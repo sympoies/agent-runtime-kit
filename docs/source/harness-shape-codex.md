@@ -46,7 +46,7 @@ Scope rules:
 
 ## Version Floors (Codex side)
 
-- Codex product `min_version` / `recommended_version`: **0.142.2**;
+- Codex product `min_version` / `recommended_version`: **0.142.5**;
   `min_version_effective_from`: **2026-07-09**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex
