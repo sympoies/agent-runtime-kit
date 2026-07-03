@@ -16,8 +16,13 @@
 {% else %}
   or directory `AGENTS.md` / `CLAUDE.md` can override or extend it.
 {% endif %}
+{% if product == "hermes" -%}
+- Keep this file concise. Detailed workflows belong in the runtime-kit source
+  docs; Hermes copies only this rendered development-policy skill.
+{% else -%}
 - Keep this file concise. Detailed workflows belong in docs resolved by
   `agent-docs`.
+{%- endif %}
 
 ## Required Preflight
 
@@ -86,8 +91,13 @@
   ambiguous classification: surface the level as a decision and wait.
   Unambiguous L0: say so and proceed. Re-triage if the work escalates
   mid-flight.
+{% if product == "hermes" -%}
+- Full ladder, escalation judge, and per-tier methods:
+  `core/policies/work-tier-levels.md` in the runtime-kit checkout.
+{% else -%}
 - Full ladder, escalation judge, and per-tier methods:
   `core/policies/work-tier-levels.md` (injected for `project-dev`).
+{%- endif %}
 
 ## Evidence, Memory, And External Facts
 
@@ -112,29 +122,54 @@
   required by project rules, or clearly reusable.
 - Keep temporary/debug artifacts out of `/tmp`: put them under the runtime-kit
   state out tree (via `agent-out`) and reference that path in the reply.
+{% if product == "hermes" -%}
+- Hermes has no runtime-kit hook runner for this copied skill; policy still
+  applies. Prefer project-defined validation commands; if none exist, run the
+  smallest meaningful checks and report what was or was not run.
+- Artifact paths, `agent-out` usage, and validation mechanics:
+  `core/policies/files-hooks-validation.md` in the runtime-kit checkout.
+{% else -%}
 - Hooks may enforce mechanical guardrails, but hooks do not replace policy.
   Prefer project-defined validation commands; if none exist, run the smallest
   meaningful checks and report what was or was not run.
 - Artifact paths, `agent-out` usage, and hook mechanics:
   `core/policies/files-hooks-validation.md` (injected for `project-dev`).
+{%- endif %}
 
 ## Git, Commits, Issues, PRs, And MRs
 
+{% if product == "hermes" -%}
+- Always use the `semantic-commit` skill for supported commit workflows.
+- Use `git-cli worktree` for agent worktree lifecycle; direct mutating
+  `git worktree` commands bypass the managed lifecycle.
+{% else -%}
 - Always use the `semantic-commit` skill; direct `git commit` is blocked by
   hook.
 - Use `git-cli worktree` for agent worktree lifecycle; direct mutating
   `git worktree` commands are blocked by hook.
+{% endif -%}
 - Never enable `extensions.worktreeConfig` or set per-worktree
   identity/signing config; never use `--no-gpg-sign` for tracked work. If
   signing fails, stop and report the blocker.
+{% if product == "hermes" -%}
+- For agent-owned provider issues, PRs, and MRs, use the active workflow or
+  `forge-cli` surface; direct provider CLI mutations bypass delivery gates.
+{% else -%}
 - For agent-owned provider issues, PRs, and MRs, use the active workflow or
   `forge-cli` surface; direct `gh pr create` or `glab mr create` are blocked
   by hook.
+{% endif -%}
 - Run the repo's pre-commit tests/checks per `DEVELOPMENT.md`. Never
   force-push `main`.
+{% if product == "hermes" -%}
+- Commit body gate, managed worktree paths, branch naming, label selection,
+  and PR/MR body format: `core/policies/git-delivery.md` in the runtime-kit
+  checkout.
+{% else -%}
 - Commit body gate, managed worktree paths, branch naming, label selection,
   and PR/MR body format: `core/policies/git-delivery.md` (injected for
   `project-dev`).
+{%- endif %}
 
 ## Plan Archive
 

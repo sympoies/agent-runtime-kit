@@ -162,10 +162,12 @@ the acceptance lane, and the current ship state.
 
 ### 17. Prompt-mode delegation policy (`AGENT_HOME.md`)
 
-- Hermes reads from: the rendered `AGENT_HOME.md` (development-policy skill),
-  whose delegation guidance routes through Hermes's `delegate_task` tool.
-- Source: root `AGENT_HOME.md` hermes render branches.
-- Support today: **shipped**.
+- Hermes reads no prompt-mode delegation policy from `AGENT_HOME.md`; the
+  Codex-only delegation block is omitted from
+  `build/hermes/AGENT_HOME.md`.
+- Hermes-specific subagent dispatch guidance remains in the rendered
+  code-review skills that use `delegate_task`.
+- Support today: **not-applicable**.
 
 ## Coverage Summary
 
@@ -187,4 +189,4 @@ the acceptance lane, and the current ship state.
 | 14 | Runtime state | shipped |
 | 15 | Local skill root | shipped |
 | 16 | Codex hook registration | not-applicable |
-| 17 | Prompt-mode delegation policy | shipped |
+| 17 | Prompt-mode delegation policy | not-applicable |

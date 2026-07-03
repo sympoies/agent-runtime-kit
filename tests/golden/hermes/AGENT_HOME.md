@@ -10,8 +10,9 @@
 
   or directory `AGENTS.md` / `.hermes.md` can override or extend it.
 
-- Keep this file concise. Detailed workflows belong in docs resolved by
-  `agent-docs`.
+- Keep this file concise. Detailed workflows belong in the runtime-kit source
+  docs; Hermes copies only this rendered development-policy skill.
+
 
 ## Required Preflight
 
@@ -62,7 +63,8 @@
   Unambiguous L0: say so and proceed. Re-triage if the work escalates
   mid-flight.
 - Full ladder, escalation judge, and per-tier methods:
-  `core/policies/work-tier-levels.md` (injected for `project-dev`).
+  `core/policies/work-tier-levels.md` in the runtime-kit checkout.
+
 
 ## Evidence, Memory, And External Facts
 
@@ -87,29 +89,29 @@
   required by project rules, or clearly reusable.
 - Keep temporary/debug artifacts out of `/tmp`: put them under the runtime-kit
   state out tree (via `agent-out`) and reference that path in the reply.
-- Hooks may enforce mechanical guardrails, but hooks do not replace policy.
-  Prefer project-defined validation commands; if none exist, run the smallest
-  meaningful checks and report what was or was not run.
-- Artifact paths, `agent-out` usage, and hook mechanics:
-  `core/policies/files-hooks-validation.md` (injected for `project-dev`).
+- Hermes has no runtime-kit hook runner for this copied skill; policy still
+  applies. Prefer project-defined validation commands; if none exist, run the
+  smallest meaningful checks and report what was or was not run.
+- Artifact paths, `agent-out` usage, and validation mechanics:
+  `core/policies/files-hooks-validation.md` in the runtime-kit checkout.
+
 
 ## Git, Commits, Issues, PRs, And MRs
 
-- Always use the `semantic-commit` skill; direct `git commit` is blocked by
-  hook.
+- Always use the `semantic-commit` skill for supported commit workflows.
 - Use `git-cli worktree` for agent worktree lifecycle; direct mutating
-  `git worktree` commands are blocked by hook.
+  `git worktree` commands bypass the managed lifecycle.
 - Never enable `extensions.worktreeConfig` or set per-worktree
   identity/signing config; never use `--no-gpg-sign` for tracked work. If
   signing fails, stop and report the blocker.
 - For agent-owned provider issues, PRs, and MRs, use the active workflow or
-  `forge-cli` surface; direct `gh pr create` or `glab mr create` are blocked
-  by hook.
+  `forge-cli` surface; direct provider CLI mutations bypass delivery gates.
 - Run the repo's pre-commit tests/checks per `DEVELOPMENT.md`. Never
   force-push `main`.
 - Commit body gate, managed worktree paths, branch naming, label selection,
-  and PR/MR body format: `core/policies/git-delivery.md` (injected for
-  `project-dev`).
+  and PR/MR body format: `core/policies/git-delivery.md` in the runtime-kit
+  checkout.
+
 
 ## Plan Archive
 

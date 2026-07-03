@@ -941,13 +941,11 @@ surfaces:
           - "docs/source/harness-shape-claude.md#1-home-scope-prompt-claudemd"
           - AGENT_HOME.md
       hermes:
-        state: shipped
-        mechanism: "the rendered `AGENT_HOME.md` delegation guidance routes through Hermes's `delegate_task` tool"
-        source_artifacts:
-          - "AGENT_HOME.md"
-          - "build/hermes/AGENT_HOME.md"
-        min_product: "0.17.0"
-        min_nils_cli: "v1.20.0"
+        state: not-applicable
+        mechanism: "Codex-only delegation policy is omitted from the rendered Hermes development-policy skill; Hermes-specific `delegate_task` guidance lives in rendered code-review skills, not in `AGENT_HOME.md`"
+        source_artifacts: []
+        min_product: "n/a"
+        min_nils_cli: "n/a"
         acceptance:
           - kind: ci
             note: "--"

@@ -57,6 +57,7 @@ run_home_prompt_render_probe() {
   local out="$META_ARTIFACTS_DIR/home-prompt-render.txt"
   local codex_home="$REPO_ROOT/build/codex/AGENT_HOME.md"
   local claude_home="$REPO_ROOT/build/claude/AGENT_HOME.md"
+  local hermes_home="$REPO_ROOT/build/hermes/AGENT_HOME.md"
   local neutral_home="$REPO_ROOT/build/neutral/AGENT_HOME.md"
   require_meta_bin agent-runtime || return 1
   (
@@ -64,14 +65,25 @@ run_home_prompt_render_probe() {
     agent-runtime render --source-root "$REPO_ROOT" --target home-prompt
     agent-runtime render --source-root "$REPO_ROOT" --target home-prompt --product codex
     agent-runtime render --source-root "$REPO_ROOT" --target home-prompt --product claude
+    agent-runtime render --source-root "$REPO_ROOT" --target home-prompt --product hermes
   ) >"$out" 2>&1
 
   test -f "$neutral_home"
   test -f "$codex_home"
   test -f "$claude_home"
+  test -f "$hermes_home"
+  grep -Fq "or directory \`AGENTS.md\` / \`CLAUDE.md\` can override or extend it." "$neutral_home"
   grep -q '## Code Review Delegation' "$codex_home"
+  if grep -q '## Code Review Delegation' "$neutral_home"; then
+    echo "runtime-smoke meta: neutral home prompt includes Codex-only delegation section" >&2
+    return 1
+  fi
   if grep -q '## Code Review Delegation' "$claude_home"; then
     echo "runtime-smoke meta: Claude home prompt includes Codex-only delegation section" >&2
+    return 1
+  fi
+  if grep -Eq "resolved by \`agent-docs\`|\\(injected for|blocked by hook|finish-line gate|delegate_task" "$hermes_home"; then
+    echo "runtime-smoke meta: Hermes home prompt includes unavailable hook, agent-docs, or delegation claims" >&2
     return 1
   fi
   if grep -Eq '\bClaude\b|CLAUDE_' "$codex_home"; then
