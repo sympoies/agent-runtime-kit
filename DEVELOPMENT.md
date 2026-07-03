@@ -190,14 +190,16 @@ runtime homes. This is the canonical home for opening a new global skill
 create-project-skill tooling into `$AGENT_PRIVATE_SKILLS_HOME/.agents/skills/<name>/`,
 then manage it from here through `scripts/sync-private-skills.sh`. The script
 keeps that private skill SOURCE tree separate and symlinks each skill into the
-per-user global skill namespaces that Codex and Claude discover directly:
+per-user skill namespaces the local agent products discover:
 
 - Codex: `$CODEX_HOME/skills/<name>` (default `$HOME/.codex/skills/<name>`)
 - Claude: `$HOME/.claude/skills/<name>`
+- Hermes: `$HOME/.hermes/external-skills/private/<name>` (presence-gated:
+  included in the default product set only when `$HOME/.hermes` exists)
 
 Unlike `sync-runtime-surfaces.sh`, this overlay does not render, install through
 nils-cli, or touch any manifest — project-local `SKILL.md` is already the
-native format both products consume. The target namespaces do not collide with
+native format these products consume. The target namespaces do not collide with
 the runtime-kit managed surface (Codex domain dirs and Claude
 `plugins/<domain>/skills/`), and the overlay refuses to clobber any path it
 does not own, so a private skill named after a runtime-kit domain dir is
@@ -205,6 +207,15 @@ skipped rather than overwriting it. The script is dry-run by default; pass
 `--apply` to write, and `--prune` to drop overlay symlinks whose source skill
 was removed. When `$AGENT_PRIVATE_SKILLS_HOME` is unset it is a safe no-op, so
 hosts without a private tree are unaffected.
+
+The Hermes target deliberately mounts through Hermes's read-only
+`skills.external_dirs` mechanism instead of the local `$HERMES_HOME/skills/`
+tree: local Hermes skills are autonomously curated by the Hermes agent, and a
+symlinked local skill would let that maintenance write through into the private
+source repo. Each Hermes profile config must register the root once
+(`skills.external_dirs: ["~/.hermes/external-skills"]`); the overlay checks the
+profile configs it can see and prints that snippet when the registration is
+missing. Offline coverage lives in `tests/smoke/sync-private-skills.sh`.
 
 ## Repository Layout
 

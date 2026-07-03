@@ -10,8 +10,19 @@
 #
 #   Codex : $CODEX_HOME/skills/<name>      (default $HOME/.codex/skills/<name>)
 #   Claude: $HOME/.claude/skills/<name>    (personal global skill namespace)
+#   Hermes: $HOME/.hermes/external-skills/private/<name>
 #
-# Neither target collides with the runtime-kit managed surface: runtime-kit
+# The Hermes target is presence-gated: it participates in the default product
+# set only when $HOME/.hermes exists. Hermes does not read that directory by
+# itself — it must be registered once as a read-only external skills root in
+# each Hermes profile config (skills.external_dirs). The overlay checks the
+# configs it can see and prints the registration snippet when missing. The
+# external-dirs mount (rather than $HERMES_HOME/skills) matters: local Hermes
+# skills are curated autonomously by the agent, and a symlinked local skill
+# would let that maintenance write through into the private source repo.
+# External dirs are Hermes's declared externally-owned, read-only boundary.
+#
+# None of the targets collide with the runtime-kit managed surface: runtime-kit
 # installs Codex skills as domain dirs under $CODEX_HOME/skills and Claude skills
 # under $HOME/.claude/plugins/<domain>/skills. The runtime-kit prune step is
 # scoped to its own managed entries, so private overlay symlinks survive it.
@@ -32,7 +43,7 @@ set -euo pipefail
 readonly PROG_NAME="sync-private-skills.sh"
 
 APPLY=0
-PRODUCT="both"
+PRODUCT="all"
 PRUNE=0
 PRIVATE_HOME="${AGENT_PRIVATE_SKILLS_HOME:-}"
 LINKED=0
@@ -45,11 +56,11 @@ PRUNED=0
 
 print_help() {
   cat <<EOF
-Usage: $PROG_NAME [--apply] [--product codex|claude|both] [--private-home PATH] [--prune]
+Usage: $PROG_NAME [--apply] [--product codex|claude|hermes|all] [--private-home PATH] [--prune]
 
-Overlay private project-local skills into the live Codex and Claude runtime
-homes by symlinking <private-home>/.agents/skills/<name> into each product's
-global skill directory.
+Overlay private project-local skills into the live Codex, Claude, and Hermes
+runtime homes by symlinking <private-home>/.agents/skills/<name> into each
+product's skill directory.
 
 The private source tree is located via \$AGENT_PRIVATE_SKILLS_HOME (a
 create-project-skill root containing .agents/skills/). When that env is unset
@@ -62,8 +73,14 @@ without mutating runtime homes. Pass --apply to run them.
 Options:
   --apply
       Execute the overlay. Without this flag, commands are printed only.
-  --product codex|claude|both
-      Limit the overlay to one product. Default: both.
+  --product codex|claude|hermes|all
+      Limit the overlay to one product. Default: all. In the default set the
+      hermes target is presence-gated (skipped unless \$HOME/.hermes exists);
+      an explicit --product hermes on a host without \$HOME/.hermes is an
+      error. "both" is accepted as a legacy alias for "all".
+      Hermes links land in \$HOME/.hermes/external-skills/private/<name>; that
+      root must be registered once per Hermes profile config under
+      skills.external_dirs (the script prints the snippet when unregistered).
   --private-home PATH
       Use a specific private skills root, overriding \$AGENT_PRIVATE_SKILLS_HOME.
   --prune
@@ -177,9 +194,13 @@ parse_args() {
   done
 
   case "$PRODUCT" in
-    codex | claude | both) ;;
+    both)
+      # Legacy alias from the two-product era.
+      PRODUCT="all"
+      ;;
+    codex | claude | hermes | all) ;;
     *)
-      err "invalid --product value: $PRODUCT (expected codex|claude|both)"
+      err "invalid --product value: $PRODUCT (expected codex|claude|hermes|all)"
       exit 2
       ;;
   esac
@@ -202,13 +223,28 @@ abs_path() {
   fi
 }
 
+# The Hermes base is deliberately fixed to $HOME/.hermes: Hermes gateway
+# processes export HERMES_HOME pointing at per-profile subdirectories, so
+# honoring that env here would scatter the shared external root per profile.
+hermes_home() {
+  printf '%s\n' "$HOME/.hermes"
+}
+
+hermes_available() {
+  [ -d "$(hermes_home)" ]
+}
+
 selected_products() {
   case "$PRODUCT" in
     codex) printf '%s\n' codex ;;
     claude) printf '%s\n' claude ;;
-    both)
+    hermes) printf '%s\n' hermes ;;
+    all)
       printf '%s\n' codex
       printf '%s\n' claude
+      if hermes_available; then
+        printf '%s\n' hermes
+      fi
       ;;
   esac
 }
@@ -217,11 +253,42 @@ product_skills_dir() {
   case "$1" in
     claude) printf '%s\n' "$HOME/.claude/skills" ;;
     codex) printf '%s\n' "${CODEX_HOME:-$HOME/.codex}/skills" ;;
+    hermes) printf '%s\n' "$(hermes_home)/external-skills/private" ;;
     *)
       err "unknown product: $1"
       exit 2
       ;;
   esac
+}
+
+# Hermes only reads the external-skills root when a profile config registers
+# it under skills.external_dirs. Best-effort check: look for the literal root
+# name in every profile config we can see and print the snippet when any is
+# missing it. Read-only, so it runs in dry-run mode too.
+hermes_config_hint() {
+  local base cfg missing=""
+  base="$(hermes_home)"
+  # The base profile config is always expected; per-profile configs are only
+  # checked when they exist (an unexpanded glob is skipped by the -f test).
+  if [ ! -f "$base/config.yaml" ] || ! grep -q "external-skills" "$base/config.yaml"; then
+    missing="${missing}  - ${base}/config.yaml
+"
+  fi
+  for cfg in "$base"/profiles/*/config.yaml; do
+    [ -f "$cfg" ] || continue
+    if ! grep -q "external-skills" "$cfg"; then
+      missing="${missing}  - ${cfg}
+"
+    fi
+  done
+  [ -n "$missing" ] || return 0
+  log ""
+  log "note [hermes]: the external-skills root is not registered in:"
+  printf '%s' "$missing"
+  log "  add to each profile's config.yaml:"
+  log "    skills:"
+  log "      external_dirs:"
+  log "        - ~/.hermes/external-skills"
 }
 
 # Resolve the private skills root and the .agents/skills source dir.
@@ -363,10 +430,18 @@ main() {
     exit 0
   fi
 
+  if [ "$PRODUCT" = "hermes" ] && ! hermes_available; then
+    err "--product hermes requested but $(hermes_home) does not exist"
+    exit 2
+  fi
+
   local mode="dry-run"
   [ "$APPLY" = "1" ] && mode="apply"
   log "$PROG_NAME: mode=$mode product=$PRODUCT private-home=$PRIVATE_HOME"
   log "source: $SKILLS_SRC_DIR"
+  if [ "$PRODUCT" = "all" ] && ! hermes_available; then
+    log "hermes: $(hermes_home) not present; skipping hermes overlay"
+  fi
   log ""
 
   local product
@@ -374,6 +449,9 @@ main() {
     overlay_product "$product"
     if [ "$PRUNE" = "1" ]; then
       prune_product "$product"
+    fi
+    if [ "$product" = "hermes" ]; then
+      hermes_config_hint
     fi
   done
 
