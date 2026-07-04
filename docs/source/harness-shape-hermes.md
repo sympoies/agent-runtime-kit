@@ -8,9 +8,10 @@ views pivot into one matrix.
 
 Hermes (the `hermes` agent, home `~/.hermes`) is a filesystem-first agent: it
 loads its identity from `~/.hermes/SOUL.md`, auto-discovers skills under
-`~/.hermes/skills/<domain>/<skill>/SKILL.md`, and dispatches subagents through
-the `delegate_task` tool rather than file-based agent definitions. It has no
-plugin marketplace and the runtime-kit does not render Hermes hook scripts.
+`~/.hermes/skills/<domain>/<skill>/SKILL.md` plus configured
+`skills.external_dirs` roots, and dispatches subagents through the
+`delegate_task` tool rather than file-based agent definitions. It has no plugin
+marketplace and the runtime-kit does not render Hermes hook scripts.
 
 ## Purpose
 
@@ -87,9 +88,8 @@ the acceptance lane, and the current ship state.
 
 ### 5. Plugin-scoped skill discovery (`plugins/<p>/skills/<s>/`)
 
-- This is the Claude nested layout. Hermes discovers skills from
-  `~/.hermes/skills/<domain>/<skill>/` (see section 15), not from a
-  `plugins/<p>/skills/` tree.
+- This is the Claude nested layout. Hermes discovers skills from filesystem
+  skill roots (see section 15), not from a `plugins/<p>/skills/` tree.
 - Support today: **not-applicable**.
 
 ### 6. Slash command files (`commands/<name>.md`)
@@ -145,14 +145,18 @@ the acceptance lane, and the current ship state.
 - Source: `manifests/runtime-roots.yaml` hermes `state_home`.
 - Support today: **shipped**.
 
-### 15. Local skill root (`~/.hermes/skills/<domain>/<skill>/SKILL.md`)
+### 15. Local and external skill roots
 
-- Hermes reads from: `~/.hermes/skills/<domain>/<skill>/SKILL.md` (nested
-  filesystem discovery), the direct analogue of the Codex local skill root.
+- Hermes reads from: `~/.hermes/skills/<domain>/<skill>/SKILL.md` and every
+  configured `skills.external_dirs` root (nested filesystem discovery), the
+  direct analogue of the Codex local skill root.
 - Source: shared skill sources rendered to
   `build/hermes/plugins/<domain>/skills/<skill>/SKILL.md`.
 - Install mechanism: recursive `symlinked-file` copy of each plugin's rendered
-  skills tree into `~/.hermes/skills/<domain>` (`targets/hermes/link-map.yaml`).
+  skills tree into
+  `~/.hermes/external-skills/agent-runtime-kit/<domain>` via
+  `targets/hermes/link-map.yaml`. The local `~/.hermes/skills` tree remains for
+  Hermes-native or operator-managed skills.
 - Support today: **shipped**.
 
 ### 16. Codex hook registration (`config.toml` managed block)

@@ -79,7 +79,8 @@ products:
   hermes:
     nested_skill_support: true
     plugin_manifest:
-      # Hermes discovers skills from `~/.hermes/skills/<domain>/<skill>/SKILL.md`.
+      # Hermes discovers skills from `~/.hermes/skills/<domain>/<skill>/SKILL.md`
+      # and configured `skills.external_dirs` roots.
       # The plugin.json is metadata-only; discovery is filesystem-based.
       path_pattern: "$HOME/.hermes/plugins/<domain>/.hermes-plugin/plugin.json"
       loaded_at_runtime: false
@@ -91,6 +92,7 @@ products:
     config_activation:
       - "$HOME/.hermes/SOUL.md"
       - "$HOME/.hermes/skills/<domain>/<skill>/SKILL.md"
+      - "$HOME/.hermes/external-skills/agent-runtime-kit/<domain>/<skill>/SKILL.md"
     runtime_state:
       state_home_env: "HERMES_HOME"
       default_path: "$HOME/.hermes"

@@ -200,13 +200,14 @@ per-user skill namespaces the local agent products discover:
 Unlike `sync-runtime-surfaces.sh`, this overlay does not render, install through
 nils-cli, or touch any manifest — project-local `SKILL.md` is already the
 native format these products consume. The target namespaces do not collide with
-the runtime-kit managed surface (Codex domain dirs and Claude
-`plugins/<domain>/skills/`), and the overlay refuses to clobber any path it
-does not own, so a private skill named after a runtime-kit domain dir is
-skipped rather than overwriting it. The script is dry-run by default; pass
-`--apply` to write, and `--prune` to drop overlay symlinks whose source skill
-was removed. When `$AGENT_PRIVATE_SKILLS_HOME` is unset it is a safe no-op, so
-hosts without a private tree are unaffected.
+the runtime-kit managed surface (Codex domain dirs, Claude
+`plugins/<domain>/skills/`, and Hermes
+`$HOME/.hermes/external-skills/agent-runtime-kit/<domain>/`). The overlay
+refuses to clobber any path it does not own, so a private skill named after a
+runtime-kit domain dir is skipped rather than overwriting it. The script is
+dry-run by default; pass `--apply` to write, and `--prune` to drop overlay
+symlinks whose source skill was removed. When `$AGENT_PRIVATE_SKILLS_HOME` is
+unset it is a safe no-op, so hosts without a private tree are unaffected.
 
 The Hermes target deliberately mounts through Hermes's read-only
 `skills.external_dirs` mechanism instead of the local `$HERMES_HOME/skills/`

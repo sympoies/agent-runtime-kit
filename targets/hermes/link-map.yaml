@@ -2,8 +2,9 @@
 #
 # Schema: ../../core/docs/schemas/link-map.schema.json
 #
-# Hermes discovers skills from ~/.hermes/skills/<domain>/<skill>/SKILL.md.
-# The rendered build output under build/hermes/ is copied to that tree.
+# Hermes discovers skills from the local skills tree and configured external
+# roots. Runtime-kit managed skills are installed under the external root so
+# Hermes-native skills in ~/.hermes/skills stay separate from kit-owned files.
 # There is no Hermes plugin marketplace — skills are standalone SKILL.md files.
 
 schema_version: 1
@@ -17,7 +18,7 @@ entries:
   - id: reporting.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/reporting/skills
-    destination: skills/reporting
+    destination: external-skills/agent-runtime-kit/reporting
     recursive: true
 
   - id: meta.plugin-manifest
@@ -28,7 +29,7 @@ entries:
   - id: meta.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/meta/skills
-    destination: skills/meta
+    destination: external-skills/agent-runtime-kit/meta
     recursive: true
 
   - id: media.plugin-manifest
@@ -39,7 +40,7 @@ entries:
   - id: media.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/media/skills
-    destination: skills/media
+    destination: external-skills/agent-runtime-kit/media
     recursive: true
 
   - id: browser.plugin-manifest
@@ -50,7 +51,7 @@ entries:
   - id: browser.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/browser/skills
-    destination: skills/browser
+    destination: external-skills/agent-runtime-kit/browser
     recursive: true
 
   - id: conversation.plugin-manifest
@@ -61,7 +62,7 @@ entries:
   - id: conversation.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/conversation/skills
-    destination: skills/conversation
+    destination: external-skills/agent-runtime-kit/conversation
     recursive: true
 
   - id: evidence.plugin-manifest
@@ -72,7 +73,7 @@ entries:
   - id: evidence.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/evidence/skills
-    destination: skills/evidence
+    destination: external-skills/agent-runtime-kit/evidence
     recursive: true
 
   - id: issue.plugin-manifest
@@ -83,7 +84,7 @@ entries:
   - id: issue.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/issue/skills
-    destination: skills/issue
+    destination: external-skills/agent-runtime-kit/issue
     recursive: true
 
   - id: code-review.plugin-manifest
@@ -94,7 +95,7 @@ entries:
   - id: code-review.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/code-review/skills
-    destination: skills/code-review
+    destination: external-skills/agent-runtime-kit/code-review
     recursive: true
 
   - id: pr.plugin-manifest
@@ -105,7 +106,7 @@ entries:
   - id: pr.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/pr/skills
-    destination: skills/pr
+    destination: external-skills/agent-runtime-kit/pr
     recursive: true
 
   - id: dispatch.plugin-manifest
@@ -116,5 +117,5 @@ entries:
   - id: dispatch.skills-tree
     kind: symlinked-file
     source: build/hermes/plugins/dispatch/skills
-    destination: skills/dispatch
+    destination: external-skills/agent-runtime-kit/dispatch
     recursive: true

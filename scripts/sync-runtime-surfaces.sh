@@ -1271,7 +1271,7 @@ sync_product_activation() {
       sync_codex_plugin_registry "$live_home" "$state_home"
       ;;
     hermes)
-      log "hermes: no plugin registry to sync; skills are copied directly to ~/.hermes/skills/"
+      log "hermes: no plugin registry to sync; runtime-kit skills are linked under ~/.hermes/external-skills/agent-runtime-kit/"
       ;;
     *)
       err "unknown product: $product"
@@ -1299,10 +1299,6 @@ account_prune_skipped() {
 
   if [ "$skipped" -gt 0 ]; then
     PRUNE_SKIPPED_TOTAL=$((PRUNE_SKIPPED_TOTAL + skipped))
-    # Hermes installs into ~/.hermes/skills/<domain>/ — the same directories that
-    # already hold Hermes's own (non-kit) skills — so its skipped candidates are
-    # expected foreign content, not retired kit skills. Word the per-path line
-    # accordingly so the operator is never told to delete a Hermes-native skill.
     local phrase="left stale candidate for review"
     if [ "$product" = "hermes" ]; then
       phrase="left non-kit-managed path untouched"
@@ -1386,6 +1382,158 @@ print(f"legacy Codex flat skill cleanup {status}: symlinks={removed_symlinks}")
 PY
 }
 
+cleanup_hermes_legacy_runtime_kit_skill_root() {
+  local live_home="$1"
+  local legacy_root="$live_home/skills"
+
+  if [ ! -d "$legacy_root" ]; then
+    return 0
+  fi
+
+  log "cleaning retired Hermes local runtime-kit skill links live_home=$live_home"
+  print_cmd python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY"
+python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY" <<'PY'
+import os
+import pathlib
+import shutil
+import sys
+
+source_root = pathlib.Path(sys.argv[1]).resolve()
+legacy_root = pathlib.Path(sys.argv[2])
+apply = sys.argv[3] == "1"
+build_plugins = (source_root / "build" / "hermes" / "plugins").resolve()
+removed_symlinks = 0
+removed_copies = 0
+candidate_dirs = set()
+
+if not legacy_root.exists():
+    sys.exit(0)
+
+
+def remember_cleanup_dirs(path, stop):
+    cleanup_dir = path
+    while cleanup_dir != legacy_root and cleanup_dir != legacy_root.parent:
+        candidate_dirs.add(cleanup_dir)
+        if cleanup_dir == stop:
+            break
+        cleanup_dir = cleanup_dir.parent
+
+
+def trees_match(left, right):
+    for root, dirnames, filenames in os.walk(left):
+        current = pathlib.Path(root)
+        rel = current.relative_to(left)
+        expected_current = right / rel
+        if not expected_current.is_dir():
+            return False
+
+        if any((current / name).is_symlink() for name in dirnames + filenames):
+            return False
+
+        expected_dirs = sorted(path.name for path in expected_current.iterdir() if path.is_dir())
+        expected_files = sorted(path.name for path in expected_current.iterdir() if path.is_file())
+        if sorted(dirnames) != expected_dirs or sorted(filenames) != expected_files:
+            return False
+
+        for filename in filenames:
+            actual_file = current / filename
+            expected_file = expected_current / filename
+            if actual_file.read_bytes() != expected_file.read_bytes():
+                return False
+    return True
+
+
+for domain_dir in sorted(legacy_root.iterdir()):
+    if domain_dir.is_symlink() or not domain_dir.is_dir():
+        continue
+    for dirpath, dirnames, filenames in os.walk(domain_dir):
+        current = pathlib.Path(dirpath)
+        for filename in sorted(filenames):
+            link_path = current / filename
+            if not link_path.is_symlink():
+                continue
+            target_raw = os.readlink(link_path)
+            if os.path.isabs(target_raw):
+                target_path = pathlib.Path(target_raw)
+            else:
+                target_path = link_path.parent / target_raw
+            target_path = target_path.resolve(strict=False)
+            try:
+                rel_target = target_path.relative_to(build_plugins)
+            except ValueError:
+                continue
+            if len(rel_target.parts) < 4 or rel_target.parts[1] != "skills":
+                continue
+            if domain_dir.name != rel_target.parts[0]:
+                continue
+
+            rel_live = link_path.relative_to(legacy_root.parent)
+            if apply:
+                link_path.unlink()
+                print(f"removed legacy Hermes runtime-kit skill symlink {rel_live}")
+            else:
+                print(f"would remove legacy Hermes runtime-kit skill symlink {rel_live}")
+            removed_symlinks += 1
+            remember_cleanup_dirs(link_path.parent, domain_dir)
+
+for domain_dir in sorted(legacy_root.iterdir()):
+    if domain_dir.is_symlink() or not domain_dir.is_dir():
+        continue
+    for skill_dir in sorted(domain_dir.iterdir()):
+        if skill_dir.is_symlink() or not skill_dir.is_dir():
+            continue
+        expected_skill_dir = build_plugins / domain_dir.name / "skills" / skill_dir.name
+        if not expected_skill_dir.is_dir():
+            continue
+        if not trees_match(skill_dir, expected_skill_dir):
+            continue
+
+        rel_live = skill_dir.relative_to(legacy_root.parent)
+        if apply:
+            shutil.rmtree(skill_dir)
+            print(f"removed legacy Hermes runtime-kit skill copy {rel_live}")
+        else:
+            print(f"would remove legacy Hermes runtime-kit skill copy {rel_live}")
+        removed_copies += 1
+        remember_cleanup_dirs(skill_dir, domain_dir)
+
+for path in sorted(candidate_dirs, key=lambda item: len(item.parts), reverse=True):
+    if path == legacy_root or not path.exists() or path.is_symlink():
+        continue
+    try:
+        is_empty = not any(path.iterdir())
+    except FileNotFoundError:
+        continue
+    if not is_empty:
+        continue
+    rel_live = path.relative_to(legacy_root.parent)
+    if apply:
+        path.rmdir()
+        print(f"removed empty legacy Hermes runtime-kit skill directory {rel_live}")
+    else:
+        print(f"would remove empty legacy Hermes runtime-kit skill directory {rel_live}")
+
+status = "removed" if apply else "planned"
+print(f"legacy Hermes runtime-kit skill cleanup {status}: symlinks={removed_symlinks} copies={removed_copies}")
+PY
+}
+
+cleanup_hermes_legacy_runtime_kit_profile_roots() {
+  local live_home="$1"
+  local profiles_root="$live_home/profiles"
+  local profile_home
+
+  if [ ! -d "$profiles_root" ]; then
+    return 0
+  fi
+
+  for profile_home in "$profiles_root"/*; do
+    if [ -d "$profile_home/skills" ]; then
+      cleanup_hermes_legacy_runtime_kit_skill_root "$profile_home"
+    fi
+  done
+}
+
 prune_product() {
   local product="$1"
   local live_home
@@ -1415,6 +1563,10 @@ prune_product() {
     if [ "$product" = "codex" ]; then
       cleanup_codex_legacy_flat_skill_root "$live_home"
     fi
+    if [ "$product" = "hermes" ]; then
+      cleanup_hermes_legacy_runtime_kit_skill_root "$live_home"
+      cleanup_hermes_legacy_runtime_kit_profile_roots "$live_home"
+    fi
     return 0
   fi
 
@@ -1443,6 +1595,10 @@ prune_product() {
   account_prune_skipped "$product" "$prune_json"
   if [ "$product" = "codex" ]; then
     cleanup_codex_legacy_flat_skill_root "$live_home"
+  fi
+  if [ "$product" = "hermes" ]; then
+    cleanup_hermes_legacy_runtime_kit_skill_root "$live_home"
+    cleanup_hermes_legacy_runtime_kit_profile_roots "$live_home"
   fi
   log "prune product=$product changes=${changes:-0} skipped=${PRUNE_LAST_SKIPPED:-0}"
 }
@@ -1572,11 +1728,7 @@ print_summary() {
   if [ "$prune_status" = "review-needed" ]; then
     case "$PRODUCT" in
       hermes | both)
-        # Hermes shares its skill domain directories between kit-managed and its
-        # own native skills, so prune-stale always reports the native ones as
-        # skipped. They are NOT retired kit skills — removing them would delete
-        # Hermes's own skills.
-        log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. For Hermes these are normally its own skills sharing a domain directory with the kit's — do NOT remove them. Only a codex/claude path above (if any) may be a retired kit skill worth removing by hand. Background: heuristic-system case sync-runtime-surfaces-prune-stale-dir-gap (archived)."
+        log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. Hermes runtime-kit skills are expected under external-skills/agent-runtime-kit. Any leftover local skills/<domain> entries are Hermes-native or historical content and must be reviewed before deletion; do not remove them blindly. Background: heuristic-system case sync-runtime-surfaces-prune-stale-dir-gap (archived)."
         ;;
       *)
         log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. Review the paths above and remove any retired managed skill directory by hand. Background: heuristic-system case sync-runtime-surfaces-prune-stale-dir-gap (archived)."

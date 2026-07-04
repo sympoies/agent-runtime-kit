@@ -302,7 +302,7 @@ surfaces:
 
       hermes:
         state: not-applicable
-        mechanism: "Hermes discovers skills from `~/.hermes/skills/<domain>/<skill>/`, not a Claude-style `plugins/<p>/skills/` tree (see the local skill root surface)"
+        mechanism: "Hermes discovers skills from filesystem skill roots, not a Claude-style `plugins/<p>/skills/` tree (see the local and external skill roots surface)"
         source_artifacts: []
         min_product: "n/a"
         min_nils_cli: "n/a"
@@ -834,7 +834,7 @@ surfaces:
 
       hermes:
         state: shipped
-        mechanism: "recursive `symlinked-file` copy of each plugin's rendered skills tree into `~/.hermes/skills/<domain>/<skill>/SKILL.md` (Hermes's filesystem skill discovery)"
+        mechanism: "recursive `symlinked-file` copy of each plugin's rendered skills tree into `~/.hermes/external-skills/agent-runtime-kit/<domain>/<skill>/SKILL.md`; Hermes discovers it through `skills.external_dirs`, while `~/.hermes/skills` stays reserved for Hermes-native/operator-managed skills"
         source_artifacts:
           - "targets/hermes/link-map.yaml"
         min_product: "0.17.0"
@@ -847,7 +847,7 @@ surfaces:
             note: "--"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-hermes.md#15-local-skill-root-hermesskillsdomainskillskillmd"
+          - "docs/source/harness-shape-hermes.md#15-local-and-external-skill-roots"
           - "targets/hermes/link-map.yaml"
   - id: codex-hook-registration
     ordinal: 16

@@ -1059,6 +1059,53 @@ run_sync_runtime_surfaces_prune_fixture_probe() {
   test -f "$claude_regular"
 }
 
+run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
+  local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.hermes-legacy-cleanup.txt"
+  local hermes_home="$TMP_ROOT/sync-prune/hermes-home"
+  local stale_skill="$hermes_home/skills/meta/agent-docs/SKILL.md"
+  local stale_ref="$hermes_home/skills/conversation/actionable-advice/references/prompts/actionable-advice.md"
+  local copied_skill="$hermes_home/skills/meta/semantic-commit"
+  local modified_copy="$hermes_home/skills/meta/agent-out"
+  local foreign="$hermes_home/skills/meta/foreign-skill/SKILL.md"
+  local regular="$hermes_home/skills/meta/user-note/SKILL.md"
+  local development_policy="$hermes_home/skills/development-policy/SKILL.md"
+
+  require_meta_bin agent-runtime || return 1
+  rm -rf "$hermes_home"
+  mkdir -p "$(dirname "$stale_skill")" "$(dirname "$stale_ref")" \
+    "$(dirname "$foreign")" "$(dirname "$regular")" "$(dirname "$development_policy")"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/agent-docs/SKILL.md" "$stale_skill"
+  ln -s "$REPO_ROOT/build/hermes/plugins/conversation/skills/actionable-advice/references/prompts/actionable-advice.md" "$stale_ref"
+  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/semantic-commit" "$copied_skill"
+  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/agent-out" "$modified_copy"
+  printf 'local note\n' >"$modified_copy/local-note.txt"
+  ln -s /var/empty/foreign-skill "$foreign"
+  printf 'user note\n' >"$regular"
+  ln -s "$REPO_ROOT/build/hermes/AGENT_HOME.md" "$development_policy"
+
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$hermes_home"
+  ) >"$out" 2>&1
+
+  grep -q "removed legacy Hermes runtime-kit skill symlink skills/meta/agent-docs/SKILL.md" "$out"
+  grep -q "removed legacy Hermes runtime-kit skill symlink skills/conversation/actionable-advice/references/prompts/actionable-advice.md" "$out"
+  grep -q "removed legacy Hermes runtime-kit skill copy skills/meta/semantic-commit" "$out"
+  grep -q "removed empty legacy Hermes runtime-kit skill directory skills/conversation/actionable-advice" "$out"
+  grep -q "legacy Hermes runtime-kit skill cleanup removed: symlinks=2 copies=1" "$out"
+  test ! -e "$stale_skill"
+  test ! -d "$hermes_home/skills/conversation/actionable-advice"
+  test ! -d "$copied_skill"
+  test -d "$modified_copy"
+  test -f "$modified_copy/local-note.txt"
+  test -L "$foreign"
+  test -f "$regular"
+  test -L "$development_policy"
+}
+
 # Characterizes the upstream nils-cli limitation tracked in inbox case
 # sync-runtime-surfaces-prune-stale-dir-gap: a retired *recursive-file* managed
 # skill directory (real files, non-empty dir) is detected as a stale candidate
@@ -1131,11 +1178,10 @@ run_sync_runtime_surfaces_prune_review_reporting_probe() {
     ! grep -q "prune=ok" "$out"
 }
 
-# Hermes shares its skill domain directories between kit-managed and its own
-# native skills, so prune-stale always reports the native ones as skipped. The
-# sync must surface them with neutral, non-destructive wording so an operator is
-# never told to delete a Hermes-native skill (the codex/claude "remove ... by
-# hand" imperative must NOT appear for hermes).
+# Hermes runtime-kit skills now live under external-skills/agent-runtime-kit, so
+# any prune-skipped local skill path is either Hermes-native or historical
+# content. The sync must surface that with review-first wording instead of the
+# codex/claude "remove ... by hand" imperative.
 run_sync_runtime_surfaces_prune_review_hermes_wording_probe() {
   local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.prune-review-hermes.txt"
   local script="$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
@@ -1167,7 +1213,9 @@ run_sync_runtime_surfaces_prune_review_hermes_wording_probe() {
     grep -q "prune-stale left non-kit-managed path untouched (product=hermes)" "$out" &&
     grep -q "gif-search" "$out" &&
     grep -q "prune=review-needed" "$out" &&
-    grep -q "do NOT remove them" "$out" &&
+    grep -q "Hermes runtime-kit skills are expected under external-skills/agent-runtime-kit" "$out" &&
+    grep -q "must be reviewed before deletion" "$out" &&
+    grep -q "do not remove them blindly" "$out" &&
     ! grep -q "Review the paths above and remove any retired managed skill directory by hand" "$out" &&
     ! grep -q "prune=ok" "$out"
 }
@@ -1935,6 +1983,7 @@ record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces apply rewires ma
 record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
 record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces apply refuses linked git worktree source roots" run_sync_runtime_surfaces_worktree_guard_probe
 record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
+record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces removes legacy Hermes runtime-kit local skill symlinks only" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
 record_case "meta.sync-runtime-surfaces" "prune-stale skips retired recursive-file managed skill directory (upstream gap characterization)" run_sync_runtime_surfaces_prune_recursive_stale_probe
 record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces reports prune=review-needed when prune-stale leaves stale candidates" run_sync_runtime_surfaces_prune_review_reporting_probe
 record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces uses neutral non-destructive wording for hermes prune-skipped paths" run_sync_runtime_surfaces_prune_review_hermes_wording_probe
