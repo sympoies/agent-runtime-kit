@@ -2799,6 +2799,68 @@ exit 65
             self.assertIn("task-tools", ctx)
             self.assertIn("ext.md", ctx)
 
+    def test_preflight_cue_qualifies_required_docs_with_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            docs_home = repo / "runtime-kit"
+            project = repo / "project"
+            project.mkdir(parents=True)
+            docs_home.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+            (project / "AGENT_DOCS.toml").write_text(
+                '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                encoding="utf-8",
+            )
+            (project / "DEV.md").write_text("# Dev\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+if [[ "$args" == *"preflight --help"* ]]; then
+  printf '%s\\n' '      --require-declared-intent'
+  exit 0
+fi
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{{"intents":["project-dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' '{{"intent":"project-dev","docs_home":{json.dumps(str(docs_home))},"project_path":{json.dumps(str(project))},"documents":[{{"path":{json.dumps(str(docs_home / "core" / "policies" / "work-tier-levels.md"))},"required":true,"scope":"home","source":"project"}},{{"path":{json.dumps(str(project / "DEV.md"))},"required":true,"scope":"project","source":"project"}}],"validation":{{"declared":true,"commands":[]}}}}'
+  exit 0
+fi
+exit 65
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(docs_home),
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            code, decision, stderr = run_shell_hook(
+                "user-prompt-agent-docs.sh",
+                {"session_id": "cue-doc-roots-test", "prompt": "hello"},
+                cwd=project,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            hook_output = decision.get("hookSpecificOutput", {})
+            ctx = ""
+            if isinstance(hook_output, dict):
+                ctx = str(hook_output.get("additionalContext", ""))
+            self.assertIn(f"Doc roots: home={docs_home}, project={project}.", ctx)
+            self.assertIn("home:core/policies/work-tier-levels.md", ctx)
+            self.assertIn("project:DEV.md", ctx)
+            self.assertNotIn(str(docs_home / "core" / "policies" / "work-tier-levels.md"), ctx)
+
     def test_preflight_cue_forwards_agent_docs_product(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

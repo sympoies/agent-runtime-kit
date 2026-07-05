@@ -135,6 +135,46 @@ cue="$(
 import json, os, sys
 lines = []
 val_cmds = []
+home_roots = set()
+project_roots = set()
+preflight_docs = []
+
+
+def rel_under(path, root):
+    if not path or not root:
+        return path
+    try:
+        abs_path = os.path.abspath(path)
+        abs_root = os.path.abspath(root)
+        if os.path.commonpath([abs_path, abs_root]) == abs_root:
+            return os.path.relpath(abs_path, abs_root)
+    except Exception:
+        return path
+    return path
+
+
+def doc_owner(doc):
+    scope = doc.get("scope")
+    if scope in ("home", "project"):
+        return scope
+    source = doc.get("source")
+    if source in ("home", "project"):
+        return source
+    return None
+
+
+def doc_label(doc, preflight):
+    path = str(doc.get("path") or "")
+    if not path:
+        return "(unknown)"
+    owner = doc_owner(doc)
+    if owner == "home":
+        return "home:" + rel_under(path, preflight.get("docs_home") or "")
+    if owner == "project":
+        return "project:" + rel_under(path, preflight.get("project_path") or "")
+    return path
+
+
 for raw in sys.argv[1:]:
     try:
         d = json.loads(raw)
@@ -142,15 +182,30 @@ for raw in sys.argv[1:]:
         continue
     intent = d.get("intent") or "?"
     docs = [x for x in d.get("documents", []) if x.get("required")]
-    if docs:
-        names = ", ".join(os.path.basename(x.get("path", "")) for x in docs)
-        lines.append(
-            f"Required {intent} docs ({len(docs)}): {names}. Read them before writing."
-        )
+    preflight_docs.append((d, intent, docs))
+    if d.get("docs_home") and any(doc_owner(x) == "home" for x in docs):
+        home_roots.add(str(d.get("docs_home")))
+    if d.get("project_path") and any(doc_owner(x) == "project" for x in docs):
+        project_roots.add(str(d.get("project_path")))
     val = d.get("validation") or {}
     for cmd in (val.get("commands") or []):
         if cmd not in val_cmds:
             val_cmds.append(cmd)
+
+root_parts = []
+if home_roots:
+    root_parts.append("home=" + " | ".join(sorted(home_roots)))
+if project_roots:
+    root_parts.append("project=" + " | ".join(sorted(project_roots)))
+if root_parts:
+    lines.append("Doc roots: " + ", ".join(root_parts) + ".")
+
+for d, intent, docs in preflight_docs:
+    if docs:
+        names = ", ".join(doc_label(x, d) for x in docs)
+        lines.append(
+            f"Required {intent} docs ({len(docs)}): {names}. Read them before writing."
+        )
 if val_cmds:
     lines.append(
         "Before declaring this task done, run the declared validation: "
