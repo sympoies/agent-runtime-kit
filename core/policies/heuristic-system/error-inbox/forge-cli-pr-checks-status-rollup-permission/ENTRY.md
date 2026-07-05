@@ -17,7 +17,8 @@ same check state.
 
 ## Evidence
 
-- Raw record: not captured (manual diagnosis, 2026-07-05)
+- Raw record: manual diagnosis for sympoies/agent-console PR #55 checks
+  read-back, 2026-07-05
 - Summary: `forge-cli pr checks` returned `backend_error` with
   `GraphQL: Resource not accessible by integration
   (nested status check rollup commit field)`.

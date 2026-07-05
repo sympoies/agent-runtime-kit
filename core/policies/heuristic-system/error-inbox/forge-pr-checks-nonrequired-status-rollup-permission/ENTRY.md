@@ -13,7 +13,8 @@ During delivery of `sympoies/agent-console` PR #37, `forge-cli pr checks 37 --re
 
 ## Evidence
 
-- Raw record: not captured (manual diagnosis, 2026-07-05)
+- Raw record: manual diagnosis for sympoies/agent-console PR #37 non-required
+  checks read-back, 2026-07-05
 - Tool versions: `forge-cli 1.20.12 (v1.20.12, rustc 1.96.1)`.
 - Repro command: `forge-cli pr checks 37 --required-only false --format json`.
 - Observed error: `GraphQL: Resource not accessible by integration (nested
