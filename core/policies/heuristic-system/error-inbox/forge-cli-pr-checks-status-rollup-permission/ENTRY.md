@@ -20,7 +20,7 @@ same check state.
 - Raw record: not captured (manual diagnosis, 2026-07-05)
 - Summary: `forge-cli pr checks` returned `backend_error` with
   `GraphQL: Resource not accessible by integration
-  (node.statusCheckRollup.nodes.0.commit.statusCheckRollup)`.
+  (nested status check rollup commit field)`.
 - Contrasting evidence: `gh pr view 55 --repo sympoies/agent-console --json
   statusCheckRollup` returned two completed successful `ci / build` check runs,
   and `forge-cli pr deliver --no-merge` had already observed a successful
@@ -46,7 +46,7 @@ delivery outcome.
 
 Promote after `forge-cli pr checks` avoids the nested
 `commit.statusCheckRollup` access pattern or implements a fallback that works
-with GitHub App tokens, with a regression test or provider-smoke evidence
+with GitHub App authentication, with a regression test or provider-smoke evidence
 covering the permission-limited path. Wontfix only if the direct checks command
 is documented as best-effort and delivery skills consistently use a separate
 stable read path.

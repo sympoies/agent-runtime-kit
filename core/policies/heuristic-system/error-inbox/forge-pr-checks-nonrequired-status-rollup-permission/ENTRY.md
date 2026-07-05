@@ -16,8 +16,11 @@ During delivery of `sympoies/agent-console` PR #37, `forge-cli pr checks 37 --re
 - Raw record: not captured (manual diagnosis, 2026-07-05)
 - Tool versions: `forge-cli 1.20.12 (v1.20.12, rustc 1.96.1)`.
 - Repro command: `forge-cli pr checks 37 --required-only false --format json`.
-- Observed error: `GraphQL: Resource not accessible by integration (node.statusCheckRollup.nodes.0.commit.statusCheckRollup)`.
-- Same PR's Actions run was readable with `gh run view 28738417253 --repo sympoies/agent-console --json status,conclusion,jobs`, which reported `conclusion: success`.
+- Observed error: `GraphQL: Resource not accessible by integration (nested
+  status check rollup commit field)`.
+- Same PR's Actions run was readable with
+  `gh run view 28738417253 --repo sympoies/agent-console --json status,conclusion,jobs`,
+  which reported `conclusion: success`.
 
 ## Impact
 
@@ -35,4 +38,6 @@ When required checks are empty but a non-required Actions check exists, use the 
 
 ## Next Action
 
-Reproduce in nils-cli with a PR that has non-required Actions checks under the GitHub App token, then adjust the non-required check reader or add a fallback.
+Reproduce in nils-cli with a PR that has non-required Actions checks under
+GitHub App authentication, then adjust the non-required check reader or add a
+fallback.
