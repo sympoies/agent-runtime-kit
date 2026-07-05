@@ -42,7 +42,9 @@
   intent declares, or state an explicit waiver; the finish-line gate blocks a
   stop when code was edited but declared validation did not run.
 - Inspect a repo's requirements on demand with `agent-docs preflight --intent
-  <intent>` or `agent-docs explain --intent <intent>`.
+  <intent>` or `agent-docs explain --intent <intent>`; when checking a source
+  docs-home checkout instead of the installed rendered home, pass
+  `--docs-home` with that checkout path.
 {% endif %}
 
 ## Work Mode

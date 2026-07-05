@@ -8,7 +8,7 @@
   `DEVELOPMENT.md` / `SUPPORT_MATRIX.md`).
 - This must be safe fallback policy for unrelated workspaces. A closer project
 
-  or directory `AGENTS.md` can override or extend it.
+  or directory `AGENTS.md` / `CLAUDE.md` can override or extend it.
 
 - Keep this file concise. Detailed workflows belong in docs resolved by
   `agent-docs`.
@@ -54,15 +54,6 @@
 - Keep answers concise, high-signal, and easy to verify; keep
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
-
-
-## Code Review Delegation
-
-- Codex-only: when the active host exposes `multi_agent_v1.spawn_agent` or an
-  equivalent dispatch tool, dispatch reviewer subagents for code-review
-  requests instead of reviewing inline; if dispatch is unavailable or blocked,
-  review inline and state that fallback. Full contract:
-  `core/policies/code-review-delegation-codex.md`.
 
 
 ## Work Tier Levels

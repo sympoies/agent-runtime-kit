@@ -3054,7 +3054,7 @@ exit 65
             self.assertIsNone(decision)
             self.assertIn("project_dev", stderr)
 
-    def test_preflight_cue_marks_required_doc_overflow(self) -> None:
+    def test_preflight_cue_lists_all_required_docs(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -3091,8 +3091,8 @@ exit 65
                 ctx = str(hook_output.get("additionalContext", ""))
             self.assertIn("doc-1.md", ctx)
             self.assertIn("doc-6.md", ctx)
-            self.assertNotIn("doc-7.md", ctx)
-            self.assertIn("+1 more", ctx)
+            self.assertIn("doc-7.md", ctx)
+            self.assertNotIn("+1 more", ctx)
 
     def test_target_hook_fragments_reference_installed_shared_scripts(self) -> None:
         shared_registered_scripts = {

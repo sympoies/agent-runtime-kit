@@ -38,7 +38,7 @@ Outputs:
 - `audit`: install-symlink wiring, declared-doc presence and content validity,
   and catalog validity — for CI and the daily healthcheck.
 - `preflight --intent X --format json`: the resolved document set plus the
-  per-repo validation contract, in the versioned `agent-docs.preflight.v1`
+  per-repo validation contract, in the versioned `agent-docs.preflight.v2`
   shape that hooks inject and the finish-line gate enforces.
 
 Failure modes:
