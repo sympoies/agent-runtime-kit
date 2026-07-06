@@ -33,9 +33,15 @@ agent can hit:
 - Evidence: `evidence/review-thread-null-response.md` (`--thread-file` line
   anchor outside the diff hunk returns `thread: null` / `software_error` in
   `forge-cli` v1.17.0; file-level retry succeeds).
+- Evidence: `evidence/review-thread-null-response-v1-20-13.md` (`--thread-file`
+  line-level thread creation still returns `thread: null` / `software_error` in
+  `forge-cli` v1.20.13; summary-only provider review was the delivery
+  workaround).
 - Version: `forge-cli` v1.9.1.
 - Later observation: `forge-cli` v1.17.0 still has the `--thread-file` null
   response failure shape.
+- Later observation: `forge-cli` v1.20.13 still has the `--thread-file` null
+  response failure shape and may leave a partial empty provider review event.
 - Repro (gap 1): `forge-cli --provider github --repo graysurf/agent-runtime-kit
   --dry-run --format json pr review-threads list 9999999` returns a live
   GraphQL error ("Could not resolve to a PullRequest 9999999"), while
