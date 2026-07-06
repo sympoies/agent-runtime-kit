@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-14
 - Area: forge-cli
 - Severity: medium
@@ -60,5 +60,12 @@ subsequent PR-mode release completes without manual body editing.
 
 ## Next Action
 
-Confirm #838 is included in the next nils-cli release and that a clean PR-mode
-release succeeds; then archive this entry as promoted.
+None. sympoies/nils-cli#838 merged the plain-bullets release PR body fix; the current release script carries the plain-bullets guard, and later PR-mode release bumps such as sympoies/nils-cli#1029 have merged successfully.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/pull/838`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Fix shipped and subsequent PR-mode releases merged
+- Durable link: `https://github.com/sympoies/nils-cli/pull/1029`

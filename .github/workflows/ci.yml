@@ -18,37 +18,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    env:
-      # Homebrew 6.0.0 made the rootless-bwrap(1) build sandbox mandatory on
-      # Linux, and the ubuntu-24.04 runner's AppArmor unprivileged-userns
-      # restriction blocks rootless bwrap even when bubblewrap is installed.
-      # The sandbox guards nothing for a binary-pour tap install in throwaway
-      # CI, so use Homebrew's documented opt-out.
-      HOMEBREW_NO_SANDBOX_LINUX: "1"
-
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
-      - name: Set up Homebrew
-        id: setup-homebrew
-        uses: Homebrew/actions/setup-homebrew@6315ef70a8bfcd2c71104383846591ac113ace33 # main
-
-      - name: Tap sympoies/tap
-        run: brew tap sympoies/tap
-
-      - name: Install nils-cli (ships agent-runtime + plan-tooling)
-        run: brew install sympoies/tap/nils-cli
+      - name: Resolve nils-cli pin
+        id: pin
+        run: |
+          set -euo pipefail
+          PIN="$(sed -n -E 's/^[[:space:]]*pinned_tag:[[:space:]]*"?([^"#]+)"?.*/\1/p' \
+            docs/source/nils-cli-pin.yaml | head -1 | tr -d '[:space:]')"
+          test -n "$PIN"
+          echo "tag=$PIN" >> "$GITHUB_OUTPUT"
+          echo "nils-cli pin: $PIN"
 
       - name: Print toolchain versions
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           echo "bash: $(bash --version | head -1)"
           echo "git: $(git --version)"
-          echo "agent-runtime: $(agent-runtime --version || true)"
-          echo "plan-tooling: $(plan-tooling --version || true)"
+          scripts/dev/with-nils-version.sh "release:${{ steps.pin.outputs.tag }}" -- agent-runtime --version
+          scripts/dev/with-nils-version.sh "release:${{ steps.pin.outputs.tag }}" -- plan-tooling --version
 
       - name: Run scripts/ci/all.sh
-        run: bash scripts/ci/all.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/dev/with-nils-version.sh "release:${{ steps.pin.outputs.tag }}" -- bash scripts/ci/all.sh

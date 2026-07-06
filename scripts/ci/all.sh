@@ -44,6 +44,86 @@ require_bin plan-tooling
 require_bin agent-runtime
 require_bin python3
 
+is_linked_worktree() {
+  local git_dir
+  local git_common_dir
+  git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+  git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  [[ -n "$git_dir" && -n "$git_common_dir" && "$git_dir" != "$git_common_dir" ]]
+}
+
+allow_linked_worktree_extra_drift() {
+  [[ "${AGENT_RUNTIME_KIT_HOOK_PHASE:-}" == "pre-push" ]] || return 1
+  is_linked_worktree
+}
+
+run_root_audit_drift() {
+  local audit_text
+  local audit_status
+  local audit_json
+  local audit_json_status
+
+  set +e
+  audit_text="$(agent-runtime audit-drift 2>&1)"
+  audit_status=$?
+  set -e
+
+  printf '%s\n' "$audit_text"
+  if [[ "$audit_status" -eq 0 ]]; then
+    return 0
+  fi
+
+  if ! allow_linked_worktree_extra_drift; then
+    return "$audit_status"
+  fi
+
+  set +e
+  audit_json="$(agent-runtime audit-drift --format json 2>&1)"
+  audit_json_status=$?
+  set -e
+
+  if [[ "$audit_json_status" -gt 2 ]]; then
+    printf '%s\n' "$audit_json" >&2
+    return "$audit_status"
+  fi
+
+  if AUDIT_DRIFT_JSON="$audit_json" python3 - <<'PY'
+import json
+import os
+import sys
+
+try:
+    payload = json.loads(os.environ["AUDIT_DRIFT_JSON"])
+except (KeyError, json.JSONDecodeError):
+    sys.exit(1)
+
+allowed = []
+blocking = []
+for finding in payload.get("findings", []):
+    severity = finding.get("severity")
+    if severity in ("info", "suppressed"):
+        continue
+    if severity == "warn" and finding.get("class") == "extra":
+        allowed.append(finding)
+    else:
+        blocking.append(finding)
+
+if blocking or not allowed:
+    sys.exit(1)
+
+print(
+    "ci/all.sh: linked-worktree pre-push allowed "
+    f"{len(allowed)} live-install extra warn finding(s); "
+    "clean-checkout CI remains strict."
+)
+PY
+  then
+    return 0
+  fi
+
+  return "$audit_status"
+}
+
 # -----------------------------------------------------------------------------
 # Position 1 — plan bundle and skill lifecycle governance validation
 # -----------------------------------------------------------------------------
@@ -137,7 +217,7 @@ git diff --exit-code -- tests/golden/
 # Position 7 — audit-drift (root sweep + four hermetic fixtures)
 # -----------------------------------------------------------------------------
 banner 7 "agent-runtime audit-drift (root + tests/drift fixtures)"
-agent-runtime audit-drift
+run_root_audit_drift
 
 drift_fixtures=(
   agent-home-leak

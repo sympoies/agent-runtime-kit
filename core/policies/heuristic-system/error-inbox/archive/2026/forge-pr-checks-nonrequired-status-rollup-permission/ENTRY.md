@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-05
 - Area: forge-cli pr checks; GitHub App status rollup
 - Severity: medium
@@ -39,6 +39,12 @@ When required checks are empty but a non-required Actions check exists, use the 
 
 ## Next Action
 
-Reproduce in nils-cli with a PR that has non-required Actions checks under
-GitHub App authentication, then adjust the non-required check reader or add a
-fallback.
+None. Promoted to consolidated provider follow-up issue https://github.com/sympoies/nils-cli/issues/1030.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1030`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Promoted to consolidated provider follow-up issue.
+- Durable link: `https://github.com/sympoies/nils-cli/issues/1030`

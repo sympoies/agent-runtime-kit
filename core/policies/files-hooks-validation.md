@@ -33,6 +33,22 @@ project-defined validation. This file is the procedural detail behind them.
   never committed into a working repo). See
   `core/policies/evidence-archive/EVIDENCE_ARCHIVE.md`.
 
+## Sensitive Output Inspection
+
+- When exploring container, stack, orchestrator, or provider API objects, never
+  print whole objects or env-like maps by default. Treat fields named `Env`,
+  `environment`, `secrets`, `config`, `auth`, `token`, `password`, or `key` as
+  potentially sensitive until proven otherwise.
+- Select only the safe-to-share fields needed for the task, or redact env-like
+  fields in the projection before output reaches the transcript. Prefer
+  presence/count/length checks over value output; if a specific value must be
+  inspected, read it by name and report only whether it exists or has the
+  expected shape.
+- If a sensitive value is printed into the session transcript, stop using that
+  value, state the leak plainly, and route credential rotation through the
+  appropriate credential owner rather than preserving the raw value in evidence,
+  summaries, issues, PRs, or memory.
+
 ## Hooks
 
 - Hooks may enforce mechanical guardrails, but hooks do not replace policy.

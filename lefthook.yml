@@ -30,4 +30,4 @@ pre-push:
       run: bash scripts/ci/verify-signed-commits.sh
     ci-gate-stack:
       files: echo README.md
-      run: bash -c 'bash scripts/ci/all.sh' -- {files}
+      run: bash -c 'AGENT_RUNTIME_KIT_HOOK_PHASE=pre-push bash scripts/ci/all.sh' -- {files}

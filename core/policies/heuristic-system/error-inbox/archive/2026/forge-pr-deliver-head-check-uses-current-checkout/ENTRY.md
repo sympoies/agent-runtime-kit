@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-15
 - Area: forge-cli
 - Severity: medium
@@ -69,7 +69,12 @@ validated. Link the upstream change or skill edit here.
 
 ## Next Action
 
-File an upstream nils-cli `forge-cli` issue: the `head_not_pushed` guard in
-`pr create` / `pr deliver` should check the `--head` branch's local-vs-remote
-state, not the current checkout's HEAD. Until then, the PR delivery skills should
-note the run-from-worktree requirement.
+None. Promoted to provider follow-up issue https://github.com/sympoies/nils-cli/issues/1031.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1031`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Promoted to provider follow-up issue.
+- Durable link: `https://github.com/sympoies/nils-cli/issues/1031`

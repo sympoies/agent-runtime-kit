@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-05
 - Area: agent-console deployment; systemd user service; tmux session durability
 - Severity: high
@@ -69,4 +69,12 @@ Promote after one of these is implemented and validated:
 
 ## Next Action
 
-Update the agent-console serve unit or launcher so daemon restarts do not keep tmux servers in the service control-group, then document the safe restart path.
+None. Promoted to provider follow-up issue https://github.com/sympoies/agent-console/issues/122.
+
+Lifecycle link: `https://github.com/sympoies/agent-console/issues/122`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Promoted to provider follow-up issue.
+- Durable link: `https://github.com/sympoies/agent-console/issues/122`

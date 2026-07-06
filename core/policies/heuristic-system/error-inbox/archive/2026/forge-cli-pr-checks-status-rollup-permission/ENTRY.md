@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-05
 - Area: forge-cli pr checks
 - Severity: medium
@@ -54,4 +54,12 @@ stable read path.
 
 ## Next Action
 
-Investigate whether forge-cli pr checks should avoid the nested commit.statusCheckRollup field or fall back to the PR rollup shape when GitHub App tokens cannot read it.
+None. Promoted to consolidated provider follow-up issue https://github.com/sympoies/nils-cli/issues/1030.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1030`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Promoted to consolidated provider follow-up issue.
+- Durable link: `https://github.com/sympoies/nils-cli/issues/1030`

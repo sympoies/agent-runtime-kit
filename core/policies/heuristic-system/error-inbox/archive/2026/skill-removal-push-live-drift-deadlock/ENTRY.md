@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-14
 - Area: runtime
 - Severity: medium
@@ -69,6 +69,10 @@ correct removal pushes without a manual bypass.
 
 ## Next Action
 
-Decide the durable fix in agent-runtime-kit: either run the pre-push
-audit-drift step with `--fail-on block` for the live tier, or scope the live
-scan out of worktree pre-push runs. Route to a focused change once chosen.
+None. Local pre-push now marks scripts/ci/all.sh with AGENT_RUNTIME_KIT_HOOK_PHASE=pre-push, and the audit-drift gate allows only linked-worktree live-install extra/warn findings while keeping all other source/rendered drift strict; documented in docs/source/local-git-hooks.md.
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Resolved by scoped linked-worktree pre-push audit-drift handling for live-install extra/warn findings.
+- Durable link: `lefthook.yml`

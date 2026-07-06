@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-02
 - Area: agent secret hygiene; container/orchestrator API inspection
 - Severity: medium
@@ -56,9 +56,10 @@ before poking orchestrator APIs.
 
 ## Next Action
 
-Add a "secret-safe API inspection" rule to the appropriate core policy doc (or
-a small shared helper), then link it here and set this entry to promoted. The
-triggering incident's rotation is tracked with the user (BotFather token
-rotation, then update `stacks/telegram-notify.enc.env` and, if it shares the
-bot, `stacks/symphony-board.enc.env` in graysurf/secrets, and redeploy both
-stacks).
+None. Secret-safe API inspection guardrail added to core/policies/files-hooks-validation.md; it prohibits broad env-like object projections, requires redacted/narrow field selection, and routes leaked values to credential rotation rather than durable evidence.
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Policy guardrail added
+- Durable link: `core/policies/files-hooks-validation.md`

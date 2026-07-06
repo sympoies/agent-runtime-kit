@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-04
 - Area: Codex PR skill packaging; progressive disclosure references
 - Severity: low
@@ -52,4 +52,10 @@ in the installed package.
 
 ## Next Action
 
-Update the create-pr skill package to include the referenced pr-lifecycle.md file or remove the stale reference, then add an audit that SKILL.md relative references resolve.
+None. Packaged lifecycle reference exists in source/rendered skill output, installed Codex plugin cache includes skills/create-pr/references/pr-lifecycle.md, and scripts/ci/skill-governance-audit.sh verifies lifecycle reference packaging and resolution.
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Packaged reference and governance audit verified
+- Durable link: `scripts/ci/skill-governance-audit.sh`

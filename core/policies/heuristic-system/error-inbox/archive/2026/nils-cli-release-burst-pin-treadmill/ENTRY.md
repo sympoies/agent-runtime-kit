@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-01
 - Area: nils-cli pin / version-alignment gate; PR delivery; sync-runtime-surfaces
 - Severity: medium
@@ -59,9 +59,12 @@ covered by the on-pin push wrapper above.
 
 ## Next Action
 
-File the "CI installs the pinned nils-cli version" improvement against the CI
-workflow (or nils-cli if the install path is owned upstream). Until then, apply
-the workaround. This entry is distinct from the host-bump *contract*-drift class
-(operation-record `plan-issue-contract-drift-on-host-bumps`): that class is about
-skill/probe surface breaking on a bump; this is about the version-alignment
-*gate itself* blocking delivery during rapid releases.
+None. GitHub Actions CI now resolves docs/source/nils-cli-pin.yaml and runs scripts/ci/all.sh through scripts/dev/with-nils-version.sh release:<pin>, so remote CI validates against the pinned nils-cli surface instead of Homebrew latest during release bursts.
+
+Lifecycle link: `.github/workflows/ci.yml`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: CI now runs on the pinned nils-cli release
+- Durable link: `.github/workflows/ci.yml`

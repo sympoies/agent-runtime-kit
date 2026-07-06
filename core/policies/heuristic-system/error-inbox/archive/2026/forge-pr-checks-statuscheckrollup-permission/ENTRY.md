@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-04
 - Area: forge-cli pr checks / wait-checks; GitHub GraphQL statusCheckRollup permissions
 - Severity: medium
@@ -65,4 +65,12 @@ the exact PR head commit.
 
 ## Next Action
 
-Update forge-cli's GitHub checks path to avoid permission-sensitive statusCheckRollup GraphQL fields or add a REST/Actions-run fallback keyed to the PR head SHA.
+None. Promoted to consolidated provider follow-up issue https://github.com/sympoies/nils-cli/issues/1030.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1030`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Promoted to consolidated provider follow-up issue.
+- Durable link: `https://github.com/sympoies/nils-cli/issues/1030`
