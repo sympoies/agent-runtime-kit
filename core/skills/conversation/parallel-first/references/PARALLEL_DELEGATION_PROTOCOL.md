@@ -30,7 +30,8 @@ result.
   issue-backed plan and execution-state ledger should drive long-running work.
 - Use `deliver-dispatch-plan`, `execute-dispatch-lane`,
   `create-dispatch-lane-pr`, `review-dispatch-lane-pr`, and
-  `dispatch-plan-closeout` for GitHub issue, sprint, PR, and task-lane
+  `dispatch-plan-closeout` when the work-tier judge selects formal L3 and a
+  shared dispatch issue should coordinate sprint, PR, review, and task-lane
   execution.
 - Use this protocol only for cross-skill ad-hoc delegation after the active
   entrypoint has authorized subagents.
@@ -39,12 +40,26 @@ result.
 
 - `max_agents`: 3
 - `max_retries_per_task`: 2
-- `mode`: direct-lane-work or patch-artifacts, depending on runtime support
+- `mode`: patch-artifacts by default
 - `artifact_root`: output from `agent-out project --topic parallel-delegation --mkdir`
 
 If `agent-out` is unavailable, use a project-local run directory that is clearly
 temporary and excluded from tracked source unless the project defines another
 artifact policy.
+
+## Mutation Safety
+
+Pick the lane execution mode before dispatch:
+
+- Use `patch-artifacts` when lanes would otherwise mutate the same working tree.
+  Subagents return patches or reports; the main agent applies them
+  deterministically.
+- Use `direct-lane-work` only when every mutating lane has an isolated
+  worktree/branch or another runtime-enforced isolation boundary.
+- On a shared working tree, parallel subagents are read-only/report-back only.
+  If a shared-tree lane must edit files, serialize it with every other writer.
+- If a subagent discovers necessary changes outside its assigned scope, it must
+  stop and report the scope delta instead of editing the extra files.
 
 ## Task Card Schema
 
@@ -54,6 +69,8 @@ Each delegated lane must receive a concrete task card:
 - `Objective`: one responsibility
 - `Scope`: allowed dirs/files and explicit out-of-scope items
 - `Dependencies`: other task IDs, if any
+- `Execution mode`: `patch-artifacts`, isolated `direct-lane-work`, or
+  read-only/report-back
 - `Acceptance criteria`: checklist
 - `Validation`: minimum commands or manual checks
 - `Expected artifacts`: report, changed files or patch, commands, and logs
@@ -68,6 +85,7 @@ Each subagent owns exactly one task card.
 Required instructions:
 
 - Stay within assigned scope and allowed files.
+- Stop and report when the lane appears to require out-of-scope edits.
 - Do not revert or overwrite changes made by other agents.
 - Keep chat output short and write details to artifacts when available.
 - Report changed files, acceptance evidence, validation run, and blockers.
@@ -85,12 +103,14 @@ For artifact-based runs, each task folder should contain:
 
 1. Dispatch only unblocked task cards, limited by `max_agents`.
 2. Review each returned lane for scope, completeness, and validation evidence.
-3. Integrate in deterministic order.
-4. Run the lane validation or closest available equivalent.
-5. If rejected, send a concrete acceptance delta back to the same subagent.
-6. Retry up to `max_retries_per_task`.
-7. Run the best available global validation after integration.
-8. Report completed lanes, blocked lanes, files changed, validation, and residual
+3. Reconcile `git status` or the runtime's equivalent changed-file inventory
+   before integration; treat unexpected paths as a scope breach to review.
+4. Integrate in deterministic order.
+5. Run the lane validation or closest available equivalent.
+6. If rejected, send a concrete acceptance delta back to the same subagent.
+7. Retry up to `max_retries_per_task`.
+8. Run the best available global validation after integration.
+9. Report completed lanes, blocked lanes, files changed, validation, and residual
    risk.
 
 If validation fails after integration, route the fix back to the responsible lane

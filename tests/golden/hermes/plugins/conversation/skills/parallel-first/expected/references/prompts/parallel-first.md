@@ -10,7 +10,8 @@ PREFERENCES (optional) $ARGUMENTS
 POLICY (sticky for this conversation)
 
 1. Persist for this thread
-   - Treat this message as a standing instruction for the rest of the conversation thread.
+   - When the host supports thread-persistent prompt modes, treat this message as a standing instruction for the rest of the conversation thread.
+   - If the host does not persist skill state across turns, apply it to the current request and re-enable it when future requests need the same mode.
    - Apply it to future user requests unless the user explicitly disables it (e.g., "parallel-first off").
 
 2. Parallelization gate (per request)
@@ -27,6 +28,7 @@ POLICY (sticky for this conversation)
      - max_agents = 3
      - max_retries_per_task = 2
      - mode = patch-artifacts
+   - Mutating lanes need patch-artifact delivery or isolated worktrees; shared-tree subagents are read-only/report-back unless serialized.
    - Decompose into task cards, spawn subagents, require artifact-based delivery, integrate deterministically, validate, and iterate until
      accepted.
 

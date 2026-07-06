@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-30
 - Area: multi-agent orchestration; Agent(subagent_type=fork) on a shared working tree; parallel-first / orchestrator-first delegation
 - Severity: medium
@@ -61,7 +61,12 @@ occurrence confirms the class and justifies a stronger guardrail.
 
 ## Next Action
 
-Watch for recurrence in multi-agent / ultracode sessions. On the next instance,
-compress with this entry into an operation record on "shared-tree parallel
-mutation needs isolation, not prose scope," and promote the rule into the
-delegation-protocol references.
+None. Promoted into the shared parallel delegation protocol; mutating parallel lanes now require patch-artifact delivery or isolated worktrees.
+
+Lifecycle link: `core/skills/conversation/parallel-first/references/PARALLEL_DELEGATION_PROTOCOL.md`
+
+## Archive
+
+- Archived: 2026-07-06
+- Reason: Promotion landed in the shared parallel delegation protocol.
+- Durable link: `core/skills/conversation/parallel-first/references/PARALLEL_DELEGATION_PROTOCOL.md`

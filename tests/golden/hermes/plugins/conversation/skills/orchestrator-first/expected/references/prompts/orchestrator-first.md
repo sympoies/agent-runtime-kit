@@ -10,7 +10,8 @@ GOAL / CONSTRAINTS (optional) $ARGUMENTS
 POLICY (sticky for this conversation)
 
 1. Persist for this thread
-   - Treat this message as a standing instruction for the rest of the conversation thread.
+   - When the host supports thread-persistent prompt modes, treat this message as a standing instruction for the rest of the conversation thread.
+   - If the host does not persist skill state across turns, apply it to the current request and re-enable it when future requests need the same mode.
    - Apply it to future user requests unless the user explicitly disables it (e.g., "orchestrator-first off").
 
 2. Main-agent ownership
@@ -31,6 +32,7 @@ POLICY (sticky for this conversation)
    - Give each subagent a concrete task card with scope, out-of-scope items, acceptance criteria, validation, and expected artifacts.
    - When no more specific plan, issue, or PR workflow owns the lane contract, follow
      `references/PARALLEL_DELEGATION_PROTOCOL.md`.
+   - Mutating lanes need patch-artifact delivery or isolated worktrees; shared-tree subagents are read-only/report-back unless serialized.
    - Subagents own implementation inside their assigned lanes and should report files changed, validation run, and blockers.
    - The main agent reviews outputs before integrating or reporting completion.
 

@@ -38,9 +38,10 @@ is never a reason to escalate — *"state worth tracking"* is.
 | **L3** | Dispatch plan | Shared dispatch issue + lanes | `deliver-dispatch-plan` |
 
 L3 is for one unit of work that must be split across multiple parallel lanes
-or subagents — a shipped, exercised path, not a placeholder. Reach for it when
-the work is too broad for one lane to hold; the user decides whether the scale
-warrants running it.
+or subagents **and** needs one shared coordination spine — a shipped, exercised
+path, not a placeholder. Reach for it when the work is too broad for one lane to
+hold and its lane state, PRs, reviews, and closeout must be coordinated through
+one dispatch issue; the user decides whether the scale warrants running it.
 
 ## Cross-Cutting Concepts
 
@@ -62,6 +63,14 @@ Two things ride alongside the ladder and must not be mistaken for tiers:
   set the tier; the execution tier is chosen by the judge below when the work is
   picked up. A doc captured but not yet scheduled is simply tier-undecided
   backlog.
+- **Subagents = an execution mode, not automatically L3.** `parallel-first` /
+  `orchestrator-first` can help execute L0-L2 work when the user explicitly
+  asks for subagents and no additional shared coordination record is needed.
+  Use formal L3 only when the work also needs the dispatch issue spine. If the
+  user hands the agent several existing provider issues and asks for subagents,
+  either open one dispatch issue that references those issues as lanes, or state
+  that the run is ad-hoc orchestrator-first execution over the existing issue
+  set rather than formal L3.
 
 ## Escalation Judge
 
@@ -91,7 +100,10 @@ If none fire, stay at **L1**. A follow-up issue can graduate to L2 later, so whe
 torn between L1 and L2, choose L1 first.
 
 **↑ L2 → L3** if the single unit of work must be split across multiple parallel
-lanes or subagents — independent PRs coordinated under one dispatch issue.
+lanes or subagents whose independent PRs, reviews, validation, and closeout need
+one shared dispatch issue. If subagents are useful but the existing artifact set
+already provides enough tracking, keep the lower tier and use
+`orchestrator-first` / `parallel-first` as execution guidance.
 
 ## Methods By Tier
 
@@ -130,11 +142,15 @@ lanes or subagents — independent PRs coordinated under one dispatch issue.
 
 ### L3 — Dispatch plan
 
-- Use for one effort split across parallel lanes / subagents. Open the shared
-  dispatch issue with `deliver-dispatch-plan`, run each lane through
-  `execute-dispatch-lane`, review lane PRs with `review-dispatch-lane-pr`, and
-  close with `dispatch-plan-closeout`.
+- Use for one effort split across parallel lanes / subagents that need a shared
+  dispatch spine. Open the shared dispatch issue with `deliver-dispatch-plan`,
+  run each lane through `execute-dispatch-lane`, review lane PRs with
+  `review-dispatch-lane-pr`, and close with `dispatch-plan-closeout`.
 - Same PR floor: each lane delivers its own PR; the dispatch issue is the spine.
+- Do not label an ad-hoc subagent run as formal L3. Existing issue sets may be
+  executed with `orchestrator-first` / `parallel-first` at their existing tier,
+  or promoted into L3 by opening one shared dispatch issue that references those
+  issues as lanes.
 
 ### Doc Lifecycle At L0 / L1
 
@@ -174,8 +190,10 @@ escalation boundary, never on routine L0 work.
 - A bug is found but other work comes first, or the root cause is unknown → **L1**.
 - "Refactor subsystem X" spanning several days and PRs with progress to
   track → **L2**.
-- A broad migration across many independent modules, run as parallel lanes →
-  **L3**.
+- A broad migration across many independent modules, run as parallel lanes with
+  one shared dispatch issue for lane state / PRs / reviews / closeout → **L3**.
+- Several existing issues executed with subagents but no shared dispatch
+  spine → keep their existing tier and use **ad-hoc orchestrator-first**.
 - A doc recorded "do Y later" that is not yet scheduled → **capture (tier
   undecided)**; classify when picked up, usually L0 or L1.
 
