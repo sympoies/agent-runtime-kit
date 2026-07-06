@@ -1,20 +1,26 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-05 (refreshed for `v1.20.13`)
+- Snapshot date: 2026-07-06 (refreshed for `v1.20.14`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.20.13`
+- Active `git describe --tags` output: `v1.20.14`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.20.13`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.20.14`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `d6b76fc3`
-  (`chore(release): bump cli versions to 1.20.13 (#1024)`)
+- Head commit: `f3761c68`
+  (`chore(release): bump cli versions to 1.20.14 (#1029)`)
 - Release:
-  [`v1.20.13`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.13),
+  [`v1.20.14`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.14),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.20.14` is a single-release bump from `v1.20.13`: it teaches the
+  `agent-session` serve daemon to propagate a session-title rename into the live
+  Claude pane via Claude Code's `/rename` slash command (sympoies/nils-cli#1028),
+  so the in-terminal display name follows console renames instead of staying on
+  the create-time `--name`. Runtime-kit still does not consume `agent-session`;
+  no consumed flag or JSON envelope moved, so no `required_clis[]` floor changes.
 - `v1.20.13` advances the pin from `v1.20.7`, folding in the `v1.20.8` through
   `v1.20.13` releases. The release burst expands the new `agent-session` binary
   with send/glance, Hermes interactive sessions, the authenticated serve
