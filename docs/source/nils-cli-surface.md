@@ -1,20 +1,34 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-07 (refreshed for `v1.20.17`)
+- Snapshot date: 2026-07-08 (refreshed for `v1.20.19`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.20.17`
+- Active `git describe --tags` output: `v1.20.19`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.20.17`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.20.19`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `67e73456`
-  (`chore(release): bump cli versions to 1.20.17 (#1038)`)
+- Head commit: `95ca9ce3`
+  (`chore(release): bump cli versions to 1.20.19 (#1045)`)
 - Release:
-  [`v1.20.17`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.17),
+  [`v1.20.19`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.19),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.20.19` advances the pin from `v1.20.17`, folding in `v1.20.18` and
+  `v1.20.19`:
+  - `agent-session` adds optional `last_terminal_activity_at` to session view
+    and glance JSON output by deriving tmux `window_activity`, so clients can
+    distinguish terminal activity freshness from control-plane updates without
+    storing terminal bytes (sympoies/nils-cli#1043).
+  - `forge-cli pr checks` / `pr wait-checks` handles GitHub App
+    `statusCheckRollup` permission failures by avoiding the unreadable GraphQL
+    rollup projection and falling back to REST check-runs/statuses for the PR
+    head commit, with fail-closed handling for truncated pages
+    (sympoies/nils-cli#1044).
+  Runtime-kit does not consume `agent-session`, and the `forge-cli` change
+  hardens existing PR checks behavior without retiring or renaming a consumed
+  flag or JSON envelope, so no `required_clis[]` floor changes.
 - `v1.20.17` advances the pin from `v1.20.16`:
   - `agent-session serve` gains a read-only `GET /sessions/{id}/buffer` that
     returns the session server's tmux paste buffer (`tmux show-buffer`), so a
