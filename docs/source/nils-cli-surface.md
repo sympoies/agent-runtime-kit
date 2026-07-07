@@ -1,26 +1,32 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-06 (refreshed for `v1.20.14`)
+- Snapshot date: 2026-07-06 (refreshed for `v1.20.16`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.20.14`
+- Active `git describe --tags` output: `v1.20.16`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.20.14`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.20.16`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `f3761c68`
-  (`chore(release): bump cli versions to 1.20.14 (#1029)`)
+- Head commit: `1e9d4911`
+  (`chore(release): bump cli versions to 1.20.16 (#1036)`)
 - Release:
-  [`v1.20.14`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.14),
+  [`v1.20.16`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.16),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.20.14` is a single-release bump from `v1.20.13`: it teaches the
-  `agent-session` serve daemon to propagate a session-title rename into the live
-  Claude pane via Claude Code's `/rename` slash command (sympoies/nils-cli#1028),
-  so the in-terminal display name follows console renames instead of staying on
-  the create-time `--name`. Runtime-kit still does not consume `agent-session`;
-  no consumed flag or JSON envelope moved, so no `required_clis[]` floor changes.
+- `v1.20.16` advances the pin from `v1.20.14`, folding in the `v1.20.15` and
+  `v1.20.16` releases:
+  - `agent-session` gains an opt-in `AGENT_SESSION_TMUX_SCOPE` that launches each
+    tmux server inside its own transient systemd user scope
+    (`systemd-run --user --scope`) so it escapes the serve service cgroup and
+    survives a daemon restart or cgroup-wide kill (sympoies/nils-cli#1035), plus
+    a fix that backfills late Codex resume metadata (sympoies/nils-cli#1033).
+  - `forge-cli` hardens PR check polling and head validation
+    (sympoies/nils-cli#1032).
+  Runtime-kit still does not consume `agent-session`, and the `forge-cli` change
+  is a behavior hardening that neither retired nor renamed a consumed flag or
+  JSON envelope, so no `required_clis[]` floor changes.
 - `v1.20.13` advances the pin from `v1.20.7`, folding in the `v1.20.8` through
   `v1.20.13` releases. The release burst expands the new `agent-session` binary
   with send/glance, Hermes interactive sessions, the authenticated serve
