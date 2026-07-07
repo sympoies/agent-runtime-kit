@@ -1,20 +1,27 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-06 (refreshed for `v1.20.16`)
+- Snapshot date: 2026-07-07 (refreshed for `v1.20.17`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.20.16`
+- Active `git describe --tags` output: `v1.20.17`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.20.16`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.20.17`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `1e9d4911`
-  (`chore(release): bump cli versions to 1.20.16 (#1036)`)
+- Head commit: `67e73456`
+  (`chore(release): bump cli versions to 1.20.17 (#1038)`)
 - Release:
-  [`v1.20.16`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.16),
+  [`v1.20.17`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.17),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.20.17` advances the pin from `v1.20.16`:
+  - `agent-session serve` gains a read-only `GET /sessions/{id}/buffer` that
+    returns the session server's tmux paste buffer (`tmux show-buffer`), so a
+    browser edge can copy the on-screen selection a live mouse-reporting TUI
+    never exposes to the DOM (sympoies/nils-cli#1037).
+  Runtime-kit still does not consume `agent-session`, and the new endpoint is
+  purely additive, so no `required_clis[]` floor changes.
 - `v1.20.16` advances the pin from `v1.20.14`, folding in the `v1.20.15` and
   `v1.20.16` releases:
   - `agent-session` gains an opt-in `AGENT_SESSION_TMUX_SCOPE` that launches each
