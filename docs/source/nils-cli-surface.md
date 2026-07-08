@@ -1,20 +1,30 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-08 (refreshed for `v1.20.20`)
+- Snapshot date: 2026-07-08 (refreshed for `v1.21.0`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.20.20`
+- Active `git describe --tags` output: `v1.21.0`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.20.20`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.0`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `c4fc7fb3`
-  (`chore(release): bump cli versions to 1.20.20 (#1064)`)
+- Head commit: `a97c5507`
+  (`chore(release): bump cli versions to 1.21.0 (#1069)`)
 - Release:
-  [`v1.20.20`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.20),
+  [`v1.21.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.0),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.0` advances the pin from `v1.20.20`:
+  - `forge-cli` now routes every GraphQL-backed op through a single
+    rate-limit-gated runner factory (`default_runner()`), extending the
+    v1.20.20 rate-limit gate (#1061) from the PR-lifecycle verbs to all
+    GraphQL-backed calls and closing the classifier-vs-wiring drift that
+    per-op runner construction allowed (sympoies/nils-cli#1063).
+  The change is internal hardening of `forge-cli`: it retires or renames no
+  consumed flag or JSON envelope, so no `required_clis[]` floor changes. The
+  remaining v1.21.0 changes are nils-cli-internal (project skill test/CI
+  wiring, dead-test removal) and touch no consumed surface.
 - `v1.20.20` advances the pin from `v1.20.19`:
   - `forge-cli pr deliver` adds a best-effort post-merge `issue_closeout` step
     that deterministically closes any still-open issue referenced by a
