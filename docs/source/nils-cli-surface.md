@@ -1,20 +1,37 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-08 (refreshed for `v1.20.19`)
+- Snapshot date: 2026-07-08 (refreshed for `v1.20.20`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.20.19`
+- Active `git describe --tags` output: `v1.20.20`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.20.19`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.20.20`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `95ca9ce3`
-  (`chore(release): bump cli versions to 1.20.19 (#1045)`)
+- Head commit: `c4fc7fb3`
+  (`chore(release): bump cli versions to 1.20.20 (#1064)`)
 - Release:
-  [`v1.20.19`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.19),
+  [`v1.20.20`](https://github.com/sympoies/nils-cli/releases/tag/v1.20.20),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.20.20` advances the pin from `v1.20.19`:
+  - `forge-cli pr deliver` adds a best-effort post-merge `issue_closeout` step
+    that deterministically closes any still-open issue referenced by a
+    `Closes/Fixes #N` closing keyword, instead of depending on GitHub's
+    asynchronous merge auto-close (confirmed latency, not a linkage gap).
+    `pr view` now exposes `closing_issue_refs` (GitHub `closingIssuesReferences`;
+    empty on GitLab / for non-closing `Refs #N`), a new `--no-issue-closeout`
+    flag opts out, and a new `cli.forge-cli.issue.closeout.v1` envelope reports
+    per-issue `closed` / `already_closed` / `error` outcomes
+    (sympoies/nils-cli#1060).
+  - `forge-cli` gates GraphQL-backed calls on the rate-limit budget so tight CI
+    polling no longer trips GitHub secondary limits (sympoies/nils-cli#1061).
+  The `deliver-pr` skill consumes `forge-cli pr deliver`, but every change is
+  purely additive (an optional post-merge step, a new field, a new opt-out
+  flag, a new envelope) and retires or renames no consumed flag or JSON
+  envelope, so no `required_clis[]` floor changes. Non-closing `Refs #N`
+  plan-tracking flows are untouched (empty `closingIssuesReferences`).
 - `v1.20.19` advances the pin from `v1.20.17`, folding in `v1.20.18` and
   `v1.20.19`:
   - `agent-session` adds optional `last_terminal_activity_at` to session view
