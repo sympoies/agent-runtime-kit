@@ -3282,6 +3282,43 @@ exit 65
             with self.subTest(product="claude", script=script):
                 self.assertIn(f"hooks/{script}", claude_commands)
 
+    def test_claude_memory_reminder_matches_all_edit_tools(self) -> None:
+        claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
+        reminder_groups = [
+            group
+            for group in claude_hooks
+            if group["matcher"] != "Bash"
+            and any(
+                "memory-write-principle-reminder.py" in hook["command"]
+                for hook in group["hooks"]
+            )
+        ]
+        self.assertGreaterEqual(len(reminder_groups), 1)
+        matcher_tools = {
+            tool
+            for group in reminder_groups
+            for tool in group["matcher"].split("|")
+        }
+        self.assertTrue(
+            {"Write", "Edit", "MultiEdit", "NotebookEdit"} <= matcher_tools,
+            matcher_tools,
+        )
+
+    def test_claude_multiedit_hooks_exclude_content_only_scanners(self) -> None:
+        claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
+        multiedit_groups = [
+            group
+            for group in claude_hooks
+            if "MultiEdit" in group["matcher"].split("|")
+        ]
+        self.assertTrue(multiedit_groups)
+
+        multiedit_commands = "\n".join(
+            hook["command"] for group in multiedit_groups for hook in group["hooks"]
+        )
+        self.assertNotIn("mcp-secret-scan.py", multiedit_commands)
+        self.assertNotIn("portable-paths-scan.py", multiedit_commands)
+
     def test_codex_hook_paths_fall_back_when_codex_home_is_unset(self) -> None:
         codex_block = (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
             encoding="utf-8"

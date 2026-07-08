@@ -152,6 +152,31 @@
           "statusMessage": "agent-runtime-kit: Record agent-docs code edits"
         }
       ]
+    },
+    {
+      "matcher": "MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-project-memory-write.py\"",
+          "statusMessage": "agent-runtime-kit: Protect project memory writes"
+        },
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/memory-write-principle-reminder.py\"",
+          "statusMessage": "agent-runtime-kit: Remind memory-write boundaries"
+        },
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/agent-scope-lock-guard.py\"",
+          "statusMessage": "agent-runtime-kit: Validate active scope lock"
+        },
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/finish-line-record.py\"",
+          "statusMessage": "agent-runtime-kit: Record agent-docs code edits"
+        }
+      ]
     }
   ]
 }
