@@ -2,10 +2,33 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-14
+- Resolved: 2026-07-08 (sympoies/nils-cli#1052 spike → #1060 fix, merged `8c19c529`)
 - Area: forge-cli
 - Severity: medium
+
+## Resolution (2026-07-08)
+
+Cause **confirmed via spike sympoies/nils-cli#1052**: this was **GitHub
+auto-close latency, not a forge-cli linkage gap**. Across all six observed
+cases (`nils-cli` #1049/#871/#872, `nils-alfredworkflow` #190,
+`agent-runtime-kit` #341/#381) `closingIssuesReferences` was populated correctly
+and the PR targeted the default branch; in every case the operator manually
+closed the issue 22–108s after merge, before GitHub's asynchronous auto-close
+fired. It "reproduced" across forge-cli 1.3.1 → 1.20.19 because the observation
+method (check-then-close-immediately) was the constant, not the release. A live
+demonstration during the fix delivery: nils-cli#1060 merged with
+`closingIssuesReferences: [1052]`, yet #1052 was still OPEN on the immediate
+post-merge check.
+
+Fixed in **nils-cli#1060**: `forge-cli pr deliver` now runs a deterministic
+post-merge `issue_closeout` step that closes any still-open closing-keyword
+issue (`issue close --reason completed`). Best-effort (never fails the merge),
+scoped to genuine `Closes/Fixes` keywords only (`Refs #N` plan-tracking flows
+untouched), GitHub-only, opt-out `--no-issue-closeout`. Shipped in nils-cli
+v1.20.20. Once the host `forge-cli` is at/after v1.20.20 the manual
+verify-and-close workaround below is no longer needed.
 
 ## Signal
 
@@ -97,11 +120,12 @@ GitHub latency only, mark `wontfix` with the timing note.
 
 ## Next Action
 
-On the next regular issue-backed forge-cli delivery, if user timing allows, wait
-several minutes after merge before manual close and capture: the PR body as
-stored on GitHub, `closingIssuesReferences`, the issue state over time, the
-issue timeline (to see whether a `connected`/`closed` event fired late), and the
-merge event timing. Route a confirmed non-latency gap to an upstream nils-cli
-issue.
+None — resolved by nils-cli #1060 (deterministic post-merge issue_closeout in pr deliver).
 
-Lifecycle link: `sympoies/nils-cli#1052 (investigation spike filed 2026-07-08; confirm cause on next live merge before fixing)`
+Lifecycle link: `sympoies/nils-cli#1052 (spike, closed) + sympoies/nils-cli#1060 (fix, merged 8c19c529)`
+
+## Archive
+
+- Archived: 2026-07-08
+- Reason: Resolved: confirmed GitHub auto-close latency (not a linkage gap); fixed by nils-cli #1060 deterministic pr deliver issue_closeout (v1.20.20).
+- Durable link: `sympoies/nils-cli#1052 + sympoies/nils-cli#1060`
