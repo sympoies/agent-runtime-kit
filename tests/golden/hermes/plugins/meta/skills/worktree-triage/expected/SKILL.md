@@ -1,9 +1,9 @@
 ---
 name: worktree-triage
 description: >
-  Read-only scan of git worktrees against a base ref, classifying each branch
-  as safe-to-prune, rescue-candidate, dirty, or locked; prunes safe ones and
-  opens draft PRs for unmerged work only on explicit confirmation.
+  Scan git worktrees against a base ref, classify safe/rescue/dirty/locked
+  branches, cleanup safe or confirmed-superseded stale worktrees when requested,
+  and open draft PRs for unmerged work only on explicit confirmation.
 ---
 
 # Worktree Triage
@@ -73,8 +73,9 @@ Failure modes:
 - A worktree is reported `dirty` or `locked`: that is a verdict to act on,
   not a tool error. Never remove either without resolving it first.
 - A `rescue-candidate` whose `evidence` looks subtractive is a *signal* to
-  review, not a license to delete — confirm with the human before closing
-  or discarding.
+  review. It becomes auto-prunable only after the workflow below confirms that
+  the branch's work is already represented on the base or was superseded by
+  newer base content.
 
 ## Entrypoint
 
@@ -108,11 +109,11 @@ $HOME/.hermes/plugins/meta/skills/worktree-triage/scripts/worktree-triage.sh --r
    `disposition`, branch, ahead/behind, and `suggested_action`, grouped
    into: safe-to-prune (`safe-merged` + `safe-superseded`),
    rescue-candidates, and blocked (`dirty` / `locked` / `primary`).
-3. **Prune the safe set — only on explicit confirmation.** For each
-   `safe-merged` / `safe-superseded` worktree the user approves, run the
-   removal against the reported `path` and delete the branch from that
-   record's `repo_root` (this matters for `--all-managed`, where rows may come
-   from different repos):
+3. **Prune the mechanically safe set.** When the user has asked to clean up
+   worktrees, prune every `safe-merged` / `safe-superseded` record without
+   per-item confirmation. Run the removal against the reported `path` and delete
+   the branch from that record's `repo_root` (this matters for `--all-managed`,
+   where rows may come from different repos):
 
    ```bash
    git-cli worktree remove <path-or-slug> --format json
@@ -121,33 +122,54 @@ $HOME/.hermes/plugins/meta/skills/worktree-triage/scripts/worktree-triage.sh --r
 
    Delete the remote branch only when it has no open PR, or its PR is
    itself superseded/closed. Never prune a `primary`, `dirty`, or `locked`
-   worktree, never prune anything from a repo listed in `errors`, and never
-   prune a `rescue-candidate`.
-4. **Judge each rescue-candidate.** Read its `evidence`:
+   worktree, and never prune anything from a repo listed in `errors`.
+4. **Auto-prune high-confidence stale rescue candidates.** Judge each
+   `rescue-candidate` from evidence instead of asking the user for another
+   cleanup confirmation:
    - `likely_superseded: true` (net diff empty or subtractive) means the
-     branch's content has probably already landed on the base via another
-     commit even though `git cherry` still lists the commits — confirm with
-     `git diff <base>..<branch> --stat`. If confirmed, close any associated
-     PR and discard the branch (this is the stale-duplicate pattern). Do
-     not merge it.
-   - `likely_superseded: false` (real additions) means genuine unmerged
-     work. On confirmation, open a **draft** PR for human review via the
-     `create-pr` / `deliver-pr` workflow (forge-cli). Never
-     auto-merge.
-5. **Stop at the human gate.** The skill never removes a worktree, deletes
-   a branch, closes a PR, or opens a PR without explicit per-item
-   confirmation, and never merges.
+     branch's content probably landed on the base via another commit. Confirm
+     it by checking the full unique commit subjects against recent base commit
+     bodies:
+
+     ```bash
+     git -C <repo_root> cherry -v <base> <branch>
+     git -C <repo_root> log <base> --format=%B --max-count=600
+     git -C <repo_root> diff --shortstat <base>..<branch>
+     ```
+
+     If every unique commit subject is present verbatim in recent base commit
+     bodies and the two-dot diff is empty or net-subtractive, treat it as a
+     confirmed stale duplicate and prune it like the safe set. If
+     `unique_commit_count` is larger than `evidence.sample_unique_commits`,
+     derive the full subject list from `git cherry -v`; do not rely only on the
+     sample.
+   - `likely_superseded: false` usually means real unmerged work. It can still
+     be pruned without another user confirmation only when provider or base-log
+     evidence proves the exact branch work already landed (for example, the
+     branch's PR is merged or every unique subject appears in a squash commit)
+     and the remaining two-dot diff is clearly the branch moving the checkout
+     backward relative to newer base content, such as older dependency or
+     generated-file versions. Otherwise retain it.
+   - Exact subject misses, related-but-not-equal base commits, open PRs, and
+     content diffs that are not clearly stale are retained and reported.
+5. **Stop at the remaining human gate.** The skill may auto-prune only
+   mechanically safe worktrees and high-confidence stale duplicates after the
+   user has requested cleanup. It never removes `primary`, `dirty`, or `locked`
+   worktrees, never removes rows from repos with scan errors, never opens or
+   merges PRs without explicit confirmation, and never treats a related commit
+   as proof of supersession.
 
 ## Boundary
 
 `worktree_triage.py` owns worktree enumeration, the ahead/behind and
 ancestor checks, the patch-equivalence (`git cherry`) call, the two-dot
 net-diff evidence, and the disposition verdict. The skill body owns when to
-fetch and scan, how to present the triage for selection, and the confirmed
-act phase (prune safe worktrees, hand rescue-candidates to PR delivery or
-closure). It never re-implements the classification in prose, never
-auto-removes a dirty/locked/primary worktree, never deletes a branch with
-unique commits without confirmation, and never merges.
+fetch and scan, how to present the triage for selection, and the cleanup act
+phase: prune mechanically safe worktrees, prune high-confidence stale
+rescue-candidates after base/provider confirmation, and hand genuine unmerged
+work to PR delivery. It never re-implements the helper's classification in
+prose, never auto-removes a dirty/locked/primary worktree, never deletes a
+branch from a repo with scan errors, and never merges.
 
 ## Related Skills
 
