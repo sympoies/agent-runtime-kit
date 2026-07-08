@@ -67,3 +67,5 @@ longer surfaces as a false "not available" or blocks ready/merge flows.
 Gate GraphQL-backed release/draft/PR lookups and forge PR lifecycle calls on the
 free rate_limit endpoint, and fall back to REST for release asset existence
 checks.
+
+Lifecycle link: `sympoies/nils-cli#1051 (tracking issue filed 2026-07-08)`

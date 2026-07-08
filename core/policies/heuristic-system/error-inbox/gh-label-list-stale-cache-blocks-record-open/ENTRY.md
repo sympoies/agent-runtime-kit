@@ -71,3 +71,5 @@ Fix nils-cli record-open dedup to avoid the gh SearchType cache path: use REST
 `issues?labels=` while excluding PR rows, or use an exhaustive no-label issue
 list with explicit pagination before client-side filtering. Detect the
 stale-cache symptom and surface the cache-clear remedy.
+
+Lifecycle link: `sympoies/nils-cli#1050 (tracking issue filed 2026-07-08)`

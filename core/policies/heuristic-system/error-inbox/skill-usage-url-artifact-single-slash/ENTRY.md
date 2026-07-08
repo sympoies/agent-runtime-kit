@@ -50,3 +50,5 @@ unchanged `https://` links.
 ## Next Action
 
 Add a nils-cli regression for URL-valued link-record paths and record-outcome artifacts, then preserve absolute URLs without Path normalization.
+
+Lifecycle link: `sympoies/nils-cli#1054 (tracking issue filed 2026-07-08; fix at common.rs display_path covers all 4 callers)`

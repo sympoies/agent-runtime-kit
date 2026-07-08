@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-16
 - Area: forge-cli
 - Severity: medium
@@ -87,8 +87,12 @@ agent-runtime-kit nils-cli pin is bumped.
 
 ## Next Action
 
-Track upstream via #887 / #888. On the next `forge-cli` release: bump the
-agent-runtime-kit nils-cli pin, restore the dropped `list` dry-run smoke probe,
-re-add the read-surface coverage claim in `acceptance-matrix.yaml`, and add a
-validation case that an out-of-diff `--thread-file` line produces an actionable
-error or is prevalidated before provider mutation.
+None. Resolved: pr review-threads list --dry-run now plans offline (verified on forge-cli v1.20.19); umbrella hardening delivered via sympoies/nils-cli#887 and #888 (both closed) plus in-repo agent-runtime-kit#416/#417. Residual first-comment-only list payload and out-of-diff --thread-file line anchor remain covered by the documented workarounds (fetch full context; use file-level threads for cross-hunk findings).
+
+Lifecycle link: `sympoies/nils-cli#887 + #888 (both closed)`
+
+## Archive
+
+- Archived: 2026-07-08
+- Reason: Completed entry archived out of the active error inbox.
+- Durable link: `sympoies/nils-cli#888`

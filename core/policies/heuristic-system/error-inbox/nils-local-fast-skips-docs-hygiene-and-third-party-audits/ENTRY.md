@@ -76,3 +76,5 @@ separately. Link the change here.
 
 File an upstream nils-cli issue proposing `--local-fast` either include the
 docs-hygiene and third-party audits or explicitly document the coverage gap.
+
+Lifecycle link: `sympoies/nils-cli#1053 (tracking issue filed 2026-07-08; third-party half already fixed, issue narrows to docs-hygiene on Rust-only diffs)`

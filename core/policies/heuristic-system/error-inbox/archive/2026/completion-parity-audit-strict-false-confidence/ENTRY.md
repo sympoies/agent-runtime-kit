@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-16
 - Area: nils-cli release / completion audit
 - Severity: medium
@@ -60,4 +60,10 @@ fails locally before the tag, not in `release.yml`.
 
 ## Next Action
 
-Run completion-flag-parity-audit.sh with --strict locally (matching release.yml) before tagging, or have the release pre-flight / completion-development-standard invoke it with --strict, so a new/changed subcommand's missing zsh blocks fail locally instead of in release.yml.
+None. Resolved: the completion parity audit is now always strict (--strict is a no-op; pre-pr, release-bump --full-checks, and DEVELOPMENT.md all route through the strict path), so a local run can no longer diverge from CI. Original trigger fixed by sympoies/nils-cli#885 (re-released v1.9.1). Verified in nils-cli source at v1.20.18.
+
+## Archive
+
+- Archived: 2026-07-08
+- Reason: Completed entry archived out of the active error inbox.
+- Durable link: `sympoies/nils-cli#885`

@@ -103,3 +103,5 @@ stored on GitHub, `closingIssuesReferences`, the issue state over time, the
 issue timeline (to see whether a `connected`/`closed` event fired late), and the
 merge event timing. Route a confirmed non-latency gap to an upstream nils-cli
 issue.
+
+Lifecycle link: `sympoies/nils-cli#1052 (investigation spike filed 2026-07-08; confirm cause on next live merge before fixing)`

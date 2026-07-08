@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-07
 - Area: nils-plan-issue integration tests; tracking checkpoint live; cargo-nextest parallel execution; coverage runs
 - Severity: medium
@@ -108,11 +108,12 @@ repeated full-workspace run with no flake and no `--retries`.
 
 ## Next Action
 
-Land the test-isolation fix tracked in graysurf/plan-tracking-testbed#61:
-give every `tracking_checkpoint_live` test (ideally the shared
-`plan_issue_cmd_options()` baseline in
-`crates/plan-issue/tests/integration/common.rs`) an isolated
-`--state-dir` / `PLAN_ISSUE_HOME` TempDir, then validate with repeated
-full-workspace nextest runs without `--retries`. The #793 lifecycle-lock
-serialization did not stop the test-side flake, consistent with the shared
-state-dir hypothesis.
+None. Resolved by sympoies/nils-cli#821 (per-process PLAN_ISSUE_HOME isolation in the shared plan_issue_cmd_options baseline, common.rs); graysurf/plan-tracking-testbed#61 closed. Verified in nils-cli source at v1.20.18 (10/10 module loops green, no --retries).
+
+Lifecycle link: `sympoies/nils-cli#821 (commit df6a7cac)`
+
+## Archive
+
+- Archived: 2026-07-08
+- Reason: Completed entry archived out of the active error inbox.
+- Durable link: `sympoies/nils-cli#821`

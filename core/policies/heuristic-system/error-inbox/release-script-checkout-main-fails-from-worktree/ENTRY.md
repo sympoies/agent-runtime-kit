@@ -65,3 +65,5 @@ run and performs the post-merge tag against `origin/main` without
 Add a worktree-aware post-merge tag step in
 project-bump-version-tag-release.sh; file an upstream nils-cli issue
 referencing this entry.
+
+Lifecycle link: `sympoies/nils-cli#1049 (tracking issue filed 2026-07-08)`

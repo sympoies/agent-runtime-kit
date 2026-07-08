@@ -112,3 +112,5 @@ Promote this entry to `operation-records/` after the next deliver-* /
 *-closeout SKILL edit either follows the prevention rule (file the
 evidence here) or skips it and ships another CLI-drift bug (file the
 reproduction here).
+
+Lifecycle link: `graysurf/agent-runtime-kit#530 (prevention-rule issue filed 2026-07-08)`
