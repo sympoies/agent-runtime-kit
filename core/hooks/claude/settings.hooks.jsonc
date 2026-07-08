@@ -103,6 +103,11 @@
         },
         {
           "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/memory-write-principle-reminder.py\"",
+          "statusMessage": "agent-runtime-kit: Remind memory-write boundaries"
+        },
+        {
+          "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/portable-paths-scan.py\"",
           "statusMessage": "agent-runtime-kit: Scan Bash-authored docs for local paths"
         },
@@ -125,6 +130,11 @@
           "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-project-memory-write.py\"",
           "statusMessage": "agent-runtime-kit: Protect project memory writes"
+        },
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/memory-write-principle-reminder.py\"",
+          "statusMessage": "agent-runtime-kit: Remind memory-write boundaries"
         },
         {
           "type": "command",

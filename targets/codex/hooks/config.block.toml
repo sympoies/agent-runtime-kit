@@ -40,6 +40,12 @@ statusMessage = "agent-runtime-kit: Protect Bash-authored project memory writes"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/memory-write-principle-reminder.py\""
+timeout = 10
+statusMessage = "agent-runtime-kit: Remind memory-write boundaries"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
 command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/portable-paths-scan.py\""
 timeout = 10
 statusMessage = "agent-runtime-kit: Scan Bash-authored docs for local paths"
@@ -70,6 +76,12 @@ type = "command"
 command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/block-project-memory-write.py\""
 timeout = 10
 statusMessage = "agent-runtime-kit: Protect project memory writes"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/memory-write-principle-reminder.py\""
+timeout = 10
+statusMessage = "agent-runtime-kit: Remind memory-write boundaries"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"

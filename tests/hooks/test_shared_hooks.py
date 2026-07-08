@@ -1057,6 +1057,67 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "project-state memory")
 
+    def test_memory_write_principle_reminder_opt_in_fires_non_blocking(self) -> None:
+        flag = "AGENT_RUNTIME_MEMORY_WRITE_REMINDER"
+
+        # (a) Opt-in ON + a Write to a memory-store note -> non-blocking reminder.
+        code, decision, stderr = run_hook(
+            "memory-write-principle-reminder.py",
+            write_payload("~/.config/agent-memory/global/foo.md", "note"),
+            env={flag: "1"},
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertIsNotNone(decision)
+        assert decision is not None
+        # Never a block decision; only additive PreToolUse context.
+        self.assertNotIn("decision", decision)
+        hook_output = decision.get("hookSpecificOutput", {})
+        self.assertIsInstance(hook_output, dict)
+        assert isinstance(hook_output, dict)
+        self.assertEqual(hook_output.get("hookEventName"), "PreToolUse")
+        ctx = str(hook_output.get("additionalContext", ""))
+        self.assertIn("Memory Boundaries", ctx)
+
+        # (a') Bash-authored heredoc write to a per-product memory dir also fires.
+        code, decision, stderr = run_hook(
+            "memory-write-principle-reminder.py",
+            command_payload(
+                "cat > ~/.codex/memories/env_notes.md <<'EOF'\nnote\nEOF"
+            ),
+            env={flag: "1"},
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertIsNotNone(decision)
+        assert decision is not None
+        self.assertNotIn("decision", decision)
+        hook_output = decision.get("hookSpecificOutput", {})
+        assert isinstance(hook_output, dict)
+        self.assertIn(
+            "Memory Boundaries", str(hook_output.get("additionalContext", ""))
+        )
+
+    def test_memory_write_principle_reminder_silent_when_flag_unset(self) -> None:
+        flag = "AGENT_RUNTIME_MEMORY_WRITE_REMINDER"
+        # Flag UNSET (empty is not truthy) -> silent even for a memory-store note.
+        code, decision, stderr = run_hook(
+            "memory-write-principle-reminder.py",
+            write_payload("~/.config/agent-memory/global/foo.md", "note"),
+            env={flag: ""},
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
+    def test_memory_write_principle_reminder_ignores_unrelated_paths(self) -> None:
+        flag = "AGENT_RUNTIME_MEMORY_WRITE_REMINDER"
+        # Opt-in ON but the write is outside the memory store -> silent.
+        code, decision, stderr = run_hook(
+            "memory-write-principle-reminder.py",
+            write_payload("/tmp/x.md", "note"),
+            env={flag: "1"},
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
     def test_blocks_mcp_secret_and_portable_path_writes(self) -> None:
         code, decision, stderr = run_hook(
             "mcp-secret-scan.py",
@@ -3167,6 +3228,7 @@ exit 65
             "finish-line-record.py",
             "forge-label-reminder.py",
             "mcp-secret-scan.py",
+            "memory-write-principle-reminder.py",
             "portable-paths-scan.py",
             "semantic-commit-body-gate.py",
             "session-start-healthcheck.sh",
