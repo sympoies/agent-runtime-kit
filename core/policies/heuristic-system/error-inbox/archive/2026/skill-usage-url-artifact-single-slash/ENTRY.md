@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-07
 - Area: skill-usage CLI; evidence retention URL fields
 - Severity: low
@@ -49,6 +49,16 @@ unchanged `https://` links.
 
 ## Next Action
 
-Add a nils-cli regression for URL-valued link-record paths and record-outcome artifacts, then preserve absolute URLs without Path normalization.
+None. Promoted to nils-cli#1054 and fixed by
+https://github.com/sympoies/nils-cli/pull/1059: `display_path` now
+returns URL-scheme values unchanged, so `link-record --path` and
+`record-outcome`/`record-failure`/`record-validation --artifact` retain
+`https://` instead of collapsing to `https:/`, with unit and integration
+coverage.
 
-Lifecycle link: `sympoies/nils-cli#1054 (tracking issue filed 2026-07-08; fix at common.rs display_path covers all 4 callers)`
+Lifecycle link: `https://github.com/sympoies/nils-cli/pull/1059`
+
+## Archive
+
+- Archived: 2026-07-08
+- Reason: Completed entry archived out of the active error inbox.

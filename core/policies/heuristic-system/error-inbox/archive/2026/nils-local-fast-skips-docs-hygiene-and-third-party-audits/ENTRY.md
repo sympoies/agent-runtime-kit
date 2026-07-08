@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-06-15
 - Area: ci
 - Severity: medium
@@ -35,6 +35,7 @@ This session hit both:
 ## Evidence
 
 - Raw record: not captured (manual diagnosis, 2026-06-15; --local-fast vs full-CI audit gap, nils-cli #873).
+- Outcome: fixed by https://github.com/sympoies/nils-cli/pull/1058 (tracking issue https://github.com/sympoies/nils-cli/issues/1053).
 - Summary: `--local-fast` reported "local-fast package checks passed" while the
   full CI `test` job (run via
   `.agents/skills/project-verify-required-checks/scripts/project-verify-required-checks.sh`,
@@ -74,7 +75,17 @@ separately. Link the change here.
 
 ## Next Action
 
-File an upstream nils-cli issue proposing `--local-fast` either include the
-docs-hygiene and third-party audits or explicitly document the coverage gap.
+None. Promoted to https://github.com/sympoies/nils-cli/issues/1053 and fixed by
+https://github.com/sympoies/nils-cli/pull/1058.
+`--local-fast` now
+runs the docs-hygiene audit for every non-empty change set (matching CI's
+unconditional run) so a code-only diff that trips a hygiene guardrail fails the
+local gate too. The third-party half was already fixed by the
+`affects_third_party_artifacts` trigger, so both halves of this case are closed.
 
-Lifecycle link: `sympoies/nils-cli#1053 (tracking issue filed 2026-07-08; third-party half already fixed, issue narrows to docs-hygiene on Rust-only diffs)`
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1053`
+
+## Archive
+
+- Archived: 2026-07-08
+- Reason: Completed entry archived out of the active error inbox.
