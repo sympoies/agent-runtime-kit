@@ -29,8 +29,8 @@ Scope rules:
 
 ## Version Floors (Claude side)
 
-- Claude product `min_version` / `recommended_version`: **2.1.198**;
-  `min_version_effective_from`: **2026-07-09**; probe: `claude --version`
+- Claude product `min_version` / `recommended_version`: **2.1.205**;
+  `min_version_effective_from`: **2026-07-10**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude
   surface) ships inside nils-cli; pinned snapshot **v1.21.0**
