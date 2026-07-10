@@ -81,6 +81,7 @@ profiles:
     - pipx
     - direnv
     - hammerspoon
+    - cliclick
     - im-select
     - imagemagick
     - vips
@@ -263,6 +264,12 @@ formulas:
     linux_only_alternative: null
     categories: [macos-automation]
     notes: "macOS only — no Linux equivalent; setup.sh should skip on non-Darwin hosts."
+  cliclick:
+    brew: cliclick
+    command: cliclick
+    linux_only_alternative: null
+    categories: [macos-automation]
+    notes: "macOS only — input backend used by macos-agent; setup.sh should skip on non-Darwin hosts."
   im-select:
     brew: im-select
     command: im-select

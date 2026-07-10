@@ -430,6 +430,19 @@ cases:
     cleanup: temp-output-only
     expected_disposition: skip-host-capability
     skip_policy: skip when host screen capture permission or display is unavailable
+  - id: computer-use.macos-desktop.shared-cli.deterministic
+    product: shared-cli
+    domain: computer-use
+    skill_id: computer-use.macos-desktop
+    mode: deterministic
+    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
+    setup: create synthetic macos-agent and SSH transports with isolated local and remote homes
+    invocation: run local preflight, remote AX discovery, remote screenshot transfer, remote scenario, and unsafe-host rejection
+    expected_exit_code: 0
+    expected_artifacts: structured envelopes, session JSONL, pending permission actions, screenshot, and scenario result
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
   - id: browser.browser-session.shared-cli.deterministic
     product: shared-cli
     domain: browser

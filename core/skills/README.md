@@ -151,6 +151,12 @@ Shared issue label, comment, and close discipline lives in
 | Image processing | [image-processing](./media/image-processing/) | Validates SVG inputs and converts SVG, PNG, JPEG, or WebP files through `image-processing`. |
 | Screen capture | [screen-record](./media/screen-record/) | Captures screenshots or recordings from windows or displays through `screen-record`. |
 
+## Computer Use
+
+| Series | Skill | Purpose |
+| --- | --- | --- |
+| macOS desktop automation | [macos-desktop](./computer-use/macos-desktop/) | Operates and tests a local or SSH-reachable Mac through nils-cli `macos-agent`, retaining screenshots, scenarios, permission gaps, and structured evidence. |
+
 ## Meta
 
 The meta domain is large enough to need its own routing index. Detailed

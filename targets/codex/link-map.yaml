@@ -56,6 +56,17 @@ entries:
     destination: plugins/browser/skills
     recursive: true
 
+  - id: computer-use.plugin-manifest
+    kind: plugin-manifest-copy
+    source: targets/codex/plugins/computer-use/.codex-plugin/plugin.json
+    destination: plugins/computer-use/.codex-plugin/plugin.json
+
+  - id: computer-use.skills-tree
+    kind: symlinked-file
+    source: build/codex/plugins/computer-use/skills
+    destination: plugins/computer-use/skills
+    recursive: true
+
   - id: conversation.plugin-manifest
     kind: plugin-manifest-copy
     source: targets/codex/plugins/conversation/.codex-plugin/plugin.json

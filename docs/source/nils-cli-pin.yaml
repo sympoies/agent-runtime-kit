@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.21.11"
+  pinned_tag: "v1.21.14"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "aeb752570a9eecfa4404cd75f35263d36b0cdc993f98c0eff26d0534c018d7dc"
-    linux_arm64: "997997d2be783bab3206589270ce4ec13899168b8fd208ebe45838978946939c"
+    linux_amd64: "01254074f121f734c012b0d9d67493a35c5a49d8756c38b691a6212f1b2a2528"
+    linux_arm64: "ab775ab6bd6a1452a0f884fd316ac28db7f146374ac9f3a1d1fe26db087eae62"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -60,3 +60,5 @@ required_clis:
     min: "1.0.9"
   - bin: agent-runtime    # home-prompt render target for per-product AGENT_HOME output (`render --target home-prompt`)
     min: "1.12.1"
+  - bin: macos-agent      # macOS Computer Use skill: AX/window/screenshot/wait/scenario plus key, move, bounded drag, scroll, modifier-assisted mouse actions, and held-input cleanup
+    min: "1.21.13"

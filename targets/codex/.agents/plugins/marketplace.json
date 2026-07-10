@@ -4,7 +4,7 @@
     "name": "graysurf"
   },
   "metadata": {
-    "description": "Codex marketplace for agent-runtime-kit — 10 plugins (browser, code-review, conversation, dispatch, evidence, issue, media, meta, pr, reporting). Registered via `codex plugin marketplace add` and installed per plugin with `codex plugin add <plugin>@codex-kit`; Codex caches each plugin under $CODEX_HOME/plugins/cache/codex-kit/<plugin>/<version>/ and discovers its bundled skills/<skill>/SKILL.md. Activation is gated (see scripts/sync-runtime-surfaces.sh); the flat $CODEX_HOME/skills root stays the default discovery path until cut-over."
+    "description": "Codex marketplace for agent-runtime-kit — 11 plugins (browser, code-review, computer-use, conversation, dispatch, evidence, issue, media, meta, pr, reporting). Registered via `codex plugin marketplace add` and installed per plugin with `codex plugin add <plugin>@codex-kit`; Codex caches each plugin under $CODEX_HOME/plugins/cache/codex-kit/<plugin>/<version>/ and discovers its bundled skills/<skill>/SKILL.md. Activation is gated (see scripts/sync-runtime-surfaces.sh); the flat $CODEX_HOME/skills root stays the default discovery path until cut-over."
   },
   "plugins": [
     {
@@ -29,6 +29,20 @@
         "path": "./plugins/code-review"
       },
       "description": "Read-only multi-lens code review — code-review-specialists with api-contract / data-migration / maintainability / performance / red-team / security / testing lenses.",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "computer-use",
+      "version": "0.1.0",
+      "source": {
+        "source": "local",
+        "path": "./plugins/computer-use"
+      },
+      "description": "macOS desktop automation and GUI testing through nils-cli macos-agent, locally or over SSH.",
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"

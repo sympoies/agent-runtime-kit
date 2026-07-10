@@ -4,7 +4,7 @@
     "name": "graysurf"
   },
   "metadata": {
-    "description": "Claude marketplace for agent-runtime-kit — 10 plugins (browser, code-review, conversation, dispatch, evidence, issue, media, meta, pr, reporting). Resolves to ~/.claude/plugins/<plugin>/ when installed by `agent-runtime install --product claude`."
+    "description": "Claude marketplace for agent-runtime-kit — 11 plugins (browser, code-review, computer-use, conversation, dispatch, evidence, issue, media, meta, pr, reporting). Resolves to ~/.claude/plugins/<plugin>/ when installed by `agent-runtime install --product claude`."
   },
   "plugins": [
     {
@@ -18,6 +18,12 @@
       "version": "0.1.0",
       "source": "./plugins/code-review",
       "description": "Read-only multi-lens code review — code-review-specialists with api-contract / data-migration / maintainability / performance / red-team / security / testing lenses."
+    },
+    {
+      "name": "computer-use",
+      "version": "0.1.0",
+      "source": "./plugins/computer-use",
+      "description": "macOS desktop automation and GUI testing through nils-cli macos-agent, locally or over SSH."
     },
     {
       "name": "conversation",

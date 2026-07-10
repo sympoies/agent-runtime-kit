@@ -76,6 +76,16 @@ plugins:
       hermes: targets/hermes/plugins/browser/.hermes-plugin/plugin.json
     install_policy: always
 
+  - id: computer-use
+    domain: computer-use
+    contained_skills:
+      - computer-use.macos-desktop
+    product_manifests:
+      codex: targets/codex/plugins/computer-use/.codex-plugin/plugin.json
+      claude: targets/claude/plugins/computer-use/.claude-plugin/plugin.json
+      hermes: targets/hermes/plugins/computer-use/.hermes-plugin/plugin.json
+    install_policy: always
+
   - id: conversation
     domain: conversation
     contained_skills:

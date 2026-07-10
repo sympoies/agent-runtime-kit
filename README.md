@@ -28,7 +28,7 @@ auth, sessions, logs, caches, generated backups, or secrets.
 | Codex CLI (`codex --version`) | `0.143.0` (effective 2026-07-10) | `manifests/runtime-roots.yaml` |
 | Claude Code (`claude --version`) | `2.1.205` (effective 2026-07-10) | `manifests/runtime-roots.yaml` |
 | Hermes Agent (`hermes --version`) | `0.17.0` (effective 2026-06-30) | `manifests/runtime-roots.yaml` |
-| `nils-cli` surface (`agent-runtime --version`) | `v1.21.11` | `docs/source/nils-cli-surface.md` |
+| `nils-cli` surface (`agent-runtime --version`) | `v1.21.14` | `docs/source/nils-cli-surface.md` |
 
 Per-skill `nils-cli` floors live in `manifests/skills.yaml` `required_clis`
 and are tighter than the surface-level pin.
@@ -179,15 +179,15 @@ and coupled nils-cli debug-build guidance.
 
 ## Skills
 
-Ten skill domains are currently rendered into Codex and Claude plugins:
+Eleven skill domains are currently rendered into Codex and Claude plugins:
 
-`browser` · `code-review` · `conversation` · `dispatch` · `evidence` ·
+`browser` · `code-review` · `computer-use` · `conversation` · `dispatch` · `evidence` ·
 `issue` · `media` · `meta` · `pr` · `reporting`
 
 Representative skills include `pr:deliver-pr`,
 `dispatch:deliver-plan-tracking-issue`, `evidence:test-first-evidence`,
 `issue:issue-triage`, `meta:semantic-commit`, `reporting:project-retro`, and
-`media:screen-record`.
+`computer-use:macos-desktop`.
 
 The authoritative skill list and CLI floors live in `manifests/skills.yaml`.
 The skill catalog is summarized in [`core/skills/README.md`](core/skills/README.md).

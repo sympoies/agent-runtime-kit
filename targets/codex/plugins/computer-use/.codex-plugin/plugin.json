@@ -1,0 +1,14 @@
+{
+  "name": "computer-use",
+  "version": "0.1.0",
+  "description": "macOS desktop automation and GUI testing through nils-cli macos-agent, locally or over SSH.",
+  "author": {
+    "name": "graysurf"
+  },
+  "skills": [
+    {
+      "id": "macos-desktop",
+      "source": "core/skills/computer-use/macos-desktop"
+    }
+  ]
+}

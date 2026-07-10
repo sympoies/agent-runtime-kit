@@ -50,7 +50,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex
-  surface) ships inside nils-cli; pinned snapshot **v1.21.11**
+  surface) ships inside nils-cli; pinned snapshot **v1.21.14**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),
@@ -161,7 +161,7 @@ a uniform shape:
   marketplace, Codex discovers each bundled `skills/<skill>/SKILL.md` and
   surfaces it as `<plugin>:<skill>`.
 - Source: `build/codex/plugins/<domain>/skills/<skill>/` is the rendered tree;
-  65 Codex plugin-scoped skill entries are declared in `manifests/skills.yaml`
+  66 Codex plugin-scoped skill entries are declared in `manifests/skills.yaml`
   (count auto-maintained by
   `scripts/ci/skill-governance-audit.sh --update-counts`);
   the marketplace materialization copies it symlink-free beside each plugin's
@@ -171,7 +171,7 @@ a uniform shape:
   skill root install (surface 15) is retired.
 - Acceptance lane: gate 3 render, gate 4 golden, gate 5 drift, and the gate 8
   runtime-smoke codex plugin-registry probe; sandbox install rehearsal diffs
-  `tests/sandbox/codex/expected-skills.txt:1-65`.
+  `tests/sandbox/codex/expected-skills.txt:1-66`.
 - Support today: **shipped** — plugin-scoped discovery is the default
   runtime-kit-managed Codex skill path.
 

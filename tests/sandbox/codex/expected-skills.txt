@@ -5,6 +5,7 @@ code-review.code-review-follow-up
 code-review.code-review-pre-merge-gate
 code-review.code-review-quick-pass
 code-review.code-review-specialists
+computer-use.macos-desktop
 conversation.actionable-advice
 conversation.actionable-knowledge
 conversation.discussion-to-implementation-doc

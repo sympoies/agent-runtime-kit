@@ -1,20 +1,40 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-11 (refreshed for `v1.21.11`)
+- Snapshot date: 2026-07-11 (refreshed for `v1.21.14`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.21.11`
+- Active `git describe --tags` output: `v1.21.14`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.21.11`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.14`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `e8b1ddb4`
-  (`chore(release): bump cli versions to 1.21.11 (#1102)`)
+- Head commit: `ec3fe1a5`
+  (`chore(release): bump cli versions to 1.21.14 (#1108)`)
 - Release:
-  [`v1.21.11`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.11),
+  [`v1.21.14`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.14),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.14` advances the pin from `v1.21.13`: `plan-issue tracking
+  close-ready` and `record close` now share the same strict review-finding
+  evaluation, so a residual blocker or major finding returns
+  `review-unresolved-findings` before the mutating close step. Runtime-kit
+  consumes both lifecycle gates, but the fix aligns their existing contracts
+  and retires or renames no consumed flag or JSON envelope
+  ([#1105](https://github.com/sympoies/nils-cli/pull/1105)). No
+  `required_clis[]` floor changes.
+- `v1.21.13` advances the pin from `v1.21.11`, folding in `v1.21.12`:
+  - `macos-agent` adds standalone `input key`, pointer `move`, bounded `drag`,
+    and horizontal/vertical `scroll`, plus modifier-assisted click/drag/scroll,
+    correct named-key AppleScript key codes, absolute negative coordinates for
+    secondary displays, one-process repeated keypresses, bounded drag timeout
+    validation, and best-effort held-input cleanup on backend failure
+    ([#1106](https://github.com/sympoies/nils-cli/pull/1106)). The new
+    `computer-use.macos-desktop` skill consumes these surfaces, so
+    `required_clis[]` adds `macos-agent >=1.21.13`.
+  - `v1.21.12` changes only `agent-session` provider turn-signal handling.
+    Runtime-kit does not consume `agent-session`, and no other consumed flag or
+    JSON envelope was retired or renamed.
 - `v1.21.11` advances the pin from `v1.21.9` (folding in the version-only
   `v1.21.10`): the `agent-session` Claude provider-hook adapter drops the
   `approval` attention when the hook payload `permission_mode` is
@@ -1076,7 +1096,7 @@ Notes on derivation:
 | `git-summary`               | `git-summary`                                                                                                       | git diff summariser.                                                                                                                                                                                                                                                   |
 | `github-app-cli`            | `github-app-cli`                                                                                                    | GitHub App installation-token minter (`token`, `installations`, `completion`). Signs the App JWT in-process (`jsonwebtoken`, RS256) and calls the GitHub REST API directly (`reqwest`); text mode prints only the raw `ghs_` token for `GH_TOKEN=$(github-app-cli token …)`, JSON mode emits non-secret metadata only and never the token. New crate as of `v1.9.6` ([#903](https://github.com/sympoies/nils-cli/pull/903)). Not consumed by this repo's runtime surfaces; used out-of-band by a local `forge-cli` bot-identity wrapper, so it never appears in `required_clis`. |
 | `image-processing`          | `image-processing`                                                                                                  | User-facing image-processing CLI.                                                                                                                                                                                                                                      |
-| `macos-agent`               | `macos-agent`                                                                                                       | macOS automation helper (AX, app intents).                                                                                                                                                                                                                             |
+| `macos-agent`               | `macos-agent`                                                                                                       | macOS automation helper. As of `v1.21.13`, runtime-kit consumes app/window discovery, AX selectors/actions, screenshots, waits, scenarios, key/type/hotkey, pointer click/move/bounded drag, horizontal/vertical scroll, modifier-assisted mouse actions, secondary-display absolute coordinates, and held-input cleanup through the `computer-use.macos-desktop` skill ([#1106](https://github.com/sympoies/nils-cli/pull/1106)). |
 | `memo`                  | `memo`                                                                                                          | Memo storage CLI.                                                                                                                                                                                                                                                      |
 | `nils-build-info`           | (library only)                                                                                                      | Build metadata helper for the workspace `--version` output; consumed transitively, never appears in `required_clis`. New crate as of `v0.28.0` (#625).                                                                                                                 |
 | `nils-common`               | (library only)                                                                                                      | Shared workspace utilities; never appears in `required_clis`.                                                                                                                                                                                                          |

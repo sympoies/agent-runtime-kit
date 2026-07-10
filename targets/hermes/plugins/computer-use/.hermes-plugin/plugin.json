@@ -1,0 +1,5 @@
+{
+  "name": "computer-use",
+  "version": "0.1.0",
+  "description": "macOS desktop automation and GUI testing through nils-cli macos-agent, locally or over SSH."
+}
