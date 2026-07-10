@@ -11,7 +11,7 @@
 
 Successful `record close --bundle` reported `execution_state_sync.changed=true`
 and `followup_commit_required=true`, but its terminal rewrite patched only
-`Status` and `Branch/commit/PR`. Across three closeouts, the durable
+`Status` and `Branch/commit/PR`. Across two closeouts, the durable
 execution-state files retained pre-close actions in `Current task`, `Next task`,
 or `Handoff` after their issues were closed.
 
@@ -19,7 +19,7 @@ or `Handoff` after their issues were closed.
 
 - Raw record: not captured (manual diagnosis: terminal execution-state sync,
   2026-07-10).
-- Installed surface: nils-cli / plan-issue `1.21.7`.
+- Installed surfaces: nils-cli / plan-issue `1.21.7` and `1.21.12`.
 - Repro tracker: `sympoies/agent-console#217`; closeout PR
   `sympoies/agent-console#224`.
 - `record close` produced a terminal sync with `Status: complete; tracking issue
@@ -31,12 +31,15 @@ or `Handoff` after their issues were closed.
 - A second closeout, `sympoies/agent-console#216`, started with `Current task:
   none` but retained `Next task: run the strict tracking close-ready audit ...
   without closing it` and the matching pre-close `Handoff` after `record close`
-  succeeded. The terminal record was repaired in commit `890ce27` before the
-  closed bundle's archive dry-run.
-- A third closeout, `sympoies/agent-console#228`, ran on plan-issue `1.21.11`.
-  The generated sync left `Next task` asking to rerun close-ready/audit and left
-  Task 4.3 saying canonical closeout would follow, despite the issue already
-  being closed. The terminal repair merged in `sympoies/agent-console#242`.
+  succeeded. Despite an earlier local repair reference, `origin/main` still
+  contained both stale fields when the closed issue was audited on 2026-07-11.
+- The defect reproduced on `sympoies/agent-console#233` with plan-issue
+  `1.21.12`: `record close --bundle` patched `Status`, `Last updated`, and
+  `Branch/commit/PR`, but left `Current task` and `Next task` describing merge
+  and closeout as future work after the issue was already closed.
+- Agent Console PR #243 repaired the durable terminal fields for both #216 and
+  #233 and merged as `94b3f42b`. Testing and maintainability follow-up passed;
+  both plan bundles explicitly retain the user's no-archive override.
 
 ## Impact
 
