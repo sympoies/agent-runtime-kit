@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-05-23
 - Area: issue-backed plan closeout skills (deliver-* + canonical *-closeout)
 - Severity: medium
@@ -43,7 +43,7 @@ User follow-up requested verification: dry-runs against `forge-cli
 
 ## Evidence
 
-- Raw record: `<workspace>/out/.../skill-usage.record.json`
+- Raw record: not captured; retain provider issue / PR evidence below.
 - PR #74 specialist review findings (ingested below as `evidence/pr74-specialist-findings.jsonl`): `<workspace>/out/.../forge-cli-closeout-cli-fix-review/findings.jsonl`
 - PR #71 specialist review findings (where the two findings were originally surfaced and deferred): scratch dir already pruned after PR merge; the findings can be reconstructed from PR #71's delivery review outcome comment on the PR conversation tab.
 - Dry-run verifying `--reason completed` is rejected: `forge-cli issue close 99999 --dry-run --format json --reason completed` → `ok=false, code=unknown-subcommand`.
@@ -108,9 +108,13 @@ touches `core/skills/{dispatch,pr}/{deliver-*,*-closeout}/SKILL.md.tera`.
 
 ## Next Action
 
-Promote this entry to `operation-records/` after the next deliver-* /
-*-closeout SKILL edit either follows the prevention rule (file the
-evidence here) or skips it and ships another CLI-drift bug (file the
-reproduction here).
+None — PR #547 landed the specialist-review gate and deterministic smoke
+coverage; the case is archived.
 
-Lifecycle link: `graysurf/agent-runtime-kit#530 (prevention-rule issue filed 2026-07-08)`
+Lifecycle link: `https://github.com/graysurf/agent-runtime-kit/pull/547`
+
+## Archive
+
+- Archived: 2026-07-10
+- Reason: Prevention rule and deterministic smoke gate landed; tracking issue #530 closed.
+- Durable link: `https://github.com/graysurf/agent-runtime-kit/pull/547`
