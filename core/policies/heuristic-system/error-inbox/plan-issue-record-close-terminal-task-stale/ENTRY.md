@@ -11,7 +11,7 @@
 
 Successful `record close --bundle` reported `execution_state_sync.changed=true`
 and `followup_commit_required=true`, but its terminal rewrite patched only
-`Status` and `Branch/commit/PR`. Across two closeouts, the durable
+`Status` and `Branch/commit/PR`. Across three closeouts, the durable
 execution-state files retained pre-close actions in `Current task`, `Next task`,
 or `Handoff` after their issues were closed.
 
@@ -33,6 +33,10 @@ or `Handoff` after their issues were closed.
   without closing it` and the matching pre-close `Handoff` after `record close`
   succeeded. The terminal record was repaired in commit `890ce27` before the
   closed bundle's archive dry-run.
+- A third closeout, `sympoies/agent-console#228`, ran on plan-issue `1.21.11`.
+  The generated sync left `Next task` asking to rerun close-ready/audit and left
+  Task 4.3 saying canonical closeout would follow, despite the issue already
+  being closed. The terminal repair merged in `sympoies/agent-console#242`.
 
 ## Impact
 

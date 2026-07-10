@@ -41,11 +41,11 @@ others at the exact close boundary.
   terminal-status contract fixed the mismatch.
 
 The class remains active. Current inbox cases show `close-ready` and
-`record close` selecting different validation truth, successful close leaving
-repository task/handoff fields actionable, and a late missing-label failure
-occurring after the provider issue was already closed. These are different
-symptoms of the same missing invariant: closeout must consume and publish one
-normalized terminal state before any irreversible mutation.
+`record close` selecting different validation or review truth, successful close
+leaving repository task/handoff fields actionable, and a late missing-label
+failure occurring after the provider issue was already closed. These are
+different symptoms of the same missing invariant: closeout must consume and
+publish one normalized terminal state before any irreversible mutation.
 
 ## Evidence
 
@@ -54,17 +54,19 @@ normalized terminal state before any irreversible mutation.
 - Current recurrence cases remain active under
   `core/policies/heuristic-system/error-inbox/` with provider repro links and
   promotion criteria.
-- Successful end-to-end counterexample: `sympoies/agent-console#228` delivery.
-  Closeout docs PR #236 deliberately retained Task 4.3 as in progress before
-  merge; terminal-state PR #239 moved all eleven rows to done only after #236
-  merged, reconciled concurrent deployed follow-up #238 and open producer
-  residual `sympoies/nils-cli#1099`, then posted one live terminal
-  state/session/validation/review checkpoint.
-- `plan-issue tracking close-ready --expect-visible` returned
-  `ready=true`, `RECORD_READY_FOR_CLOSE`, and no blockers for #228. A separate
-  `plan-issue record audit --profile tracking --expect-visible` recognized all
-  six required roles with no visible findings while the issue remained open for
-  the dedicated closeout skill.
+- End-to-end exercise: `sympoies/agent-console#228`. Closeout docs PR #236
+  deliberately retained Task 4.3 as in progress before merge; terminal-state
+  PR #239 moved all eleven rows to done only after #236 merged. Installed macOS
+  acceptance PR #241 then replaced the last human-interaction waiver and marked
+  all review findings fixed.
+- The final `tracking close-ready --expect-visible` returned `ready=true`,
+  `RECORD_READY_FOR_CLOSE`, and no blockers. `record close` verified all six
+  linked PRs, closed #228, and the post-close visible audit recognized all seven
+  lifecycle roles. Its generated repository sync still left an actionable
+  `Next task` and future-tense Task 4.3 note; PR #242 repaired both.
+- The earlier #228 attempt also reproduced gate disagreement: close-ready
+  passed while `record close` rejected two major residual review findings.
+  `graysurf/plan-tracking-testbed#79` retains the upstream report.
 
 ## Diagnosis
 
@@ -125,9 +127,9 @@ agreement between valid closeout surfaces at one installed version.
 ## Validation
 
 - `sympoies/agent-console#228`: all eleven task rows terminal; PRs #235, #236,
-  #238, and #239 merged; nils-cli PR #1093 merged/released; terminal checkpoint
-  posted; close-ready and visible record audit passed; issue intentionally left
-  open for canonical closeout.
+  #238, #239, #241, and #242 merged; nils-cli PR #1093 merged/released; installed
+  macOS WebView acceptance and user confirmation passed; issue closed with
+  `state::closed`; post-close visible audit passed all seven roles.
 - Resolved source cases each retain their shipped CLI/renderer/status-contract
   validation and lifecycle links in their archived `ENTRY.md` files.
 - Current open siblings keep their own reproduction and promotion criteria;
