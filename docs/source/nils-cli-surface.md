@@ -1,20 +1,42 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-08 (refreshed for `v1.21.0`)
+- Snapshot date: 2026-07-10 (refreshed for `v1.21.9`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.21.0`
+- Active `git describe --tags` output: `v1.21.9`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.21.0`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.9`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `a97c5507`
-  (`chore(release): bump cli versions to 1.21.0 (#1069)`)
+- Head commit: `68c9e59e`
+  (`chore(release): bump cli versions to 1.21.9 (#1098)`)
 - Release:
-  [`v1.21.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.0),
+  [`v1.21.9`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.9),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.9` advances the pin from `v1.21.0`, folding in the `v1.21.1`–`v1.21.9`
+  releases:
+  - `codex-cli` and `claude-cli` each gain `agent resume <SESSION_ID> [--cd <dir>]`,
+    a foreground wrapper that resolves the recorded working directory from local
+    session metadata and relaunches the provider there (`codex resume <id> --cd
+    <cwd> --no-alt-screen`; `claude --resume <id>` launched in `<cwd>`). The
+    bounded session-history scan, `session_meta` / transcript parsing, scan
+    budgets, and structured resolve outcomes are shared through a new
+    `nils-provider-resume` library crate that `agent-session` also delegates to
+    (sympoies/nils-cli#1094, #1096).
+  - `agent-session` adds terminal-activity timestamps, Claude input-attention
+    correlation, and durable provider turn state to its session / serve surfaces
+    (sympoies/nils-cli#1091, #1093, and follow-ups).
+  - The remaining changes (`codex-cli diag rate-limits --all` and its auth.json
+    diagnostics contract, a `git-cli` internal `open` change, a `claude-cli`
+    usage prompt segment, and nils-cli-internal test / CI wiring) touch no
+    consumed surface.
+  Runtime-kit does not consume `agent-session`, `codex-cli`, or `claude-cli` in
+  required skill flows, and the `git-cli` / `forge-cli` changes retire or rename
+  no consumed flag or JSON envelope, so no `required_clis[]` floor changes. The
+  new `nils-provider-resume` crate is library-only and never appears in
+  `required_clis[]`.
 - `v1.21.0` advances the pin from `v1.20.20`:
   - `forge-cli` now routes every GraphQL-backed op through a single
     rate-limit-gated runner factory (`default_runner()`), extending the
@@ -1054,6 +1076,7 @@ Notes on derivation:
 | `nils-common`               | (library only)                                                                                                      | Shared workspace utilities; never appears in `required_clis`.                                                                                                                                                                                                          |
 | `nils-evidence`             | `evidence`                                                                                                          | Query/migrate CLI over the durable, secret-scrubbed skill-usage evidence archive (`migrate` / `discover` / `query` / `search` / `catalog` / `validate-*` / `prune-source`). New crate as of `v1.5.0`; consumed by the `evidence-migrate` skill, which sets the `evidence >= 1.6.0` floor mirrored in `docs/source/nils-cli-pin.yaml`. As of `v1.6.1`, `migrate` hardens scrub/path handling, query/catalog/XDG behavior, and host-vouch precedence so `--host` resolves slug-only records without overriding records that already resolve a cwd identity ([#854](https://github.com/sympoies/nils-cli/pull/854), [#856](https://github.com/sympoies/nils-cli/pull/856)). As of `v1.8.0`, `migrate` hardens cwd/origin and slug identity matching for nested source rescue, repointed or ambiguous cwd guards, refined cwd-vs-slug matching, and one uniform slug rule; `purge --apply` also hardens destructive-operation safety. `evidence-migrate` and `heuristic-session-closeout` consume those guarantees, so the `evidence` floor moves to `>= 1.8.0` ([#873](https://github.com/sympoies/nils-cli/pull/873), [#874](https://github.com/sympoies/nils-cli/pull/874), [#877](https://github.com/sympoies/nils-cli/pull/877), [#878](https://github.com/sympoies/nils-cli/pull/878), [#879](https://github.com/sympoies/nils-cli/pull/879), [#880](https://github.com/sympoies/nils-cli/pull/880)). As of `v1.12.0`, `prune-source --archived-only` is the source-cleanup counterpart to copy-only migration: it reads archive `catalog.json` source digests, dry-runs by default, and `--apply` deletes only already-archived local source run directories. `evidence-prune-source` and `heuristic-session-closeout` consume that surface, so the `evidence` floor moves to `>= 1.12.0` ([#916](https://github.com/sympoies/nils-cli/pull/916)). |
 | `nils-markdown`             | `md-render`                                                                                                         | Shared Tera-backed Markdown template layer. Ships the `md-render` binary behind the `bin-cli` cargo feature (enumerated by `workspace-bins.sh`); library role otherwise, not consumed by any skill today. Present since before `v0.25.8`; the prior snapshot omitted it. |
+| `nils-provider-resume`      | (library only)                                                                                                      | Shared provider session-resume resolver (bounded Codex/Claude session-history scan, `session_meta` / transcript parsing, scan budgets, and structured resolve outcomes) extracted for `codex-cli` / `claude-cli` / `agent-session`. New crate as of `v1.21.9` ([#1096](https://github.com/sympoies/nils-cli/pull/1096)); never appears in `required_clis`.|
 | `nils-scrub`                | (library only)                                                                                                      | Shared secret-scrub pattern set plus labelled scrub-log format, extracted from `plan-archive` so both `plan-archive refresh` and `evidence migrate` reuse one v1 implementation. New crate as of `v1.5.0`; never appears in `required_clis`.                            |
 | `nils-term`                 | (library only)                                                                                                      | Terminal / TTY helpers; never appears in `required_clis`.                                                                                                                                                                                                              |
 | `nils-test-support`         | (library only)                                                                                                      | Integration-test harness; test-only, never appears in `required_clis`.                                                                                                                                                                                                 |
