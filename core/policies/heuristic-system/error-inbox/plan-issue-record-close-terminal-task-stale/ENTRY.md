@@ -1,4 +1,4 @@
-# plan-issue record close leaves Current task stale in terminal execution state
+# plan-issue record close leaves terminal task and handoff fields stale
 
 ## Status
 
@@ -11,9 +11,9 @@
 
 Successful `record close --bundle` reported `execution_state_sync.changed=true`
 and `followup_commit_required=true`, but its terminal rewrite patched only
-`Status` and `Branch/commit/PR`. The durable execution-state file still said
-`Current task: run the close-ready audit and tracker closeout` after the issue
-was closed.
+`Status` and `Branch/commit/PR`. Across two closeouts, the durable
+execution-state files retained pre-close actions in `Current task`, `Next task`,
+or `Handoff` after their issues were closed.
 
 ## Evidence
 
@@ -28,6 +28,11 @@ was closed.
   so the provider record and repository file contradicted one another.
 - Testing and maintainability reviewers independently found the stale field.
   The manual repair landed in `sympoies/agent-console#225`.
+- A second closeout, `sympoies/agent-console#216`, started with `Current task:
+  none` but retained `Next task: run the strict tracking close-ready audit ...
+  without closing it` and the matching pre-close `Handoff` after `record close`
+  succeeded. The terminal record was repaired in commit `890ce27` before the
+  closed bundle's archive dry-run.
 
 ## Impact
 
@@ -39,15 +44,18 @@ contradiction.
 ## Current Workaround
 
 Inspect the generated execution-state diff before committing it. For a closed
-tracker, require `Status: complete`, `Current task: complete`, and `Next task:
-none`; repair the current-task field in the same follow-up PR when needed.
+tracker, require `Status: complete`, no pending action in `Current task` or
+`Next task`, and a `Handoff` that describes the closed state rather than asking
+for closeout; repair all stale terminal fields in the follow-up commit when
+needed.
 
 ## Promotion Criteria
 
-Promote when `record close` synchronizes the terminal status, current task, next
-task, and merged PR fields atomically, with a regression test that starts from
-an actionable pre-closeout `Current task` value.
+Promote when `record close` synchronizes terminal status, current task, next
+task, handoff, and merged PR fields atomically, with regression tests that start
+from actionable pre-closeout values in each field.
 
 ## Next Action
 
-File an upstream nils-cli regression that requires record close to synchronize Status, Current task, Next task, and merged PR fields atomically.
+File an upstream nils-cli regression that requires record close to synchronize
+Status, Current task, Next task, Handoff, and merged PR fields atomically.
