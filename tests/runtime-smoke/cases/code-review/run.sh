@@ -108,6 +108,41 @@ run_pre_merge_gate_probe() {
   grep -q '"maintainability"' "$scope_out"
 }
 
+run_cli_command_contract_policy_probe() {
+  local gate_body="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
+  local api_reviewer="$REPO_ROOT/core/agents/code-review/reviewer-api-contract/AGENT.md.tera"
+  local api_fallback="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/specialists/api-contract.md"
+  local gate_section
+  local reviewer_path
+
+  gate_section="$(awk '
+    found && /^## / { exit }
+    /^## CLI Command-Block Contract Check$/ { found = 1 }
+    found { print }
+  ' "$gate_body")"
+
+  grep -Fq 'core/skills/{dispatch,pr}/{deliver-*,*-closeout}/SKILL.md.tera' <<<"$gate_section"
+  grep -Fq 'Force the `api-contract` lens' <<<"$gate_section"
+  grep -Fq 'pinned nils-cli surface' <<<"$gate_section"
+  grep -Fq 'Check every invocation' <<<"$gate_section"
+  grep -Fq '`--dry-run --format json`' <<<"$gate_section"
+  grep -Fq 'require `ok=true`' <<<"$gate_section"
+  grep -Fq 'plan-bearing field' <<<"$gate_section"
+  grep -Fq '`data.plan`' <<<"$gate_section"
+  grep -Fq '`data.plan_steps[].plan`' <<<"$gate_section"
+  grep -Fq '`guard_plan`' <<<"$gate_section"
+  grep -Fq '`issue_plan`' <<<"$gate_section"
+  grep -Fq 'read output' <<<"$gate_section"
+  grep -Fq 'downstream JSON fields' <<<"$gate_section"
+  grep -Fq 'comments-aware fetch' <<<"$gate_section"
+  grep -Fq '`forge-cli issue view --with-comments`' <<<"$gate_section"
+  grep -Fq 'evidence blocks a passing review outcome.' <<<"$gate_section"
+  for reviewer_path in "$api_reviewer" "$api_fallback"; do
+    grep -Fq 'CLI command syntax, flags, subcommands, and machine-readable output fields' "$reviewer_path"
+    grep -Fq 'non-mutating dry-runs' "$reviewer_path"
+  done
+}
+
 run_follow_up_probe() {
   local scope_out="$CODE_REVIEW_ARTIFACTS_DIR/follow-up-scope.json"
   local findings="$CODE_REVIEW_ARTIFACTS_DIR/follow-up-findings.jsonl"
@@ -177,6 +212,7 @@ failures=0
 record_case "code-review.code-review-focused-lens" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.code-review-follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
 record_case "code-review.code-review-pre-merge-gate" "pre-merge gate mandatory forced specialists passed" run_pre_merge_gate_probe
+record_case "code-review.cli-command-contract-policy" "delivery skill CLI command blocks require pinned-surface dry-run contract evidence" run_cli_command_contract_policy_probe
 record_case "code-review.code-review-quick-pass" "quick-pass scope sizing probe passed" run_quick_pass_probe
 record_case "code-review.code-review-specialists" "review-specialists scope, validate, merge, and render probes passed" run_code_review_specialists_probe
 

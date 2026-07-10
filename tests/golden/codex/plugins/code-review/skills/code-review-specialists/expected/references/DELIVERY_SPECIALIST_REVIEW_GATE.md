@@ -68,6 +68,41 @@ For every end-to-end delivery PR or MR:
    reviewer subagent remains read-only and does not post directly. Specialist
    comments report findings only; the parent records final dispositions later.
 
+## CLI Command-Block Contract Check
+
+When a diff touches
+`core/skills/{dispatch,pr}/{deliver-*,*-closeout}/SKILL.md.tera` and changes a
+command block containing a `forge-cli`, `gh`, or `glab` invocation:
+
+1. Force the `api-contract` lens even when the reviewable is otherwise small or
+   documentation-only.
+2. Resolve the repository's pinned nils-cli surface from
+   `docs/source/nils-cli-pin.yaml`. Run the check through
+   `scripts/dev/with-nils-version.sh release:<pinned-tag>` when the ambient host
+   differs, and record the exact version. The pinned nils-cli surface is the
+   consumer contract; an ahead-of-pin host is not substitute evidence.
+3. Check every invocation in the edited command block, not only the changed
+   line:
+   - For `forge-cli`, repeat the exact invocation with
+     `--dry-run --format json`, require `ok=true`, and inspect every
+     plan-bearing field in the command envelope for the intended subcommand,
+     flags, and provider argv. This includes `data.plan`,
+     `data.plan_steps[].plan`, and applicable auxiliary fields such as
+     `guard_plan`, `issue_plan`, `thread_plan`, `submit_plan`, or `target_plan`.
+   - Raw `gh` / `glab` read commands may run only against a safe target; verify
+     their exact flags and output shape. Never execute raw provider mutations
+     for review evidence. Prefer the matching `forge-cli` dry-run, or a
+     provider-native documented dry-run when no forge surface exists.
+4. Compare the backend plan or read output with the downstream JSON fields,
+   `jq` expressions, and consumer assumptions in the skill body. For example, a
+   comments consumer requires a comments-aware fetch such as
+   `forge-cli issue view --with-comments`; a plain issue view must not be
+   treated as comments evidence.
+5. Capture the pinned version, exact commands, `ok` result, backend plans or
+   read-output shape, and downstream field comparison in the `api-contract`
+   specialist report or provider review comment. Missing command-contract
+   evidence blocks a passing review outcome.
+
 ## Findings And Repair Loop
 
 - Treat evidence-backed concrete findings as blocking before merge.

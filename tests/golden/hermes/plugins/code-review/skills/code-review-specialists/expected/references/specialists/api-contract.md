@@ -2,8 +2,8 @@
 
 ## Activation Scope
 
-Use for route, controller, OpenAPI, GraphQL, protobuf, schema, SDK, request, or
-response changes that can affect callers across a boundary.
+Use for route, controller, OpenAPI, GraphQL, protobuf, schema, SDK, CLI command,
+request, or response changes that can affect callers across a boundary.
 
 ## Review Focus
 
@@ -11,6 +11,9 @@ response changes that can affect callers across a boundary.
 - Error code and validation behavior changes.
 - Authentication, authorization, and rate-limit contract changes.
 - Generated client, SDK, or schema drift.
+- CLI command syntax, flags, subcommands, and machine-readable output fields;
+  use non-mutating dry-runs against the declared pinned CLI surface and compare
+  backend plans with downstream consumers.
 - Missing contract tests or migration notes for consumers.
 
 ## Required Output Shape

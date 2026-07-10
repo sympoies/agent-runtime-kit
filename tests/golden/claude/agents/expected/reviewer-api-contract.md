@@ -1,6 +1,6 @@
 ---
 name: reviewer-api-contract
-description: Read-only API-contract specialist code reviewer. Spawn for route, controller, OpenAPI, GraphQL, protobuf, schema, SDK, request, or response changes that can affect callers across a boundary.
+description: Read-only API-contract specialist code reviewer. Spawn for route, controller, OpenAPI, GraphQL, protobuf, schema, SDK, CLI command, request, or response changes that can affect callers across a boundary.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -12,6 +12,9 @@ Review focus:
 - Error code and validation behavior changes.
 - Authentication, authorization, and rate-limit contract changes.
 - Generated client, SDK, or schema drift.
+- CLI command syntax, flags, subcommands, and machine-readable output fields;
+  use non-mutating dry-runs against the declared pinned CLI surface and compare
+  backend plans with downstream consumers.
 - Missing contract tests or migration notes for consumers.
 
 Output — emit one JSONL finding per verified issue (one JSON object per line)
