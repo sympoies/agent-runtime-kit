@@ -36,6 +36,12 @@ of the exact commit SHA the workflow had just produced.
   view` still reported the pre-push `headRefOid` (provider read-after-write
   lag); the watcher keyed on that stale OID selected the previous head's
   already-failed run and aborted delivery. Reproduced 3/3 on PRs #811–#813.
+- `forge-cli pr deliver` empty-check registration race (observed on
+  sympoies/nils-agent-console#48, 2026-07-10): 1.845 seconds after creating the
+  draft PR, `wait_checks` returned success with `checks: []` and the macro
+  merged. Six CI / CodeQL checks registered immediately afterward and were
+  still pending on the merged PR. An empty provider check set was transient,
+  not terminal success.
 
 ## Evidence
 
@@ -46,6 +52,10 @@ of the exact commit SHA the workflow had just produced.
 - Fixed in-session with failing-test evidence: sympoies/nils-cli#817
   (<https://github.com/sympoies/nils-cli/pull/817>), reproduced live on
   PRs #811–#813 before the fix.
+- Live recurrence: sympoies/nils-agent-console#48
+  (<https://github.com/sympoies/nils-agent-console/pull/48>); delivery output
+  recorded `checks: []` and `duration_ms: 1845`, while the provider showed six
+  pending checks after merge.
 
 ## Diagnosis
 
@@ -70,6 +80,11 @@ any script that pushes (or tags) and then watches CI:
    timeout, proceed but keep run selection keyed to the SHA.
 4. Select workflow runs by `headSha == <expected>` (e.g. `gh run list
    --commit <sha>`), never by branch or tag name alone.
+5. Treat an empty check set immediately after PR creation or push as an
+   unregistered state when the repository has CI workflows. Apply a bounded
+   registration grace keyed to the exact head SHA before declaring success;
+   zero required checks must not collapse "no checks observed yet" into
+   "all checks passed".
 
 ## Promotion Decision
 
@@ -86,6 +101,9 @@ reusable artifact; the individual fixes are already landed and linked above.
   against the pre-fix script and passing post-fix.
 - The two archived cases were validated by their own promoted fixes
   (rerun-push guard; tag-SHA-keyed run selection) before archive.
+- The PR #48 recurrence remains live evidence for a future `forge-cli`
+  regression: create a PR whose checks register asynchronously, return an empty
+  first poll, and prove delivery waits for head-SHA checks instead of merging.
 
 ## Retention
 
