@@ -1,20 +1,26 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-10 (refreshed for `v1.21.9`)
+- Snapshot date: 2026-07-11 (refreshed for `v1.21.11`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.21.9`
+- Active `git describe --tags` output: `v1.21.11`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.21.9`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.11`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `68c9e59e`
-  (`chore(release): bump cli versions to 1.21.9 (#1098)`)
+- Head commit: `e8b1ddb4`
+  (`chore(release): bump cli versions to 1.21.11 (#1102)`)
 - Release:
-  [`v1.21.9`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.9),
+  [`v1.21.11`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.11),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.11` advances the pin from `v1.21.9` (folding in the version-only
+  `v1.21.10`): the `agent-session` Claude provider-hook adapter drops the
+  `approval` attention when the hook payload `permission_mode` is
+  `bypassPermissions`, so a bypass session no longer latches `needs_input` on an
+  approval that has no clear event (sympoies/nils-cli#1101). No
+  downstream-consumed CLI surface changed.
 - `v1.21.9` advances the pin from `v1.21.0`, folding in the `v1.21.1`–`v1.21.9`
   releases:
   - `codex-cli` and `claude-cli` each gain `agent resume <SESSION_ID> [--cd <dir>]`,
