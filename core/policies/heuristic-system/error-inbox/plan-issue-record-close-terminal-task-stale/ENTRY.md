@@ -48,8 +48,10 @@ or `Handoff` after their issues were closed.
 - Reproduced again on `sympoies/agent-console#248` with plan-issue `1.21.16`:
   `record close --bundle` patched `Status` and `Branch/commit/PR`, but retained
   `Next task: canonical tracking-issue closeout` after it had already closed
-  the tracker. Follow-up PR #252 committed the terminal-state repair after the
-  post-close visible audit passed all seven lifecycle roles.
+  the tracker. Closeout PR #252 initially committed that generated state after
+  the post-close visible audit passed all seven lifecycle roles; a final
+  read-back caught the contradiction, and follow-up PR #253 repaired the field
+  to `none; tracking issue closed`.
 
 ## Impact
 
