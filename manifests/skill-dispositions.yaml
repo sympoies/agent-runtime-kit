@@ -10,21 +10,87 @@ source_skill_ids_sha256: "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971
 
 dispositions:
   - id: reporting.daily-brief
-    status: pending
+    status: reviewed
+    example_request: "Prepare my daily information brief"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [daily-brief]
+    current_clis: [agent-out]
+    current_hooks: []
+    enforcement_point: "Skill admission and product render governance."
+    migration_path: "Retain the existing entrypoint."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Produces a distinct report directly requested by a user."
   - id: reporting.project-retro
-    status: pending
+    status: reviewed
+    example_request: "Give me a retrospective of this repository's last week"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [repo-retro, agent-out]
+    current_hooks: []
+    enforcement_point: "Typed repo-retro report plus user-facing synthesis."
+    migration_path: "Retain as the canonical retrospective outcome and absorb meta.repo-retro."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A synthesized project retrospective is a direct outcome, not collection bookkeeping."
   - id: reporting.topic-radar
-    status: pending
+    status: reviewed
+    example_request: "Scan AI agent trends and return a source-level JSON digest"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [task-tools]
+    current_clis: [agent-out]
+    current_hooks: []
+    enforcement_point: "Read-only source fetchers, ranking, and citation policy."
+    migration_path: "Retain for source-level scans and machine-consumable radar output."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Custom source scanning and raw digest output are distinct from a daily synthesized brief."
   - id: meta.agent-docs
     status: pending
   - id: meta.agent-out
     status: pending
   - id: meta.bootstrap
-    status: pending
+    status: reviewed
+    example_request: "Bootstrap this repository's development environment"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-run]
+    current_hooks: []
+    enforcement_point: "Repository-owned .agents/scripts/bootstrap.sh."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Bootstrapping a project is a deliberate user-requested maintenance outcome."
   - id: meta.sync-runtime-surfaces
-    status: pending
+    status: reviewed
+    example_request: "Refresh my managed Codex and Claude runtime surfaces"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime]
+    current_hooks: []
+    enforcement_point: "Runtime sync script ownership, stale pruning, and doctor checks."
+    migration_path: "Retain as explicit runtime maintenance with preview and apply behavior."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Users intentionally request runtime synchronization and stale-surface cleanup."
   - id: meta.deploy
-    status: pending
+    status: reviewed
+    example_request: "Deploy this project through its repository-owned workflow"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-run]
+    current_hooks: []
+    enforcement_point: "Repository-owned .agents/scripts/deploy.sh."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Deployment is a direct externally meaningful user outcome."
   - id: meta.agent-scope-lock
     status: pending
   - id: meta.heuristic-inbox
@@ -32,23 +98,89 @@ dispositions:
   - id: meta.heuristic-session-closeout
     status: pending
   - id: meta.create-skill
-    status: pending
+    status: reviewed
+    example_request: "Add a new governed runtime-kit skill"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime]
+    current_hooks: ["skill governance checks"]
+    enforcement_point: "Governed source, manifest, render, acceptance, and validation lifecycle."
+    migration_path: "Retain as an explicit repository maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Creating a governed runtime capability is a deliberate multi-surface user outcome."
   - id: meta.create-project-skill
-    status: pending
+    status: reviewed
+    example_request: "Create a project-local skill for this repository"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Project-local scaffold ownership and validation."
+    migration_path: "Retain as the project-local skill authoring outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Project-local capability authoring is distinct from repo-owned runtime-kit skill authoring."
   - id: meta.remove-skill
-    status: pending
+    status: reviewed
+    example_request: "Remove this governed runtime-kit skill safely"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime]
+    current_hooks: ["skill governance checks"]
+    enforcement_point: "Dry-run reference audit and governed removal lifecycle."
+    migration_path: "Retain as an explicit repository maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Safe governed removal is a deliberate cross-surface user outcome."
   - id: meta.remove-project-skill
-    status: pending
+    status: reviewed
+    example_request: "Remove this project-local skill and its owned wrapper"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Project-local ownership inventory and explicit cleanup approval."
+    migration_path: "Retain as the project-local skill removal outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Project-local removal has a distinct ownership and retention contract."
   - id: meta.pre-pr
     status: pending
   - id: meta.release
-    status: pending
+    status: reviewed
+    example_request: "Release this project through its repository-owned workflow"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-run]
+    current_hooks: []
+    enforcement_point: "Repository-owned .agents/scripts/release.sh."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Publishing a release is a direct user-requested outcome with meaningful side effects."
   - id: meta.repo-retro
     status: pending
   - id: meta.semantic-commit
     status: pending
   - id: meta.setup-project
-    status: pending
+    status: reviewed
+    example_request: "Set this repository up for project-local agent conventions"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Project-local adoption diagnostics and explicit dispatcher choices."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Adopting project-local agent conventions is a deliberate multi-file setup outcome."
   - id: meta.plan-archive-migrate
     status: pending
   - id: meta.plan-archive-query
@@ -60,15 +192,70 @@ dispositions:
   - id: meta.evidence-prune-source
     status: pending
   - id: meta.nils-cli-bump
-    status: pending
+    status: reviewed
+    example_request: "Bump this repository to the latest released nils-cli surface"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime, forge-cli]
+    current_hooks: ["version alignment gate"]
+    enforcement_point: "Surface diff, pin alignment, consumer refresh, and PR delivery."
+    migration_path: "Retain as explicit release-consumer maintenance."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A coordinated dependency pin and consumer refresh is a deliberate repository outcome."
   - id: meta.worktree-triage
-    status: pending
+    status: reviewed
+    example_request: "Triage and clean stale managed worktrees"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Read-only classification plus explicit cleanup and PR confirmation."
+    migration_path: "Retain as explicit safety-sensitive repository maintenance."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Recovering or cleaning worktrees is a user-selected maintenance outcome with nontrivial judgment."
   - id: media.image-processing
-    status: pending
+    status: reviewed
+    example_request: "Convert this SVG to a validated PNG"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [media]
+    current_clis: [image-processing]
+    current_hooks: []
+    enforcement_point: "Image validation and conversion CLI."
+    migration_path: "Retain as a direct media transformation outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Producing a validated converted image is a direct user artifact."
   - id: media.screen-record
-    status: pending
+    status: reviewed
+    example_request: "Record this application window and save the capture"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [media, computer-use]
+    current_clis: [screen-record]
+    current_hooks: []
+    enforcement_point: "Host capture preflight and screen-record CLI."
+    migration_path: "Retain as a direct capture outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A screenshot or recording is a direct requested artifact."
   - id: computer-use.macos-desktop
-    status: pending
+    status: reviewed
+    example_request: "Test this macOS desktop flow and retain screenshots"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [computer-use]
+    current_clis: [agent-out, macos-agent]
+    current_hooks: []
+    enforcement_point: "AX-first safety workflow, scenario assertions, and retained evidence."
+    migration_path: "Retain as the direct macOS desktop operation and testing outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Operating or testing a desktop is a distinct user outcome with safety and visual judgment."
   - id: browser.browser-session
     status: pending
   - id: browser.canary-check
@@ -78,11 +265,44 @@ dispositions:
   - id: conversation.actionable-knowledge
     status: pending
   - id: conversation.discussion-to-implementation-doc
-    status: pending
+    status: reviewed
+    example_request: "Turn our completed design discussion into an implementation-readiness document"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Document placement, evidence classification, and retention policy."
+    migration_path: "Retain as the durable discussion-capture outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Producing an implementation-readiness document is a distinct requested artifact."
   - id: conversation.guided-feature-build
-    status: pending
+    status: reviewed
+    example_request: "Guide me through building this feature in the existing codebase"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: ["test-first and finish-line gates"]
+    enforcement_point: "In-session explore, design, implement, review orchestration."
+    migration_path: "Retain as the direct guided implementation outcome; internalize its execution modes."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A guided feature build is a complete user-requested delivery outcome."
   - id: conversation.handoff-session-prompt
-    status: pending
+    status: reviewed
+    example_request: "Create a prompt I can use to resume this work in a fresh session"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [conversation, project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Context selection, sensitive-data exclusion, and self-contained prompt rendering."
+    migration_path: "Retain as the direct session-handoff artifact outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A copy-ready handoff prompt is a distinct requested artifact."
   - id: conversation.orchestrator-first
     status: pending
   - id: conversation.parallel-first
@@ -100,9 +320,31 @@ dispositions:
   - id: evidence.model-cross-check
     status: pending
   - id: issue.issue-follow-up
-    status: pending
+    status: reviewed
+    example_request: "Open a follow-up issue for this discovered problem"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [forge-cli, web-evidence]
+    current_hooks: []
+    enforcement_point: "Provider issue lifecycle, evidence-backed scope, and labels."
+    migration_path: "Retain as the canonical issue follow-up outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Opening or continuing a durable issue timeline is a direct user outcome."
   - id: issue.issue-triage
-    status: pending
+    status: reviewed
+    example_request: "Triage the open issues and recommend what to execute next"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Read-only provider inbox analysis and explicit follow-up authorization."
+    migration_path: "Retain as the direct issue triage outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Prioritizing and classifying issue work is a distinct user-requested analysis."
   - id: issue.report-plan-issue-finding
     status: pending
   - id: code-review.code-review-focused-lens
@@ -114,7 +356,18 @@ dispositions:
   - id: code-review.code-review-quick-pass
     status: pending
   - id: code-review.code-review-specialists
-    status: pending
+    status: reviewed
+    example_request: "Review this change and choose the appropriate specialist lenses"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [code-review, project-dev]
+    current_clis: [review-specialists]
+    current_hooks: ["Codex delegated-review policy"]
+    enforcement_point: "Read-only specialist orchestration and parent-owned review judgment."
+    migration_path: "Retain as the single generic code-review outcome and fold other review modes into it."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A complete evidence-backed code review is a direct user outcome."
   - id: pr.create-pr
     status: pending
   - id: pr.create-dispatch-lane-pr
@@ -122,7 +375,18 @@ dispositions:
   - id: pr.close-pr
     status: pending
   - id: pr.deliver-pr
-    status: pending
+    status: reviewed
+    example_request: "Deliver this change as a pull request"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [pr-delivery, project-dev]
+    current_clis: [forge-cli, agent-runtime, plan-issue, review-specialists]
+    current_hooks: ["test-first provider gate", "pre-merge review policy"]
+    enforcement_point: "Governed PR lifecycle with rendered body, checks, review, and merge controls."
+    migration_path: "Retain as the single governed PR lifecycle outcome and fold child modes into it."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "End-to-end PR delivery is a complete direct user outcome."
   - id: pr.review-thread-cleanup
     status: pending
   - id: dispatch.create-plan-tracking-issue
@@ -130,13 +394,35 @@ dispositions:
   - id: dispatch.plan-tracking-issue-closeout
     status: pending
   - id: dispatch.deliver-dispatch-plan
-    status: pending
+    status: reviewed
+    example_request: "Execute this plan as coordinated dispatch lanes"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [dispatch, project-dev]
+    current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
+    current_hooks: ["test-first and review delivery gates"]
+    enforcement_point: "Shared dispatch issue controller, lane coordination, and closeout handoff."
+    migration_path: "Retain as the single L3 dispatch-plan outcome and internalize lane roles."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Coordinated multi-lane delivery is a complete user-requested outcome."
   - id: dispatch.dispatch-plan-closeout
     status: pending
   - id: dispatch.execute-plan-tracking-issue
     status: pending
   - id: dispatch.deliver-plan-tracking-issue
-    status: pending
+    status: reviewed
+    example_request: "Execute and deliver this issue-backed plan"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [plan-tracking, project-dev]
+    current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
+    current_hooks: ["test-first and review delivery gates"]
+    enforcement_point: "Plan controller, implementation, validation, review, PR delivery, and close-ready handoff."
+    migration_path: "Retain as the single L2 plan-tracking outcome and internalize child roles."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "End-to-end issue-backed plan delivery is a complete user-requested outcome."
   - id: dispatch.review-dispatch-lane-pr
     status: pending
   - id: dispatch.execute-dispatch-lane

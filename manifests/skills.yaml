@@ -11,43 +11,23 @@ schema_version: 2
 migration:
   owner: "https://github.com/graysurf/agent-runtime-kit/issues/562"
   pending_disposition:
-    - reporting.daily-brief
-    - reporting.project-retro
-    - reporting.topic-radar
     - meta.agent-docs
     - meta.agent-out
-    - meta.bootstrap
-    - meta.sync-runtime-surfaces
-    - meta.deploy
     - meta.agent-scope-lock
     - meta.heuristic-inbox
     - meta.heuristic-session-closeout
-    - meta.create-skill
-    - meta.create-project-skill
-    - meta.remove-skill
-    - meta.remove-project-skill
     - meta.pre-pr
-    - meta.release
     - meta.repo-retro
     - meta.semantic-commit
-    - meta.setup-project
     - meta.plan-archive-migrate
     - meta.plan-archive-query
     - meta.plan-archive-discover
     - meta.evidence-migrate
     - meta.evidence-prune-source
-    - meta.nils-cli-bump
-    - meta.worktree-triage
-    - media.image-processing
-    - media.screen-record
-    - computer-use.macos-desktop
     - browser.browser-session
     - browser.canary-check
     - conversation.actionable-advice
     - conversation.actionable-knowledge
-    - conversation.discussion-to-implementation-doc
-    - conversation.guided-feature-build
-    - conversation.handoff-session-prompt
     - conversation.orchestrator-first
     - conversation.parallel-first
     - evidence.web-evidence
@@ -56,25 +36,19 @@ migration:
     - evidence.skill-usage
     - evidence.docs-impact
     - evidence.model-cross-check
-    - issue.issue-follow-up
-    - issue.issue-triage
     - issue.report-plan-issue-finding
     - code-review.code-review-focused-lens
     - code-review.code-review-follow-up
     - code-review.code-review-pre-merge-gate
     - code-review.code-review-quick-pass
-    - code-review.code-review-specialists
     - pr.create-pr
     - pr.create-dispatch-lane-pr
     - pr.close-pr
-    - pr.deliver-pr
     - pr.review-thread-cleanup
     - dispatch.create-plan-tracking-issue
     - dispatch.plan-tracking-issue-closeout
-    - dispatch.deliver-dispatch-plan
     - dispatch.dispatch-plan-closeout
     - dispatch.execute-plan-tracking-issue
-    - dispatch.deliver-plan-tracking-issue
     - dispatch.review-dispatch-lane-pr
     - dispatch.execute-dispatch-lane
 
@@ -82,6 +56,13 @@ skills:
   - id: reporting.daily-brief
     domain: reporting
     source: core/skills/reporting/daily-brief
+    invocation:
+      role: workflow
+      intents: [daily-brief]
+      example_request: "Prepare my daily information brief"
+      admission_rationale: "Produces a distinct report directly requested by a user."
+    exposure:
+      profile: default
     products:
       codex:
         name: daily-brief
@@ -99,6 +80,13 @@ skills:
   - id: reporting.project-retro
     domain: reporting
     source: core/skills/reporting/project-retro
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Give me a retrospective of this repository's last week"
+      admission_rationale: "A synthesized project retrospective is a direct outcome, not collection bookkeeping."
+    exposure:
+      profile: default
     products:
       codex:
         name: project-retro
@@ -116,6 +104,13 @@ skills:
   - id: reporting.topic-radar
     domain: reporting
     source: core/skills/reporting/topic-radar
+    invocation:
+      role: workflow
+      intents: [task-tools]
+      example_request: "Scan AI agent trends and return a source-level JSON digest"
+      admission_rationale: "Custom source scanning and raw digest output are distinct from a daily synthesized brief."
+    exposure:
+      profile: default
     products:
       codex:
         name: topic-radar
@@ -166,6 +161,13 @@ skills:
   - id: meta.bootstrap
     domain: meta
     source: core/skills/meta/bootstrap
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Bootstrap this repository's development environment"
+      admission_rationale: "Bootstrapping a project is a deliberate user-requested maintenance outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: bootstrap
@@ -182,6 +184,13 @@ skills:
   - id: meta.sync-runtime-surfaces
     domain: meta
     source: core/skills/meta/sync-runtime-surfaces
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Refresh my managed Codex and Claude runtime surfaces"
+      admission_rationale: "Users intentionally request runtime synchronization and stale-surface cleanup."
+    exposure:
+      profile: default
     products:
       codex:
         name: sync-runtime-surfaces
@@ -198,6 +207,13 @@ skills:
   - id: meta.deploy
     domain: meta
     source: core/skills/meta/deploy
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Deploy this project through its repository-owned workflow"
+      admission_rationale: "Deployment is a direct externally meaningful user outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: deploy
@@ -264,6 +280,13 @@ skills:
   - id: meta.create-skill
     domain: meta
     source: core/skills/meta/create-skill
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Add a new governed runtime-kit skill"
+      admission_rationale: "Creating a governed runtime capability is a deliberate multi-surface user outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: create-skill
@@ -280,6 +303,13 @@ skills:
   - id: meta.create-project-skill
     domain: meta
     source: core/skills/meta/create-project-skill
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Create a project-local skill for this repository"
+      admission_rationale: "Project-local capability authoring is distinct from repo-owned runtime-kit skill authoring."
+    exposure:
+      profile: default
     products:
       codex:
         name: create-project-skill
@@ -295,6 +325,13 @@ skills:
   - id: meta.remove-skill
     domain: meta
     source: core/skills/meta/remove-skill
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Remove this governed runtime-kit skill safely"
+      admission_rationale: "Safe governed removal is a deliberate cross-surface user outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: remove-skill
@@ -311,6 +348,13 @@ skills:
   - id: meta.remove-project-skill
     domain: meta
     source: core/skills/meta/remove-project-skill
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Remove this project-local skill and its owned wrapper"
+      admission_rationale: "Project-local removal has a distinct ownership and retention contract."
+    exposure:
+      profile: default
     products:
       codex:
         name: remove-project-skill
@@ -342,6 +386,13 @@ skills:
   - id: meta.release
     domain: meta
     source: core/skills/meta/release
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Release this project through its repository-owned workflow"
+      admission_rationale: "Publishing a release is a direct user-requested outcome with meaningful side effects."
+    exposure:
+      profile: default
     products:
       codex:
         name: release
@@ -390,6 +441,13 @@ skills:
   - id: meta.setup-project
     domain: meta
     source: core/skills/meta/setup-project
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Set this repository up for project-local agent conventions"
+      admission_rationale: "Adopting project-local agent conventions is a deliberate multi-file setup outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: setup-project
@@ -487,6 +545,13 @@ skills:
   - id: meta.nils-cli-bump
     domain: meta
     source: core/skills/meta/nils-cli-bump
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Bump this repository to the latest released nils-cli surface"
+      admission_rationale: "A coordinated dependency pin and consumer refresh is a deliberate repository outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: nils-cli-bump
@@ -504,6 +569,13 @@ skills:
   - id: meta.worktree-triage
     domain: meta
     source: core/skills/meta/worktree-triage
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Triage and clean stale managed worktrees"
+      admission_rationale: "Recovering or cleaning worktrees is a user-selected maintenance outcome with nontrivial judgment."
+    exposure:
+      profile: default
     products:
       codex:
         name: worktree-triage
@@ -520,6 +592,13 @@ skills:
   - id: media.image-processing
     domain: media
     source: core/skills/media/image-processing
+    invocation:
+      role: workflow
+      intents: [media]
+      example_request: "Convert this SVG to a validated PNG"
+      admission_rationale: "Producing a validated converted image is a direct user artifact."
+    exposure:
+      profile: default
     products:
       codex:
         name: image-processing
@@ -536,6 +615,13 @@ skills:
   - id: media.screen-record
     domain: media
     source: core/skills/media/screen-record
+    invocation:
+      role: workflow
+      intents: [media, computer-use]
+      example_request: "Record this application window and save the capture"
+      admission_rationale: "A screenshot or recording is a direct requested artifact."
+    exposure:
+      profile: default
     products:
       codex:
         name: screen-record
@@ -552,6 +638,13 @@ skills:
   - id: computer-use.macos-desktop
     domain: computer-use
     source: core/skills/computer-use/macos-desktop
+    invocation:
+      role: workflow
+      intents: [computer-use]
+      example_request: "Test this macOS desktop flow and retain screenshots"
+      admission_rationale: "Operating or testing a desktop is a distinct user outcome with safety and visual judgment."
+    exposure:
+      profile: default
     products:
       codex:
         name: macos-desktop
@@ -631,6 +724,13 @@ skills:
   - id: conversation.discussion-to-implementation-doc
     domain: conversation
     source: core/skills/conversation/discussion-to-implementation-doc
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Turn our completed design discussion into an implementation-readiness document"
+      admission_rationale: "Producing an implementation-readiness document is a distinct requested artifact."
+    exposure:
+      profile: default
     products:
       codex:
         name: discussion-to-implementation-doc
@@ -646,6 +746,13 @@ skills:
   - id: conversation.guided-feature-build
     domain: conversation
     source: core/skills/conversation/guided-feature-build
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Guide me through building this feature in the existing codebase"
+      admission_rationale: "A guided feature build is a complete user-requested delivery outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: guided-feature-build
@@ -661,6 +768,13 @@ skills:
   - id: conversation.handoff-session-prompt
     domain: conversation
     source: core/skills/conversation/handoff-session-prompt
+    invocation:
+      role: workflow
+      intents: [conversation, project-dev]
+      example_request: "Create a prompt I can use to resume this work in a fresh session"
+      admission_rationale: "A copy-ready handoff prompt is a distinct requested artifact."
+    exposure:
+      profile: default
     products:
       codex:
         name: handoff-session-prompt
@@ -804,6 +918,13 @@ skills:
   - id: issue.issue-follow-up
     domain: issue
     source: core/skills/issue/issue-follow-up
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Open a follow-up issue for this discovered problem"
+      admission_rationale: "Opening or continuing a durable issue timeline is a direct user outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: issue-follow-up
@@ -821,6 +942,13 @@ skills:
   - id: issue.issue-triage
     domain: issue
     source: core/skills/issue/issue-triage
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Triage the open issues and recommend what to execute next"
+      admission_rationale: "Prioritizing and classifying issue work is a distinct user-requested analysis."
+    exposure:
+      profile: default
     products:
       codex:
         name: issue-triage
@@ -917,6 +1045,13 @@ skills:
   - id: code-review.code-review-specialists
     domain: code-review
     source: core/skills/code-review/code-review-specialists
+    invocation:
+      role: workflow
+      intents: [code-review, project-dev]
+      example_request: "Review this change and choose the appropriate specialist lenses"
+      admission_rationale: "A complete evidence-backed code review is a direct user outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: code-review-specialists
@@ -983,6 +1118,13 @@ skills:
   - id: pr.deliver-pr
     domain: pr
     source: core/skills/pr/deliver-pr
+    invocation:
+      role: workflow
+      intents: [pr-delivery, project-dev]
+      example_request: "Deliver this change as a pull request"
+      admission_rationale: "End-to-end PR delivery is a complete direct user outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: deliver-pr
@@ -1054,6 +1196,13 @@ skills:
   - id: dispatch.deliver-dispatch-plan
     domain: dispatch
     source: core/skills/dispatch/deliver-dispatch-plan
+    invocation:
+      role: workflow
+      intents: [dispatch, project-dev]
+      example_request: "Execute this plan as coordinated dispatch lanes"
+      admission_rationale: "Coordinated multi-lane delivery is a complete user-requested outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: deliver-dispatch-plan
@@ -1112,6 +1261,13 @@ skills:
   - id: dispatch.deliver-plan-tracking-issue
     domain: dispatch
     source: core/skills/dispatch/deliver-plan-tracking-issue
+    invocation:
+      role: workflow
+      intents: [plan-tracking, project-dev]
+      example_request: "Execute and deliver this issue-backed plan"
+      admission_rationale: "End-to-end issue-backed plan delivery is a complete user-requested outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: deliver-plan-tracking-issue
