@@ -5,13 +5,14 @@
 - Source document: docs/plans/2026-07-11-skill-exposure-contract/skill-exposure-contract-discussion-source.md
 - Plan document: docs/plans/2026-07-11-skill-exposure-contract/skill-exposure-contract-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/563>
-- Current sprint: Sprint 4
-- Status: in-progress
-- Current task: 4.3
-- Next task: complete final provider sweeps, merge PR #565, then run strict tracker closeout
+- Current sprint: Sprint 4 (complete)
+- Status: complete; tracking issue closed
+- Current task: complete
+- Next task: none
 - Branch: feat/skill-exposure-contract
 - PR: https://github.com/graysurf/agent-runtime-kit/pull/565
 - Last updated: 2026-07-11
+- Branch/commit/PR: graysurf/agent-runtime-kit#565 merged (<https://github.com/graysurf/agent-runtime-kit/pull/565>)
 
 ## Task Ledger
 
@@ -29,8 +30,8 @@
 | 3.4 | Refresh product diagnostics, docs, renders, and goldens | done | released v1.21.15; three-product contract test; surface snapshot and golden refresh | Exact pin, release SHA256, CLI floor, and product surface floors updated |
 | 4.1 | Run declared validation | done | `bash scripts/ci/all.sh`; test-first evidence verified | Positions 1-15 passed on released v1.21.15; shared hook contract 97/97 |
 | 4.2 | Run mandatory specialist review and converge findings | done | PR #565 native reviews; outcome review 4677447098 | One API-contract major fixed in 869e7d3; follow-ups pass; thread resolved; testing, maintainability, data-migration, and red-team complete |
-| 4.3 | Merge, close the tracker, and complete #561 | in-progress | PR #565 checks pass; threads=0; tasks=0 | Final head sweep, merge, strict close-ready, and canonical closeout remain |
-| 4.4 | Reassess #562 against the landed contract | pending | pending | Final handoff decision |
+| 4.3 | Merge, close the tracker, and complete #561 | done | PR #565 merged as cd158f96; #561 closed completed | Latest-head CI/CodeQL passed; threads=0; tasks=0; final approval 4677459476 |
+| 4.4 | Reassess #562 against the landed contract | done | #562 handoff comment 4944664662; label state::ready | Landed ledger/field/sequencing changes recorded; issue body no longer reports blocked |
 
 ## Blockers
 
@@ -72,3 +73,7 @@
   schema/parser gap was fixed in 869e7d3 with fail-first block-list evidence and
   enum/boolean/list/unknown-field coverage; affected follow-ups passed and the
   native thread was resolved. Combined outcome is proceed-to-merge.
+- 2026-07-11: PR #565 merged as cd158f96 and #561 closed completed. #562 is
+  now ready; its issue body and implementation handoff consume the landed
+  66-row ledger, default-only exposure truth, compatibility rules, three-product
+  diagnostics, and replacement-before-removal sequencing.
