@@ -132,8 +132,9 @@ machine-specific details remain in private local evidence.
 
 ## Acceptance Criteria
 
-- Every frozen disposition row is `reviewed` or `retired`; the pending set is
-  empty and the original 66 IDs/order/count/digest remain unchanged.
+- Every frozen disposition row is `reviewed`; the pending set is empty, retired
+  active sources remain as reviewed historical rows, and the original 66
+  IDs/order/count/digest remain unchanged.
 - No normal-discovery skill exists solely for bookkeeping, a one-command CLI
   wrapper, or an agent lifecycle substep.
 - Retained active skills map to direct user outcomes and carry complete
@@ -147,7 +148,10 @@ machine-specific details remain in private local evidence.
   are enforced at observable boundaries without hooks inventing semantic
   judgment.
 - Codex, Claude, and Hermes render, governance, drift, install, runtime-smoke,
-  and stale-prune checks pass against equivalent intent and exposure rules.
+  and stale-prune checks pass against equivalent semantic placement and
+  exposure rules. Mechanical hook parity is required only where the declared
+  product capability supports hooks/agent-docs; unsupported products must expose
+  and test the capability ceiling rather than claim a nonexistent gate.
 - Any required nils-cli change is merged, released, installed, and pinned before
   runtime-kit consumes it.
 - After the integration PR merges, fresh Codex CLI and Claude Code sessions on

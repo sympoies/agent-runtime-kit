@@ -127,8 +127,12 @@ compatibility surfaces.
   to the correct policy and parent workflows; enforces observable ordering and
   completion in hooks or released gates; and preserves deterministic nils-cli
   records and diagnostics. This task does not remove skill sources or edit the
-  shared skill manifests. If selective activation or enforcement needs a new
-  nils-cli primitive, deliver and release it before consuming it here.
+  shared skill manifests. Released v1.21.15 lacks durable selective-intent
+  activation/status/verification, so this lane must open and deliver the
+  product-neutral nils-cli primitive, release it, and pin it before runtime-kit
+  consumption. Phase-aware test-first, workflow-usage, and docs-impact record
+  gaps must be verified against the same upstream boundary and delivered there
+  when required by acceptance.
 - **Dependencies**:
   - Task 1.1
 - **Complexity**: 10
@@ -146,6 +150,9 @@ compatibility surfaces.
     waivers, docs-only, generated-only, and unavailable-harness paths.
   - Existing Browser/Evidence skills remain temporarily operational until Task
     3.1 applies retirement.
+  - Codex and Claude enforce equivalent supported hook decisions; Hermes uses
+    shared policy/CLI verification and reports its declared no-hook capability
+    ceiling without false parity.
 - **Validation**:
   - `agent-docs preflight --docs-home "$PWD" --intent project-dev --strict`
   - `agent-docs preflight --docs-home "$PWD" --intent task-tools --strict`
@@ -244,13 +251,17 @@ render/install/prune/sync behavior without depending on private machine state.
     one-command wrapping, or an agent lifecycle substep.
   - Every removed source has reviewed replacement, compatibility, manifest,
     render, install expectation, and stale-prune evidence.
-  - The frozen disposition ledger still contains all 66 original IDs and marks
-    retired versus retained outcomes accurately.
-  - `migration.pending_disposition` is empty and every ledger row is reviewed
-    or retired only after its active/default or replacement/removal state is
+  - The frozen disposition ledger still contains all 66 original IDs as
+    reviewed history and records active-retained versus source-retired outcomes
+    accurately through destination, migration, and cleanup fields.
+  - `migration.pending_disposition` is empty and every ledger row becomes
+    reviewed only after its active/default or replacement/removal state is
     truthful.
   - Codex, Claude, and Hermes report the same active semantic set allowed by
     product capabilities, with no stale managed files after prune rehearsal.
+  - Whole-plugin retirement removes stale managed Codex and Claude plugin
+    registrations, including plugins no longer present in the new marketplace;
+    a `review-needed` stale directory is not accepted as successful cleanup.
   - Skill create/remove fixtures and exposure governance fail closed on
     unreviewed additions or incomplete lifecycle edits.
 - **Validation**:
@@ -390,8 +401,9 @@ runtime to both roles, and prove future sessions use the completed convergence.
 - A reviewed decision is not proof that replacement behavior exists. Task 3.1
   must inspect merged implementation evidence before retiring each source.
 - Selective intent state or a pre-edit gate may require nils-cli work. Do not
-  create a runtime-kit-only state engine; deliver, release, pin, and consume the
-  upstream primitive.
+  create a runtime-kit-only state engine; v1.21.15 has no durable selective
+  activation contract, so deliver, release, pin, and consume the upstream
+  primitive before Browser/Evidence retirement.
 - Broad policy or hook files can become merge hot spots. Lane B owns
   Browser/Evidence-specific policy and hooks; Lane C uses separate family docs
   and adapters; Lane A owns shared manifest integration.
@@ -399,7 +411,9 @@ runtime to both roles, and prove future sessions use the completed convergence.
   acceptance uses explicit operator-owned environments after merge.
 - Static HTTP evidence cannot prove rendered JavaScript or desktop behavior.
 - Removing plugin entries without ownership-safe live prune leaves stale skill
-  discovery in future sessions.
+- Hermes does not currently expose runtime-kit hooks or agent-docs activation;
+  preserve semantic policy and CLI verification while recording that declared
+  capability ceiling instead of asserting mechanical hook parity.
 
 ## Rollback Plan
 
