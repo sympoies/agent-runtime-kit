@@ -45,6 +45,11 @@ or `Handoff` after their issues were closed.
   evidence but retained `Next task: run strict close-ready and canonical
   tracker closeout`. PR #566 repaired it to `Next task: none`. See
   `evidence/issue563-terminal-sync.md`.
+- Reproduced again on `sympoies/agent-console#248` with plan-issue `1.21.16`:
+  `record close --bundle` patched `Status` and `Branch/commit/PR`, but retained
+  `Next task: canonical tracking-issue closeout` after it had already closed
+  the tracker. Follow-up PR #252 committed the terminal-state repair after the
+  post-close visible audit passed all seven lifecycle roles.
 
 ## Impact
 

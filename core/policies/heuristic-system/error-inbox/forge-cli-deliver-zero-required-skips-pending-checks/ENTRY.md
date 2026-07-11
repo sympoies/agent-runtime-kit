@@ -39,6 +39,12 @@ checks as pending.
   still pending, then immediately promoted and squash-merged the PR. The caller
   separately held and verified runs `29148841982` and `29148841380` to success
   after merge. See `evidence/pr566-premature-merge.md`.
+- Reproduced again as an actual premature merge on
+  `sympoies/agent-console#252` with `forge-cli 1.21.16`: `pr deliver` reported
+  `required_count=0` and success while two visible `build` checks were pending,
+  then immediately promoted and squash-merged the PR. The caller separately
+  waited for pull-request runs `29154209856` and `29154207642` plus merge-commit
+  run `29154215095`; all passed only after the merge had already completed.
 
 ## Impact
 
