@@ -13,6 +13,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 PR_ARTIFACTS_DIR="$ARTIFACTS_DIR/pr"
 PR_WORKSPACE="$TMP_ROOT/workspaces/pr-basic-repo"
@@ -546,11 +549,43 @@ run_review_thread_cleanup_probe() {
   return "$rc"
 }
 
+run_pr_outcome_routing_probe() {
+  local skill="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local rendered_helper="$REPO_ROOT/tests/runtime-smoke/lib/rendered-contract.sh"
+
+  grep -Fq '## Lifecycle Mode Selection' "$skill"
+  grep -Fq '**Create only**' "$skill"
+  grep -Fq '**Deliver**' "$skill"
+  grep -Fq '**Review repair**' "$skill"
+  grep -Fq '**Merge**' "$skill"
+  grep -Fq '**Close unmerged**' "$skill"
+  grep -Fq '.agents/scripts/pre-pr.sh' "$skill"
+  grep -Fq 'semantic-commit' "$skill"
+  grep -Fq 'The user requests the PR/MR outcome, not a lifecycle helper.' "$skill"
+  awk '
+    /^## Workflow/ { in_workflow = 1; next }
+    /^## Boundary/ { in_workflow = 0 }
+    in_workflow && /close-unmerged mode/ { close_line = NR }
+    in_workflow && /\.agents\/scripts\/pre-pr\.sh/ { pre_pr_line = NR }
+    END { exit !(close_line && pre_pr_line && close_line < pre_pr_line) }
+  ' "$skill"
+
+  # Every rendered assertion must be able to bootstrap its product surface in
+  # a standalone deterministic domain run from a clean checkout.
+  grep -Fq 'rendered_contract_prepare_product "$product"' "$rendered_helper"
+
+  rendered_contract_assert_skill pr deliver-pr
+  rendered_contract_assert_all_contain pr deliver-pr '## Lifecycle Mode Selection'
+  rendered_contract_assert_all_contain pr deliver-pr '**Close unmerged**'
+  rendered_contract_assert_all_contain pr deliver-pr 'run `forge-cli pr close` and stop before delivery'
+}
+
 failures=0
 record_case "pr.create-pr" "forge-cli GitHub+GitLab pr create dry-run passed" run_create_pr_probe
 record_case "pr.create-dispatch-lane-pr" "forge-cli dispatch lane pr create dry-run passed" run_create_dispatch_lane_probe
 record_case "pr.close-pr" "forge-cli GitHub+GitLab close dry-runs and optional specialist scope passed" run_close_pr_probe
 record_case "pr.deliver-pr" "forge-cli GitHub+GitLab delivery macro and mandatory specialist scope passed" run_deliver_pr_probe
 record_case "pr.review-thread-cleanup" "forge-cli review-threads resolve/reply offline dry-runs, GitLab fail-closed, and documented shared skill surface" run_review_thread_cleanup_probe
+record_case "pr.outcome-routing" "one governed PR/MR outcome selects create, deliver, repair, merge, and close modes internally" run_pr_outcome_routing_probe
 
 exit "$failures"

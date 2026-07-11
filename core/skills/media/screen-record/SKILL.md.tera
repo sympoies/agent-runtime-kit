@@ -31,6 +31,14 @@ Failure modes:
 - The selected window or display cannot be resolved.
 - Required recording backend is unavailable.
 
+## Outcome Routing
+
+The user requests a screenshot or recording. The workflow selects preflight,
+target discovery, capture, and diagnostics from the requested claim. When no
+path is supplied, allocate one project-scoped output directory; evidence
+metadata and diagnostics are internal bookkeeping and are reported only when
+they support the result or explain a failure.
+
 ## Entrypoint
 
 Use the released CLI directly:
@@ -38,8 +46,8 @@ Use the released CLI directly:
 ```bash
 screen-record --preflight
 screen-record --list-windows
-screen-record --screenshot --active-window --path /tmp/window.png
-screen-record --display --duration 10 --path /tmp/session.mov --metadata-out /tmp/session.json
+screen-record --screenshot --active-window --path "$RUN_DIR/window.png"
+screen-record --display --duration 10 --path "$RUN_DIR/session.mov" --metadata-out "$RUN_DIR/session.json"
 ```
 
 ## Workflow

@@ -13,6 +13,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 DISPATCH_ARTIFACTS_DIR="$ARTIFACTS_DIR/dispatch"
 DISPATCH_WORKSPACE="$TMP_ROOT/workspaces/dispatch-basic-repo"
@@ -1189,6 +1192,74 @@ run_dispatch_subagent_pr_probe() {
   grep -q 'plan-issue.record.post.v2' "$session_out"
 }
 
+run_dispatch_outcome_routing_probe() {
+  local protocol="$REPO_ROOT/core/skills/dispatch/plan-issue-spec/outcome-routing.md"
+  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+  local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
+  local tracking_protocol="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/references/outcome-routing.md"
+  local dispatch_protocol="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/references/outcome-routing.md"
+
+  test -s "$protocol"
+  grep -Fq '## L2 Tracking Outcome' "$protocol"
+  grep -Fq '## L3 Dispatch Outcome' "$protocol"
+  grep -Fq '| Lifecycle role | L2 writer | L3 writer |' "$protocol"
+  cmp -s "$protocol" "$tracking_protocol"
+  cmp -s "$protocol" "$dispatch_protocol"
+  grep -Fq 'plan-archive discover' "$tracking"
+  grep -Fq 'plan-archive migrate' "$tracking"
+  if grep -Fq 'plan-archive migrate --dry-run' "$tracking"; then
+    return 1
+  fi
+  grep -Fq 'PLAN_LABEL_ARGS=(--label workflow::plan --label workflow::tracking)' "$tracking"
+  grep -Fq 'PLAN_LABEL_ARGS=(--label workflow::tracking --label plan)' "$tracking"
+  grep -Fq '"${PLAN_LABEL_ARGS[@]}"' "$tracking"
+  grep -Fq 'references/outcome-routing.md' "$tracking"
+  grep -Fq 'references/outcome-routing.md' "$dispatch"
+  grep -Fq 'record audit' "$tracking"
+  awk '
+    /^plan-issue .* record close/ { close_line = NR }
+    /^forge-cli .* issue view/ { readback_line = NR }
+    /^plan-issue .* record audit/ { audit_line = NR }
+    /^plan-archive discover/ { archive_line = NR }
+    /^plan-issue .* record audit/ { in_audit = 1 }
+    in_audit && /--profile tracking/ { audit_profile = 1 }
+    in_audit && /--expect-visible/ { audit_visible = 1 }
+    in_audit && /^$/ { in_audit = 0 }
+    END {
+      exit !(close_line < readback_line && readback_line < audit_line &&
+             audit_line < archive_line && audit_profile && audit_visible)
+    }
+  ' "$tracking"
+  grep -Fq 'The user selects the L3 outcome, never a lane lifecycle substep.' "$dispatch"
+  awk '
+    /^plan-issue .* record close/ { close_line = NR }
+    /^forge-cli .* issue view/ { readback_line = NR }
+    /^plan-issue .* record audit/ { audit_line = NR; in_audit = 1 }
+    in_audit && /--profile dispatch/ { audit_profile = 1 }
+    in_audit && /--expect-visible/ { audit_visible = 1 }
+    in_audit && /^$/ { in_audit = 0 }
+    END {
+      exit !(close_line < readback_line && readback_line < audit_line &&
+             audit_profile && audit_visible)
+    }
+  ' "$dispatch"
+
+  rendered_contract_assert_skill dispatch deliver-plan-tracking-issue
+  rendered_contract_assert_skill dispatch deliver-dispatch-plan
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'references/outcome-routing.md'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'references/outcome-routing.md'
+  rendered_contract_assert_all_omit dispatch deliver-plan-tracking-issue 'core/skills/dispatch/plan-issue-spec/outcome-routing.md'
+  rendered_contract_assert_all_omit dispatch deliver-dispatch-plan 'core/skills/dispatch/plan-issue-spec/outcome-routing.md'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'record audit'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'issue view "$ISSUE" --with-comments'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue '--expect-visible'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'record audit'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'issue view "$ISSUE" --with-comments'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan '--expect-visible'
+  rendered_contract_assert_reference dispatch deliver-plan-tracking-issue references/outcome-routing.md
+  rendered_contract_assert_reference dispatch deliver-dispatch-plan references/outcome-routing.md
+}
+
 failures=0
 record_case "dispatch.create-plan-tracking-issue" "plan-tooling plus tracking post/repair/audit probes passed" run_create_plan_tracking_issue_probe
 record_case "dispatch.deliver-dispatch-plan" "dispatch post/repair/audit, split, and specialist scope probes passed" run_deliver_dispatch_plan_probe
@@ -1203,5 +1274,6 @@ record_case "dispatch.execute-plan-tracking-issue" "tracking audit and forge-cli
 record_case "dispatch.deliver-plan-tracking-issue" "review-specialists, per-lens provider reviews, final review, checks, and tracking validation probes passed" run_deliver_tracking_issue_probe
 record_case "dispatch.review-dispatch-lane-pr" "review-specialists, review evidence, PR review outcome, and dispatch review post probes passed" run_dispatch_pr_review_probe
 record_case "dispatch.execute-dispatch-lane" "execute dispatch lane PR create and dispatch session post probes passed" run_dispatch_subagent_pr_probe
+record_case "dispatch.outcome-routing" "one L2 and one L3 outcome preserve distinct lifecycle writers behind internal protocols" run_dispatch_outcome_routing_probe
 
 exit "$failures"

@@ -32,6 +32,14 @@ Failure modes:
 - Output exists and overwrite was not allowed.
 - SVG validation fails or the conversion backend reports an error.
 
+## Outcome Routing
+
+The user requests a validated or converted image. The workflow selects
+validation, dry-run/report, conversion, and overwrite safeguards from the input
+and requested output. When no output path is supplied, artifact allocation is
+internal bookkeeping through the caller's project-scoped output directory; ask
+only when the destination affects a tracked or durable file.
+
 ## Entrypoint
 
 Use the released CLI directly:
@@ -53,4 +61,7 @@ You author the SVG; this CLI validates and renders it. There is no generate step
 
 ## Boundary
 
-`image-processing` owns validation and conversion mechanics. The caller owns authoring the SVG, and deciding whether the resulting media should be committed, regenerated, or treated as a temporary artifact.
+`image-processing` owns validation and conversion mechanics. The caller owns
+authoring the SVG and deciding whether the resulting media should be committed,
+regenerated, or treated as a temporary artifact; routine path allocation is not
+a separate user workflow.

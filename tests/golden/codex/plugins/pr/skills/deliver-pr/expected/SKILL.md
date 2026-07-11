@@ -12,8 +12,8 @@ Prereqs:
 
 - `agent-runtime`, `forge-cli >=1.17.0`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
-  available on `PATH`. The `code-review-pre-merge-gate` workflow uses
-  `review-specialists`; the review-thread sweep and merge gate need
+  available on `PATH`. The generic code-review outcome uses
+  `review-specialists` in pre-merge mode; the review-thread sweep and merge gate need
   `forge-cli` 1.0.16, the task-list sweep and merge gate 1.0.17, and
   existing-PR adoption in `pr deliver` needs 1.1.0. Linked issue closeout
   relies on the unified terminal task-row contract in `plan-issue` 1.1.0.
@@ -21,6 +21,12 @@ Prereqs:
   `../create-pr/references/pr-lifecycle.md` are satisfied.
 - The working tree contains only the intended delivery changes.
 - Local validation and review findings have been resolved before merge.
+- Implementation changes have been committed through `semantic-commit`; commit
+  mutation is an internal delivery prerequisite, not a user-selected workflow.
+- For every lifecycle mode except close-unmerged, if executable
+  `.agents/scripts/pre-pr.sh` exists, run it through the repository dispatcher
+  before the first provider mutation. Abandon-close is a remote terminal route
+  and must not depend on unrelated local pre-PR validation.
 
 Inputs:
 
@@ -30,11 +36,13 @@ Inputs:
   it must match the branch prefix.
 - PR/MR title and body section files for `agent-runtime pr-body render`.
 - Optional head branch, base branch, merge method, reviewers, and timeout.
+- Requested lifecycle outcome: create only, deliver to readiness, repair review
+  findings, merge, or close an unmerged record.
 - Required labels selected from the shared taxonomy.
 - Optional `--no-merge` when the workflow should stop after checks.
 - Optional `--no-closeout` to stop after delivery readiness checks and before
   linked issue closeout.
-- Mandatory pre-merge review through `code-review-pre-merge-gate`.
+- Mandatory generic code review in pre-merge mode.
 - If the body references a linked tracking or dispatch issue, use non-closing
   references such as `Refs #<issue>`; provider auto-close keywords are refused.
   Carry the references through `pr-body render --issues-file` — rendered as
@@ -48,7 +56,7 @@ Outputs:
 
 - A draft or ready GitHub PR or GitLab MR opened from the current branch.
 - Required checks / pipeline state waited through `forge-cli pr wait-checks`.
-- A `code-review-pre-merge-gate` result completed before merge with at least
+- A generic pre-merge review result completed before merge with at least
   `testing` and `maintainability`.
 - Compact specialist reviews posted to the PR/MR as each reviewer lens returns
   (native `COMMENT` review events on GitHub via `--submit-review`, outcome notes
@@ -102,6 +110,28 @@ Failure modes:
   merge. Route to `deliver-plan-tracking-issue` or `deliver-dispatch-plan`
   instead of merging and backfilling after the fact.
 - `plan-issue record close` rejects linked issue closeout.
+
+## Lifecycle Mode Selection
+
+The user requests the PR/MR outcome, not a lifecycle helper.
+
+- **Create only** — render and validate the body, create the draft provider
+  record with `forge-cli pr create`, return its URL, and stop before checks,
+  review, merge, or linked-issue closeout.
+- **Deliver** — create or adopt the record, wait for checks, run the mandatory
+  review gate, repair findings, sweep threads/tasks, and merge unless the user
+  requested a readiness stop.
+- **Review repair** — adopt the existing record, classify unresolved review
+  threads, make authorized fixes, rerun validation and affected review modes,
+  and return to the delivery gates.
+- **Merge** — adopt an existing ready record and run every remaining review,
+  task, thread, linked-lifecycle, and checks gate before `forge-cli pr merge`.
+- **Close unmerged** — only when the user explicitly abandons the record; read
+  current state, record the reason, and call `forge-cli pr close` without
+  pretending delivery succeeded.
+
+Dispatch lane PR creation remains an internal L3 dispatch role because its
+plan-branch target and lane checkpoint authority belong to that outcome.
 
 ## Body Format
 
@@ -160,7 +190,8 @@ the `test-first-evidence` skill produces. Omit it for the exempt kinds (`docs` /
 `chore` / `ci` / `refactor`); without it delivery fails closed with
 `test_first_evidence_required`.
 
-Run `code-review-pre-merge-gate` before merge. Its minimum underlying scope is:
+Run the generic code-review outcome in pre-merge mode before merge. Its minimum
+underlying scope is:
 
 ```bash
 review-specialists scope \
@@ -285,64 +316,70 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 
 ## Workflow
 
-1. Confirm the branch, base, dirty-tree scope, validation evidence, and review
-   outcome.
-2. Inspect linked issues and closing references. For issue-backed plan work,
+1. Confirm the branch, base, dirty-tree scope, validation evidence, review
+   outcome, and requested lifecycle mode. Ensure implementation commits were
+   created through `semantic-commit`.
+2. In close-unmerged mode, read the current provider record, record the abandon
+   reason, run `forge-cli pr close` and stop before delivery or local pre-PR
+   validation.
+3. If `.agents/scripts/pre-pr.sh` is executable, run it through the repository
+   dispatcher and stop on failure.
+4. Inspect linked issues and closing references. For issue-backed plan work,
    use `Refs #<issue>` until `record close` has passed.
-3. Render the PR/MR body with `agent-runtime pr-body render`.
-4. Select labels before provider mutation; use
+5. Render the PR/MR body with `agent-runtime pr-body render`.
+6. Select labels before provider mutation; use
    `../create-pr/references/pr-lifecycle.md` for the shared taxonomy rule.
-5. If `manifests/forge-labels.yaml` exists, validate labels with the
+7. If `manifests/forge-labels.yaml` exists, validate labels with the
    appropriate `forge-cli label` surface before the first live delivery.
-6. Run `forge-cli pr deliver` with selected `--label` flags,
+8. In create-only mode, run `forge-cli pr create`, return the provider URL, and
+   stop. Otherwise run `forge-cli pr deliver` with selected `--label` flags,
    `--label-catalog manifests/forge-labels.yaml` when present, and
    `--no-merge` so checks / pipelines complete before the mandatory review gate.
-7. Run `code-review-pre-merge-gate`:
-   `skills/code-review/code-review-pre-merge-gate/SKILL.md`.
-8. Keep `code-review-pre-merge-gate` read-only. As each reviewer lens returns,
+9. Run the generic code-review outcome in pre-merge mode.
+10. Keep review workers read-only. As each reviewer lens returns,
    post one compact specialist review comment through `forge-cli pr review`
    (a native `COMMENT` review event via `--submit-review` on GitHub)
    with the mapped reviewer bot profile, or `FORGE_BOT_PROFILE=dobi` for
    unmapped specialist lenses. The parent delivery workflow posts; reviewer
    subagents never call the provider. Post the moment each lens returns — before
-   the repair in step 9, never batched after it; the comment is the finding the
-   step-9 fix responds to, so it must exist first (see
+   the repair in step 11, never batched after it; the comment is the finding the
+   step-11 fix responds to, so it must exist first (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
    `--thread-file` for actionable findings so the fix can close a native review
    thread; summary-only reviews omit it.
-9. Repair concrete findings in this delivery workflow, then rerun validation,
+11. Repair concrete findings in this delivery workflow, then rerun validation,
    checks, and affected review lenses. Post each focused follow-up specialist
    review comment with the same bot-profile selection before continuing.
-10. Post the final combined delivery review outcome body produced by
-   `code-review-pre-merge-gate` with `forge-cli pr review` (a native
+12. Post the final combined delivery review outcome body produced by the
+   generic review's pre-merge mode with `forge-cli pr review` (a native
    `APPROVE` / `REQUEST_CHANGES` review event via `--submit-review` on GitHub)
    before merge. Set `FORGE_BOT_PROFILE=dobi` for combined delivery-owner
    outcomes so they stay on `dobi-bot`; set a reviewer bot profile only for
    mapped specialist review comments.
-11. Sweep provider review threads immediately before merge with
+13. Sweep provider review threads immediately before merge with
     `forge-cli pr review-threads` (see Entrypoint) — bot reviewers post
     asynchronously, so this runs as the last gate, not only at creation.
     Disposition every unresolved thread: repair, reply-and-resolve as
     accepted, or convert to a follow-up issue. `pr merge` refuses
     undispositioned threads (`unresolved_review_threads`); do not bypass with
     `--allow-unresolved-threads` without recording the reason.
-12. In the same pass, sweep the description's task list with
+14. In the same pass, sweep the description's task list with
     `forge-cli pr tasks` (see Entrypoint). Disposition every unchecked
     `- [ ]` item: check it off or rewrite it as deferred with a follow-up
     ref. `pr merge` refuses unchecked items (`unchecked_task_items`); do not
     bypass with `--allow-unchecked-tasks` without its required reason flag
     and a matching note in the delivery review outcome.
-13. Before merge, if the PR/MR references a linked tracking or dispatch issue,
+15. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are
     present. If not, stop and route to the matching plan delivery workflow.
-14. Merge with `forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER"` unless
+16. Merge with `forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER"` unless
     `--no-merge` is the requested final stop.
-15. After merge, if the body referenced a linked tracking or dispatch issue
+17. After merge, if the body referenced a linked tracking or dispatch issue
     and `--no-closeout` was not supplied, run `plan-issue record close` with
     the correct profile. On gate fail, leave the issue open with the blocked
     code surfaced by `plan-issue` and route to the matching closeout skill.
-16. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
+18. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
     commit, chained closeout result, and any fallback used in delivery notes.
 
 ## Boundary

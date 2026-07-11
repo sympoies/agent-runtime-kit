@@ -12,6 +12,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 HELPER="$REPO_ROOT/core/skills/computer-use/macos-desktop/bin/macos_desktop.py"
 CASE_ROOT="$TMP_ROOT/computer-use"
@@ -202,10 +205,29 @@ run_probe() {
     "$REPO_ROOT/core/skills/computer-use" "$CASE_ARTIFACTS"
 }
 
+run_outcome_routing_probe() {
+  local skill="$REPO_ROOT/core/skills/computer-use/macos-desktop/SKILL.md.tera"
+
+  grep -Fq '## Outcome Routing' "$skill"
+  grep -Fq 'workflow allocates one with' "$skill"
+  grep -Fq '`agent-out` when the caller did not supply it' "$skill"
+  grep -Fq 'Transport and evidence bookkeeping are selected internally' "$skill"
+  grep -Fq 'Never ask the user to choose a transport' "$skill"
+  grep -Fq 'or evidence substep' "$skill"
+
+  rendered_contract_assert_skill computer-use macos-desktop
+  rendered_contract_assert_all_contain computer-use macos-desktop '## Outcome Routing'
+  rendered_contract_assert_all_contain computer-use macos-desktop 'Never ask the user to choose a transport'
+}
+
 failures=0
 results_record_case \
   "computer-use.macos-desktop" \
   "local and SSH transports preserve structured output, artifacts, degraded permissions, scenarios, and safe host parsing" \
   run_probe
+results_record_case \
+  "computer-use.outcome-routing" \
+  "desktop outcome selects transport, transfer, and evidence bookkeeping internally" \
+  run_outcome_routing_probe
 
 exit "$failures"

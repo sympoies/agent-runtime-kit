@@ -1,7 +1,8 @@
 ---
 name: deliver-dispatch-plan
 description: >
-  Open or resume one shared dispatch plan issue, dispatch task lanes, coordinate lane PRs and reviews, and hand off to dispatch closeout.
+  Open or resume one shared dispatch plan issue, coordinate independently
+  reviewed lane PRs, integrate approved work, and close through strict gates.
 ---
 
 # Deliver Dispatch Plan
@@ -18,10 +19,14 @@ Prereqs:
 - Dispatch `run-state.json` is either uninitialized or reconciled.
 - Shared family rules apply from
   `core/skills/dispatch/plan-issue-spec/skill-family.md`.
+- Internal role ordering and single-writer boundaries apply from
+  `references/outcome-routing.md`.
 
 Inputs:
 
-- `OWNER_REPO`, `PLAN_BUNDLE`, `PLAN`, `SLUG`, optional `ISSUE`.
+- `OWNER_REPO`, `PLAN_BUNDLE`, `PLAN`, `SLUG`, optional `ISSUE`, `PROVIDER`,
+  and post-close read-back paths `CLOSED_ISSUE_VIEW_JSON`,
+  `CLOSED_ISSUE_JSON`, and `CLOSED_ISSUE_BODY`.
 - `RUN_STATE` for the dispatch run.
 - Lane assignments with `TASK_ID` / sprint / PR group, `PLAN_BRANCH`,
   exact task context, and the dispatch bundle
@@ -43,8 +48,12 @@ Outputs:
 - Dispatch-level checkpoints through `tracking checkpoint --profile
   dispatch --live --post state[,session[,validation[,review]]]`.
 - Final per-lane ledger repair through `plan-tooling ledger-update`.
-- Non-mutating `tracking close-ready --profile dispatch --expect-visible`
-  handoff result.
+- Independent lane review and orchestrator-owned merge after approval.
+- Strict `tracking close-ready --profile dispatch --expect-visible`, followed
+  by `record close --profile dispatch` only when every lane and integration
+  gate passes.
+- Post-close provider read-back plus
+  `record audit --profile dispatch --expect-visible` before completion.
 
 Failure modes:
 
@@ -55,9 +64,23 @@ Failure modes:
   paths before retrying.
 - Stop on `ledger-rows-pending`; repair only the named task rows before
   retrying close-ready.
-- Forbidden writes: `record close`, lane-scoped implementation posts,
-  lane review posts, lightweight-tracking closeout rules, multiple shared
-  issues for one dispatch plan, or raw lifecycle comments.
+- Forbidden writes: lane-scoped implementation posts by the orchestrator, lane
+  review posts by lane executors, lightweight-tracking closeout rules, multiple
+  shared issues for one dispatch plan, or raw lifecycle comments.
+
+## Outcome Routing
+
+The user selects the L3 outcome, never a lane lifecycle substep. This parent
+applies `references/outcome-routing.md` to route lane
+execution, plan-branch PR creation, independent review, orchestrator merge,
+plan-level checkpoints, and strict closeout while keeping one writer for every
+role.
+
+Lane executors stop after implementation, validation, PR creation, and their
+lane-scoped state/session/validation checkpoint. An independent reviewer owns
+provider review activity and the lane review checkpoint. Only the orchestrator
+may merge an approved lane PR with `--allow-non-default-base`, update
+plan-level integration truth, and enter dispatch closeout.
 
 ## Entrypoint
 
@@ -109,6 +132,25 @@ plan-issue --format json tracking close-ready \
   --linked-pr "$LANE_PR_2" \
   --approval "$APPROVAL" \
   --expect-visible
+
+# Only after close-ready reports ready=true and blockers=[].
+plan-issue --repo "$OWNER_REPO" --format json record close \
+  --profile dispatch --issue "$ISSUE" \
+  --linked-pr "$LANE_PR_1" --linked-pr "$LANE_PR_2" \
+  --approval "$APPROVAL" \
+  --add-label state::closed --remove-label state::needs-triage
+
+forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json issue view "$ISSUE" --with-comments \
+  >"$CLOSED_ISSUE_VIEW_JSON"
+jq '{body:.data.body, comments:(.data.comments // [])}' \
+  "$CLOSED_ISSUE_VIEW_JSON" >"$CLOSED_ISSUE_JSON"
+jq -r .body "$CLOSED_ISSUE_JSON" >"$CLOSED_ISSUE_BODY"
+
+plan-issue --repo "$OWNER_REPO" --format json record audit \
+  --profile dispatch \
+  --body-file "$CLOSED_ISSUE_BODY" \
+  --comments-json "$CLOSED_ISSUE_JSON" \
+  --expect-visible
 ```
 
 Replace `area::docs` with the dispatch plan's primary `area::` label.
@@ -123,35 +165,44 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    - GitLab: `workflow::dispatch` + bare `plan`.
 3. **Open / resume** — open or attach the shared dispatch issue, then run
    `tracking run init` with `--execution-state-file`.
-4. **Lane dispatch** — assign each lane to `execute-dispatch-lane` with
-   its exact scope and `PLAN_BRANCH`; the orchestrator does not implement
-   lane code.
-5. **Dispatch checkpoints** — post plan-level state/session/validation/review
+4. **Lane execution** — assign each lane its exact scope, worktree, branch,
+   run state, task packet, and `PLAN_BRANCH`. The lane executor implements,
+   validates, creates the plan-branch PR, posts lane state/session/validation,
+   and stops ready for independent review.
+5. **Independent lane review** — a different reviewer runs the generic review
+   outcome with retained evidence, posts provider review activity, and writes
+   the lane review checkpoint. The lane executor never self-reviews.
+6. **Orchestrator merge** — after approval and provider gates, the orchestrator
+   merges the lane PR through `forge-cli pr merge
+   --allow-non-default-base`. A reviewer does not merge.
+7. **Dispatch checkpoints** — post plan-level state/session/validation/review
    only when orchestration truth changes across lanes.
-6. **Ledger finalize branch** — before close-ready, patch any lane row not
-   already updated by `execute-dispatch-lane`.
-7. **Read-back** — run `tracking status --profile dispatch
+8. **Ledger finalize branch** — before close-ready, patch any lane row not
+   already updated by its lane executor.
+9. **Read-back** — run `tracking status --profile dispatch
    --expect-visible` after dispatch checkpoints.
-8. **Close-ready probe** — run the non-mutating close-ready gate. On
-   `ready: true`, hand off to `dispatch-plan-closeout`; otherwise stop
-   with blockers.
+10. **Close-ready / closeout** — run the non-mutating close-ready gate. Stop on
+    every blocker. On `ready: true`, write the closing summary, optionally
+    repair only a stale dashboard, and call `record close --profile dispatch`.
+11. **Closeout read-back** — fetch the closed provider issue with comments and
+    run `record audit --profile dispatch --expect-visible`; stop unless the
+    closeout role is visible and lint-clean.
 
 ## Boundary
 
 Owns:
 
 - Plan-level orchestration, lane assignment, integration judgement,
-  dispatch dashboard freshness, and the non-mutating close-ready handoff.
+  dispatch dashboard freshness, approved lane integration, and strict closeout.
 
 Must not:
 
-- Implement lane tasks, review lane PRs, close the dispatch issue, merge
-  PRs outside the active delivery workflow, or apply lightweight tracking
+- Implement lane tasks, let a lane executor review or merge its own PR, close
+  with any blocker, merge PRs outside the active delivery workflow, or apply lightweight tracking
   closeout rules.
 
-Handoff:
+Internal phases:
 
-- Lanes: `execute-dispatch-lane`.
-- Lane PR helper: `create-dispatch-lane-pr`.
-- Lane review: `review-dispatch-lane-pr`.
-- Closeout: `dispatch-plan-closeout`.
+- Open/resume, lane execution, lane PR creation, independent review,
+  orchestrator merge, and closeout follow `references/outcome-routing.md`;
+  they are not separate user choices.

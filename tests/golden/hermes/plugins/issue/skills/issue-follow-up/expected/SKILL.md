@@ -67,14 +67,11 @@ lower-level issue or PR/MR tools.
 
 - Treat `forge-cli issue` as the provider mutation surface, not a separate
   user-facing workflow choice.
-- Use `create-plan-tracking-issue` for plan-bundle tracking issue creation.
+- Use the L2 plan-tracking outcome for plan-bundle lifecycle work.
 - Use normal implementation and PR/MR workflows when code/docs changes are
   ready.
-- Use `review-dispatch-lane-pr` when PR review decisions or review follow-up must be
-  mirrored back to a plan issue.
-- Use `plan-tracking-issue-closeout` for lightweight plan-tracking closeout.
-- Use `dispatch-plan-closeout` for heavyweight `plan-issue` dispatch runtimes
-  with subagent lanes and close gates.
+- Let the L2 or L3 parent workflow mirror review and closeout evidence when the
+  issue is part of a plan lifecycle.
 
 ## Modes
 
@@ -153,6 +150,25 @@ Use when an issue already exists and the user asks to continue it.
 
 6. Keep unresolved issues open. Close only when the requested outcome is complete
    or the user explicitly chooses not to continue.
+
+### Plan-Family Finding Mode
+
+Use this mode when a plan-tracking skill, CLI, driver, or catalog problem needs
+its own durable upstream follow-up. The caller supplies `TRACKER_REPO`; this
+generic workflow never hardcodes a provider account or repository.
+
+1. Normalize the finding into surface, severity, description, reproduction,
+   expected versus actual behavior, provenance, and a fix candidate.
+2. Deduplicate before opening with `forge-cli issue list --repo
+   "$TRACKER_REPO" --label plan-issue-finding --state open --format json`.
+3. Comment on a clear existing match. Otherwise open one issue through
+   `forge-cli issue create` with `plan-issue-finding`, the shared type/area/
+   severity labels, and `state::needs-triage`.
+4. Keep implementation outside the tracker issue workflow. When the upstream
+   fix lands, post the fixing PR and validation, then close the issue.
+
+This is an internal specialization of issue follow-up, not a separate outcome
+the user must discover.
 
 ## Static HTTP Evidence
 

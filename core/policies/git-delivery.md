@@ -68,6 +68,16 @@ detail behind the one-line gates.
   not hand-write body scaffolding or copy the formatter's section table into
   policy files.
 
+## Parent Workflow Routing
+
+Commit mutation and repository pre-PR validation are internal phases of the
+implementation and governed PR outcome. Parent workflows stage only their owned
+changes and invoke `semantic-commit`; they do not ask the user to select a commit
+helper. Before provider mutation, the PR parent runs the repository-owned
+`.agents/scripts/pre-pr.sh` dispatcher when present and stops on failure. Keep
+the deterministic CLI and repository dispatcher directly callable for
+diagnostics without exposing either as a separate delivery outcome.
+
 ## Labels
 
 - Labels describe the record's type, area, state or size, and workflow for

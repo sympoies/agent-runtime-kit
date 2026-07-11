@@ -29,7 +29,8 @@ Inputs:
 - A concrete application or window target, acceptance goal, allowed mutation
   scope, and stopping conditions.
 - Local mode, or a runtime-only SSH alias passed with `--host`.
-- A project-scoped evidence directory allocated with `agent-out`.
+- Optional project-scoped evidence directory. The workflow allocates one with
+  `agent-out` when the caller did not supply it.
 - Optional declarative `macos-agent scenario` JSON for repeatable flows.
 
 Outputs:
@@ -57,9 +58,19 @@ Failure modes:
   credential-bearing, or otherwise outside the declared test scope. Stop for
   explicit confirmation.
 
+## Outcome Routing
+
+The user requests a bounded desktop operation or test and names the target.
+Transport and evidence bookkeeping are selected internally: infer local versus
+SSH from the reachable target context, allocate output when absent, transfer
+remote artifacts through the helper, redact transport identity, and retain the
+minimum evidence needed for the claim. Never ask the user to choose a transport
+or evidence substep; ask only when the target itself is ambiguous or the action
+needs approval.
+
 ## Entrypoint
 
-Allocate evidence first:
+Allocate evidence internally when the caller did not provide a directory:
 
 ```bash
 out="$(agent-out project --topic macos-computer-use --repo "$PWD" --mkdir)"

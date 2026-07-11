@@ -16,6 +16,8 @@ Prereqs:
   written.
 - The delegated role prompts exist at `references/prompts/explorer.md` and
   `references/prompts/architect.md`.
+- The internal execution strategy is available at
+  `references/DELEGATION_PROTOCOL.md`.
 - Active project preflight and validation rules are followed before any
   repository edits.
 
@@ -25,8 +27,7 @@ Inputs:
   criteria, and any preferred approach when available.
 - Whether subagent delegation is available and allowed by active runtime
   instructions before any subagents are spawned.
-- Any execution mode already active in the thread (`parallel-first`,
-  `orchestrator-first`).
+- Any explicit delegation preference or constraint already stated by the user.
 
 Outputs:
 
@@ -52,6 +53,18 @@ Failure modes:
 - The work needs durable issue tracking, multiple delivery lanes, or PR
   grouping — hand off to the plan-tracking or dispatch workflow instead.
 - Active project rules conflict with the requested implementation path.
+
+## Outcome Routing
+
+Advice and explanation stay normal conversation behavior: ask only material
+clarifying questions, state assumptions, compare meaningful options, and give
+one recommendation without asking the user to select a prompt-style skill.
+
+For an implementation outcome, this workflow selects inline, orchestrated, or
+parallel execution internally using `references/DELEGATION_PROTOCOL.md`.
+Delegation is an implementation detail, not a separate user outcome. The
+workflow escalates to plan tracking or dispatch only when durable coordination
+state is actually required.
 
 ## Workflow
 
@@ -105,8 +118,10 @@ Do not skip this gate.
 Do not start without explicit user approval.
 
 1. Wait for approval of the chosen approach.
-2. If `parallel-first` or `orchestrator-first` is already active in the thread,
-   honor that mode rather than re-implementing its behavior.
+2. Select the execution strategy through
+   `references/DELEGATION_PROTOCOL.md`. Honor an explicit user preference when
+   safe, but keep scope, write isolation, integration, and validation under the
+   parent workflow.
 3. For a testable production behavior change, follow the failing-test discipline
    in the `test-first-evidence` skill (classify, failing test or waiver before
    production edits, scoped implementation, final validation) and record the
@@ -118,9 +133,10 @@ Do not start without explicit user approval.
 
 ### Phase 6 — Quality Review
 
-1. Route the diff to the existing review skill: `code-review-quick-pass` for a
-   small or ordinary diff; `code-review-specialists` for a broad or risky one.
-   Do not define a separate review rubric here.
+1. Route the diff to the generic `code-review-specialists` outcome. Its
+   internal mode selection chooses quick review for a small ordinary diff and
+   focused, specialist, follow-up, or pre-merge review when the request or risk
+   requires it. Do not define a separate review rubric here.
 2. Present the consolidated findings and ask the user how to proceed — fix now,
    fix later, or proceed as-is — then act on the decision. When this build is
    being delivered through a PR/MR, surface the findings on it before fixing,
@@ -145,6 +161,6 @@ Do not start without explicit user approval.
   `commands/<n>.md`; the explorer and architect roles live as delegated role
   prompts under `references/prompts/`, fulfilled by each harness's own
   delegation capability.
-- It reuses the `code-review` skills for Phase 6, the `parallel-first` /
-  `orchestrator-first` execution modes and the `test-first-evidence` failing-test
-  discipline for Phase 5, instead of duplicating them.
+- It reuses the generic code-review outcome for Phase 6, the internal delegation
+  protocol, and the test-first failing-test discipline for Phase 5 instead of
+  exposing those mechanics as user-selected substeps.

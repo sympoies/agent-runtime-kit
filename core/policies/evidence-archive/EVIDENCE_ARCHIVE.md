@@ -19,34 +19,34 @@ policy is the map, not a re-implementation of any of them.
    machine that never archives. Each record carries a
    `producer { tool, nils_cli_version }` block so an archived record is
    attributable to the surface and CLI version that wrote it.
-2. **Surface** — at session end, `heuristic-session-closeout` enumerates the
-   **session's** records (read-only) and flags non-pass outcomes as promotion
-   candidates for the curated-lesson lane. This is awareness, not durability:
+2. **Surface** — at session end, the parent session closeout procedure
+   enumerates the **session's** records (read-only) and flags non-pass outcomes
+   as promotion candidates for the curated-lesson lane. This is awareness, not durability:
    the runtime tree is scratch space that is **not** auto-reaped — records
    persist there until manually cleaned (`agent-out`) or migrated.
-3. **Migrate** — `evidence migrate` (the `evidence-migrate` skill) copies
+3. **Migrate** — the direct `evidence migrate` CLI copies
    records out of the runtime tree into the archive repository. Dry-run is the
    default; `--apply` writes, commits, and pushes. Migration is the durability
    boundary: once a record is archived and pushed, it survives any later cleanup
-   of the runtime tree. **`heuristic-session-closeout` drives this stage** as
-   its step 8 (whole-tree, not session-scoped): it runs the dry-run, and when it
+   of the runtime tree. **The session closeout procedure drives this stage**
+   (whole-tree, not session-scoped): it runs the dry-run, and when it
    is clean — `eligible > 0` and every `blocked` entry is an expected
-   host-classification block (gamania-safety) or an unresolvable/old-`cwd`
+   host-classification block or an unresolvable/old-`cwd`
    record — it auto-`--apply`s; anything off (an unexpected block, a surprising
    scrub volume, an unrecognized host, a dry-run error) is surfaced for the
-   operator instead of applied. The skill never re-implements the migration; it
-   only triggers the CLI. Manual `evidence migrate` remains available for
+   operator instead of applied. The parent never re-implements the migration; it
+   only invokes the CLI. Manual `evidence migrate` remains available for
    out-of-closeout drains.
 4. **Store** — the archive repository holds the rollups, their `metadata.yaml`,
    scrubbed linked evidence, scrub logs, and a derived `catalog.json` (see
    Layout).
-5. **Prune source** — `evidence prune-source --archived-only` (the
-   `evidence-prune-source` skill) removes local agent-out source run directories
+5. **Prune source** — the direct `evidence prune-source --archived-only` CLI
+   removes local agent-out source run directories
    only after their raw `skill-usage.record.json` digest already exists in the
    archive `catalog.json`. Dry-run is the default; direct use requires explicit
-   confirmation before `--apply`. `heuristic-session-closeout` drives this after
-   migration and auto-applies only when the dry-run is clean and every prunable
-   source path is expected. The archive remains read-only for this command.
+   confirmation before `--apply`. The session closeout procedure drives this
+   after migration and auto-applies only when the dry-run is clean and every
+   prunable source path is expected. The archive remains read-only for this command.
 6. **Query** — `evidence discover` / `query` / `search` / `catalog` read the
    archive. These are read-only and are driven directly from the CLI.
 
@@ -114,7 +114,7 @@ record bytes never reach the archive. Scrubbing uses the shared `nils-scrub`
 pattern set (`REDACTED` token), runs over the rollup, metadata, and any UTF-8
 linked-evidence children (binary children are copied verbatim), and writes a
 scrub log alongside each record so a reviewer can see what was redacted. The
-`evidence-migrate` skill surfaces the per-record scrub summary
+`evidence migrate` surfaces the per-record scrub summary
 (`patterns_triggered` + `total_matches`) in the dry-run for review. Scrubbing is
 never disabled. A working directory outside `$HOME` is itself redacted to
 `[REDACTED]` rather than archived as an absolute path.
@@ -150,8 +150,9 @@ motivated it, and vice versa.
 
 ## When to migrate
 
-The default trigger is `heuristic-session-closeout` step 8: after a session's
-goal is achieved, the closeout drives a migration dry-run and auto-applies it
+The default trigger is the policy-owned session closeout procedure: after a
+session's goal is achieved, closeout invokes `evidence migrate` and
+`evidence prune-source` directly, drives a migration dry-run, and auto-applies it
 when clean, then runs a prune-source dry-run and auto-applies source cleanup only
 when that dry-run is clean (see the Migrate and Prune source stages above). So
 under normal operation retention and already-archived source cleanup are

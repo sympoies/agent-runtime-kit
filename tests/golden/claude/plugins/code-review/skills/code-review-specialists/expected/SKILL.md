@@ -1,13 +1,15 @@
 ---
 name: code-review-specialists
 description: >
-  Decompose risky or broad diffs into read-only specialist review passes and merge normalized findings.
+  Review a code change through an internally selected quick, focused,
+  specialist, follow-up, or pre-merge mode and return evidence-grounded findings.
 ---
 
-# Code Review Specialists
+# Code Review
 
-Use this workflow to review broad or risky diffs through focused, read-only
-specialist lenses before a reviewer makes a decision.
+Use this as the generic read-only code-review outcome. The workflow selects the
+smallest review mode that satisfies the request and risk, then returns findings
+before any summary.
 
 ## Contract
 
@@ -26,14 +28,14 @@ Prereqs:
   Codex must dispatch the selected reviewers; inline lens execution is only the
   fallback when dispatch is unavailable or blocked, and the fallback must be
   stated. The parent agent owns lens selection, dispatch, validation, and merge.
-- Use `review-dispatch-lane-pr` for PR decision actions and `review-evidence` only
-  when findings need a retained evidence record.
+- Leave provider review decisions to the owning PR or dispatch parent. Use
+  `review-evidence` only when findings need a retained evidence record.
 
 Inputs:
 
 - Diff base ref, optional review target summary, and optional validation
   evidence to inspect.
-- Optional forced specialist flags: `--testing`, `--security`,
+- Optional requested focus or forced specialist flags: `--testing`, `--security`,
   `--performance`, `--data-migration`, `--api-contract`, `--maintainability`,
   `--red-team`, or `--all-specialists`.
 - Optional specialist JSONL finding files for deterministic validation, merge,
@@ -42,6 +44,8 @@ Inputs:
 
 Outputs:
 
+- A mode decision (`quick`, `focused`, `specialist`, `follow-up`, or
+  `pre-merge`) grounded in request, scope, and delivery context.
 - Scope JSON from `review-specialists scope` describing changed files, diff
   size, stack signals, test framework signals, and suggested specialists.
 - Read-only specialist findings with concrete file or evidence anchors.
@@ -54,13 +58,12 @@ Outputs:
 Failure modes:
 
 - Base ref is missing or does not resolve in the target repository.
-- Diff is too small or low-risk for specialist review and no specialist was
-  forced.
 - Specialist output is malformed JSONL, lacks required fields, uses unsupported
   severity values, or omits evidence anchors.
 - Findings lack enough confidence or evidence to support a concrete issue; mark
   them as residual risk instead of presenting them as verified findings.
-- Caller tries to use this workflow as a substitute for `review-dispatch-lane-pr`,
+- Caller tries to use this read-only workflow as a substitute for provider write
+  authority owned by the PR or dispatch parent,
   `review-evidence`, browser-session checks, CI repair automation, or
   implementation work.
 
@@ -76,36 +79,52 @@ review-specialists render --profile report --input merged-findings.json --out sp
 review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile report --format json
 ```
 
-## When To Use
+## Mode Selection
 
-- The user explicitly asks for specialist code review.
-- A PR/MR or diff is large, risky, security-sensitive, migration-heavy,
-  API-contract heavy, or broader than normal reviewer confidence.
-- Normal tests are not enough to reason about cross-cutting risk.
-- An issue or plan PR review needs supplemental specialist findings before the
-  `review-dispatch-lane-pr` decision path.
+The caller requests the review outcome; the workflow selects the mode.
 
-Do not use it for tiny diffs, ordinary implementation work, pure formatting or
-doc-only changes unless requested, CI repair loops, or browser-facing checks
-owned by browser-session workflows.
-Use `code-review-quick-pass` for lightweight review, `code-review-focused-lens`
-for one explicitly requested lens, `code-review-pre-merge-gate` for delivery
-gate review, and `code-review-follow-up` when re-checking previous findings
-after fixes.
+- **Follow-up** — previous findings or review threads are supplied and must be
+  classified as resolved, unresolved, accepted, or residual risk.
+- **Pre-merge** — the review is a delivery gate. Force at least `testing` and
+  `maintainability`, add risk lenses, preserve comment-before-fix ordering, and
+  return a decision to the delivery owner.
+- **Focused** — the user explicitly asks for one or more lenses. Force only
+  those lenses unless scope reveals a mandatory safety lens.
+- **Quick** — the diff is small or ordinary, with no migration, security,
+  public API, or other specialist trigger. Inspect the complete diff directly
+  and report concrete findings or a clean result plus residual test risk.
+- **Specialist** — the diff is broad, risky, cross-cutting, or exceeds normal
+  reviewer confidence. Use scope detection and the specialist workflow below.
+
+All modes are read-only. When reviewer subagents are available and a mode uses
+one or more lenses, the workflow must dispatch the selected reviewers. The
+parent owns base selection, synthesis, and any authorized provider action.
 
 ## Workflow
 
 1. Establish the review target and base ref. For a PR/MR, use the actual
-   PR/MR base or merge-base rather than a moving `origin/main` guess.
-2. Run deterministic scope detection:
+   PR/MR base or merge-base rather than a moving `origin/main` guess. Inspect
+   previous findings and delivery context before selecting a mode.
+2. Select the mode using the precedence above.
+3. For **quick** mode, inspect the complete diff, changed tests, and validation
+   evidence directly. Report findings first with file anchors; if clean, state
+   that explicitly and name residual test or validation risk. Stop without
+   manufacturing specialist work.
+4. For **follow-up** mode, re-check every supplied finding against the current
+   diff and classify it as `resolved`, `unresolved`, `accepted`, or
+   `residual-risk`. Do not broaden scope unless a fix created a new concrete
+   regression.
+5. For **focused**, **specialist**, and **pre-merge** modes, run deterministic
+   scope detection:
 
    ```bash
    review-specialists scope --base "$BASE_REF" --format json
    ```
 
-3. If `diff_lines < 50`, skip specialist review unless the user forced a
-   specialist or all specialists.
-4. Select specialists:
+6. Select specialists:
+   - In focused mode, use the requested lenses.
+   - In pre-merge mode, always include `testing` and `maintainability`.
+   - In specialist mode, use the scope suggestions and rules below.
    - Always consider `testing` and `maintainability` for larger diffs.
    - Consider `security` for auth changes or backend changes over 100 diff
      lines.
@@ -113,55 +132,60 @@ after fixes.
    - Consider `data-migration` for migration, schema, or data transform changes.
    - Consider `api-contract` for route, controller, API schema, OpenAPI,
      GraphQL, or protocol changes.
-5. Select the matching managed reviewer subagents for the chosen lenses
+7. Select the matching managed reviewer subagents for the chosen lenses
    (`reviewer-testing`, `reviewer-maintainability`, `reviewer-security`,
    `reviewer-performance`, `reviewer-data-migration`, `reviewer-api-contract`),
    installed at `~/.codex/agents/reviewer-<lens>.toml` and
    `~/.claude/agents/reviewer-<lens>.md`.
-6. Dispatch the selected read-only reviewer subagents one per lens, handing each
+8. Dispatch the selected read-only reviewer subagents one per lens, handing each
    the base ref and scope; each inspects read-only and returns JSONL findings for
    its lens. In Codex, use `multi_agent_v1.spawn_agent` when it is available.
    If dispatch is unavailable or blocked, state the fallback reason and run the
    same lenses inline by reading the prompt from `references/specialists/`. You
    stay the parent: you own base-ref selection, lens selection, dispatch,
    fallback justification, and the validation/merge steps below.
-7. Collect each subagent's JSONL findings (or the inline equivalent) following
+9. Collect each subagent's JSONL findings (or the inline equivalent) following
    `references/SPECIALIST_REVIEW_CONTRACT.md`. Treat malformed JSONL, missing
    required fields, unsupported severities, or absent evidence anchors as a
    workflow failure or residual risk for that lens — never promote it to a
    verified finding. Mark unverifiable claims as residual risk, not findings.
-8. Validate and merge findings:
+10. Validate and merge findings:
 
    ```bash
    review-specialists validate --input findings.jsonl --validate-paths --format json
    review-specialists merge --input findings.jsonl --summary-out specialist-review.md --format json
    ```
 
-9. Run red-team only after the selected specialists when `diff_lines > 200`, any
+11. Run red-team only after the selected specialists when `diff_lines > 200`, any
    selected specialist produced a `critical` finding, or the reviewer forced it.
    Dispatch `reviewer-red-team` when subagent dispatch is available. If dispatch
    is unavailable or blocked, state the fallback reason and run the same
-   red-team lens inline from `references/specialists/red-team.md`. Hand it the
+   red-team lens inline from `references/specialists/red-team.md`.
+   Hand it the
    merged first-wave findings so it can probe cross-cutting failure modes. Pass
    the red-team JSONL through `review-specialists validate`, then append it to
    the first-wave JSONL and run `review-specialists merge` again over the
    combined input so duplicate
    fingerprints, confirming specialists, and confidence ordering are resolved in
    the final report.
-10. Use the report template for the final synthesis. The recommended next step
-    may route to `review-dispatch-lane-pr`, a normal implementation workflow, or a
-    retained `review-evidence` record, but this workflow does not execute that
-    decision.
+12. Use the report template for the final synthesis. For pre-merge mode, apply
+   `references/DELIVERY_SPECIALIST_REVIEW_GATE.md` and
+   `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`; the delivery owner, not a
+   reviewer, posts provider comments and makes the merge decision. For every
+   mode, the recommended next step may route to the dispatch parent's
+   independent-review phase, a normal implementation workflow, or a retained
+   `review-evidence` record, but this workflow does not execute that decision.
 
 ## Boundary
 
-`code-review-specialists` owns scope detection, specialist selection,
-reviewer-subagent dispatch, validation and merge of the returned findings, and
-the merged report. Each `reviewer-<lens>` subagent owns only its read-only lens.
+`code-review-specialists` owns mode selection, read-only diff inspection, scope
+detection, specialist selection, reviewer-subagent dispatch, follow-up
+classification, validation and merge of returned findings, and the final
+report.
+Each `reviewer-<lens>` subagent owns only its read-only lens.
 This workflow does not fix code, post PR or MR review comments, mark a draft
 reviewable ready, merge, close issues, or execute the recommended next step —
-those belong to the owning PR / MR delivery skills, `review-dispatch-lane-pr`,
-or `review-evidence`.
+those belong to the owning PR / MR or dispatch parent and `review-evidence`.
 
 ## References
 
@@ -169,14 +193,6 @@ or `review-evidence`.
   `core/agents/code-review/reviewer-<lens>/AGENT.md.tera`
 - Specialist review contract:
   `references/SPECIALIST_REVIEW_CONTRACT.md`
-- Quick pass workflow:
-  `skills/code-review/code-review-quick-pass/SKILL.md`
-- Focused lens workflow:
-  `skills/code-review/code-review-focused-lens/SKILL.md`
-- Pre-merge gate workflow:
-  `skills/code-review/code-review-pre-merge-gate/SKILL.md`
-- Follow-up workflow:
-  `skills/code-review/code-review-follow-up/SKILL.md`
 - Report template:
   `references/SPECIALIST_REVIEW_REPORT_TEMPLATE.md`
 - Specialist prompts:
@@ -191,7 +207,5 @@ or `review-evidence`.
   `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`
 - Delivery review outcome schema:
   `references/DELIVERY_REVIEW_OUTCOME_SCHEMA.md`
-- PR decision workflow:
-  `skills/dispatch/review-dispatch-lane-pr/SKILL.md`
 - Review evidence tool:
   `skills/evidence/review-evidence/SKILL.md`

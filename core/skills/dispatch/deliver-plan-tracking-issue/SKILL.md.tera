@@ -1,7 +1,8 @@
 ---
 name: deliver-plan-tracking-issue
 description: >
-  Carry one lightweight issue-backed plan tracker through implementation, validation, review, PR delivery, final state, and non-mutating close-ready handoff.
+  Open or resume one lightweight issue-backed plan tracker and carry it through
+  implementation, review, PR delivery, strict closeout, and archive handoff.
 ---
 
 # Deliver Plan Tracking Issue
@@ -13,20 +14,23 @@ Prereqs:
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
   `forge-cli >=1.17.0`, `review-specialists`.
-- The tracking issue is open, visible, and reconciled with
-  `run-state.json`; FSM is not blocked or stale.
-- PR delivery runs the shared pre-merge review gate
-  (`code-review-pre-merge-gate`) and posts native review events per
+- The tracking issue is absent and ready to open, or open, visible, and
+  reconcilable with `run-state.json`; FSM is not blocked or stale.
+- PR delivery runs the generic code-review outcome in pre-merge mode and posts
+  native review events per
   `core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md`.
   Every tracking PR runs the full gate; there is no single-author self-review
   shortcut.
 - Shared family rules apply from
   `core/skills/dispatch/plan-issue-spec/skill-family.md`.
+- Internal role ordering and single-writer boundaries apply from
+  `references/outcome-routing.md`.
 
 Inputs:
 
-- `OWNER_REPO`, `ISSUE`, `RUN_STATE`, `PLAN_BUNDLE`, `SLUG`, `BRANCH`,
-  `PR_NUMBER`, `PROVIDER`, `BASE_REF`.
+- `OWNER_REPO`, optional `ISSUE`, optional `RUN_STATE`, `PLAN_BUNDLE`, `SLUG`,
+  `BRANCH`, `PR_NUMBER`, `PROVIDER`, `BASE_REF`, and post-close read-back paths
+  `CLOSED_ISSUE_VIEW_JSON`, `CLOSED_ISSUE_JSON`, and `CLOSED_ISSUE_BODY`.
 - Optional `LINKED_PR` when a PR already exists and should be verified
   instead of created.
 - Approval evidence for the later close-ready probe.
@@ -41,6 +45,8 @@ Inputs:
 
 Outputs:
 
+- `record open|attach --profile tracking` and `tracking run init` when the
+  tracker does not yet exist or has no run state.
 - Progress checkpoints: `tracking checkpoint --live --post
   state[,session[,validation]]`.
 - PR delivery through `forge-cli pr deliver --no-merge`, or adoption of an
@@ -55,7 +61,11 @@ Outputs:
   `review` role records the native review outcome URL and is posted before merge.
 - Per-task ledger sync through `plan-tooling ledger-update`.
 - `forge-cli pr merge` after the gate, sweeps, and review checkpoint pass.
-- Non-mutating `tracking close-ready --expect-visible` handoff result.
+- Strict `tracking close-ready --expect-visible`, followed by
+  `record close --profile tracking` only when readiness and approval are complete.
+- Post-close provider read-back plus `record audit --expect-visible`, followed
+  by `plan-archive discover` and dry-run-first `plan-archive migrate` routing;
+  apply remains confirmation-gated.
 
 Failure modes:
 
@@ -69,14 +79,52 @@ Failure modes:
   `plan-tooling ledger-update` before retrying the gate.
 - Stop when `pr merge` fails closed on `unresolved_review_threads` or
   `unchecked_task_items`; disposition every thread and task item, then retry.
-- Forbidden writes: `record open`, `record attach`, `record close`,
-  dispatch-profile posts, raw lifecycle comments, raw `gh pr review` /
-  `glab mr approve` for recorded review evidence, or merging before the review
+- Forbidden writes: dispatch-profile posts, raw lifecycle comments, raw
+  `gh pr review` / `glab mr approve` for recorded review evidence, or merging before the review
   gate, sweeps, and `review` checkpoint complete.
+
+## Outcome Routing
+
+The user selects the L2 plan outcome, never tracker creation, execution,
+review, closeout, or archive substeps. This parent selects those phases using
+`references/outcome-routing.md` and preserves their
+separate CLI write authorities.
+
+When no tracker exists, validate the bundle, open or attach it through
+`plan-issue record`, and initialize run state before implementation. When a
+tracker exists, reconcile live evidence before any mutation. After delivery and
+independent review, merge only after the issue-side review checkpoint and all
+provider sweeps pass. Close only after `tracking close-ready` returns
+`ready: true`; then run archive discovery and migration directly through
+`plan-archive`, dry-run first and apply only with explicit confirmation.
 
 ## Entrypoint
 
 ```bash
+plan-tooling validate --file "$PLAN_BUNDLE/$SLUG-plan.md" --format text --explain
+
+# Open/attach and tracking run init are used only when the tracker/run is absent.
+PROVIDER="$(forge-cli repo view --repo "$OWNER_REPO" --format json \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["provider"])')"
+case "$PROVIDER" in
+  github) PLAN_LABEL_ARGS=(--label workflow::plan --label workflow::tracking) ;;
+  gitlab) PLAN_LABEL_ARGS=(--label workflow::tracking --label plan) ;;
+  *) echo "unsupported tracker provider: $PROVIDER" >&2; exit 64 ;;
+esac
+
+plan-issue --repo "$OWNER_REPO" --format json record open \
+  --profile tracking --bundle "$PLAN_BUNDLE" --title "$TITLE" \
+  --label type::chore --label area::docs \
+  --label state::needs-triage \
+  "${PLAN_LABEL_ARGS[@]}"
+
+plan-issue --format json tracking run init \
+  --provider-repo "$OWNER_REPO" --issue "$ISSUE" \
+  --bundle "$PLAN_BUNDLE" \
+  --execution-state-file "$PLAN_BUNDLE/$SLUG-execution-state.md" \
+  --branch "$BRANCH" \
+  --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 plan-issue --format json tracking status \
   --provider-repo "$OWNER_REPO" \
   --issue "$ISSUE" \
@@ -126,7 +174,7 @@ review-specialists scope --base "$BASE_REF" --testing --maintainability --format
 SUBMIT_REVIEW=(); [ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
 
 # Repeat this specialist block once for each returned lens: testing,
-# maintainability, plus any risk lens selected by code-review-pre-merge-gate.
+# maintainability, plus any risk lens selected by generic pre-merge review.
 THREAD_FILE_ARGS=()
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
@@ -194,6 +242,29 @@ plan-issue --format json tracking close-ready \
   --linked-pr "$OWNER_REPO#$PR_NUMBER" \
   --approval "$APPROVAL" \
   --expect-visible
+
+# Only after close-ready reports ready=true and blockers=[].
+plan-issue --repo "$OWNER_REPO" --format json record close \
+  --profile tracking --issue "$ISSUE" --bundle "$PLAN_BUNDLE" \
+  --linked-pr "$OWNER_REPO#$PR_NUMBER" --approval "$APPROVAL" \
+  --add-label state::closed --remove-label state::needs-triage
+
+# Read back the closed provider issue body and comments, then require visible
+# closeout evidence before archive maintenance.
+forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json issue view "$ISSUE" --with-comments \
+  >"$CLOSED_ISSUE_VIEW_JSON"
+jq '{body:.data.body, comments:(.data.comments // [])}' \
+  "$CLOSED_ISSUE_VIEW_JSON" >"$CLOSED_ISSUE_JSON"
+jq -r .body "$CLOSED_ISSUE_JSON" >"$CLOSED_ISSUE_BODY"
+
+plan-issue --repo "$OWNER_REPO" --format json record audit \
+  --profile tracking \
+  --body-file "$CLOSED_ISSUE_BODY" \
+  --comments-json "$CLOSED_ISSUE_JSON" \
+  --expect-visible
+
+plan-archive discover --source-repo "$PWD" --format json
+plan-archive migrate --plan "$PLAN_BUNDLE" --issue "$ISSUE_URL" --format json
 ```
 
 `forge-cli pr deliver --no-merge` creates, checks, and marks the PR ready without
@@ -207,8 +278,8 @@ Post one compact specialist review comment per lens as it returns — before any
 repair — using the mapped reviewer bot profile (`FORGE_BOT_PROFILE=dobi` for
 unmapped lenses), with `--thread-file "$REVIEW_THREAD_FILE"` for actionable GitHub
 findings; the combined delivery outcome posts last as `dobi`.
-`code-review-pre-merge-gate` owns the read-only lenses and the bot-profile
-resolver, this skill owns the provider writes, the sweeps, and the merge, and
+The generic review outcome owns the read-only lenses and mode selection; this
+skill owns the provider writes, bot-profile resolution, sweeps, and merge, and
 reviewer subagents never post. `pr merge` fails closed on
 `unresolved_review_threads` / `unchecked_task_items`, so disposition every thread
 and task item first.
@@ -222,14 +293,15 @@ directory the `test-first-evidence` skill produces — or it fails closed with
 
 ## Workflow
 
-1. **Preflight** — run `tracking status --expect-visible`; stop on stale,
-   missing, blocked, or non-visible evidence.
+1. **Open / preflight** — validate the bundle. Open or attach the tracker and
+   initialize run state when absent; otherwise run `tracking status
+   --expect-visible`. Stop on stale, blocked, or non-visible evidence.
 2. **Implementation / validation** — do local work, update the task ledger
    after every task transition, and checkpoint only changed roles.
 3. **PR branch** — deliver with `forge-cli pr deliver --no-merge` (or adopt and
    verify `LINKED_PR` through `pr deliver` existing-PR adoption). Do not merge
    yet; the review gate runs first.
-4. **Review gate** — run `code-review-pre-merge-gate` (min `testing` +
+4. **Review gate** — run the generic code-review outcome in pre-merge mode (min `testing` +
    `maintainability`; add risk lenses per scope). Post each lens's specialist
    review comment through `forge-cli pr review` as it returns (native `COMMENT`
    on GitHub via `--submit-review`, mapped reviewer bot profile; `--thread-file`
@@ -248,10 +320,17 @@ directory the `test-first-evidence` skill produces — or it fails closed with
    `review` evidence is posted before merge.
 7. **Merge** — `forge-cli pr merge` once the gate, sweeps, and review checkpoint
    pass.
-8. **Close-ready probe** — run `tracking close-ready --expect-visible`. If
-   `ready: true`, hand off to `plan-tracking-issue-closeout`; if `ready: false`,
-   surface blockers and stop.
-9. **Never close** — this skill does not call `record close`.
+8. **Close-ready / closeout** — run `tracking close-ready --expect-visible`.
+   Stop on every blocker. On `ready: true`, write the closing summary, perform
+   only controller-authorized final-role/dashboard repair, and call `record
+   close --profile tracking` with linked PR and approval evidence.
+9. **Closeout read-back** — fetch the closed provider issue with comments and
+   run `record audit --profile tracking --expect-visible`; stop unless the
+   closeout role is visible and lint-clean.
+10. **Archive maintenance** — only after closeout read-back succeeds, run
+    `plan-archive discover`, then the default dry-run `plan-archive migrate`;
+    apply only
+    after explicit confirmation and a clean plan.
 
 ## Boundary
 
@@ -260,18 +339,16 @@ Owns:
 - Delivery-scope judgement, validation strength, review-gate orchestration and
   the provider review writes (per-lens specialist comments + the combined native
   outcome), pre-merge thread/task disposition, final state/review checkpoint
-  timing, the merge, and the non-mutating close-ready handoff.
+  timing, the merge, strict closeout, read-back, and archive routing.
 
 Must not:
 
-- Open the original tracker, close the issue, use dispatch-profile
-  semantics, let reviewer subagents post provider comments, or merge before the
+- Use dispatch-profile semantics, let reviewer subagents post provider comments,
+  close with any blocker, archive before close read-back, or merge before the
   review gate, sweeps, and `review` checkpoint complete.
 
-Handoff:
+Internal phases:
 
-- Upstream: `execute-plan-tracking-issue` or
-  `create-plan-tracking-issue`.
-- Review gate: `code-review-pre-merge-gate` (read-only lenses + bot-profile
-  resolver).
-- Closeout: `plan-tracking-issue-closeout`.
+- Open, execution, delivery, independent review, closeout, and archive phases
+  follow `references/outcome-routing.md`; they are not separate user
+  choices.

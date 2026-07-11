@@ -13,6 +13,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 META_ARTIFACTS_DIR="$ARTIFACTS_DIR/meta"
 META_WORKSPACE="$TMP_ROOT/workspaces/meta-basic-repo"
@@ -1952,6 +1955,49 @@ for branch in ("merged-branch", "super-branch", "real-work", "unmanaged-safe"):
 PY
 }
 
+run_meta_outcome_routing_probe() {
+  local files_policy="$REPO_ROOT/core/policies/files-hooks-validation.md"
+  local git_policy="$REPO_ROOT/core/policies/git-delivery.md"
+  local heuristic_policy="$REPO_ROOT/core/policies/heuristic-system/HEURISTIC_SYSTEM.md"
+  local evidence_policy="$REPO_ROOT/core/policies/evidence-archive/EVIDENCE_ARCHIVE.md"
+
+  grep -Fq '## Parent Workflow Routing' "$files_policy" || {
+    echo "runtime-smoke meta: files policy missing parent routing" >&2
+    return 1
+  }
+  grep -Fq '`agent-docs` preflight and `agent-out` allocation are parent workflow' "$files_policy" &&
+    grep -Fq 'responsibilities, not user-selected outcomes' "$files_policy" || {
+    echo "runtime-smoke meta: files policy missing parent-owned preflight/allocation" >&2
+    return 1
+  }
+  grep -Fq '## Parent Workflow Routing' "$git_policy" || {
+    echo "runtime-smoke meta: git policy missing parent routing" >&2
+    return 1
+  }
+  grep -Fq '`.agents/scripts/pre-pr.sh`' "$git_policy" || {
+    echo "runtime-smoke meta: git policy missing pre-PR dispatcher routing" >&2
+    return 1
+  }
+  grep -Fq '## Session Closeout Procedure' "$heuristic_policy" || {
+    echo "runtime-smoke meta: heuristic policy missing session closeout procedure" >&2
+    return 1
+  }
+  grep -Fq 'invoke `heuristic-inbox` directly' "$heuristic_policy" || {
+    echo "runtime-smoke meta: heuristic policy missing direct inbox routing" >&2
+    return 1
+  }
+  grep -Fq 'session closeout procedure' "$evidence_policy" &&
+    grep -Fq 'invokes `evidence migrate`' "$evidence_policy" &&
+    grep -Fq '`evidence prune-source` directly' "$evidence_policy" || {
+    echo "runtime-smoke meta: evidence policy missing direct closeout routing" >&2
+    return 1
+  }
+
+  rendered_contract_assert_skill meta heuristic-session-closeout
+  rendered_contract_assert_skill meta semantic-commit
+  rendered_contract_assert_skill reporting project-retro
+}
+
 failures=0
 record_case "meta.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
 record_case "meta.home-prompt-render" "home prompt render isolates Codex-only delegation and product sentinel text" run_home_prompt_render_probe
@@ -1975,6 +2021,7 @@ record_case "meta.plan-archive-query" "plan-archive query single-ref JSON probe 
 record_case "meta.plan-archive-discover" "plan-archive discover JSON probe classified blocked candidate" run_plan_archive_discover_probe
 record_case "meta.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
 record_case "meta.evidence-prune-source" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
+record_case "meta.outcome-routing" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
 record_case "meta.nils-cli-bump" "version-alignment doctor probe blocked v0.0.0 drift and passed host-aligned pin" run_nils_cli_bump_probe
 record_case "meta.worktree-triage" "worktree triage scan classified safe-merged, safe-superseded, and rescue-candidate worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe

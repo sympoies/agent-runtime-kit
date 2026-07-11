@@ -13,6 +13,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 MEDIA_ARTIFACTS_DIR="$ARTIFACTS_DIR/media"
 MEDIA_WORKSPACE="$TMP_ROOT/workspaces/media-basic-repo"
@@ -60,6 +63,23 @@ run_screen_record_probe() {
   ) >"$out" 2>"$err"
 }
 
+run_media_outcome_routing_probe() {
+  local image_skill="$REPO_ROOT/core/skills/media/image-processing/SKILL.md.tera"
+  local capture_skill="$REPO_ROOT/core/skills/media/screen-record/SKILL.md.tera"
+
+  grep -Fq '## Outcome Routing' "$image_skill"
+  grep -Fq 'artifact allocation is' "$image_skill"
+  grep -Fq 'internal bookkeeping' "$image_skill"
+  grep -Fq '## Outcome Routing' "$capture_skill"
+  grep -Fq 'evidence' "$capture_skill"
+  grep -Fq 'metadata and diagnostics are internal bookkeeping' "$capture_skill"
+
+  rendered_contract_assert_skill media image-processing
+  rendered_contract_assert_skill media screen-record
+  rendered_contract_assert_all_contain media image-processing '## Outcome Routing'
+  rendered_contract_assert_all_contain media screen-record '## Outcome Routing'
+}
+
 failures=0
 record_case "media.image-processing" "image-processing validated committed SVG fixture in temp workspace" run_image_processing_probe
 
@@ -68,5 +88,6 @@ if run_screen_record_probe; then
 else
   results_add "media.screen-record" "shared-cli" "skip-host-capability" "0" "screen-record host preflight unavailable; see media artifacts"
 fi
+record_case "media.outcome-routing" "media outcomes allocate and retain artifacts without exposing bookkeeping choices" run_media_outcome_routing_probe
 
 exit "$failures"

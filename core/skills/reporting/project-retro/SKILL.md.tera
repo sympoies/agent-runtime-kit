@@ -57,6 +57,15 @@ Failure modes:
 - History persistence is requested without both `--history-dir` and `--write`.
 - The JSON envelope is not `cli.repo-retro.report.v2` or the result schema is not `repo-retro.report.v2`.
 
+## Outcome Routing
+
+This is the canonical repository-retrospective outcome. Legacy
+`meta.repo-retro` requests route here; callers invoke the released `repo-retro`
+CLI for deterministic collection and this workflow owns interpretation. For a
+one-off report, artifact allocation and CLI collection are internal bookkeeping
+and default to stdout or the workflow state-out path. Durable history remains an
+explicit user outcome because it writes retained files.
+
 ## Entrypoint
 
 `project-retro` is a skill surface, not a local parser. Use the installed nils-cli command directly:
@@ -122,7 +131,7 @@ Then pass that explicit path with `--history-dir <dir> --write` only if the user
    - Mark theme statements as inference when they connect multiple deterministic signals into a narrative about the work.
    - Keep commit-type mix, hotspots, author summaries, validation signals, and HEURISTIC_SYSTEM movement compact.
    - Treat Heuristic System records as read-only operational evidence. Do not create, mutate, promote, or archive inbox entries from this
-     workflow; use `heuristic-inbox` for that lifecycle.
+     workflow; session closeout policy owns that lifecycle through the direct CLI.
    - Mark inference explicitly when connecting several deterministic signals into a habit, risk, or follow-up recommendation.
 
 6. Handle typed JSONL inputs.
@@ -144,7 +153,8 @@ Then pass that explicit path with `--history-dir <dir> --write` only if the user
   report schema implementation.
 - `project-retro` may summarize `skill-usage` or other workflow evidence only when it is provided as an explicit JSONL/path input or appears
   in local git history.
-- `project-retro` reads Heuristic System records but never replaces the `heuristic-inbox` lifecycle workflow.
+- `project-retro` reads Heuristic System records but never replaces the
+  policy-owned heuristic lifecycle.
 - The CLI owns deterministic data collection and path-safe writes; the skill owns user-facing judgment, primary-theme synthesis, and
   follow-up framing.
 
