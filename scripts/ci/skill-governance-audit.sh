@@ -11,7 +11,7 @@ SHAPE_PATHS=()
 
 usage() {
   cat <<'USAGE'
-Usage: bash scripts/ci/skill-governance-audit.sh [--check-counts|--update-counts] [--fixture create|remove|create-project|remove-project|count-refresh|codex-plugin|description-limit] [--shape-only [paths...]]
+Usage: bash scripts/ci/skill-governance-audit.sh [--check-counts|--update-counts] [--fixture create|remove|create-project|remove-project|count-refresh|codex-plugin|description-limit|exposure-contract] [--shape-only [paths...]]
 
 Checks:
   default                   Validate active repo source/manifests/plugins/reminders/counts.
@@ -24,6 +24,7 @@ Checks:
   --fixture count-refresh   Validate stale count detection and whitelist updates.
   --fixture codex-plugin    Validate Codex plugin skill-list drift detection.
   --fixture description-limit  Validate the >240-char and missing-description hard-fail paths.
+  --fixture exposure-contract  Validate v2 admission, exposure, and disposition failure paths.
   --shape-only [paths...]   Lint H2 section shape on the given SKILL.md.tera paths
                             (fast pre-commit gate; consumes all remaining args).
 USAGE
@@ -41,7 +42,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --fixture)
       if [ "$#" -lt 2 ]; then
-        echo "skill-governance-audit: --fixture requires create|remove|create-project|remove-project|count-refresh|codex-plugin|description-limit" >&2
+        echo "skill-governance-audit: --fixture requires create|remove|create-project|remove-project|count-refresh|codex-plugin|description-limit|exposure-contract" >&2
         exit 2
       fi
       case "$2" in
@@ -56,6 +57,9 @@ while [ "$#" -gt 0 ]; do
           ;;
         description-limit)
           MODE="description-limit-fixture"
+          ;;
+        exposure-contract)
+          MODE="exposure-contract-fixture"
           ;;
         *)
           echo "skill-governance-audit: unsupported fixture: $2" >&2
@@ -88,6 +92,7 @@ python3 - "$MODE" "$REPO_ROOT" ${SHAPE_PATHS[@]+"${SHAPE_PATHS[@]}"} <<'PY'
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -107,6 +112,9 @@ CANONICAL_SECTIONS = ("Contract", "Entrypoint", "Workflow", "Boundary")
 # products). Keep it minimal per core/skills/README.md "Skill Description
 # Rubric"; this hard ceiling backstops the rubric against trigger-phrase bloat.
 DESCRIPTION_MAX_CHARS = 240
+INITIAL_DISPOSITION_COUNT = 66
+INITIAL_DISPOSITION_IDS_SHA256 = "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971aa84a34d60"
+SKILL_ID_RE = r"[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*"
 
 
 COUNT_TARGETS = [
@@ -202,7 +210,7 @@ def parse_skills(path: Path) -> list[dict[str, object]]:
             required = current["required_clis"]
             assert isinstance(required, dict)
             required[key] = strip_quotes(value)
-        elif line.startswith("      codex:") or line.startswith("      claude:"):
+        elif line.startswith("      codex:") or line.startswith("      claude:") or line.startswith("      hermes:"):
             product = line.strip().removesuffix(":")
             products = current["products"]
             assert isinstance(products, dict)
@@ -220,7 +228,348 @@ def parse_skills(path: Path) -> list[dict[str, object]]:
             in_required = False
     if current is not None:
         entries.append(current)
+
+    text = read(path)
+    by_id = {str(entry["id"]): entry for entry in entries}
+    chunks = re.split(r"(?=^  - id: )", text, flags=re.M)
+    for chunk in chunks:
+        id_match = re.match(rf"^  - id: ({SKILL_ID_RE})$", chunk, re.M)
+        if not id_match:
+            continue
+        entry = by_id[id_match.group(1)]
+        if re.search(r"^    invocation:$", chunk, re.M):
+            role = re.search(r"^      role: ([a-z-]+)$", chunk, re.M)
+            intents = re.search(r"^      intents: \[(.*)\]$", chunk, re.M)
+            example = re.search(r"^      example_request: (.+)$", chunk, re.M)
+            rationale = re.search(r"^      admission_rationale: (.+)$", chunk, re.M)
+            entry["invocation"] = {
+                "role": role.group(1) if role else "",
+                "intents": [
+                    strip_quotes(item.strip())
+                    for item in (intents.group(1).split(",") if intents else [])
+                    if item.strip()
+                ],
+                "example_request": strip_quotes(example.group(1)) if example else "",
+                "admission_rationale": strip_quotes(rationale.group(1)) if rationale else "",
+            }
+        if re.search(r"^    exposure:$", chunk, re.M):
+            profile = re.search(r"^      profile: ([a-z-]+)$", chunk, re.M)
+            replacement = re.search(rf"^      replacement: ({SKILL_ID_RE})$", chunk, re.M)
+            retire_after = re.search(r'^      retire_after: ["\']?([^"\']+)["\']?$', chunk, re.M)
+            entry["exposure"] = {
+                "profile": profile.group(1) if profile else "",
+                "replacement": replacement.group(1) if replacement else None,
+                "retire_after": retire_after.group(1) if retire_after else None,
+            }
     return entries
+
+
+def parse_skill_migration(path: Path) -> dict[str, object]:
+    prefix = read(path).split("\nskills:\n", 1)[0]
+    version = re.search(r"^schema_version: (\d+)$", prefix, re.M)
+    owner = re.search(r"^  owner: (.+)$", prefix, re.M)
+    pending = re.findall(rf"^    - ({SKILL_ID_RE})$", prefix, re.M)
+    return {
+        "schema_version": int(version.group(1)) if version else 0,
+        "owner": strip_quotes(owner.group(1)) if owner else "",
+        "pending_disposition": pending,
+    }
+
+
+def parse_disposition_scalar(raw: str) -> object:
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    return value
+
+
+def parse_dispositions(path: Path) -> dict[str, object]:
+    text = read(path)
+    version = re.search(r"^schema_version: (\d+)$", text, re.M)
+    owner = re.search(r"^owner: (.+)$", text, re.M)
+    source_count = re.search(r"^source_skill_count: (\d+)$", text, re.M)
+    source_ids_sha256 = re.search(r'^source_skill_ids_sha256: ["\']?([0-9a-f]{64})["\']?$', text, re.M)
+    root_keys = set(re.findall(r"^([a-z_]+):", text, re.M))
+    allowed_root_keys = {
+        "schema_version",
+        "owner",
+        "source_skill_count",
+        "source_skill_ids_sha256",
+        "dispositions",
+    }
+    scalar_fields = {
+        "status",
+        "example_request",
+        "user_outcome",
+        "destination",
+        "enforcement_point",
+        "migration_path",
+        "replacement",
+        "compatibility_required",
+        "live_cleanup_required",
+        "rationale",
+    }
+    list_fields = {"parent_intents", "current_clis", "current_hooks"}
+    rows: list[dict[str, object]] = []
+    for chunk in re.split(r"(?=^  - id: )", text, flags=re.M):
+        id_match = re.match(rf"^  - id: ({SKILL_ID_RE})$", chunk, re.M)
+        if not id_match:
+            continue
+        row: dict[str, object] = {"id": id_match.group(1)}
+        unknown_fields: list[str] = []
+        parse_errors: list[str] = []
+        lines = chunk.splitlines()
+        for index, line in enumerate(lines):
+            field = re.match(r"^    ([a-z_]+):(.*)$", line)
+            if field is None:
+                continue
+            key = field.group(1)
+            raw_value = field.group(2).strip()
+            if key in scalar_fields:
+                row[key] = parse_disposition_scalar(raw_value)
+                continue
+            if key not in list_fields:
+                unknown_fields.append(key)
+                continue
+
+            values: list[object] = []
+            if raw_value:
+                if not (raw_value.startswith("[") and raw_value.endswith("]")):
+                    parse_errors.append(f"{key} must be an inline or block array")
+                    continue
+                inner = raw_value[1:-1].strip()
+                if inner:
+                    values = [
+                        parse_disposition_scalar(item)
+                        for item in inner.split(",")
+                    ]
+            else:
+                for continuation in lines[index + 1 :]:
+                    item = re.match(r"^      - (.*)$", continuation)
+                    if item is not None:
+                        values.append(parse_disposition_scalar(item.group(1)))
+                        continue
+                    if not continuation.strip() or continuation.lstrip().startswith("#"):
+                        continue
+                    break
+            row[key] = values
+        if unknown_fields:
+            row["__unknown_fields"] = sorted(set(unknown_fields))
+        if parse_errors:
+            row["__parse_errors"] = parse_errors
+        rows.append(row)
+    return {
+        "schema_version": int(version.group(1)) if version else 0,
+        "owner": strip_quotes(owner.group(1)) if owner else "",
+        "source_skill_count": int(source_count.group(1)) if source_count else -1,
+        "source_skill_ids_sha256": source_ids_sha256.group(1) if source_ids_sha256 else "",
+        "unknown_fields": sorted(root_keys - allowed_root_keys),
+        "rows": rows,
+    }
+
+
+def exposure_contract_errors(root: Path) -> list[str]:
+    errors: list[str] = []
+    skills_path = root / "manifests" / "skills.yaml"
+    dispositions_path = root / "manifests" / "skill-dispositions.yaml"
+    skills_schema_path = root / "core" / "docs" / "schemas" / "skills.schema.json"
+    dispositions_schema_path = root / "core" / "docs" / "schemas" / "skill-dispositions.schema.json"
+
+    skills_schema = json.loads(read(skills_schema_path))
+    disposition_schema = json.loads(read(dispositions_schema_path))
+    if skills_schema.get("properties", {}).get("schema_version", {}).get("const") != 2:
+        errors.append("skills schema version must be 2")
+    if disposition_schema.get("properties", {}).get("schema_version", {}).get("const") != 1:
+        errors.append("disposition schema version must be 1")
+
+    migration = parse_skill_migration(skills_path)
+    skills = parse_skills(skills_path)
+    dispositions = parse_dispositions(dispositions_path)
+    skill_ids = [str(entry["id"]) for entry in skills]
+    skill_id_set = set(skill_ids)
+    pending = migration["pending_disposition"]
+    assert isinstance(pending, list)
+    pending_ids = [str(item) for item in pending]
+    pending_set = set(pending_ids)
+    rows = dispositions["rows"]
+    assert isinstance(rows, list)
+    disposition_ids = [str(row["id"]) for row in rows]
+
+    if migration["schema_version"] != 2:
+        errors.append("skills manifest schema version must be 2")
+    if not migration["owner"]:
+        errors.append("migration owner is required")
+    if len(skill_ids) != len(skill_id_set):
+        errors.append("active skill ids must be unique")
+    if len(pending_ids) != len(pending_set):
+        errors.append("pending disposition ids must be unique")
+    unknown_pending = sorted(pending_set - skill_id_set)
+    if unknown_pending:
+        errors.append(f"pending disposition ids are not active: {unknown_pending}")
+
+    if dispositions["schema_version"] != 1:
+        errors.append("disposition manifest schema version must be 1")
+    if dispositions["unknown_fields"]:
+        errors.append(f"unknown disposition manifest fields: {dispositions['unknown_fields']}")
+    if dispositions["owner"] != migration["owner"]:
+        errors.append("migration and disposition owners must match")
+    if dispositions["source_skill_count"] != INITIAL_DISPOSITION_COUNT:
+        errors.append(f"source_skill_count must remain {INITIAL_DISPOSITION_COUNT}")
+    if len(rows) != INITIAL_DISPOSITION_COUNT:
+        errors.append(f"disposition ledger must retain {INITIAL_DISPOSITION_COUNT} rows")
+    if len(disposition_ids) != len(set(disposition_ids)):
+        errors.append("disposition ids must be unique")
+    disposition_digest = hashlib.sha256(("\n".join(disposition_ids) + "\n").encode()).hexdigest()
+    if dispositions["source_skill_ids_sha256"] != INITIAL_DISPOSITION_IDS_SHA256:
+        errors.append("source_skill_ids_sha256 must remain the initial baseline digest")
+    if disposition_digest != INITIAL_DISPOSITION_IDS_SHA256:
+        errors.append("ordered disposition ids do not match the frozen baseline")
+
+    pending_rows = [str(row["id"]) for row in rows if row.get("status") == "pending"]
+    if pending_ids != [skill_id for skill_id in skill_ids if skill_id in pending_set]:
+        errors.append("pending disposition ids must follow active manifest order")
+    if pending_rows != pending_ids:
+        errors.append("pending disposition rows must exactly match the migration pending set")
+
+    valid_destinations = {
+        "entrypoint",
+        "policy",
+        "intent-doc",
+        "hook-gate",
+        "cli-only",
+        "internal-workflow",
+        "merge",
+        "remove",
+        "compatibility",
+    }
+    for row in rows:
+        row_id = str(row["id"])
+        unknown_fields = row.get("__unknown_fields", [])
+        parse_errors = row.get("__parse_errors", [])
+        if unknown_fields:
+            errors.append(f"{row_id} unknown disposition fields: {unknown_fields}")
+        for parse_error in parse_errors:
+            errors.append(f"{row_id} {parse_error}")
+
+        status = row.get("status")
+        if status not in {"pending", "reviewed"}:
+            errors.append(f"{row_id} disposition status is invalid")
+            continue
+
+        for field in (
+            "example_request",
+            "enforcement_point",
+            "migration_path",
+            "rationale",
+        ):
+            if field in row and (
+                not isinstance(row[field], str) or not str(row[field]).strip()
+            ):
+                errors.append(f"{row_id} {field} must be a non-empty string")
+
+        if "user_outcome" in row and row["user_outcome"] not in {"yes", "no", "advanced"}:
+            errors.append(f"{row_id} user_outcome is invalid")
+        if "destination" in row and row["destination"] not in valid_destinations:
+            errors.append(f"{row_id} reviewed disposition destination is invalid")
+        for field in ("parent_intents", "current_clis", "current_hooks"):
+            if field not in row:
+                continue
+            values = row[field]
+            if not isinstance(values, list) or any(
+                not isinstance(item, str) or not item.strip() for item in values
+            ):
+                errors.append(f"{row_id} {field} must contain non-empty strings")
+                continue
+            if len(values) != len(set(values)):
+                errors.append(f"{row_id} {field} must contain unique items")
+            if field == "parent_intents" and not values:
+                errors.append(f"{row_id} parent_intents must not be empty")
+        for field in ("compatibility_required", "live_cleanup_required"):
+            if field in row and type(row[field]) is not bool:
+                errors.append(f"{row_id} {field} must be boolean")
+        if "replacement" in row and (
+            not isinstance(row["replacement"], str)
+            or re.fullmatch(SKILL_ID_RE, str(row["replacement"])) is None
+        ):
+            errors.append(f"{row_id} replacement must be a skill id")
+
+        if status == "pending":
+            forbidden = {"user_outcome", "destination", "parent_intents", "rationale"}
+            if forbidden.intersection(row):
+                errors.append(f"{row_id} pending disposition cannot carry reviewed fields")
+            continue
+        required = {
+            "user_outcome",
+            "destination",
+            "parent_intents",
+            "current_clis",
+            "current_hooks",
+            "enforcement_point",
+            "migration_path",
+            "compatibility_required",
+            "live_cleanup_required",
+            "rationale",
+        }
+        missing = sorted(required - set(row))
+        if missing:
+            errors.append(f"{row_id} reviewed disposition is missing {missing}")
+
+    from datetime import date
+
+    def valid_date(value: object) -> bool:
+        if not isinstance(value, str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", value):
+            return False
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    for entry in skills:
+        skill_id = str(entry["id"])
+        invocation = entry.get("invocation")
+        exposure = entry.get("exposure")
+        if skill_id in pending_set:
+            if invocation is not None or exposure is not None:
+                errors.append(f"{skill_id} pending disposition must not carry retained metadata")
+            continue
+        if not isinstance(invocation, dict) or not isinstance(exposure, dict):
+            errors.append(f"{skill_id} retained skill requires invocation and exposure metadata")
+            continue
+        role = invocation.get("role")
+        if role not in {"workflow", "maintenance", "advanced", "compatibility"}:
+            errors.append(f"{skill_id} invocation role is invalid")
+        if role == "advanced":
+            errors.append(f"{skill_id} advanced role has no supported opt-in exposure")
+        if not invocation.get("intents") or not invocation.get("example_request") or not invocation.get("admission_rationale"):
+            errors.append(f"{skill_id} retained admission metadata is incomplete")
+        if exposure.get("profile") != "default":
+            errors.append(f"{skill_id} exposure profile must be default")
+        replacement = exposure.get("replacement")
+        retire_after = exposure.get("retire_after")
+        if role == "compatibility":
+            if (
+                not replacement
+                or replacement == skill_id
+                or replacement not in skill_id_set
+                or replacement in pending_set
+            ):
+                errors.append(f"{skill_id} compatibility replacement must name another reviewed active skill")
+            if not valid_date(retire_after):
+                errors.append(f"{skill_id} compatibility retire_after must be YYYY-MM-DD")
+        elif replacement is not None or retire_after is not None:
+            errors.append(f"{skill_id} non-compatibility role cannot carry lifecycle metadata")
+
+    return errors
+
+
+def validate_exposure_contract(root: Path) -> None:
+    errors = exposure_contract_errors(root)
+    if errors:
+        fail("skill exposure contract: " + "; ".join(errors))
 
 
 def active_skill_count(root: Path) -> int:
@@ -724,7 +1073,296 @@ def validate_description_limit_fixture() -> None:
     )
 
 
+def validate_exposure_contract_fixture() -> None:
+    def copy_contract_tree(destination: Path) -> None:
+        (destination / "manifests").mkdir(parents=True)
+        (destination / "core" / "docs" / "schemas").mkdir(parents=True)
+        for name in ("skills.yaml", "skill-dispositions.yaml"):
+            shutil.copy2(ROOT / "manifests" / name, destination / "manifests" / name)
+        for name in ("skills.schema.json", "skill-dispositions.schema.json"):
+            shutil.copy2(
+                ROOT / "core" / "docs" / "schemas" / name,
+                destination / "core" / "docs" / "schemas" / name,
+            )
+
+    def write_positive_retained(root: Path) -> None:
+        skills_path = root / "manifests" / "skills.yaml"
+        dispositions_path = root / "manifests" / "skill-dispositions.yaml"
+        first_id = "reporting.daily-brief"
+        skills = read(skills_path).replace(f"    - {first_id}\n", "", 1)
+        semantics = """    invocation:
+      role: workflow
+      intents: [daily-brief]
+      example_request: "Prepare my daily information brief"
+      admission_rationale: "Produces a distinct report directly requested by a user."
+    exposure:
+      profile: default
+"""
+        skills = skills.replace("    products:\n", semantics + "    products:\n", 1)
+        skills_path.write_text(skills, encoding="utf-8")
+
+        reviewed = """  - id: reporting.daily-brief
+    status: reviewed
+    example_request: "Prepare my daily information brief"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [daily-brief]
+    current_clis: [agent-out]
+    current_hooks: []
+    enforcement_point: "Skill admission and product render governance."
+    migration_path: "Retain the existing entrypoint."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Produces a distinct user-requested report."
+"""
+        dispositions = read(dispositions_path).replace(
+            "  - id: reporting.daily-brief\n    status: pending\n",
+            reviewed,
+            1,
+        )
+        dispositions_path.write_text(dispositions, encoding="utf-8")
+
+    def write_replacement_retained(root: Path) -> None:
+        skills_path = root / "manifests" / "skills.yaml"
+        dispositions_path = root / "manifests" / "skill-dispositions.yaml"
+        replacement_id = "reporting.project-retro"
+        skills = read(skills_path).replace(f"    - {replacement_id}\n", "", 1)
+        marker = f"  - id: {replacement_id}\n"
+        before, after = skills.split(marker, 1)
+        semantics = """    invocation:
+      role: workflow
+      intents: [project-retro]
+      example_request: "Prepare a project implementation retrospective"
+      admission_rationale: "Produces a distinct user-requested report."
+    exposure:
+      profile: default
+"""
+        after = after.replace("    products:\n", semantics + "    products:\n", 1)
+        skills_path.write_text(before + marker + after, encoding="utf-8")
+
+        reviewed = """  - id: reporting.project-retro
+    status: reviewed
+    example_request: "Prepare a project implementation retrospective"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-retro]
+    current_clis: [repo-retro]
+    current_hooks: []
+    enforcement_point: "Skill admission and product render governance."
+    migration_path: "Retain the existing entrypoint."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Produces a distinct user-requested report."
+"""
+        dispositions = read(dispositions_path).replace(
+            "  - id: reporting.project-retro\n    status: pending\n",
+            reviewed,
+            1,
+        )
+        dispositions_path.write_text(dispositions, encoding="utf-8")
+
+    def expect_error(root: Path, needle: str) -> None:
+        errors = exposure_contract_errors(root)
+        if not any(needle in error for error in errors):
+            fail(f"exposure-contract fixture expected {needle!r}, got {errors}")
+
+    with tempfile.TemporaryDirectory(prefix="skill-exposure-contract-") as tmp:
+        base = Path(tmp) / "base"
+        copy_contract_tree(base)
+        if exposure_contract_errors(base):
+            fail("exposure-contract fixture base catalog is not valid")
+
+        retained = Path(tmp) / "retained"
+        shutil.copytree(base, retained)
+        write_positive_retained(retained)
+        retained_errors = exposure_contract_errors(retained)
+        if retained_errors:
+            fail(f"exposure-contract fixture valid retained entry failed: {retained_errors}")
+
+        block_lists = Path(tmp) / "block-lists"
+        shutil.copytree(retained, block_lists)
+        dispositions_path = block_lists / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path)
+            .replace("    parent_intents: [daily-brief]\n", "    parent_intents:\n      - daily-brief\n", 1)
+            .replace("    current_clis: [agent-out]\n", "    current_clis:\n      - agent-out\n", 1),
+            encoding="utf-8",
+        )
+        block_list_errors = exposure_contract_errors(block_lists)
+        if block_list_errors:
+            fail(f"exposure-contract fixture valid block lists failed: {block_list_errors}")
+
+        invalid_user_outcome = Path(tmp) / "invalid-user-outcome"
+        shutil.copytree(retained, invalid_user_outcome)
+        dispositions_path = invalid_user_outcome / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace("    user_outcome: yes\n", "    user_outcome: maybe\n", 1),
+            encoding="utf-8",
+        )
+        expect_error(invalid_user_outcome, "user_outcome is invalid")
+
+        invalid_boolean = Path(tmp) / "invalid-boolean"
+        shutil.copytree(retained, invalid_boolean)
+        dispositions_path = invalid_boolean / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace(
+                "    compatibility_required: false\n",
+                '    compatibility_required: "false"\n',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        expect_error(invalid_boolean, "compatibility_required must be boolean")
+
+        duplicate_array = Path(tmp) / "duplicate-array"
+        shutil.copytree(retained, duplicate_array)
+        dispositions_path = duplicate_array / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace(
+                "    current_clis: [agent-out]\n",
+                "    current_clis: [agent-out, agent-out]\n",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        expect_error(duplicate_array, "current_clis must contain unique items")
+
+        empty_parent_intents = Path(tmp) / "empty-parent-intents"
+        shutil.copytree(retained, empty_parent_intents)
+        dispositions_path = empty_parent_intents / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace(
+                "    parent_intents: [daily-brief]\n",
+                "    parent_intents: []\n",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        expect_error(empty_parent_intents, "parent_intents must not be empty")
+
+        unknown_field = Path(tmp) / "unknown-field"
+        shutil.copytree(retained, unknown_field)
+        dispositions_path = unknown_field / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace(
+                "    status: reviewed\n",
+                "    status: reviewed\n    surprise_field: true\n",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        expect_error(unknown_field, "unknown disposition fields")
+
+        missing_metadata = Path(tmp) / "missing-metadata"
+        shutil.copytree(base, missing_metadata)
+        dispositions_path = missing_metadata / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace(
+                "  - id: reporting.daily-brief\n    status: pending\n",
+                """  - id: reporting.daily-brief
+    status: reviewed
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [daily-brief]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Skill admission governance."
+    migration_path: "Retain it."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Direct outcome."
+""",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        skills_path = missing_metadata / "manifests" / "skills.yaml"
+        skills_path.write_text(
+            read(skills_path).replace("    - reporting.daily-brief\n", "", 1),
+            encoding="utf-8",
+        )
+        expect_error(missing_metadata, "requires invocation and exposure metadata")
+
+        advanced = Path(tmp) / "advanced"
+        shutil.copytree(retained, advanced)
+        skills_path = advanced / "manifests" / "skills.yaml"
+        skills_path.write_text(read(skills_path).replace("role: workflow", "role: advanced", 1), encoding="utf-8")
+        expect_error(advanced, "advanced role has no supported opt-in exposure")
+
+        opt_in = Path(tmp) / "opt-in"
+        shutil.copytree(retained, opt_in)
+        skills_path = opt_in / "manifests" / "skills.yaml"
+        skills_path.write_text(read(skills_path).replace("profile: default", "profile: opt-in", 1), encoding="utf-8")
+        expect_error(opt_in, "exposure profile must be default")
+
+        compatibility = Path(tmp) / "compatibility"
+        shutil.copytree(retained, compatibility)
+        skills_path = compatibility / "manifests" / "skills.yaml"
+        skills_path.write_text(read(skills_path).replace("role: workflow", "role: compatibility", 1), encoding="utf-8")
+        expect_error(compatibility, "compatibility replacement must name another reviewed active skill")
+
+        bounded_compatibility = Path(tmp) / "bounded-compatibility"
+        shutil.copytree(retained, bounded_compatibility)
+        write_replacement_retained(bounded_compatibility)
+        skills_path = bounded_compatibility / "manifests" / "skills.yaml"
+        skills = read(skills_path).replace("role: workflow", "role: compatibility", 1)
+        skills = skills.replace(
+            "      profile: default\n",
+            """      profile: default
+      replacement: reporting.project-retro
+      retire_after: "2026-12-31"
+""",
+            1,
+        )
+        skills_path.write_text(skills, encoding="utf-8")
+        bounded_errors = exposure_contract_errors(bounded_compatibility)
+        if bounded_errors:
+            fail(f"exposure-contract fixture valid compatibility failed: {bounded_errors}")
+
+        invalid_date = Path(tmp) / "invalid-date"
+        shutil.copytree(bounded_compatibility, invalid_date)
+        skills_path = invalid_date / "manifests" / "skills.yaml"
+        skills_path.write_text(
+            read(skills_path).replace("2026-12-31", "2026-99-99", 1),
+            encoding="utf-8",
+        )
+        expect_error(invalid_date, "compatibility retire_after must be YYYY-MM-DD")
+
+        growth = Path(tmp) / "growth"
+        shutil.copytree(base, growth)
+        skills_path = growth / "manifests" / "skills.yaml"
+        skills_path.write_text(
+            read(skills_path).replace(
+                "  pending_disposition:\n",
+                "  pending_disposition:\n    - fixture.new-skill\n",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        expect_error(growth, "pending disposition ids are not active")
+
+        replaced_baseline = Path(tmp) / "replaced-baseline"
+        shutil.copytree(base, replaced_baseline)
+        dispositions_path = replaced_baseline / "manifests" / "skill-dispositions.yaml"
+        dispositions_path.write_text(
+            read(dispositions_path).replace(
+                "  - id: reporting.daily-brief\n",
+                "  - id: fixture.replacement\n",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        expect_error(replaced_baseline, "ordered disposition ids do not match the frozen baseline")
+
+    print(
+        "skill-governance-audit: exposure-contract fixture OK "
+        "pending=66 retained=true advanced=false opt_in=false compatibility_bounded=true "
+        "schema_types=true block_lists=true growth=false"
+    )
+
+
 def validate_repo() -> None:
+    validate_exposure_contract(ROOT)
     skills = parse_skills(ROOT / "manifests" / "skills.yaml")
     plugins = parse_plugins(ROOT / "manifests" / "plugins.yaml")
     by_id = {str(entry["id"]): entry for entry in skills}
@@ -859,8 +1497,12 @@ def validate_create_fixture() -> None:
         if not (fixture / rel).is_file():
             fail(f"create fixture missing {rel}")
     skill_id = "fixture.sample-prose"
-    if skill_id not in {str(entry["id"]) for entry in parse_skills(fixture / "manifests" / "skills.yaml")}:
+    entries = parse_skills(fixture / "manifests" / "skills.yaml")
+    if skill_id not in {str(entry["id"]) for entry in entries}:
         fail("create fixture missing skill manifest entry")
+    entry = next(item for item in entries if item["id"] == skill_id)
+    if not isinstance(entry.get("invocation"), dict) or not isinstance(entry.get("exposure"), dict):
+        fail("create fixture missing v2 invocation/exposure admission")
     plugins = parse_plugins(fixture / "manifests" / "plugins.yaml")
     if not any(skill_id in plugin.get("contained_skills", []) for plugin in plugins):
         fail("create fixture missing plugin containment")
@@ -912,6 +1554,10 @@ def validate_remove_fixture() -> None:
     ]:
         if not (fixture / rel).is_file():
             fail(f"remove fixture missing {rel}")
+    entries = parse_skills(fixture / "manifests" / "skills.yaml")
+    entry = next((item for item in entries if item["id"] == "fixture.removable-skill"), None)
+    if entry is None or not isinstance(entry.get("invocation"), dict) or not isinstance(entry.get("exposure"), dict):
+        fail("remove fixture missing v2 invocation/exposure admission")
     print("skill-governance-audit: remove fixture OK classes=10 retained_history=true")
 
 
@@ -1104,6 +1750,8 @@ elif MODE == "codex-plugin-fixture":
     validate_codex_plugin_fixture()
 elif MODE == "description-limit-fixture":
     validate_description_limit_fixture()
+elif MODE == "exposure-contract-fixture":
+    validate_exposure_contract_fixture()
 else:
     fail(f"unknown mode: {MODE}")
 PY

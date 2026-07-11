@@ -133,8 +133,10 @@ bash scripts/ci/skill-governance-audit.sh
 bash scripts/ci/skill-governance-audit.sh --fixture count-refresh
 bash scripts/ci/skill-governance-audit.sh --fixture codex-plugin
 bash scripts/ci/skill-governance-audit.sh --fixture description-limit
+bash scripts/ci/skill-governance-audit.sh --fixture exposure-contract
 bash scripts/ci/skill-governance-audit.sh --fixture create
 bash scripts/ci/skill-governance-audit.sh --fixture remove
+bash tests/skill-exposure-contract/run.sh
 
 # -----------------------------------------------------------------------------
 # Position 2 — nils-cli surface pin alignment (version-alignment doctor class)

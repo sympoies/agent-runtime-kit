@@ -4,6 +4,10 @@ This directory contains the portable source templates for runtime-kit skills.
 `manifests/skills.yaml` is the machine-checkable inventory; this README is the
 human index for scanning the skill catalog by category and skill series.
 
+Admission roles, truthful product exposure, the frozen #562 pending cohort,
+and disposition destinations are defined in the
+[skill exposure contract](../../docs/source/skill-exposure-contract.md).
+
 ## Summary
 
 | Category | Skills | Main series |

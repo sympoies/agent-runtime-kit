@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.21.14"
+  pinned_tag: "v1.21.15"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "01254074f121f734c012b0d9d67493a35c5a49d8756c38b691a6212f1b2a2528"
-    linux_arm64: "ab775ab6bd6a1452a0f884fd316ac28db7f146374ac9f3a1d1fe26db087eae62"
+    linux_amd64: "af79fc18dded42314e9514e095d955522aef61093cae6b575399504d68896e11"
+    linux_arm64: "6ece89e0fb9167cd3f5d41cb5cf4ae07f71c2abbf0aef7ef9fa2238bdd9be18d"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -58,7 +58,7 @@ required_clis:
     min: "1.8.0"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos
     min: "1.0.9"
-  - bin: agent-runtime    # home-prompt render target for per-product AGENT_HOME output (`render --target home-prompt`)
-    min: "1.12.1"
+  - bin: agent-runtime    # home-prompt render plus skills-manifest v2 parsing and semantic `list-skills` diagnostics
+    min: "1.21.15"
   - bin: macos-agent      # macOS Computer Use skill: AX/window/screenshot/wait/scenario plus key, move, bounded drag, scroll, modifier-assisted mouse actions, and held-input cleanup
     min: "1.21.13"

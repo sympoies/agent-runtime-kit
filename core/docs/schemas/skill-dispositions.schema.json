@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-runtime-kit.local/schemas/skill-dispositions.schema.json",
+  "title": "skill-dispositions.yaml",
+  "description": "Machine-auditable migration ledger for deciding whether each current skill remains a user entrypoint or moves to another runtime layer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "owner",
+    "source_skill_count",
+    "source_skill_ids_sha256",
+    "dispositions"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "owner": { "type": "string", "minLength": 1 },
+    "source_skill_count": { "type": "integer", "minimum": 0 },
+    "source_skill_ids_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dispositions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/disposition" }
+    }
+  },
+  "$defs": {
+    "skillId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$"
+    },
+    "disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/skillId" },
+        "status": { "type": "string", "enum": ["pending", "reviewed"] },
+        "example_request": { "type": "string", "minLength": 1 },
+        "user_outcome": { "type": "string", "enum": ["yes", "no", "advanced"] },
+        "destination": {
+          "type": "string",
+          "enum": [
+            "entrypoint",
+            "policy",
+            "intent-doc",
+            "hook-gate",
+            "cli-only",
+            "internal-workflow",
+            "merge",
+            "remove",
+            "compatibility"
+          ]
+        },
+        "parent_intents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "current_clis": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "current_hooks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "enforcement_point": { "type": "string", "minLength": 1 },
+        "migration_path": { "type": "string", "minLength": 1 },
+        "replacement": { "$ref": "#/$defs/skillId" },
+        "compatibility_required": { "type": "boolean" },
+        "live_cleanup_required": { "type": "boolean" },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "if": {
+        "properties": { "status": { "const": "pending" } },
+        "required": ["status"]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["user_outcome"] },
+            { "required": ["destination"] },
+            { "required": ["parent_intents"] },
+            { "required": ["rationale"] }
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "user_outcome",
+          "destination",
+          "parent_intents",
+          "current_clis",
+          "current_hooks",
+          "enforcement_point",
+          "migration_path",
+          "compatibility_required",
+          "live_cleanup_required",
+          "rationale"
+        ]
+      }
+    }
+  }
+}

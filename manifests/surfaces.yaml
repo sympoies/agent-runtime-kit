@@ -269,7 +269,7 @@ surfaces:
           - "core/skills/<domain>/<skill>/ -> build/codex/plugins/<p>/skills/<s>/"
           - scripts/sync-runtime-surfaces.sh
         min_product: "0.141.0"
-        min_nils_cli: "v0.20.0"
+        min_nils_cli: "v1.21.15"
         acceptance:
           - kind: ci
             note: "gate 3 (render), gate 4 (golden), gate 5 (drift), gate 8 (runtime-smoke codex plugin-registry probe)"
@@ -287,7 +287,7 @@ surfaces:
         source_artifacts:
           - "core/skills/<domain>/<skill>/ -> build/claude/plugins/<p>/skills/<s>/"
         min_product: "2.1.145"
-        min_nils_cli: "v0.20.0"
+        min_nils_cli: "v1.21.15"
         acceptance:
           - kind: ci
             note: "gate 3 (render), gate 4 (golden), gate 5 (drift), gate 7 (sandbox), gate 8 (runtime-smoke)"
@@ -838,7 +838,7 @@ surfaces:
         source_artifacts:
           - "targets/hermes/link-map.yaml"
         min_product: "0.17.0"
-        min_nils_cli: "v1.20.0"
+        min_nils_cli: "v1.21.15"
         acceptance:
           - kind: ci
             note: "--"

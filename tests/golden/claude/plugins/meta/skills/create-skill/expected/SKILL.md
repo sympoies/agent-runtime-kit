@@ -20,8 +20,9 @@ Prereqs:
 
 Inputs:
 
-- Skill ID, domain, skill name, supported products, description, and
-  `required_clis` floors.
+- Skill ID, domain, skill name, supported products, description,
+  `required_clis` floors, parent intents, example user request, and admission
+  rationale.
 - Optional skill-owned `scripts/`, `bin/`, `fixtures/`, or docs support
   folders when the workflow needs them.
 - Explicit approval for any new plugin domain.
@@ -29,7 +30,8 @@ Inputs:
 Outputs:
 
 - `core/skills/<domain>/<skill>/SKILL.md.tera`.
-- `manifests/skills.yaml` entry with concrete `required_clis` values or an
+- `manifests/skills.yaml` v2 entry with complete `invocation`, honest
+  `exposure.profile: default`, and concrete `required_clis` values or an
   explicit empty map for prose-only skills.
 - `manifests/plugins.yaml` containment update, and product plugin metadata
   only when a new domain was approved.
@@ -43,6 +45,10 @@ Failure modes:
   entry.
 - A new domain was requested without explicit user approval.
 - `required_clis` contains placeholders or references an unreleased binary.
+- The capability is agent bookkeeping, a one-command wrapper, execution mode,
+  or child lifecycle phase without a reviewed direct-user outcome.
+- The entry claims `advanced`, `internal`, or `opt-in` exposure that the three
+  product installers cannot implement.
 - The workflow would leave a skill without render, sandbox, or runtime-smoke
   acceptance coverage.
 
@@ -88,7 +94,9 @@ bash scripts/ci/all.sh
    product surfaces.
 4. Create `SKILL.md.tera` with the standard front matter, H1, Contract,
    Entrypoint, Workflow, and Boundary sections.
-5. Add the skill manifest entry for every supported product.
+5. Add the v2 skill manifest entry for every supported product. Name the parent
+   intent, a direct example request, and why this is a user outcome. New skills
+   must never enter `migration.pending_disposition` or the #562 ledger.
 6. Add plugin containment for the skill. For existing domains, do not touch
    unrelated plugin metadata.
 7. Add reminder metadata only when agents should invoke the skill as a workflow.

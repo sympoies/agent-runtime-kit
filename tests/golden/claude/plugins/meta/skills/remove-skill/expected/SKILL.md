@@ -31,6 +31,9 @@ Outputs:
   `manifests/skills.yaml` entry, `manifests/plugins.yaml` containment, product
   render metadata, golden snapshots, sandbox expected skill pins, runtime-smoke
   cases, hook/reminder metadata, and maintained docs references.
+- A reviewed `manifests/skill-dispositions.yaml` row is retained when the skill
+  belongs to the frozen #562 migration cohort; it records destination,
+  replacement/compatibility needs, and live cleanup instead of deleting history.
 - A validation summary proving no active references remain.
 
 Failure modes:
@@ -88,7 +91,9 @@ bash scripts/ci/all.sh
    historical evidence unless the user explicitly asks for cleanup.
 4. Present the planned active delta and stop unless apply approval is already
    part of the active plan.
-5. Remove the source directory and manifest entry.
+5. Remove the source directory and active manifest entry. If the ID belongs to
+   the frozen migration cohort, update its disposition row to `reviewed`; never
+   delete or replace a baseline row to make a new pending skill fit.
 6. Remove plugin containment and product metadata for the target skill.
 7. Remove rendered/golden/sandbox/runtime-smoke/hook/reminder references.
 8. Run `bash scripts/ci/skill-governance-audit.sh --update-counts` to refresh

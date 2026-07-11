@@ -1,9 +1,16 @@
-schema_version: 1
+schema_version: 2
 
 skills:
   - id: fixture.removable-skill
     domain: fixture
     source: core/skills/fixture/removable-skill
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Run the removable sample workflow"
+      admission_rationale: "Represents a direct user workflow before its removal."
+    exposure:
+      profile: default
     products:
       codex:
         name: removable-skill

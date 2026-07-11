@@ -1,12 +1,82 @@
-# Skill manifest — declares every migrated domain's skills, their source paths,
-# supported products, and required nils-cli floors. Add new domains here.
+# Active skill manifest — declares every rendered skill, its source path,
+# product surfaces, CLI floors, and semantic admission state.
 #
 # Schema: ../core/docs/schemas/skills.schema.json
 #
-# Each entry MUST declare `id`, `domain`, `source`, `products`, and
-# `required_clis`. Concrete semver floors are pinned against the released
-# nils-cli surface; the audit-drift gate rejects any surviving placeholder.
-schema_version: 1
+# The current catalog remains fully installed while issue #562 reviews every
+# entry. The frozen pending set is explicit migration debt, not a hidden or
+# internal exposure profile, and governance rejects additions to it.
+schema_version: 2
+
+migration:
+  owner: "https://github.com/graysurf/agent-runtime-kit/issues/562"
+  pending_disposition:
+    - reporting.daily-brief
+    - reporting.project-retro
+    - reporting.topic-radar
+    - meta.agent-docs
+    - meta.agent-out
+    - meta.bootstrap
+    - meta.sync-runtime-surfaces
+    - meta.deploy
+    - meta.agent-scope-lock
+    - meta.heuristic-inbox
+    - meta.heuristic-session-closeout
+    - meta.create-skill
+    - meta.create-project-skill
+    - meta.remove-skill
+    - meta.remove-project-skill
+    - meta.pre-pr
+    - meta.release
+    - meta.repo-retro
+    - meta.semantic-commit
+    - meta.setup-project
+    - meta.plan-archive-migrate
+    - meta.plan-archive-query
+    - meta.plan-archive-discover
+    - meta.evidence-migrate
+    - meta.evidence-prune-source
+    - meta.nils-cli-bump
+    - meta.worktree-triage
+    - media.image-processing
+    - media.screen-record
+    - computer-use.macos-desktop
+    - browser.browser-session
+    - browser.canary-check
+    - conversation.actionable-advice
+    - conversation.actionable-knowledge
+    - conversation.discussion-to-implementation-doc
+    - conversation.guided-feature-build
+    - conversation.handoff-session-prompt
+    - conversation.orchestrator-first
+    - conversation.parallel-first
+    - evidence.web-evidence
+    - evidence.test-first-evidence
+    - evidence.review-evidence
+    - evidence.skill-usage
+    - evidence.docs-impact
+    - evidence.model-cross-check
+    - issue.issue-follow-up
+    - issue.issue-triage
+    - issue.report-plan-issue-finding
+    - code-review.code-review-focused-lens
+    - code-review.code-review-follow-up
+    - code-review.code-review-pre-merge-gate
+    - code-review.code-review-quick-pass
+    - code-review.code-review-specialists
+    - pr.create-pr
+    - pr.create-dispatch-lane-pr
+    - pr.close-pr
+    - pr.deliver-pr
+    - pr.review-thread-cleanup
+    - dispatch.create-plan-tracking-issue
+    - dispatch.plan-tracking-issue-closeout
+    - dispatch.deliver-dispatch-plan
+    - dispatch.dispatch-plan-closeout
+    - dispatch.execute-plan-tracking-issue
+    - dispatch.deliver-plan-tracking-issue
+    - dispatch.review-dispatch-lane-pr
+    - dispatch.execute-dispatch-lane
 
 skills:
   - id: reporting.daily-brief

@@ -2,46 +2,104 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-runtime-kit.local/schemas/skills.schema.json",
   "title": "skills.yaml",
-  "description": "Skill manifest. Each entry declares a canonical skill ID, source path, supported products, required nils-cli binaries with semver floors, optional aliases, and per-product path overrides.",
+  "description": "Active renderable skill manifest. Invocation semantics and product exposure are explicit; pending migration entries remain visibly installed until disposition review completes.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "skills"],
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 1,
-      "description": "Manifest schema version. Drift audit uses this to pick the validator."
+      "const": 2
+    },
+    "migration": {
+      "$ref": "#/$defs/migration"
     },
     "skills": {
       "type": "array",
-      "description": "List of skill entries, one per migrated skill.",
       "items": { "$ref": "#/$defs/skill" }
     }
   },
   "$defs": {
+    "skillId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$"
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "pending_disposition"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Durable issue or plan that owns the pending migration set."
+        },
+        "pending_disposition": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/skillId" }
+        }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "intents", "example_request", "admission_rationale"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["workflow", "maintenance", "advanced", "compatibility"]
+        },
+        "intents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "example_request": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A direct user request that justifies this discoverable entrypoint."
+        },
+        "admission_rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why this capability is a user outcome rather than agent bookkeeping or a child workflow phase."
+        }
+      }
+    },
+    "exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "default",
+          "description": "The only product-real exposure profile currently supported across Codex, Claude, and Hermes."
+        },
+        "replacement": { "$ref": "#/$defs/skillId" },
+        "retire_after": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
     "skill": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "domain", "source", "products", "required_clis"],
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Canonical `<domain>.<skill>` identifier (lowercase, hyphenated within each segment, dot-separated).",
-          "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$"
-        },
+        "id": { "$ref": "#/$defs/skillId" },
         "domain": {
           "type": "string",
-          "description": "Owning domain (matches the first segment of `id`).",
           "pattern": "^[a-z0-9][a-z0-9-]*$"
         },
-        "source": {
-          "type": "string",
-          "description": "Source path under `core/skills/<domain>/<skill>/` (or `core/skills/<domain>/<skill>/{shared,codex,claude}/` when `divergent: true`).",
-          "minLength": 1
-        },
+        "source": { "type": "string", "minLength": 1 },
+        "invocation": { "$ref": "#/$defs/invocation" },
+        "exposure": { "$ref": "#/$defs/exposure" },
         "products": {
           "type": "object",
-          "description": "Per-product render configuration. Each entry maps a supported product (`codex` / `claude` / `hermes`) to its product-native name and rendered output path.",
           "additionalProperties": false,
           "properties": {
             "codex": { "$ref": "#/$defs/productRender" },
@@ -51,51 +109,86 @@
         },
         "required_clis": {
           "type": "object",
-          "description": "Map of nils-cli binary name to a semver range (e.g. `\">=0.5.0\"`). Concrete floors are pinned against the released nils-cli surface; the audit-drift gate rejects any surviving `<TBD>` placeholder.",
           "additionalProperties": { "type": "string", "minLength": 1 }
         },
         "state_out_mode": {
           "type": "string",
-          "description": "Default `runtime` (agent-out resolves the path at execution); `literal` only when the consuming context cannot exec.",
           "enum": ["runtime", "literal"],
           "default": "runtime"
         },
         "aliases": {
           "type": "object",
-          "description": "Optional aliases keyed by product, used when a skill has different invocation names per product but the same behaviour.",
           "additionalProperties": { "type": "string", "minLength": 1 }
         },
         "divergent": {
           "type": "boolean",
-          "description": "Set to `true` when a skill exists in both products but with divergent behaviour. Drift audit warns on every divergent entry.",
           "default": false
         },
-        "portability_notes": {
-          "type": "string",
-          "description": "Free-text notes about portability constraints, host requirements, or migration provenance."
+        "portability_notes": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            { "required": ["invocation", "exposure"] },
+            {
+              "not": {
+                "anyOf": [
+                  { "required": ["invocation"] },
+                  { "required": ["exposure"] }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "not": {
+            "properties": {
+              "invocation": {
+                "properties": { "role": { "const": "advanced" } },
+                "required": ["role"]
+              }
+            },
+            "required": ["invocation"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "invocation": {
+                "properties": { "role": { "const": "compatibility" } },
+                "required": ["role"]
+              }
+            },
+            "required": ["invocation"]
+          },
+          "then": {
+            "properties": {
+              "exposure": { "required": ["replacement", "retire_after"] }
+            }
+          },
+          "else": {
+            "properties": {
+              "exposure": {
+                "not": {
+                  "anyOf": [
+                    { "required": ["replacement"] },
+                    { "required": ["retire_after"] }
+                  ]
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "productRender": {
       "type": "object",
       "additionalProperties": false,
       "required": ["render_to"],
       "properties": {
-        "name": {
-          "type": "string",
-          "description": "Product-native invocation name (e.g. Claude's `<plugin>:<skill>`, Codex's slash variant).",
-          "minLength": 1
-        },
-        "render_to": {
-          "type": "string",
-          "description": "Rendered output path under `build/<product>/`.",
-          "minLength": 1
-        },
-        "path_override": {
-          "type": "string",
-          "description": "Optional override for the product-native source path (e.g. legacy `tools/market-research/<x>` placement).",
-          "minLength": 1
-        }
+        "name": { "type": "string", "minLength": 1 },
+        "render_to": { "type": "string", "minLength": 1 },
+        "path_override": { "type": "string", "minLength": 1 }
       }
     }
   }

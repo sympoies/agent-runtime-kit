@@ -1,9 +1,16 @@
-schema_version: 1
+schema_version: 2
 
 skills:
   - id: fixture.sample-prose
     domain: fixture
     source: core/skills/fixture/sample-prose
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Create the sample prose artifact"
+      admission_rationale: "Represents a distinct user-requested authoring outcome."
+    exposure:
+      profile: default
     products:
       codex:
         name: sample-prose

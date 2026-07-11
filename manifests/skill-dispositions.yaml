@@ -1,0 +1,143 @@
+# Skill disposition ledger — issue #562 replaces each pending row with one
+# reviewed destination. This file records migration decisions; active render
+# truth remains in manifests/skills.yaml.
+#
+# Schema: ../core/docs/schemas/skill-dispositions.schema.json
+schema_version: 1
+owner: "https://github.com/graysurf/agent-runtime-kit/issues/562"
+source_skill_count: 66
+source_skill_ids_sha256: "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971aa84a34d60"
+
+dispositions:
+  - id: reporting.daily-brief
+    status: pending
+  - id: reporting.project-retro
+    status: pending
+  - id: reporting.topic-radar
+    status: pending
+  - id: meta.agent-docs
+    status: pending
+  - id: meta.agent-out
+    status: pending
+  - id: meta.bootstrap
+    status: pending
+  - id: meta.sync-runtime-surfaces
+    status: pending
+  - id: meta.deploy
+    status: pending
+  - id: meta.agent-scope-lock
+    status: pending
+  - id: meta.heuristic-inbox
+    status: pending
+  - id: meta.heuristic-session-closeout
+    status: pending
+  - id: meta.create-skill
+    status: pending
+  - id: meta.create-project-skill
+    status: pending
+  - id: meta.remove-skill
+    status: pending
+  - id: meta.remove-project-skill
+    status: pending
+  - id: meta.pre-pr
+    status: pending
+  - id: meta.release
+    status: pending
+  - id: meta.repo-retro
+    status: pending
+  - id: meta.semantic-commit
+    status: pending
+  - id: meta.setup-project
+    status: pending
+  - id: meta.plan-archive-migrate
+    status: pending
+  - id: meta.plan-archive-query
+    status: pending
+  - id: meta.plan-archive-discover
+    status: pending
+  - id: meta.evidence-migrate
+    status: pending
+  - id: meta.evidence-prune-source
+    status: pending
+  - id: meta.nils-cli-bump
+    status: pending
+  - id: meta.worktree-triage
+    status: pending
+  - id: media.image-processing
+    status: pending
+  - id: media.screen-record
+    status: pending
+  - id: computer-use.macos-desktop
+    status: pending
+  - id: browser.browser-session
+    status: pending
+  - id: browser.canary-check
+    status: pending
+  - id: conversation.actionable-advice
+    status: pending
+  - id: conversation.actionable-knowledge
+    status: pending
+  - id: conversation.discussion-to-implementation-doc
+    status: pending
+  - id: conversation.guided-feature-build
+    status: pending
+  - id: conversation.handoff-session-prompt
+    status: pending
+  - id: conversation.orchestrator-first
+    status: pending
+  - id: conversation.parallel-first
+    status: pending
+  - id: evidence.web-evidence
+    status: pending
+  - id: evidence.test-first-evidence
+    status: pending
+  - id: evidence.review-evidence
+    status: pending
+  - id: evidence.skill-usage
+    status: pending
+  - id: evidence.docs-impact
+    status: pending
+  - id: evidence.model-cross-check
+    status: pending
+  - id: issue.issue-follow-up
+    status: pending
+  - id: issue.issue-triage
+    status: pending
+  - id: issue.report-plan-issue-finding
+    status: pending
+  - id: code-review.code-review-focused-lens
+    status: pending
+  - id: code-review.code-review-follow-up
+    status: pending
+  - id: code-review.code-review-pre-merge-gate
+    status: pending
+  - id: code-review.code-review-quick-pass
+    status: pending
+  - id: code-review.code-review-specialists
+    status: pending
+  - id: pr.create-pr
+    status: pending
+  - id: pr.create-dispatch-lane-pr
+    status: pending
+  - id: pr.close-pr
+    status: pending
+  - id: pr.deliver-pr
+    status: pending
+  - id: pr.review-thread-cleanup
+    status: pending
+  - id: dispatch.create-plan-tracking-issue
+    status: pending
+  - id: dispatch.plan-tracking-issue-closeout
+    status: pending
+  - id: dispatch.deliver-dispatch-plan
+    status: pending
+  - id: dispatch.dispatch-plan-closeout
+    status: pending
+  - id: dispatch.execute-plan-tracking-issue
+    status: pending
+  - id: dispatch.deliver-plan-tracking-issue
+    status: pending
+  - id: dispatch.review-dispatch-lane-pr
+    status: pending
+  - id: dispatch.execute-dispatch-lane
+    status: pending
