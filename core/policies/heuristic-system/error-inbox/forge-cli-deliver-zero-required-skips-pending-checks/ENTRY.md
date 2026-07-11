@@ -26,6 +26,11 @@ checks as pending.
 - A separate `forge-cli pr checks 240 --required-only false --format json`
   poll later reported both runs successful. Delivery was held until that
   all-check read reached `state=success`.
+- Reproduced independently on `sympoies/agent-console#245` on 2026-07-11:
+  `pr deliver --no-merge` exited 0 with `required_count=0` while `ci / build`
+  was still pending. The delivery workflow again held review/merge until a
+  separate all-check read showed both runs successful. See
+  `evidence/pr245-zero-required-checks.md`.
 - The repo's earlier final-content push produced the same zero-required shape:
   visible non-required builds existed, so a required-only result was not a
   complete convergence signal.
