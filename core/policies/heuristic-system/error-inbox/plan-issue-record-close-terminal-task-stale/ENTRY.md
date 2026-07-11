@@ -40,6 +40,11 @@ or `Handoff` after their issues were closed.
 - Agent Console PR #243 repaired the durable terminal fields for both #216 and
   #233 and merged as `94b3f42b`. Testing and maintainability follow-up passed;
   both plan bundles explicitly retain the user's no-archive override.
+- Reproduced again on `graysurf/agent-runtime-kit#563` with plan-issue
+  `1.21.15`: `record close --bundle` patched terminal status and merged-PR
+  evidence but retained `Next task: run strict close-ready and canonical
+  tracker closeout`. PR #566 repaired it to `Next task: none`. See
+  `evidence/issue563-terminal-sync.md`.
 
 ## Impact
 

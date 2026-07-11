@@ -34,6 +34,11 @@ checks as pending.
 - The repo's earlier final-content push produced the same zero-required shape:
   visible non-required builds existed, so a required-only result was not a
   complete convergence signal.
+- Reproduced as an actual premature merge on `graysurf/agent-runtime-kit#566`
+  with `forge-cli 1.21.15`: the macro reported success with CI and CodeQL rows
+  still pending, then immediately promoted and squash-merged the PR. The caller
+  separately held and verified runs `29148841982` and `29148841380` to success
+  after merge. See `evidence/pr566-premature-merge.md`.
 
 ## Impact
 
