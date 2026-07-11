@@ -6,15 +6,15 @@
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/568>
 - Current sprint: Sprint 3
 - Status: in-progress
-- Current gate: Atomic retirement and portable acceptance
+- Current gate: Portable convergence deployment acceptance
 - Plan branch: `feat/agent-capability-convergence`
 - Integration PR: pending
-- Current lanes: Lane A (`disposition`) and Lane D (`portable-acceptance`)
-- Next task: Task 3.1 — atomically retire 40 agent-only skill surfaces
+- Current lanes: Lane D (`portable-acceptance`)
+- Next task: Task 3.2 — prove portable install, prune, doctor, and fresh-session routing
 - Upstream prerequisite: complete; nils-cli v1.21.17 and Tasks 2.1/2.2 landed
-- Task 3.1 gate: open; both replacement lanes are merged
+- Task 3.1 gate: complete; PR #577 merged as 92da055
 - Blockers: none
-- Last updated: 2026-07-11
+- Last updated: 2026-07-12
 
 ## Task Ledger
 
@@ -23,8 +23,8 @@
 | 1.1 | Review all 66 disposition rows | done | #561 handoff and frozen ledger; https://github.com/graysurf/agent-runtime-kit/issues/568; reviewed=26 pending=40; focused reviewed-active contract and full `scripts/ci/all.sh` positions 1-15 pass; PR #569 merged as b4a5a8a | Lane A (`disposition`); no source retirement in this pass |
 | 2.1 | Migrate Browser and Evidence behavior | done | PR #575 merged as 09536bc7; final approval; 13/13 review threads resolved; Browser 3/3, Evidence 7/7, hooks 113/113, full CI positions 1-15, and provider CI pass | Lane B (`browser-evidence`); documented Bash CWD and host-trust ceilings |
 | 2.2 | Converge all remaining agent-only skill families | done | PR #571 merged as 0c9cb095; provider CI pass; review threads resolved; pinned full CI positions 1-15 and hooks 97/97 pass | Lane C (`remaining-skills`); replacement behavior only |
-| 3.1 | Apply manifest, render, compatibility, and cleanup retirement | pending | pending second Lane A PR and validation | Sole shared manifest/source retirement owner |
-| 3.2 | Add portable convergence deployment acceptance | pending | pending Lane D PR and validation | Public generic roles; no private host details |
+| 3.1 | Apply manifest, render, compatibility, and cleanup retirement | done | pending second Lane A PR and validation; PR #577 merged as 92da055; provider CI pass; 3/3 findings fixed; testing and maintainability follow-up pass; 0 unresolved threads | Atomic retirement complete: 26 active outcomes, 40 retired surfaces, ownership-safe rollback |
+| 3.2 | Add portable convergence deployment acceptance | in-progress | pending Lane D PR and validation; Task started after PR #577 merge | Lane D portable acceptance; generic roles and redacted evidence only |
 | 4.1 | Activate and verify both runtime roles from merged main | pending | pending private redacted acceptance | Lane D post-integration; private artifacts stay local |
 
 ## Validation Log
@@ -51,6 +51,12 @@
   Browser 3/3, Evidence 7/7, hooks 113/113, full CI positions 1-15, and
   provider CI; 13/13 review threads were resolved and final red-team found no
   actionable findings.
+- 2026-07-12: Task 3.1 landed through PR #577 as 92da055. The final surface has
+  26 active user outcomes and 40 retired internal surfaces. Provider CI passed;
+  three review findings were fixed in b85eb24, testing and maintainability
+  follow-up passed, all review threads resolved, and cleanup fault injection
+  proves descriptor-bound rollback after rename, during deletion, and before
+  final removal.
 
 ## Session Notes
 
@@ -72,3 +78,6 @@
 - 2026-07-11: both replacement lanes are merged. Task 3.1 now owns the single
   atomic transition from 66 exposed skill surfaces to 26 direct user outcomes,
   including stale installed-plugin cleanup and compatibility-negative tests.
+- 2026-07-12: Task 3.1 is merged and the plan advances to Task 3.2. Portable
+  acceptance remains product-neutral and may publish only generic role names,
+  revision provenance, redacted artifact metadata, and deterministic results.
