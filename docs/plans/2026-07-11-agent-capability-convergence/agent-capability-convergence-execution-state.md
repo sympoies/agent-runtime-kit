@@ -3,7 +3,7 @@
 ## Execution State
 
 - Source document: docs/plans/2026-07-11-agent-capability-convergence/agent-capability-convergence-plan.md
-- Tracking issue: pending dispatch record open
+- Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/568>
 - Current sprint: Sprint 1
 - Status: in-progress
 - Current gate: validate and open dispatch tracker
