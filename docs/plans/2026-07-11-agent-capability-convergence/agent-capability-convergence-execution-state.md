@@ -6,10 +6,10 @@
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/568>
 - Current sprint: Sprint 1
 - Status: in-progress
-- Current gate: validate and open dispatch tracker
+- Current gate: Lane A disposition review
 - Plan branch: `feat/agent-capability-convergence`
 - Integration PR: pending
-- Current lane: orchestration preflight
+- Current lane: Lane A (`disposition`)
 - Next task: Task 1.1 — review all 66 disposition rows
 - Blockers: none
 - Last updated: 2026-07-11
@@ -18,7 +18,7 @@
 
 | ID | Title | Status | Evidence | Notes |
 | --- | --- | --- | --- | --- |
-| 1.1 | Review all 66 disposition rows | pending | #561 handoff and frozen ledger | Lane A (`disposition`); no source retirement in this pass |
+| 1.1 | Review all 66 disposition rows | in-progress | #561 handoff and frozen ledger; https://github.com/graysurf/agent-runtime-kit/issues/568 | Lane A (`disposition`); no source retirement in this pass |
 | 2.1 | Migrate Browser and Evidence behavior | pending | pending lane PR and validation | Lane B (`browser-evidence`); replacement behavior only |
 | 2.2 | Converge all remaining agent-only skill families | pending | pending lane PR and validation | Lane C (`remaining-skills`); replacement behavior only |
 | 3.1 | Apply manifest, render, compatibility, and cleanup retirement | pending | pending second Lane A PR and validation | Sole shared manifest/source retirement owner |
@@ -40,3 +40,6 @@
 - 2026-07-11: lane boundaries centralize shared manifest and retirement edits
   in Lane A. Lanes B and C land replacement behavior first; Lane D validates
   portable activation and then performs private post-merge acceptance.
+- 2026-07-11: dispatch issue #568 opened with superseding source/plan/state
+  snapshots after read-only lane scoping corrected pending/reviewed sequencing
+  and product capability claims.
