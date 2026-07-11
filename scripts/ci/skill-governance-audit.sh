@@ -415,8 +415,8 @@ def exposure_contract_errors(root: Path) -> list[str]:
 
     if progress.get("schema") != "agent-runtime-kit.skill-migration-progress.v1":
         errors.append("migration progress schema is invalid")
-    if progress.get("task") != "1.1" or progress.get("advance_in_task") != "3.1":
-        errors.append("migration progress task lifecycle must be 1.1 -> 3.1")
+    if progress.get("task") != "3.1" or progress.get("advance_in_task") != "complete":
+        errors.append("migration progress task lifecycle must be 3.1 -> complete")
     if not isinstance(expected_reviewed, list) or not all(
         isinstance(item, str) for item in expected_reviewed
     ):
@@ -473,9 +473,9 @@ def exposure_contract_errors(root: Path) -> list[str]:
     if pending_rows != pending_ids:
         errors.append("pending disposition rows must exactly match the migration pending set")
     if reviewed_rows != expected_reviewed:
-        errors.append("reviewed disposition rows do not match the Task 1.1 migration progress contract")
+        errors.append("reviewed disposition rows do not match the final migration progress contract")
     if pending_rows != expected_pending:
-        errors.append("pending disposition rows do not match the Task 1.1 migration progress contract")
+        errors.append("pending disposition rows do not match the final migration progress contract")
     expected_partition = [*expected_reviewed, *expected_pending]
     if len(expected_partition) != len(set(expected_partition)):
         errors.append("migration progress ids must be unique across reviewed and pending sets")
@@ -878,9 +878,9 @@ def audit_rendered_lifecycle_reference_packaging(root: Path) -> None:
         (
             "PR/MR lifecycle",
             root / "core" / "skills" / "pr" / "pr-lifecycle" / "README.md",
-            root / "core" / "skills" / "pr" / "create-pr" / "references" / "pr-lifecycle.md",
-            Path("plugins/pr/skills/create-pr/references/pr-lifecycle.md"),
-            Path("plugins/pr/skills/create-pr/expected/references/pr-lifecycle.md"),
+            root / "core" / "skills" / "pr" / "deliver-pr" / "references" / "pr-lifecycle.md",
+            Path("plugins/pr/skills/deliver-pr/references/pr-lifecycle.md"),
+            Path("plugins/pr/skills/deliver-pr/expected/references/pr-lifecycle.md"),
         ),
         (
             "issue lifecycle",
@@ -1555,7 +1555,7 @@ def validate_exposure_contract_fixture() -> None:
         skills_path = growth / "manifests" / "skills.yaml"
         skills_path.write_text(
             read(skills_path).replace(
-                "  pending_disposition:\n",
+                "  pending_disposition: []\n",
                 "  pending_disposition:\n    - fixture.new-skill\n",
                 1,
             ),

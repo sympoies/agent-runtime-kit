@@ -1,7 +1,7 @@
 {
   "name": "pr",
   "version": "0.1.0",
-  "description": "Provider PR and MR creation, review-gated closeout, delivery macros, and dispatch lane PR workflows backed by forge-cli.",
+  "description": "One governed GitHub/GitLab PR and MR delivery outcome with lifecycle modes routed internally.",
   "author": {
     "name": "graysurf"
   },

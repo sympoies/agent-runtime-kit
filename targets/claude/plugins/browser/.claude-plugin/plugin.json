@@ -1,9 +1,0 @@
-{
-  "name": "browser",
-  "version": "0.1.0",
-  "description": "Browser evidence skills for session records and local canary checks.",
-  "author": {
-    "name": "graysurf"
-  },
-  "homepage": "https://github.com/graysurf/agent-runtime-kit"
-}

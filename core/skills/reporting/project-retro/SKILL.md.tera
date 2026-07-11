@@ -59,9 +59,9 @@ Failure modes:
 
 ## Outcome Routing
 
-This is the canonical repository-retrospective outcome. Legacy
-`meta.repo-retro` requests route here; callers invoke the released `repo-retro`
-CLI for deterministic collection and this workflow owns interpretation. For a
+This is the canonical repository-retrospective outcome. Callers invoke the
+released `repo-retro` CLI for deterministic collection and this workflow owns
+interpretation. For a
 one-off report, artifact allocation and CLI collection are internal bookkeeping
 and default to stdout or the workflow state-out path. Durable history remains an
 explicit user outcome because it writes retained files.

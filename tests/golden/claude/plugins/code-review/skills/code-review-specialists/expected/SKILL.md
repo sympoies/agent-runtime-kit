@@ -28,8 +28,8 @@ Prereqs:
   Codex must dispatch the selected reviewers; inline lens execution is only the
   fallback when dispatch is unavailable or blocked, and the fallback must be
   stated. The parent agent owns lens selection, dispatch, validation, and merge.
-- Leave provider review decisions to the owning PR or dispatch parent. Use
-  `review-evidence` only when findings need a retained evidence record.
+- Leave provider review decisions to the owning PR or dispatch parent. Create a
+  `review-evidence` CLI record only when findings need retained evidence.
 
 Inputs:
 
@@ -64,7 +64,7 @@ Failure modes:
   them as residual risk instead of presenting them as verified findings.
 - Caller tries to use this read-only workflow as a substitute for provider write
   authority owned by the PR or dispatch parent,
-  `review-evidence`, browser-session checks, CI repair automation, or
+  retained evidence, browser-operation checks, CI repair automation, or
   implementation work.
 
 ## Entrypoint
@@ -174,7 +174,7 @@ parent owns base selection, synthesis, and any authorized provider action.
    reviewer, posts provider comments and makes the merge decision. For every
    mode, the recommended next step may route to the dispatch parent's
    independent-review phase, a normal implementation workflow, or a retained
-   `review-evidence` record, but this workflow does not execute that decision.
+   `review-evidence` CLI record, but this workflow does not execute that decision.
 
 ## Boundary
 
@@ -185,7 +185,7 @@ report.
 Each `reviewer-<lens>` subagent owns only its read-only lens.
 This workflow does not fix code, post PR or MR review comments, mark a draft
 reviewable ready, merge, close issues, or execute the recommended next step —
-those belong to the owning PR / MR or dispatch parent and `review-evidence`.
+those belong to the owning PR / MR or dispatch parent and the evidence control plane.
 
 ## References
 
@@ -207,5 +207,5 @@ those belong to the owning PR / MR or dispatch parent and `review-evidence`.
   `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`
 - Delivery review outcome schema:
   `references/DELIVERY_REVIEW_OUTCOME_SCHEMA.md`
-- Review evidence tool:
-  `skills/evidence/review-evidence/SKILL.md`
+- Evidence routing policy:
+  `core/policies/evidence-control-plane.md`

@@ -1,8 +1,93 @@
 {
   "schema": "agent-runtime-kit.skill-migration-progress.v1",
-  "task": "1.1",
-  "advance_in_task": "3.1",
+  "task": "3.1",
+  "advance_in_task": "complete",
   "reviewed_ids": [
+    "reporting.daily-brief",
+    "reporting.project-retro",
+    "reporting.topic-radar",
+    "meta.agent-docs",
+    "meta.agent-out",
+    "meta.bootstrap",
+    "meta.sync-runtime-surfaces",
+    "meta.deploy",
+    "meta.agent-scope-lock",
+    "meta.heuristic-inbox",
+    "meta.heuristic-session-closeout",
+    "meta.create-skill",
+    "meta.create-project-skill",
+    "meta.remove-skill",
+    "meta.remove-project-skill",
+    "meta.pre-pr",
+    "meta.release",
+    "meta.repo-retro",
+    "meta.semantic-commit",
+    "meta.setup-project",
+    "meta.plan-archive-migrate",
+    "meta.plan-archive-query",
+    "meta.plan-archive-discover",
+    "meta.evidence-migrate",
+    "meta.evidence-prune-source",
+    "meta.nils-cli-bump",
+    "meta.worktree-triage",
+    "media.image-processing",
+    "media.screen-record",
+    "computer-use.macos-desktop",
+    "browser.browser-session",
+    "browser.canary-check",
+    "conversation.actionable-advice",
+    "conversation.actionable-knowledge",
+    "conversation.discussion-to-implementation-doc",
+    "conversation.guided-feature-build",
+    "conversation.handoff-session-prompt",
+    "conversation.orchestrator-first",
+    "conversation.parallel-first",
+    "evidence.web-evidence",
+    "evidence.test-first-evidence",
+    "evidence.review-evidence",
+    "evidence.skill-usage",
+    "evidence.docs-impact",
+    "evidence.model-cross-check",
+    "issue.issue-follow-up",
+    "issue.issue-triage",
+    "issue.report-plan-issue-finding",
+    "code-review.code-review-focused-lens",
+    "code-review.code-review-follow-up",
+    "code-review.code-review-pre-merge-gate",
+    "code-review.code-review-quick-pass",
+    "code-review.code-review-specialists",
+    "pr.create-pr",
+    "pr.create-dispatch-lane-pr",
+    "pr.close-pr",
+    "pr.deliver-pr",
+    "pr.review-thread-cleanup",
+    "dispatch.create-plan-tracking-issue",
+    "dispatch.plan-tracking-issue-closeout",
+    "dispatch.deliver-dispatch-plan",
+    "dispatch.dispatch-plan-closeout",
+    "dispatch.execute-plan-tracking-issue",
+    "dispatch.deliver-plan-tracking-issue",
+    "dispatch.review-dispatch-lane-pr",
+    "dispatch.execute-dispatch-lane"
+  ],
+  "pending_ids": [
+
+  ],
+  "reviewed_field_mapping": [
+    {
+      "disposition": "example_request",
+      "manifest": "invocation.example_request"
+    },
+    {
+      "disposition": "parent_intents",
+      "manifest": "invocation.intents"
+    },
+    {
+      "disposition": "rationale",
+      "manifest": "invocation.admission_rationale"
+    }
+  ],
+  "retained_ids": [
     "reporting.daily-brief",
     "reporting.project-retro",
     "reporting.topic-radar",
@@ -30,7 +115,7 @@
     "dispatch.deliver-dispatch-plan",
     "dispatch.deliver-plan-tracking-issue"
   ],
-  "pending_ids": [
+  "retired_ids": [
     "meta.agent-docs",
     "meta.agent-out",
     "meta.agent-scope-lock",
@@ -71,19 +156,5 @@
     "dispatch.execute-plan-tracking-issue",
     "dispatch.review-dispatch-lane-pr",
     "dispatch.execute-dispatch-lane"
-  ],
-  "reviewed_field_mapping": [
-    {
-      "disposition": "example_request",
-      "manifest": "invocation.example_request"
-    },
-    {
-      "disposition": "parent_intents",
-      "manifest": "invocation.intents"
-    },
-    {
-      "disposition": "rationale",
-      "manifest": "invocation.admission_rationale"
-    }
   ]
 }

@@ -107,7 +107,8 @@
 
 ## Git, Commits, Issues, PRs, And MRs
 
-- Always use the `semantic-commit` skill for supported commit workflows.
+- Commit through the owning implementation or delivery workflow using the
+  `semantic-commit` CLI; direct `git commit` bypasses the managed boundary.
 - Use `git-cli worktree` for agent worktree lifecycle; direct mutating
   `git worktree` commands bypass the managed lifecycle.
 - Never enable `extensions.worktreeConfig` or set per-worktree
@@ -139,8 +140,9 @@
   through `heuristic-inbox` (version, minimal repro, upstream issue link when
   found, current workaround); archive promoted or `wontfix` inbox entries via
   `heuristic-inbox`, never by deleting them in place.
-- After the session goal is achieved, run `$heuristic-session-closeout`: it
-  reviews available evidence, drives `evidence migrate` for durable
-  `skill-usage` retention, and preserves warranted records on `main`.
+- After the session goal is achieved, follow the session-closeout procedure in
+  `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`: review available
+  evidence, run `evidence migrate` when durable `skill-usage` retention is
+  warranted, and preserve warranted records on `main`.
 - Full routing policy for turning failures and repeated lessons into durable
   knowledge: `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`.

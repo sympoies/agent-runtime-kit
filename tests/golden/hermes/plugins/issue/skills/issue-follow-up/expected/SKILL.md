@@ -173,7 +173,7 @@ the user must discover.
 ## Static HTTP Evidence
 
 - When the follow-up concerns a public or internal HTTP/HTTPS URL and static
-  response evidence is enough, use the `web-evidence` skill or:
+  response evidence is enough, use the `web-evidence` CLI directly:
 
   ```bash
   web-evidence capture "$URL" --out "$RUN_DIR/web-evidence" --label issue-follow-up --format json
@@ -181,7 +181,7 @@ the user must discover.
 
 - Attach, link, or cite only redacted artifacts from the bundle, typically
   `summary.json`, `headers.redacted.json`, and `body-preview.redacted.txt`.
-- Use browser-session evidence for JavaScript behavior, screenshots,
+- Use the browser operator with policy-owned browser-session evidence for JavaScript behavior, screenshots,
   authenticated/cookie-backed state, console logs, or other browser-visible
   behavior. Keep `web-evidence` for static HTTP evidence only.
 

@@ -1,42 +1,18 @@
 {
   "name": "dispatch",
   "version": "0.1.0",
-  "description": "Issue-backed plan execution, dispatch review, subagent lane, and tracking issue lifecycle workflows backed by plan-issue and forge-cli.",
+  "description": "Two governed plan outcomes: L2 issue-backed tracking and L3 multi-lane dispatch.",
   "author": {
     "name": "graysurf"
   },
   "skills": [
     {
-      "id": "create-plan-tracking-issue",
-      "source": "core/skills/dispatch/create-plan-tracking-issue"
-    },
-    {
       "id": "deliver-dispatch-plan",
       "source": "core/skills/dispatch/deliver-dispatch-plan"
     },
     {
-      "id": "dispatch-plan-closeout",
-      "source": "core/skills/dispatch/dispatch-plan-closeout"
-    },
-    {
-      "id": "plan-tracking-issue-closeout",
-      "source": "core/skills/dispatch/plan-tracking-issue-closeout"
-    },
-    {
-      "id": "execute-plan-tracking-issue",
-      "source": "core/skills/dispatch/execute-plan-tracking-issue"
-    },
-    {
       "id": "deliver-plan-tracking-issue",
       "source": "core/skills/dispatch/deliver-plan-tracking-issue"
-    },
-    {
-      "id": "review-dispatch-lane-pr",
-      "source": "core/skills/dispatch/review-dispatch-lane-pr"
-    },
-    {
-      "id": "execute-dispatch-lane",
-      "source": "core/skills/dispatch/execute-dispatch-lane"
     }
   ]
 }

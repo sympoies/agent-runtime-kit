@@ -3,54 +3,15 @@
 #
 # Schema: ../core/docs/schemas/skills.schema.json
 #
-# The current catalog remains fully installed while issue #562 reviews every
-# entry. The frozen pending set is explicit migration debt, not a hidden or
-# internal exposure profile, and governance rejects additions to it.
+# Issue #562 completed the frozen 66-row migration. Active render truth now
+# contains only reviewed direct user outcomes; the immutable disposition ledger
+# retains retired-row history and live-cleanup decisions.
 schema_version: 2
+
 
 migration:
   owner: "https://github.com/graysurf/agent-runtime-kit/issues/562"
-  pending_disposition:
-    - meta.agent-docs
-    - meta.agent-out
-    - meta.agent-scope-lock
-    - meta.heuristic-inbox
-    - meta.heuristic-session-closeout
-    - meta.pre-pr
-    - meta.repo-retro
-    - meta.semantic-commit
-    - meta.plan-archive-migrate
-    - meta.plan-archive-query
-    - meta.plan-archive-discover
-    - meta.evidence-migrate
-    - meta.evidence-prune-source
-    - browser.browser-session
-    - browser.canary-check
-    - conversation.actionable-advice
-    - conversation.actionable-knowledge
-    - conversation.orchestrator-first
-    - conversation.parallel-first
-    - evidence.web-evidence
-    - evidence.test-first-evidence
-    - evidence.review-evidence
-    - evidence.skill-usage
-    - evidence.docs-impact
-    - evidence.model-cross-check
-    - issue.report-plan-issue-finding
-    - code-review.code-review-focused-lens
-    - code-review.code-review-follow-up
-    - code-review.code-review-pre-merge-gate
-    - code-review.code-review-quick-pass
-    - pr.create-pr
-    - pr.create-dispatch-lane-pr
-    - pr.close-pr
-    - pr.review-thread-cleanup
-    - dispatch.create-plan-tracking-issue
-    - dispatch.plan-tracking-issue-closeout
-    - dispatch.dispatch-plan-closeout
-    - dispatch.execute-plan-tracking-issue
-    - dispatch.review-dispatch-lane-pr
-    - dispatch.execute-dispatch-lane
+  pending_disposition: []
 
 skills:
   - id: reporting.daily-brief
@@ -126,38 +87,6 @@ skills:
       agent-out: ">=1.19.2"
     state_out_mode: runtime
 
-  - id: meta.agent-docs
-    domain: meta
-    source: core/skills/meta/agent-docs
-    products:
-      codex:
-        name: agent-docs
-        render_to: plugins/meta/skills/agent-docs/SKILL.md
-      claude:
-        name: agent-docs
-        render_to: plugins/meta/skills/agent-docs/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/agent-docs/SKILL.md
-    required_clis:
-      agent-docs: ">=0.30.1"
-    state_out_mode: runtime
-
-  - id: meta.agent-out
-    domain: meta
-    source: core/skills/meta/agent-out
-    products:
-      codex:
-        name: agent-out
-        render_to: plugins/meta/skills/agent-out/SKILL.md
-      claude:
-        name: agent-out
-        render_to: plugins/meta/skills/agent-out/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/agent-out/SKILL.md
-    required_clis:
-      agent-out: ">=1.19.3"
-    state_out_mode: runtime
-
   - id: meta.bootstrap
     domain: meta
     source: core/skills/meta/bootstrap
@@ -225,56 +154,6 @@ skills:
         render_to: plugins/meta/skills/deploy/SKILL.md
     required_clis:
       agent-run: ">=0.20.0"
-    state_out_mode: runtime
-
-  - id: meta.agent-scope-lock
-    domain: meta
-    source: core/skills/meta/agent-scope-lock
-    products:
-      codex:
-        name: agent-scope-lock
-        render_to: plugins/meta/skills/agent-scope-lock/SKILL.md
-      claude:
-        name: agent-scope-lock
-        render_to: plugins/meta/skills/agent-scope-lock/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/agent-scope-lock/SKILL.md
-    required_clis:
-      agent-scope-lock: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: meta.heuristic-inbox
-    domain: meta
-    source: core/skills/meta/heuristic-inbox
-    products:
-      codex:
-        name: heuristic-inbox
-        render_to: plugins/meta/skills/heuristic-inbox/SKILL.md
-      claude:
-        name: heuristic-inbox
-        render_to: plugins/meta/skills/heuristic-inbox/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/heuristic-inbox/SKILL.md
-    required_clis:
-      heuristic-inbox: ">=1.8.0"
-    state_out_mode: runtime
-
-  - id: meta.heuristic-session-closeout
-    domain: meta
-    source: core/skills/meta/heuristic-session-closeout
-    products:
-      codex:
-        name: heuristic-session-closeout
-        render_to: plugins/meta/skills/heuristic-session-closeout/SKILL.md
-      claude:
-        name: heuristic-session-closeout
-        render_to: plugins/meta/skills/heuristic-session-closeout/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/heuristic-session-closeout/SKILL.md
-    required_clis:
-      heuristic-inbox: ">=1.8.0"
-      semantic-commit: ">=0.16.0"
-      evidence: ">=1.12.0"
     state_out_mode: runtime
 
   - id: meta.create-skill
@@ -367,22 +246,6 @@ skills:
     required_clis: {}
     state_out_mode: runtime
 
-  - id: meta.pre-pr
-    domain: meta
-    source: core/skills/meta/pre-pr
-    products:
-      codex:
-        name: pre-pr
-        render_to: plugins/meta/skills/pre-pr/SKILL.md
-      claude:
-        name: pre-pr
-        render_to: plugins/meta/skills/pre-pr/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/pre-pr/SKILL.md
-    required_clis:
-      agent-run: ">=0.20.0"
-    state_out_mode: runtime
-
   - id: meta.release
     domain: meta
     source: core/skills/meta/release
@@ -406,38 +269,6 @@ skills:
       agent-run: ">=0.20.0"
     state_out_mode: runtime
 
-  - id: meta.repo-retro
-    domain: meta
-    source: core/skills/meta/repo-retro
-    products:
-      codex:
-        name: repo-retro
-        render_to: plugins/meta/skills/repo-retro/SKILL.md
-      claude:
-        name: repo-retro
-        render_to: plugins/meta/skills/repo-retro/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/repo-retro/SKILL.md
-    required_clis:
-      repo-retro: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: meta.semantic-commit
-    domain: meta
-    source: core/skills/meta/semantic-commit
-    products:
-      codex:
-        name: semantic-commit
-        render_to: plugins/meta/skills/semantic-commit/SKILL.md
-      claude:
-        name: semantic-commit
-        render_to: plugins/meta/skills/semantic-commit/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/semantic-commit/SKILL.md
-    required_clis:
-      semantic-commit: ">=0.16.0"
-    state_out_mode: runtime
-
   - id: meta.setup-project
     domain: meta
     source: core/skills/meta/setup-project
@@ -458,88 +289,6 @@ skills:
       hermes:
         render_to: plugins/meta/skills/setup-project/SKILL.md
     required_clis: {}
-    state_out_mode: runtime
-
-  - id: meta.plan-archive-migrate
-    domain: meta
-    source: core/skills/meta/plan-archive-migrate
-    products:
-      codex:
-        name: plan-archive-migrate
-        render_to: plugins/meta/skills/plan-archive-migrate/SKILL.md
-      claude:
-        name: plan-archive-migrate
-        render_to: plugins/meta/skills/plan-archive-migrate/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/plan-archive-migrate/SKILL.md
-    required_clis:
-      plan-archive: ">=0.25.0"
-      semantic-commit: ">=0.25.0"
-    state_out_mode: runtime
-
-  - id: meta.plan-archive-query
-    domain: meta
-    source: core/skills/meta/plan-archive-query
-    products:
-      codex:
-        name: plan-archive-query
-        render_to: plugins/meta/skills/plan-archive-query/SKILL.md
-      claude:
-        name: plan-archive-query
-        render_to: plugins/meta/skills/plan-archive-query/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/plan-archive-query/SKILL.md
-    required_clis:
-      plan-archive: ">=0.25.0"
-    state_out_mode: runtime
-
-  - id: meta.plan-archive-discover
-    domain: meta
-    source: core/skills/meta/plan-archive-discover
-    products:
-      codex:
-        name: plan-archive-discover
-        render_to: plugins/meta/skills/plan-archive-discover/SKILL.md
-      claude:
-        name: plan-archive-discover
-        render_to: plugins/meta/skills/plan-archive-discover/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/plan-archive-discover/SKILL.md
-    required_clis:
-      plan-archive: ">=0.25.5"
-    state_out_mode: runtime
-
-  - id: meta.evidence-migrate
-    domain: meta
-    source: core/skills/meta/evidence-migrate
-    products:
-      codex:
-        name: evidence-migrate
-        render_to: plugins/meta/skills/evidence-migrate/SKILL.md
-      claude:
-        name: evidence-migrate
-        render_to: plugins/meta/skills/evidence-migrate/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/evidence-migrate/SKILL.md
-    required_clis:
-      evidence: ">=1.8.0"
-      semantic-commit: ">=0.25.0"
-    state_out_mode: runtime
-
-  - id: meta.evidence-prune-source
-    domain: meta
-    source: core/skills/meta/evidence-prune-source
-    products:
-      codex:
-        name: evidence-prune-source
-        render_to: plugins/meta/skills/evidence-prune-source/SKILL.md
-      claude:
-        name: evidence-prune-source
-        render_to: plugins/meta/skills/evidence-prune-source/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/evidence-prune-source/SKILL.md
-    required_clis:
-      evidence: ">=1.12.0"
     state_out_mode: runtime
 
   - id: meta.nils-cli-bump
@@ -659,68 +408,6 @@ skills:
       macos-agent: ">=1.21.13"
     state_out_mode: runtime
 
-  - id: browser.browser-session
-    domain: browser
-    source: core/skills/browser/browser-session
-    products:
-      codex:
-        name: browser-session
-        render_to: plugins/browser/skills/browser-session/SKILL.md
-      claude:
-        name: browser-session
-        render_to: plugins/browser/skills/browser-session/SKILL.md
-      hermes:
-        render_to: plugins/browser/skills/browser-session/SKILL.md
-    required_clis:
-      browser-session: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: browser.canary-check
-    domain: browser
-    source: core/skills/browser/canary-check
-    products:
-      codex:
-        name: canary-check
-        render_to: plugins/browser/skills/canary-check/SKILL.md
-      claude:
-        name: canary-check
-        render_to: plugins/browser/skills/canary-check/SKILL.md
-      hermes:
-        render_to: plugins/browser/skills/canary-check/SKILL.md
-    required_clis:
-      canary-check: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: conversation.actionable-advice
-    domain: conversation
-    source: core/skills/conversation/actionable-advice
-    products:
-      codex:
-        name: actionable-advice
-        render_to: plugins/conversation/skills/actionable-advice/SKILL.md
-      claude:
-        name: actionable-advice
-        render_to: plugins/conversation/skills/actionable-advice/SKILL.md
-      hermes:
-        render_to: plugins/conversation/skills/actionable-advice/SKILL.md
-    required_clis: {}
-    state_out_mode: runtime
-
-  - id: conversation.actionable-knowledge
-    domain: conversation
-    source: core/skills/conversation/actionable-knowledge
-    products:
-      codex:
-        name: actionable-knowledge
-        render_to: plugins/conversation/skills/actionable-knowledge/SKILL.md
-      claude:
-        name: actionable-knowledge
-        render_to: plugins/conversation/skills/actionable-knowledge/SKILL.md
-      hermes:
-        render_to: plugins/conversation/skills/actionable-knowledge/SKILL.md
-    required_clis: {}
-    state_out_mode: runtime
-
   - id: conversation.discussion-to-implementation-doc
     domain: conversation
     source: core/skills/conversation/discussion-to-implementation-doc
@@ -787,134 +474,6 @@ skills:
     required_clis: {}
     state_out_mode: runtime
 
-  - id: conversation.orchestrator-first
-    domain: conversation
-    source: core/skills/conversation/orchestrator-first
-    products:
-      codex:
-        name: orchestrator-first
-        render_to: plugins/conversation/skills/orchestrator-first/SKILL.md
-      claude:
-        name: orchestrator-first
-        render_to: plugins/conversation/skills/orchestrator-first/SKILL.md
-      hermes:
-        render_to: plugins/conversation/skills/orchestrator-first/SKILL.md
-    required_clis: {}
-    state_out_mode: runtime
-
-  - id: conversation.parallel-first
-    domain: conversation
-    source: core/skills/conversation/parallel-first
-    products:
-      codex:
-        name: parallel-first
-        render_to: plugins/conversation/skills/parallel-first/SKILL.md
-      claude:
-        name: parallel-first
-        render_to: plugins/conversation/skills/parallel-first/SKILL.md
-      hermes:
-        render_to: plugins/conversation/skills/parallel-first/SKILL.md
-    required_clis: {}
-    state_out_mode: runtime
-
-  - id: evidence.web-evidence
-    domain: evidence
-    source: core/skills/evidence/web-evidence
-    products:
-      codex:
-        name: web-evidence
-        render_to: plugins/evidence/skills/web-evidence/SKILL.md
-      claude:
-        name: web-evidence
-        render_to: plugins/evidence/skills/web-evidence/SKILL.md
-      hermes:
-        render_to: plugins/evidence/skills/web-evidence/SKILL.md
-    required_clis:
-      web-evidence: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: evidence.test-first-evidence
-    domain: evidence
-    source: core/skills/evidence/test-first-evidence
-    products:
-      codex:
-        name: test-first-evidence
-        render_to: plugins/evidence/skills/test-first-evidence/SKILL.md
-      claude:
-        name: test-first-evidence
-        render_to: plugins/evidence/skills/test-first-evidence/SKILL.md
-      hermes:
-        render_to: plugins/evidence/skills/test-first-evidence/SKILL.md
-    required_clis:
-      test-first-evidence: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: evidence.review-evidence
-    domain: evidence
-    source: core/skills/evidence/review-evidence
-    products:
-      codex:
-        name: review-evidence
-        render_to: plugins/evidence/skills/review-evidence/SKILL.md
-      claude:
-        name: review-evidence
-        render_to: plugins/evidence/skills/review-evidence/SKILL.md
-      hermes:
-        render_to: plugins/evidence/skills/review-evidence/SKILL.md
-    required_clis:
-      agent-out: ">=0.16.0"
-      review-evidence: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: evidence.skill-usage
-    domain: evidence
-    source: core/skills/evidence/skill-usage
-    products:
-      codex:
-        name: skill-usage
-        render_to: plugins/evidence/skills/skill-usage/SKILL.md
-      claude:
-        name: skill-usage
-        render_to: plugins/evidence/skills/skill-usage/SKILL.md
-      hermes:
-        render_to: plugins/evidence/skills/skill-usage/SKILL.md
-    required_clis:
-      agent-out: ">=0.16.0"
-      skill-usage: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: evidence.docs-impact
-    domain: evidence
-    source: core/skills/evidence/docs-impact
-    products:
-      codex:
-        name: docs-impact
-        render_to: plugins/evidence/skills/docs-impact/SKILL.md
-      claude:
-        name: docs-impact
-        render_to: plugins/evidence/skills/docs-impact/SKILL.md
-      hermes:
-        render_to: plugins/evidence/skills/docs-impact/SKILL.md
-    required_clis:
-      docs-impact: ">=0.16.0"
-    state_out_mode: runtime
-
-  - id: evidence.model-cross-check
-    domain: evidence
-    source: core/skills/evidence/model-cross-check
-    products:
-      codex:
-        name: model-cross-check
-        render_to: plugins/evidence/skills/model-cross-check/SKILL.md
-      claude:
-        name: model-cross-check
-        render_to: plugins/evidence/skills/model-cross-check/SKILL.md
-      hermes:
-        render_to: plugins/evidence/skills/model-cross-check/SKILL.md
-    required_clis:
-      model-cross-check: ">=0.16.0"
-    state_out_mode: runtime
-
   - id: issue.issue-follow-up
     domain: issue
     source: core/skills/issue/issue-follow-up
@@ -962,86 +521,6 @@ skills:
       forge-cli: ">=1.11.2"
     state_out_mode: runtime
 
-  - id: issue.report-plan-issue-finding
-    domain: issue
-    source: core/skills/issue/report-plan-issue-finding
-    products:
-      codex:
-        name: report-plan-issue-finding
-        render_to: plugins/issue/skills/report-plan-issue-finding/SKILL.md
-      claude:
-        name: report-plan-issue-finding
-        render_to: plugins/issue/skills/report-plan-issue-finding/SKILL.md
-      hermes:
-        render_to: plugins/issue/skills/report-plan-issue-finding/SKILL.md
-    required_clis:
-      forge-cli: ">=1.11.2"
-    state_out_mode: runtime
-
-  - id: code-review.code-review-focused-lens
-    domain: code-review
-    source: core/skills/code-review/code-review-focused-lens
-    products:
-      codex:
-        name: code-review-focused-lens
-        render_to: plugins/code-review/skills/code-review-focused-lens/SKILL.md
-      claude:
-        name: code-review-focused-lens
-        render_to: plugins/code-review/skills/code-review-focused-lens/SKILL.md
-      hermes:
-        render_to: plugins/code-review/skills/code-review-focused-lens/SKILL.md
-    required_clis:
-      review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: code-review.code-review-follow-up
-    domain: code-review
-    source: core/skills/code-review/code-review-follow-up
-    products:
-      codex:
-        name: code-review-follow-up
-        render_to: plugins/code-review/skills/code-review-follow-up/SKILL.md
-      claude:
-        name: code-review-follow-up
-        render_to: plugins/code-review/skills/code-review-follow-up/SKILL.md
-      hermes:
-        render_to: plugins/code-review/skills/code-review-follow-up/SKILL.md
-    required_clis:
-      review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: code-review.code-review-pre-merge-gate
-    domain: code-review
-    source: core/skills/code-review/code-review-pre-merge-gate
-    products:
-      codex:
-        name: code-review-pre-merge-gate
-        render_to: plugins/code-review/skills/code-review-pre-merge-gate/SKILL.md
-      claude:
-        name: code-review-pre-merge-gate
-        render_to: plugins/code-review/skills/code-review-pre-merge-gate/SKILL.md
-      hermes:
-        render_to: plugins/code-review/skills/code-review-pre-merge-gate/SKILL.md
-    required_clis:
-      review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: code-review.code-review-quick-pass
-    domain: code-review
-    source: core/skills/code-review/code-review-quick-pass
-    products:
-      codex:
-        name: code-review-quick-pass
-        render_to: plugins/code-review/skills/code-review-quick-pass/SKILL.md
-      claude:
-        name: code-review-quick-pass
-        render_to: plugins/code-review/skills/code-review-quick-pass/SKILL.md
-      hermes:
-        render_to: plugins/code-review/skills/code-review-quick-pass/SKILL.md
-    required_clis:
-      review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
   - id: code-review.code-review-specialists
     domain: code-review
     source: core/skills/code-review/code-review-specialists
@@ -1063,56 +542,6 @@ skills:
         render_to: plugins/code-review/skills/code-review-specialists/SKILL.md
     required_clis:
       review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: pr.create-pr
-    domain: pr
-    source: core/skills/pr/create-pr
-    products:
-      codex:
-        name: create-pr
-        render_to: plugins/pr/skills/create-pr/SKILL.md
-      claude:
-        name: create-pr
-        render_to: plugins/pr/skills/create-pr/SKILL.md
-      hermes:
-        render_to: plugins/pr/skills/create-pr/SKILL.md
-    required_clis:
-      agent-runtime: ">=0.19.0"
-      forge-cli: ">=1.11.2"
-    state_out_mode: runtime
-
-  - id: pr.create-dispatch-lane-pr
-    domain: pr
-    source: core/skills/pr/create-dispatch-lane-pr
-    products:
-      codex:
-        name: create-dispatch-lane-pr
-        render_to: plugins/pr/skills/create-dispatch-lane-pr/SKILL.md
-      claude:
-        name: create-dispatch-lane-pr
-        render_to: plugins/pr/skills/create-dispatch-lane-pr/SKILL.md
-      hermes:
-        render_to: plugins/pr/skills/create-dispatch-lane-pr/SKILL.md
-    required_clis:
-      forge-cli: ">=1.11.2"
-      plan-issue: ">=1.0.13"
-    state_out_mode: runtime
-
-  - id: pr.close-pr
-    domain: pr
-    source: core/skills/pr/close-pr
-    products:
-      codex:
-        name: close-pr
-        render_to: plugins/pr/skills/close-pr/SKILL.md
-      claude:
-        name: close-pr
-        render_to: plugins/pr/skills/close-pr/SKILL.md
-      hermes:
-        render_to: plugins/pr/skills/close-pr/SKILL.md
-    required_clis:
-      forge-cli: ">=1.11.2"
     state_out_mode: runtime
 
   - id: pr.deliver-pr
@@ -1139,58 +568,6 @@ skills:
       agent-runtime: ">=0.19.0"
       plan-issue: ">=1.1.0"
       review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: pr.review-thread-cleanup
-    domain: pr
-    source: core/skills/pr/review-thread-cleanup
-    products:
-      codex:
-        name: review-thread-cleanup
-        render_to: plugins/pr/skills/review-thread-cleanup/SKILL.md
-      claude:
-        name: review-thread-cleanup
-        render_to: plugins/pr/skills/review-thread-cleanup/SKILL.md
-      hermes:
-        render_to: plugins/pr/skills/review-thread-cleanup/SKILL.md
-    required_clis:
-      forge-cli: ">=1.11.2"
-    state_out_mode: runtime
-
-  - id: dispatch.create-plan-tracking-issue
-    domain: dispatch
-    source: core/skills/dispatch/create-plan-tracking-issue
-    products:
-      codex:
-        name: create-plan-tracking-issue
-        render_to: plugins/dispatch/skills/create-plan-tracking-issue/SKILL.md
-      claude:
-        name: create-plan-tracking-issue
-        render_to: plugins/dispatch/skills/create-plan-tracking-issue/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/create-plan-tracking-issue/SKILL.md
-    required_clis:
-      plan-tooling: ">=1.0.1"
-      plan-issue: ">=1.0.13"
-      forge-cli: ">=1.11.2"
-    state_out_mode: runtime
-
-  - id: dispatch.plan-tracking-issue-closeout
-    domain: dispatch
-    source: core/skills/dispatch/plan-tracking-issue-closeout
-    products:
-      codex:
-        name: plan-tracking-issue-closeout
-        render_to: plugins/dispatch/skills/plan-tracking-issue-closeout/SKILL.md
-      claude:
-        name: plan-tracking-issue-closeout
-        render_to: plugins/dispatch/skills/plan-tracking-issue-closeout/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/plan-tracking-issue-closeout/SKILL.md
-    required_clis:
-      forge-cli: ">=1.11.2"
-      plan-issue: ">=1.1.0"
-      plan-tooling: ">=1.0.1"
     state_out_mode: runtime
 
   - id: dispatch.deliver-dispatch-plan
@@ -1220,44 +597,6 @@ skills:
       review-specialists: ">=0.17.1"
     state_out_mode: runtime
 
-  - id: dispatch.dispatch-plan-closeout
-    domain: dispatch
-    source: core/skills/dispatch/dispatch-plan-closeout
-    products:
-      codex:
-        name: dispatch-plan-closeout
-        render_to: plugins/dispatch/skills/dispatch-plan-closeout/SKILL.md
-      claude:
-        name: dispatch-plan-closeout
-        render_to: plugins/dispatch/skills/dispatch-plan-closeout/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/dispatch-plan-closeout/SKILL.md
-    required_clis:
-      plan-issue: ">=1.1.0"
-      plan-tooling: ">=1.0.1"
-      forge-cli: ">=1.11.2"
-      review-evidence: ">=0.16.0"
-      review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: dispatch.execute-plan-tracking-issue
-    domain: dispatch
-    source: core/skills/dispatch/execute-plan-tracking-issue
-    products:
-      codex:
-        name: execute-plan-tracking-issue
-        render_to: plugins/dispatch/skills/execute-plan-tracking-issue/SKILL.md
-      claude:
-        name: execute-plan-tracking-issue
-        render_to: plugins/dispatch/skills/execute-plan-tracking-issue/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/execute-plan-tracking-issue/SKILL.md
-    required_clis:
-      plan-tooling: ">=1.0.1"
-      plan-issue: ">=1.0.13"
-      forge-cli: ">=1.11.2"
-    state_out_mode: runtime
-
   - id: dispatch.deliver-plan-tracking-issue
     domain: dispatch
     source: core/skills/dispatch/deliver-plan-tracking-issue
@@ -1283,42 +622,4 @@ skills:
       forge-cli: ">=1.17.0"
       review-evidence: ">=0.16.0"
       review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: dispatch.review-dispatch-lane-pr
-    domain: dispatch
-    source: core/skills/dispatch/review-dispatch-lane-pr
-    products:
-      codex:
-        name: review-dispatch-lane-pr
-        render_to: plugins/dispatch/skills/review-dispatch-lane-pr/SKILL.md
-      claude:
-        name: review-dispatch-lane-pr
-        render_to: plugins/dispatch/skills/review-dispatch-lane-pr/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/review-dispatch-lane-pr/SKILL.md
-    required_clis:
-      forge-cli: ">=1.17.0"
-      plan-issue: ">=1.0.13"
-      review-evidence: ">=0.16.0"
-      review-specialists: ">=0.17.1"
-    state_out_mode: runtime
-
-  - id: dispatch.execute-dispatch-lane
-    domain: dispatch
-    source: core/skills/dispatch/execute-dispatch-lane
-    products:
-      codex:
-        name: execute-dispatch-lane
-        render_to: plugins/dispatch/skills/execute-dispatch-lane/SKILL.md
-      claude:
-        name: execute-dispatch-lane
-        render_to: plugins/dispatch/skills/execute-dispatch-lane/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/execute-dispatch-lane/SKILL.md
-    required_clis:
-      forge-cli: ">=1.11.2"
-      plan-issue: ">=1.0.13"
-      plan-tooling: ">=1.0.1"
-      review-evidence: ">=0.16.0"
     state_out_mode: runtime

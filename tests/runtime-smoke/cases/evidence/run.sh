@@ -572,12 +572,12 @@ run_model_cross_check_probe() {
 }
 
 failures=0
-record_case "evidence.web-evidence" "web-evidence captured local loopback HTTP fixture" run_web_evidence_probe
-record_case "evidence.test-first-evidence" "test-first evidence waiver and final validation verified" run_test_first_evidence_probe
-record_case "evidence.review-evidence" "review evidence finding and validation verified" run_review_evidence_probe
-record_case "evidence.docs-impact" "docs-impact classified controlled untracked docs fixture" run_docs_impact_probe
-record_case "evidence.model-cross-check" "model cross-check recorded primary and checker observations without provider calls" run_model_cross_check_probe
-record_case "evidence.selective-control-plane" "pinned durable sessions and phase-aware pre-edit transitions passed" run_selective_intent_control_plane_probe
-record_case "evidence.skill-usage" "one natural-language parent workflow owned ordered verified child evidence" run_parent_workflow_outcome_probe
+record_case "evidence.selective-control-plane.web" "web-evidence captured local loopback HTTP fixture" run_web_evidence_probe
+record_case "evidence.selective-control-plane.test-first" "test-first evidence waiver and final validation verified" run_test_first_evidence_probe
+record_case "evidence.selective-control-plane.review" "review evidence finding and validation verified" run_review_evidence_probe
+record_case "evidence.selective-control-plane.docs-impact" "docs-impact classified controlled untracked docs fixture" run_docs_impact_probe
+record_case "evidence.selective-control-plane.model-cross-check" "model cross-check recorded primary and checker observations without provider calls" run_model_cross_check_probe
+record_case "evidence.selective-control-plane.intent-session" "pinned durable sessions and phase-aware pre-edit transitions passed" run_selective_intent_control_plane_probe
+record_case "evidence.selective-control-plane.parent" "one natural-language parent workflow owned ordered verified child evidence" run_parent_workflow_outcome_probe
 
 exit "$failures"

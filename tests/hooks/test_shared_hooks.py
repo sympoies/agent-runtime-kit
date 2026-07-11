@@ -623,8 +623,8 @@ class SharedHookTests(unittest.TestCase):
         self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
 
         for marker in (
-            "AGENT_RUNTIME_PR_SKILL=create-pr",
-            "AGENT_RUNTIME_PR_SKILL=pr:create-pr",
+            "AGENT_RUNTIME_PR_SKILL=deliver-pr",
+            "AGENT_RUNTIME_PR_SKILL=pr:deliver-pr",
         ):
             code, decision, stderr = run_hook(
                 "block-direct-pr-create.py",
@@ -632,6 +632,19 @@ class SharedHookTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+        for retired_marker in (
+            "AGENT_RUNTIME_PR_SKILL=create-pr",
+            "AGENT_RUNTIME_PR_SKILL=pr:create-pr",
+            "AGENT_RUNTIME_PR_SKILL=create-dispatch-lane-pr",
+            "AGENT_RUNTIME_PR_SKILL=pr:create-dispatch-lane-pr",
+        ):
+            code, decision, stderr = run_hook(
+                "block-direct-pr-create.py",
+                command_payload(f"{retired_marker} gh pr create --draft"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
 
         # Retired legacy product markers must no longer bypass the gate.
         for legacy in (
@@ -646,9 +659,9 @@ class SharedHookTests(unittest.TestCase):
             self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
 
         for command in (
-            "gh pr create --draft --body 'AGENT_RUNTIME_PR_SKILL=create-pr'",
-            "AGENT_RUNTIME_PR_SKILL=create-pr printf ok; gh pr create --draft",
-            "# AGENT_RUNTIME_PR_SKILL=create-pr\ngh pr create --draft",
+            "gh pr create --draft --body 'AGENT_RUNTIME_PR_SKILL=deliver-pr'",
+            "AGENT_RUNTIME_PR_SKILL=deliver-pr printf ok; gh pr create --draft",
+            "# AGENT_RUNTIME_PR_SKILL=deliver-pr\ngh pr create --draft",
         ):
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
@@ -660,14 +673,14 @@ class SharedHookTests(unittest.TestCase):
 
         code, decision, stderr = run_hook(
             "block-direct-pr-create.py",
-            command_payload("env AGENT_RUNTIME_PR_SKILL=create-pr gh pr create --draft"),
+            command_payload("env AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft"),
         )
         self.assertEqual(code, 0, stderr)
         self.assert_allowed(decision)
 
         for command in (
-            "env -S 'AGENT_RUNTIME_PR_SKILL=create-pr gh pr create --draft'",
-            "AGENT_RUNTIME_PR_SKILL=create-pr bash -lc 'gh pr create --draft'",
+            "env -S 'AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft'",
+            "AGENT_RUNTIME_PR_SKILL=deliver-pr bash -lc 'gh pr create --draft'",
         ):
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
@@ -697,9 +710,9 @@ class SharedHookTests(unittest.TestCase):
                 self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
 
         for command in (
-            "env AGENT_RUNTIME_PR_SKILL=pr:create-pr gh api -X POST /repos/graysurf/agent-runtime-kit/pulls -f title=x -f head=topic -f base=main",
-            "AGENT_RUNTIME_PR_SKILL=pr:create-pr glab mr create --draft",
-            "env AGENT_RUNTIME_PR_SKILL=pr:create-pr glab api -X POST /projects/1/merge_requests",
+            "env AGENT_RUNTIME_PR_SKILL=pr:deliver-pr gh api -X POST /repos/graysurf/agent-runtime-kit/pulls -f title=x -f head=topic -f base=main",
+            "AGENT_RUNTIME_PR_SKILL=pr:deliver-pr glab mr create --draft",
+            "env AGENT_RUNTIME_PR_SKILL=pr:deliver-pr glab api -X POST /projects/1/merge_requests",
         ):
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(

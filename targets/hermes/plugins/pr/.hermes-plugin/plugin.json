@@ -1,5 +1,5 @@
 {
   "name": "pr",
   "version": "0.1.0",
-  "description": "PR lifecycle skills — create-pr, deliver-pr, close-pr, create-dispatch-lane-pr, and review-thread-cleanup."
+  "description": "One governed GitHub/GitLab PR and MR delivery outcome with lifecycle modes routed internally."
 }

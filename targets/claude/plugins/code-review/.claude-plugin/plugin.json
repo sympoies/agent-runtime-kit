@@ -1,7 +1,7 @@
 {
   "name": "code-review",
   "version": "0.1.0",
-  "description": "Read-only specialist code review workflows backed by review-specialists.",
+  "description": "One read-only code-review outcome with internally selected quick, focused, specialist, follow-up, and pre-merge modes.",
   "author": {
     "name": "graysurf"
   },

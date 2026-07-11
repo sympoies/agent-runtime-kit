@@ -43,17 +43,6 @@ entries:
     destination: external-skills/agent-runtime-kit/media
     recursive: true
 
-  - id: browser.plugin-manifest
-    kind: plugin-manifest-copy
-    source: targets/hermes/plugins/browser/.hermes-plugin/plugin.json
-    destination: plugins/browser/.hermes-plugin/plugin.json
-
-  - id: browser.skills-tree
-    kind: symlinked-file
-    source: build/hermes/plugins/browser/skills
-    destination: external-skills/agent-runtime-kit/browser
-    recursive: true
-
   - id: computer-use.plugin-manifest
     kind: plugin-manifest-copy
     source: targets/hermes/plugins/computer-use/.hermes-plugin/plugin.json
@@ -74,17 +63,6 @@ entries:
     kind: symlinked-file
     source: build/hermes/plugins/conversation/skills
     destination: external-skills/agent-runtime-kit/conversation
-    recursive: true
-
-  - id: evidence.plugin-manifest
-    kind: plugin-manifest-copy
-    source: targets/hermes/plugins/evidence/.hermes-plugin/plugin.json
-    destination: plugins/evidence/.hermes-plugin/plugin.json
-
-  - id: evidence.skills-tree
-    kind: symlinked-file
-    source: build/hermes/plugins/evidence/skills
-    destination: external-skills/agent-runtime-kit/evidence
     recursive: true
 
   - id: issue.plugin-manifest

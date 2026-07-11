@@ -149,7 +149,7 @@ run_issue_outcome_routing_probe() {
 failures=0
 record_case "issue.issue-follow-up" "forge-cli issue create/view/comment dry-run probes passed" run_issue_follow_up_probe
 record_case "issue.issue-triage" "forge-cli inbox issue triage dry-run probes passed" run_issue_triage_probe
-record_case "issue.report-plan-issue-finding" "forge-cli issue list dedup + create dry-run probes passed" run_report_plan_issue_finding_probe
-record_case "issue.outcome-routing" "generic issue follow-up absorbs plan-family finding routing without a fixed provider account" run_issue_outcome_routing_probe
+record_case "issue.outcome-routing.plan-finding" "forge-cli issue list dedup + create dry-run probes passed" run_report_plan_issue_finding_probe
+record_case "issue.outcome-routing.contract" "generic issue follow-up absorbs plan-family finding routing without a fixed provider account" run_issue_outcome_routing_probe
 
 exit "$failures"

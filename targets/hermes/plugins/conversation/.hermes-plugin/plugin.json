@@ -1,5 +1,5 @@
 {
   "name": "conversation",
   "version": "0.1.0",
-  "description": "Conversation pattern skills — guided-feature-build, orchestrator-first, parallel-first, and discussion-to-implementation-doc."
+  "description": "Discussion capture, guided feature build, and handoff prompt outcomes."
 }

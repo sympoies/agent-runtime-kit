@@ -1,3 +1,0 @@
-Use the agent-out skill guidance if it is available in this product runtime.
-Reply with one line only:
-runtime-smoke:meta.agent-out:agent-out project

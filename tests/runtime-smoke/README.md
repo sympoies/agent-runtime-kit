@@ -22,10 +22,10 @@ history, logs, caches, or product state.
   `evidence`, `issue`, `code-review`, `pr`, `dispatch`, and `reporting`
   domains. The `pr` domain includes `forge-cli` dry-run probes for create,
   close, dispatch-lane create, and delivery macro surfaces.
-- `product`: runs quarantined product CLI isolation probes, installs temporary
-  product homes, and records representative prompt cases. Prompt execution is
-  skipped by default unless isolated provider/auth execution is explicitly
-  enabled.
+- `product`: runs quarantined product CLI isolation probes and installs
+  temporary product homes. It does not execute prompts; outcome routing is
+  covered deterministically, while authenticated fresh-session acceptance is a
+  separate private/live lane.
 
 `doctor` warnings are allowed in install mode because host tool freshness can
 vary. Blocking findings are not allowed; the runner parses the `block=<n>`
@@ -62,12 +62,11 @@ without keeping the temporary runtime homes.
 
 Product mode is intentionally outside default CI. It proves the product CLI can
 run with temporary runtime homes, installs the current runtime surface into
-temporary product homes, and records representative prompt cases for
-`agent-docs`, `agent-out`, `canary-check`, `skill-usage`, and `docs-impact`.
-Prompt cases default to `skip-host-capability`; set
-`RUNTIME_SMOKE_PRODUCT_EXECUTE=1` only with isolated provider/auth state when
-running the quarantined prompt path manually. Product mode must not touch real
+temporary product homes, and stops before any prompt/provider call. Product
+mode must not touch real
 `$HOME/.codex`, `$HOME/.claude`, auth, sessions, history, logs, or caches.
+Prompt routing remains residual live-product risk and is verified only by the
+private fresh-session acceptance lane after public integration.
 
 ## Reviewer Subagent Discovery
 

@@ -120,7 +120,7 @@ a uniform shape:
   all discover identically), so the kit keeps the `skills: [{id, source}]`
   array as source-organisation audit metadata rather than rewriting it.
 - Source: `targets/codex/plugins/<plugin>/.codex-plugin/plugin.json`
-  exists for all 10 plugin domains (`manifests/plugins.yaml`); the
+  exists for all 9 direct-outcome plugin domains (`manifests/plugins.yaml`); the
   reporting artifact shows the audit schema shape
   (`targets/codex/plugins/reporting/.codex-plugin/plugin.json`).
 - Install mechanism: `plugin-manifest-copy` into
@@ -141,7 +141,7 @@ a uniform shape:
   `.claude-plugin/marketplace.json` as a legacy source). runtime-kit ships the
   canonical path.
 - Source: `targets/codex/.agents/plugins/marketplace.json` — the `codex-kit`
-  marketplace listing all 10 plugins by `./plugins/<name>`, installed by the
+  marketplace listing all 9 direct-outcome plugins by `./plugins/<name>`, installed by the
   `codex-kit.marketplace` `plugin-manifest-copy` entry
   (`targets/codex/link-map.yaml`).
 - Install mechanism: `sync-runtime-surfaces.sh --apply --product codex`
@@ -161,7 +161,7 @@ a uniform shape:
   marketplace, Codex discovers each bundled `skills/<skill>/SKILL.md` and
   surfaces it as `<plugin>:<skill>`.
 - Source: `build/codex/plugins/<domain>/skills/<skill>/` is the rendered tree;
-  66 Codex plugin-scoped skill entries are declared in `manifests/skills.yaml`
+  26 Codex plugin-scoped skill entries are declared in `manifests/skills.yaml`
   (count auto-maintained by
   `scripts/ci/skill-governance-audit.sh --update-counts`);
   the marketplace materialization copies it symlink-free beside each plugin's
@@ -171,7 +171,7 @@ a uniform shape:
   skill root install (surface 15) is retired.
 - Acceptance lane: gate 3 render, gate 4 golden, gate 5 drift, and the gate 8
   runtime-smoke codex plugin-registry probe; sandbox install rehearsal diffs
-  `tests/sandbox/codex/expected-skills.txt:1-66`.
+  `tests/sandbox/codex/expected-skills.txt:1-26`.
 - Support today: **shipped** — plugin-scoped discovery is the default
   runtime-kit-managed Codex skill path.
 
@@ -278,25 +278,25 @@ a uniform shape:
 ### 13. Heuristic system (curated retained records)
 
 - Codex reads from: not directly as a harness loader. The home prompt
-  points at the heuristic system as policy / workflow guidance, and the
-  `heuristic-inbox` skill consumes the retained-record tree.
+  points at the heuristic system as policy / workflow guidance, and parent
+  workflows use the `heuristic-inbox` CLI for retained records.
 - Source: shared root under `core/policies/heuristic-system/`
   (HEURISTIC_SYSTEM.md + error-inbox + operation-records).
 - Install mechanism: currently a docs / skill surface; consumed via the
   `heuristic-inbox` nils-cli binary with explicit `--inbox-dir`
   arguments rather than a fixed Codex load path.
 - Acceptance lane: runtime-smoke deterministic mode exercises the
-  `heuristic-inbox` skill through the meta domain (`DEVELOPMENT.md`).
+  policy-owned `heuristic-inbox` CLI path (`DEVELOPMENT.md`).
 - Support today: **shipped (shared policy root)**.
 
 ### 14. Runtime state (`state_home`)
 
-- Codex reads from: not directly — `state_home` is owned by skills /
-  hooks via `agent-out` and `CODEX_AGENT_STATE_HOME`.
+- Codex reads from: not directly — `state_home` is owned by parent workflows
+  and hooks via the `agent-out` CLI and `CODEX_AGENT_STATE_HOME`.
 - Source: contract in `manifests/runtime-roots.yaml` and
   `manifests/product-capabilities.yaml`.
 - Install mechanism: `agent-runtime install` resolves runtime roots;
-  `agent-out` allocates artifact paths at runtime.
+  the `agent-out` CLI allocates artifact paths at runtime.
 - Acceptance lane: drift audit + doctor verify resolution; backup
   retention reported by `doctor`.
 - Support today: **shipped (env var + runtime allocator)**.
@@ -334,20 +334,17 @@ a uniform shape:
   verify the referenced shared scripts (`DEVELOPMENT.md`).
 - Support today: **shipped (managed block)**.
 
-### 17. Prompt-mode delegation policy (`AGENT_HOME.md`)
+### 17. Work-tier delegation policy (`core/policies/work-tier-levels.md`)
 
-- Codex reads from: the loaded home prompt (`$CODEX_HOME/AGENTS.md`)
-  carries opt-in delegation modes such as `parallel-first` and
-  `orchestrator-first`; there is no separate Codex file loader for
-  subagent definitions (`AGENT_HOME.md`).
-- Source: the Codex-only block in root `AGENT_HOME.md`, rendered into
-  `build/codex/AGENT_HOME.md`.
-- Install mechanism: same rendered-home symlink as surface 1; policy text is
-  loaded as part of the Codex home-scope prompt and omitted from the Claude
-  render.
-- Acceptance lane: live session prompt load only; no dedicated CI gate
-  validates prompt-mode behavior.
-- Support today: **shipped (Codex-only rendered home block)**.
+- Codex reads from: the required-doc injection path names the work-tier policy
+  for `project-dev`; that policy may select parallel or orchestrator execution
+  without exposing those execution modes as skills.
+- Source: `core/policies/work-tier-levels.md`, routed by
+  `AGENT_DOCS.toml` and summarized by the rendered home policy.
+- Install mechanism: shared policy tree plus `agent-docs` intent resolution;
+  there is no separate skill or Codex file loader for an execution mode.
+- Acceptance lane: agent-docs preflight and policy-render validation.
+- Support today: **shipped (policy-routed)**.
 
 ## Coverage Summary
 
@@ -366,10 +363,10 @@ a uniform shape:
 | 11 | `statusLine` / `settings.json` | not-applicable | — | n/a | n/a |
 | 12 | MCP servers | no | — | n/a | n/a |
 | 13 | Heuristic system | yes | shared policy root | 0.130.0 | v1.8.0 (heuristic-inbox) |
-| 14 | `state_home` | yes | env var + `agent-out` allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup plan/apply is skill-specific in `meta.agent-out`) |
+| 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 | 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | retired; plugin-scoped discovery is row 5 | n/a | n/a |
 | 16 | `config.toml` hook managed block | yes | managed-block sync | 0.130.0 | v0.17.5 |
-| 17 | prompt-mode delegation policy | yes | Codex-only block loaded via rendered home prompt | 0.130.0 | v1.12.1 |
+| 17 | work-tier delegation policy | yes | agent-docs policy routing | 0.130.0 | v0.16.0 |
 
 Status legend:
 

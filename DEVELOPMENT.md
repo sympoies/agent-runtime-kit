@@ -176,6 +176,15 @@ with `--apply`. Keep
 `scripts/setup.sh` for first-time host bootstrap and CLI tool installation; it
 delegates the same plugin registry activation after bootstrap.
 
+Retired managed-surface cleanup has two separate sources of truth:
+`manifests/retired-skill-ids.json` owns the product-neutral ID boundary used by
+Codex, Claude, and Hermes cleanup, while
+`manifests/retired-hermes-skill-copies.json` owns Hermes exact-copy digests.
+The digest manifest names the immutable pre-retirement revision used to
+recompute every digest from historical Hermes goldens. CI checks out full Git
+history for that replay, so retired skill content does not need to remain in an
+active source or fixture tree.
+
 For non-technical operators setting up another Mac through an agent, use the
 copyable clean-reinstall prompt in
 [`docs/source/macos-agent-bootstrap-prompt.md`](docs/source/macos-agent-bootstrap-prompt.md).

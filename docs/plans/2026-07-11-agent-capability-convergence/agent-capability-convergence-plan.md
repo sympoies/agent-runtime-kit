@@ -116,8 +116,8 @@ compatibility surfaces.
   - `AGENT_HOME.md`
   - `core/policies/`
   - `core/hooks/`
-  - `core/skills/browser/`
-  - `core/skills/evidence/`
+  - `core/policies/browser-test-routing.md`
+  - `core/policies/evidence-control-plane.md`
   - `tests/hooks/`
   - `tests/runtime-smoke/cases/browser/`
   - `tests/runtime-smoke/cases/evidence/`

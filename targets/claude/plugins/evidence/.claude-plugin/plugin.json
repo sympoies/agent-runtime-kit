@@ -1,9 +1,0 @@
-{
-  "name": "evidence",
-  "version": "0.1.0",
-  "description": "Evidence primitives for web capture, test-first records, reviews, skill usage, docs impact, and model cross-checks.",
-  "author": {
-    "name": "graysurf"
-  },
-  "homepage": "https://github.com/graysurf/agent-runtime-kit"
-}

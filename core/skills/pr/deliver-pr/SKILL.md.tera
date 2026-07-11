@@ -18,7 +18,7 @@ Prereqs:
   existing-PR adoption in `pr deliver` needs 1.1.0. Linked issue closeout
   relies on the unified terminal task-row contract in `plan-issue` 1.1.0.
 - Shared provider, branch, body, and label rules in
-  `../create-pr/references/pr-lifecycle.md` are satisfied.
+  `references/pr-lifecycle.md` are satisfied.
 - The working tree contains only the intended delivery changes.
 - Local validation and review findings have been resolved before merge.
 - Implementation changes have been committed through `semantic-commit`; commit
@@ -186,7 +186,7 @@ When the test-first gate is enabled — `[test_first].require = true` in a repo
 `${XDG_CONFIG_HOME:-~/.config}/forge-cli/config.toml` — a `--kind feature` /
 `bug` deliver (the create, adopt, and `--dry-run` preflight steps) also requires
 `--test-first-evidence "$EVIDENCE_DIR"`, pointing at the `verify`-clean directory
-the `test-first-evidence` skill produces. Omit it for the exempt kinds (`docs` /
+the policy-owned `test-first-evidence` CLI flow produces. Omit it for the exempt kinds (`docs` /
 `chore` / `ci` / `refactor`); without it delivery fails closed with
 `test_first_evidence_required`.
 
@@ -328,7 +328,7 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    use `Refs #<issue>` until `record close` has passed.
 5. Render the PR/MR body with `agent-runtime pr-body render`.
 6. Select labels before provider mutation; use
-   `../create-pr/references/pr-lifecycle.md` for the shared taxonomy rule.
+   `references/pr-lifecycle.md` for the shared taxonomy rule.
 7. If `manifests/forge-labels.yaml` exists, validate labels with the
    appropriate `forge-cli label` surface before the first live delivery.
 8. In create-only mode, run `forge-cli pr create`, return the provider URL, and

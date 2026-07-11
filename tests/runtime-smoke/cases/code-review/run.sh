@@ -124,7 +124,7 @@ run_cli_command_contract_policy_probe() {
     found { print }
   ' "$gate_body")"
 
-  grep -Fq 'core/skills/{dispatch,pr}/{deliver-*,*-closeout}/SKILL.md.tera' <<<"$gate_section"
+  grep -Fq 'core/skills/{dispatch,pr}/deliver-*/SKILL.md.tera' <<<"$gate_section"
   grep -Fq 'Force the `api-contract` lens' <<<"$gate_section"
   grep -Fq 'pinned nils-cli surface' <<<"$gate_section"
   grep -Fq 'Check every invocation' <<<"$gate_section"
@@ -239,12 +239,12 @@ run_code_review_outcome_routing_probe() {
 }
 
 failures=0
-record_case "code-review.code-review-focused-lens" "focused lens scope with forced specialists passed" run_focused_lens_probe
-record_case "code-review.code-review-follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
-record_case "code-review.code-review-pre-merge-gate" "pre-merge gate mandatory forced specialists passed" run_pre_merge_gate_probe
+record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
+record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
+record_case "code-review.outcome-routing.pre-merge" "pre-merge gate mandatory forced specialists passed" run_pre_merge_gate_probe
 record_case "code-review.cli-command-contract-policy" "delivery skill CLI command blocks require pinned-surface dry-run contract evidence" run_cli_command_contract_policy_probe
-record_case "code-review.code-review-quick-pass" "quick-pass scope sizing probe passed" run_quick_pass_probe
+record_case "code-review.outcome-routing.quick" "quick-pass scope sizing probe passed" run_quick_pass_probe
 record_case "code-review.code-review-specialists" "review-specialists scope, validate, merge, and render probes passed" run_code_review_specialists_probe
-record_case "code-review.outcome-routing" "one review outcome selects quick, focused, specialist, follow-up, and pre-merge modes internally" run_code_review_outcome_routing_probe
+record_case "code-review.outcome-routing.contract" "one review outcome selects quick, focused, specialist, follow-up, and pre-merge modes internally" run_code_review_outcome_routing_probe
 
 exit "$failures"

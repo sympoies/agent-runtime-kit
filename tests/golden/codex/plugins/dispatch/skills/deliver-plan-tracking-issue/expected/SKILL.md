@@ -288,7 +288,7 @@ Plan-tracking PRs are `--kind feature` records, so when the test-first gate is
 enabled (`[test_first].require = true` in a repo `.forge-cli.toml` or the
 user-global `${XDG_CONFIG_HOME:-~/.config}/forge-cli/config.toml`) the deliver
 above requires `--test-first-evidence "$EVIDENCE_DIR"` — the `verify`-clean
-directory the `test-first-evidence` skill produces — or it fails closed with
+directory the policy-owned `test-first-evidence` CLI flow produces — or it fails closed with
 `test_first_evidence_required`.
 
 ## Workflow

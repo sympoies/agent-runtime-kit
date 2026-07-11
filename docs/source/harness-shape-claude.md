@@ -42,8 +42,8 @@ Scope rules:
   project-script dispatcher skills so repository-owned `.agents/scripts/*`
   commands run through explicit `.envrc` / `.env` handling.
 - Per-skill nils-cli floors come from `manifests/skills.yaml`
-  `required_clis` (e.g. `agent-out: ">=1.19.3"`,
-  `agent-docs: ">=0.16.0"`, `agent-run: ">=0.20.0"`). These gate skill
+  `required_clis` (e.g. `agent-out: ">=1.19.2"`,
+  `macos-agent: ">=1.21.13"`, `agent-run: ">=0.20.0"`). These gate skill
   bodies, not the harness load path.
 
 ## Surface-By-Surface Shape
@@ -90,11 +90,10 @@ a uniform shape:
   at runtime (`manifests/product-capabilities.yaml`,
   `loaded_at_runtime: true`).
 - Source: `targets/claude/plugins/<plugin>/.claude-plugin/plugin.json`
-  — 10 plugins enumerated (`manifests/plugins.yaml`).
+  — 9 direct-outcome plugins enumerated (`manifests/plugins.yaml`).
 - Install mechanism: `plugin-manifest-copy` per plugin (e.g.
   `targets/claude/link-map.yaml` for reporting; same pattern for meta,
-  media, browser, conversation, evidence, issue, code-review, pr,
-  dispatch).
+  media, conversation, issue, code-review, pr, and dispatch).
 - Schema: local `core/docs/schemas/claude-plugin.schema.json`
   (`manifests/product-capabilities.yaml`).
 - Acceptance lane: drift audit + plugin schema validation (CI gate
@@ -136,9 +135,9 @@ a uniform shape:
 - Claude reads from: `${CLAUDE_PLUGIN_ROOT}/<plugin>/skills/<skill>/`
   for plugin-scoped skill discovery
   (`manifests/product-capabilities.yaml`).
-- Source: `core/skills/<domain>/<skill>/` (10 plugin domains, reporting +
-  meta + media + browser + conversation + evidence + issue + code-review
-  + pr + dispatch); rendered into
+- Source: `core/skills/<domain>/<skill>/` (9 direct-outcome plugin domains:
+  reporting, meta, media, computer-use, conversation, issue, code-review, pr,
+  and dispatch); rendered into
   `build/claude/plugins/<plugin>/skills/<skill>/`.
 - Install mechanism: `symlinked-file` with `recursive: true` per plugin
   (`targets/claude/link-map.yaml` for reporting; same for the other
@@ -262,18 +261,18 @@ a uniform shape:
   `heuristic-inbox` nils-cli binary with explicit `--inbox-dir`
   arguments rather than a fixed install path.
 - Acceptance lane: runtime-smoke deterministic mode exercises the
-  `heuristic-inbox` skill (position 8 / meta domain).
+  policy-owned `heuristic-inbox` CLI path (position 8 / meta domain).
 - Support today: **shipped (shared policy root)**.
 
 ### 14. Runtime state (`state_home`)
 
-- Claude reads from: not directly — `state_home` is owned by
-  skills/hooks via `agent-out` and product-specific env vars
+- Claude reads from: not directly — `state_home` is owned by parent workflows
+  and hooks via the `agent-out` CLI and product-specific env vars
   (`CLAUDE_KIT_STATE_HOME`).
 - Source: contract in `manifests/runtime-roots.yaml` and
   `manifests/product-capabilities.yaml`.
 - Install mechanism: `agent-runtime install` sets the env var via the
-  managed block; `agent-out` allocates artifact paths at runtime.
+  managed block; the `agent-out` CLI allocates artifact paths at runtime.
 - Acceptance lane: drift audit + doctor verify resolution; backup
   retention reported by `doctor`.
 - Support today: **shipped (env var + runtime allocator)**.
@@ -295,7 +294,7 @@ a uniform shape:
 | 11 | `statusLine` | no | — | n/a | n/a |
 | 12 | MCP servers | no | — | n/a | n/a |
 | 13 | Heuristic system | yes | shared policy root | 2.1.145 | v1.8.0 (heuristic-inbox) |
-| 14 | `state_home` | yes | env var + `agent-out` allocation | 2.1.145 | v1.19.2 (`path-for`; reviewed cleanup plan/apply is skill-specific in `meta.agent-out`) |
+| 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 2.1.145 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 
 Status legend:
 

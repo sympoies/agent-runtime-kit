@@ -7,17 +7,13 @@ without making low-level close skills mandatory review orchestrators.
 ## Ownership
 
 - `deliver-pr` owns this mandatory gate for end-to-end delivery.
-- `close-pr` keeps its optional user-requested review gate for direct close or
-  merge requests.
+- `deliver-pr` also owns explicit provider close or merge requests when the
+  selected lifecycle path requires them.
 - `deliver-plan-tracking-issue` relies on this delivery gate for each PR, then adds
   issue-visible evidence, runtime-finding disposition, lifecycle completion, and
   closeout requirements.
-- `review-dispatch-lane-pr` may use `code-review-specialists` before a main-agent
-  decision for broad, high-risk, security-sensitive, migration-heavy, or
-  API-contract-heavy dispatch PRs.
-- `code-review-pre-merge-gate` exposes this shared gate as a direct read-only
-  code-review entrypoint when the caller needs gate evidence without provider
-  merge or comment actions.
+- `deliver-dispatch-plan` uses `code-review-specialists` in pre-merge or
+  specialist mode before the parent decision for dispatch PRs.
 - `code-review-specialists` remains read-only. It supplies scope detection,
   specialist findings, and reports; it does not fix code, post PR or MR
   comments, mark draft reviewables ready, merge, close issues, or clean
@@ -71,7 +67,7 @@ For every end-to-end delivery PR or MR:
 ## CLI Command-Block Contract Check
 
 When a diff touches
-`core/skills/{dispatch,pr}/{deliver-*,*-closeout}/SKILL.md.tera` and changes a
+`core/skills/{dispatch,pr}/deliver-*/SKILL.md.tera` and changes a
 command block containing a `forge-cli`, `gh`, or `glab` invocation:
 
 1. Force the `api-contract` lens even when the reviewable is otherwise small or

@@ -29,18 +29,14 @@ from hook_common import (
 
 _BUILTIN_PR_SKILLS: frozenset[str] = frozenset(
     {
-        "create-pr",
-        "create-dispatch-lane-pr",
-        "pr:create-feature-pr",
-        "pr:create-bug-pr",
-        "pr:create-pr",
-        "pr:create-dispatch-lane-pr",
+        "deliver-pr",
+        "pr:deliver-pr",
     }
 )
 _BUILTIN_MR_SKILLS: frozenset[str] = frozenset(
     {
-        "create-pr",
-        "pr:create-pr",
+        "deliver-pr",
+        "pr:deliver-pr",
     }
 )
 

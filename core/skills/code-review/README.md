@@ -1,56 +1,44 @@
-# Code Review Skill Routing
+# Code Review Outcome
 
-This directory contains the code review skill family. Prefer the lightest
-workflow that can answer the review question, and escalate only when scope,
-risk, or delivery policy requires it.
+Runtime-kit exposes one user-visible code-review outcome:
+`code-review-specialists`. It selects the smallest internal mode that satisfies
+the request and risk; quick, focused, pre-merge, and follow-up are modes, not
+separate skills.
 
-## Skill Selection
-
-| Situation | Use | Notes |
+| Situation | Internal mode | Behavior |
 | --- | --- | --- |
-| Small, routine, docs-only, or ordinary diff | `code-review-quick-pass` | Lightweight read-only review. Dispatches `reviewer-quick` whenever the active host exposes subagent dispatch; Codex must use `multi_agent_v1.spawn_agent` when available. Escalates when scope or confidence requires a stronger workflow. |
-| Explicit review lens requested, such as testing, security, performance, data migration, API contract, maintainability, or red-team | `code-review-focused-lens` | Runs one or more named lenses without invoking the full specialist bundle. Dispatches the matching `reviewer-<lens>` subagents when dispatch is available. Escalates if the selected lens exposes broader risk. |
-| PR/MR is close to merge and needs the shared delivery gate | `code-review-pre-merge-gate` | Mandatory delivery gate. Forces at least `testing` and `maintainability`, dispatches the matching reviewers when dispatch is available, produces a delivery outcome, and leaves provider comments/merge decisions to the owning delivery workflow. |
-| Previous review findings were repaired and need disposition evidence | `code-review-follow-up` | Re-checks prior findings after fixes. Reruns affected reviewers through subagents when dispatch is available. It does not start a fresh broad review unless new concrete risk appears. |
-| Broad, risky, security-sensitive, migration-heavy, API-contract-heavy, or otherwise full-bundle review | `code-review-specialists` | Full specialist review bundle. Uses the matching managed `reviewer-<lens>` subagents whenever the active host exposes subagent dispatch; Codex must use `multi_agent_v1.spawn_agent` when available. Avoid for tiny diffs, ordinary implementation work, pure formatting, docs-only changes, or CI repair loops unless explicitly requested. |
+| Small, routine, docs-only, or ordinary diff | `quick` | Lightweight read-only review; escalate when scope or confidence requires it. |
+| Explicit lens requested | `focused` | Run only the requested testing, security, performance, data-migration, API-contract, maintainability, or red-team lenses unless concrete scope requires more. |
+| PR/MR near merge | `pre-merge` | Force at least testing and maintainability, produce a delivery outcome, and leave provider writes and merge decisions to the owning delivery workflow. |
+| Previous findings repaired | `follow-up` | Re-check supplied findings and classify each without starting a fresh broad review unless a fix creates new risk. |
+| Broad or high-risk change | `specialist` | Select and dispatch the relevant specialist bundle, then validate and merge findings. |
 
 ## Reviewer Subagents
 
-`code-review-quick-pass`, `code-review-specialists`, and
-`code-review-pre-merge-gate` share the same reviewer lens definitions. The
-managed reviewers render from `core/agents/code-review/` into each product home
+Managed reviewers render from `core/agents/code-review/` into each product home
 (`~/.codex/agents/reviewer-<lens>.toml`,
-`~/.claude/agents/reviewer-<lens>.md`):
+`~/.claude/agents/reviewer-<lens>.md`). When the active host exposes subagent
+dispatch, each selected lens is delegated read-only; Codex uses
+`multi_agent_v1.spawn_agent` or its equivalent. Inline review is the stated
+fallback only when dispatch is unavailable or blocked.
 
-- `reviewer-quick` — lightweight quick-pass review.
-- `reviewer-testing`, `reviewer-maintainability`, `reviewer-security`,
-  `reviewer-performance`, `reviewer-api-contract`, `reviewer-data-migration`,
-  `reviewer-red-team` — one read-only lens each, emitting JSONL findings per the
-  specialist review contract.
+## Parent Workflow Integration
 
-The parent agent always owns base-ref selection, lens / scope selection,
-dispatch, fallback justification, validation and merge of returned findings,
-synthesis, and every provider / merge action; a subagent owns only its read-only
-inspection lens. Inline review is only the fallback when the active host lacks
-subagent dispatch or a dispatch attempt is blocked; state that fallback
-explicitly.
-
-## Current Callers
-
-| Caller skill | Review routing | Notes |
-| --- | --- | --- |
-| `discussion-to-implementation-doc` | Does not run review by default; records the expected review gate in the source document. | Routes later review guidance to `quick-pass`, `focused-lens`, `pre-merge-gate`, `follow-up`, or `specialists` based on scope. |
-| `close-pr` | Optional user-requested review chooses the lightest matching workflow. | Uses `quick-pass` for routine diffs, `focused-lens` for explicit lenses, `pre-merge-gate` for final delivery gates, and `specialists` only for broad or risky full-bundle review. Close skills do not require `review-specialists` in their manifest because review is optional. |
-| `deliver-pr` | `code-review-pre-merge-gate`. | Mandatory before merge; the delivery workflow owns comments, fixes, checks, and merge. Uses the PR base or MR target branch as the review base. |
-| `deliver-plan-tracking-issue` | `code-review-pre-merge-gate` for every PR. | Mandatory before merge, even for small diffs, because the plan-tracking workflow owns delivery readiness. |
-| `deliver-dispatch-plan` | `review-dispatch-lane-pr`, with supplemental `code-review-specialists` when risk warrants it. | Lane reviews stay in the dispatch lane review workflow; specialist review is read-only evidence. |
-| `review-dispatch-lane-pr` | Optional `code-review-specialists` for broad or high-risk lane PRs. | Records specialists as used or skipped in review evidence. |
-| `dispatch-plan-closeout` | Does not directly run code review. | Verifies lane review evidence and records specialist review as used or skipped. |
-| `review-evidence` | May import `code-review-specialists` reports. | Keeps specialist output as evidence; caller owns judgment and blocking decisions. |
+- `deliver-pr` invokes pre-merge mode before merge and owns provider comments,
+  fixes, checks, and merge.
+- `deliver-plan-tracking-issue` invokes pre-merge mode for each PR, then owns
+  issue-visible review evidence and strict closeout.
+- `deliver-dispatch-plan` invokes the generic outcome for independent lane
+  review and keeps provider writes, checkpoints, integration, and closeout in
+  the dispatch parent.
+- `discussion-to-implementation-doc` records the expected review mode in the
+  implementation source document but does not review by default.
+- When retained findings matter, the parent creates a `review-evidence` CLI
+  record under the evidence control-plane policy.
 
 ## Boundary
 
-All code review skills are read-only. They can produce findings, gate results,
-reports, escalation rationale, and disposition evidence, but they do not fix
-code, post provider comments, merge PRs/MRs, or close issues. The workflow that
-invoked review owns those actions.
+The review outcome is read-only. It selects modes and lenses, dispatches
+reviewers, validates findings, and returns evidence-grounded conclusions. It
+does not fix code, post provider comments, merge or close PRs/MRs, mutate plan
+issues, or execute the recommended next step.

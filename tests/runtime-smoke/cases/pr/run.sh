@@ -95,7 +95,7 @@ assert_provider_payload_local_path_gate() {
   ! grep -q "$raw_path" "$path" || return 1
 }
 
-# Every PR/MR delivery skill that can open a feature/bug record must thread the
+# Every retained PR/MR outcome that directly opens a feature/bug record must thread the
 # forge-cli test-first gate flag (--test-first-evidence) into its documented
 # create/deliver invocation. Without it, an operator with [test_first].require =
 # true (repo or user-global) hits test_first_evidence_required at the documented
@@ -104,10 +104,7 @@ assert_provider_payload_local_path_gate() {
 assert_delivery_skills_thread_test_first_evidence() {
   local rc=0 skill
   for skill in \
-    core/skills/pr/create-pr/SKILL.md.tera \
     core/skills/pr/deliver-pr/SKILL.md.tera \
-    core/skills/pr/create-dispatch-lane-pr/SKILL.md.tera \
-    core/skills/dispatch/execute-dispatch-lane/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera; do
     if ! grep -q -- '--test-first-evidence' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill omits --test-first-evidence gate threading" >&2
@@ -440,7 +437,7 @@ run_deliver_gitlab_probe() {
     "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
 }
 
-# The provider-neutral create-pr/close-pr/deliver-pr skills cover both
+# The provider-neutral deliver-pr outcome covers the complete lifecycle for both
 # providers, so each case exercises the GitHub and GitLab probe and fails if
 # either provider regresses.
 run_create_pr_probe() {
@@ -525,15 +522,15 @@ run_review_thread_cleanup_gitlab_probe() {
 }
 
 assert_review_thread_cleanup_skill_documents_surface() {
-  local skill="$REPO_ROOT/core/skills/pr/review-thread-cleanup/SKILL.md.tera"
+  local skill="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
   local rc=0
   if [ ! -f "$skill" ]; then
     echo "runtime-smoke pr: missing $skill" >&2
     return 1
   fi
   grep -q 'pr review-threads list' "$skill" || rc=1
-  grep -q 'pr review-threads resolve' "$skill" || rc=1
-  grep -q 'pr review-threads reply' "$skill" || rc=1
+  grep -q 'reply and' "$skill" || rc=1
+  grep -q 'resolve' "$skill" || rc=1
   grep -q 'review-thread-convergence' "$skill" || rc=1
   if [ "$rc" -ne 0 ]; then
     echo "runtime-smoke pr: $skill omits read/write surface or convergence policy reference" >&2
@@ -581,11 +578,11 @@ run_pr_outcome_routing_probe() {
 }
 
 failures=0
-record_case "pr.create-pr" "forge-cli GitHub+GitLab pr create dry-run passed" run_create_pr_probe
-record_case "pr.create-dispatch-lane-pr" "forge-cli dispatch lane pr create dry-run passed" run_create_dispatch_lane_probe
-record_case "pr.close-pr" "forge-cli GitHub+GitLab close dry-runs and optional specialist scope passed" run_close_pr_probe
+record_case "pr.outcome-routing.create" "forge-cli GitHub+GitLab pr create dry-run passed" run_create_pr_probe
+record_case "pr.outcome-routing.dispatch-lane" "forge-cli dispatch lane pr create dry-run passed" run_create_dispatch_lane_probe
+record_case "pr.outcome-routing.close" "forge-cli GitHub+GitLab close dry-runs and optional specialist scope passed" run_close_pr_probe
 record_case "pr.deliver-pr" "forge-cli GitHub+GitLab delivery macro and mandatory specialist scope passed" run_deliver_pr_probe
-record_case "pr.review-thread-cleanup" "forge-cli review-threads resolve/reply offline dry-runs, GitLab fail-closed, and documented shared skill surface" run_review_thread_cleanup_probe
-record_case "pr.outcome-routing" "one governed PR/MR outcome selects create, deliver, repair, merge, and close modes internally" run_pr_outcome_routing_probe
+record_case "pr.outcome-routing.review-threads" "forge-cli review-threads resolve/reply offline dry-runs, GitLab fail-closed, and documented shared skill surface" run_review_thread_cleanup_probe
+record_case "pr.outcome-routing.contract" "one governed PR/MR outcome selects create, deliver, repair, merge, and close modes internally" run_pr_outcome_routing_probe
 
 exit "$failures"

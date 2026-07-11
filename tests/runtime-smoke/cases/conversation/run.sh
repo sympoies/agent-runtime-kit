@@ -77,13 +77,9 @@ run_conversation_outcome_routing_probe() {
 }
 
 failures=0
-record_case "conversation.actionable-advice" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe actionable-advice
-record_case "conversation.actionable-knowledge" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe actionable-knowledge
 record_case "conversation.discussion-to-implementation-doc" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe discussion-to-implementation-doc
 record_case "conversation.guided-feature-build" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe guided-feature-build
 record_case "conversation.handoff-session-prompt" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe handoff-session-prompt
-record_case "conversation.orchestrator-first" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe orchestrator-first
-record_case "conversation.parallel-first" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe parallel-first
 record_case "conversation.outcome-routing" "normal conversation and guided build select advice, explanation, and delegation modes without child-skill selection" run_conversation_outcome_routing_probe
 
 exit "$failures"

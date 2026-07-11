@@ -173,9 +173,9 @@ branch from a repo with scan errors, and never merges.
 
 ## Related Skills
 
-- `create-pr` / `deliver-pr` — open the draft PR a genuine
-  `rescue-candidate` is handed off to. Triage never merges.
-- `close-pr` — close the PR of a `rescue-candidate` confirmed to be
-  already-on-base (superseded).
+- `deliver-pr` — own the provider lifecycle for a genuine
+  `rescue-candidate`, including opening its draft PR. Triage never merges.
+- The active PR workflow closes a provider PR only after a
+  `rescue-candidate` is confirmed already-on-base (superseded).
 - `sync-runtime-surfaces` — its apply path refuses linked-worktree source
   roots; this skill is the companion that cleans those worktrees up.

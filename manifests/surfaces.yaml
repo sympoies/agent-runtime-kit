@@ -922,7 +922,7 @@ surfaces:
             note: "live Codex session"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#17-prompt-mode-delegation-policy-agenthomemd"
+          - "docs/source/harness-shape-codex.md#17-work-tier-delegation-policy-corepolicieswork-tier-levelsmd"
           - AGENT_HOME.md
       claude:
         state: not-applicable

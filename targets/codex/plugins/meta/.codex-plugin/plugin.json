@@ -1,19 +1,11 @@
 {
   "name": "meta",
   "version": "0.1.0",
-  "description": "Runtime-kit maintenance skills for docs, output paths, project-local shims, skill lifecycle changes, scope locks, heuristic cases, plan archives, evidence archives, CLI pin bumps, worktree triage, retrospectives, and semantic commits.",
+  "description": "Explicit runtime and repository maintenance outcomes: bootstrap, deploy, governed skill lifecycle, release, setup, runtime sync, nils-cli bump, and worktree triage.",
   "author": {
     "name": "graysurf"
   },
   "skills": [
-    {
-      "id": "agent-docs",
-      "source": "core/skills/meta/agent-docs"
-    },
-    {
-      "id": "agent-out",
-      "source": "core/skills/meta/agent-out"
-    },
     {
       "id": "bootstrap",
       "source": "core/skills/meta/bootstrap"
@@ -21,18 +13,6 @@
     {
       "id": "deploy",
       "source": "core/skills/meta/deploy"
-    },
-    {
-      "id": "agent-scope-lock",
-      "source": "core/skills/meta/agent-scope-lock"
-    },
-    {
-      "id": "heuristic-inbox",
-      "source": "core/skills/meta/heuristic-inbox"
-    },
-    {
-      "id": "heuristic-session-closeout",
-      "source": "core/skills/meta/heuristic-session-closeout"
     },
     {
       "id": "create-skill",
@@ -55,44 +35,12 @@
       "source": "core/skills/meta/sync-runtime-surfaces"
     },
     {
-      "id": "pre-pr",
-      "source": "core/skills/meta/pre-pr"
-    },
-    {
       "id": "release",
       "source": "core/skills/meta/release"
     },
     {
-      "id": "repo-retro",
-      "source": "core/skills/meta/repo-retro"
-    },
-    {
-      "id": "semantic-commit",
-      "source": "core/skills/meta/semantic-commit"
-    },
-    {
       "id": "setup-project",
       "source": "core/skills/meta/setup-project"
-    },
-    {
-      "id": "plan-archive-migrate",
-      "source": "core/skills/meta/plan-archive-migrate"
-    },
-    {
-      "id": "plan-archive-query",
-      "source": "core/skills/meta/plan-archive-query"
-    },
-    {
-      "id": "plan-archive-discover",
-      "source": "core/skills/meta/plan-archive-discover"
-    },
-    {
-      "id": "evidence-migrate",
-      "source": "core/skills/meta/evidence-migrate"
-    },
-    {
-      "id": "evidence-prune-source",
-      "source": "core/skills/meta/evidence-prune-source"
     },
     {
       "id": "nils-cli-bump",

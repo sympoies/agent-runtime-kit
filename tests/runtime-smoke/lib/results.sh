@@ -117,3 +117,13 @@ results_has_failures() {
   fi
   return 1
 }
+
+results_validate_unique_ids() {
+  local duplicates
+  duplicates="$(cut -f1 "$RESULTS_FILE" | sort | uniq -d)"
+  if [ -n "$duplicates" ]; then
+    echo "runtime-smoke: duplicate result ids:" >&2
+    echo "$duplicates" >&2
+    return 1
+  fi
+}

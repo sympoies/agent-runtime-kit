@@ -1,5 +1,5 @@
 {
   "name": "dispatch",
   "version": "0.1.0",
-  "description": "Dispatch workflow skills — plan-tracking, dispatch-plan, execute-lane, and plan-closeout for structured implementation."
+  "description": "Two governed plan outcomes: L2 issue-backed tracking and L3 multi-lane dispatch."
 }

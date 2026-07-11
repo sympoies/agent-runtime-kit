@@ -115,8 +115,8 @@ run_browser_routing_contract_probe() {
 }
 
 failures=0
-record_case "browser.browser-session" "browser-session init, step, and verify passed with local artifacts" run_browser_session_probe
-record_case "browser.canary-check" "canary-check recorded passing and expected-nonzero local commands" run_canary_check_probe
-record_case "browser.route-by-claim" "browser-test policy distinguishes HTTP, rendered browser, Playwright, and desktop claims" run_browser_routing_contract_probe
+record_case "browser.route-by-claim.session" "browser-session init, step, and verify passed with local artifacts" run_browser_session_probe
+record_case "browser.route-by-claim.canary" "canary-check recorded passing and expected-nonzero local commands" run_canary_check_probe
+record_case "browser.route-by-claim.policy" "browser-test policy distinguishes HTTP, rendered browser, Playwright, and desktop claims" run_browser_routing_contract_probe
 
 exit "$failures"

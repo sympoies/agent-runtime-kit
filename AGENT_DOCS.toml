@@ -81,7 +81,7 @@ scope = "home"
 path = "core/policies/review-thread-convergence.md"
 required = false
 when = "always"
-notes = "Provider-agnostic discipline for dispositioning provider review threads and converging post-merge bot-review fix loops: per-finding triage, the convergence/stopping rule, and concentrate-vs-converge. Home-scoped and optional — referenced by review-cleanup-type skills (deliver-pr, code-review-follow-up, project-local review-cleanup) when a thread sweep is active, not force-injected for every project-dev task."
+notes = "Provider-agnostic discipline for dispositioning provider review threads and converging post-merge bot-review fix loops: per-finding triage, the convergence/stopping rule, and concentrate-vs-converge. Home-scoped and optional — referenced by deliver-pr, code-review-specialists follow-up mode, and project-local review-cleanup outcomes when a thread sweep is active, not force-injected for every project-dev task."
 
 [[document]]
 context = "project-dev"

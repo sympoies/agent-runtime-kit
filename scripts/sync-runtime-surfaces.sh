@@ -25,6 +25,14 @@ CLAUDE_PLUGIN_STATUS="not-run"
 CODEX_PLUGIN_STATUS="not-run"
 PRUNE_SKIPPED_TOTAL=0
 PRUNE_LAST_SKIPPED=0
+CLAUDE_PLUGIN_PREFLIGHT_DONE=0
+CLAUDE_PREFLIGHT_MARKETPLACE=""
+CLAUDE_PREFLIGHT_INSTALLED_REFS=""
+CLAUDE_PREFLIGHT_MARKETPLACES_JSON=""
+CODEX_PLUGIN_PREFLIGHT_DONE=0
+CODEX_PREFLIGHT_MARKETPLACE=""
+CODEX_PREFLIGHT_INSTALLED_REFS=""
+CODEX_PREFLIGHT_MARKETPLACES_JSON=""
 
 # -----------------------------------------------------------------------------
 # Help
@@ -381,6 +389,91 @@ canonical_path() {
   printf '%s\n' "$path"
 }
 
+is_managed_runtime_kit_checkout_root() {
+  local candidate_root="$1"
+  local top_level
+  local candidate_head
+  local source_head
+  local source_origin
+  local source_origin_path
+
+  [ -f "$candidate_root/AGENT_HOME.md" ] || return 1
+  [ -f "$candidate_root/manifests/skills.yaml" ] || return 1
+  [ -f "$candidate_root/scripts/sync-runtime-surfaces.sh" ] || return 1
+  top_level="$(git -C "$candidate_root" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ "$(canonical_path "$top_level")" = "$(canonical_path "$candidate_root")" ] || return 1
+  git -C "$candidate_root" ls-files --error-unmatch -- \
+    AGENT_HOME.md manifests/skills.yaml scripts/sync-runtime-surfaces.sh \
+    >/dev/null 2>&1 || return 1
+  candidate_head="$(git -C "$candidate_root" rev-parse HEAD 2>/dev/null)" || return 1
+  source_head="$(git -C "$SOURCE_ROOT" rev-parse HEAD 2>/dev/null)" || return 1
+  git -C "$SOURCE_ROOT" cat-file -e "$candidate_head^{commit}" 2>/dev/null || return 1
+  if git -C "$SOURCE_ROOT" merge-base --is-ancestor "$candidate_head" "$source_head" 2>/dev/null ||
+    git -C "$SOURCE_ROOT" merge-base --is-ancestor "$source_head" "$candidate_head" 2>/dev/null; then
+    return 0
+  fi
+
+  # A durable independent clone may be on a branch that diverged from the
+  # primary checkout. Its local origin still provides an exact ownership link
+  # to that checkout; accept only that canonical path relation.
+  if source_origin="$(python3 - "$SOURCE_ROOT" <<'PY'
+import subprocess
+import sys
+
+root = sys.argv[1]
+proc = subprocess.run(
+    ["git", "-C", root, "config", "--local", "--null", "--get-all", "remote.origin.url"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    check=False,
+)
+if proc.returncode != 0:
+    raise SystemExit(1)
+records = proc.stdout.split(b"\0")
+if not records or records[-1] != b"":
+    raise SystemExit(1)
+records.pop()
+if len(records) != 1:
+    raise SystemExit(1)
+try:
+    value = records[0].decode("utf-8")
+except UnicodeDecodeError:
+    raise SystemExit(1)
+if not value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+    raise SystemExit(1)
+sys.stdout.write(value)
+PY
+  )"; then
+    :
+  else
+    source_origin=""
+  fi
+  case "$source_origin" in
+    /*) source_origin_path="$source_origin" ;;
+    ./* | ../*) source_origin_path="$SOURCE_ROOT/$source_origin" ;;
+    *) source_origin_path="" ;;
+  esac
+  if [ -n "$source_origin_path" ] && [ -d "$source_origin_path" ] &&
+    [ "$(cd "$source_origin_path" && pwd -P)" = "$(cd "$candidate_root" && pwd -P)" ]; then
+    return 0
+  fi
+  return 1
+}
+
+is_managed_rendered_home_prompt_target() {
+  local product="$1"
+  local existing="$2"
+  local suffix="/build/$product/AGENT_HOME.md"
+  local candidate_root
+
+  case "$existing" in
+    *"$suffix") candidate_root="${existing%"$suffix"}" ;;
+    *) return 1 ;;
+  esac
+  [ -f "$existing" ] || return 1
+  is_managed_runtime_kit_checkout_root "$candidate_root"
+}
+
 resolve_symlink_target() {
   local link_path="$1"
   local raw_target
@@ -485,7 +578,8 @@ ensure_home_prompt() {
       fi
       return 0
     fi
-    if [ "$existing" = "$old_expected" ]; then
+    if [ "$existing" = "$old_expected" ] ||
+      is_managed_rendered_home_prompt_target "$product" "$existing"; then
       log "rewiring managed home prompt product=$product target=$target"
       run_cmd rm "$target"
       run_cmd ln -s "$expected" "$target"
@@ -717,6 +811,7 @@ claude_marketplace_name() {
   local marketplace_json="$1"
   python3 - "$marketplace_json" <<'PY'
 import json
+import re
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as handle:
@@ -859,24 +954,101 @@ raise SystemExit(1)
 PY
 }
 
-claude_plugin_installed() {
+claude_installed_plugin_refs_for_marketplace() {
   local installed_json="$1"
-  local plugin_ref="$2"
+  local marketplace="$2"
 
-  python3 - "$installed_json" "$plugin_ref" <<'PY'
+  python3 - "$installed_json" "$marketplace" <<'PY'
 import json
+import re
 import sys
 
 try:
     data = json.loads(sys.argv[1])
 except json.JSONDecodeError:
     raise SystemExit(1)
-plugin_ref = sys.argv[2]
+marketplace = sys.argv[2]
+name_re = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+if name_re.fullmatch(marketplace) is None:
+    raise SystemExit("managed Claude marketplace name has invalid syntax")
+suffix = "@" + marketplace
 for entry in data:
-    if isinstance(entry, dict) and entry.get("id") == plugin_ref and entry.get("scope") == "user":
-        raise SystemExit(0)
-raise SystemExit(1)
+    if not isinstance(entry, dict) or entry.get("scope") != "user":
+        continue
+    plugin_ref = entry.get("id")
+    if not isinstance(plugin_ref, str) or not plugin_ref.endswith(suffix):
+        continue
+    plugin_name, separator, plugin_marketplace = plugin_ref.rpartition("@")
+    if (
+        separator != "@"
+        or plugin_marketplace != marketplace
+        or name_re.fullmatch(plugin_name) is None
+    ):
+        raise SystemExit("installed Claude plugin id for managed marketplace has invalid syntax")
+    print(plugin_ref)
 PY
+}
+
+validate_claude_marketplace_registry_json() {
+  local marketplaces_json="$1"
+
+  python3 - "$marketplaces_json" <<'PY'
+import json
+import re
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+except json.JSONDecodeError:
+    raise SystemExit("Claude marketplace registry returned invalid JSON")
+if not isinstance(data, list):
+    raise SystemExit("Claude marketplace registry must be a list")
+name_re = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+for entry in data:
+    if not isinstance(entry, dict):
+        raise SystemExit("Claude marketplace registry entry must be an object")
+    name = entry.get("name")
+    if not isinstance(name, str) or name_re.fullmatch(name) is None:
+        raise SystemExit("Claude marketplace registry entry has invalid name")
+PY
+}
+
+preflight_claude_plugin_registry() {
+  local live_home="$1"
+  local marketplace_json
+  local marketplace
+  local installed_json
+  local installed_refs
+  local marketplaces_json
+
+  [ "$APPLY" = "1" ] || return 0
+  if ! command -v claude >/dev/null 2>&1; then
+    CLAUDE_PLUGIN_STATUS="skipped"
+    CLAUDE_PLUGIN_PREFLIGHT_DONE=1
+    log "claude plugin registry preflight skipped (claude binary not on PATH)"
+    return 0
+  fi
+
+  marketplace_json="$(claude_marketplace_json_path "$live_home")"
+  marketplace="$(claude_marketplace_name "$marketplace_json")"
+  installed_json="$(claude plugins list --json)"
+  if ! installed_refs="$(claude_installed_plugin_refs_for_marketplace "$installed_json" "$marketplace")"; then
+    CLAUDE_PLUGIN_STATUS="failed-invalid-installed-ref"
+    err "Claude plugin registry returned an invalid installed plugin id for the managed marketplace; refusing refresh."
+    return 1
+  fi
+  marketplaces_json="$(claude plugin marketplace list --json)"
+  if ! validate_claude_marketplace_registry_json "$marketplaces_json"; then
+    CLAUDE_PLUGIN_STATUS="failed-invalid-marketplace-registry"
+    err "Claude plugin registry returned invalid marketplace data; refusing refresh."
+    return 1
+  fi
+
+  CLAUDE_PREFLIGHT_MARKETPLACE="$marketplace"
+  CLAUDE_PREFLIGHT_INSTALLED_REFS="$installed_refs"
+  CLAUDE_PREFLIGHT_MARKETPLACES_JSON="$marketplaces_json"
+  CLAUDE_PLUGIN_PREFLIGHT_DONE=1
+  log "claude plugin registry preflight passed marketplace=$marketplace"
 }
 
 sync_claude_plugin_registry() {
@@ -887,6 +1059,7 @@ sync_claude_plugin_registry() {
   local materialized_home
   local marketplaces_json=""
   local installed_json=""
+  local installed_refs=""
   local plugin_ref
   local plugin
   local plugin_count=0
@@ -902,23 +1075,27 @@ sync_claude_plugin_registry() {
     return 0
   fi
 
+  if [ "$APPLY" = "1" ] && {
+    [ "$CLAUDE_PLUGIN_PREFLIGHT_DONE" != "1" ] ||
+      [ "$CLAUDE_PREFLIGHT_MARKETPLACE" != "$marketplace" ]
+  }; then
+    preflight_claude_plugin_registry "$live_home" || return $?
+  fi
+
   materialize_claude_plugin_marketplace "$marketplace_json" "$materialized_home"
 
   log "syncing Claude plugin registry marketplace=$marketplace source=$materialized_home"
   if [ "$APPLY" = "1" ]; then
-    installed_json="$(claude plugins list --json)"
-    while IFS= read -r plugin; do
-      [ -n "$plugin" ] || continue
-      plugin_ref="$plugin@$marketplace"
-      if claude_plugin_installed "$installed_json" "$plugin_ref"; then
-        run_cmd claude plugin uninstall "$plugin_ref" --scope user --keep-data
-        refresh_count=$((refresh_count + 1))
-      fi
+    installed_refs="$CLAUDE_PREFLIGHT_INSTALLED_REFS"
+    while IFS= read -r plugin_ref; do
+      [ -n "$plugin_ref" ] || continue
+      run_cmd claude plugin uninstall "$plugin_ref" --scope user --keep-data
+      refresh_count=$((refresh_count + 1))
     done <<EOF_REFRESH_PLUGINS
-$(claude_marketplace_plugins "$marketplace_json")
+$installed_refs
 EOF_REFRESH_PLUGINS
 
-    marketplaces_json="$(claude plugin marketplace list --json)"
+    marketplaces_json="$CLAUDE_PREFLIGHT_MARKETPLACES_JSON"
     if claude_marketplace_registered "$marketplaces_json" "$marketplace"; then
       run_cmd claude plugin marketplace remove "$marketplace" --scope user
     fi
@@ -1152,6 +1329,7 @@ codex_installed_plugin_refs_for_marketplace() {
 
   python3 - "$installed_json" "$marketplace" <<'PY'
 import json
+import re
 import sys
 
 try:
@@ -1159,6 +1337,9 @@ try:
 except json.JSONDecodeError:
     raise SystemExit(1)
 marketplace = sys.argv[2]
+name_re = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+if name_re.fullmatch(marketplace) is None:
+    raise SystemExit("managed Codex marketplace name has invalid syntax")
 suffix = "@" + marketplace
 entries = data.get("installed", []) if isinstance(data, dict) else []
 for entry in entries:
@@ -1167,8 +1348,41 @@ for entry in entries:
     plugin_id = entry.get("pluginId")
     if not isinstance(plugin_id, str):
         plugin_id = entry.get("plugin_id")
-    if isinstance(plugin_id, str) and plugin_id.endswith(suffix) and plugin_id != suffix:
-        print(plugin_id)
+    if not isinstance(plugin_id, str) or not plugin_id.endswith(suffix):
+        continue
+    plugin_name, separator, plugin_marketplace = plugin_id.rpartition("@")
+    if (
+        separator != "@"
+        or plugin_marketplace != marketplace
+        or name_re.fullmatch(plugin_name) is None
+    ):
+        raise SystemExit("installed Codex plugin id for managed marketplace has invalid syntax")
+    print(plugin_id)
+PY
+}
+
+validate_codex_marketplace_registry_json() {
+  local marketplaces_json="$1"
+
+  python3 - "$marketplaces_json" <<'PY'
+import json
+import re
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+except json.JSONDecodeError:
+    raise SystemExit("Codex marketplace registry returned invalid JSON")
+entries = data.get("marketplaces") if isinstance(data, dict) else None
+if not isinstance(entries, list):
+    raise SystemExit("Codex marketplace registry marketplaces must be a list")
+name_re = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+for entry in entries:
+    if not isinstance(entry, dict):
+        raise SystemExit("Codex marketplace registry entry must be an object")
+    name = entry.get("name")
+    if not isinstance(name, str) or name_re.fullmatch(name) is None:
+        raise SystemExit("Codex marketplace registry entry has invalid name")
 PY
 }
 
@@ -1187,6 +1401,39 @@ require_codex_plugin_cli() {
   fi
 }
 
+preflight_codex_plugin_registry() {
+  local live_home="$1"
+  local marketplace_json
+  local marketplace
+  local installed_json
+  local installed_refs
+  local marketplaces_json
+
+  [ "$APPLY" = "1" ] || return 0
+  require_codex_plugin_cli || return $?
+
+  marketplace_json="$(codex_marketplace_json_path "$live_home")"
+  marketplace="$(codex_marketplace_name "$marketplace_json")"
+  installed_json="$(codex plugin list --json)"
+  if ! installed_refs="$(codex_installed_plugin_refs_for_marketplace "$installed_json" "$marketplace")"; then
+    CODEX_PLUGIN_STATUS="failed-invalid-installed-ref"
+    err "Codex plugin registry returned an invalid installed plugin id for the managed marketplace; refusing refresh."
+    return 1
+  fi
+  marketplaces_json="$(codex plugin marketplace list --json)"
+  if ! validate_codex_marketplace_registry_json "$marketplaces_json"; then
+    CODEX_PLUGIN_STATUS="failed-invalid-marketplace-registry"
+    err "Codex plugin registry returned invalid marketplace data; refusing refresh."
+    return 1
+  fi
+
+  CODEX_PREFLIGHT_MARKETPLACE="$marketplace"
+  CODEX_PREFLIGHT_INSTALLED_REFS="$installed_refs"
+  CODEX_PREFLIGHT_MARKETPLACES_JSON="$marketplaces_json"
+  CODEX_PLUGIN_PREFLIGHT_DONE=1
+  log "codex plugin registry preflight passed marketplace=$marketplace"
+}
+
 # Mirror of sync_claude_plugin_registry for Codex, adapted to the Codex plugin
 # CLI (`codex plugin add` / `remove`, `codex plugin marketplace add` / `remove`,
 # no `--scope`) and the `{installed:[...],available:[...]}` /
@@ -1201,6 +1448,7 @@ sync_codex_plugin_registry() {
   local materialized_home
   local marketplaces_json=""
   local installed_json=""
+  local installed_refs=""
   local plugin_ref
   local plugin
   local plugin_count=0
@@ -1211,23 +1459,26 @@ sync_codex_plugin_registry() {
   materialized_home="$(codex_materialized_marketplace_home "$state_home" "$marketplace")"
 
   if [ "$APPLY" = "1" ]; then
-    require_codex_plugin_cli || return $?
+    if [ "$CODEX_PLUGIN_PREFLIGHT_DONE" != "1" ] ||
+      [ "$CODEX_PREFLIGHT_MARKETPLACE" != "$marketplace" ]; then
+      preflight_codex_plugin_registry "$live_home" || return $?
+    fi
   fi
 
   materialize_codex_plugin_marketplace "$marketplace_json" "$materialized_home"
 
   log "syncing Codex plugin registry marketplace=$marketplace source=$materialized_home"
   if [ "$APPLY" = "1" ]; then
-    installed_json="$(codex plugin list --json)"
+    installed_refs="$CODEX_PREFLIGHT_INSTALLED_REFS"
     while IFS= read -r plugin_ref; do
       [ -n "$plugin_ref" ] || continue
       run_cmd codex plugin remove "$plugin_ref"
       refresh_count=$((refresh_count + 1))
     done <<EOF_REFRESH_CODEX_PLUGINS
-$(codex_installed_plugin_refs_for_marketplace "$installed_json" "$marketplace")
+$installed_refs
 EOF_REFRESH_CODEX_PLUGINS
 
-    marketplaces_json="$(codex plugin marketplace list --json)"
+    marketplaces_json="$CODEX_PREFLIGHT_MARKETPLACES_JSON"
     if codex_marketplace_registered "$marketplaces_json" "$marketplace"; then
       run_cmd codex plugin marketplace remove "$marketplace"
     fi
@@ -1280,6 +1531,25 @@ sync_product_activation() {
   esac
 }
 
+preflight_selected_product_activation() {
+  local product
+  local live_home
+
+  [ "$APPLY" = "1" ] || return 0
+  for product in $(selected_products); do
+    live_home="$(product_live_home "$product")"
+    case "$product" in
+      claude) preflight_claude_plugin_registry "$live_home" ;;
+      codex) preflight_codex_plugin_registry "$live_home" ;;
+      hermes) : ;;
+      *)
+        err "unknown product: $product"
+        return 2
+        ;;
+    esac
+  done
+}
+
 # Read the skipped count from one prune-stale JSON blob, accumulate it into the
 # run-wide total, and surface the skipped rel_paths so the operator sees exactly
 # which stale candidates prune-stale could not auto-remove. prune-stale only
@@ -1306,6 +1576,526 @@ account_prune_skipped() {
     printf '%s\n' "$json" |
       sed -n 's/.*"rel_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/  ? prune-stale '"$phrase"' (product='"$product"'): \1/p'
   fi
+}
+
+retired_managed_skill_ids() {
+  python3 - \
+    "$SOURCE_ROOT/manifests/retired-skill-ids.json" \
+    "$SOURCE_ROOT/manifests/retired-hermes-skill-copies.json" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+with open(sys.argv[2], encoding="utf-8") as handle:
+    hermes = json.load(handle)
+if data.get("schema") != "agent-runtime-kit.retired-skill-ids.v1":
+    raise SystemExit("retired managed skill manifest has unsupported schema")
+skills = data.get("skills")
+if not isinstance(skills, list) or not skills or len(skills) != len(set(skills)):
+    raise SystemExit("retired managed skill manifest has invalid skills list")
+if hermes.get("schema") != "agent-runtime-kit.retired-hermes-skill-copies.v1":
+    raise SystemExit("retired Hermes copy manifest has unsupported schema")
+digests = hermes.get("skills")
+if not isinstance(digests, dict) or list(digests) != skills:
+    raise SystemExit("retired Hermes copy manifest IDs differ from canonical retired skill IDs")
+for skill_id in skills:
+    if re.fullmatch(
+        r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?",
+        skill_id,
+    ) is None:
+        raise SystemExit("retired managed skill manifest has invalid skill id")
+    print(skill_id)
+PY
+}
+
+retired_skill_link_tree_is_owned() {
+  local product="$1"
+  local domain="$2"
+  local skill="$3"
+  local skill_dir="$4"
+  local suffix="/build/$product/plugins/$domain/skills/$skill"
+  local link_path
+  local target_path
+  local candidate_root
+  local rel_link
+  local rel_target
+  local link_count=0
+
+  if find "$skill_dir" -mindepth 1 ! -type d ! -type l -print -quit | grep -q .; then
+    return 1
+  fi
+  while IFS= read -r link_path; do
+    [ -n "$link_path" ] || continue
+    target_path="$(resolve_symlink_target "$link_path")" || return 1
+    case "$target_path" in
+      *"$suffix" | *"$suffix"/*) ;;
+      *) return 1 ;;
+    esac
+    candidate_root="${target_path%%"$suffix"*}"
+    [ -n "$candidate_root" ] || return 1
+    rel_link="${link_path#"$skill_dir"}"
+    rel_link="${rel_link#/}"
+    rel_target="${target_path#"$candidate_root$suffix"}"
+    rel_target="${rel_target#/}"
+    [ "$rel_link" = "$rel_target" ] || return 1
+    is_managed_runtime_kit_checkout_root "$candidate_root" || return 1
+    link_count=$((link_count + 1))
+  done < <(find "$skill_dir" -type l -print)
+  [ "$link_count" -gt 0 ]
+}
+
+retired_plugin_link_tree_is_owned() {
+  local product="$1"
+  local domain="$2"
+  local plugin_dir="$3"
+  local link_path
+  local target_path
+  local candidate_root
+  local suffix
+  local rel_link
+  local rel_target
+  local link_count=0
+
+  if find "$plugin_dir" -mindepth 1 ! -type d ! -type l -print -quit | grep -q .; then
+    return 1
+  fi
+  while IFS= read -r link_path; do
+    [ -n "$link_path" ] || continue
+    target_path="$(resolve_symlink_target "$link_path")" || return 1
+    suffix=""
+    case "$target_path" in
+      *"/build/$product/plugins/$domain" | *"/build/$product/plugins/$domain"/*)
+        suffix="/build/$product/plugins/$domain"
+        ;;
+      *"/targets/$product/plugins/$domain" | *"/targets/$product/plugins/$domain"/*)
+        suffix="/targets/$product/plugins/$domain"
+        ;;
+      *) return 1 ;;
+    esac
+    candidate_root="${target_path%%"$suffix"*}"
+    [ -n "$candidate_root" ] || return 1
+    rel_link="${link_path#"$plugin_dir"}"
+    rel_link="${rel_link#/}"
+    rel_target="${target_path#"$candidate_root$suffix"}"
+    rel_target="${rel_target#/}"
+    [ "$rel_link" = "$rel_target" ] || return 1
+    is_managed_runtime_kit_checkout_root "$candidate_root" || return 1
+    link_count=$((link_count + 1))
+  done < <(find "$plugin_dir" -type l -print)
+  [ "$link_count" -gt 0 ]
+}
+
+quarantine_validate_and_remove_retired_tree() {
+  local tree_path="$1"
+  local live_home="$2"
+  local kind="$3"
+  local product="$4"
+  local domain="$5"
+  local skill="${6:-}"
+
+  python3 - "$SOURCE_ROOT" "$live_home" "$tree_path" "$kind" "$product" "$domain" "$skill" <<'PY'
+import os
+import pathlib
+import stat
+import subprocess
+import sys
+
+source_root, live_home, tree_path, kind, product, domain, skill = sys.argv[1:8]
+open_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+fault_at = os.environ.get("AGENT_RUNTIME_KIT_TEST_RETIRE_CLEANUP_FAIL_AT", "")
+
+
+class ReviewNeeded(Exception):
+    pass
+
+
+def git(root, *args):
+    return subprocess.run(
+        ["git", "-C", root, *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+
+def same_checkout(candidate):
+    candidate = os.path.realpath(candidate)
+    required = ("AGENT_HOME.md", "manifests/skills.yaml", "scripts/sync-runtime-surfaces.sh")
+    if not all(os.path.isfile(os.path.join(candidate, item)) for item in required):
+        return False
+    top = git(candidate, "rev-parse", "--show-toplevel")
+    if top.returncode != 0 or os.path.realpath(top.stdout.decode().strip()) != candidate:
+        return False
+    if git(candidate, "ls-files", "--error-unmatch", "--", *required).returncode != 0:
+        return False
+    candidate_head = git(candidate, "rev-parse", "HEAD")
+    source_head = git(source_root, "rev-parse", "HEAD")
+    if candidate_head.returncode != 0 or source_head.returncode != 0:
+        return False
+    candidate_sha = candidate_head.stdout.decode().strip()
+    source_sha = source_head.stdout.decode().strip()
+    if git(source_root, "cat-file", "-e", candidate_sha + "^{commit}").returncode != 0:
+        return False
+    if (
+        git(source_root, "merge-base", "--is-ancestor", candidate_sha, source_sha).returncode == 0
+        or git(source_root, "merge-base", "--is-ancestor", source_sha, candidate_sha).returncode == 0
+    ):
+        return True
+    origin = git(source_root, "config", "--local", "--null", "--get-all", "remote.origin.url")
+    if origin.returncode != 0:
+        return False
+    records = origin.stdout.split(b"\0")
+    if not records or records[-1] != b"":
+        return False
+    records.pop()
+    if len(records) != 1:
+        return False
+    try:
+        value = records[0].decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if not value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return False
+    if os.path.isabs(value):
+        origin_path = value
+    elif value.startswith(("./", "../")):
+        origin_path = os.path.join(source_root, value)
+    else:
+        return False
+    return os.path.isdir(origin_path) and os.path.realpath(origin_path) == candidate
+
+
+def validate_link(raw_target, relative_link):
+    original_parent = os.path.dirname(os.path.join(tree_path, relative_link))
+    target = os.path.normpath(
+        raw_target if os.path.isabs(raw_target) else os.path.join(original_parent, raw_target)
+    )
+    suffixes = (
+        [f"/build/{product}/plugins/{domain}/skills/{skill}"]
+        if kind == "skill"
+        else [f"/build/{product}/plugins/{domain}", f"/targets/{product}/plugins/{domain}"]
+    )
+    for suffix in suffixes:
+        marker = target.rfind(suffix)
+        if marker <= 0:
+            continue
+        remainder = target[marker + len(suffix):]
+        if remainder and not remainder.startswith("/"):
+            continue
+        if remainder.lstrip("/") != relative_link.replace(os.sep, "/"):
+            continue
+        if same_checkout(target[:marker]):
+            return
+    raise ReviewNeeded("symlink target is not an owned runtime-kit path")
+
+
+def maybe_fail(point):
+    if fault_at == point:
+        raise OSError(f"injected retired cleanup failure at {point}")
+
+
+def snapshot_dir(descriptor, relative=()):
+    snapshot = []
+    links = 0
+    for name in sorted(os.listdir(descriptor)):
+        metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        child_relative = relative + (name,)
+        if stat.S_ISDIR(metadata.st_mode):
+            snapshot.append((child_relative, "d", stat.S_IMODE(metadata.st_mode), None))
+            child = os.open(name, open_flags, dir_fd=descriptor)
+            try:
+                child_snapshot, child_links = snapshot_dir(child, child_relative)
+                snapshot.extend(child_snapshot)
+                links += child_links
+            finally:
+                os.close(child)
+        elif stat.S_ISLNK(metadata.st_mode):
+            target = os.readlink(name, dir_fd=descriptor)
+            validate_link(target, "/".join(child_relative))
+            snapshot.append((child_relative, "l", None, target))
+            links += 1
+        else:
+            raise ReviewNeeded("retired managed tree contains a non-symlink object")
+    return snapshot, links
+
+
+def delete_dir(descriptor):
+    for name in sorted(os.listdir(descriptor)):
+        metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISDIR(metadata.st_mode):
+            child = os.open(name, open_flags, dir_fd=descriptor)
+            try:
+                delete_dir(child)
+            finally:
+                os.close(child)
+            os.rmdir(name, dir_fd=descriptor)
+            maybe_fail("during-delete")
+        elif stat.S_ISLNK(metadata.st_mode):
+            os.unlink(name, dir_fd=descriptor)
+            maybe_fail("during-delete")
+        else:
+            raise ReviewNeeded("quarantined tree changed after validation")
+
+
+def open_snapshot_dir(root_fd, parts):
+    descriptor = os.dup(root_fd)
+    try:
+        for part in parts:
+            child = os.open(part, open_flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def restore_snapshot(root_fd, snapshot):
+    directories = [entry for entry in snapshot if entry[1] == "d"]
+    links = [entry for entry in snapshot if entry[1] == "l"]
+    for relative, _, mode, _ in sorted(directories, key=lambda entry: len(entry[0])):
+        parent = open_snapshot_dir(root_fd, relative[:-1])
+        try:
+            name = relative[-1]
+            try:
+                metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                os.mkdir(name, mode=mode, dir_fd=parent)
+                metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise OSError("rollback directory path changed type")
+        finally:
+            os.close(parent)
+    for relative, _, _, target in links:
+        parent = open_snapshot_dir(root_fd, relative[:-1])
+        try:
+            name = relative[-1]
+            try:
+                metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                os.symlink(target, name, dir_fd=parent)
+            else:
+                if not stat.S_ISLNK(metadata.st_mode) or os.readlink(name, dir_fd=parent) != target:
+                    raise OSError("rollback symlink path changed")
+        finally:
+            os.close(parent)
+    for relative, _, mode, _ in sorted(
+        directories, key=lambda entry: len(entry[0]), reverse=True
+    ):
+        descriptor = open_snapshot_dir(root_fd, relative)
+        try:
+            os.fchmod(descriptor, mode)
+        finally:
+            os.close(descriptor)
+
+
+def restore_and_rename(parent_fd, leaf, quarantine, candidate_fd, root_mode, snapshot):
+    descriptor = candidate_fd
+    if descriptor is None:
+        descriptor = os.open(quarantine, open_flags, dir_fd=parent_fd)
+    try:
+        if snapshot is not None:
+            restore_snapshot(descriptor, snapshot)
+        os.fchmod(descriptor, root_mode)
+    finally:
+        os.close(descriptor)
+    try:
+        os.stat(leaf, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        raise OSError("rollback destination already exists")
+    os.rename(quarantine, leaf, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+    print("restored retired managed tree after cleanup failure", file=sys.stderr)
+
+
+live = pathlib.Path(live_home)
+tree = pathlib.Path(tree_path)
+try:
+    relative = tree.relative_to(live)
+except ValueError:
+    raise SystemExit(1)
+if not relative.parts or any(part in ("", ".", "..") for part in relative.parts):
+    raise SystemExit(1)
+
+descriptors = []
+quarantine_name = f".{relative.name}.agent-runtime-kit-retired.{os.getpid()}"
+renamed = False
+tree_fd = None
+original_mode = None
+snapshot = None
+try:
+    current = os.open(live_home, open_flags)
+    descriptors.append(current)
+    for component in relative.parts[:-1]:
+        current = os.open(component, open_flags, dir_fd=current)
+        descriptors.append(current)
+    parent_fd = current
+    leaf = relative.parts[-1]
+    candidate_metadata = os.stat(leaf, dir_fd=parent_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(candidate_metadata.st_mode):
+        raise ReviewNeeded("candidate is not a directory")
+    original_mode = stat.S_IMODE(candidate_metadata.st_mode)
+    try:
+        os.stat(quarantine_name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        raise ReviewNeeded("quarantine collision")
+    os.rename(leaf, quarantine_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+    renamed = True
+    maybe_fail("after-rename")
+    tree_fd = os.open(quarantine_name, open_flags, dir_fd=parent_fd)
+    os.fchmod(tree_fd, 0o700)
+    snapshot, link_count = snapshot_dir(tree_fd)
+    if link_count == 0:
+        raise ReviewNeeded("retired managed tree contains no symlinks")
+    delete_dir(tree_fd)
+    maybe_fail("before-rmdir")
+    os.close(tree_fd)
+    tree_fd = None
+    os.rmdir(quarantine_name, dir_fd=parent_fd)
+    renamed = False
+except ReviewNeeded as exc:
+    print(f"review-needed descriptor-bound retired tree: {exc}", file=sys.stderr)
+    if renamed:
+        try:
+            restore_and_rename(
+                descriptors[-1], relative.parts[-1], quarantine_name,
+                tree_fd, original_mode, snapshot,
+            )
+            tree_fd = None
+            renamed = False
+        except OSError as rollback_exc:
+            tree_fd = None
+            print(f"retired managed cleanup rollback failed: {rollback_exc}", file=sys.stderr)
+            raise SystemExit(1)
+    raise SystemExit(3)
+except OSError as exc:
+    print(f"retired managed descriptor cleanup failed: {exc}", file=sys.stderr)
+    if renamed:
+        try:
+            restore_and_rename(
+                descriptors[-1], relative.parts[-1], quarantine_name,
+                tree_fd, original_mode, snapshot,
+            )
+            tree_fd = None
+            renamed = False
+        except OSError as rollback_exc:
+            tree_fd = None
+            print(f"retired managed cleanup rollback failed: {rollback_exc}", file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    if tree_fd is not None:
+        os.close(tree_fd)
+    for descriptor in reversed(descriptors):
+        os.close(descriptor)
+PY
+}
+
+cleanup_retired_managed_product_links() {
+  local product="$1"
+  local live_home="$2"
+  local managed_root
+  local skill_id
+  local domain
+  local skill
+  local skill_dir
+  local domain_dir
+  local removed_skills=0
+  local removed_plugins=0
+  local review_needed=0
+  local retired_ids
+  local retired_domains
+
+  case "$product" in
+    codex | claude) managed_root="$live_home/plugins" ;;
+    hermes) managed_root="$live_home/external-skills/agent-runtime-kit" ;;
+    *)
+      err "unknown product for retired managed link cleanup: $product"
+      return 2
+      ;;
+  esac
+  [ -d "$managed_root" ] || return 0
+
+  if ! retired_ids="$(retired_managed_skill_ids)" || [ -z "$retired_ids" ]; then
+    err "retired managed skill manifest preflight failed; refusing cleanup"
+    return 1
+  fi
+
+  while IFS= read -r skill_id; do
+    [ -n "$skill_id" ] || continue
+    domain="${skill_id%%.*}"
+    skill="${skill_id#*.}"
+    case "$product" in
+      codex | claude) skill_dir="$managed_root/$domain/skills/$skill" ;;
+      hermes) skill_dir="$managed_root/$domain/$skill" ;;
+    esac
+    [ -d "$skill_dir" ] || continue
+    if [ "$APPLY" = "0" ]; then
+      if retired_skill_link_tree_is_owned "$product" "$domain" "$skill" "$skill_dir"; then
+        log "would remove retired managed skill link tree product=$product path=$skill_dir"
+        removed_skills=$((removed_skills + 1))
+      else
+        log "review-needed retired managed skill link tree product=$product path=$skill_dir"
+        review_needed=$((review_needed + 1))
+      fi
+    elif quarantine_validate_and_remove_retired_tree \
+      "$skill_dir" "$live_home" skill "$product" "$domain" "$skill"; then
+      log "removed retired managed skill link tree product=$product path=$skill_dir"
+      removed_skills=$((removed_skills + 1))
+    else
+      log "review-needed retired managed skill link tree product=$product path=$skill_dir"
+      review_needed=$((review_needed + 1))
+    fi
+  done <<EOF_RETIRED_MANAGED_SKILLS
+$retired_ids
+EOF_RETIRED_MANAGED_SKILLS
+
+  if [ "$product" = "codex" ] || [ "$product" = "claude" ]; then
+    retired_domains="$(printf '%s\n' "$retired_ids" | sed 's/\..*//' | sort -u)"
+    while IFS= read -r domain; do
+      [ -n "$domain" ] || continue
+      domain_dir="$managed_root/$domain"
+      [ -d "$domain_dir" ] || continue
+      if find "$SOURCE_ROOT/targets/$product/plugins/$domain" -type f -print -quit 2>/dev/null | grep -q .; then
+        continue
+      fi
+      if [ "$APPLY" = "0" ]; then
+        if retired_plugin_link_tree_is_owned "$product" "$domain" "$domain_dir"; then
+          log "would remove retired managed plugin link tree product=$product path=$domain_dir"
+          removed_plugins=$((removed_plugins + 1))
+        elif find "$domain_dir" -mindepth 1 -print -quit | grep -q .; then
+          log "review-needed retired managed plugin link tree product=$product path=$domain_dir"
+          review_needed=$((review_needed + 1))
+        fi
+      elif quarantine_validate_and_remove_retired_tree \
+        "$domain_dir" "$live_home" plugin "$product" "$domain"; then
+        log "removed retired managed plugin link tree product=$product path=$domain_dir"
+        removed_plugins=$((removed_plugins + 1))
+      elif find "$domain_dir" -mindepth 1 -print -quit | grep -q .; then
+        log "review-needed retired managed plugin link tree product=$product path=$domain_dir"
+        review_needed=$((review_needed + 1))
+      fi
+    done <<EOF_RETIRED_PLUGIN_DOMAINS
+$retired_domains
+EOF_RETIRED_PLUGIN_DOMAINS
+  else
+    for domain_dir in "$managed_root"/*; do
+      [ -d "$domain_dir" ] || continue
+      if ! find "$domain_dir" -mindepth 1 -print -quit | grep -q .; then
+        run_cmd rmdir "$domain_dir"
+      fi
+    done
+  fi
+
+  log "retired managed link cleanup product=$product skills=$removed_skills plugins=$removed_plugins review_needed=$review_needed"
+  if [ "$review_needed" -gt 0 ] && [ "$APPLY" = "1" ]; then
+    return 3
+  fi
+  return 0
 }
 
 cleanup_codex_legacy_flat_skill_root() {
@@ -1394,6 +2184,8 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   print_cmd python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY"
 python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY" <<'PY'
 import os
+import hashlib
+import json
 import pathlib
 import shutil
 import sys
@@ -1402,9 +2194,31 @@ source_root = pathlib.Path(sys.argv[1]).resolve()
 legacy_root = pathlib.Path(sys.argv[2])
 apply = sys.argv[3] == "1"
 build_plugins = (source_root / "build" / "hermes" / "plugins").resolve()
+retired_manifest_path = source_root / "manifests" / "retired-hermes-skill-copies.json"
+retired_ids_path = source_root / "manifests" / "retired-skill-ids.json"
+try:
+    retired_manifest = json.loads(retired_manifest_path.read_text(encoding="utf-8"))
+    retired_ids_manifest = json.loads(retired_ids_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"cannot read retired Hermes copy manifest: {exc}")
+if retired_manifest.get("schema") != "agent-runtime-kit.retired-hermes-skill-copies.v1":
+    raise SystemExit("retired Hermes copy manifest has unsupported schema")
+if retired_ids_manifest.get("schema") != "agent-runtime-kit.retired-skill-ids.v1":
+    raise SystemExit("retired skill ID manifest has unsupported schema")
+retired_ids = retired_ids_manifest.get("skills")
+if not isinstance(retired_ids, list) or not retired_ids or len(retired_ids) != len(set(retired_ids)):
+    raise SystemExit("retired skill ID manifest has invalid skills list")
+retired_copy_digests = retired_manifest.get("skills")
+if not isinstance(retired_copy_digests, dict):
+    raise SystemExit("retired Hermes copy manifest has invalid skills map")
+if list(retired_copy_digests) != retired_ids:
+    raise SystemExit("retired Hermes copy manifest IDs differ from canonical retired skill IDs")
 removed_symlinks = 0
 removed_copies = 0
+review_needed = 0
 candidate_dirs = set()
+copy_removal_roots = []
+review_needed_roots = []
 
 if not legacy_root.exists():
     sys.exit(0)
@@ -1443,6 +2257,81 @@ def trees_match(left, right):
     return True
 
 
+def tree_digest(root):
+    entries = []
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            return None
+        if path.is_dir():
+            entry_type = "d"
+            content = None
+        elif path.is_file():
+            entry_type = "f"
+            content = path.read_bytes()
+        else:
+            return None
+        entries.append(
+            (
+                path.relative_to(root).as_posix(),
+                entry_type,
+                "0755"
+                if entry_type == "d" or path.stat().st_mode & 0o111
+                else "0644",
+                content,
+            )
+        )
+    digest = hashlib.sha256()
+    for relative, entry_type, mode, content in sorted(entries):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(entry_type.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(mode.encode("ascii"))
+        digest.update(b"\0")
+        if content is not None:
+            digest.update(str(len(content)).encode("ascii"))
+            digest.update(b"\0")
+            digest.update(content)
+    return digest.hexdigest()
+
+
+# Classify each complete skill tree before any apply-mode deletion. In
+# particular, a managed active/retired tree containing a local symlink is a
+# modified copy and must remain byte-for-byte and link-for-link untouched for
+# operator review.
+for domain_dir in sorted(legacy_root.iterdir()):
+    if domain_dir.is_symlink() or not domain_dir.is_dir():
+        continue
+    for skill_dir in sorted(domain_dir.iterdir()):
+        if skill_dir.is_symlink() or not skill_dir.is_dir():
+            continue
+        # A tree made only of managed symlinks is the old link layout handled
+        # by the targeted traversal below, not a copied skill tree. Any real
+        # file makes this a copy whose complete contents must be classified.
+        if not any(
+            path.is_file() and not path.is_symlink()
+            for path in skill_dir.rglob("*")
+        ):
+            continue
+        expected_skill_dir = build_plugins / domain_dir.name / "skills" / skill_dir.name
+        skill_id = f"{domain_dir.name}.{skill_dir.name}"
+        exact_active_copy = expected_skill_dir.is_dir() and trees_match(skill_dir, expected_skill_dir)
+        retired_digest = retired_copy_digests.get(skill_id)
+        exact_retired_copy = (
+            not expected_skill_dir.is_dir()
+            and isinstance(retired_digest, str)
+            and tree_digest(skill_dir) == retired_digest
+        )
+        if exact_active_copy or exact_retired_copy:
+            copy_removal_roots.append((skill_dir, domain_dir))
+            continue
+        if expected_skill_dir.is_dir() or isinstance(retired_digest, str):
+            review_needed += 1
+            review_needed_roots.append(skill_dir)
+            rel_live = skill_dir.relative_to(legacy_root.parent)
+            print(f"review-needed legacy Hermes runtime-kit skill copy {rel_live}")
+
+
 for domain_dir in sorted(legacy_root.iterdir()):
     if domain_dir.is_symlink() or not domain_dir.is_dir():
         continue
@@ -1466,6 +2355,11 @@ for domain_dir in sorted(legacy_root.iterdir()):
                 continue
             if domain_dir.name != rel_target.parts[0]:
                 continue
+            if any(
+                review_root == link_path or review_root in link_path.parents
+                for review_root in review_needed_roots
+            ):
+                continue
 
             rel_live = link_path.relative_to(legacy_root.parent)
             if apply:
@@ -1476,26 +2370,15 @@ for domain_dir in sorted(legacy_root.iterdir()):
             removed_symlinks += 1
             remember_cleanup_dirs(link_path.parent, domain_dir)
 
-for domain_dir in sorted(legacy_root.iterdir()):
-    if domain_dir.is_symlink() or not domain_dir.is_dir():
-        continue
-    for skill_dir in sorted(domain_dir.iterdir()):
-        if skill_dir.is_symlink() or not skill_dir.is_dir():
-            continue
-        expected_skill_dir = build_plugins / domain_dir.name / "skills" / skill_dir.name
-        if not expected_skill_dir.is_dir():
-            continue
-        if not trees_match(skill_dir, expected_skill_dir):
-            continue
-
-        rel_live = skill_dir.relative_to(legacy_root.parent)
-        if apply:
-            shutil.rmtree(skill_dir)
-            print(f"removed legacy Hermes runtime-kit skill copy {rel_live}")
-        else:
-            print(f"would remove legacy Hermes runtime-kit skill copy {rel_live}")
-        removed_copies += 1
-        remember_cleanup_dirs(skill_dir, domain_dir)
+for skill_dir, domain_dir in copy_removal_roots:
+    rel_live = skill_dir.relative_to(legacy_root.parent)
+    if apply:
+        shutil.rmtree(skill_dir)
+        print(f"removed legacy Hermes runtime-kit skill copy {rel_live}")
+    else:
+        print(f"would remove legacy Hermes runtime-kit skill copy {rel_live}")
+    removed_copies += 1
+    remember_cleanup_dirs(skill_dir, domain_dir)
 
 for path in sorted(candidate_dirs, key=lambda item: len(item.parts), reverse=True):
     if path == legacy_root or not path.exists() or path.is_symlink():
@@ -1514,7 +2397,12 @@ for path in sorted(candidate_dirs, key=lambda item: len(item.parts), reverse=Tru
         print(f"would remove empty legacy Hermes runtime-kit skill directory {rel_live}")
 
 status = "removed" if apply else "planned"
-print(f"legacy Hermes runtime-kit skill cleanup {status}: symlinks={removed_symlinks} copies={removed_copies}")
+print(
+    f"legacy Hermes runtime-kit skill cleanup {status}: "
+    f"symlinks={removed_symlinks} copies={removed_copies} review_needed={review_needed}"
+)
+if review_needed:
+    raise SystemExit(3)
 PY
 }
 
@@ -1553,6 +2441,7 @@ prune_product() {
   fi
 
   log "pruning stale managed surfaces product=$product live_home=$live_home"
+  cleanup_retired_managed_product_links "$product" "$live_home"
 
   if [ "$APPLY" = "0" ]; then
     run_cmd agent-runtime prune-stale \
@@ -1757,6 +2646,7 @@ main() {
 
   pull_source
   check_source_counts
+  preflight_selected_product_activation
   render_home_prompt_base
   for product in $(selected_products); do
     render_home_prompt_product "$product"

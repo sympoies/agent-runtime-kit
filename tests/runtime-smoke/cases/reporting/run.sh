@@ -103,8 +103,8 @@ run_reporting_outcome_routing_probe() {
   grep -Fq 'invokes `topic-radar` as its' "$daily"
   grep -Fq 'internal collection engine' "$daily"
   grep -Fq '## Outcome Routing' "$retro"
-  grep -Fq 'canonical repository-retrospective outcome. Legacy' "$retro"
-  grep -Fq '`meta.repo-retro` requests route here' "$retro"
+  grep -Fq 'canonical repository-retrospective outcome. Callers invoke the' "$retro"
+  grep -Fq 'released `repo-retro` CLI for deterministic collection' "$retro"
   grep -Fq 'artifact allocation and CLI collection are internal bookkeeping' "$retro"
 
   rendered_contract_assert_skill reporting daily-brief

@@ -1,27 +1,11 @@
 {
   "name": "code-review",
   "version": "0.1.0",
-  "description": "Read-only specialist code review workflows backed by review-specialists.",
+  "description": "One read-only code-review outcome with internally selected quick, focused, specialist, follow-up, and pre-merge modes.",
   "author": {
     "name": "graysurf"
   },
   "skills": [
-    {
-      "id": "code-review-focused-lens",
-      "source": "core/skills/code-review/code-review-focused-lens"
-    },
-    {
-      "id": "code-review-follow-up",
-      "source": "core/skills/code-review/code-review-follow-up"
-    },
-    {
-      "id": "code-review-pre-merge-gate",
-      "source": "core/skills/code-review/code-review-pre-merge-gate"
-    },
-    {
-      "id": "code-review-quick-pass",
-      "source": "core/skills/code-review/code-review-quick-pass"
-    },
     {
       "id": "code-review-specialists",
       "source": "core/skills/code-review/code-review-specialists"

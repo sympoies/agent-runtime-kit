@@ -122,8 +122,8 @@ Do not start without explicit user approval.
    `references/DELEGATION_PROTOCOL.md`. Honor an explicit user preference when
    safe, but keep scope, write isolation, integration, and validation under the
    parent workflow.
-3. For a testable production behavior change, follow the failing-test discipline
-   in the `test-first-evidence` skill (classify, failing test or waiver before
+3. For a testable production behavior change, follow the policy-owned
+   `test-first-evidence` discipline (classify, failing test or waiver before
    production edits, scoped implementation, final validation) and record the
    evidence — required when the repo or user opts into the `forge-cli`
    `[test_first].require` gate.

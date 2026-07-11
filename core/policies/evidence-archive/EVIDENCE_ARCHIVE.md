@@ -12,7 +12,7 @@ the machine-emitted `skill-usage` records those lessons are drawn from.
 Evidence moves through six stages. Each stage is owned by one surface; this
 policy is the map, not a re-implementation of any of them.
 
-1. **Produce** — skills emit `skill-usage.record.v1` envelopes into the
+1. **Produce** — parent outcomes emit `skill-usage.record.v1` envelopes into the
    agent-out runtime tree (`${AGENT_HOME}/out/projects/<owner__repo>/...`)
    during a session. Records are written **unconditionally** — regardless of
    whether an archive is configured — so they are a useful breadcrumb even on a

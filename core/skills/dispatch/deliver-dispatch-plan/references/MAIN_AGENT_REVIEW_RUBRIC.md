@@ -31,7 +31,7 @@ reviewing unless an explicit corrective-fix exception is documented.
   blocker remains.
 - `request-followup`: scope, validation, correctness, or integration risk is
   still correctable on the same lane.
-- `close-pr`: the PR is wrong-lane, superseded, or intentionally retired.
+- `close`: the PR is wrong-lane, superseded, or intentionally retired.
 
 Specialist findings are supplemental evidence. They do not merge, close, or
 request follow-up by themselves.

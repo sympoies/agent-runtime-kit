@@ -377,6 +377,10 @@ case "$MODE" in
     ;;
 esac
 
+if ! results_validate_unique_ids; then
+  RUN_STATUS=1
+fi
+
 if [ "$FORMAT" = "json" ]; then
   results_print_json "$MODE"
 else

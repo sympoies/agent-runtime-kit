@@ -1,19 +1,11 @@
 {
   "name": "conversation",
   "version": "0.1.0",
-  "description": "Conversation-to-artifact workflow skills for implementation handoffs and next-session prompts.",
+  "description": "Discussion capture, guided feature build, and handoff prompt outcomes.",
   "author": {
     "name": "graysurf"
   },
   "skills": [
-    {
-      "id": "actionable-advice",
-      "source": "core/skills/conversation/actionable-advice"
-    },
-    {
-      "id": "actionable-knowledge",
-      "source": "core/skills/conversation/actionable-knowledge"
-    },
     {
       "id": "discussion-to-implementation-doc",
       "source": "core/skills/conversation/discussion-to-implementation-doc"
@@ -25,14 +17,6 @@
     {
       "id": "handoff-session-prompt",
       "source": "core/skills/conversation/handoff-session-prompt"
-    },
-    {
-      "id": "orchestrator-first",
-      "source": "core/skills/conversation/orchestrator-first"
-    },
-    {
-      "id": "parallel-first",
-      "source": "core/skills/conversation/parallel-first"
     }
   ]
 }

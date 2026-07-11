@@ -8,7 +8,9 @@ python3 - "$REPO_ROOT" <<'PY'
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,8 +20,8 @@ progress = json.loads(
     (root / "tests/skill-exposure-contract/expected-migration-progress.json").read_text()
 )
 assert progress["schema"] == "agent-runtime-kit.skill-migration-progress.v1"
-assert progress["task"] == "1.1"
-assert progress["advance_in_task"] == "3.1"
+assert progress["task"] == "3.1"
+assert progress["advance_in_task"] == "complete"
 skills_schema = json.loads((root / "core/docs/schemas/skills.schema.json").read_text())
 disposition_schema_path = root / "core/docs/schemas/skill-dispositions.schema.json"
 assert skills_schema["properties"]["schema_version"]["const"] == 2
@@ -28,7 +30,7 @@ assert disposition_schema_path.is_file()
 skill_text = (root / "manifests/skills.yaml").read_text()
 assert re.search(r"^schema_version: 2$", skill_text, re.M)
 assert re.search(r"^migration:$", skill_text, re.M)
-assert "pending_disposition:" in skill_text
+assert "pending_disposition: []" in skill_text
 
 skill_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", skill_text, re.M)
 pending_ids = re.findall(r"^    - ([a-z0-9.-]+)$", skill_text.split("skills:", 1)[0], re.M)
@@ -36,6 +38,7 @@ assert len(skill_ids) == len(set(skill_ids))
 assert set(pending_ids).issubset(skill_ids)
 assert pending_ids == [skill_id for skill_id in skill_ids if skill_id in set(pending_ids)]
 assert pending_ids == progress["pending_ids"]
+assert skill_ids == progress["retained_ids"]
 
 disposition_text = (root / "manifests/skill-dispositions.yaml").read_text()
 assert 'source_skill_ids_sha256: "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971aa84a34d60"' in disposition_text
@@ -65,15 +68,18 @@ for chunk in re.split(r"(?=^  - id: )", disposition_text, flags=re.M):
         dispositions[row_id.group(1)] = values
 assert pending_rows == pending_ids
 assert reviewed_rows == progress["reviewed_ids"]
-assert len(reviewed_rows) == 26
-assert len(pending_rows) == 40
+assert len(reviewed_rows) == 66
+assert len(pending_rows) == 0
+assert progress["retired_ids"] == [
+    skill_id for skill_id in reviewed_rows if skill_id not in set(skill_ids)
+]
 
 skill_chunks = {
     match.group(1): chunk
     for chunk in re.split(r"(?=^  - id: )", skill_text, flags=re.M)
     if (match := re.match(r"^  - id: ([a-z0-9.-]+)$", chunk, re.M))
 }
-for skill_id in reviewed_rows:
+for skill_id in progress["retained_ids"]:
     chunk = skill_chunks[skill_id]
     invocation = {
         "example_request": re.search(r"^      example_request: (.+)$", chunk, re.M).group(1).strip('"\''),
@@ -90,6 +96,123 @@ for skill_id in reviewed_rows:
             skill_id,
             mapping,
         )
+
+for skill_id in progress["retired_ids"]:
+    domain, skill = skill_id.split(".", 1)
+    source = root / "core" / "skills" / domain / skill
+    assert not any(path.is_file() for path in source.rglob("*")), skill_id
+
+retired_ids = json.loads(
+    (root / "manifests/retired-skill-ids.json").read_text()
+)
+assert retired_ids["schema"] == "agent-runtime-kit.retired-skill-ids.v1"
+assert retired_ids["skills"] == progress["retired_ids"]
+
+retired_hermes = json.loads(
+    (root / "manifests/retired-hermes-skill-copies.json").read_text()
+)
+assert retired_hermes["schema"] == "agent-runtime-kit.retired-hermes-skill-copies.v1"
+assert list(retired_hermes["skills"]) == retired_ids["skills"]
+
+source_revision = retired_hermes["source_revision"]
+subprocess.run(
+    ["git", "cat-file", "-e", f"{source_revision}^{{commit}}"],
+    cwd=root,
+    check=True,
+)
+
+
+def baseline_tree_digest(skill_id: str) -> str:
+    domain, skill = skill_id.split(".", 1)
+    prefix = f"tests/golden/hermes/plugins/{domain}/skills/{skill}/expected"
+    raw = subprocess.check_output(
+        ["git", "ls-tree", "-r", "-t", "-z", source_revision, "--", prefix],
+        cwd=root,
+    )
+    entries = []
+    for record in raw.rstrip(b"\0").split(b"\0") if raw else []:
+        metadata, path_raw = record.split(b"\t", 1)
+        mode_raw, entry_type_raw, object_id_raw = metadata.split(b" ", 2)
+        path = path_raw.decode()
+        if not path.startswith(prefix + "/"):
+            continue
+        relative = Path(path).relative_to(prefix).as_posix()
+        if relative == ".":
+            continue
+        entry_type = "d" if entry_type_raw == b"tree" else "f"
+        mode = "0755" if entry_type == "d" or mode_raw == b"100755" else "0644"
+        content = None
+        if entry_type == "f":
+            content = subprocess.check_output(
+                ["git", "cat-file", "blob", object_id_raw.decode()], cwd=root
+            )
+        entries.append((relative, entry_type, mode, content))
+    assert entries, skill_id
+    digest = hashlib.sha256()
+    for relative, entry_type, mode, content in sorted(entries):
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        digest.update(entry_type.encode())
+        digest.update(b"\0")
+        digest.update(mode.encode())
+        digest.update(b"\0")
+        if content is not None:
+            digest.update(str(len(content)).encode())
+            digest.update(b"\0")
+            digest.update(content)
+    return digest.hexdigest()
+
+
+for skill_id, expected_digest in retired_hermes["skills"].items():
+    assert baseline_tree_digest(skill_id) == expected_digest, skill_id
+
+fixture_root = root / "tests/fixtures/retired-hermes-skill-copies"
+for skill_file in fixture_root.glob("*/*/SKILL.md"):
+    skill_dir = skill_file.parent
+    domain = skill_dir.parent.name
+    skill = skill_dir.name
+    digest = hashlib.sha256()
+    entries = []
+    for path in skill_dir.rglob("*"):
+        relative = path.relative_to(skill_dir).as_posix()
+        entry_type = "d" if path.is_dir() else "f"
+        mode = "0755" if entry_type == "d" or path.stat().st_mode & 0o111 else "0644"
+        content = path.read_bytes() if path.is_file() else None
+        entries.append((relative, entry_type, mode, content))
+    for relative, entry_type, mode, content in sorted(entries):
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        digest.update(entry_type.encode())
+        digest.update(b"\0")
+        digest.update(mode.encode())
+        digest.update(b"\0")
+        if content is not None:
+            digest.update(str(len(content)).encode())
+            digest.update(b"\0")
+            digest.update(content)
+    assert digest.hexdigest() == retired_hermes["skills"][f"{domain}.{skill}"]
+
+policy_paths = [
+    root / "AGENT_HOME.md",
+    root / "AGENT_DOCS.toml",
+    root / "core/policies/work-tier-levels.md",
+    root / "core/policies/git-delivery.md",
+    root / "core/policies/review-thread-convergence.md",
+]
+for path in policy_paths:
+    text = path.read_text()
+    for skill_id in progress["retired_ids"]:
+        domain, skill = skill_id.split(".", 1)
+        for forbidden in (
+            skill_id,
+            f"{domain}:{skill}",
+            f"${skill}",
+            f"core/skills/{domain}/{skill}",
+        ):
+            assert forbidden not in text, (path, forbidden)
+        for line_number, line in enumerate(text.splitlines(), 1):
+            if re.search(r"(?<![-\w])skills?(?![-\w])", line, re.I):
+                assert f"`{skill}`" not in line, (path, line_number, skill, line)
 PY
 
 fixture_output="$(bash "$REPO_ROOT/scripts/ci/skill-governance-audit.sh" --fixture exposure-contract)"
@@ -129,6 +252,8 @@ pending_ids = set(
 )
 reported = {item["id"]: item for item in skills}
 assert set(reported) == set(active_ids), (product, set(active_ids) - set(reported), set(reported) - set(active_ids))
+assert len(active_ids) == 26, (product, len(active_ids))
+assert not pending_ids, (product, pending_ids)
 
 manifest_semantics = {}
 for chunk in re.split(r"(?=^  - id: )", manifest, flags=re.M):

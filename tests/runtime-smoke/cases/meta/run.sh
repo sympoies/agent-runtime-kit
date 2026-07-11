@@ -173,6 +173,7 @@ PY
     echo "runtime-smoke meta: cleanup apply accepted a mismatched plan digest" >&2
     return 1
   fi
+
   python3 - "$cleanup_bad_digest" <<'PY'
 import json
 import sys
@@ -288,21 +289,18 @@ run_heuristic_inbox_probe() {
 }
 
 run_heuristic_session_closeout_probe() {
-  local body="$REPO_ROOT/core/skills/meta/heuristic-session-closeout/SKILL.md.tera"
+  local body="$REPO_ROOT/core/policies/heuristic-system/HEURISTIC_SYSTEM.md"
   local shared_root="$REPO_ROOT/core/policies/heuristic-system"
   local out="$META_ARTIFACTS_DIR/heuristic-session-closeout.contract.txt"
 
   test -f "$body"
   test -d "$shared_root/error-inbox"
   test -d "$shared_root/operation-records"
-  grep -q "session's goal has been achieved" "$body"
-  grep -q "heuristic-inbox verify" "$body"
-  grep -q "heuristic-inbox deliver" "$body"
-  grep -q "workflow::heuristic-records" "$body"
-  grep -q "forge-cli pr ready" "$body"
-  grep -q "forge-cli pr merge" "$body"
-  grep -q "never a direct push to \`main\`" "$body"
-  grep -q "git checkout -- core/policies/heuristic-system" "$body"
+  grep -q "After the session goal is achieved" "$body"
+  grep -q "invoke \`heuristic-inbox\` directly" "$body"
+  grep -q "evidence-archive migration dry-run" "$body"
+  grep -q "archived-only source-prune dry-run" "$body"
+  grep -q "Report retained, archived, skipped, and blocked records" "$body"
   {
     printf 'body=%s\n' "$body"
     printf 'shared_root=%s\n' "$shared_root"
@@ -508,12 +506,18 @@ run_sync_runtime_surfaces_probe() {
 run_sync_runtime_surfaces_home_prompt_apply_probe() {
   local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.home-prompt-apply.txt"
   local collision_out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.home-prompt-collision.txt"
+  local lookalike_out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.home-prompt-lookalike.txt"
   local root="$TMP_ROOT/sync-home-prompt-apply"
   local source_root="$root/source"
+  local previous_source_root="$root/previous-source"
+  local lookalike_source_root="$root/lookalike-source"
+  local no_origin_source_root="$root/no-origin-source"
   local home="$root/home"
   local codex_home="$home/.codex"
   local collision_home="$root/collision-home"
   local collision_codex_home="$collision_home/.codex"
+  local lookalike_home="$root/lookalike-home"
+  local lookalike_codex_home="$lookalike_home/.codex"
   local state_home="$root/state"
   local stub_bin="$root/bin"
   local stub_log="$root/codex.log"
@@ -523,11 +527,14 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
   mkdir -p "$source_root/scripts/ci" \
     "$source_root/targets/codex/.agents/plugins" \
     "$source_root/targets/codex/plugins/meta/.codex-plugin" \
-    "$codex_home" "$collision_codex_home" "$stub_bin"
+    "$source_root/manifests" \
+    "$codex_home" "$collision_codex_home" "$lookalike_codex_home" "$stub_bin"
   git -C "$source_root" init -q
 
   printf '# raw AGENT_HOME fixture\n' >"$source_root/AGENT_HOME.md"
-  ln -s "$source_root/AGENT_HOME.md" "$codex_home/AGENTS.md"
+  printf 'skills: []\n' >"$source_root/manifests/skills.yaml"
+  printf '#!/usr/bin/env bash\n' >"$source_root/scripts/sync-runtime-surfaces.sh"
+  ln -s "$previous_source_root/build/codex/AGENT_HOME.md" "$codex_home/AGENTS.md"
   printf 'manual codex policy\n' >"$collision_codex_home/AGENTS.md"
 
   cat >"$source_root/scripts/ci/skill-governance-audit.sh" <<'SH'
@@ -544,6 +551,88 @@ case "${1:-}" in
 esac
 SH
   chmod +x "$source_root/scripts/ci/skill-governance-audit.sh"
+
+  git -C "$source_root" add AGENT_HOME.md manifests/skills.yaml scripts/sync-runtime-surfaces.sh
+  git -C "$source_root" \
+    -c user.name='Runtime Smoke' -c user.email='runtime-smoke@example.invalid' \
+    -c commit.gpgSign=false commit -qm 'fixture: establish runtime-kit identity'
+  git clone -q "$source_root" "$previous_source_root"
+  printf '# previous branch identity\n' >>"$previous_source_root/AGENT_HOME.md"
+  git -C "$previous_source_root" add AGENT_HOME.md
+  git -C "$previous_source_root" \
+    -c user.name='Runtime Smoke' -c user.email='runtime-smoke@example.invalid' \
+    -c commit.gpgSign=false commit -qm 'fixture: advance previous checkout'
+  printf '# current branch identity\n' >>"$source_root/manifests/skills.yaml"
+  git -C "$source_root" add manifests/skills.yaml
+  git -C "$source_root" \
+    -c user.name='Runtime Smoke' -c user.email='runtime-smoke@example.invalid' \
+    -c commit.gpgSign=false commit -qm 'fixture: advance current checkout'
+  git -C "$source_root" remote add origin "$previous_source_root"
+  git -C "$source_root" fetch -q origin HEAD
+  mkdir -p "$previous_source_root/build/codex"
+  printf '# AGENT_HOME codex fixture\n' >"$previous_source_root/build/codex/AGENT_HOME.md"
+
+  mkdir -p "$lookalike_source_root/build/codex" \
+    "$lookalike_source_root/manifests" "$lookalike_source_root/scripts"
+  git -C "$lookalike_source_root" init -q
+  printf '# unrelated raw AGENT_HOME fixture\n' >"$lookalike_source_root/AGENT_HOME.md"
+  printf 'skills: []\n' >"$lookalike_source_root/manifests/skills.yaml"
+  printf '#!/usr/bin/env bash\n' >"$lookalike_source_root/scripts/sync-runtime-surfaces.sh"
+  printf '# unrelated rendered AGENT_HOME fixture\n' >"$lookalike_source_root/build/codex/AGENT_HOME.md"
+  git -C "$lookalike_source_root" add AGENT_HOME.md manifests/skills.yaml scripts/sync-runtime-surfaces.sh
+  git -C "$lookalike_source_root" \
+    -c user.name='Runtime Smoke' -c user.email='runtime-smoke@example.invalid' \
+    -c commit.gpgSign=false commit -qm 'fixture: unrelated lookalike identity'
+  ln -s "$lookalike_source_root/build/codex/AGENT_HOME.md" "$lookalike_codex_home/AGENTS.md"
+
+  git clone -q "$source_root" "$no_origin_source_root"
+  git -C "$no_origin_source_root" remote remove origin
+  git -C "$no_origin_source_root" fetch -q "$lookalike_source_root" HEAD
+  HOME="$lookalike_home" XDG_CONFIG_HOME="$lookalike_home/.config" \
+    GIT_CONFIG_GLOBAL="$lookalike_home/.gitconfig" \
+    git config --global remote.origin.url "$lookalike_source_root"
+  if (
+    export HOME="$lookalike_home"
+    export XDG_CONFIG_HOME="$lookalike_home/.config"
+    export GIT_CONFIG_GLOBAL="$lookalike_home/.gitconfig"
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$no_origin_source_root"
+    is_managed_rendered_home_prompt_target codex \
+      "$lookalike_source_root/build/codex/AGENT_HOME.md"
+  ); then
+    echo "home prompt ownership accepted inherited Git origin configuration" >&2
+    return 1
+  fi
+
+  for origin_mutation in trailing-newline empty-second-value; do
+    git -C "$no_origin_source_root" config --local --unset-all remote.origin.url 2>/dev/null || true
+    case "$origin_mutation" in
+      trailing-newline)
+        git -C "$no_origin_source_root" config --local --add remote.origin.url \
+          "$lookalike_source_root"$'\n'
+        ;;
+      empty-second-value)
+        git -C "$no_origin_source_root" config --local --add remote.origin.url \
+          "$lookalike_source_root"
+        git -C "$no_origin_source_root" config --local --add remote.origin.url ""
+        ;;
+    esac
+    if (
+      export HOME="$lookalike_home"
+      export XDG_CONFIG_HOME="$lookalike_home/.config"
+      export GIT_CONFIG_GLOBAL="$lookalike_home/.gitconfig"
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$no_origin_source_root"
+      is_managed_rendered_home_prompt_target codex \
+        "$lookalike_source_root/build/codex/AGENT_HOME.md"
+    ); then
+      echo "home prompt ownership accepted malformed local origin: $origin_mutation" >&2
+      return 1
+    fi
+  done
+  git -C "$no_origin_source_root" config --local --unset-all remote.origin.url 2>/dev/null || true
 
   cat >"$source_root/targets/codex/.agents/plugins/marketplace.json" <<'JSON'
 {
@@ -651,6 +740,26 @@ SH
   grep -q "codex plugin registry installed: marketplace=codex-kit" "$out"
   grep -q "plugin marketplace add $state_home/plugin-marketplaces/codex-kit" "$stub_log"
   grep -q "plugin add meta@codex-kit" "$stub_log"
+
+  set +e
+  (
+    cd "$REPO_ROOT"
+    PATH="$stub_bin:$PATH" HOME="$lookalike_home" CODEX_HOME="$lookalike_codex_home" \
+      CODEX_AGENT_STATE_HOME="$state_home-lookalike" CODEX_STUB_LOG="$stub_log" \
+      bash scripts/sync-runtime-surfaces.sh \
+      --source-root "$source_root" \
+      --product codex \
+      --no-pull \
+      --no-prune \
+      --no-verify \
+      --apply
+  ) >"$lookalike_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ]
+  grep -q "expected $source_root/build/codex/AGENT_HOME.md" "$lookalike_out"
+  assert_symlink_target "$lookalike_codex_home/AGENTS.md" \
+    "$lookalike_source_root/build/codex/AGENT_HOME.md"
 
   set +e
   (
@@ -1072,21 +1181,23 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   local hermes_home="$TMP_ROOT/sync-prune/hermes-home"
   local stale_skill="$hermes_home/skills/meta/agent-docs/SKILL.md"
   local stale_ref="$hermes_home/skills/conversation/actionable-advice/references/prompts/actionable-advice.md"
-  local copied_skill="$hermes_home/skills/meta/semantic-commit"
-  local modified_copy="$hermes_home/skills/meta/agent-out"
+  local copied_skill="$hermes_home/skills/meta/bootstrap"
+  local retired_copy="$hermes_home/skills/browser/canary-check"
   local foreign="$hermes_home/skills/meta/foreign-skill/SKILL.md"
   local regular="$hermes_home/skills/meta/user-note/SKILL.md"
   local development_policy="$hermes_home/skills/development-policy/SKILL.md"
+  local mutation modified_home modified_retired modified_out
+  local status
 
   require_meta_bin agent-runtime || return 1
   rm -rf "$hermes_home"
   mkdir -p "$(dirname "$stale_skill")" "$(dirname "$stale_ref")" \
     "$(dirname "$foreign")" "$(dirname "$regular")" "$(dirname "$development_policy")"
-  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/agent-docs/SKILL.md" "$stale_skill"
-  ln -s "$REPO_ROOT/build/hermes/plugins/conversation/skills/actionable-advice/references/prompts/actionable-advice.md" "$stale_ref"
-  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/semantic-commit" "$copied_skill"
-  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/agent-out" "$modified_copy"
-  printf 'local note\n' >"$modified_copy/local-note.txt"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" "$stale_skill"
+  ln -s "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build/SKILL.md" "$stale_ref"
+  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap" "$copied_skill"
+  mkdir -p "$(dirname "$retired_copy")"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" "$retired_copy"
   ln -s /var/empty/foreign-skill "$foreign"
   printf 'user note\n' >"$regular"
   ln -s "$REPO_ROOT/build/hermes/AGENT_HOME.md" "$development_policy"
@@ -1101,17 +1212,491 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
 
   grep -q "removed legacy Hermes runtime-kit skill symlink skills/meta/agent-docs/SKILL.md" "$out"
   grep -q "removed legacy Hermes runtime-kit skill symlink skills/conversation/actionable-advice/references/prompts/actionable-advice.md" "$out"
-  grep -q "removed legacy Hermes runtime-kit skill copy skills/meta/semantic-commit" "$out"
+  grep -q "removed legacy Hermes runtime-kit skill copy skills/meta/bootstrap" "$out"
+  grep -q "removed legacy Hermes runtime-kit skill copy skills/browser/canary-check" "$out"
   grep -q "removed empty legacy Hermes runtime-kit skill directory skills/conversation/actionable-advice" "$out"
-  grep -q "legacy Hermes runtime-kit skill cleanup removed: symlinks=2 copies=1" "$out"
+  grep -q "legacy Hermes runtime-kit skill cleanup removed: symlinks=2 copies=2 review_needed=0" "$out"
   test ! -e "$stale_skill"
   test ! -d "$hermes_home/skills/conversation/actionable-advice"
   test ! -d "$copied_skill"
-  test -d "$modified_copy"
-  test -f "$modified_copy/local-note.txt"
+  test ! -d "$retired_copy"
   test -L "$foreign"
   test -f "$regular"
   test -L "$development_policy"
+
+  for mutation in empty-dir mode symlink; do
+    modified_home="$TMP_ROOT/sync-prune/hermes-modified-$mutation"
+    modified_retired="$modified_home/skills/browser/canary-check"
+    modified_out="$out.$mutation"
+    mkdir -p "$(dirname "$modified_retired")"
+    cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" "$modified_retired"
+    case "$mutation" in
+      empty-dir) mkdir "$modified_retired/local-empty" ;;
+      mode) chmod 755 "$modified_retired/SKILL.md" ;;
+      symlink)
+        ln -s "$REPO_ROOT/build/hermes/plugins/browser/skills/canary-check/SKILL.md" \
+          "$modified_retired/local-managed-link"
+        ;;
+    esac
+
+    set +e
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
+      APPLY=1
+      cleanup_hermes_legacy_runtime_kit_skill_root "$modified_home"
+    ) >"$modified_out" 2>&1
+    status=$?
+    set -e
+    [ "$status" -eq 3 ] || {
+      echo "Hermes cleanup accepted a modified retired copy: $mutation" >&2
+      return 1
+    }
+    grep -q "review-needed legacy Hermes runtime-kit skill copy skills/browser/canary-check" "$modified_out"
+    test -d "$modified_retired"
+    if [ "$mutation" = "symlink" ]; then
+      test -L "$modified_retired/local-managed-link"
+      test "$(readlink "$modified_retired/local-managed-link")" = \
+        "$REPO_ROOT/build/hermes/plugins/browser/skills/canary-check/SKILL.md"
+    fi
+  done
+}
+
+run_sync_runtime_surfaces_retired_managed_links_probe() {
+  local root="$TMP_ROOT/sync-retired-managed-links"
+  local previous_source="$root/previous-source"
+  local codex_home="$root/codex-home"
+  local claude_home="$root/claude-home"
+  local hermes_home="$root/hermes-home"
+  local product live_home skill_root plugin_manifest status out
+  local mixed_retired mixed_retained mixed_manifest
+  local modified_home modified_skill
+  local fixture_source fixture_live fixture_file fixture_case
+  local integration_home="$root/integration-home"
+  local integration_modified_home="$root/integration-modified-home"
+  local escape_home="$root/quarantine-escape-home"
+  local escape_external="$root/quarantine-escape-external"
+  local stub_bin="$root/bin"
+  local stub_log="$root/prune.log"
+
+  rm -rf "$root"
+  mkdir -p "$root"
+  git clone -q "$REPO_ROOT" "$previous_source"
+
+  for product in codex claude hermes; do
+    case "$product" in
+      codex)
+        live_home="$codex_home"
+        skill_root="$live_home/plugins/browser/skills/canary-check"
+        plugin_manifest="$live_home/plugins/browser/.codex-plugin/plugin.json"
+        ;;
+      claude)
+        live_home="$claude_home"
+        skill_root="$live_home/plugins/browser/skills/canary-check"
+        plugin_manifest="$live_home/plugins/browser/.claude-plugin/plugin.json"
+        ;;
+      hermes)
+        live_home="$hermes_home"
+        skill_root="$live_home/external-skills/agent-runtime-kit/browser/canary-check"
+        plugin_manifest=""
+        ;;
+    esac
+    mkdir -p "$skill_root"
+    ln -s "$previous_source/build/$product/plugins/browser/skills/canary-check/SKILL.md" \
+      "$skill_root/SKILL.md"
+    if [ -n "$plugin_manifest" ]; then
+      mkdir -p "$(dirname "$plugin_manifest")"
+      ln -s "$previous_source/targets/$product/plugins/browser/$(dirname "${plugin_manifest##*/plugins/browser/}")/plugin.json" \
+        "$plugin_manifest"
+      mkdir -p "$live_home/plugins/cache"
+      printf 'preserve unrelated plugin state\n' >"$live_home/plugins/cache/user-state.txt"
+      mixed_retired="$live_home/plugins/meta/skills/agent-docs/SKILL.md"
+      mixed_retained="$live_home/plugins/meta/skills/bootstrap/SKILL.md"
+      case "$product" in
+        codex) mixed_manifest="$live_home/plugins/meta/.codex-plugin/plugin.json" ;;
+        claude) mixed_manifest="$live_home/plugins/meta/.claude-plugin/plugin.json" ;;
+      esac
+      mkdir -p "$(dirname "$mixed_retired")" "$(dirname "$mixed_retained")" \
+        "$(dirname "$mixed_manifest")"
+      ln -s "$previous_source/build/$product/plugins/meta/skills/agent-docs/SKILL.md" \
+        "$mixed_retired"
+      ln -s "$previous_source/build/$product/plugins/meta/skills/bootstrap/SKILL.md" \
+        "$mixed_retained"
+      ln -s "$previous_source/targets/$product/plugins/meta/$(dirname "${mixed_manifest##*/plugins/meta/}")/plugin.json" \
+        "$mixed_manifest"
+    fi
+    out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-managed-$product-dry.txt"
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
+      APPLY=0
+      cleanup_retired_managed_product_links "$product" "$live_home"
+    ) >"$out" 2>&1
+    test -L "$skill_root/SKILL.md"
+    if [ -n "$plugin_manifest" ]; then
+      test -L "$plugin_manifest"
+      test -L "$mixed_retired"
+      test -L "$mixed_retained"
+      test -L "$mixed_manifest"
+      grep -q "would remove retired managed plugin link tree" "$out"
+    fi
+    grep -q "would remove retired managed skill link tree" "$out"
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
+      APPLY=1
+      cleanup_retired_managed_product_links "$product" "$live_home"
+    )
+    test ! -e "$skill_root"
+    if [ "$product" != "hermes" ]; then
+      test ! -e "$live_home/plugins/browser"
+      test -f "$live_home/plugins/cache/user-state.txt"
+      test ! -e "$mixed_retired"
+      test -L "$mixed_retained"
+      test -L "$mixed_manifest"
+      test -d "$live_home/plugins/meta"
+    fi
+  done
+
+  for product in codex claude hermes; do
+    modified_home="$root/modified-$product-home"
+    case "$product" in
+      codex | claude)
+        modified_skill="$modified_home/plugins/evidence/skills/web-evidence"
+        ;;
+      hermes)
+        modified_skill="$modified_home/external-skills/agent-runtime-kit/evidence/web-evidence"
+        ;;
+    esac
+    mkdir -p "$modified_skill"
+    chmod 755 "$modified_skill"
+    printf 'local modification\n' >"$modified_skill/SKILL.md"
+    out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-managed-modified-$product.txt"
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
+      APPLY=0
+      cleanup_retired_managed_product_links "$product" "$modified_home"
+    ) >"$out.dry" 2>&1
+    test -f "$modified_skill/SKILL.md"
+    grep -q "review-needed retired managed skill link tree" "$out.dry"
+
+    set +e
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
+      APPLY=1
+      cleanup_retired_managed_product_links "$product" "$modified_home"
+    ) >"$out" 2>&1
+    status=$?
+    set -e
+    [ "$status" -eq 3 ]
+    test -f "$modified_skill/SKILL.md"
+    test ! -e "$modified_home/.agent-runtime-kit-retired-quarantine"
+    python3 - "$modified_skill" <<'PY'
+import os
+import stat
+import sys
+
+assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o755
+PY
+    grep -q "review-needed retired managed skill link tree" "$out"
+  done
+
+  for fault in after-rename during-delete before-rmdir; do
+    fault_home="$root/fault-$fault-codex-home"
+    fault_skill="$fault_home/plugins/browser/skills/canary-check"
+    mkdir -p "$fault_skill"
+    chmod 755 "$fault_skill"
+    ln -s "$previous_source/build/codex/plugins/browser/skills/canary-check/SKILL.md" \
+      "$fault_skill/SKILL.md"
+    expected_target="$(readlink "$fault_skill/SKILL.md")"
+    out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-managed-fault-$fault.txt"
+    set +e
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
+      APPLY=1
+      export AGENT_RUNTIME_KIT_TEST_RETIRE_CLEANUP_FAIL_AT="$fault"
+      cleanup_retired_managed_product_links codex "$fault_home"
+    ) >"$out" 2>&1
+    status=$?
+    set -e
+    [ "$status" -ne 0 ]
+    test -L "$fault_skill/SKILL.md"
+    [ "$(readlink "$fault_skill/SKILL.md")" = "$expected_target" ]
+    python3 - "$fault_skill" <<'PY'
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+assert stat.S_IMODE(os.stat(root).st_mode) == 0o755
+assert sorted(os.listdir(root)) == ["SKILL.md"]
+PY
+    test -z "$(find "$(dirname "$fault_skill")" -maxdepth 1 -name '.*.agent-runtime-kit-retired.*' -print -quit)"
+    grep -q "restored retired managed tree after cleanup failure" "$out"
+  done
+
+  skill_root="$escape_external/browser/skills/canary-check"
+  mkdir -p "$skill_root" "$escape_home"
+  printf 'external sentinel\n' >"$escape_external/sentinel.txt"
+  chmod 755 "$escape_external"
+  ln -s "$previous_source/build/codex/plugins/browser/skills/canary-check/SKILL.md" \
+    "$skill_root/SKILL.md"
+  ln -s "$escape_external" "$escape_home/plugins"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_retired_managed_product_links codex "$escape_home"
+  ) >"$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-quarantine-escape.txt" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ]
+  test -L "$skill_root/SKILL.md"
+  test -f "$escape_external/sentinel.txt"
+  python3 - "$escape_external" <<'PY'
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+assert stat.S_IMODE(os.stat(root).st_mode) == 0o755
+assert sorted(os.listdir(root)) == ["browser", "sentinel.txt"]
+PY
+
+  for fixture_case in \
+    missing malformed invalid-map invalid-schema \
+    invalid-id-slash invalid-id-extra-dot invalid-id-space \
+    canonical-missing canonical-malformed canonical-invalid-list \
+    canonical-invalid-schema canonical-mismatch; do
+    fixture_source="$root/manifest-$fixture_case-source"
+    fixture_live="$root/manifest-$fixture_case-home"
+    fixture_file="$fixture_live/plugins/evidence/skills/web-evidence/SKILL.md"
+    mkdir -p "$fixture_source/manifests" \
+      "$fixture_source/targets/codex/plugins/evidence" \
+      "$(dirname "$fixture_file")"
+    cp "$REPO_ROOT/manifests/retired-skill-ids.json" \
+      "$fixture_source/manifests/retired-skill-ids.json"
+    cp "$REPO_ROOT/manifests/retired-hermes-skill-copies.json" \
+      "$fixture_source/manifests/retired-hermes-skill-copies.json"
+    printf 'active plugin marker\n' >"$fixture_source/targets/codex/plugins/evidence/plugin.json"
+    printf 'preserve me\n' >"$fixture_file"
+    case "$fixture_case" in
+      missing) rm -f "$fixture_source/manifests/retired-hermes-skill-copies.json" ;;
+      malformed) printf '{not json\n' >"$fixture_source/manifests/retired-hermes-skill-copies.json" ;;
+      invalid-map)
+        printf '%s\n' '{"schema":"agent-runtime-kit.retired-hermes-skill-copies.v1","skills":[]}' \
+          >"$fixture_source/manifests/retired-hermes-skill-copies.json"
+        ;;
+      invalid-schema)
+        printf '%s\n' '{"schema":"unsupported","skills":{"meta.agent-docs":"digest"}}' \
+          >"$fixture_source/manifests/retired-hermes-skill-copies.json"
+        ;;
+      invalid-id-slash)
+        printf '%s\n' '{"schema":"agent-runtime-kit.retired-hermes-skill-copies.v1","skills":{"meta.bad/name":"digest"}}' \
+          >"$fixture_source/manifests/retired-hermes-skill-copies.json"
+        ;;
+      invalid-id-extra-dot)
+        printf '%s\n' '{"schema":"agent-runtime-kit.retired-hermes-skill-copies.v1","skills":{"meta.bad.name":"digest"}}' \
+          >"$fixture_source/manifests/retired-hermes-skill-copies.json"
+        ;;
+      invalid-id-space)
+        printf '%s\n' '{"schema":"agent-runtime-kit.retired-hermes-skill-copies.v1","skills":{"meta.bad name":"digest"}}' \
+          >"$fixture_source/manifests/retired-hermes-skill-copies.json"
+        ;;
+      canonical-missing)
+        rm -f "$fixture_source/manifests/retired-skill-ids.json"
+        ;;
+      canonical-malformed)
+        printf '{not json\n' >"$fixture_source/manifests/retired-skill-ids.json"
+        ;;
+      canonical-invalid-list)
+        printf '%s\n' '{"schema":"agent-runtime-kit.retired-skill-ids.v1","skills":{}}' \
+          >"$fixture_source/manifests/retired-skill-ids.json"
+        ;;
+      canonical-invalid-schema)
+        printf '%s\n' '{"schema":"unsupported","skills":["meta.agent-docs"]}' \
+          >"$fixture_source/manifests/retired-skill-ids.json"
+        ;;
+      canonical-mismatch)
+        printf '%s\n' '{"schema":"agent-runtime-kit.retired-skill-ids.v1","skills":["meta.agent-docs"]}' \
+          >"$fixture_source/manifests/retired-skill-ids.json"
+        ;;
+    esac
+    set +e
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$fixture_source"
+      APPLY=1
+      cleanup_retired_managed_product_links codex "$fixture_live"
+    ) >"$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-manifest-$fixture_case.txt" 2>&1
+    status=$?
+    set -e
+    [ "$status" -ne 0 ]
+    test -f "$fixture_file"
+  done
+
+  mkdir -p "$stub_bin" "$integration_home/plugins/browser/skills/canary-check" \
+    "$integration_home/plugins/browser/.codex-plugin"
+  ln -s "$previous_source/build/codex/plugins/browser/skills/canary-check/SKILL.md" \
+    "$integration_home/plugins/browser/skills/canary-check/SKILL.md"
+  ln -s "$previous_source/targets/codex/plugins/browser/.codex-plugin/plugin.json" \
+    "$integration_home/plugins/browser/.codex-plugin/plugin.json"
+  cat >"$stub_bin/agent-runtime" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" != "prune-stale" ]; then
+  exit 64
+fi
+if [ -e "$EXPECT_REMOVED_PATH" ] || [ -L "$EXPECT_REMOVED_PATH" ]; then
+  echo "prune-stale ran before retired-link cleanup" >&2
+  exit 65
+fi
+printf 'prune-stale\n' >>"$PRUNE_STUB_LOG"
+printf '%s\n' '{"ok":true,"data":{"changes":0,"skipped":0,"records":[]},"changes":0,"skipped":0}'
+SH
+  chmod +x "$stub_bin/agent-runtime"
+  : >"$stub_log"
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    NO_PRUNE=0
+    CODEX_HOME="$integration_home"
+    PATH="$stub_bin:$PATH"
+    EXPECT_REMOVED_PATH="$integration_home/plugins/browser"
+    PRUNE_STUB_LOG="$stub_log"
+    export PATH EXPECT_REMOVED_PATH PRUNE_STUB_LOG CODEX_HOME
+    prune_product codex
+  ) >"$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-pre-prune.txt" 2>&1
+  grep -q "prune-stale" "$stub_log"
+  test ! -e "$integration_home/plugins/browser"
+
+  modified_skill="$integration_modified_home/plugins/evidence/skills/web-evidence"
+  mkdir -p "$modified_skill"
+  printf 'local modification\n' >"$modified_skill/SKILL.md"
+  : >"$stub_log"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    NO_PRUNE=0
+    CODEX_HOME="$integration_modified_home"
+    PATH="$stub_bin:$PATH"
+    EXPECT_REMOVED_PATH="$integration_modified_home/plugins/evidence"
+    PRUNE_STUB_LOG="$stub_log"
+    export PATH EXPECT_REMOVED_PATH PRUNE_STUB_LOG CODEX_HOME
+    prune_product codex
+  ) >"$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-pre-prune-modified.txt" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ]
+  test ! -s "$stub_log"
+  test -f "$modified_skill/SKILL.md"
+}
+
+# Apply-mode registry validation is a transaction preflight: malformed provider
+# output must fail before rendering, prompt rewiring, installation, pruning, or
+# activation mutates any live/runtime state.
+run_sync_runtime_surfaces_registry_preflight_probe() {
+  local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.registry-preflight.txt"
+  local script="$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+  local root="$TMP_ROOT/sync-registry-preflight"
+  local stub_bin="$root/bin"
+  local mutation_log="$root/mutations.log"
+  local provider_log="$root/provider.log"
+  local status
+
+  rm -rf "$root"
+  mkdir -p "$stub_bin" "$root/home"
+  : >"$mutation_log"
+  cat >"$stub_bin/claude" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$CLAUDE_STUB_LOG"
+case "$*" in
+  "plugins list --json")
+    printf '%s\n' '[{"id":"outside@other-kit\nretired@claude-kit","scope":"user","enabled":true}]'
+    ;;
+  "plugin marketplace list --json")
+    printf '%s\n' '[]'
+    ;;
+esac
+SH
+  chmod +x "$stub_bin/claude"
+
+  set +e
+  (
+    export HOME="$root/home"
+    export PATH="$stub_bin:$PATH"
+    export CLAUDE_STUB_LOG="$provider_log"
+    export CLAUDE_KIT_STATE_HOME="$root/state"
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
+    validate_live_sync_source_root() { :; }
+    pull_source() { :; }
+    check_source_counts() { :; }
+    render_home_prompt_base() { printf '%s\n' render-home-base >>"$mutation_log"; }
+    render_home_prompt_product() { printf '%s\n' render-home-product >>"$mutation_log"; }
+    ensure_home_prompt() { printf '%s\n' ensure-home >>"$mutation_log"; }
+    render_product() { printf '%s\n' render-product >>"$mutation_log"; }
+    install_product() { printf '%s\n' install-product >>"$mutation_log"; }
+    prune_product() { printf '%s\n' prune-product >>"$mutation_log"; }
+    main --apply --no-pull --product claude --source-root "$REPO_ROOT"
+  ) >"$out" 2>&1
+  status=$?
+  set -e
+
+  [ "$status" -ne 0 ] || {
+    echo "sync-runtime-surfaces accepted malformed registry output" >&2
+    return 1
+  }
+  grep -q "invalid installed plugin id" "$out"
+  if [ -s "$mutation_log" ]; then
+    echo "sync-runtime-surfaces mutated state before registry preflight completed" >&2
+    cat "$mutation_log" >&2
+    return 1
+  fi
+  test ! -e "$root/home/.claude/settings.json"
+  test ! -e "$root/state/plugin-marketplaces"
+}
+
+run_product_leak_unused_allow_probe() {
+  local out="$META_ARTIFACTS_DIR/product-leak-unused-allow.txt"
+  local allow="$TMP_ROOT/product-leak-unused-allow.yaml"
+  local status
+
+  cat >"$allow" <<'YAML'
+allow:
+  - product: codex
+    path: build/codex/plugins/reporting/skills/daily-brief/SKILL.md
+    sentinel: Claude
+    reason: Negative fixture; the active artifact does not contain this sentinel.
+YAML
+  set +e
+  PRODUCT_LEAK_ALLOW_FILE="$allow" \
+    bash "$REPO_ROOT/scripts/ci/product-leak-audit.sh" >"$out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || {
+    echo "product leak audit accepted an unused allowlist entry" >&2
+    return 1
+  }
+  grep -q "unused allow entry" "$out"
 }
 
 # Characterizes the upstream nils-cli limitation tracked in inbox case
@@ -1302,6 +1887,8 @@ run_sync_runtime_surfaces_claude_plugin_registry_probe() {
   local materialized_home="$state_home/plugin-marketplaces/claude-kit"
   local stub_bin="$TMP_ROOT/sync-claude-plugin-registry/bin"
   local stub_log="$TMP_ROOT/sync-claude-plugin-registry/claude.log"
+  local bad_stub_log="$TMP_ROOT/sync-claude-plugin-registry/claude-bad-ref.log"
+  local status
 
   rm -rf "$TMP_ROOT/sync-claude-plugin-registry"
   mkdir -p "$claude_home" "$source_root/targets/claude/.claude-plugin" \
@@ -1345,7 +1932,11 @@ case "$*" in
     printf '[{"name":"claude-kit","source":"directory","path":"/old-live-home"}]\n'
     ;;
   "plugins list --json")
-    printf '[{"id":"meta@claude-kit","scope":"user","enabled":true}]\n'
+    if [ "${CLAUDE_STUB_BAD_PLUGIN_REF:-0}" = "1" ]; then
+      printf '%s\n' '[{"id":"outside@other-kit\nretired@claude-kit","scope":"user","enabled":true}]'
+    else
+      printf '[{"id":"meta@claude-kit","scope":"user","enabled":true},{"id":"retired@claude-kit","scope":"user","enabled":true},{"id":"outside@other-kit","scope":"user","enabled":true}]\n'
+    fi
     ;;
 esac
 SH
@@ -1365,12 +1956,37 @@ SH
   grep -q "plugin marketplace remove claude-kit --scope user" "$stub_log"
   grep -q "plugin marketplace add $materialized_home --scope user" "$stub_log"
   grep -q "plugin uninstall meta@claude-kit --scope user --keep-data" "$stub_log"
+  grep -q "plugin uninstall retired@claude-kit --scope user --keep-data" "$stub_log"
+  if grep -q "plugin uninstall outside@other-kit" "$stub_log"; then
+    echo "refresh removed an unrelated Claude marketplace plugin" >&2
+    return 1
+  fi
   grep -q "plugin install meta@claude-kit --scope user" "$stub_log"
   grep -q "plugin install evidence@claude-kit --scope user" "$stub_log"
   test -f "$materialized_home/plugins/meta/skills/demo-symlink/SKILL.md"
   test ! -L "$materialized_home/plugins/meta/skills/demo-symlink/SKILL.md"
   test -f "$materialized_home/plugins/meta/.claude-plugin/plugin.json"
   test -f "$materialized_home/.claude-plugin/marketplace.json"
+
+  set +e
+  (
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
+    APPLY=1
+    SOURCE_ROOT="$source_root"
+    PATH="$stub_bin:$PATH" CLAUDE_STUB_LOG="$bad_stub_log" \
+      CLAUDE_STUB_BAD_PLUGIN_REF=1 \
+      sync_claude_plugin_registry "$claude_home" "$state_home"
+  ) >"$out.bad-ref" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || {
+    echo "Claude registry accepted a control-character plugin ref" >&2
+    return 1
+  }
+  if grep -q "plugin uninstall" "$bad_stub_log"; then
+    echo "Claude registry uninstalled a plugin from a malformed ref" >&2
+    return 1
+  fi
 }
 
 run_sync_runtime_surfaces_codex_marketplace_shape_probe() {
@@ -1427,6 +2043,8 @@ run_sync_runtime_surfaces_codex_plugin_registry_probe() {
   local materialized_home="$state_home/plugin-marketplaces/codex-kit"
   local stub_bin="$TMP_ROOT/sync-codex-plugin-registry/bin"
   local stub_log="$TMP_ROOT/sync-codex-plugin-registry/codex.log"
+  local bad_stub_log="$TMP_ROOT/sync-codex-plugin-registry/codex-bad-ref.log"
+  local status
 
   rm -rf "$TMP_ROOT/sync-codex-plugin-registry"
   mkdir -p "$codex_home" "$source_root/targets/codex/.agents/plugins" \
@@ -1471,7 +2089,11 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$CODEX_STUB_LOG"
 case "$*" in
   "plugin list --json")
-    printf '{"installed":[{"pluginId":"meta@codex-kit"},{"pluginId":"legacy@codex-kit"},{"pluginId":"outside@other-kit"}],"available":[]}\n'
+    if [ "${CODEX_STUB_BAD_PLUGIN_REF:-0}" = "1" ]; then
+      printf '%s\n' '{"installed":[{"pluginId":"outside@other-kit\nlegacy@codex-kit"}],"available":[]}'
+    else
+      printf '{"installed":[{"pluginId":"meta@codex-kit"},{"pluginId":"legacy@codex-kit"},{"pluginId":"outside@other-kit"}],"available":[]}\n'
+    fi
     ;;
   "plugin marketplace list --json")
     printf '{"marketplaces":[{"name":"codex-kit","root":"/old-state-home"}]}\n'
@@ -1512,6 +2134,26 @@ SH
   test ! -L "$materialized_home/plugins/meta/skills/demo-symlink/SKILL.md"
   test -f "$materialized_home/plugins/meta/.codex-plugin/plugin.json"
   test -f "$materialized_home/.agents/plugins/marketplace.json"
+
+  set +e
+  (
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
+    APPLY=1
+    SOURCE_ROOT="$source_root"
+    PATH="$stub_bin:$PATH" CODEX_STUB_LOG="$bad_stub_log" \
+      CODEX_STUB_BAD_PLUGIN_REF=1 \
+      sync_codex_plugin_registry "$codex_home" "$state_home"
+  ) >"$out.bad-ref" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || {
+    echo "Codex registry accepted a control-character plugin ref" >&2
+    return 1
+  }
+  if grep -q "plugin remove" "$bad_stub_log"; then
+    echo "Codex registry removed a plugin from a malformed ref" >&2
+    return 1
+  fi
 }
 
 run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe() {
@@ -1998,52 +2640,55 @@ run_meta_outcome_routing_probe() {
     return 1
   }
 
-  rendered_contract_assert_skill meta heuristic-session-closeout
-  rendered_contract_assert_skill meta semantic-commit
+  rendered_contract_assert_skill meta sync-runtime-surfaces
+  rendered_contract_assert_skill pr deliver-pr
   rendered_contract_assert_skill reporting project-retro
 }
 
 failures=0
-record_case "meta.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
+record_case "meta.outcome-routing.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
 record_case "meta.home-prompt-render" "home prompt render isolates Codex-only delegation and product sentinel text" run_home_prompt_render_probe
-record_case "meta.agent-out" "agent-out allocated a temp project path and applied a reviewed cleanup plan" run_agent_out_probe
-record_case "meta.agent-scope-lock" "scope lock create and validate passed in temp git workspace" run_agent_scope_lock_probe
+record_case "meta.outcome-routing.agent-out" "agent-out allocated a temp project path and applied a reviewed cleanup plan" run_agent_out_probe
+record_case "meta.outcome-routing.scope-lock" "scope lock create and validate passed in temp git workspace" run_agent_scope_lock_probe
 record_case "meta.bootstrap" "project-local bootstrap shim executed fixture script" run_project_local_shim_probe bootstrap
 record_case "meta.deploy" "project-local deploy shim executed fixture script" run_project_local_shim_probe deploy
-record_case "meta.heuristic-inbox" "heuristic inbox shared-root list and strict verification passed" run_heuristic_inbox_probe
-record_case "meta.heuristic-session-closeout" "session closeout contract preserves retained heuristic records on main" run_heuristic_session_closeout_probe
+record_case "meta.outcome-routing.heuristic-inbox" "heuristic inbox shared-root list and strict verification passed" run_heuristic_inbox_probe
+record_case "meta.outcome-routing.session-closeout" "session closeout contract preserves retained heuristic records on main" run_heuristic_session_closeout_probe
 record_case "meta.create-skill" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
 record_case "meta.create-project-skill" "project skill lifecycle create surface and fixture passed" run_create_project_skill_probe
 record_case "meta.remove-skill" "skill lifecycle removal surface and governance fixture passed" run_remove_skill_probe
 record_case "meta.remove-project-skill" "project skill lifecycle removal surface and fixture passed" run_remove_project_skill_probe
-record_case "meta.pre-pr" "project-local pre-pr shim executed fixture script" run_project_local_shim_probe pre-pr
+record_case "meta.outcome-routing.pre-pr" "project-local pre-pr shim executed fixture script" run_project_local_shim_probe pre-pr
 record_case "meta.release" "project-local release shim executed fixture script" run_project_local_shim_probe release
-record_case "meta.repo-retro" "repo-retro JSON report probe passed against temp git workspace" run_repo_retro_probe
-record_case "meta.semantic-commit" "semantic-commit dry-run validated staged temp change without commit" run_semantic_commit_probe
+record_case "meta.outcome-routing.repo-retro" "repo-retro JSON report probe passed against temp git workspace" run_repo_retro_probe
+record_case "meta.outcome-routing.semantic-commit" "semantic-commit dry-run validated staged temp change without commit" run_semantic_commit_probe
 record_case "meta.setup-project" "setup-project dry-run/apply adoption probes passed" run_setup_project_probe
-record_case "meta.plan-archive-migrate" "plan-archive migrate dry-run JSON probe resolved archive target" run_plan_archive_migrate_probe
-record_case "meta.plan-archive-query" "plan-archive query single-ref JSON probe surfaced fetched_at" run_plan_archive_query_probe
-record_case "meta.plan-archive-discover" "plan-archive discover JSON probe classified blocked candidate" run_plan_archive_discover_probe
-record_case "meta.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
-record_case "meta.evidence-prune-source" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
-record_case "meta.outcome-routing" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
+record_case "meta.outcome-routing.plan-archive-migrate" "plan-archive migrate dry-run JSON probe resolved archive target" run_plan_archive_migrate_probe
+record_case "meta.outcome-routing.plan-archive-query" "plan-archive query single-ref JSON probe surfaced fetched_at" run_plan_archive_query_probe
+record_case "meta.outcome-routing.plan-archive-discover" "plan-archive discover JSON probe classified blocked candidate" run_plan_archive_discover_probe
+record_case "meta.outcome-routing.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
+record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
+record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
 record_case "meta.nils-cli-bump" "version-alignment doctor probe blocked v0.0.0 drift and passed host-aligned pin" run_nils_cli_bump_probe
 record_case "meta.worktree-triage" "worktree triage scan classified safe-merged, safe-superseded, and rescue-candidate worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces apply rewires managed home prompt symlinks" run_sync_runtime_surfaces_home_prompt_apply_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces apply refuses linked git worktree source roots" run_sync_runtime_surfaces_worktree_guard_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces removes legacy Hermes runtime-kit local skill symlinks only" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
-record_case "meta.sync-runtime-surfaces" "prune-stale skips retired recursive-file managed skill directory (upstream gap characterization)" run_sync_runtime_surfaces_prune_recursive_stale_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces reports prune=review-needed when prune-stale leaves stale candidates" run_sync_runtime_surfaces_prune_review_reporting_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces uses neutral non-destructive wording for hermes prune-skipped paths" run_sync_runtime_surfaces_prune_review_hermes_wording_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces merges Claude settings hooks without dropping custom hooks" run_sync_runtime_surfaces_claude_settings_hooks_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces materializes and installs Claude plugins for skill visibility" run_sync_runtime_surfaces_claude_plugin_registry_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces ships Codex marketplace entries with required policy metadata" run_sync_runtime_surfaces_codex_marketplace_shape_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces fails Codex plugin activation when the Codex CLI is unavailable" run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe
-record_case "meta.sync-runtime-surfaces" "sync-runtime-surfaces prints a Codex activation plan without executing it under dry-run" run_sync_runtime_surfaces_codex_plugin_registry_planned_probe
+record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
+record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply rewires managed home prompt symlinks" run_sync_runtime_surfaces_home_prompt_apply_probe
+record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
+record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktree source roots" run_sync_runtime_surfaces_worktree_guard_probe
+record_case "meta.sync-runtime-surfaces.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
+record_case "meta.sync-runtime-surfaces.hermes-legacy" "sync-runtime-surfaces removes owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
+record_case "meta.sync-runtime-surfaces.retired-managed-links" "sync-runtime-surfaces removes repository-owned retired symlink trees and preserves modified trees" run_sync_runtime_surfaces_retired_managed_links_probe
+record_case "meta.sync-runtime-surfaces.registry-preflight" "sync-runtime-surfaces validates provider registry data before any apply mutation" run_sync_runtime_surfaces_registry_preflight_probe
+record_case "meta.sync-runtime-surfaces.recursive-stale" "prune-stale skips retired recursive-file managed skill directory (upstream gap characterization)" run_sync_runtime_surfaces_prune_recursive_stale_probe
+record_case "meta.sync-runtime-surfaces.review-report" "sync-runtime-surfaces reports prune=review-needed when prune-stale leaves stale candidates" run_sync_runtime_surfaces_prune_review_reporting_probe
+record_case "meta.sync-runtime-surfaces.hermes-wording" "sync-runtime-surfaces uses neutral non-destructive wording for hermes prune-skipped paths" run_sync_runtime_surfaces_prune_review_hermes_wording_probe
+record_case "meta.sync-runtime-surfaces.claude-hooks" "sync-runtime-surfaces merges Claude settings hooks without dropping custom hooks" run_sync_runtime_surfaces_claude_settings_hooks_probe
+record_case "meta.sync-runtime-surfaces.claude-registry" "sync-runtime-surfaces materializes and installs Claude plugins for skill visibility" run_sync_runtime_surfaces_claude_plugin_registry_probe
+record_case "meta.sync-runtime-surfaces.codex-marketplace" "sync-runtime-surfaces ships Codex marketplace entries with required policy metadata" run_sync_runtime_surfaces_codex_marketplace_shape_probe
+record_case "meta.sync-runtime-surfaces.codex-registry" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe
+record_case "meta.sync-runtime-surfaces.codex-missing" "sync-runtime-surfaces fails Codex plugin activation when the Codex CLI is unavailable" run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe
+record_case "meta.sync-runtime-surfaces.codex-preview" "sync-runtime-surfaces prints a Codex activation plan without executing it under dry-run" run_sync_runtime_surfaces_codex_plugin_registry_planned_probe
+record_case "meta.product-leak-unused-allow" "product leak audit rejects allowlist entries without active rendered artifacts" run_product_leak_unused_allow_probe
 
 exit "$failures"

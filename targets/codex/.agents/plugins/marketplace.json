@@ -4,23 +4,9 @@
     "name": "graysurf"
   },
   "metadata": {
-    "description": "Codex marketplace for agent-runtime-kit — 11 plugins (browser, code-review, computer-use, conversation, dispatch, evidence, issue, media, meta, pr, reporting). Registered via `codex plugin marketplace add` and installed per plugin with `codex plugin add <plugin>@codex-kit`; Codex caches each plugin under $CODEX_HOME/plugins/cache/codex-kit/<plugin>/<version>/ and discovers its bundled skills/<skill>/SKILL.md. Activation is gated (see scripts/sync-runtime-surfaces.sh); the flat $CODEX_HOME/skills root stays the default discovery path until cut-over."
+    "description": "Codex marketplace for agent-runtime-kit — 9 plugins (code-review, computer-use, conversation, dispatch, issue, media, meta, pr, reporting). Registered via `codex plugin marketplace add` and installed per plugin with `codex plugin add <plugin>@codex-kit`; Codex caches each plugin under $CODEX_HOME/plugins/cache/codex-kit/<plugin>/<version>/ and discovers its bundled skills/<skill>/SKILL.md. Activation is gated (see scripts/sync-runtime-surfaces.sh); the flat $CODEX_HOME/skills root stays the default discovery path until cut-over."
   },
   "plugins": [
-    {
-      "name": "browser",
-      "version": "0.1.0",
-      "source": {
-        "source": "local",
-        "path": "./plugins/browser"
-      },
-      "description": "Browser automation + browser-facing QA — agent-browser, playwright, browser-qa, web-qa, browser-session, web-evidence.",
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Productivity"
-    },
     {
       "name": "code-review",
       "version": "0.1.0",
@@ -56,7 +42,7 @@
         "source": "local",
         "path": "./plugins/conversation"
       },
-      "description": "Conversation-to-artifact workflows — discussion-to-implementation-doc, handoff-session-prompt.",
+      "description": "Conversation-to-artifact workflows — discussion-to-implementation-doc, guided-feature-build, and handoff-session-prompt.",
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
@@ -70,21 +56,7 @@
         "source": "local",
         "path": "./plugins/dispatch"
       },
-      "description": "Plan-driven multi-PR delivery on GitHub — create/deliver/closeout plan-tracking issues, dispatch-plan, dispatch-lane execution and review.",
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Productivity"
-    },
-    {
-      "name": "evidence",
-      "version": "0.1.0",
-      "source": {
-        "source": "local",
-        "path": "./plugins/evidence"
-      },
-      "description": "nils-cli workflow-evidence wrappers — canary-check, docs-impact, model-cross-check, review-evidence, skill-usage, test-first-evidence, web-evidence.",
+      "description": "Two governed plan outcomes — L2 plan tracking and L3 multi-lane dispatch — with lifecycle phases routed internally.",
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
@@ -98,7 +70,7 @@
         "source": "local",
         "path": "./plugins/issue"
       },
-      "description": "GitHub Issue lifecycle skills — issue-follow-up.",
+      "description": "GitHub and GitLab issue outcomes — issue-follow-up and issue-triage.",
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
@@ -126,7 +98,7 @@
         "source": "local",
         "path": "./plugins/meta"
       },
-      "description": "Workflow primitives — agent-docs, agent-out, agent-scope-lock, bootstrap, deploy, heuristic-inbox, pre-pr, release, repo-retro, semantic-commit, setup-project.",
+      "description": "Explicit runtime and repository maintenance outcomes — bootstrap, deploy, skill lifecycle, release, setup, sync, version bump, and worktree triage.",
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
@@ -140,7 +112,7 @@
         "source": "local",
         "path": "./plugins/pr"
       },
-      "description": "PR / MR lifecycle (GitHub + GitLab) — create/close/deliver × feat/fix and dispatch lane PRs. Hooked via block-direct-pr-create.",
+      "description": "One governed GitHub/GitLab PR and MR delivery outcome with create, review, repair, merge, close, and abandon modes routed internally.",
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
