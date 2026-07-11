@@ -22,7 +22,7 @@
 | --- | --- | --- | --- | --- |
 | 1.1 | Review all 66 disposition rows | done | #561 handoff and frozen ledger; https://github.com/graysurf/agent-runtime-kit/issues/568; reviewed=26 pending=40; focused reviewed-active contract and full `scripts/ci/all.sh` positions 1-15 pass; PR #569 merged as b4a5a8a | Lane A (`disposition`); no source retirement in this pass |
 | 2.1 | Migrate Browser and Evidence behavior | in-progress | pending lane PR and validation; nils-cli #1115; dispatch #568 | Lane B (`browser-evidence`); replacement behavior only |
-| 2.2 | Converge all remaining agent-only skill families | in-progress | pending lane PR and validation; dispatch #568 | Lane C (`remaining-skills`); replacement behavior only |
+| 2.2 | Converge all remaining agent-only skill families | done | PR #571 merged as 0c9cb095; provider CI pass; review threads resolved; pinned full CI positions 1-15 and hooks 97/97 pass | Lane C (`remaining-skills`); replacement behavior only |
 | 3.1 | Apply manifest, render, compatibility, and cleanup retirement | pending | pending second Lane A PR and validation | Sole shared manifest/source retirement owner |
 | 3.2 | Add portable convergence deployment acceptance | pending | pending Lane D PR and validation | Public generic roles; no private host details |
 | 4.1 | Activate and verify both runtime roles from merged main | pending | pending private redacted acceptance | Lane D post-integration; private artifacts stay local |
