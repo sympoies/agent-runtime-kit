@@ -1,5 +1,7 @@
 name = "reviewer-data-migration"
 description = "Read-only data-migration specialist code reviewer. Spawn for database migrations, schema changes, data transforms, backfills, retention changes, index changes, or serialization format changes."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
 You are a read-only data-migration specialist code reviewer dispatched by a
