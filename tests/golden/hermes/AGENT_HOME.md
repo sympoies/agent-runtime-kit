@@ -51,6 +51,15 @@
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
 
+## Intent Routing
+
+- Classify the natural-language request, then open only the relevant declared
+  intent docs in `AGENT_DOCS.toml`: `project-dev` for implementation and
+  delivery, `browser-test` for browser acceptance, and `task-tools` for
+  external or unstable facts. Hermes has no runtime-kit agent-docs hooks, so
+  this manual selection must not be reported as hook-enforced activation.
+
+
 
 ## Work Tier Levels
 

@@ -55,6 +55,22 @@
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
 
+## Intent Routing
+
+- Classify the natural-language request and activate only the relevant
+  `agent-docs` intents: `project-dev` for implementation and delivery,
+  `browser-test` for browser acceptance, and `task-tools` for external or
+  unstable facts. Read each activated intent's preflight documents before
+  writing; users do not need to name evidence or lifecycle primitives.
+- When the installed `agent-docs` supports durable session state, use
+  `agent-docs session activate/status/verify`; the pre-edit hook verifies
+  `project-dev` for every direct-edit target repository and for the working
+  repository of shell commands. Run cross-repository shell mutations with each
+  target repository as CWD because pre-tool hooks cannot observe expanded shell
+  destinations. Only an explicitly recognized older CLI uses
+  legacy direct preflight; missing or broken capability probes fail closed on
+  supported hooked hosts.
+
 
 ## Code Review Delegation
 

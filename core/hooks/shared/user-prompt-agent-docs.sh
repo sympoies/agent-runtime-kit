@@ -3,15 +3,12 @@
 # UserPromptSubmit hook: inject a short, language-agnostic agent-docs awareness
 # cue for repos that declare intents in AGENT_DOCS.toml.
 #
-# The cue covers EVERY declared intent (for example project-dev and task-tools),
-# enumerated from `agent-docs list` and resolved per intent via `agent-docs
-# preflight --intent` (with the declared-intent guard when the installed
-# agent-docs supports it). There is no English-keyword gating: the cue is driven
-# by what the repo declares, so a non-English prompt in a policy repo still gets
-# the cue, and declaring a new intent in AGENT_DOCS.toml activates it
-# automatically.
-# It fires at most once per session per repo (falling back to once per day) so it
-# is a start-of-task nudge, not a per-prompt reminder.
+# On a released agent-docs with durable session state, the cue expands only
+# active intents and lists inactive routes without injecting their runbooks.
+# The agent classifies the natural-language request and activates the relevant
+# intent; no English-keyword matching or evidence-skill selection is required.
+# Older agent-docs releases keep the compatibility behavior of resolving every
+# declared intent and do not claim selective activation was enforced.
 #
 set -uo pipefail
 
@@ -22,9 +19,15 @@ if [[ "${AGENT_RUNTIME_SUPPRESS_PREFLIGHT:-0}" == "1" ||
 fi
 
 command -v git >/dev/null 2>&1 || exit 0
-command -v agent-docs >/dev/null 2>&1 || exit 0
 python_bin="$(command -v python3 || true)"
 [[ -z "$python_bin" ]] && exit 0
+agent_docs_candidate="$(command -v agent-docs 2>/dev/null || true)"
+[[ "$agent_docs_candidate" == /* && -x "$agent_docs_candidate" ]] || exit 0
+agent_docs_bin="$(
+  "$python_bin" -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' \
+    "$agent_docs_candidate" 2>/dev/null || true
+)"
+[[ "$agent_docs_bin" == /* && -x "$agent_docs_bin" ]] || exit 0
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -z "$repo_root" ]] && exit 0
@@ -67,8 +70,7 @@ repo_hash="$(printf '%s' "$repo_root" | cksum 2>/dev/null | awk '{print $1}' || 
 key="${session_id:-$(date +%Y%m%d)}"
 stamp_dir="$HOME/.cache/agent-runtime-kit"
 stamp_product="${product:-agent-runtime}"
-stamp="$stamp_dir/preflight-cue-${stamp_product}-${repo_hash}-${key}.stamp"
-[[ -f "$stamp" ]] && exit 0
+stamp_base="$stamp_dir/preflight-cue-${stamp_product}-${repo_hash}-${key}"
 
 docs_home="${AGENT_RUNTIME_DOCS_HOME:-${AGENT_DOCS_HOME:-}}"
 if [[ -z "$docs_home" ]] && runtime_kit_source_checkout "$repo_root"; then
@@ -78,19 +80,23 @@ dh_args=()
 [[ -n "$docs_home" ]] && dh_args=(--docs-home "$docs_home")
 
 require_declared_args=()
-if agent-docs "${dh_args[@]}" --project-path "$repo_root" \
+if "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
   preflight --help 2>/dev/null | grep -q -- "--require-declared-intent"; then
   require_declared_args=(--require-declared-intent)
 fi
-if [[ -n "$product" ]] && agent-docs "${dh_args[@]}" --project-path "$repo_root" \
+if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
   preflight --help 2>/dev/null | grep -q -- "--product"; then
   product_args=(--product "$product")
 fi
 
 # Enumerate every declared intent, newest catalog wins. No hard-coded intent.
+# Keep a canonical identity separate from display order so even a session with
+# no active intent invalidates its cue when the declared catalog changes.
+catalog_json="$(
+  "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" list --format json 2>/dev/null || true
+)"
 intents="$(
-  agent-docs "${dh_args[@]}" --project-path "$repo_root" list --format json 2>/dev/null |
-    "$python_bin" -c '
+  printf '%s' "$catalog_json" | "$python_bin" -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -102,14 +108,116 @@ for intent in d.get("intents", []):
 ' 2>/dev/null || true
 )"
 [[ -z "$intents" ]] && exit 0
+catalog_identity="$(
+  printf '%s' "$catalog_json" | "$python_bin" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+intents = sorted({x for x in d.get("intents", []) if isinstance(x, str) and x})
+print(json.dumps(intents, separators=(",", ":")))
+' 2>/dev/null || true
+)"
 
-# Resolve each intent's document set + validation contract (preflight honors the
-# per-document `when` conditions; `list` alone does not).
+runtime_state_home() {
+  if [[ -n "${AGENT_RUNTIME_STATE_HOME:-}" ]]; then
+    printf '%s\n' "$AGENT_RUNTIME_STATE_HOME"
+    return
+  fi
+  case "$product" in
+    codex)
+      printf '%s\n' "${CODEX_AGENT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/codex}"
+      ;;
+    claude)
+      printf '%s\n' "${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/claude}"
+      ;;
+  esac
+}
+
+session_supported=0
+active_intents=""
+state_home=""
+status_json=""
+verify_json=""
+activation_stale=0
+record_identity=""
+if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+  session --help 2>/dev/null | grep -q -- "status" &&
+  "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+    session --help 2>/dev/null | grep -q -- "verify"; then
+  session_supported=1
+  state_home="$(runtime_state_home)"
+  if [[ -n "$session_id" && -n "$state_home" ]]; then
+    status_json="$("$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+      session status --session-id "$session_id" --product "$product" \
+      --state-home "$state_home" --format json 2>/dev/null || true)"
+    active_intents="$(
+      printf '%s' "$status_json" | "$python_bin" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+data = d.get("data") if isinstance(d, dict) else None
+for intent in (data or {}).get("active_intents", []):
+    if isinstance(intent, str) and intent:
+        print(intent)
+' 2>/dev/null || true
+    )"
+    if [[ -n "$active_intents" ]]; then
+      verify_args=()
+      while IFS= read -r active_intent; do
+        [[ -n "$active_intent" ]] && verify_args+=(--require-intent "$active_intent")
+      done <<<"$active_intents"
+      verify_json="$("$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+        session verify --session-id "$session_id" --product "$product" \
+        --state-home "$state_home" "${verify_args[@]}" --format json 2>/dev/null || true)"
+      verified="$(printf '%s' "$verify_json" | "$python_bin" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+data = d.get("data") if isinstance(d, dict) else None
+if d.get("ok") is True and isinstance(data, dict) and data.get("verified") is True:
+    print("yes")
+' 2>/dev/null || true)"
+      if [[ "$verified" != "yes" ]]; then
+        activation_stale=1
+        active_intents=""
+      fi
+    fi
+
+    record_file="$(printf '%s' "$status_json" | "$python_bin" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+data = d.get("data") if isinstance(d, dict) else None
+value = (data or {}).get("record_file")
+if isinstance(value, str) and value and not value.startswith("/") and ".." not in value.split("/"):
+    print(value)
+' 2>/dev/null || true)"
+    if [[ -n "$record_file" && -f "$state_home/$record_file" ]]; then
+      record_identity="$(cksum <"$state_home/$record_file" 2>/dev/null || true)"
+    fi
+  fi
+fi
+
+selected_intents="$intents"
+if [[ "$session_supported" == "1" ]]; then
+  selected_intents="$active_intents"
+fi
+
+# Resolve only selected intents. With durable session state this means active
+# intents; with an older CLI it preserves the previous all-intents fallback.
 preflights=()
 while IFS= read -r intent; do
   [[ -z "$intent" ]] && continue
   pf="$(
-    agent-docs "${dh_args[@]}" --project-path "$repo_root" \
+    "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
       preflight --intent "$intent" "${require_declared_args[@]}" \
       "${product_args[@]}" \
       --format json 2>/dev/null
@@ -125,19 +233,46 @@ while IFS= read -r intent; do
   fi
   [[ -z "$pf" ]] && continue
   preflights+=("$pf")
-done <<<"$intents"
-[[ ${#preflights[@]} -eq 0 ]] && exit 0
+done <<<"$selected_intents"
 
-# Compose one cue across all intents: per-intent required docs, plus the union
-# of declared validation commands (the finish-line gate enforces those).
+preflight_identity="$(printf '%s\n' "${preflights[@]}" | cksum 2>/dev/null || true)"
+activation_key="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+  "$session_supported" "$active_intents" "$activation_stale" "$status_json" \
+  "$verify_json" "$record_identity" "$preflight_identity" "$catalog_identity" | \
+  cksum | awk '{print $1}' || true)"
+stamp="${stamp_base}-${activation_key:-legacy}.stamp"
+[[ -f "$stamp" ]] && exit 0
+
+# Compose one cue across active intents and include a concise route to inactive
+# intents without loading their document bodies.
 cue="$(
-  "$python_bin" - "${preflights[@]}" <<'PY' 2>/dev/null || true
-import json, os, sys
+  AGENT_RUNTIME_DECLARED_INTENTS="$intents" \
+    AGENT_RUNTIME_ACTIVE_INTENTS="$active_intents" \
+    AGENT_RUNTIME_SESSION_SUPPORTED="$session_supported" \
+    AGENT_RUNTIME_SESSION_ID="$session_id" \
+    AGENT_RUNTIME_SESSION_PRODUCT="$product" \
+    AGENT_RUNTIME_SESSION_STATE_HOME="$state_home" \
+    AGENT_RUNTIME_SESSION_STALE="$activation_stale" \
+    AGENT_RUNTIME_RESOLVED_AGENT_DOCS="$agent_docs_bin" \
+    AGENT_RUNTIME_RESOLVED_DOCS_HOME="$docs_home" \
+    AGENT_RUNTIME_RESOLVED_PROJECT_PATH="$repo_root" \
+    "$python_bin" - "${preflights[@]}" <<'PY' 2>/dev/null || true
+import json, os, shlex, sys
 lines = []
 val_cmds = []
 home_roots = set()
 project_roots = set()
 preflight_docs = []
+declared = [x for x in os.environ.get("AGENT_RUNTIME_DECLARED_INTENTS", "").splitlines() if x]
+active = [x for x in os.environ.get("AGENT_RUNTIME_ACTIVE_INTENTS", "").splitlines() if x]
+session_supported = os.environ.get("AGENT_RUNTIME_SESSION_SUPPORTED") == "1"
+session_id = os.environ.get("AGENT_RUNTIME_SESSION_ID", "")
+product = os.environ.get("AGENT_RUNTIME_SESSION_PRODUCT", "")
+state_home = os.environ.get("AGENT_RUNTIME_SESSION_STATE_HOME", "")
+activation_stale = os.environ.get("AGENT_RUNTIME_SESSION_STALE") == "1"
+resolved_docs_home = os.environ.get("AGENT_RUNTIME_RESOLVED_DOCS_HOME", "")
+resolved_project_path = os.environ.get("AGENT_RUNTIME_RESOLVED_PROJECT_PATH", "")
+resolved_agent_docs = os.environ.get("AGENT_RUNTIME_RESOLVED_AGENT_DOCS", "")
 
 
 def rel_under(path, root):
@@ -199,6 +334,34 @@ if project_roots:
     root_parts.append("project=" + " | ".join(sorted(project_roots)))
 if root_parts:
     lines.append("Doc roots: " + ", ".join(root_parts) + ".")
+
+if session_supported:
+    if activation_stale:
+        lines.append("The prior agent-docs activation is stale or unverifiable; reactivate before writing.")
+    if active:
+        lines.append("Active agent-docs intents: " + ", ".join(active) + ".")
+    inactive = [intent for intent in declared if intent not in active]
+    if inactive:
+        lines.append("Inactive available intents: " + ", ".join(inactive) + ".")
+        if session_id and product:
+            context_args = []
+            if resolved_docs_home:
+                context_args += ["--docs-home", resolved_docs_home]
+            context_args += ["--project-path", resolved_project_path]
+            prefix = shlex.quote(resolved_agent_docs) + " " + " ".join(
+                shlex.quote(value) for value in context_args
+            )
+            lines.append(
+                "Classify the request, then activate only relevant inactive intents before writing: "
+                f"{prefix} session activate --session-id {shlex.quote(session_id)} "
+                f"--product {product} --state-home {shlex.quote(state_home)} --intent <intent>; "
+                f"then read {prefix} preflight --intent <intent>."
+            )
+        else:
+            lines.append(
+                "Selective activation is supported but this hook lacks session/product context; "
+                "do not claim intent activation was verified."
+            )
 
 for d, intent, docs in preflight_docs:
     if docs:

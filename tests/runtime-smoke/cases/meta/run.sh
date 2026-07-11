@@ -731,7 +731,12 @@ preflight_lines = [
 ]
 
 assert len(link_lines) == 2, link_lines
-assert len(preflight_lines) == 2, preflight_lines
+assert len(preflight_lines) == 3, preflight_lines
+preflight_intents = {
+    line.rsplit("--intent ", 1)[1].split()[0]
+    for _, line in preflight_lines
+}
+assert preflight_intents == {"browser-test", "project-dev", "task-tools"}, preflight_lines
 assert len(sync_lines) == 2, sync_lines
 sync_products = []
 for _, sync_line in sync_lines:

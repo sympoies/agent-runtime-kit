@@ -1,20 +1,33 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-11 (refreshed for `v1.21.15`)
+- Snapshot date: 2026-07-11 (refreshed for `v1.21.17`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.21.15`
+- Active `git describe --tags` output: `v1.21.17`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.21.15`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.17`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `136767ff`
-  (`chore(release): bump cli versions to 1.21.15 (#1113)`)
+- Head commit: `291e4907`
+  (`chore(release): bump cli versions to 1.21.17 (#1119)`)
 - Release:
-  [`v1.21.15`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.15),
+  [`v1.21.17`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.17),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.17` advances the pin from `v1.21.15` for the durable agent control
+  plane ([#1117](https://github.com/sympoies/nils-cli/pull/1117)):
+  - `agent-docs session activate/status/verify` persists selective intent state
+    by repository, product, and opaque session identifier; shared path classes
+    provide deterministic pre-edit classification.
+  - `docs-impact` gains durable record/show/verify flows,
+    `test-first-evidence check` gains classified/pre-edit/delivery phases, and
+    `skill-usage` v2 generalizes ownership to skills, workflows, and intents
+    while preserving v1 readers.
+  - `evidence` migration and `heuristic-inbox` promotion accept mixed v1/v2
+    usage owners, and runtime installation receipts gain focused doctor
+    verification. Runtime-kit consumes the first two groups and the mixed-owner
+    archive/closeout path in the Browser/Evidence control plane.
 - `v1.21.15` advances the pin from `v1.21.14`:
   - `agent-runtime` accepts skills manifest schema v2 while preserving v1,
     validates invocation role, exposure, compatibility, and pending-disposition
@@ -1066,6 +1079,14 @@ should reference binary names from the **Binary** column when declaring
 changes a consumed surface. The machine-readable pin the CI gate enforces
 lives in `docs/source/nils-cli-pin.yaml`; the `meta:nils-cli-bump` skill
 keeps both in sync on a release bump.
+
+As of `v1.21.17`, the consumed rows below have these additive floors:
+`agent-docs` supplies durable selective-intent session state and path
+classification; `agent-workflow-primitives` supplies durable `docs-impact`,
+phase-aware `test-first-evidence`, and v2 `skill-usage` ownership; and
+`nils-evidence` plus the `heuristic-inbox` binary accept those mixed v1/v2
+owners during archive and closeout promotion. No Browser/Evidence command was
+retired or renamed in this release.
 
 Notes on derivation:
 

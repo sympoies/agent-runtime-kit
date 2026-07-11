@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.21.15"
+  pinned_tag: "v1.21.17"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "af79fc18dded42314e9514e095d955522aef61093cae6b575399504d68896e11"
-    linux_arm64: "6ece89e0fb9167cd3f5d41cb5cf4ae07f71c2abbf0aef7ef9fa2238bdd9be18d"
+    linux_amd64: "20aa61952f4fad44719faa700418d8c72176b5ca5c0013c4bcef990b4c6efabc"
+    linux_arm64: "e54888ad30b27f5006c2c473344c182947b964e486c6eb2f9a57edb57fb5b8db"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -46,19 +46,25 @@ required_clis:
     min: "1.17.0"
   - bin: plan-archive     # discover / migrate / refresh / query
     min: "0.25.5"
-  - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2`
-    min: "1.12.1"
+  - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2` + durable product/session-scoped intent activation and path classification
+    min: "1.21.17"
   - bin: agent-memory     # shared git-backed memory index consumed opportunistically by the Codex UserPromptSubmit memory cue hook (`agent-memory index global`)
     min: "0.28.1"
-  - bin: evidence         # durable skill-usage evidence archive surface: migrate (--host + blocked-record handling), unclassified-host block (a resolved host absent from hosts.yaml is blocked, not written — the kit's gamania-safety guarantee), working_repo_roots identity rescue, cwd/origin + slug identity hardening, the purge retention command (--host/--class delete-on-termination) with apply safety, skill-path home-relativization so rollup ids / dir names / the skill field never leak the machine home, and prune-source --archived-only source cleanup after archive catalog digest match
-    min: "1.12.0"
+  - bin: evidence         # durable usage evidence archive surface: migrate (--host + blocked-record handling), mixed skill-usage v1/v2 owner provenance, unclassified-host block, working_repo_roots identity rescue, cwd/origin + slug identity hardening, purge retention, home-relativized skill paths, and prune-source --archived-only
+    min: "1.21.17"
   - bin: git-cli          # managed worktree add/list/remove/prune surface
     min: "0.31.5"
-  - bin: heuristic-inbox  # deliver + --label: records-branch PR writeback + default slug auto-suffixing (closeout consumer) + operation-record archive / status lifecycle support
-    min: "1.8.0"
+  - bin: heuristic-inbox  # deliver + --label: records-branch PR writeback + default slug auto-suffixing + operation-record lifecycle + normalized skill/workflow/intent usage owners for closeout promotion
+    min: "1.21.17"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos
     min: "1.0.9"
   - bin: agent-runtime    # home-prompt render plus skills-manifest v2 parsing and semantic `list-skills` diagnostics
     min: "1.21.15"
   - bin: macos-agent      # macOS Computer Use skill: AX/window/screenshot/wait/scenario plus key, move, bounded drag, scroll, modifier-assisted mouse actions, and held-input cleanup
     min: "1.21.13"
+  - bin: docs-impact      # durable scan disposition record/show/verify workflow
+    min: "1.21.17"
+  - bin: skill-usage      # v2 skill/workflow/intent owner records with v1 compatibility
+    min: "1.21.17"
+  - bin: test-first-evidence # phase-aware classified/pre-edit/delivery checks over repository path classes
+    min: "1.21.17"
