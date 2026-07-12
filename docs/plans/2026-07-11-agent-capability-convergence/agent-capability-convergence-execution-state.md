@@ -5,17 +5,18 @@
 - Source document: docs/plans/2026-07-11-agent-capability-convergence/agent-capability-convergence-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/568>
 - Current sprint: Sprint 4
-- Status: complete
-- Current gate: Dispatch closeout
+- Status: complete; tracking issue closed
+- Current gate: complete
 - Plan branch: `feat/agent-capability-convergence`
 - Integration PR: #582 merged as e99e024
 - Current lanes: complete
-- Next task: strict dispatch closeout for #568 and parent closeout for #562
+- Next task: close parent #562
 - Upstream prerequisite: complete; nils-cli v1.21.17 and Tasks 2.1/2.2 landed
 - Task 3.1 gate: complete; PR #577 merged as 92da055
 - Task 3.2 gate: complete; PR #581 merged as bda76df
 - Blockers: none
 - Last updated: 2026-07-12
+- Branch/commit/PR: graysurf/agent-runtime-kit#577 merged (<https://github.com/graysurf/agent-runtime-kit/pull/577>); graysurf/agent-runtime-kit#581 merged (<https://github.com/graysurf/agent-runtime-kit/pull/581>); graysurf/agent-runtime-kit#582 merged (<https://github.com/graysurf/agent-runtime-kit/pull/582>); graysurf/agent-runtime-kit#588 merged (<https://github.com/graysurf/agent-runtime-kit/pull/588>)
 
 ## Task Ledger
 
@@ -117,3 +118,6 @@
   was forward-tested from a non-repository working directory, synchronized to
   both runtime roles, and kept outside the public capability catalog. The plan
   now advances to strict #568 closeout and parent #562 closure.
+- 2026-07-12: strict dispatch closeout passed with all linked PRs merged and all
+  seven lifecycle roles visible and lint-clean. Tracking issue #568 is closed;
+  only parent #562 closure remains.
