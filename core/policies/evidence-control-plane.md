@@ -31,17 +31,80 @@ into a working repository.
 
 ## Test-First Paths
 
+For testable production behavior, the implementation parent owns this durable
+engineering lifecycle even though the CLI record is an internal primitive:
+
+1. Classify bugs, features, parsers, state machines, APIs, workflows, and
+   user-visible behavior as testable by default.
+2. Declare the contract delta: retained behavior and invariants, changed or
+   removed behavior, and added behavior. Do not infer the contract only from
+   the implementation diff.
+3. Scan materially affected tests, fixtures, snapshots, mocks, contract
+   consumers, and higher-level journeys. Disposition each target as `keep`,
+   `update-spec`, `remove-superseded`, `add-missing`, or `refactor-only`, with
+   an invariant and rationale; group targets that share one decision.
+4. Choose the lowest stable behavioral boundary that directly proves the
+   contract. Unit/property, integration, contract, and E2E owners are all
+   valid; do not force a private implementation boundary.
+5. Capture meaningful red before production edits: command or scenario,
+   non-zero result, test identity, expected failure, and observed failure must
+   agree. Compilation, setup, environment, fixture, unrelated failure, and
+   retry-only green do not qualify.
+6. Implement narrowly, then add only distinct-risk partitions, boundaries,
+   integrations, or failure modes. Coverage percentage is diagnostic, not an
+   objective, and does not justify duplicate cases.
+7. Converge the suite on observable outcomes and deterministic, isolated
+   fixtures. Removed tests must retire the invariant or name the owner that
+   preserves every still-valid part.
+8. Validate by risk across the focused owner, affected suite, and shared
+   contract consumers; record each scope and declare residual gaps explicitly.
+
+Flaky tests are defects. Quarantine is deferred debt only when it has a durable
+owner/follow-up, expiry or removal condition, and substitute validation.
+`non-testable` waivers explain why meaningful red cannot exist and name
+substitute validation; `deferred-debt` waivers additionally carry that durable
+follow-up and expiry. Neither waiver removes contract-delta, affected-test,
+final-validation, or residual-gap decisions.
+
 For testable behavior, initialize the record before production edits and make
 the pre-edit decision explicit:
 
 ```bash
 test-first-evidence init --out "$EVIDENCE_DIR" \
-  --classification behavior-change --production-path src/example
+  --classification behavior-change --production-path src/example \
+  --retained-behavior "existing callers keep their result" \
+  --changed-behavior "invalid input returns a typed error" \
+  --invariant "valid input behavior is unchanged"
+test-first-evidence record-impact --out "$EVIDENCE_DIR" \
+  --target "tests::invalid_input" --disposition update-spec \
+  --protected-behavior "invalid-input contract" \
+  --reason "the old expectation represents the intentionally replaced spec" \
+  --validation-scope focused --validation-scope affected-suite
 test-first-evidence record-failing --out "$EVIDENCE_DIR" \
-  --command "<focused test>" --exit-code 1 --summary "<observed failure>"
+  --command "cargo test invalid_input" --exit-code 101 \
+  --test-name "tests::invalid_input" \
+  --expected-failure "expected typed error, received old fallback" \
+  --observed-failure "assertion shows old fallback" \
+  --summary "new contract fails before production edit"
 test-first-evidence check --out "$EVIDENCE_DIR" --phase pre-edit \
   --project-path . --path src/example --format json
+
+# Edit production behavior only after the pre-edit check.
+test-first-evidence record-final --out "$EVIDENCE_DIR" \
+  --command "cargo test invalid_input" --status pass --scope focused
+test-first-evidence record-final --out "$EVIDENCE_DIR" \
+  --command "cargo test affected_module" --status pass --scope affected-suite
+test-first-evidence record-gap --out "$EVIDENCE_DIR" --none
+test-first-evidence verify --out "$EVIDENCE_DIR" --format json
 ```
+
+Repeated failing and final-validation records append deterministically. A later
+attempt for the same command/scope supersedes the earlier attempt's effective
+status without deleting history; every other latest failure still blocks.
+The CLI can reject missing fields, unsafe removals or waivers, duplicate
+identities, unresolved latest failures, and v1 delivery. It cannot decide
+whether red agrees semantically, whether the owner boundary is right, or
+whether cases are redundant; those remain parent and testing-review judgments.
 
 Docs-only and generated-only work may record an explicit waiver. An unavailable
 test harness may also use a waiver only when the parent states why no failing

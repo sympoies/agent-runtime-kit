@@ -103,16 +103,23 @@ diagnostics without exposing either as a separate delivery outcome.
   `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit
   flag > repo config > global config > default (off). A global opt-in turns the
   gate on for every repo without a per-repo file.
-- The evidence directory must hold a record that `test-first-evidence verify`
-  accepts: a failing test **or** an explicit waiver, plus a passing final
-  validation. The parent workflow owns classification and waiver judgment;
-  `core/policies/evidence-control-plane.md` owns routing and the CLI owns record
-  mechanics.
-- A waiver is the sanctioned path when a change is not testable production
-  behavior (docs-only, generated-only, no usable harness, emergency hotfix); it
-  still records substitute validation. Waivers are expected and legitimate — the
-  gate requires a *recorded decision*, not a test on every PR.
-- Failures surface as `test_first_evidence_required` / `_incomplete` /
-  `_unreadable` (exit `DATA`). Pin and consumed-surface detail live in
-  `docs/source/nils-cli-surface.md`; record mechanics live in the
+- The evidence directory must hold a strict-verification-clean
+  `test-first-evidence.record.v2`: testable classification, actual contract
+  delta, affected-test decision, meaningful failing fields or a complete
+  waiver, scoped passing validation, and explicit residual gaps. The parent
+  workflow owns classification, affected-test and waiver judgment, suite
+  convergence, and residual-gap disclosure;
+  `core/policies/evidence-control-plane.md` owns routing, while the
+  `test-first-evidence` CLI owns storage and strict verification.
+- Record v1 remains readable but is ineligible for feature/bug delivery. Re-run
+  the v2 lifecycle rather than inferring missing impact and ownership facts.
+- A non-testable waiver records why meaningful red cannot exist and substitute
+  validation. Deferred test debt additionally requires follow-up and expiry;
+  neither path removes final-validation or residual-gap requirements.
+- Failures surface as `test_first_evidence_required`,
+  `test_first_evidence_v1`, `test_first_evidence_classification`,
+  `test_first_evidence_incomplete`, or `test_first_evidence_unreadable` (exit
+  `DATA`). Pin and consumed-surface detail live in
+  `docs/source/nils-cli-surface.md`; the full engineering contract lives in
+  `core/policies/evidence-control-plane.md`, and record mechanics live in the
   `test-first-evidence` CLI.

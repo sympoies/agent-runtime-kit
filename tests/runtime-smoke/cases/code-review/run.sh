@@ -33,6 +33,21 @@ record_case() {
   results_record_case "$@"
 }
 
+run_testing_specialist_contract_probe() {
+  local agent="$REPO_ROOT/core/agents/code-review/reviewer-testing/AGENT.md.tera"
+  local specialist="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/specialists/testing.md"
+
+  for path in "$agent" "$specialist"; do
+    grep -Fiq 'test-delta completeness' "$path"
+    grep -Fiq 'lost invariants' "$path"
+    grep -Fiq 'duplicate owners' "$path"
+    grep -Fiq 'meaningful red' "$path"
+    grep -Fiq 'stable behavioral boundary' "$path"
+    grep -Fiq 'deterministic fixtures' "$path"
+    grep -Fiq 'residual gaps' "$path"
+  done
+}
+
 init_diff_fixture() {
   local tree commit
 
@@ -239,6 +254,7 @@ run_code_review_outcome_routing_probe() {
 }
 
 failures=0
+record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
 record_case "code-review.outcome-routing.pre-merge" "pre-merge gate mandatory forced specialists passed" run_pre_merge_gate_probe

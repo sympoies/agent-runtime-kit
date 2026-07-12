@@ -99,30 +99,146 @@ PY
 
 run_test_first_evidence_probe() {
   local out_dir="$EVIDENCE_ARTIFACTS_DIR/test-first-evidence"
+  local removal_dir="$EVIDENCE_ARTIFACTS_DIR/test-first-removal-invalid"
+  local waiver_dir="$EVIDENCE_ARTIFACTS_DIR/test-first-waiver-invalid"
+  local v1_dir="$EVIDENCE_ARTIFACTS_DIR/test-first-v1"
+  local rc
   require_evidence_bin test-first-evidence || return 1
-  mkdir -p "$out_dir"
+  require_evidence_bin python3 || return 1
+  mkdir -p "$out_dir" "$removal_dir" "$waiver_dir" "$v1_dir"
+
+  # Policy owns qualitative judgment; the CLI owns deterministic v2 records.
+  # Keep this assertion focused on the durable concepts, not CLI internals.
+  grep -Fq '## Test-First Paths' \
+    "$REPO_ROOT/core/policies/evidence-control-plane.md"
+  grep -Fq 'Declare the contract delta' \
+    "$REPO_ROOT/core/policies/evidence-control-plane.md"
+  grep -Fq 'Capture meaningful red' \
+    "$REPO_ROOT/core/policies/evidence-control-plane.md"
+  grep -Fq 'Coverage percentage is diagnostic' \
+    "$REPO_ROOT/core/policies/evidence-control-plane.md"
+
   test-first-evidence init \
     --out "$out_dir" \
-    --classification docs-only \
-    --production-path README.md \
+    --classification behavior-change \
+    --production-path core/policies/evidence-control-plane.md \
+    --retained-behavior "test-first remains proportional to material risk" \
+    --changed-behavior "old-spec tests have explicit dispositions" \
+    --added-behavior "validation scopes and residual gaps are durable evidence" \
+    --invariant "the forge gate remains opt-in" \
     --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.init.json"
-  test-first-evidence record-waiver \
+  test-first-evidence record-impact \
     --out "$out_dir" \
-    --reason "docs-only runtime smoke fixture" \
-    --substitute-validation "bash -n tests/runtime-smoke/run.sh" \
-    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.waiver.json"
+    --target "tests/runtime-smoke/cases/evidence" \
+    --disposition update-spec \
+    --protected-behavior "released evidence lifecycle remains deterministic" \
+    --reason "the fixture intentionally migrates from record v1 to v2" \
+    --validation-scope focused \
+    --validation-scope affected-suite \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.impact.json"
+  test-first-evidence record-failing \
+    --out "$out_dir" \
+    --command "bash tests/runtime-smoke/run.sh --mode deterministic --domain evidence" \
+    --exit-code 1 \
+    --test-name "evidence.selective-control-plane.test-first" \
+    --expected-failure "the old policy omits the durable v2 lifecycle" \
+    --observed-failure "the policy-owned lifecycle assertion failed" \
+    --summary "runtime smoke captured the intended contract migration" \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.failing.json"
+  test-first-evidence record-final \
+    --out "$out_dir" \
+    --command "bash -n tests/runtime-smoke/cases/evidence/run.sh" \
+    --status pass \
+    --scope focused \
+    --summary "focused v2 runtime smoke fixture passed" \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.final-focused.json"
   test-first-evidence record-final \
     --out "$out_dir" \
     --command "bash tests/runtime-smoke/run.sh --mode deterministic --domain evidence" \
     --status pass \
-    --summary "runtime smoke evidence fixture passed" \
-    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.final.json"
+    --scope affected-suite \
+    --summary "evidence domain passed" \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.final-suite.json"
+  test-first-evidence record-gap \
+    --out "$out_dir" \
+    --none \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.gap.json"
   test-first-evidence verify \
     --out "$out_dir" \
     --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.verify.json"
-  grep -q '"schema_version": "cli.test-first-evidence.verify.v1"' "$EVIDENCE_ARTIFACTS_DIR/test-first.verify.json"
+  grep -q '"schema_version": "cli.test-first-evidence.verify.v2"' "$EVIDENCE_ARTIFACTS_DIR/test-first.verify.json"
   grep -q '"ok": true' "$EVIDENCE_ARTIFACTS_DIR/test-first.verify.json"
   grep -q '"complete": true' "$EVIDENCE_ARTIFACTS_DIR/test-first.verify.json"
+  python3 - "$out_dir/test-first-evidence.json" <<'PY'
+import json
+import sys
+
+record = json.load(open(sys.argv[1], encoding="utf-8"))
+assert record["schema_version"] == "test-first-evidence.record.v2"
+assert len(record["test_impacts"]) == 1
+assert record["test_impacts"][0]["disposition"] == "update-spec"
+assert len(record["failing_tests"]) == 1
+assert len(record["final_validations"]) == 2
+assert record["no_residual_gaps"] is True
+PY
+
+  # Unsafe old-spec removal and deferred debt without durable ownership must
+  # fail with stable DATA errors.
+  test-first-evidence init \
+    --out "$removal_dir" \
+    --classification behavior-change \
+    --removed-behavior "retired behavior" \
+    --format json >/dev/null
+  set +e
+  test-first-evidence record-impact \
+    --out "$removal_dir" \
+    --target "tests::retired_behavior" \
+    --disposition remove-superseded \
+    --protected-behavior "retired behavior" \
+    --reason "the behavior was removed" \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.removal-error.json" 2>&1
+  rc="$?"
+  set -e
+  test "$rc" -eq 65
+  grep -q '"code": "remove-superseded-owner-required"' \
+    "$EVIDENCE_ARTIFACTS_DIR/test-first.removal-error.json"
+
+  test-first-evidence init \
+    --out "$waiver_dir" \
+    --classification behavior-change \
+    --changed-behavior "deferred behavior" \
+    --format json >/dev/null
+  set +e
+  test-first-evidence record-waiver \
+    --out "$waiver_dir" \
+    --reason "harness unavailable" \
+    --waiver-kind deferred-debt \
+    --why-no-red "the external harness is offline" \
+    --substitute-validation "manual contract review" \
+    --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.waiver-error.json" 2>&1
+  rc="$?"
+  set -e
+  test "$rc" -eq 65
+  grep -q '"code": "deferred-waiver-follow-up-required"' \
+    "$EVIDENCE_ARTIFACTS_DIR/test-first.waiver-error.json"
+
+  # Record v1 remains readable, but strict verification requires deliberate
+  # v2 re-recording because the missing maintenance facts are unknowable.
+  printf '%s\n' \
+    '{"schema_version":"test-first-evidence.record.v1","change_classification":"behavior-change","failing_test":{"command":"false","exit_code":1,"summary":"red","artifacts":[]},"final_validation":{"command":"true","status":"pass","artifacts":[]}}' \
+    >"$v1_dir/test-first-evidence.json"
+  test-first-evidence show --out "$v1_dir" --format json \
+    >"$EVIDENCE_ARTIFACTS_DIR/test-first.v1-show.json"
+  grep -q '"schema_version": "test-first-evidence.record.v1"' \
+    "$EVIDENCE_ARTIFACTS_DIR/test-first.v1-show.json"
+  set +e
+  test-first-evidence verify --out "$v1_dir" --format json \
+    >"$EVIDENCE_ARTIFACTS_DIR/test-first.v1-verify.json" 2>&1
+  rc="$?"
+  set -e
+  test "$rc" -eq 65
+  grep -q '"code": "v1-evidence-record"' \
+    "$EVIDENCE_ARTIFACTS_DIR/test-first.v1-verify.json"
 }
 
 run_review_evidence_probe() {
@@ -201,7 +317,7 @@ run_selective_intent_control_plane_probe() {
   local state_home="$EVIDENCE_ARTIFACTS_DIR/agent-docs-state"
   local test_first_dir="$EVIDENCE_ARTIFACTS_DIR/phase-aware-test-first"
   require_evidence_bin agent-docs || return 1
-  agent-docs --version | grep -q '1\.21\.17'
+  agent-docs --version | grep -q '1\.21\.19'
   agent-docs session --help | grep -q 'status'
   mkdir -p "$workspace/src" "$workspace/tests"
   printf '# Dev\n' >"$workspace/DEV.md"
@@ -285,8 +401,11 @@ assert record_path == expected_record_path, (record_path, expected_record_path)
 PY
 
   test-first-evidence init --out "$test_first_dir" \
-    --classification behavior-change --production-path src/lib.rs --format json \
+    --classification behavior-change --production-path src/lib.rs \
+    --changed-behavior "phase-aware fixture behavior changes" --format json \
     >"$EVIDENCE_ARTIFACTS_DIR/phase-aware.init.json"
+  test-first-evidence record-impact --out "$test_first_dir" --none \
+    --reason "the isolated phase fixture has no existing owner" --format json >/dev/null
   if test-first-evidence check --out "$test_first_dir" --phase pre-edit \
     --project-path "$workspace" --path src/lib.rs --format json \
     >"$EVIDENCE_ARTIFACTS_DIR/phase-aware.denied.json" 2>&1; then
@@ -296,7 +415,9 @@ PY
   grep -q '"code": "pre-edit-blocked"' "$EVIDENCE_ARTIFACTS_DIR/phase-aware.denied.json"
   test-first-evidence record-failing --out "$test_first_dir" \
     --command "false" --exit-code 1 --summary "fixture failure reproduced" \
-    --test-name "runtime smoke regression" --format json \
+    --test-name "runtime smoke regression" \
+    --expected-failure "phase-aware behavior is absent before implementation" \
+    --observed-failure "the focused fixture returned exit 1" --format json \
     >"$EVIDENCE_ARTIFACTS_DIR/phase-aware.failing.json"
   test-first-evidence check --out "$test_first_dir" --phase pre-edit \
     --project-path "$workspace" --path src/lib.rs --format json \
@@ -309,9 +430,16 @@ PY
     [[ "$classification" == "generated-only" ]] && path="build/output.rs"
     dir="$EVIDENCE_ARTIFACTS_DIR/phase-$classification"
     test-first-evidence init --out "$dir" --classification "$classification" \
-      --production-path "$path" --format json >/dev/null
+      --production-path "$path" \
+      --added-behavior "$classification fixture updates only its declared class" \
+      --format json >/dev/null
+    test-first-evidence record-impact --out "$dir" --none \
+      --reason "$classification has no production-test owner" --format json >/dev/null
     test-first-evidence record-waiver --out "$dir" \
-      --reason "$classification fixture" --substitute-validation "test -e $path" \
+      --waiver-kind non-testable \
+      --reason "$classification fixture" \
+      --why-no-red "$classification has no executable production behavior" \
+      --substitute-validation "test -e $path" \
       --format json >/dev/null
     test-first-evidence check --out "$dir" --phase pre-edit \
       --project-path "$workspace" --path "$path" --format json \
@@ -321,9 +449,16 @@ PY
 
   dir="$EVIDENCE_ARTIFACTS_DIR/phase-unavailable-harness"
   test-first-evidence init --out "$dir" --classification behavior-change \
-    --production-path src/lib.rs --format json >/dev/null
+    --production-path src/lib.rs \
+    --changed-behavior "fixture behavior changes without an available harness" \
+    --format json >/dev/null
+  test-first-evidence record-impact --out "$dir" --none \
+    --reason "the fixture intentionally has no usable harness" --format json >/dev/null
   test-first-evidence record-waiver --out "$dir" \
-    --reason "fixture harness unavailable" --substitute-validation "test -s src/lib.rs" \
+    --waiver-kind non-testable \
+    --reason "fixture harness unavailable" \
+    --why-no-red "the isolated fixture exposes no executable test harness" \
+    --substitute-validation "test -s src/lib.rs" \
     --format json >/dev/null
   test-first-evidence check --out "$dir" --phase pre-edit \
     --project-path "$workspace" --path src/lib.rs --format json \
@@ -332,9 +467,15 @@ PY
 
   dir="$EVIDENCE_ARTIFACTS_DIR/phase-explicit-waiver"
   test-first-evidence init --out "$dir" --classification behavior-change \
-    --production-path src/lib.rs --format json >/dev/null
+    --production-path src/lib.rs \
+    --changed-behavior "fixture behavior uses an explicit non-testable waiver" \
+    --format json >/dev/null
+  test-first-evidence record-impact --out "$dir" --none \
+    --reason "the fixture intentionally has no existing owner" --format json >/dev/null
   test-first-evidence record-waiver --out "$dir" \
+    --waiver-kind non-testable \
     --reason "focused failure cannot be reproduced in the fixture" \
+    --why-no-red "the fixture exposes no executable failure boundary" \
     --substitute-validation "test -s src/lib.rs" --format json >/dev/null
   test-first-evidence check --out "$dir" --phase pre-edit \
     --project-path "$workspace" --path src/lib.rs --format json >"$dir/check.json"
@@ -343,7 +484,9 @@ PY
   for path in misc/unknown.rs mixed/file.md; do
     dir="$EVIDENCE_ARTIFACTS_DIR/phase-$(basename "$path")"
     test-first-evidence init --out "$dir" --classification behavior-change \
-      --production-path "$path" --format json >/dev/null
+      --production-path "$path" \
+      --changed-behavior "unknown path-class fixture behavior changes" \
+      --format json >/dev/null
     if test-first-evidence check --out "$dir" --phase pre-edit \
       --project-path "$workspace" --path "$path" --format json \
       >"$dir/check.json" 2>&1; then
@@ -359,9 +502,14 @@ PY
   printf '[[document]]\ncontext = "project-dev"\nscope = "project"\npath = "DEV.md"\nrequired = true\nwhen = "always"\n' >"$no_classes/AGENT_DOCS.toml"
   dir="$EVIDENCE_ARTIFACTS_DIR/phase-not-configured"
   test-first-evidence init --out "$dir" --classification behavior-change \
-    --production-path src/lib.rs --format json >/dev/null
+    --production-path src/lib.rs \
+    --changed-behavior "no-path-class fixture behavior changes" --format json >/dev/null
+  test-first-evidence record-impact --out "$dir" --none \
+    --reason "the fixture has no configured path-class owner" --format json >/dev/null
   test-first-evidence record-failing --out "$dir" --command false --exit-code 1 \
-    --summary "fixture failure" --format json >/dev/null
+    --summary "fixture failure" --test-name "no path classes" \
+    --expected-failure "fixture behavior is absent before implementation" \
+    --observed-failure "the fixture command returned exit 1" --format json >/dev/null
   test-first-evidence check --out "$dir" --phase pre-edit \
     --project-path "$no_classes" --path src/lib.rs --format json >"$dir/check.json"
   python3 - "$EVIDENCE_ARTIFACTS_DIR" <<'PY'
@@ -379,7 +527,7 @@ cases = (
 )
 for relative, allowed, path_class, reason in cases:
     body = json.loads((root / relative).read_text())
-    assert body["schema_version"] == "cli.test-first-evidence.check.v1", (relative, body)
+    assert body["schema_version"] == "cli.test-first-evidence.check.v2", (relative, body)
     assert body["ok"] is allowed, (relative, body)
     payload = body["result"] if allowed else body["error"]["details"]
     assert payload["phase"] == "pre-edit", (relative, body)
@@ -573,7 +721,7 @@ run_model_cross_check_probe() {
 
 failures=0
 record_case "evidence.selective-control-plane.web" "web-evidence captured local loopback HTTP fixture" run_web_evidence_probe
-record_case "evidence.selective-control-plane.test-first" "test-first evidence waiver and final validation verified" run_test_first_evidence_probe
+record_case "evidence.selective-control-plane.test-first" "durable test-first v2 lifecycle, structural failures, and v1 diagnostics verified" run_test_first_evidence_probe
 record_case "evidence.selective-control-plane.review" "review evidence finding and validation verified" run_review_evidence_probe
 record_case "evidence.selective-control-plane.docs-impact" "docs-impact classified controlled untracked docs fixture" run_docs_impact_probe
 record_case "evidence.selective-control-plane.model-cross-check" "model cross-check recorded primary and checker observations without provider calls" run_model_cross_check_probe

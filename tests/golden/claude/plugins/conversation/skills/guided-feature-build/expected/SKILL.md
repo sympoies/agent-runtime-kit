@@ -123,10 +123,11 @@ Do not start without explicit user approval.
    safe, but keep scope, write isolation, integration, and validation under the
    parent workflow.
 3. For a testable production behavior change, follow the policy-owned
-   `test-first-evidence` discipline (classify, failing test or waiver before
-   production edits, scoped implementation, final validation) and record the
-   evidence — required when the repo or user opts into the `forge-cli`
-   `[test_first].require` gate.
+   durable test-first lifecycle: contract delta, affected-test scan, meaningful
+   red or complete waiver before production edits, scoped validation, suite
+   convergence, and explicit residual gaps. Record v2 evidence through the
+   `test-first-evidence` CLI; it is required when the repo or user opts into the
+   `forge-cli` `[test_first].require` gate.
 4. Read the relevant files again, implement the chosen approach, follow codebase
    conventions strictly, and keep `TodoWrite` current.
 5. Run the project's required preflight and validation as edits land.
@@ -162,5 +163,5 @@ Do not start without explicit user approval.
   prompts under `references/prompts/`, fulfilled by each harness's own
   delegation capability.
 - It reuses the generic code-review outcome for Phase 6, the internal delegation
-  protocol, and the test-first failing-test discipline for Phase 5 instead of
-  exposing those mechanics as user-selected substeps.
+  protocol, and the policy-owned durable test-first lifecycle for Phase 5
+  instead of exposing those mechanics as user-selected substeps.

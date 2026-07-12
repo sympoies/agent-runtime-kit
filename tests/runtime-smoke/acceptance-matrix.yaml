@@ -411,9 +411,9 @@ cases:
     mode: deterministic
     fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
     setup: create temp git workspace with pushed upstream branch metadata
-    invocation: forge-cli github/gitlab pr deliver dry-run with taxonomy labels plus mandatory review-specialists scope and GitHub specialist review thread-file dry-run
+    invocation: forge-cli github/gitlab pr deliver dry-run with taxonomy labels, mandatory specialist scope, opted-in strict v2 test-first preflight acceptance, typed v1 preflight rejection, and GitHub review thread-file dry-run
     expected_exit_code: 0
-    expected_artifacts: forge-cli deliver dry-run provider command with selected labels, specialist scope JSON, and PR review outcome plan with planned review threads
+    expected_artifacts: forge-cli delivery plans, specialist scope JSON, strict v2 test-first preflight verdict, typed v1 preflight verdict, and review outcome plan with threads
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none

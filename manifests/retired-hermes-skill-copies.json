@@ -1,6 +1,6 @@
 {
   "schema": "agent-runtime-kit.retired-hermes-skill-copies.v1",
-  "source_revision": "277beac981c10678248f57f2b839a5e4a1b6892a",
+  "source_revision": "9fd7b418bff38644e293bc9b9d1cf51c7ee2801b",
   "hash_algorithm": "sha256 over sorted relative-path, NUL, entry-type, NUL, canonical executable-class mode, NUL, and for files byte-length, NUL, content tuples",
   "skills": {
     "meta.agent-docs": "2ddb8e7ed116c7a81407643a3e156c8ecebea0662a087e273b7ac523db2622a2",
@@ -23,7 +23,7 @@
     "conversation.orchestrator-first": "43219ca9fbe5a42f6fce7205c8a8da2403664317bb7c87b938e1cb7df4bb6cd7",
     "conversation.parallel-first": "2ace4f31515728697b1933f7210131e3cdccad3d1e372fb4556590930165767a",
     "evidence.web-evidence": "4c84ea4cdb2edb56faff0739e144f7de2eadc31267e694173748b0c9fe5f02a0",
-    "evidence.test-first-evidence": "a6f59845c7b7be8a51a914eedff3f6a745061b740fe3a86a1858f7cee53536bd",
+    "evidence.test-first-evidence": "5ea1b165010bfa6fc8ae8d7ac0cd391814f3ed71385a3192a3709300e17112db",
     "evidence.review-evidence": "d4498369c7ef346a629d4f4024346b2a431acb7926ccbbf6ee91385abfcfccb6",
     "evidence.skill-usage": "9467914994fb8d7fd82117902094229a20cbc21ae593cccecc36afc7ef07251d",
     "evidence.docs-impact": "ea10dabdce0e21a1183d22fb44388d15a587cc4b80c26c88580c0be9e038b1fc",

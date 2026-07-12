@@ -10,7 +10,7 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.17.0`, `plan-issue >=1.1.0`, and
+- `agent-runtime`, `forge-cli >=1.21.19`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
   available on `PATH`. The generic code-review outcome uses
   `review-specialists` in pre-merge mode; the review-thread sweep and merge gate need

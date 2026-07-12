@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `dispatch`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.17.0`.
+  `forge-cli >=1.21.19`.
 - The dispatch issue is either not opened yet, or the existing issue is
   the same shared plan being resumed by the orchestrator.
 - Dispatch `run-state.json` is either uninitialized or reconciled.
@@ -81,6 +81,12 @@ lane-scoped state/session/validation checkpoint. An independent reviewer owns
 provider review activity and the lane review checkpoint. Only the orchestrator
 may merge an approved lane PR with `--allow-non-default-base`, update
 plan-level integration truth, and enter dispatch closeout.
+
+For feature/bug lane PRs, the parent allocates a policy-owned v2 evidence
+directory before production edits. When `[test_first].require = true`, the
+internal lane PR create/deliver call must thread
+`--test-first-evidence "$EVIDENCE_DIR"`; exempt PR kinds omit it. The CLI record
+is internal workflow state, not a lane lifecycle outcome exposed to the user.
 
 ## Entrypoint
 

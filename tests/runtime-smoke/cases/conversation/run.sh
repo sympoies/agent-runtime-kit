@@ -54,6 +54,13 @@ run_conversation_skill_probe() {
   grep -q "^name: ${skill}$" "$source"
   grep -q "^name: ${skill}$" "$codex"
   grep -q "^name: ${skill}$" "$claude"
+
+  if [ "$skill" = "guided-feature-build" ]; then
+    for path in "$source" "$codex" "$claude"; do
+      grep -Fq 'durable test-first lifecycle: contract delta, affected-test scan' "$path"
+      grep -Fq 'convergence, and explicit residual gaps' "$path"
+    done
+  fi
 }
 
 run_conversation_outcome_routing_probe() {
