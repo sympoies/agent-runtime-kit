@@ -18,7 +18,7 @@ validation, review, or notes.
 
 ## Evidence
 
-- Raw record: not captured (manual diagnosis, 2026-07-10)
+- Raw record: not captured (manual diagnosis of agent-console#216 tracking run dry-run, 2026-07-10)
 - Reproduction surface: `plan-issue tracking run init --out
   <existing-run-state> --dry-run --format json`.
 - Provider workflow: <https://github.com/sympoies/agent-console/issues/216>.
@@ -57,3 +57,5 @@ command shape above.
 File a focused nils-cli bug, add a failing CLI regression proving `--dry-run`
 leaves `run-state.json` and `events.jsonl` byte-identical, then make `tracking
 run init` honor dry-run before filesystem writes.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1138`

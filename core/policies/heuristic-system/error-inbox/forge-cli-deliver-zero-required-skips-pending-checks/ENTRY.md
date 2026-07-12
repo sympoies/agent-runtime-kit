@@ -76,3 +76,5 @@ two pending optional builds followed by success.
 
 File a nils-cli regression for the zero-required fallback and link its test/fix
 here.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1132`

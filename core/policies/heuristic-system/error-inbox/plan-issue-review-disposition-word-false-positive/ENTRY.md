@@ -47,3 +47,5 @@ not hide a valid `fixed` disposition row.
 ## Next Action
 
 Narrow header detection to the actual header row and add a finding-summary regression fixture.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1137`
