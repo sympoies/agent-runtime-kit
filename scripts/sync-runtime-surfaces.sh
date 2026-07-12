@@ -2989,6 +2989,7 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
   local live_home="$1"
   local profiles_root="$live_home/profiles"
   local profile_home
+  local preview_output preview_status
   local review_needed=0
 
   if [ -L "$profiles_root" ]; then
@@ -3003,6 +3004,10 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
     mv "$profiles_root" "$live_home/.profiles.agent-runtime-kit-test-original"
     ln -s "$AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_ROOT_TO" "$profiles_root"
   fi
+  if [ -n "${AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_REAL_ROOT_TO:-}" ]; then
+    mv "$profiles_root" "$live_home/.profiles.agent-runtime-kit-test-original"
+    mv "$AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_REAL_ROOT_TO" "$profiles_root"
+  fi
   if [ -L "$profiles_root" ]; then
     log "review-needed Hermes profiles root changed after discovery"
     return 3
@@ -3015,8 +3020,18 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
       continue
     fi
     if [ -d "$profile_home/skills" ]; then
-      if ! cleanup_hermes_legacy_runtime_kit_skill_root \
-        "$profile_home" "$live_home" "${profile_home##*/}"; then
+      set +e
+      preview_output="$(
+        APPLY=0 cleanup_hermes_legacy_runtime_kit_skill_root \
+          "$profile_home" "$live_home" "${profile_home##*/}" 2>&1
+      )"
+      preview_status=$?
+      set -e
+      if [ "$preview_status" -ne 0 ] ||
+        ! grep -q \
+          'legacy Hermes runtime-kit skill cleanup planned: symlinks=0 copies=0 review_needed=0' \
+          <<<"$preview_output"; then
+        log "review-needed Hermes profile legacy runtime-kit surfaces profile=${profile_home##*/}; automatic profile mutation is disabled"
         review_needed=1
       fi
     fi

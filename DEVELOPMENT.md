@@ -191,12 +191,14 @@ tree by an atomic no-replace move into
 quarantine is ownership-marked and retained: refresh never recursively deletes
 its contents. Rollback/re-upgrade cycles retain additional deterministic
 `.generation-NNNNNN` siblings after validating every existing generation as an
-exact match. Cleanup opens the Hermes home, profile, and skills components with
+exact match. Top-level cleanup opens the Hermes home and skills components with
 no-follow descriptors and performs symlink removal and copy moves relative to
 those descriptors; empty legacy directories are harmless and deliberately
-left in place. A pre-existing unowned quarantine, non-matching destination,
-changed copy, or changed/symlinked traversal returns `review-needed` and leaves
-operator data untouched.
+left in place. Profile roots are classified read-only: any legacy runtime-kit
+surface there returns `review-needed` for manual migration and is never mutated
+automatically. A pre-existing unowned quarantine, non-matching destination,
+changed copy, or changed/symlinked traversal also returns `review-needed` and
+leaves operator data untouched.
 
 For non-technical operators setting up another Mac through an agent, use the
 copyable clean-reinstall prompt in

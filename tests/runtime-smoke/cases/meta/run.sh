@@ -1579,6 +1579,30 @@ PY
   grep -q "review-needed symlinked Hermes profile" "$profile_out"
   test -f "$external_retired/SKILL.md"
 
+  local managed_profile_home="$TMP_ROOT/sync-prune/hermes-managed-profile"
+  local managed_profile_link="$managed_profile_home/profiles/default/skills/meta/agent-docs/SKILL.md"
+  local managed_profile_out="$out.managed-profile"
+  mkdir -p "$(dirname "$managed_profile_link")"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$managed_profile_link"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_profile_roots "$managed_profile_home"
+  ) >"$managed_profile_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes profile cleanup mutated a managed-looking profile root" >&2
+    return 1
+  }
+  test -L "$managed_profile_link"
+  grep -q "review-needed Hermes profile legacy runtime-kit surfaces" \
+    "$managed_profile_out"
+
   local profiles_swap_home="$TMP_ROOT/sync-prune/hermes-profiles-root-swap"
   local profiles_swap_original="$profiles_swap_home/.profiles.agent-runtime-kit-test-original"
   local profiles_swap_external="$TMP_ROOT/sync-prune/hermes-profiles-root-swap-external/profiles"
@@ -1610,6 +1634,39 @@ PY
   test -L "$profiles_swap_home/profiles"
   test -L "$profiles_swap_original_link"
   test -L "$profiles_swap_external_link"
+
+  local profiles_real_swap_home="$TMP_ROOT/sync-prune/hermes-profiles-real-root-swap"
+  local profiles_real_swap_original="$profiles_real_swap_home/.profiles.agent-runtime-kit-test-original"
+  local profiles_real_swap_external="$TMP_ROOT/sync-prune/hermes-profiles-real-root-swap-external/profiles"
+  local profiles_real_swap_local_link="$profiles_real_swap_home/profiles/default/skills/meta/agent-docs/SKILL.md"
+  local profiles_real_swap_original_link="$profiles_real_swap_original/default/skills/meta/agent-docs/SKILL.md"
+  local profiles_real_swap_external_link="$profiles_real_swap_home/profiles/default/skills/meta/agent-docs/SKILL.md"
+  local profiles_real_swap_out="$out.profiles-real-root-swap"
+  mkdir -p "$(dirname "$profiles_real_swap_local_link")" \
+    "$profiles_real_swap_external/default/skills/meta/agent-docs"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$profiles_real_swap_local_link"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$profiles_real_swap_external/default/skills/meta/agent-docs/SKILL.md"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_REAL_ROOT_TO="$profiles_real_swap_external"
+    cleanup_hermes_legacy_runtime_kit_profile_roots "$profiles_real_swap_home"
+  ) >"$profiles_real_swap_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes profile cleanup followed a real-directory profiles swap" >&2
+    return 1
+  }
+  test -L "$profiles_real_swap_original_link"
+  test -L "$profiles_real_swap_external_link"
+  grep -q "review-needed Hermes profile legacy runtime-kit surfaces" \
+    "$profiles_real_swap_out"
 }
 
 run_sync_runtime_surfaces_retired_managed_links_probe() {

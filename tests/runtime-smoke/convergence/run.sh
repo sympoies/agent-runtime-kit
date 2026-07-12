@@ -185,20 +185,113 @@ collect_hermes_active_ids() {
   } | sort -u
 }
 
+collect_hermes_legacy_ids() {
+  local live_home="$1"
+  find "$live_home/skills" -mindepth 3 -maxdepth 3 -path '*/SKILL.md' -print 2>/dev/null |
+    sed "s#^$live_home/skills/##" |
+    sed 's#/#.#g' |
+    sed 's#\.SKILL\.md$##' |
+    sort -u
+}
+
+write_hermes_retired_ids() {
+  local repo_root="$1"
+  local output="$2"
+  python3 - "$repo_root/manifests/retired-skill-ids.json" "$output" <<'PY'
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+pathlib.Path(sys.argv[2]).write_text(
+    "".join(f"{skill_id}\n" for skill_id in sorted(data["skills"])),
+    encoding="utf-8",
+)
+PY
+}
+
+write_hermes_quarantine_inventory() {
+  local repo_root="$1"
+  local live_home="$2"
+  local generations="$3"
+  local output="$4"
+  python3 - \
+    "$repo_root/manifests/retired-skill-ids.json" \
+    "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills" \
+    "$generations" "$output" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+retired = sorted(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))["skills"])
+root = pathlib.Path(sys.argv[2])
+generations = int(sys.argv[3])
+expected = []
+for skill_id in retired:
+    domain, skill = skill_id.split(".", 1)
+    expected.append((skill_id, 1, root / domain / skill))
+    for generation in range(2, generations + 1):
+        expected.append((
+            skill_id,
+            generation,
+            root / domain / f"{skill}.generation-{generation:06d}",
+        ))
+for _, _, path in expected:
+    assert path.is_dir(), path
+
+observed = []
+pattern = re.compile(r"(.+)\.generation-([0-9]{6})$")
+for domain in sorted(root.iterdir()):
+    if not domain.is_dir():
+        raise AssertionError(domain)
+    for entry in sorted(domain.iterdir()):
+        if not entry.is_dir():
+            raise AssertionError(entry)
+        match = pattern.fullmatch(entry.name)
+        if match:
+            skill = match.group(1)
+            generation = int(match.group(2))
+        else:
+            skill = entry.name
+            generation = 1
+        observed.append((f"{domain.name}.{skill}", generation, entry))
+assert [(skill_id, generation) for skill_id, generation, _ in observed] == [
+    (skill_id, generation) for skill_id, generation, _ in sorted(expected)
+]
+pathlib.Path(sys.argv[4]).write_text(
+    "".join(f"{skill_id} generation-{generation:06d}\n" for skill_id, generation, _ in observed),
+    encoding="utf-8",
+)
+PY
+}
+
 runtime_convergence_hermes() {
   local repo_root="$1"
   local baseline_root="$2"
   local tmp_root="$3"
   local artifacts_dir="$4"
-  local live_home state_home observed
+  local live_home state_home observed expected_retired external_ids legacy_ids
+  local quarantine_first quarantine_second quarantine_after_idempotent
 
   live_home="$(runtime_live_home "$tmp_root" hermes)"
   state_home="$(runtime_state_home "$tmp_root" hermes)"
   mkdir -p "$live_home" "$state_home" "$artifacts_dir"
+  expected_retired="$artifacts_dir/hermes.expected-retired.txt"
+  external_ids="$artifacts_dir/hermes.external.txt"
+  legacy_ids="$artifacts_dir/hermes.legacy.txt"
+  quarantine_first="$artifacts_dir/hermes.quarantine-first.txt"
+  quarantine_second="$artifacts_dir/hermes.quarantine-second.txt"
+  quarantine_after_idempotent="$artifacts_dir/hermes.quarantine-after-idempotent.txt"
+  write_hermes_retired_ids "$repo_root" "$expected_retired"
 
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
     "$artifacts_dir/baseline" || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
+  runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
+  diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
+  collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
+  diff -u "$expected_retired" "$legacy_ids" || return 1
   observed="$artifacts_dir/hermes.baseline-active.txt"
   collect_hermes_active_ids "$live_home" >"$observed"
   diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
@@ -223,6 +316,11 @@ runtime_convergence_hermes() {
   ) >"$artifacts_dir/hermes.cleanup-first.log" 2>&1 || return 1
   runtime_install_product "$repo_root" "$tmp_root" hermes \
     "$artifacts_dir/upgrade-first" || return 1
+  runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
+  diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
+  collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
+  test ! -s "$legacy_ids" || return 1
+  write_hermes_quarantine_inventory "$repo_root" "$live_home" 1 "$quarantine_first" || return 1
   observed="$artifacts_dir/hermes.upgrade-first-active.txt"
   collect_hermes_active_ids "$live_home" >"$observed"
   diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
@@ -231,6 +329,10 @@ runtime_convergence_hermes() {
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
     "$artifacts_dir/rollback" || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
+  runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
+  diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
+  collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
+  diff -u "$expected_retired" "$legacy_ids" || return 1
   observed="$artifacts_dir/hermes.rollback-active.txt"
   collect_hermes_active_ids "$live_home" >"$observed"
   diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
@@ -253,12 +355,36 @@ runtime_convergence_hermes() {
   ) >"$artifacts_dir/hermes.cleanup-second.log" 2>&1 || return 1
   runtime_install_product "$repo_root" "$tmp_root" hermes \
     "$artifacts_dir/upgrade-second" || return 1
+  runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
+  diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
+  collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
+  test ! -s "$legacy_ids" || return 1
+  write_hermes_quarantine_inventory "$repo_root" "$live_home" 2 "$quarantine_second" || return 1
   observed="$artifacts_dir/hermes.upgrade-second-active.txt"
   collect_hermes_active_ids "$live_home" >"$observed"
   diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
   test "$(wc -l <"$observed" | tr -d '[:space:]')" = 26 || return 1
   test -d "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills/conversation/orchestrator-first"
   test -d "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills/conversation/orchestrator-first.generation-000002"
+
+  agent-runtime install --source-root "$repo_root" --product hermes \
+    --live-home "$live_home" --state-home "$state_home" --no-overlay --apply \
+    >"$artifacts_dir/hermes.idempotent-install.log" 2>&1 || return 1
+  grep -q 'changes=0' "$artifacts_dir/hermes.idempotent-install.log" || return 1
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$repo_root/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$repo_root"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$live_home"
+  ) >"$artifacts_dir/hermes.idempotent-cleanup.log" 2>&1 || return 1
+  write_hermes_quarantine_inventory \
+    "$repo_root" "$live_home" 2 "$quarantine_after_idempotent" || return 1
+  cmp "$quarantine_second" "$quarantine_after_idempotent" || return 1
+  runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
+  diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
+  collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
+  test ! -s "$legacy_ids" || return 1
 
   python3 - "$artifacts_dir/hermes.portable-summary.json" <<'PY'
 import json
