@@ -1,10 +1,11 @@
-# plan-issue record close mutates provider state before failing on missing labels
+# plan-issue record close does not atomically normalize lifecycle labels
 
 ## Status
 
 - Status: open
 - First observed: 2026-07-09
-- Area: plan-issue record close; tracking issue closeout labels
+- Last observed: 2026-07-12
+- Area: plan-issue record close; tracking issue lifecycle-label normalization
 - Severity: medium
 
 ## Signal
@@ -23,6 +24,14 @@ the issue body linked the closeout comment and review approval, the
 required roles including closeout. The only missing side effect was the optional
 closed-state label.
 
+A second closeout on `graysurf/agent-runtime-kit#578` exposed the complementary
+case. With nils-cli `1.21.19`, live closeout succeeded, added
+`state::closed`, accepted a request to remove the absent
+`state::needs-triage` label, and passed the seven-role visible audit, but
+preserved the pre-existing `state::ready` label.
+The closed issue therefore carried two mutually exclusive lifecycle states
+until the operator removed `state::ready` separately.
+
 ## Evidence
 
 - Raw record: not captured (manual diagnosis, 2026-07-09)
@@ -36,16 +45,25 @@ closed-state label.
   `<agent-out>/projects/sympoies__nils-agent-console/20260709-134406-issue-7-closeout-readback/audit.json`
 - Failure shape: `record-close-label-edit-failed`; `state::closed` label not
   found after the irreversible provider closeout side effects had already run.
+- Second tracking issue:
+  `https://github.com/graysurf/agent-runtime-kit/issues/578`
+- Second failure shape: successful close with both `state::ready` and
+  `state::closed`; seven-role visible audit passed, but lifecycle state was not
+  normalized.
+- Second workaround: `forge-cli issue edit 578 --remove-label state::ready`.
 
 ## Impact
 
-The command looks failed even though the issue is already closed and the
-closeout marker is already posted. A future agent may rerun mutating closeout,
-hand-edit provider state unnecessarily, or report the tracker as blocked instead
-of doing a read-back audit and accepting the completed closeout minus the
-optional label.
+The provider result can be misleading in either direction: the command may
+look failed after the issue was already closed, or it may report success while
+the issue retains mutually exclusive lifecycle labels. A future agent may rerun
+an irreversible closeout, hand-edit provider state unnecessarily, report the
+tracker as blocked, or trust an internally inconsistent closed issue.
 
 ## Current Workaround
+
+After every close attempt, read back the provider issue and its complete
+lifecycle-label group before treating the tracker as converged.
 
 When `record close` fails only at label edit after posting closeout / closing
 the issue:
@@ -58,24 +76,31 @@ the issue:
 - For repositories without lifecycle labels, omit `--add-label state::closed`
   or create/ensure the label before the mutating close step.
 
+When `record close` succeeds but a closed issue retains a conflicting state
+such as `state::ready`, remove that label with a single explicit provider edit
+and verify the final label set.
+
 ## Promotion Criteria
 
-Promote after one of these lands and is validated:
+Promote only after both failure modes are resolved and validated, whether by
+one combined fix or multiple changes:
 
-- `plan-issue record close` preflights requested label additions before any
-  provider mutation.
-- `plan-issue record close` treats a missing optional lifecycle label as a
-  warning when closeout, provider close, dashboard update, and read-back audit
-  have already succeeded.
-- The closeout skill flow ensures required labels exist, or avoids passing
-  absent optional lifecycle labels on repositories that do not use them.
+- Unavailable-label handling is made safe: requested label additions are
+  preflighted before provider mutation, a missing optional lifecycle label is
+  downgraded only after successful read-back, or the closeout flow ensures
+  required labels exist and avoids absent optional labels.
+- Terminal-state exclusivity is guaranteed: conflicting lifecycle-label
+  siblings are removed atomically, or closeout rejects the operation before
+  irreversible mutation when it cannot guarantee normalization.
 
-Regression coverage should include a repository without `state::closed` where
-dry-run passes and live closeout cannot leave the operator with an ambiguous
-post-close failure.
+Regression coverage should include both a repository without `state::closed`
+and an issue that already carries `state::ready`. Dry-run and live closeout
+must not leave the operator with either an ambiguous post-close failure or a
+closed issue carrying conflicting lifecycle states.
 
 ## Next Action
 
 Route to nils-cli / plan-issue: update `record close` or the closeout skill flow
-so label availability is preflighted before provider mutation, or missing
-optional lifecycle labels are downgraded after a successful read-back audit.
+so label availability and exclusivity are preflighted before provider mutation,
+terminal lifecycle labels are normalized atomically, and missing optional
+labels are downgraded only after a successful read-back audit.
