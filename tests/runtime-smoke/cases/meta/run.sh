@@ -1607,6 +1607,22 @@ PY
     SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
     SOURCE_ROOT="$REPO_ROOT"
     APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root \
+      "$managed_profile_home/profiles/default" "$managed_profile_home" default 1
+  ) >"$managed_profile_out.classify-apply" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 4 ] || {
+    echo "Hermes classify-only mode did not override apply" >&2
+    return 1
+  }
+  test -L "$managed_profile_link"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
     cleanup_hermes_legacy_runtime_kit_profile_roots "$managed_profile_home"
   ) >"$managed_profile_out" 2>&1
   status=$?

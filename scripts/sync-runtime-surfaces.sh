@@ -2300,6 +2300,8 @@ anchor_home = pathlib.Path(sys.argv[2])
 profile_name = sys.argv[3]
 apply = sys.argv[4] == "1"
 classify_only = sys.argv[5] == "1"
+if classify_only:
+    apply = False
 live_home = anchor_home / "profiles" / profile_name if profile_name else anchor_home
 legacy_root = live_home / "skills"
 build_plugins = (source_root / "build" / "hermes" / "plugins").resolve()
