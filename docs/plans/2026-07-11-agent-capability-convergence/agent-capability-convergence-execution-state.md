@@ -5,12 +5,12 @@
 - Source document: docs/plans/2026-07-11-agent-capability-convergence/agent-capability-convergence-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/568>
 - Current sprint: Sprint 4
-- Status: in-progress
-- Current gate: Post-integration dual-role activation
+- Status: complete
+- Current gate: Dispatch closeout
 - Plan branch: `feat/agent-capability-convergence`
-- Integration PR: pending; Task 3.2 is merged into the plan branch
-- Current lanes: Lane D (`post-integration-acceptance`)
-- Next task: Task 4.1 — integrate to `main`, activate, and verify both runtime roles
+- Integration PR: #582 merged as e99e024
+- Current lanes: complete
+- Next task: strict dispatch closeout for #568 and parent closeout for #562
 - Upstream prerequisite: complete; nils-cli v1.21.17 and Tasks 2.1/2.2 landed
 - Task 3.1 gate: complete; PR #577 merged as 92da055
 - Task 3.2 gate: complete; PR #581 merged as bda76df
@@ -26,7 +26,7 @@
 | 2.2 | Converge all remaining agent-only skill families | done | PR #571 merged as 0c9cb095; provider CI pass; review threads resolved; pinned full CI positions 1-15 and hooks 97/97 pass | Lane C (`remaining-skills`); replacement behavior only |
 | 3.1 | Apply manifest, render, compatibility, and cleanup retirement | done | PR #577 merged as 92da055; provider CI pass; 3/3 findings fixed; testing and maintainability follow-up pass; 0 unresolved threads | Atomic retirement complete: 26 active outcomes, 40 retired surfaces, ownership-safe rollback |
 | 3.2 | Add portable convergence deployment acceptance | done | PR #581 merged as bda76df; detached-HEAD Codex/Claude convergence 5/5; pinned pre-PR positions 1-15; provider CI and specialist review pass | Lane D portable acceptance; generic roles and redacted evidence only |
-| 4.1 | Activate and verify both runtime roles from merged main | in-progress | pending integration PR and private redacted acceptance | Lane D post-integration; private artifacts stay local |
+| 4.1 | Activate and verify both runtime roles from merged main | done | PR #582 merged as e99e024; both generic runtime roles synchronized; installed-runtime doctor and 26-outcome read-back pass for Codex, Claude, and Hermes; fresh Codex desktop action and privacy-minimized screenshot evidence pass; Claude live provider execution waived because authorization is unavailable | Lane D complete; the waiver is an environment capability disposition, not a Claude live-action pass; private artifacts stay local |
 
 ## Validation Log
 
@@ -64,6 +64,25 @@
   operator-state preservation, and idempotency. The pinned pre-PR stack passed
   all 15 positions; provider CI and testing, maintainability, and security
   review passed with no unresolved threads.
+- 2026-07-12: Integration PR #582 merged as e99e024 with the plan-branch
+  ancestry preserved. Provider CI, CodeQL, all specialist review lenses, the
+  strict test-first record, full pre-PR positions 1-15, and 116/116 hook tests
+  passed; all review threads and task items were resolved before merge.
+- 2026-07-12: Task 4.1 synchronized both generic runtime roles from merged
+  `main`. Installed-runtime doctor passed for Codex, Claude, and Hermes; each
+  product exposes the same 26 active outcome IDs with zero warnings, and the 40
+  retired managed surfaces have no review-needed path.
+- 2026-07-12: A fresh Codex CLI session automatically discovered the macOS
+  desktop outcome, activated the bounded target, verified the structured
+  active-app postcondition, and retained a privacy-minimized window-chrome
+  screenshot plus redaction manifest. Machine identifiers, user paths, window
+  contents, and connection details remain outside tracked and provider
+  evidence.
+- 2026-07-12: Fresh Claude Code provider execution could not start because the
+  active environment has no authorized provider path. The user accepted an
+  explicit environment-capability waiver. Portable credential-free Claude
+  routing, convergence, installed-surface, and doctor acceptance remain green;
+  no Claude live desktop action is claimed.
 
 ## Session Notes
 
@@ -93,3 +112,8 @@
   revision remains available. Live Codex and Claude activation and bounded
   desktop evidence remain private; the public record receives only generic,
   redacted pass/fail results.
+- 2026-07-12: Task 4.1 is complete with the Claude provider limitation recorded
+  as an explicit waiver rather than a false pass. The private one-shot entrypoint
+  was forward-tested from a non-repository working directory, synchronized to
+  both runtime roles, and kept outside the public capability catalog. The plan
+  now advances to strict #568 closeout and parent #562 closure.
