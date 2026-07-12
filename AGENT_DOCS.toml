@@ -129,6 +129,14 @@ when = "always"
 notes = "Browser-test parents own browser-session, HTTP, canary, and linked workflow evidence without exposing recorder primitives as user outcomes."
 
 [[document]]
+context = "memory"
+scope = "home"
+path = "core/policies/memory.md"
+required = true
+when = "always"
+notes = "Bounded startup and on-demand recall, producer candidate ownership, explicit promotion approval, product capability ceilings, and retired-reference audit routing."
+
+[[document]]
 context = "task-tools"
 scope = "home"
 path = "core/policies/cli-tools.md"

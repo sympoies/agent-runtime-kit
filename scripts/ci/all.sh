@@ -391,4 +391,10 @@ banner 15 "product leakage audit"
 bash scripts/ci/product-leak-audit.sh --self-test
 bash scripts/ci/product-leak-audit.sh
 
-printf '\nci/all.sh: positions 1-15 OK\n'
+# -----------------------------------------------------------------------------
+# Position 16 — memory policy, retired-reference audit, and product routing
+# -----------------------------------------------------------------------------
+banner 16 "memory runtime policy + retired-reference audit"
+bash tests/memory-runtime/run.sh
+
+printf '\nci/all.sh: positions 1-16 OK\n'

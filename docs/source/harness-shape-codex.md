@@ -50,7 +50,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex
-  surface) ships inside nils-cli; pinned snapshot **v1.21.19**
+  surface) ships inside nils-cli; pinned snapshot **v1.21.21**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),
@@ -223,11 +223,11 @@ a uniform shape:
   in `targets/codex/hooks/` plus the link map (`core/hooks/README.md`).
   The Codex-only `user-prompt-agent-memory.sh` hook lives in the shared hook
   source tree for install reuse, but is registered only by the Codex TOML block;
-  it reads `agent-memory index global` once per session and injects bounded
-  shared memory context. The trusted cue also tells Codex to surface stable
-  preferences, setup facts, recurring workflows, and corrections as candidate
-  `agent-memory` updates, while requiring explicit user approval before any
-  memory edit.
+  it reads bounded `agent-memory recall startup` context once per session
+  without falling back to the full global index. The untrusted cue directs
+  Codex to write stable proposals only through `agent-memory candidate add
+  codex`; curated promotion remains dry-run-first and requires explicit user
+  approval.
 - Install mechanism: `symlinked-file` (`targets/codex/link-map.yaml`,
   `id: hooks.shared-scripts`, source `core/hooks/shared` →
   `$CODEX_HOME/hooks`).
@@ -332,9 +332,10 @@ a uniform shape:
   managed-block contract preserves everything outside the marker pair
   byte-for-byte.
   The managed UserPromptSubmit block registers `user-prompt-agent-memory.sh`
-  for Codex only, bridging the shared `agent-memory` global index into sessions
-  that lack Claude's native memory loader and reminding Codex to report
-  candidate memory updates before editing the backing store.
+  for Codex only, injecting bounded `agent-memory recall startup` context into
+  sessions that lack Claude's native memory loader. Candidate writes route to
+  the Codex producer root; curated promotion remains a separately reviewed,
+  explicitly approved action.
 - Acceptance lane: drift audit checks managed-block presence; hook tests
   verify the referenced shared scripts (`DEVELOPMENT.md`).
 - Support today: **shipped (managed block)**.

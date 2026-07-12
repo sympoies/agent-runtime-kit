@@ -43,14 +43,17 @@ MEMORY_NOTE_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 REMINDER = (
-    "Writing to the agent-memory store — apply its AGENTS.md Memory Boundaries. "
+    "Writing to memory — apply core/policies/memory.md and the store's "
+    "AGENTS.md Memory Boundaries. Write only to the active product's untrusted "
+    "candidate root; never write curated global memory autonomously. "
     "Store a fact only if it is durable AND project-independent: host/machine "
     "environment, network and tailnet setup, account/workspace conventions, "
     "cross-cutting tooling behavior, and the user's stable preferences and "
     "habits. A single repo's architecture, deploy specifics, build/test loops, "
     "or per-project gotchas belong in that repo's AGENTS.md / DEVELOPMENT.md / "
     "docs/ — memory keeps at most a thin pointer (name + one-line what-it-is + "
-    "where its docs live), never the project's internal knowledge. This is a "
+    "where its docs live), never the project's internal knowledge. Promotion "
+    "requires a reviewed dry-run and explicit user approval. This is a "
     "reminder, not a block."
 )
 

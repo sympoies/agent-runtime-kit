@@ -1,20 +1,35 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-12 (refreshed for `v1.21.19`)
+- Snapshot date: 2026-07-12 (refreshed for `v1.21.21`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.21.19`
+- Active `git describe --tags` output: `v1.21.21`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.21.19`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.21`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `94da9a57`
-  (`chore(release): bump cli versions to 1.21.19 (#1128)`)
+- Head commit: `42c17207`
+  (`chore(release): bump cli versions to 1.21.21 (#1146)`)
 - Release:
-  [`v1.21.19`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.19),
+  [`v1.21.21`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.21),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.21` advances the pin from `v1.21.19`, folding in `v1.21.20`:
+  - `agent-memory` adds bounded `recall startup`, curated
+    `recall on-demand`, explicitly untrusted candidate recall, producer-isolated
+    candidate add/list, and dry-run-first rollback-safe promotion. Strict
+    checks add index-byte budgets and caller-owned forbidden-term files
+    ([#1143](https://github.com/sympoies/nils-cli/pull/1143)). Runtime-kit now
+    consumes startup recall in the Codex hook and the generic retired-memory
+    audit, so the `agent-memory` floor moves to `>= 1.21.21`.
+  - The release preserves the human CLI and adds versioned JSON runtime-error
+    envelopes, required promotion provenance, supported global symlink
+    compatibility, metadata-injection guards, and native candidate-index
+    cleanup. No consumed surface was retired.
+  - Folded `v1.21.20` changes agent-session and forge/test-first subject
+    binding; runtime-kit does not consume a new flag or envelope from those
+    changes, so no other `required_clis[]` floor moves.
 - `v1.21.19` advances the pin from `v1.21.15`, folding in `v1.21.16`–`v1.21.18`:
   - `test-first-evidence` replaces the v1 red/green minimum with a durable v2
     contract: contract delta, grouped affected-test dispositions, meaningful
@@ -1046,11 +1061,10 @@
   markers on dispatch `tracking checkpoint` lifecycle comments
   ([#639](https://github.com/sympoies/nils-cli/pull/639)), and the new
   `agent-memory` CLI ([#638](https://github.com/sympoies/nils-cli/pull/638)).
-  Runtime-kit now consumes `agent-memory index global` opportunistically in the
-  Codex UserPromptSubmit memory cue hook; the hook fails open when the binary or
-  memory index is unavailable and reminds Codex to propose durable memory
-  updates only with explicit user approval. Earlier release history retained
-  below.
+  At that snapshot runtime-kit consumed `agent-memory index global`
+  opportunistically in the Codex UserPromptSubmit hook. `v1.21.21` supersedes
+  that startup path with bounded `recall startup` and producer candidates;
+  the earlier release history remains below.
   `v0.25.8` at `4d0d621`
   (`chore(release): bump cli versions to 0.25.8 (#608)`). `v0.28.0` spans the
   v0.25.9–v0.28.0 releases and adds: the
@@ -1119,7 +1133,7 @@ Notes on derivation:
 | Crate                       | Binary                                                                                                              | Notes                                                                                                                                                                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent-docs`                | `agent-docs`                                                                                                        | Data-driven required-doc resolver and auditor; no hardcoded builtins. As of `v0.30.0` the surface is `audit` (repo health: install-symlink wiring + declared-doc presence/validity + catalog validity), `preflight --intent X` (resolve the doc set plus the per-repo validation contract as versioned JSON for hooks to inject and enforce), and `init` / `explain` / `list` / `remove`. Policy is declared in `AGENT_DOCS.toml` (`[[document]]` + `[[validation]]`, `when` predicates, content validation); docs-home is derived from the install symlink. As of `v0.30.1`, a docs-home catalog's `scope = "project"` documents and its `[[validation]]` contracts are scoped to the declaring repository, so they never leak into unrelated projects. As of `v0.31.6`, `preflight --require-declared-intent` lets known-intent callers fail closed for undeclared intent names while preserving the unguarded compatibility fallback. As of `v1.12.1`, catalog documents and validation contracts can declare `product`, and `preflight` / `audit` / `explain` / `list` accept `--product codex|claude`; `preflight` now emits `agent-docs.preflight.v2` with product scope. The `resolve` / `baseline` / `scaffold-*` / `add` / `contexts` commands and the `startup` per-task context were retired in the redesign.                                                                                                  |
-| `agent-memory`              | `agent-memory`                                                                                                      | Agent memory helper. Runtime-kit consumes `agent-memory index global` opportunistically from the Codex UserPromptSubmit memory cue hook to bridge the shared git-backed global memory index into Codex sessions. The hook fails open when the binary or index is unavailable, caps injected context, treats memory as preference/setup context rather than external-fact evidence, and reminds Codex to surface candidate durable memory updates without editing the backing store until the user explicitly approves.                                                                                                                         |
+| `agent-memory`              | `agent-memory`                                                                                                      | Agent memory helper. As of `v1.21.21`, runtime-kit consumes bounded `recall startup` in the Codex UserPromptSubmit hook and `check --max-index-bytes --forbid-terms-file` in the retired-memory audit. The CLI also owns curated on-demand recall, producer-isolated untrusted candidates, and dry-run-first promotion. The hook fails open without falling back to the full global index; policy requires live verification and explicit user approval before curated promotion ([#1143](https://github.com/sympoies/nils-cli/pull/1143)). |
 | `agent-out`                 | `agent-out`                                                                                                         | Agent output / artifact helper. As of `v1.19.2`, runtime-kit consumes `agent-out path-for --domain <domain> [--topic <topic>]` as the compatibility allocator for rendered `state_out(...)` skill instructions; it delegates to the canonical project allocator, supports `path` / `json` / `env`, and emits `cli.agent-out.path-for.v1` JSON ([#984](https://github.com/sympoies/nils-cli/pull/984)). As of `v1.19.3`, runtime-kit consumes `agent-out cleanup plan/apply` for reviewed cleanup of stale cache and noncanonical output entries: plans emit `cli.agent-out.cleanup.plan.v1` with a digest, and apply emits `cli.agent-out.cleanup.apply.v1` after digest, containment, delete-shape, and evidence-marker checks ([#987](https://github.com/sympoies/nils-cli/pull/987)). |
 | `agent-runtime`         | `agent-runtime`                                                                                                     | Runtime kit CLI. As of `v0.20.0`, this repo consumes released `render`, `install`, `uninstall`, `doctor` (including `--class skill-surface --product codex`), `audit-drift`, `gc-backups`, `restore-backups`, `purge-state`, and `pr-body render` bodies through Homebrew. The `pr-body render` surface renders standardized feature / bug PR and MR bodies before `forge-cli pr create` / `forge-cli pr deliver`. As of `v0.22.4`, `sync-runtime-surfaces` consumes `agent-runtime prune-stale` to remove stale managed Codex and Claude skill surfaces after install. As of `v0.28.0`, ships `doctor --class version-alignment --pin <manifest>` (the surface-pin drift gate this repo's Position 2 consumes via `docs/source/nils-cli-pin.yaml`) and adds build metadata to the `agent-runtime --version` output. As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `sync-runtime-surfaces` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)). As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup feature-detects it and keeps a phase-command fallback for older hosts ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)). As of `v1.3.0`, `render` adds an optional agents surface: an absent `manifests/agents.yaml` is a no-op, and when present each `core/agents/<id>/AGENT.md.tera` renders per product into `build/<product>/` at `render_to` (Codex TOML / Claude Markdown selected via the `product` Tera variable), cached in a separate `.render-cache-agents.json` and covered by `--update-golden` / `audit-drift` ([#839](https://github.com/sympoies/nils-cli/pull/839)). As of `v1.3.1`, `audit-drift`'s `rendered-target` class skips the `.render-cache-agents.json` agents render cache scratchpad (matching the existing `.render-cache.json` skip), so a `build/<product>/` tree lacking that cache file no longer produces a spurious `rendered-target` drift warn ([#842](https://github.com/sympoies/nils-cli/pull/842)). As of `v1.12.1`, `render --target home-prompt` renders `AGENT_HOME.md` to `build/<product-or-neutral>/AGENT_HOME.md`, which runtime-kit setup consumes for per-product home prompt symlinks. | As of `v1.21.15`, the skills manifest loader supports schema v2 independently of other manifest families, and `list-skills --format json` reports invocation, exposure, and pending-disposition metadata for Codex, Claude, and Hermes ([#1111](https://github.com/sympoies/nils-cli/pull/1111)). |
 | `agent-scope-lock`          | `agent-scope-lock`                                                                                                  | Workspace scope-lock helper.                                                                                                                                                                                                                                           |

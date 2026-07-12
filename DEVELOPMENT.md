@@ -17,14 +17,15 @@ publishes is the standalone Linux container image at
 `ghcr.io/graysurf/agent-runtime-kit`; see [`RELEASING.md`](RELEASING.md) for how
 that image is versioned and cut.
 
-The local gate stack is mature. `scripts/ci/all.sh` runs fifteen positions
+The local gate stack is mature. `scripts/ci/all.sh` runs sixteen positions
 covering plan/skill governance, nils-cli pin alignment, Codex/Claude render and
 golden diff, drift audit, surface-registry acceptance, the skill-surface shape
 diagnostic, sandbox install rehearsal, runtime-smoke, project-local overlay
-smoke, the shared hook contract, version-baseline mirrors, and product leakage
-audit. `scripts/setup.sh` contains the brew-first host bootstrap path for
-installing the released `agent-runtime` binary, rendering and wiring home prompt
-docs, activating Claude/Codex runtime homes, pruning stale managed surfaces, and
+smoke, the shared hook contract, version-baseline mirrors, product leakage
+audit, and deterministic memory policy/retired-reference routing.
+`scripts/setup.sh` contains the brew-first host bootstrap path for installing
+the released `agent-runtime` binary, rendering and wiring home prompt docs,
+activating Claude/Codex runtime homes, pruning stale managed surfaces, and
 running doctor.
 
 ## Setup

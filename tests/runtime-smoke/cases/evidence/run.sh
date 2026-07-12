@@ -317,7 +317,7 @@ run_selective_intent_control_plane_probe() {
   local state_home="$EVIDENCE_ARTIFACTS_DIR/agent-docs-state"
   local test_first_dir="$EVIDENCE_ARTIFACTS_DIR/phase-aware-test-first"
   require_evidence_bin agent-docs || return 1
-  agent-docs --version | grep -q '1\.21\.19'
+  agent-docs --version | grep -q '1\.21\.21'
   agent-docs session --help | grep -q 'status'
   mkdir -p "$workspace/src" "$workspace/tests"
   printf '# Dev\n' >"$workspace/DEV.md"
