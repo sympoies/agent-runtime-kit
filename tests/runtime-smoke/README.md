@@ -26,8 +26,8 @@ history, logs, caches, or product state.
   temporary product homes. It does not execute prompts; outcome routing is
   covered deterministically, while authenticated fresh-session acceptance is a
   separate private/live lane.
-- `convergence`: clones a clean committed source and isolated Codex / Claude
-  homes, then proves a historical 66-to-26-skill upgrade, baseline re-sync rollback, retired
+- `convergence`: clones a clean committed source and isolated Codex, Claude,
+  and Hermes homes, then proves a historical 66-to-26-skill upgrade, baseline re-sync rollback, retired
   managed-surface pruning, stubbed plugin registry activation, independently
   rebuilt installed-runtime receipt entry/plan digests, active-ID read-back,
   idempotent reapply, and four generic
@@ -62,10 +62,12 @@ bash tests/runtime-smoke/run.sh --mode product --product codex --probe-only
 bash tests/runtime-smoke/run.sh --mode product --product claude --probe-only
 bash tests/runtime-smoke/run.sh --mode product --format json
 bash tests/runtime-smoke/run.sh --mode convergence
+bash tests/runtime-smoke/run.sh --mode convergence --product hermes
 bash tests/runtime-smoke/run.sh --mode convergence --format json
 ```
 
-Use `--product codex` or `--product claude` to narrow install mode. Use
+Use `--product codex` or `--product claude` to narrow install mode. Convergence
+also accepts `--product hermes`; other modes reject it explicitly. Use
 `--keep-artifacts` for manual debugging; the command prints the temporary root
 to stderr. Use `--artifacts-dir <path>` when a caller needs persistent logs
 without keeping the temporary runtime homes.

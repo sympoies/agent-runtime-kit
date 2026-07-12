@@ -31,7 +31,7 @@ Usage: tests/runtime-smoke/run.sh --mode <matrix|install|deterministic|product|c
 Options:
   --mode <mode>           Smoke mode to run.
   --format <text|json>    Output format. Default: text.
-  --product <product>     Product for install/product/convergence mode: codex or claude. Default: both.
+  --product <product>     Product selector: codex or claude; convergence also accepts hermes. Default: all supported by the mode.
   --domain <domain>       Deterministic smoke domain. Default: all available domains.
   --probe-only            Product mode only: run isolation probes without product prompt assertions.
   --artifacts-dir <path>  Write run logs and observed files to this directory.
@@ -108,6 +108,12 @@ esac
 
 case "$PRODUCT" in
   "" | codex | claude)
+    ;;
+  hermes)
+    if [ "$MODE" != convergence ]; then
+      echo "runtime-smoke: product hermes is supported only in convergence mode" >&2
+      exit 2
+    fi
     ;;
   *)
     echo "runtime-smoke: unsupported product: $PRODUCT" >&2
