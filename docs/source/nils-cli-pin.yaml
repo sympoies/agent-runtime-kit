@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.21.15"
+  pinned_tag: "v1.21.19"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "af79fc18dded42314e9514e095d955522aef61093cae6b575399504d68896e11"
-    linux_arm64: "6ece89e0fb9167cd3f5d41cb5cf4ae07f71c2abbf0aef7ef9fa2238bdd9be18d"
+    linux_amd64: "a374d65e92183fb385818d625d35f410d9bd531c44ed9d32f1158430de3883f2"
+    linux_arm64: "da1b815e3871bed348e0f8ae168fc65654afa7045f860c621b8ba4808fad1806"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -42,8 +42,10 @@ required_clis:
     min: "1.0.1"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
-  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread read surface and merge gate + task-list read surface and merge gate + existing-PR adoption in pr deliver + config-gated test-first evidence gate (--test-first-evidence + [test_first].require, layered global config) + pr review-threads list/resolve/reply subcommand group (resolve/reply are GitHub-only write surfaces) + fork-safe remote-derived --repo targeting for provider ops + pr review outcome posting with optional issue mirror + GitHub pr review --thread-file for actionable resolvable review findings
-    min: "1.17.0"
+  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads
+    min: "1.21.19"
+  - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
+    min: "1.21.19"
   - bin: plan-archive     # discover / migrate / refresh / query
     min: "0.25.5"
   - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2`

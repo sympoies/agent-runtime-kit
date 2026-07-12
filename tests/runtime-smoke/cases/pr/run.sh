@@ -114,6 +114,149 @@ assert_delivery_skills_thread_test_first_evidence() {
   return "$rc"
 }
 
+write_test_first_gate_records() {
+  local v2_dir="$1"
+  local v1_dir="$2"
+  local owner="$3"
+  mkdir -p "$v2_dir" "$v1_dir"
+  test-first-evidence init \
+    --out "$v2_dir" \
+    --classification behavior-change \
+    --production-path src/lib.rs \
+    --changed-behavior "runtime smoke exercises strict v2 $owner" \
+    --format json >/dev/null
+  test-first-evidence record-impact \
+    --out "$v2_dir" \
+    --none \
+    --reason "the isolated fixture has no pre-existing test surface" \
+    --format json >/dev/null
+  test-first-evidence record-failing \
+    --out "$v2_dir" \
+    --command "false" \
+    --exit-code 1 \
+    --test-name "runtime-smoke-test-first-v2-$owner" \
+    --expected-failure "the fixture behavior is absent before implementation" \
+    --observed-failure "the focused fixture command returned exit 1" \
+    --summary "strict v2 red fixture" \
+    --format json >/dev/null
+  test-first-evidence record-final \
+    --out "$v2_dir" \
+    --command "true" \
+    --status pass \
+    --scope focused \
+    --summary "focused fixture validation passed" \
+    --format json >/dev/null
+  test-first-evidence record-gap --out "$v2_dir" --none --format json >/dev/null
+  test-first-evidence verify --out "$v2_dir" --format json >/dev/null
+
+  printf '%s\n' \
+    '{"schema_version":"test-first-evidence.record.v1","change_classification":"behavior-change","failing_test":{"command":"false","exit_code":1,"summary":"red","artifacts":[]},"final_validation":{"command":"true","status":"pass","artifacts":[]}}' \
+    >"$v1_dir/test-first-evidence.json"
+}
+
+run_create_test_first_v2_gate_probe() {
+  local workspace="$PR_WORKSPACE/create-test-first-v2-gate"
+  local body="$PR_ARTIFACTS_DIR/create-test-first-v2-body.md"
+  local v2_dir="$PR_ARTIFACTS_DIR/create-test-first-v2-record"
+  local v1_dir="$PR_ARTIFACTS_DIR/create-test-first-v1-record"
+  local accepted_out="$PR_ARTIFACTS_DIR/create-test-first-v2-accepted.json"
+  local rejected_out="$PR_ARTIFACTS_DIR/create-test-first-v1-rejected.json"
+  local rc
+  require_pr_bin forge-cli || return 1
+  require_pr_bin test-first-evidence || return 1
+  mkdir -p "$workspace"
+  cp -R "$SCRIPT_DIR/workspaces/basic-repo/." "$workspace"
+  printf '[test_first]\nrequire = true\n' >"$workspace/.forge-cli.toml"
+  init_pushed_branch_fixture "$workspace" "feat/runtime-smoke-create-test-first-v2" \
+    "git@github.com:graysurf/agent-runtime-kit.git"
+  write_pr_body "$body"
+  write_test_first_gate_records "$v2_dir" "$v1_dir" "create"
+
+  (
+    cd "$workspace"
+    forge-cli --provider github --repo graysurf/agent-runtime-kit \
+      --dry-run --format json pr create \
+      --kind feature \
+      --base main \
+      --title "Runtime smoke strict v2 PR" \
+      --body-file "$body" \
+      --test-first-evidence "$v2_dir" \
+      --no-draft
+  ) >"$accepted_out" 2>&1
+  grep -q '"schema_version":"cli.forge-cli.pr.create.v1"' "$accepted_out"
+  grep -q '"provider":"github"' "$accepted_out"
+
+  set +e
+  (
+    cd "$workspace"
+    forge-cli --provider github --repo graysurf/agent-runtime-kit \
+      --dry-run --format json pr create \
+      --kind feature \
+      --base main \
+      --title "Runtime smoke rejected v1 PR" \
+      --body-file "$body" \
+      --test-first-evidence "$v1_dir" \
+      --no-draft
+  ) >"$rejected_out" 2>&1
+  rc="$?"
+  set -e
+  test "$rc" -eq 65
+  grep -q '"code":"test_first_evidence_v1"' "$rejected_out"
+}
+
+run_deliver_test_first_v2_gate_probe() {
+  local workspace="$PR_WORKSPACE/deliver-test-first-v2-gate"
+  local body="$PR_ARTIFACTS_DIR/deliver-test-first-v2-body.md"
+  local v2_dir="$PR_ARTIFACTS_DIR/deliver-test-first-v2-record"
+  local v1_dir="$PR_ARTIFACTS_DIR/deliver-test-first-v1-record"
+  local accepted_out="$PR_ARTIFACTS_DIR/deliver-test-first-v2-accepted.json"
+  local rejected_out="$PR_ARTIFACTS_DIR/deliver-test-first-v1-rejected.json"
+  require_pr_bin forge-cli || return 1
+  require_pr_bin test-first-evidence || return 1
+  require_pr_bin jq || return 1
+  mkdir -p "$workspace"
+  cp -R "$SCRIPT_DIR/workspaces/basic-repo/." "$workspace"
+  printf '[test_first]\nrequire = true\n' >"$workspace/.forge-cli.toml"
+  init_pushed_branch_fixture "$workspace" "feat/runtime-smoke-deliver-test-first-v2" \
+    "git@github.com:graysurf/agent-runtime-kit.git"
+  write_pr_body "$body"
+  write_test_first_gate_records "$v2_dir" "$v1_dir" "deliver"
+
+  (
+    cd "$workspace"
+    forge-cli --provider github --repo graysurf/agent-runtime-kit \
+      --dry-run --format json pr deliver \
+      --kind feature \
+      --base main \
+      --title "Runtime smoke strict v2 delivery" \
+      --body-file "$body" \
+      --test-first-evidence "$v2_dir" \
+      --no-merge
+  ) >"$accepted_out" 2>&1
+  jq -e '
+    .schema_version == "cli.forge-cli.pr.deliver.v1" and
+    (.data.local_preflight[] | select(.rule == "test_first" and .ok == true))
+  ' "$accepted_out" >/dev/null
+
+  (
+    cd "$workspace"
+    forge-cli --provider github --repo graysurf/agent-runtime-kit \
+      --dry-run --format json pr deliver \
+      --kind feature \
+      --base main \
+      --title "Runtime smoke rejected v1 delivery" \
+      --body-file "$body" \
+      --test-first-evidence "$v1_dir" \
+      --no-merge
+  ) >"$rejected_out" 2>&1
+  jq -e '
+    .schema_version == "cli.forge-cli.pr.deliver.v1" and
+    (.data.local_preflight[] |
+      select(.rule == "test_first" and .ok == false and
+        .code == "test_first_evidence_v1"))
+  ' "$rejected_out" >/dev/null
+}
+
 run_pr_comment_provider_payload_privacy_gate_probe() {
   local body="$PR_ARTIFACTS_DIR/pr-comment-local-path.md"
   local out="$PR_ARTIFACTS_DIR/pr-comment-local-path-gate.json"
@@ -444,6 +587,7 @@ run_create_pr_probe() {
   local rc=0
   run_create_github_probe || rc=1
   run_create_gitlab_probe || rc=1
+  run_create_test_first_v2_gate_probe || rc=1
   return "$rc"
 }
 
@@ -460,6 +604,7 @@ run_deliver_pr_probe() {
   run_deliver_gitlab_probe || rc=1
   run_pr_comment_provider_payload_privacy_gate_probe || rc=1
   assert_delivery_skills_thread_test_first_evidence || rc=1
+  run_deliver_test_first_v2_gate_probe || rc=1
   return "$rc"
 }
 

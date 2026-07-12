@@ -107,11 +107,11 @@ Do not start without explicit user approval.
 1. Wait for approval of the chosen approach.
 2. If `parallel-first` or `orchestrator-first` is already active in the thread,
    honor that mode rather than re-implementing its behavior.
-3. For a testable production behavior change, follow the failing-test discipline
-   in the `test-first-evidence` skill (classify, failing test or waiver before
-   production edits, scoped implementation, final validation) and record the
-   evidence — required when the repo or user opts into the `forge-cli`
-   `[test_first].require` gate.
+3. For a testable production behavior change, follow the durable lifecycle in
+   the `test-first-evidence` skill: contract delta, affected-test scan,
+   meaningful red, scoped validation, and suite convergence. Record its v2
+   evidence before production edits; it is required when the repo or user opts
+   into the `forge-cli` `[test_first].require` gate.
 4. Read the relevant files again, implement the chosen approach, follow codebase
    conventions strictly, and keep `TodoWrite` current.
 5. Run the project's required preflight and validation as edits land.
@@ -146,5 +146,6 @@ Do not start without explicit user approval.
   prompts under `references/prompts/`, fulfilled by each harness's own
   delegation capability.
 - It reuses the `code-review` skills for Phase 6, the `parallel-first` /
-  `orchestrator-first` execution modes and the `test-first-evidence` failing-test
-  discipline for Phase 5, instead of duplicating them.
+  `orchestrator-first` execution modes and the canonical
+  `test-first-evidence` durable lifecycle for Phase 5, instead of duplicating
+  them.

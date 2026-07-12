@@ -732,7 +732,7 @@ skills:
       hermes:
         render_to: plugins/evidence/skills/test-first-evidence/SKILL.md
     required_clis:
-      test-first-evidence: ">=0.16.0"
+      test-first-evidence: ">=1.21.19"
     state_out_mode: runtime
 
   - id: evidence.review-evidence
@@ -944,7 +944,7 @@ skills:
         render_to: plugins/pr/skills/create-pr/SKILL.md
     required_clis:
       agent-runtime: ">=0.19.0"
-      forge-cli: ">=1.11.2"
+      forge-cli: ">=1.21.19"
     state_out_mode: runtime
 
   - id: pr.create-dispatch-lane-pr
@@ -960,7 +960,7 @@ skills:
       hermes:
         render_to: plugins/pr/skills/create-dispatch-lane-pr/SKILL.md
     required_clis:
-      forge-cli: ">=1.11.2"
+      forge-cli: ">=1.21.19"
       plan-issue: ">=1.0.13"
     state_out_mode: runtime
 
@@ -993,7 +993,7 @@ skills:
       hermes:
         render_to: plugins/pr/skills/deliver-pr/SKILL.md
     required_clis:
-      forge-cli: ">=1.17.0"
+      forge-cli: ">=1.21.19"
       agent-runtime: ">=0.19.0"
       plan-issue: ">=1.1.0"
       review-specialists: ">=0.17.1"
@@ -1124,7 +1124,7 @@ skills:
     required_clis:
       plan-tooling: ">=1.0.1"
       plan-issue: ">=1.0.13"
-      forge-cli: ">=1.17.0"
+      forge-cli: ">=1.21.19"
       review-evidence: ">=0.16.0"
       review-specialists: ">=0.17.1"
     state_out_mode: runtime
@@ -1161,7 +1161,7 @@ skills:
       hermes:
         render_to: plugins/dispatch/skills/execute-dispatch-lane/SKILL.md
     required_clis:
-      forge-cli: ">=1.11.2"
+      forge-cli: ">=1.21.19"
       plan-issue: ">=1.0.13"
       plan-tooling: ">=1.0.1"
       review-evidence: ">=0.16.0"

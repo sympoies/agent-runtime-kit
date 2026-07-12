@@ -51,6 +51,13 @@ run_conversation_skill_probe() {
   grep -q "^name: ${skill}$" "$source"
   grep -q "^name: ${skill}$" "$codex"
   grep -q "^name: ${skill}$" "$claude"
+
+  if [ "$skill" = "guided-feature-build" ]; then
+    for path in "$source" "$codex" "$claude"; do
+      grep -Fq 'contract delta, affected-test scan,' "$path"
+      grep -Fq 'meaningful red, scoped validation, and suite convergence.' "$path"
+    done
+  fi
 }
 
 failures=0

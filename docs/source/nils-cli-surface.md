@@ -1,20 +1,34 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-11 (refreshed for `v1.21.15`)
+- Snapshot date: 2026-07-12 (refreshed for `v1.21.19`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.21.15`
+- Active `git describe --tags` output: `v1.21.19`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.21.15`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.21.19`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `136767ff`
-  (`chore(release): bump cli versions to 1.21.15 (#1113)`)
+- Head commit: `94da9a57`
+  (`chore(release): bump cli versions to 1.21.19 (#1128)`)
 - Release:
-  [`v1.21.15`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.15),
+  [`v1.21.19`](https://github.com/sympoies/nils-cli/releases/tag/v1.21.19),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.21.19` advances the pin from `v1.21.15`, folding in `v1.21.16`–`v1.21.18`:
+  - `test-first-evidence` replaces the v1 red/green minimum with a durable v2
+    contract: contract delta, grouped affected-test dispositions, meaningful
+    expected/observed red, typed waivers, ordered scoped final-validation
+    attempts, explicit residual gaps, and strict pre-edit/delivery checks.
+    Record v1 remains readable but is rejected by strict delivery. `forge-cli`
+    feature/bug create, adopt, dry-run, and deliver consume strict v2 while the
+    opt-in config precedence and exempt kinds remain unchanged
+    ([#1125](https://github.com/sympoies/nils-cli/pull/1125)). Runtime-kit now
+    consumes these surfaces, so `test-first-evidence` and the five delivery
+    skill `forge-cli` floors move to `>= 1.21.19`.
+  - The folded releases add provider failure classification and agent-session
+    control-plane/activity correctness. Runtime-kit does not consume those
+    provider/agent-session surfaces, so no other floor moves.
 - `v1.21.15` advances the pin from `v1.21.14`:
   - `agent-runtime` accepts skills manifest schema v2 while preserving v1,
     validates invocation role, exposure, compatibility, and pending-disposition

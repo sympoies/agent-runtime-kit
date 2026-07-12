@@ -44,9 +44,9 @@
   inferences, and open questions.
 - Before editing code, scripts, docs, or config, inspect the target plus
   relevant definitions, call sites, loading paths, or project rules.
-- For testable production behavior changes, follow the `test-first-evidence`
-  discipline: capture failing-test evidence before editing production code, or
-  state an explicit waiver with substitute validation.
+- For testable production behavior changes, follow the canonical
+  `test-first-evidence` durable lifecycle: declare the contract/test impact and
+  capture meaningful red before production edits, or record a complete waiver.
 - Keep answers concise, high-signal, and easy to verify; keep
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.

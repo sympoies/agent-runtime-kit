@@ -8,11 +8,21 @@ confidence.
 
 ## Review Focus
 
-- Tests that exercise actual changed behavior and failure paths.
-- Overly broad snapshots or brittle assertions.
-- Missing regression tests for fixed bugs.
-- Fixture setup/cleanup and deterministic replay.
-- Validation command relevance and whether evidence matches the claimed risk.
+- Test-delta completeness across contract changes, lost invariants, duplicate owners,
+  and missing distinct-risk cases.
+- Meaningful red whose expected and observed behavior failure agree; reject
+  compilation, setup, environment, fixture, unrelated failure, and retry-only
+  green as evidence.
+- Primary ownership at a stable behavioral boundary and assertions on
+  observable outcomes rather than private call order or hidden state.
+- Intentional old-spec migration versus weakened/skipped assertions; removed
+  tests must retire the invariant or name the test that preserves it.
+- Brittle mocks and broad snapshots, deterministic fixtures and cleanup,
+  uncontrolled time/random/network dependencies, and flakes or quarantines
+  without explicit debt ownership.
+- Relevant focused/affected-suite/contract-consumer validation, explicit
+  residual gaps, and coverage additions that protect distinct risk rather than
+  merely raising a percentage.
 
 ## Required Output Shape
 
