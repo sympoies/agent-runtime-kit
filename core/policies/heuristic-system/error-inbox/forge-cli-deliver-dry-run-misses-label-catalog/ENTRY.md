@@ -46,3 +46,5 @@ and the released fix is linked here.
 File the upstream nils-cli issue with the retained minimal repro, add a
 regression proving dry-run and live delivery reject `--strict-labels` without
 `--label-catalog` before provider mutation, then align both preflight paths.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1131`

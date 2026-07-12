@@ -67,3 +67,5 @@ the change here.
 File a nils-cli issue proposing `docs-hygiene-audit.sh` require `rg` up front
 (replace the blanket `rg ... || true` with a preflight plus explicit no-match
 handling) and extend the `--docs-only` lanes' tool preflight to include `rg`.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1130`

@@ -78,3 +78,5 @@ from actionable pre-closeout values in each field.
 
 File an upstream nils-cli regression that requires record close to synchronize
 Status, Current task, Next task, Handoff, and merged PR fields atomically.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1136`

@@ -104,3 +104,5 @@ Route to nils-cli / plan-issue: update `record close` or the closeout skill flow
 so label availability and exclusivity are preflighted before provider mutation,
 terminal lifecycle labels are normalized atomically, and missing optional
 labels are downgraded only after a successful read-back audit.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1135`

@@ -24,7 +24,7 @@ write barrier.
 
 ## Evidence
 
-- Raw record: not captured (manual diagnosis, 2026-07-10)
+- Raw record: not captured (manual diagnosis of cross-repository auth review mutation, 2026-07-10)
 - Summary: the parent detected unexpected edits with `git status`, required the
   reviewer to restore only its agent-owned changes through the approved patch
   surface, and verified every affected blob/mode matched the reviewed HEAD

@@ -70,3 +70,5 @@ blocker for provider-latest validation and review disagreements.
 Drive `graysurf/plan-tracking-testbed#79` to a shared gate contract and add the
 validation mismatch fixture so close-ready and record close return the same
 blocker for every terminal lifecycle role.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1133`

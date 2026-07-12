@@ -41,3 +41,5 @@ validated, and linked from this entry.
 ## Next Action
 
 Align dispatch closeout rendering with the active Tracking Issue Closeout heading contract and add dispatch read-back regression coverage.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/issues/1134`
