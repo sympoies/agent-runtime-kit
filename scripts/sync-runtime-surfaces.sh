@@ -1701,6 +1701,7 @@ import ctypes
 import errno
 import os
 import pathlib
+import re
 import stat
 import subprocess
 import sys
@@ -2289,6 +2290,7 @@ import os
 import hashlib
 import json
 import pathlib
+import re
 import stat
 import sys
 
@@ -2706,8 +2708,50 @@ def quarantine_validate_and_retain_copy(
         quarantine_domain_fd = open_or_create_directory(quarantine_skills_fd, domain)
         descriptors.append(quarantine_domain_fd)
 
-        generation = 2
+        def inventory_generations():
+            entries = {}
+            generation_prefix = f"{leaf}.generation-"
+            generation_pattern = re.compile(
+                rf"{re.escape(leaf)}\.generation-([0-9]{{6}})"
+            )
+            for name in sorted(os.listdir(quarantine_domain_fd)):
+                if name == leaf:
+                    generation_number = 1
+                else:
+                    match = generation_pattern.fullmatch(name)
+                    if match is None:
+                        if name.startswith(generation_prefix):
+                            raise ValueError(
+                                "quarantine contains a malformed generation name"
+                            )
+                        continue
+                    generation_number = int(match.group(1))
+                    if generation_number < 2:
+                        raise ValueError(
+                            "quarantine generation number must start at 000002"
+                        )
+                if generation_number in entries:
+                    raise ValueError("quarantine contains duplicate generation numbers")
+                existing_fd = os.open(name, open_flags, dir_fd=quarantine_domain_fd)
+                try:
+                    if descriptor_tree_digest(existing_fd) != source_digest:
+                        raise ValueError(
+                            "quarantine generation contains non-matching operator data"
+                        )
+                finally:
+                    os.close(existing_fd)
+                entries[generation_number] = name
+            return entries
+
         while True:
+            generations = inventory_generations()
+            if 1 not in generations:
+                destination_leaf = leaf
+            else:
+                generation = 2
+                while generation in generations:
+                    generation += 1
+                destination_leaf = f"{leaf}.generation-{generation:06d}"
             try:
                 rename_noreplace(
                     source_domain_fd,
@@ -2718,20 +2762,7 @@ def quarantine_validate_and_retain_copy(
                 renamed = True
                 break
             except FileExistsError:
-                existing_fd = os.open(
-                    destination_leaf,
-                    open_flags,
-                    dir_fd=quarantine_domain_fd,
-                )
-                try:
-                    if descriptor_tree_digest(existing_fd) != source_digest:
-                        raise ValueError(
-                            "quarantine destination contains non-matching operator data"
-                        )
-                finally:
-                    os.close(existing_fd)
-                destination_leaf = f"{leaf}.generation-{generation:06d}"
-                generation += 1
+                continue
 
         tree_fd = os.open(destination_leaf, open_flags, dir_fd=quarantine_domain_fd)
         descriptors.append(tree_fd)
@@ -2742,6 +2773,8 @@ def quarantine_validate_and_retain_copy(
         observed_digest = descriptor_tree_digest(tree_fd)
         if observed_digest != source_digest:
             raise ValueError("copy changed after classification")
+        if destination_leaf not in inventory_generations().values():
+            raise ValueError("quarantine generation disappeared after move")
 
         if inject_after_validation == "add":
             descriptor = os.open(

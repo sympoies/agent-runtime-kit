@@ -1292,6 +1292,40 @@ PY
   grep -q "quarantined legacy Hermes runtime-kit skill copy skills/browser/canary-check" \
     "$out.reupgrade"
 
+  local sparse_home="$TMP_ROOT/sync-prune/hermes-sparse-generation"
+  local sparse_retired="$sparse_home/skills/browser/canary-check"
+  local sparse_root="$sparse_home/.agent-runtime-kit-quarantine"
+  local sparse_domain="$sparse_root/hermes-retired-skills/browser"
+  local sparse_base="$sparse_domain/canary-check"
+  local sparse_gap="$sparse_domain/canary-check.generation-000003"
+  local sparse_out="$out.sparse-generation"
+  mkdir -p "$(dirname "$sparse_retired")" "$sparse_domain" "$sparse_gap"
+  printf 'agent-runtime-kit hermes retired skills v1\n' \
+    >"$sparse_root/.agent-runtime-kit-owner"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$sparse_retired"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$sparse_base"
+  printf 'operator sparse generation\n' >"$sparse_gap/operator-sentinel"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$sparse_home"
+  ) >"$sparse_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes cleanup ignored a non-matching sparse quarantine generation" >&2
+    return 1
+  }
+  test -f "$sparse_retired/SKILL.md"
+  test -f "$sparse_gap/operator-sentinel"
+  test ! -e "$sparse_domain/canary-check.generation-000002"
+  grep -q "review-needed legacy Hermes runtime-kit skill copy" "$sparse_out"
+
   for mutation in empty-dir mode symlink; do
     modified_home="$TMP_ROOT/sync-prune/hermes-modified-$mutation"
     modified_retired="$modified_home/skills/browser/canary-check"
