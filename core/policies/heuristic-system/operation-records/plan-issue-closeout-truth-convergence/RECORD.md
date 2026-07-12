@@ -21,6 +21,7 @@
   - `plan-issue-close-ready-validation-truth-mismatch`
   - `plan-issue-record-close-terminal-task-stale`
   - `plan-issue-record-close-label-partial-side-effects`
+  - `plan-issue-dispatch-closeout-heading-contract-gap`
 
 ## Signal
 
@@ -46,6 +47,8 @@ leaving repository task/handoff fields actionable, and a late missing-label
 failure occurring after the provider issue was already closed. These are
 different symptoms of the same missing invariant: closeout must consume and
 publish one normalized terminal state before any irreversible mutation.
+The dispatch-heading recurrence adds another layer: a successful close can
+emit a lifecycle comment that its own strict read-back contract rejects.
 
 ## Evidence
 

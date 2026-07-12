@@ -39,6 +39,18 @@ checks as pending.
   still pending, then immediately promoted and squash-merged the PR. The caller
   separately held and verified runs `29148841982` and `29148841380` to success
   after merge. See `evidence/pr566-premature-merge.md`.
+- Reproduced again as an actual premature merge on
+  `sympoies/agent-console#252` with `forge-cli 1.21.16`: `pr deliver` reported
+  `required_count=0` and success while two visible `build` checks were pending,
+  then immediately promoted and squash-merged the PR. The caller separately
+  waited for pull-request runs `29154209856` and `29154207642` plus merge-commit
+  run `29154215095`; all passed only after the merge had already completed.
+- Reproduced on `sympoies/agent-console#254` with `forge-cli 1.21.16`:
+  `pr deliver --no-merge` returned success with `required_count=0` while runs
+  `29156505230` and `29156500571` were pending. Holding delivery on
+  `pr wait-checks 254 --required-only false` waited about 25 seconds and
+  returned only after both builds passed. See
+  `evidence/pr254-zero-required-checks.md`.
 
 ## Impact
 
@@ -49,9 +61,10 @@ passed.
 
 ## Current Workaround
 
-When the delivery result has `required_count=0`, inspect all checks with
-`forge-cli pr checks <pr> --required-only false --format json` and wait until
-every visible row is terminal and successful before ready/merge.
+When the delivery result has `required_count=0`, run
+`forge-cli pr wait-checks <pr> --required-only false --format json` and wait
+until every visible row is terminal and successful before ready/merge. A manual
+`pr checks --required-only false` poll remains a read-only fallback.
 
 ## Promotion Criteria
 
