@@ -1306,6 +1306,31 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   grep -q "review-needed legacy Hermes runtime-kit skill copy" "$race_out"
   test -f "$race_retired/operator-added-after-classification"
 
+  local delete_race_home="$TMP_ROOT/sync-prune/hermes-delete-race-add"
+  local delete_race_retired="$delete_race_home/skills/browser/canary-check"
+  local delete_race_out="$out.delete-race-add"
+  mkdir -p "$(dirname "$delete_race_retired")"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$delete_race_retired"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_HERMES_COPY_INJECT_AFTER_VALIDATION=add
+    cleanup_hermes_legacy_runtime_kit_skill_root "$delete_race_home"
+  ) >"$delete_race_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes cleanup removed a copy changed after quarantine validation" >&2
+    return 1
+  }
+  grep -q "review-needed legacy Hermes runtime-kit skill copy" "$delete_race_out"
+  test -f "$delete_race_retired/operator-added-after-validation"
+  test -f "$delete_race_retired/SKILL.md"
+
   local profile_home="$TMP_ROOT/sync-prune/hermes-profile-symlink"
   local external_profile="$TMP_ROOT/sync-prune/operator-external-profile"
   local external_retired="$external_profile/skills/browser/canary-check"
