@@ -2271,6 +2271,7 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   local live_home="$1"
   local anchor_home="${2:-$live_home}"
   local profile_name="${3:-}"
+  local classify_only="${4:-0}"
   local legacy_root="$live_home/skills"
 
   if [ -L "$legacy_root" ]; then
@@ -2282,8 +2283,8 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   fi
 
   log "cleaning retired Hermes local runtime-kit skill links live_home=$live_home"
-  print_cmd python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY"
-python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" <<'PY'
+  print_cmd python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only"
+python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only" <<'PY'
 import ctypes
 import errno
 import os
@@ -2298,6 +2299,7 @@ source_root = pathlib.Path(sys.argv[1]).resolve()
 anchor_home = pathlib.Path(sys.argv[2])
 profile_name = sys.argv[3]
 apply = sys.argv[4] == "1"
+classify_only = sys.argv[5] == "1"
 live_home = anchor_home / "profiles" / profile_name if profile_name else anchor_home
 legacy_root = live_home / "skills"
 build_plugins = (source_root / "build" / "hermes" / "plugins").resolve()
@@ -2982,6 +2984,8 @@ print(
 )
 if review_needed:
     raise SystemExit(3)
+if classify_only and (removed_symlinks or removed_copies):
+    raise SystemExit(4)
 PY
 }
 
@@ -2989,7 +2993,7 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
   local live_home="$1"
   local profiles_root="$live_home/profiles"
   local profile_home
-  local preview_output preview_status
+  local preview_status
   local review_needed=0
 
   if [ -L "$profiles_root" ]; then
@@ -3021,16 +3025,12 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
     fi
     if [ -d "$profile_home/skills" ]; then
       set +e
-      preview_output="$(
-        APPLY=0 cleanup_hermes_legacy_runtime_kit_skill_root \
-          "$profile_home" "$live_home" "${profile_home##*/}" 2>&1
-      )"
+      APPLY=0 cleanup_hermes_legacy_runtime_kit_skill_root \
+        "$profile_home" "$live_home" "${profile_home##*/}" 1 \
+        >/dev/null 2>&1
       preview_status=$?
       set -e
-      if [ "$preview_status" -ne 0 ] ||
-        ! grep -q \
-          'legacy Hermes runtime-kit skill cleanup planned: symlinks=0 copies=0 review_needed=0' \
-          <<<"$preview_output"; then
+      if [ "$preview_status" -ne 0 ]; then
         log "review-needed Hermes profile legacy runtime-kit surfaces profile=${profile_home##*/}; automatic profile mutation is disabled"
         review_needed=1
       fi

@@ -216,17 +216,56 @@ write_hermes_quarantine_inventory() {
   local generations="$3"
   local output="$4"
   python3 - \
-    "$repo_root/manifests/retired-skill-ids.json" \
+    "$repo_root/manifests/retired-hermes-skill-copies.json" \
     "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills" \
     "$generations" "$output" <<'PY'
+import hashlib
 import json
+import os
 import pathlib
 import re
+import stat
 import sys
 
-retired = sorted(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))["skills"])
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+retired = sorted(manifest["skills"])
+expected_digests = manifest["skills"]
 root = pathlib.Path(sys.argv[2])
 generations = int(sys.argv[3])
+
+def tree_digest(tree):
+    metadata = tree.lstat()
+    assert stat.S_ISDIR(metadata.st_mode) and not tree.is_symlink(), tree
+    entries = []
+    for directory, dirnames, filenames in os.walk(tree, followlinks=False):
+        current = pathlib.Path(directory)
+        for name in sorted(dirnames + filenames):
+            path = current / name
+            item = path.lstat()
+            relative = path.relative_to(tree).as_posix()
+            if stat.S_ISLNK(item.st_mode):
+                raise AssertionError(path)
+            if stat.S_ISDIR(item.st_mode):
+                entries.append((relative, "d", "0755", None))
+            elif stat.S_ISREG(item.st_mode):
+                mode = "0755" if item.st_mode & 0o111 else "0644"
+                entries.append((relative, "f", mode, path.read_bytes()))
+            else:
+                raise AssertionError(path)
+    digest = hashlib.sha256()
+    for relative, kind, mode, content in sorted(entries):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(kind.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(mode.encode("ascii"))
+        digest.update(b"\0")
+        if content is not None:
+            digest.update(str(len(content)).encode("ascii"))
+            digest.update(b"\0")
+            digest.update(content)
+    return digest.hexdigest()
+
 expected = []
 for skill_id in retired:
     domain, skill = skill_id.split(".", 1)
@@ -237,8 +276,8 @@ for skill_id in retired:
             generation,
             root / domain / f"{skill}.generation-{generation:06d}",
         ))
-for _, _, path in expected:
-    assert path.is_dir(), path
+for skill_id, _, path in expected:
+    assert tree_digest(path) == expected_digests[skill_id], path
 
 observed = []
 pattern = re.compile(r"(.+)\.generation-([0-9]{6})$")
@@ -246,7 +285,8 @@ for domain in sorted(root.iterdir()):
     if not domain.is_dir():
         raise AssertionError(domain)
     for entry in sorted(domain.iterdir()):
-        if not entry.is_dir():
+        metadata = entry.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or entry.is_symlink():
             raise AssertionError(entry)
         match = pattern.fullmatch(entry.name)
         if match:
@@ -255,12 +295,18 @@ for domain in sorted(root.iterdir()):
         else:
             skill = entry.name
             generation = 1
-        observed.append((f"{domain.name}.{skill}", generation, entry))
-assert [(skill_id, generation) for skill_id, generation, _ in observed] == [
+        skill_id = f"{domain.name}.{skill}"
+        digest = tree_digest(entry)
+        assert digest == expected_digests[skill_id], entry
+        observed.append((skill_id, generation, digest, entry))
+assert [(skill_id, generation) for skill_id, generation, _, _ in observed] == [
     (skill_id, generation) for skill_id, generation, _ in sorted(expected)
 ]
 pathlib.Path(sys.argv[4]).write_text(
-    "".join(f"{skill_id} generation-{generation:06d}\n" for skill_id, generation, _ in observed),
+    "".join(
+        f"{skill_id} generation-{generation:06d} sha256:{digest}\n"
+        for skill_id, generation, digest, _ in observed
+    ),
     encoding="utf-8",
 )
 PY
