@@ -1187,7 +1187,7 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   local regular="$hermes_home/skills/meta/user-note/SKILL.md"
   local development_policy="$hermes_home/skills/development-policy/SKILL.md"
   local mutation modified_home modified_retired modified_out
-  local status
+  local status preview_status
 
   require_meta_bin agent-runtime || return 1
   rm -rf "$hermes_home"
@@ -1201,6 +1201,15 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   ln -s /var/empty/foreign-skill "$foreign"
   printf 'user note\n' >"$regular"
   ln -s "$REPO_ROOT/build/hermes/AGENT_HOME.md" "$development_policy"
+
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=0
+    cleanup_hermes_legacy_runtime_kit_skill_root "$hermes_home"
+  ) >"$out.preview" 2>&1
+  grep -q "legacy Hermes runtime-kit skill cleanup planned: symlinks=2 copies=2 review_needed=0" "$out.preview"
 
   (
     # shellcheck disable=SC1091
@@ -1244,11 +1253,23 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
       # shellcheck disable=SC1091
       SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
       SOURCE_ROOT="$REPO_ROOT"
+      APPLY=0
+      cleanup_hermes_legacy_runtime_kit_skill_root "$modified_home"
+    ) >"$modified_out.preview" 2>&1
+    preview_status=$?
+    (
+      # shellcheck disable=SC1091
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      SOURCE_ROOT="$REPO_ROOT"
       APPLY=1
       cleanup_hermes_legacy_runtime_kit_skill_root "$modified_home"
     ) >"$modified_out" 2>&1
     status=$?
     set -e
+    [ "$preview_status" -eq 3 ] || {
+      echo "Hermes cleanup preview accepted a modified retired copy: $mutation" >&2
+      return 1
+    }
     [ "$status" -eq 3 ] || {
       echo "Hermes cleanup accepted a modified retired copy: $mutation" >&2
       return 1
@@ -1261,6 +1282,53 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
         "$REPO_ROOT/build/hermes/plugins/browser/skills/canary-check/SKILL.md"
     fi
   done
+
+  local race_home="$TMP_ROOT/sync-prune/hermes-race-add"
+  local race_retired="$race_home/skills/browser/canary-check"
+  local race_out="$out.race-add"
+  mkdir -p "$(dirname "$race_retired")"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" "$race_retired"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_HERMES_COPY_INJECT_AFTER_CLASSIFICATION=add
+    cleanup_hermes_legacy_runtime_kit_skill_root "$race_home"
+  ) >"$race_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes cleanup removed a copy changed after classification" >&2
+    return 1
+  }
+  grep -q "review-needed legacy Hermes runtime-kit skill copy" "$race_out"
+  test -f "$race_retired/operator-added-after-classification"
+
+  local profile_home="$TMP_ROOT/sync-prune/hermes-profile-symlink"
+  local external_profile="$TMP_ROOT/sync-prune/operator-external-profile"
+  local external_retired="$external_profile/skills/browser/canary-check"
+  local profile_out="$out.profile-symlink"
+  mkdir -p "$profile_home/profiles" "$(dirname "$external_retired")"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" "$external_retired"
+  ln -s "$external_profile" "$profile_home/profiles/external"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_profile_roots "$profile_home"
+  ) >"$profile_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes profile cleanup followed an operator-owned symlink" >&2
+    return 1
+  }
+  grep -q "review-needed symlinked Hermes profile" "$profile_out"
+  test -f "$external_retired/SKILL.md"
 }
 
 run_sync_runtime_surfaces_retired_managed_links_probe() {

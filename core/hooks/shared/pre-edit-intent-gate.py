@@ -329,6 +329,35 @@ def target_repositories(payload: Mapping[str, Any], tool: str) -> list[str]:
     )
 
 
+def trusted_agent_docs_executable(executable: str, repos: list[str]) -> bool:
+    executable = os.path.realpath(executable)
+    candidate = shutil.which("agent-docs")
+    if not candidate or not os.path.isabs(candidate):
+        return False
+    candidate = os.path.abspath(candidate)
+    if any(path_within(candidate, repo_root) for repo_root in repos):
+        return False
+    configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
+    if configured:
+        roots = [os.path.realpath(item) for item in configured.split(os.pathsep) if item]
+        return os.path.dirname(candidate) in roots and not any(
+            path_within(executable, repo_root) for repo_root in repos
+        )
+    for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
+        if os.path.dirname(candidate) != os.path.join(prefix, "bin"):
+            continue
+        if os.path.dirname(executable) == os.path.dirname(candidate):
+            return True
+        cellar = os.path.join(prefix, "Cellar", "nils-cli")
+        if path_within(executable, cellar) and os.path.basename(
+            os.path.dirname(executable)
+        ) == "bin":
+            return True
+    return os.path.dirname(candidate) == "/usr/bin" and os.path.dirname(
+        executable
+    ) == "/usr/bin"
+
+
 def verify_intent(
     base_args: list[str], *, current_session: str, product: str
 ) -> tuple[bool, str]:
@@ -407,12 +436,15 @@ def main() -> int:
             "restore the governed runtime before retrying."
         )
         return ALLOW
+    if not trusted_agent_docs_executable(agent_docs_executable, repos):
+        emit_block(
+            "A trusted agent-docs executable is unavailable for this governed "
+            "repository mutation; restore the managed runtime CLI path before retrying."
+        )
+        return ALLOW
     if tool in COMMAND_TOOLS:
         command = command_from(payload)
-        bootstrap_trusted = not any(
-            path_within(agent_docs_executable, repo_root) for repo_root in repos
-        )
-        if bootstrap_trusted and activation_bootstrap(
+        if activation_bootstrap(
             command,
             payload=payload,
             product=product,

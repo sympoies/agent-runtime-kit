@@ -1681,6 +1681,45 @@ def validate_repo() -> None:
                     fail(f"{skill_id} missing project lifecycle contract phrase: {needle}")
 
     reminders = json.loads(read(ROOT / "core" / "hooks" / "shared" / "skill-usage-reminder.skills.json"))
+    retired = set(
+        json.loads(read(ROOT / "manifests" / "retired-skill-ids.json"))["skills"]
+    )
+    active_short_ids = {skill_id.split(".", 1)[1] for skill_id in by_id}
+    explicit_external = {
+        "browser-qa",
+        "find-and-fix-bugs",
+        "fix-bug-pr",
+        "gh-fix-ci",
+        "release-workflow",
+        "semgrep-find-and-fix",
+    }
+    for entry in reminders:
+        reminder_id = str(entry.get("skill", ""))
+        qualified_matches = {
+            skill_id
+            for skill_id in retired
+            if skill_id == reminder_id or skill_id.endswith(f".{reminder_id}")
+        }
+        if qualified_matches:
+            fail(
+                "skill-usage reminder exposes retired skill id "
+                f"{reminder_id}: {sorted(qualified_matches)}"
+            )
+        if reminder_id not in active_short_ids:
+            if entry.get("surface") != "external" or reminder_id not in explicit_external:
+                fail(f"skill-usage reminder has ungoverned non-active id: {reminder_id}")
+
+    retired_short_ids = {skill_id.split(".", 1)[1] for skill_id in retired}
+    for agent_path in sorted((ROOT / "core" / "agents").glob("**/AGENT.md.tera")):
+        body = read(agent_path)
+        stale_refs = sorted(
+            retired_id for retired_id in retired_short_ids if retired_id in body
+        )
+        if stale_refs:
+            fail(
+                "active agent template references retired skills "
+                f"{agent_path.relative_to(ROOT)}: {stale_refs}"
+            )
     exact = {
         entry.get("skill")
         for entry in reminders

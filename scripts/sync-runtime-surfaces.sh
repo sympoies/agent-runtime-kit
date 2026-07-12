@@ -2270,6 +2270,10 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   local live_home="$1"
   local legacy_root="$live_home/skills"
 
+  if [ -L "$legacy_root" ]; then
+    log "review-needed symlinked Hermes skill root live_home=$live_home"
+    return 3
+  fi
   if [ ! -d "$legacy_root" ]; then
     return 0
   fi
@@ -2277,6 +2281,8 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   log "cleaning retired Hermes local runtime-kit skill links live_home=$live_home"
   print_cmd python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY"
 python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY" <<'PY'
+import ctypes
+import errno
 import os
 import hashlib
 import json
@@ -2313,6 +2319,9 @@ review_needed = 0
 candidate_dirs = set()
 copy_removal_roots = []
 review_needed_roots = []
+inject_after_classification = os.environ.get(
+    "AGENT_RUNTIME_KIT_TEST_HERMES_COPY_INJECT_AFTER_CLASSIFICATION", ""
+)
 
 if not legacy_root.exists():
     sys.exit(0)
@@ -2389,6 +2398,84 @@ def tree_digest(root):
     return digest.hexdigest()
 
 
+def rename_noreplace(descriptor, source, destination):
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_raw = os.fsencode(source)
+    destination_raw = os.fsencode(destination)
+    if hasattr(libc, "renameat2"):
+        result = libc.renameat2(
+            descriptor,
+            ctypes.c_char_p(source_raw),
+            descriptor,
+            ctypes.c_char_p(destination_raw),
+            1,
+        )
+    elif hasattr(libc, "renameatx_np"):
+        result = libc.renameatx_np(
+            descriptor,
+            ctypes.c_char_p(source_raw),
+            descriptor,
+            ctypes.c_char_p(destination_raw),
+            4,
+        )
+    else:
+        raise OSError("atomic no-replace rename is unavailable")
+    if result == 0:
+        return
+    error = ctypes.get_errno()
+    if error == errno.EEXIST:
+        raise FileExistsError(destination)
+    raise OSError(error, os.strerror(error), destination)
+
+
+def quarantine_validate_and_remove_copy(skill_dir, expected_skill_dir, retired_digest):
+    parent = skill_dir.parent
+    leaf = skill_dir.name
+    quarantine = f".{leaf}.agent-runtime-kit-retired-copy.{os.getpid()}"
+    open_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    parent_fd = os.open(parent, open_flags)
+    renamed = False
+    try:
+        rename_noreplace(parent_fd, leaf, quarantine)
+        renamed = True
+        quarantined = parent / quarantine
+        exact_active = expected_skill_dir.is_dir() and trees_match(
+            quarantined, expected_skill_dir
+        )
+        exact_retired = (
+            not expected_skill_dir.is_dir()
+            and isinstance(retired_digest, str)
+            and tree_digest(quarantined) == retired_digest
+        )
+        if not (exact_active or exact_retired):
+            raise ValueError("copy changed after classification")
+        shutil.rmtree(quarantined)
+        renamed = False
+        return True
+    except (FileExistsError, OSError, ValueError) as exc:
+        if renamed:
+            try:
+                os.stat(leaf, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                os.rename(quarantine, leaf, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                renamed = False
+            else:
+                print(
+                    "Hermes copy cleanup rollback destination changed; "
+                    f"quarantine retained at {parent / quarantine}",
+                    file=sys.stderr,
+                )
+                raise
+        print(f"review-needed Hermes copy changed after classification: {exc}")
+        return False
+    finally:
+        os.close(parent_fd)
+
+
 # Classify each complete skill tree before any apply-mode deletion. In
 # particular, a managed active/retired tree containing a local symlink is a
 # modified copy and must remain byte-for-byte and link-for-link untouched for
@@ -2417,7 +2504,9 @@ for domain_dir in sorted(legacy_root.iterdir()):
             and tree_digest(skill_dir) == retired_digest
         )
         if exact_active_copy or exact_retired_copy:
-            copy_removal_roots.append((skill_dir, domain_dir))
+            copy_removal_roots.append(
+                (skill_dir, domain_dir, expected_skill_dir, retired_digest)
+            )
             continue
         if expected_skill_dir.is_dir() or isinstance(retired_digest, str):
             review_needed += 1
@@ -2464,10 +2553,22 @@ for domain_dir in sorted(legacy_root.iterdir()):
             removed_symlinks += 1
             remember_cleanup_dirs(link_path.parent, domain_dir)
 
-for skill_dir, domain_dir in copy_removal_roots:
+for index, (skill_dir, domain_dir, expected_skill_dir, retired_digest) in enumerate(
+    copy_removal_roots
+):
     rel_live = skill_dir.relative_to(legacy_root.parent)
     if apply:
-        shutil.rmtree(skill_dir)
+        if inject_after_classification == "add" and index == 0:
+            (skill_dir / "operator-added-after-classification").write_text(
+                "operator\n", encoding="utf-8"
+            )
+        if not quarantine_validate_and_remove_copy(
+            skill_dir, expected_skill_dir, retired_digest
+        ):
+            review_needed += 1
+            review_needed_roots.append(skill_dir)
+            print(f"review-needed legacy Hermes runtime-kit skill copy {rel_live}")
+            continue
         print(f"removed legacy Hermes runtime-kit skill copy {rel_live}")
     else:
         print(f"would remove legacy Hermes runtime-kit skill copy {rel_live}")
@@ -2504,16 +2605,29 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
   local live_home="$1"
   local profiles_root="$live_home/profiles"
   local profile_home
+  local review_needed=0
 
+  if [ -L "$profiles_root" ]; then
+    log "review-needed symlinked Hermes profiles root"
+    return 3
+  fi
   if [ ! -d "$profiles_root" ]; then
     return 0
   fi
 
   for profile_home in "$profiles_root"/*; do
+    if [ -L "$profile_home" ]; then
+      log "review-needed symlinked Hermes profile ${profile_home##*/}"
+      review_needed=1
+      continue
+    fi
     if [ -d "$profile_home/skills" ]; then
-      cleanup_hermes_legacy_runtime_kit_skill_root "$profile_home"
+      if ! cleanup_hermes_legacy_runtime_kit_skill_root "$profile_home"; then
+        review_needed=1
+      fi
     fi
   done
+  [ "$review_needed" -eq 0 ] || return 3
 }
 
 prune_product() {

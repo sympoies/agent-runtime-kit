@@ -45,6 +45,32 @@ def load_claude_hook_fragment() -> dict[str, Any]:
     return parsed
 
 
+def prepare_trusted_test_agent_docs(
+    full_env: dict[str, str],
+    cwd: Path | None,
+) -> tempfile.TemporaryDirectory[str] | None:
+    if "AGENT_RUNTIME_TRUSTED_CLI_ROOT" in full_env:
+        return None
+    agent_docs = shutil.which("agent-docs", path=full_env.get("PATH"))
+    if not agent_docs:
+        return None
+    if cwd is not None:
+        try:
+            Path(agent_docs).resolve().relative_to(cwd.resolve())
+        except ValueError:
+            full_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(
+                Path(agent_docs).resolve().parent
+            )
+            return None
+    trusted = tempfile.TemporaryDirectory()
+    trusted_binary = Path(trusted.name) / "agent-docs"
+    shutil.copy2(agent_docs, trusted_binary)
+    trusted_binary.chmod(0o755)
+    full_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = trusted.name
+    full_env["PATH"] = trusted.name + os.pathsep + full_env.get("PATH", "")
+    return trusted
+
+
 def run_hook(
     script_name: str,
     payload: dict[str, Any],
@@ -61,15 +87,20 @@ def run_hook(
         full_env.pop("PYTHONDONTWRITEBYTECODE", None)
     if env:
         full_env.update(env)
-    completed = subprocess.run(
-        [sys.executable, str(HOOK_DIR / script_name)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-        env=full_env,
-        check=False,
-    )
+    trusted = prepare_trusted_test_agent_docs(full_env, cwd)
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(HOOK_DIR / script_name)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=full_env,
+            check=False,
+        )
+    finally:
+        if trusted is not None:
+            trusted.cleanup()
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
@@ -84,15 +115,20 @@ def run_shell_hook(
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
-    completed = subprocess.run(
-        ["bash", str(HOOK_DIR / script_name)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-        env=full_env,
-        check=False,
-    )
+    trusted = prepare_trusted_test_agent_docs(full_env, cwd)
+    try:
+        completed = subprocess.run(
+            ["bash", str(HOOK_DIR / script_name)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=full_env,
+            check=False,
+        )
+    finally:
+        if trusted is not None:
+            trusted.cleanup()
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
@@ -1444,10 +1480,29 @@ class SharedHookTests(unittest.TestCase):
             self.assertIn("--owner-kind workflow", context)
             self.assertIn("one outermost", context)
 
-    def test_skill_usage_reminder_fires_on_evidence_migrate_cli_phrases(self) -> None:
-        # PR #365 follow-up: the evidence-migrate reminder must fire on the bare
-        # CLI / action phrasings named in its record_when, not only when an extra
-        # leading verb ("run evidence migrate") is present.
+    def test_skill_usage_reminder_routes_aliases_to_active_parent_outcomes(self) -> None:
+        cases = (
+            ("open PR", "deliver-pr", "create-pr"),
+            ("quick code review", "code-review-specialists", "code-review-quick-pass"),
+            ("execute dispatch lane", "deliver-dispatch-plan", "execute-dispatch-lane"),
+        )
+        for prompt, active, retired in cases:
+            with self.subTest(prompt=prompt):
+                code, decision, stderr = run_hook(
+                    "skill-usage-reminder.py",
+                    {"prompt": prompt},
+                    env={"AGENT_RUNTIME_PRODUCT": "codex"},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNotNone(decision)
+                assert decision is not None
+                output = decision.get("hookSpecificOutput")
+                self.assertIsInstance(output, dict)
+                context = str(output)
+                self.assertIn(active, context)
+                self.assertNotIn(f"detected: {retired}", context)
+
+    def test_skill_usage_reminder_hides_internal_evidence_migrate_phrases(self) -> None:
         for prompt in (
             "evidence migrate --apply",
             "migrate evidence",
@@ -1460,15 +1515,12 @@ class SharedHookTests(unittest.TestCase):
                     env={"AGENT_RUNTIME_PRODUCT": "codex"},
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assertIsNotNone(decision)
-                assert decision is not None
-                output = decision.get("hookSpecificOutput")
-                self.assertIsInstance(output, dict)
-                assert isinstance(output, dict)
-                self.assertIn(
-                    "evidence-migrate",
-                    str(output.get("additionalContext", "")),
-                )
+                context = ""
+                if decision is not None:
+                    output = decision.get("hookSpecificOutput")
+                    if isinstance(output, dict):
+                        context = str(output.get("additionalContext", ""))
+                self.assertNotIn("evidence-migrate", context)
 
     def test_skill_usage_reminder_ignores_unrelated_evidence_mentions(self) -> None:
         # A passing mention of evidence that is not the migrate/archive action
@@ -2907,16 +2959,57 @@ exit 64
             self.assert_blocked(decision, "project-dev")
             self.assertNotIn(str(repo), str(decision))
 
+    def test_pre_edit_intent_gate_rejects_repo_local_agent_docs_without_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            marker = repo / "fake-agent-docs-executed"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+printf 'executed\n' > {shlex.quote(str(marker))}
+if [[ "$*" == *"session --help"* ]]; then printf '%s\n' 'status verify'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  printf '%s\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+  exit 0
+fi
+exit 64
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": "",
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "repo-local-agent-docs"
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "trusted")
+            self.assertFalse(marker.exists())
+
     def test_pre_edit_intent_gate_allows_verified_session_and_legacy_cli(self) -> None:
         for supports_session in (True, False):
             for product in ("codex", "claude"):
                 with self.subTest(
                     supports_session=supports_session, product=product
                 ), tempfile.TemporaryDirectory() as tmp:
-                    repo = Path(tmp)
+                    root = Path(tmp)
+                    repo = root / "repo"
+                    repo.mkdir()
                     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
                     (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-                    bin_dir = repo / "bin"
+                    bin_dir = root / "bin"
                     bin_dir.mkdir()
                     if supports_session:
                         body = f"""#!/usr/bin/env bash
@@ -2949,10 +3042,10 @@ exit 64
                         "AGENT_RUNTIME_DOCS_HOME": str(repo),
                         "AGENT_RUNTIME_PRODUCT": product,
                         "CLAUDE_KIT_STATE_HOME": str(repo / "state"),
-                        "HOME": str(repo / "home"),
+                        "HOME": str(root / "home"),
                         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                     }
-                    (repo / "home").mkdir()
+                    (root / "home").mkdir()
                     payload = write_payload("src/lib.rs", "fn main() {}\n")
                     payload["session_id"] = "intent-gate-allow"
 
@@ -3461,6 +3554,37 @@ exit 1
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "project-dev")
 
+    def test_preflight_cue_rejects_repo_local_agent_docs_without_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            marker = repo / "fake-agent-docs-executed"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+printf 'executed\n' > {shlex.quote(str(marker))}
+printf '%s\n' '{{"intents":["project-dev"]}}'
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            code, decision, stderr = run_shell_hook(
+                "user-prompt-agent-docs.sh",
+                {"session_id": "repo-local-cue", "prompt": "hello"},
+                cwd=repo,
+                env={
+                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": "",
+                    "HOME": str(home),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNone(decision)
+            self.assertFalse(marker.exists())
+
     def test_preflight_cue_expands_only_active_intents_when_sessions_supported(
         self,
     ) -> None:
@@ -3534,10 +3658,7 @@ exit 64
             self.assertIn("browser-test", context)
             self.assertNotIn("BROWSER.md", context)
             self.assertIn("activate", context)
-            self.assertIn(
-                f"{shlex.quote(str((bin_dir / 'agent-docs').resolve()))} --docs-home",
-                context,
-            )
+            self.assertIn("agent-docs --docs-home", context)
             self.assertIn(f"--docs-home {repo.resolve()}", context)
             self.assertIn(f"--project-path {repo.resolve()}", context)
             self.assertIn(f"--state-home {repo / 'state'}", context)

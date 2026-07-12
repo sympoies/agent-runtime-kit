@@ -23,15 +23,56 @@ python_bin="$(command -v python3 || true)"
 [[ -z "$python_bin" ]] && exit 0
 agent_docs_candidate="$(command -v agent-docs 2>/dev/null || true)"
 [[ "$agent_docs_candidate" == /* && -x "$agent_docs_candidate" ]] || exit 0
-agent_docs_bin="$(
-  "$python_bin" -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' \
-    "$agent_docs_candidate" 2>/dev/null || true
-)"
-[[ "$agent_docs_bin" == /* && -x "$agent_docs_bin" ]] || exit 0
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -z "$repo_root" ]] && exit 0
 [[ -f "$repo_root/AGENT_DOCS.toml" ]] || exit 0
+agent_docs_bin="$(
+  "$python_bin" - "$agent_docs_candidate" "$repo_root" <<'PY' 2>/dev/null || true
+import os
+import pathlib
+import sys
+
+candidate_path = pathlib.Path(sys.argv[1]).absolute()
+candidate = candidate_path.resolve()
+repo = pathlib.Path(sys.argv[2]).resolve()
+configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
+try:
+    candidate_path.relative_to(repo)
+except ValueError:
+    pass
+else:
+    raise SystemExit(0)
+trusted = False
+if configured:
+    roots = [
+        pathlib.Path(item).resolve()
+        for item in configured.split(os.pathsep)
+        if item
+    ]
+    trusted = candidate_path.parent in roots
+else:
+    for prefix_raw in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
+        prefix = pathlib.Path(prefix_raw)
+        if candidate_path.parent != prefix / "bin":
+            continue
+        if candidate.parent == candidate_path.parent:
+            trusted = True
+            break
+        try:
+            relative = candidate.relative_to(prefix / "Cellar" / "nils-cli")
+        except ValueError:
+            continue
+        trusted = len(relative.parts) >= 3 and candidate.parent.name == "bin"
+        if trusted:
+            break
+if candidate_path.parent == pathlib.Path("/usr/bin") and candidate.parent == candidate_path.parent:
+    trusted = True
+if trusted and candidate.is_file() and os.access(candidate, os.X_OK):
+    print(candidate)
+PY
+)"
+[[ "$agent_docs_bin" == /* && -x "$agent_docs_bin" ]] || exit 0
 
 runtime_kit_source_checkout() {
   local root="$1"

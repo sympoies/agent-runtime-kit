@@ -236,7 +236,7 @@ def emit_reminder(skills: list[str]) -> None:
   skill-usage init --out "$record_dir" --skill "<parent-skill>" ...; skill-usage record-validation --out "$record_dir" ...; skill-usage record-outcome --out "$record_dir" ...; skill-usage verify --out "$record_dir" --format json"""
     context = f"""[agent-runtime-kit:{product}] High-impact outcome workflow detected: {skill_list}.
 If this turn actually invokes the skill and performs file edits, tool/API calls, validation, delivery, external lookup, or durable artifact creation, {record_contract}
-Keep detailed evidence in typed child records and link them from the envelope. Curate only important unresolved or reusable workflow gaps into heuristic-inbox cases under the shared Heuristic System root. This hook is a reminder only; do not auto-generate or hand-edit records. See the rendered skill-usage skill under the active runtime home."""
+Keep detailed evidence in typed child records and link them from the envelope. Curate only important unresolved or reusable workflow gaps into heuristic-inbox cases under the shared Heuristic System root. This hook is a reminder only; do not auto-generate or hand-edit records. Follow the evidence control-plane policy and the released skill-usage CLI contract owned by the parent workflow."""
     sys.stdout.write(
         json.dumps(
             {

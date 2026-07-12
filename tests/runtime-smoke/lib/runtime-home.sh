@@ -389,7 +389,7 @@ runtime_convergence_product() {
   local product="$4"
   local artifacts_dir="$5"
   local live_home state_home config_path rollback_path baseline_surface operator_surface
-  local idempotent_log public_summary
+  local idempotent_log public_summary baseline_skill_count
 
   live_home="$(runtime_live_home "$tmp_root" "$product")"
   state_home="$(runtime_state_home "$tmp_root" "$product")"
@@ -414,6 +414,10 @@ runtime_convergence_product() {
   cp "$live_home/operator-owned.txt" "$operator_surface"
 
   runtime_install_product "$prior_root" "$tmp_root" "$product" "$artifacts_dir/baseline" || return 1
+  baseline_skill_count="$(
+    wc -l <"$artifacts_dir/baseline/${product}.observed-skills.txt" | tr -d '[:space:]'
+  )"
+  [ "$baseline_skill_count" = "66" ] || return 1
   runtime_assert_operator_config "$product" "$config_path" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
   cp -L "$rollback_path" "$baseline_surface"
@@ -431,10 +435,29 @@ runtime_convergence_product() {
   runtime_assert_operator_config "$product" "$config_path" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
+  runtime_remove_retired_surface "$repo_root" "$product" "$live_home" \
+    >"$artifacts_dir/${product}.retired-cleanup-first.log" 2>&1 || return 1
+  agent-runtime prune-stale \
+    --source-root "$repo_root" \
+    --product "$product" \
+    --live-home "$live_home" \
+    --no-overlay \
+    --apply --format json >"$artifacts_dir/${product}.prune-first.json" 2>&1 || return 1
+  runtime_activate_product_registry \
+    "$repo_root" "$product" "$live_home" "$state_home" "$artifacts_dir/head-first" || return 1
+  runtime_install_product \
+    "$repo_root" "$tmp_root" "$product" "$artifacts_dir/head-first" || return 1
+  cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
+
   runtime_install_product \
     "$prior_root" "$tmp_root" "$product" "$artifacts_dir/rollback" || return 1
+  runtime_activate_product_registry \
+    "$prior_root" "$product" "$live_home" "$state_home" "$artifacts_dir/rollback" || return 1
   runtime_assert_operator_config "$product" "$config_path" || return 1
   cmp "$baseline_surface" "$rollback_path" || return 1
+  [ "$(
+    wc -l <"$artifacts_dir/rollback/${product}.observed-skills.txt" | tr -d '[:space:]'
+  )" = "$baseline_skill_count" ] || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
   agent-runtime install \
@@ -478,7 +501,8 @@ runtime_convergence_product() {
     "$artifacts_dir/baseline/${product}.receipt-summary.json" \
     "$artifacts_dir/upgrade/${product}.receipt-summary.json" \
     "$public_summary" \
-    "$RUNTIME_SMOKE_SKILL_COUNT" <<'PY'
+    "$RUNTIME_SMOKE_SKILL_COUNT" \
+    "$baseline_skill_count" <<'PY'
 import json
 import pathlib
 import re
@@ -487,13 +511,17 @@ import sys
 baseline = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 receipt = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 skill_count = int(sys.argv[4])
+baseline_skill_count = int(sys.argv[5])
 assert baseline["source_revision"] != receipt["source_revision"]
 assert baseline["managed_entry_count"] > receipt["managed_entry_count"]
+assert baseline_skill_count == 66
+assert skill_count == 26
 summary = {
     "schema": "portable-convergence-summary.v1",
     "product": receipt["product"],
     "baseline_revision": baseline["source_revision"],
     "source_revision": receipt["source_revision"],
+    "baseline_skill_count": baseline_skill_count,
     "skill_count": skill_count,
     "receipt_verified": receipt["verified"],
     "rollback_verified": True,

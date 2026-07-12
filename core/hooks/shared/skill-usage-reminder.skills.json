@@ -1,6 +1,7 @@
 [
   {
     "skill": "browser-qa",
+    "surface": "external",
     "tier": "default",
     "match_mode": "action_or_explicit",
     "aliases": ["browser-qa", "browser qa", "web-qa", "web qa"],
@@ -11,84 +12,21 @@
     "skill": "code-review-specialists",
     "tier": "default",
     "match_mode": "action_or_explicit",
-    "aliases": ["code-review-specialists", "code review specialists", "specialist review"],
+    "aliases": ["code-review-specialists", "code review specialists", "specialist review", "code-review-quick-pass", "code review quick pass", "quick code review", "code-review-focused-lens", "focused code review", "focused review lens", "code-review-pre-merge-gate", "pre-merge review gate", "pre merge review gate", "code-review-follow-up", "review follow-up", "review follow up"],
     "reason": "Specialist review workflows create retained review findings for broad or risky diffs.",
     "record_when": "The workflow runs specialist review passes, writes a report, or gates a PR/release decision."
-  },
-  {
-    "skill": "code-review-quick-pass",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["code-review-quick-pass", "code review quick pass", "quick code review"],
-    "reason": "Quick review can create retained findings or escalation evidence for a diff.",
-    "record_when": "The workflow records findings, residual risk, or an escalation decision."
-  },
-  {
-    "skill": "code-review-focused-lens",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["code-review-focused-lens", "focused code review", "focused review lens"],
-    "reason": "Focused lens review can create specialist findings for a selected risk area.",
-    "record_when": "The workflow runs a forced specialist lens, writes findings, or gates a decision."
-  },
-  {
-    "skill": "code-review-pre-merge-gate",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["code-review-pre-merge-gate", "pre-merge review gate", "pre merge review gate"],
-    "reason": "Pre-merge review gates affect delivery readiness and should retain the review outcome.",
-    "record_when": "The workflow runs a pre-merge gate, writes a gate result, or blocks/allows delivery."
-  },
-  {
-    "skill": "code-review-follow-up",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["code-review-follow-up", "review follow-up", "review follow up"],
-    "reason": "Review follow-up records whether previous findings were resolved or accepted.",
-    "record_when": "The workflow classifies previous findings after repairs or records disposition evidence."
-  },
-  {
-    "skill": "create-pr",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["create-pr", "create pr", "open pr", "create github pr", "open github pr", "create gitlab mr", "open gitlab mr"],
-    "reason": "PR/MR creation is provider-side delivery state.",
-    "record_when": "The workflow creates or materially prepares a GitHub pull request or GitLab merge request."
   },
   {
     "skill": "deliver-pr",
     "tier": "default",
     "match_mode": "action_or_explicit",
-    "aliases": ["deliver-pr", "deliver pr", "deliver github pr", "deliver gitlab mr"],
+    "aliases": ["deliver-pr", "deliver pr", "deliver github pr", "deliver gitlab mr", "create-pr", "create pr", "open pr", "create github pr", "open github pr", "create gitlab mr", "open gitlab mr", "close-pr", "close pr", "merge pr", "close github pr", "merge github pr", "close gitlab mr", "merge gitlab mr", "review-thread-cleanup", "review thread cleanup", "resolve review threads", "resolve review thread", "review thread sweep", "bot review cleanup"],
     "reason": "PR/MR delivery spans validation, checks/pipelines, provider state, and merge handling.",
     "record_when": "The workflow creates, updates, watches, readies, merges, or closes a GitHub pull request or GitLab merge request."
   },
   {
-    "skill": "close-pr",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["close-pr", "close pr", "merge pr", "close github pr", "merge github pr", "close gitlab mr", "merge gitlab mr"],
-    "reason": "PR/MR close/merge changes provider-side delivery state.",
-    "record_when": "The workflow marks ready, merges, closes, or cleans up a GitHub pull request or GitLab merge request."
-  },
-  {
-    "skill": "review-thread-cleanup",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["review-thread-cleanup", "review thread cleanup", "resolve review threads", "resolve review thread", "review thread sweep", "bot review cleanup"],
-    "reason": "Resolving or replying to review threads changes provider-side review state and applies the convergence policy's triage decisions.",
-    "record_when": "The workflow lists, triages, resolves, replies to, or defers review threads on a GitHub pull request or GitLab merge request."
-  },
-  {
-    "skill": "create-dispatch-lane-pr",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["create-dispatch-lane-pr", "create dispatch lane pr", "dispatch lane pr"],
-    "reason": "Dispatch lane PR creation links plan execution state to provider delivery state.",
-    "record_when": "The workflow creates or materially prepares an assigned dispatch lane pull request."
-  },
-  {
     "skill": "gh-fix-ci",
+    "surface": "external",
     "tier": "default",
     "match_mode": "action_or_explicit",
     "aliases": ["gh-fix-ci", "fix ci", "fix github actions", "github actions failure"],
@@ -97,6 +35,7 @@
   },
   {
     "skill": "release-workflow",
+    "surface": "external",
     "tier": "default",
     "match_mode": "action_or_explicit",
     "aliases": ["release-workflow", "release workflow", "cut release", "publish release"],
@@ -105,6 +44,7 @@
   },
   {
     "skill": "find-and-fix-bugs",
+    "surface": "external",
     "tier": "default",
     "match_mode": "action_or_explicit",
     "aliases": ["find-and-fix-bugs", "find and fix bugs"],
@@ -113,6 +53,7 @@
   },
   {
     "skill": "fix-bug-pr",
+    "surface": "external",
     "tier": "default",
     "match_mode": "action_or_explicit",
     "aliases": ["fix-bug-pr", "fix bug pr"],
@@ -121,6 +62,7 @@
   },
   {
     "skill": "semgrep-find-and-fix",
+    "surface": "external",
     "tier": "default",
     "match_mode": "action_or_explicit",
     "aliases": ["semgrep-find-and-fix", "semgrep find and fix"],
@@ -131,47 +73,15 @@
     "skill": "issue-follow-up",
     "tier": "default",
     "match_mode": "action_or_explicit",
-    "aliases": ["issue-follow-up", "issue follow-up", "issue follow up"],
+    "aliases": ["issue-follow-up", "issue follow-up", "issue follow up", "report-plan-issue-finding", "report plan issue finding", "plan-issue finding", "plan-tracking finding"],
     "reason": "Issue follow-up turns discovered work or blockers into durable provider state.",
     "record_when": "The workflow opens, updates, or continues a GitHub issue for durable follow-up."
-  },
-  {
-    "skill": "report-plan-issue-finding",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["report-plan-issue-finding", "report plan issue finding", "plan-issue finding", "plan-tracking finding"],
-    "reason": "Plan-issue findings are tracked as labeled issues in a central tracker so skill/CLI drift is not lost.",
-    "record_when": "The workflow finds drift or a bug while running the plan-issue / plan-tracking skills or their CLIs and files or closes a finding issue."
-  },
-  {
-    "skill": "review-dispatch-lane-pr",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["review-dispatch-lane-pr", "dispatch-pr-review", "dispatch pr review"],
-    "reason": "Dispatch PR review ties provider comments, findings, issue state, and merge decisions together.",
-    "record_when": "The workflow reviews a PR through issue-linked evidence, comments, or merge decisions."
-  },
-  {
-    "skill": "dispatch-plan-closeout",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["dispatch-plan-closeout", "dispatch-issue-closeout", "dispatch issue closeout"],
-    "reason": "Dispatch issue closeout reviews subagent lanes, merges PRs, and closes plan-issue runtime work.",
-    "record_when": "The workflow reviews, merges, or closes existing issue-backed dispatch work."
-  },
-  {
-    "skill": "execute-dispatch-lane",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["execute-dispatch-lane", "dispatch-subagent-pr", "execute dispatch lane", "dispatch subagent pr"],
-    "reason": "Dispatch subagent PR work owns an implementation lane and provider PR handoff.",
-    "record_when": "The workflow implements an assigned lane, creates a draft PR, or responds to review."
   },
   {
     "skill": "deliver-dispatch-plan",
     "tier": "default",
     "match_mode": "action_or_explicit",
-    "aliases": ["deliver-dispatch-plan", "deliver dispatch plan", "create-dispatch-plan", "create dispatch plan", "dispatch plan"],
+    "aliases": ["deliver-dispatch-plan", "deliver dispatch plan", "create-dispatch-plan", "create dispatch plan", "dispatch plan", "review-dispatch-lane-pr", "dispatch-pr-review", "dispatch pr review", "dispatch-plan-closeout", "dispatch-issue-closeout", "dispatch issue closeout", "execute-dispatch-lane", "dispatch-subagent-pr", "execute dispatch lane", "dispatch subagent pr", "create-dispatch-lane-pr", "create dispatch lane pr", "dispatch lane pr"],
     "reason": "Dispatch plan delivery coordinates sprint execution, subagent PRs, and acceptance gates.",
     "record_when": "The workflow dispatches, reviews, merges, or advances plan-driven issue sprints."
   },
@@ -187,41 +97,17 @@
     "skill": "guided-feature-build",
     "tier": "default",
     "match_mode": "action_or_explicit",
-    "aliases": ["guided-feature-build", "guided feature build", "feature build conductor"],
+    "aliases": ["guided-feature-build", "guided feature build", "feature build conductor", "parallel-first", "parallel first", "execute-plan-parallel", "execute plan parallel"],
     "reason": "The guided feature build conductor implements a feature across files and routes to review and delivery.",
     "record_when": "The workflow implements a feature, edits files, or routes to review or delivery for a guided build."
-  },
-  {
-    "skill": "create-plan-tracking-issue",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["create-plan-tracking-issue", "create plan tracking issue"],
-    "reason": "Plan-tracking issue creation turns a plan bundle into provider-side lifecycle state.",
-    "record_when": "The workflow creates or previews a provider issue for a plan bundle."
   },
   {
     "skill": "deliver-plan-tracking-issue",
     "tier": "default",
     "match_mode": "action_or_explicit",
-    "aliases": ["deliver-plan-tracking-issue", "deliver plan tracking issue"],
+    "aliases": ["deliver-plan-tracking-issue", "deliver plan tracking issue", "create-plan-tracking-issue", "create plan tracking issue", "execute-plan-tracking-issue", "execute plan tracking issue", "execute-from-plan", "execute from plan"],
     "reason": "Plan-tracking delivery executes, reviews, merges, and closes issue-backed plan work.",
     "record_when": "The workflow implements, reviews, merges, or advances a lightweight issue-backed plan."
-  },
-  {
-    "skill": "execute-plan-tracking-issue",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["execute-plan-tracking-issue", "execute plan tracking issue", "execute-from-plan", "execute from plan"],
-    "reason": "Plan-tracking execution resumes implementation against issue-hosted plan state.",
-    "record_when": "The workflow resumes, edits, validates, or updates execution state from an issue-backed plan."
-  },
-  {
-    "skill": "parallel-first",
-    "tier": "default",
-    "match_mode": "action_or_explicit",
-    "aliases": ["parallel-first", "parallel first", "execute-plan-parallel", "execute plan parallel"],
-    "reason": "Parallel-first workflows can dispatch subagents, integrate changes, and validate results.",
-    "record_when": "The workflow dispatches, integrates, validates, or updates state for parallel task lanes."
   },
   {
     "skill": "sync-runtime-surfaces",
@@ -262,45 +148,5 @@
     "aliases": ["remove-project-skill"],
     "reason": "Project-local skill removal changes future agent behavior in a consuming repo.",
     "record_when": "The workflow removes a project-local skill directory or purges project-local references."
-  },
-  {
-    "skill": "plan-archive-migrate",
-    "tier": "exact-only",
-    "match_mode": "action_or_explicit",
-    "aliases": ["plan-archive-migrate", "plan archive migrate", "archive plan", "migrate plan"],
-    "reason": "Migrating a plan moves a closed plan folder into the archive repo and deletes it from the working repo — a durable, hard-to-reverse lifecycle change.",
-    "record_when": "The workflow runs plan-archive migrate --apply or commits an archived plan."
-  },
-  {
-    "skill": "plan-archive-query",
-    "tier": "exact-only",
-    "match_mode": "action_or_explicit",
-    "aliases": ["plan-archive-query", "plan archive query", "query archive", "refresh archive snapshot"],
-    "reason": "Refreshing a snapshot writes an append-only provider payload that may require scrub-log review before commit.",
-    "record_when": "The workflow runs plan-archive refresh and commits a new _index/ snapshot."
-  },
-  {
-    "skill": "plan-archive-discover",
-    "tier": "exact-only",
-    "match_mode": "action_or_explicit",
-    "aliases": ["plan-archive-discover", "plan archive discover", "discover archive candidates", "scan archive candidates"],
-    "reason": "Discover surfaces archive candidates and hands selected folders to plan-archive-migrate, which then drives the durable archive + source-delete lifecycle change.",
-    "record_when": "The workflow scans plan folders, narrows candidate selection, and hands a folder off to plan-archive-migrate."
-  },
-  {
-    "skill": "evidence-migrate",
-    "tier": "exact-only",
-    "match_mode": "action_or_explicit",
-    "aliases": ["evidence-migrate", "evidence migrate", "migrate evidence", "archive skill-usage evidence"],
-    "reason": "Migrating evidence copies skill-usage records into the durable agent-evidence-archive and commits + pushes them — a durable retention step (copy-only, so the source is left intact).",
-    "record_when": "The workflow runs evidence migrate --apply or commits archived skill-usage evidence."
-  },
-  {
-    "skill": "evidence-prune-source",
-    "tier": "exact-only",
-    "match_mode": "action_or_explicit",
-    "aliases": ["evidence-prune-source", "evidence prune-source", "prune evidence source", "clean archived skill-usage evidence"],
-    "reason": "Pruning evidence source deletes local agent-out run directories after the archive catalog already contains their raw record digest.",
-    "record_when": "The workflow runs evidence prune-source --apply or deletes archived local skill-usage source records."
   }
 ]

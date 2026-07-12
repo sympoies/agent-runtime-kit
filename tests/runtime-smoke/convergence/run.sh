@@ -169,7 +169,17 @@ fi
 for product in $products; do
   if runtime_convergence_product \
     "$PORTABLE_SOURCE_ROOT" "$BASELINE_SOURCE_ROOT" "$TMP_ROOT" "$product" \
-    "$CONVERGENCE_ARTIFACTS_DIR/$product"; then
+    "$CONVERGENCE_ARTIFACTS_DIR/$product" &&
+    python3 - "$CONVERGENCE_ARTIFACTS_DIR/$product/$product.portable-summary.json" <<'PY'
+import json
+import pathlib
+import sys
+
+summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert summary["baseline_skill_count"] == 66
+assert summary["skill_count"] == 26
+PY
+  then
     results_add "convergence.$product.lifecycle" "$product" pass \
       "$RUNTIME_SMOKE_SKILL_COUNT" \
       "historical upgrade, rollback rehearsal, retired prune, exact registry activation, receipt transition, and idempotent apply passed"
