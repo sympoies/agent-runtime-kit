@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -205,14 +207,36 @@ def list_reminders(output_format: str) -> int:
     return ALLOW
 
 
+def supports_workflow_owners() -> bool:
+    if not shutil.which("skill-usage"):
+        return False
+    try:
+        completed = subprocess.run(
+            ["skill-usage", "init", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0 and "--owner-kind" in completed.stdout
+
+
 def emit_reminder(skills: list[str]) -> None:
     skill_list = ", ".join(skills)
     product = os.environ.get("AGENT_RUNTIME_PRODUCT", "agent-runtime")
-    context = f"""[agent-runtime-kit:{product}] High-impact skill workflow detected: {skill_list}.
-If this turn actually invokes the skill and performs file edits, tool/API calls, validation, delivery, external lookup, or durable artifact creation, retain a skill-usage.record.v1 envelope:
+    if supports_workflow_owners():
+        record_contract = """retain one outermost skill-usage.record.v2 envelope for the parent outcome workflow (not one record per primitive):
   record_dir="$(agent-out project --topic skill-usage --mkdir)"
-  skill-usage init --out "$record_dir" ...; skill-usage record-validation --out "$record_dir" ...; skill-usage record-outcome --out "$record_dir" ...; skill-usage verify --out "$record_dir" --format json
-Keep detailed evidence in typed child records and link them from the envelope. Curate only important unresolved or reusable workflow gaps into heuristic-inbox cases under the shared Heuristic System root. This hook is a reminder only; do not auto-generate or hand-edit records. See the rendered skill-usage skill under the active runtime home."""
+  skill-usage init --out "$record_dir" --owner-kind workflow --owner-id "<outermost-outcome>" ...; skill-usage record-validation --out "$record_dir" ...; skill-usage record-outcome --out "$record_dir" ...; skill-usage verify --out "$record_dir" --format json"""
+    else:
+        record_contract = """retain one compatibility skill-usage.record.v1 envelope for the parent skill workflow:
+  record_dir="$(agent-out project --topic skill-usage --mkdir)"
+  skill-usage init --out "$record_dir" --skill "<parent-skill>" ...; skill-usage record-validation --out "$record_dir" ...; skill-usage record-outcome --out "$record_dir" ...; skill-usage verify --out "$record_dir" --format json"""
+    context = f"""[agent-runtime-kit:{product}] High-impact outcome workflow detected: {skill_list}.
+If this turn actually invokes the skill and performs file edits, tool/API calls, validation, delivery, external lookup, or durable artifact creation, {record_contract}
+Keep detailed evidence in typed child records and link them from the envelope. Curate only important unresolved or reusable workflow gaps into heuristic-inbox cases under the shared Heuristic System root. This hook is a reminder only; do not auto-generate or hand-edit records. Follow the evidence control-plane policy and the released skill-usage CLI contract owned by the parent workflow."""
     sys.stdout.write(
         json.dumps(
             {

@@ -56,7 +56,7 @@ Outputs:
   them for a `docs/discussions/` capture and for promoted canon.
 - Updated local docs index or README only when the document is intentionally promoted as retained knowledge and should be discoverable
   outside the plan.
-- When following the skill usage recording convention, a `skill-usage.record.v1` envelope that links the created document and validation
+- When following the evidence-control-plane recording convention, a `skill-usage.record.v1` envelope that links the created document and validation
   evidence.
 - A short response linking the document path, listing validation run, and
   presenting any response-only open questions as immediate decision prompts.
@@ -69,8 +69,8 @@ Failure modes:
 
 - The user actually needs phased tasks, sprint grouping, PR splitting, or
   detailed execution sequencing now; create or update the plan first, then use
-  `create-plan-tracking-issue`, `deliver-plan-tracking-issue`, or
-  `deliver-dispatch-plan` as appropriate for the issue-backed workflow.
+  `deliver-plan-tracking-issue` or `deliver-dispatch-plan` as appropriate for
+  the issue-backed workflow; each parent opens a missing tracker internally.
 - The user only needs a copy-ready prompt for a fresh session; use `handoff-session-prompt` instead.
 - Source evidence is too ambiguous to record as fact. If the ambiguity affects
   core facts, scope, requirements, acceptance criteria, or implementation
@@ -103,11 +103,11 @@ Failure modes:
    - Graduating a `docs/discussions/` capture to L2: when it later needs a
      tracked plan, move it into a `docs/plans/<YYYY-MM-DD>-<slug>/` bundle as
      `<slug>-discussion-source.md` (retire the `docs/discussions/` original),
-     author the `<slug>-plan.md` + `<slug>-execution-state.md`, then run
-     `create-plan-tracking-issue`. Promotion is a move, not a copy.
+     author the `<slug>-plan.md` + `<slug>-execution-state.md`, then run the
+     selected plan delivery outcome. Promotion is a move, not a copy.
    - Do not use the document as a session prompt. If continuity is needed, write or reference this document first, then use
      `handoff-session-prompt`.
-   - Do not use `review-evidence` as the primary artifact for this workflow. If review findings or validation records matter, attach or link
+   - Do not use a `review-evidence` CLI record as the primary artifact for this workflow. If review findings or validation records matter, attach or link
      those evidence files from the document.
 
 2. Run project preflight and choose the destination
@@ -191,10 +191,11 @@ Failure modes:
      writing a source document. Put the expected review gate in the document's
      validation plan or execution notes.
    - When the document does prescribe review, pick the workflow from the
-     "Relationship To Nearby Skills" section below — quick-pass for ordinary
-     diffs, focused-lens for explicit lenses, pre-merge-gate for PR/MR delivery
-     gates, follow-up after fixes, specialists for broad or risky bundles.
-   - Link `review-evidence` records when retained review findings or validation
+     "Relationship To Nearby Outcomes" section below — quick mode for ordinary
+     diffs, focused mode for explicit lenses, pre-merge mode for PR/MR delivery
+     gates, follow-up mode after fixes, and specialist mode for broad or risky
+     bundles.
+   - Link `review-evidence` CLI records when retained review findings or validation
      records materially affect the implementation source. Keep this document as
      the primary read-first artifact.
 
@@ -212,9 +213,9 @@ Failure modes:
    - If the document names commands, files, tests, or runtime gates as acceptance criteria, verify obvious references when cheap.
    - Report validation that was run and anything intentionally skipped.
 
-8. Record skill usage when retained evidence is required
-   - This skill is the first docs-only pilot for `skill-usage.record.v1`.
-   - When the skill creates or updates durable docs and the project allows retained evidence, write a compact skill usage record in the
+8. Record usage when retained evidence is required
+   - This outcome supports the `skill-usage.record.v1` evidence envelope.
+   - When it creates or updates durable docs and the project allows retained evidence, write a compact usage record in the
      project evidence path or an `agent-out project --topic skill-usage --mkdir` run directory.
    - Link the implementation-readiness document, docs index changes, validation commands, and any typed child records from the envelope.
    - Prefer `skill-usage verify --out <record-dir> --format json`; use the documented local checkout fallback when PATH has not caught up.
@@ -229,26 +230,14 @@ Failure modes:
    - If no unresolved questions remain, say that no open questions were left out
      of the document.
 
-## Relationship To Nearby Skills
+## Relationship To Nearby Outcomes
 
-- `review-evidence`: use for normalized review findings and validation records; link it from this document when evidence matters.
-- `code-review-quick-pass`: use for lightweight read-only review of small or
-  ordinary diffs referenced by this source document.
-- `code-review-focused-lens`: use when this source document requests explicit
-  review lenses.
-- `code-review-pre-merge-gate`: use for PR/MR delivery gates derived from this
-  source document.
-- `code-review-follow-up`: use after fixes to re-check findings captured or
-  linked by this source document.
-- `code-review-specialists`: use only when the later review needs the broad or
-  risky full specialist bundle.
-- `create-plan-tracking-issue`: use when an existing plan that links this
-  document under `Read First` needs a lightweight provider issue record.
+- `code-review-specialists`: use for later read-only review; it selects quick,
+  focused, pre-merge, follow-up, or specialist mode from scope and delivery
+  context. Link any retained `review-evidence` CLI record from this document.
 - `deliver-plan-tracking-issue`: use when a lightweight issue-backed plan is
-  ready to execute and deliver.
+  ready to open or resume, execute, and deliver.
 - `deliver-dispatch-plan`: use when implementation needs dispatch lanes,
-  PR grouping, main-agent review, and final dispatch closeout.
-- `execute-plan-tracking-issue`: use to resume execution from an existing
-  lightweight plan-tracking issue.
+  PR grouping, independent lane review, and final dispatch closeout.
 - `handoff-session-prompt`: use after this skill when the user wants a copy-ready prompt for a fresh session; put this document under
   `Read First`.

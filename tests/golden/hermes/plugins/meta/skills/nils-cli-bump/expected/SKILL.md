@@ -125,7 +125,7 @@ bash scripts/ci/all.sh                                 # Position 2 now aligned
    `pinned_tag` prose mirror still lags. Downstream render / drift /
    runtime-smoke positions catch any consumer the rewrite missed.
 9. Deliver one bump PR through the active PR workflow
-   (`pr:create-pr` / `pr:deliver-pr` / `forge-cli pr`), not raw
+   (`pr:deliver-pr` / `forge-cli pr`), not raw
    `gh pr create`. Title it as a `chore` (pin + snapshot only) or `feat`
    (consumer surface rewrites included) per the actual diff.
 
@@ -145,8 +145,7 @@ and call it from here.
 
 ## Related Skills
 
-- `meta:semantic-commit` — commit the bump with the staged-change boundary
-  intact.
+- The policy-owned semantic commit phase preserves the staged-change boundary.
 - `pr:deliver-pr` — open and drive the single bump PR; this skill never
   calls raw `gh pr create`.
 - `meta:sync-runtime-surfaces` — after the host upgrade, refresh the live Codex

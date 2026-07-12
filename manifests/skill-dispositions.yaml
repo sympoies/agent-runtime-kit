@@ -10,134 +10,843 @@ source_skill_ids_sha256: "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971
 
 dispositions:
   - id: reporting.daily-brief
-    status: pending
+    status: reviewed
+    example_request: "Prepare my daily information brief"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [daily-brief]
+    current_clis: [agent-out]
+    current_hooks: []
+    enforcement_point: "Skill admission and product render governance."
+    migration_path: "Retain the existing entrypoint."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Produces a distinct report directly requested by a user."
   - id: reporting.project-retro
-    status: pending
+    status: reviewed
+    example_request: "Give me a retrospective of this repository's last week"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [repo-retro, agent-out]
+    current_hooks: []
+    enforcement_point: "Typed repo-retro report plus user-facing synthesis."
+    migration_path: "Retain as the canonical retrospective outcome and absorb meta.repo-retro."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A synthesized project retrospective is a direct outcome, not collection bookkeeping."
   - id: reporting.topic-radar
-    status: pending
+    status: reviewed
+    example_request: "Scan AI agent trends and return a source-level JSON digest"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [task-tools]
+    current_clis: [agent-out]
+    current_hooks: []
+    enforcement_point: "Read-only source fetchers, ranking, and citation policy."
+    migration_path: "Retain for source-level scans and machine-consumable radar output."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Custom source scanning and raw digest output are distinct from a daily synthesized brief."
   - id: meta.agent-docs
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: intent-doc
+    parent_intents: [project-dev]
+    current_clis: [agent-docs]
+    current_hooks: [selective intent activation hooks]
+    enforcement_point: "Selective project intent loading and pre-edit verification."
+    migration_path: "Move operating guidance into declared intent documents and keep the CLI directly callable."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Required-doc resolution is parent workflow plumbing, not a user outcome."
   - id: meta.agent-out
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [project-dev]
+    current_clis: [agent-out]
+    current_hooks: []
+    enforcement_point: "Artifact-placement policy plus deterministic agent-out allocation."
+    migration_path: "Route allocation and cleanup from the owning workflow."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Output allocation is bookkeeping owned by the active outcome."
   - id: meta.bootstrap
-    status: pending
+    status: reviewed
+    example_request: "Bootstrap this repository's development environment"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-run]
+    current_hooks: []
+    enforcement_point: "Repository-owned .agents/scripts/bootstrap.sh."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Bootstrapping a project is a deliberate user-requested maintenance outcome."
   - id: meta.sync-runtime-surfaces
-    status: pending
+    status: reviewed
+    example_request: "Refresh my managed Codex and Claude runtime surfaces"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime]
+    current_hooks: []
+    enforcement_point: "Runtime sync script ownership, stale pruning, and doctor checks."
+    migration_path: "Retain as explicit runtime maintenance with preview and apply behavior."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Users intentionally request runtime synchronization and stale-surface cleanup."
   - id: meta.deploy
-    status: pending
+    status: reviewed
+    example_request: "Deploy this project through its repository-owned workflow"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-run]
+    current_hooks: []
+    enforcement_point: "Repository-owned .agents/scripts/deploy.sh."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Deployment is a direct externally meaningful user outcome."
   - id: meta.agent-scope-lock
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: hook-gate
+    parent_intents: [project-dev]
+    current_clis: [agent-scope-lock]
+    current_hooks: [agent scope lock guard]
+    enforcement_point: "Typed lock validation and pre-edit scope guard."
+    migration_path: "Keep the CLI diagnostic and enforce the lock through the project workflow and hook."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Edit-scope locking is a mechanical guardrail, not a user-selected outcome."
   - id: meta.heuristic-inbox
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [session-closeout]
+    current_clis: [heuristic-inbox]
+    current_hooks: []
+    enforcement_point: "Heuristic-system policy and typed inbox transitions."
+    migration_path: "Invoke directly only when parent closeout identifies a warranted durable gap."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Curated lesson routing is an internal closeout decision."
   - id: meta.heuristic-session-closeout
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [session-closeout]
+    current_clis: [heuristic-inbox, evidence, agent-out]
+    current_hooks: []
+    enforcement_point: "Session-closeout policy owns ordering and promotion judgment."
+    migration_path: "Run the ordered closeout procedure from the outermost session workflow."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Session bookkeeping should happen after the user outcome without a separate skill choice."
   - id: meta.create-skill
-    status: pending
+    status: reviewed
+    example_request: "Add a new governed runtime-kit skill"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime]
+    current_hooks: ["skill governance checks"]
+    enforcement_point: "Governed source, manifest, render, acceptance, and validation lifecycle."
+    migration_path: "Retain as an explicit repository maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Creating a governed runtime capability is a deliberate multi-surface user outcome."
   - id: meta.create-project-skill
-    status: pending
+    status: reviewed
+    example_request: "Create a project-local skill for this repository"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Project-local scaffold ownership and validation."
+    migration_path: "Retain as the project-local skill authoring outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Project-local capability authoring is distinct from repo-owned runtime-kit skill authoring."
   - id: meta.remove-skill
-    status: pending
+    status: reviewed
+    example_request: "Remove this governed runtime-kit skill safely"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime]
+    current_hooks: ["skill governance checks"]
+    enforcement_point: "Dry-run reference audit and governed removal lifecycle."
+    migration_path: "Retain as an explicit repository maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Safe governed removal is a deliberate cross-surface user outcome."
   - id: meta.remove-project-skill
-    status: pending
+    status: reviewed
+    example_request: "Remove this project-local skill and its owned wrapper"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Project-local ownership inventory and explicit cleanup approval."
+    migration_path: "Retain as the project-local skill removal outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Project-local removal has a distinct ownership and retention contract."
   - id: meta.pre-pr
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery, project-dev]
+    current_clis: [agent-run]
+    current_hooks: [finish-line validation gate]
+    enforcement_point: "Repository dispatcher plus delivery parent validation."
+    migration_path: "Merge pre-PR execution into the governed PR outcome."
+    replacement: pr.deliver-pr
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Pre-PR is an internal delivery phase."
   - id: meta.release
-    status: pending
+    status: reviewed
+    example_request: "Release this project through its repository-owned workflow"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-run]
+    current_hooks: []
+    enforcement_point: "Repository-owned .agents/scripts/release.sh."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Publishing a release is a direct user-requested outcome with meaningful side effects."
   - id: meta.repo-retro
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [project-dev]
+    current_clis: [repo-retro, agent-out]
+    current_hooks: []
+    enforcement_point: "Typed report collection under the retained project retrospective outcome."
+    migration_path: "Merge raw collection into the reporting project-retro workflow."
+    replacement: reporting.project-retro
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "The CLI collector is not distinct from the synthesized retrospective outcome."
   - id: meta.semantic-commit
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery, project-dev]
+    current_clis: [semantic-commit]
+    current_hooks: [direct commit block]
+    enforcement_point: "Commit policy and semantic-commit gate inside implementation and delivery."
+    migration_path: "Merge commit mutation into the owning implementation or PR workflow."
+    replacement: pr.deliver-pr
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Commit mechanics are an internal phase rather than a separate user outcome."
   - id: meta.setup-project
-    status: pending
+    status: reviewed
+    example_request: "Set this repository up for project-local agent conventions"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Project-local adoption diagnostics and explicit dispatcher choices."
+    migration_path: "Retain as an explicit project maintenance outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Adopting project-local agent conventions is a deliberate multi-file setup outcome."
   - id: meta.plan-archive-migrate
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [delivery]
+    current_clis: [plan-archive]
+    current_hooks: []
+    enforcement_point: "Plan closeout readiness and dry-run-first archive policy."
+    migration_path: "Invoke from the L2 plan outcome after verified provider closeout."
+    replacement: dispatch.deliver-plan-tracking-issue
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Archive migration is an internal post-close phase."
   - id: meta.plan-archive-query
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [project-dev, delivery]
+    current_clis: [plan-archive]
+    current_hooks: []
+    enforcement_point: "Read-only historical context lookup policy."
+    migration_path: "Invoke directly when opening a recurring plan or diagnosing prior work."
+    replacement: dispatch.deliver-plan-tracking-issue
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Archive lookup supports another outcome and is not itself a user workflow."
   - id: meta.plan-archive-discover
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [delivery]
+    current_clis: [plan-archive]
+    current_hooks: []
+    enforcement_point: "Read-only archive-candidate classification after closeout."
+    migration_path: "Invoke from the L2 plan outcome before archive migration."
+    replacement: dispatch.deliver-plan-tracking-issue
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Archive discovery is an internal closeout phase."
   - id: meta.evidence-migrate
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [session-closeout]
+    current_clis: [evidence]
+    current_hooks: []
+    enforcement_point: "Evidence-archive policy and typed migration transaction."
+    migration_path: "Run dry-run-first from the outermost session closeout."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Evidence migration is retention bookkeeping."
   - id: meta.evidence-prune-source
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [session-closeout]
+    current_clis: [evidence]
+    current_hooks: []
+    enforcement_point: "Archived-digest verification and source-prune transaction."
+    migration_path: "Run only after verified migration from the outermost session closeout."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Source pruning is internal retention maintenance."
   - id: meta.nils-cli-bump
-    status: pending
+    status: reviewed
+    example_request: "Bump this repository to the latest released nils-cli surface"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [agent-runtime, forge-cli]
+    current_hooks: ["version alignment gate"]
+    enforcement_point: "Surface diff, pin alignment, consumer refresh, and PR delivery."
+    migration_path: "Retain as explicit release-consumer maintenance."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A coordinated dependency pin and consumer refresh is a deliberate repository outcome."
   - id: meta.worktree-triage
-    status: pending
+    status: reviewed
+    example_request: "Triage and clean stale managed worktrees"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Read-only classification plus explicit cleanup and PR confirmation."
+    migration_path: "Retain as explicit safety-sensitive repository maintenance."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Recovering or cleaning worktrees is a user-selected maintenance outcome with nontrivial judgment."
   - id: media.image-processing
-    status: pending
+    status: reviewed
+    example_request: "Convert this SVG to a validated PNG"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [media]
+    current_clis: [image-processing]
+    current_hooks: []
+    enforcement_point: "Image validation and conversion CLI."
+    migration_path: "Retain as a direct media transformation outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Producing a validated converted image is a direct user artifact."
   - id: media.screen-record
-    status: pending
+    status: reviewed
+    example_request: "Record this application window and save the capture"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [media, computer-use]
+    current_clis: [screen-record]
+    current_hooks: []
+    enforcement_point: "Host capture preflight and screen-record CLI."
+    migration_path: "Retain as a direct capture outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A screenshot or recording is a direct requested artifact."
   - id: computer-use.macos-desktop
-    status: pending
+    status: reviewed
+    example_request: "Test this macOS desktop flow and retain screenshots"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [computer-use]
+    current_clis: [agent-out, macos-agent]
+    current_hooks: []
+    enforcement_point: "AX-first safety workflow, scenario assertions, and retained evidence."
+    migration_path: "Retain as the direct macOS desktop operation and testing outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Operating or testing a desktop is a distinct user outcome with safety and visual judgment."
   - id: browser.browser-session
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: intent-doc
+    parent_intents: [browser-test]
+    current_clis: [browser-session]
+    current_hooks: []
+    enforcement_point: "Browser-test intent routing and verified session records."
+    migration_path: "Keep the CLI diagnostic and route its use from the browser-test parent."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Session recording supports a browser outcome but is not the outcome."
   - id: browser.canary-check
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: intent-doc
+    parent_intents: [browser-test, project-dev]
+    current_clis: [canary-check]
+    current_hooks: []
+    enforcement_point: "Browser and validation parents select bounded canaries."
+    migration_path: "Keep the CLI primitive and invoke it only from the owning validation path."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "A canary record is validation bookkeeping."
   - id: conversation.actionable-advice
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [conversation]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Natural-language collaboration policy."
+    migration_path: "Absorb option and recommendation structure into normal conversation behavior."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Users ask for advice directly and do not need a mode skill."
   - id: conversation.actionable-knowledge
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [conversation]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Natural-language explanation policy."
+    migration_path: "Absorb explanation lenses into normal conversation behavior."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Users ask questions directly and do not need a mode skill."
   - id: conversation.discussion-to-implementation-doc
-    status: pending
+    status: reviewed
+    example_request: "Turn our completed design discussion into an implementation-readiness document"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Document placement, evidence classification, and retention policy."
+    migration_path: "Retain as the durable discussion-capture outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Producing an implementation-readiness document is a distinct requested artifact."
   - id: conversation.guided-feature-build
-    status: pending
+    status: reviewed
+    example_request: "Guide me through building this feature in the existing codebase"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: ["test-first and finish-line gates"]
+    enforcement_point: "In-session explore, design, implement, review orchestration."
+    migration_path: "Retain as the direct guided implementation outcome; internalize its execution modes."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A guided feature build is a complete user-requested delivery outcome."
   - id: conversation.handoff-session-prompt
-    status: pending
+    status: reviewed
+    example_request: "Create a prompt I can use to resume this work in a fresh session"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [conversation, project-dev]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Context selection, sensitive-data exclusion, and self-contained prompt rendering."
+    migration_path: "Retain as the direct session-handoff artifact outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A copy-ready handoff prompt is a distinct requested artifact."
   - id: conversation.orchestrator-first
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: [subagent delegation policy]
+    enforcement_point: "Guided build parent selects orchestration mode internally."
+    migration_path: "Merge orchestration selection into guided-feature-build."
+    replacement: conversation.guided-feature-build
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Delegation mode is an execution strategy, not a user outcome."
   - id: conversation.parallel-first
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [project-dev]
+    current_clis: []
+    current_hooks: [subagent delegation policy]
+    enforcement_point: "Guided build parent selects safe parallelism internally."
+    migration_path: "Merge parallel execution selection into guided-feature-build."
+    replacement: conversation.guided-feature-build
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Parallelism is an execution strategy, not a user outcome."
   - id: evidence.web-evidence
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [task-tools, browser-test]
+    current_clis: [web-evidence]
+    current_hooks: []
+    enforcement_point: "External-fact and browser claim policy selects static HTTP evidence."
+    migration_path: "Keep the CLI recorder and route it from the owning fact or browser workflow."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "HTTP capture is evidence for another outcome."
   - id: evidence.test-first-evidence
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [project-dev, delivery]
+    current_clis: [test-first-evidence]
+    current_hooks: [pre-edit intent gate, finish-line validation gate, forge-cli delivery gate]
+    enforcement_point: "Test-first policy, phase checks, and delivery verification."
+    migration_path: "Keep deterministic records in nils-cli and route them from implementation and delivery."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Test-first evidence is implementation discipline, not a user-selected outcome."
   - id: evidence.review-evidence
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [code-review, delivery]
+    current_clis: [review-evidence]
+    current_hooks: []
+    enforcement_point: "Review parent owns finding retention and verification."
+    migration_path: "Invoke only when the owning review needs a retained record."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Review evidence supports the review outcome."
   - id: evidence.skill-usage
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: internal-workflow
+    parent_intents: [session-closeout]
+    current_clis: [skill-usage]
+    current_hooks: [skill usage reminder]
+    enforcement_point: "Outermost workflow and closeout own one linked usage record."
+    migration_path: "Keep the v2 CLI record and remove nested user-facing invocation."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Usage records are lifecycle bookkeeping."
   - id: evidence.docs-impact
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [project-dev, delivery]
+    current_clis: [docs-impact]
+    current_hooks: [finish-line validation gate]
+    enforcement_point: "Implementation and delivery own documentation-impact judgment."
+    migration_path: "Keep deterministic scanning and require a current parent disposition before delivery."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Documentation impact is a completion check for another outcome."
   - id: evidence.model-cross-check
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: policy
+    parent_intents: [task-tools, code-review]
+    current_clis: [model-cross-check]
+    current_hooks: []
+    enforcement_point: "Risk and review policy decide when a checker is warranted."
+    migration_path: "Keep provider calls outside the recorder and invoke it only from the owning parent."
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Cross-check recording is evidence bookkeeping."
   - id: issue.issue-follow-up
-    status: pending
+    status: reviewed
+    example_request: "Open a follow-up issue for this discovered problem"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [forge-cli, web-evidence]
+    current_hooks: []
+    enforcement_point: "Provider issue lifecycle, evidence-backed scope, and labels."
+    migration_path: "Retain as the canonical issue follow-up outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Opening or continuing a durable issue timeline is a direct user outcome."
   - id: issue.issue-triage
-    status: pending
+    status: reviewed
+    example_request: "Triage the open issues and recommend what to execute next"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [project-dev]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Read-only provider inbox analysis and explicit follow-up authorization."
+    migration_path: "Retain as the direct issue triage outcome."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Prioritizing and classifying issue work is a distinct user-requested analysis."
   - id: issue.report-plan-issue-finding
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [project-dev]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Generic issue follow-up owns deduplication and durable finding routing."
+    migration_path: "Merge plan-family findings into issue-follow-up."
+    replacement: issue.issue-follow-up
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "The finding subtype does not require a separate user entrypoint."
   - id: code-review.code-review-focused-lens
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [code-review]
+    current_clis: [review-specialists]
+    current_hooks: [code review delegation policy]
+    enforcement_point: "Generic review outcome selects focused lenses internally."
+    migration_path: "Merge focused mode into code-review-specialists."
+    replacement: code-review.code-review-specialists
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "A lens is an internal review mode."
   - id: code-review.code-review-follow-up
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [code-review]
+    current_clis: [review-specialists]
+    current_hooks: [code review delegation policy]
+    enforcement_point: "Generic review outcome selects follow-up mode internally."
+    migration_path: "Merge follow-up mode into code-review-specialists."
+    replacement: code-review.code-review-specialists
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Follow-up is a phase of the same review outcome."
   - id: code-review.code-review-pre-merge-gate
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [code-review, delivery]
+    current_clis: [review-specialists, forge-cli]
+    current_hooks: [code review delegation policy]
+    enforcement_point: "Delivery invokes the generic review outcome in pre-merge mode."
+    migration_path: "Merge pre-merge mode into code-review-specialists and the PR parent."
+    replacement: code-review.code-review-specialists
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "The pre-merge gate is a routed review mode."
   - id: code-review.code-review-quick-pass
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [code-review]
+    current_clis: [review-specialists]
+    current_hooks: [code review delegation policy]
+    enforcement_point: "Generic review outcome selects quick mode internally."
+    migration_path: "Merge quick mode into code-review-specialists."
+    replacement: code-review.code-review-specialists
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Review depth is an internal routing choice."
   - id: code-review.code-review-specialists
-    status: pending
+    status: reviewed
+    example_request: "Review this change and choose the appropriate specialist lenses"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [code-review, project-dev]
+    current_clis: [review-specialists]
+    current_hooks: ["Codex delegated-review policy"]
+    enforcement_point: "Read-only specialist orchestration and parent-owned review judgment."
+    migration_path: "Retain as the single generic code-review outcome and fold other review modes into it."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "A complete evidence-backed code review is a direct user outcome."
   - id: pr.create-pr
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [forge-cli, agent-runtime]
+    current_hooks: [direct PR create block]
+    enforcement_point: "Governed PR outcome owns creation through merge."
+    migration_path: "Merge creation into deliver-pr."
+    replacement: pr.deliver-pr
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "PR creation is one phase of delivery."
   - id: pr.create-dispatch-lane-pr
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [forge-cli]
+    current_hooks: [direct PR create block]
+    enforcement_point: "Dispatch parent owns lane PR creation with scoped checkpoints."
+    migration_path: "Route lane creation through the governed PR outcome inside dispatch."
+    replacement: pr.deliver-pr
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Lane PR creation is an internal dispatch phase."
   - id: pr.close-pr
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Governed PR outcome selects merge, close, or abandon actions."
+    migration_path: "Merge close behavior into deliver-pr."
+    replacement: pr.deliver-pr
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Closing is a terminal mode of the same PR outcome."
   - id: pr.deliver-pr
-    status: pending
+    status: reviewed
+    example_request: "Deliver this change as a pull request"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [pr-delivery, project-dev]
+    current_clis: [forge-cli, agent-runtime, plan-issue, review-specialists]
+    current_hooks: ["test-first provider gate", "pre-merge review policy"]
+    enforcement_point: "Governed PR lifecycle with rendered body, checks, review, and merge controls."
+    migration_path: "Retain as the single governed PR lifecycle outcome and fold child modes into it."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "End-to-end PR delivery is a complete direct user outcome."
   - id: pr.review-thread-cleanup
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [forge-cli]
+    current_hooks: []
+    enforcement_point: "Governed PR outcome owns thread convergence before terminal action."
+    migration_path: "Merge review-thread cleanup into deliver-pr."
+    replacement: pr.deliver-pr
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Thread cleanup is an internal delivery phase."
   - id: dispatch.create-plan-tracking-issue
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [plan-issue, plan-tooling]
+    current_hooks: []
+    enforcement_point: "L2 plan outcome opens or resumes its tracker."
+    migration_path: "Merge tracker creation into deliver-plan-tracking-issue."
+    replacement: dispatch.deliver-plan-tracking-issue
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Tracker creation is an internal L2 lifecycle phase."
   - id: dispatch.plan-tracking-issue-closeout
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [plan-issue, plan-archive]
+    current_hooks: []
+    enforcement_point: "L2 plan outcome owns strict close-ready, read-back, and archive routing."
+    migration_path: "Merge closeout into deliver-plan-tracking-issue."
+    replacement: dispatch.deliver-plan-tracking-issue
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Closeout is an internal L2 phase."
   - id: dispatch.deliver-dispatch-plan
-    status: pending
+    status: reviewed
+    example_request: "Execute this plan as coordinated dispatch lanes"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [dispatch, project-dev]
+    current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
+    current_hooks: ["test-first and review delivery gates"]
+    enforcement_point: "Shared dispatch issue controller, lane coordination, and closeout handoff."
+    migration_path: "Retain as the single L3 dispatch-plan outcome and internalize lane roles."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Coordinated multi-lane delivery is a complete user-requested outcome."
   - id: dispatch.dispatch-plan-closeout
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [plan-issue]
+    current_hooks: []
+    enforcement_point: "L3 dispatch outcome owns strict integration closeout."
+    migration_path: "Merge closeout into deliver-dispatch-plan."
+    replacement: dispatch.deliver-dispatch-plan
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Closeout is an internal L3 phase."
   - id: dispatch.execute-plan-tracking-issue
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [plan-issue, plan-tooling, forge-cli]
+    current_hooks: []
+    enforcement_point: "L2 plan outcome owns execution and checkpoint reconciliation."
+    migration_path: "Merge execution into deliver-plan-tracking-issue."
+    replacement: dispatch.deliver-plan-tracking-issue
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Execution is an internal L2 lifecycle phase."
   - id: dispatch.deliver-plan-tracking-issue
-    status: pending
+    status: reviewed
+    example_request: "Execute and deliver this issue-backed plan"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [plan-tracking, project-dev]
+    current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
+    current_hooks: ["test-first and review delivery gates"]
+    enforcement_point: "Plan controller, implementation, validation, review, PR delivery, and close-ready handoff."
+    migration_path: "Retain as the single L2 plan-tracking outcome and internalize child roles."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "End-to-end issue-backed plan delivery is a complete user-requested outcome."
   - id: dispatch.review-dispatch-lane-pr
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery, code-review]
+    current_clis: [review-specialists, forge-cli, plan-issue]
+    current_hooks: [code review delegation policy]
+    enforcement_point: "L3 dispatch outcome routes lane PRs to independent reviewers."
+    migration_path: "Merge lane review into deliver-dispatch-plan."
+    replacement: dispatch.deliver-dispatch-plan
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Lane review is an internal L3 phase."
   - id: dispatch.execute-dispatch-lane
-    status: pending
+    status: reviewed
+    user_outcome: no
+    destination: merge
+    parent_intents: [delivery]
+    current_clis: [plan-issue, forge-cli]
+    current_hooks: []
+    enforcement_point: "L3 dispatch outcome assigns and checkpoints lane execution."
+    migration_path: "Merge lane execution into deliver-dispatch-plan."
+    replacement: dispatch.deliver-dispatch-plan
+    compatibility_required: false
+    live_cleanup_required: true
+    rationale: "Lane execution is an internal L3 phase."

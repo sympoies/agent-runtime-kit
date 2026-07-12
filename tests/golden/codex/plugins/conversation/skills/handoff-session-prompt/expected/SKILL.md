@@ -153,9 +153,8 @@ You are starting a new session for this task.
 
 ## Plan-Tracking Handoff
 
-When the next session resumes a plan-tracking issue (i.e., the work is
-governed by `execute-plan-tracking-issue`, `deliver-plan-tracking-issue`,
-or `plan-tracking-issue-closeout`), include a dedicated "Plan-tracking
+When the next session resumes a plan-tracking issue governed by
+`deliver-plan-tracking-issue`, include a dedicated "Plan-tracking
 handoff" subsection inside `Known Facts` (or its own clearly labeled
 block) that dumps four concrete elements so the next agent does not have
 to re-derive run-state context:

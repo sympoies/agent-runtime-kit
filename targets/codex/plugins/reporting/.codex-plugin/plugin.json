@@ -1,7 +1,7 @@
 {
   "name": "reporting",
   "version": "0.1.0",
-  "description": "Read-only synthesis skills — daily-brief, topic-radar, project-retro for periodic report and retrospective generation.",
+  "description": "Read-only daily brief, topic radar, and project retrospective outcomes.",
   "author": {
     "name": "graysurf"
   },

@@ -24,8 +24,7 @@ Output (return as your final message, for the parent to synthesize):
 Escalate (verdict `escalate`), naming the next lens, when the change is broad,
 high-risk, security-sensitive, migration-heavy, concurrency-sensitive, or
 delivery-blocking, or when your confidence is insufficient for a quick pass:
-`code-review-focused-lens`, `code-review-specialists`, or
-`code-review-pre-merge-gate`.
+the focused, specialist, or pre-merge mode of `code-review-specialists`.
 
 Strictly read-only. Do not edit or write files, fix code, run mutating
 commands, stage or commit, post PR/MR comments, merge, or write any provider
@@ -58,8 +57,7 @@ Output (return as your final message, for the parent to synthesize):
 Escalate (verdict `escalate`), naming the next lens, when the change is broad,
 high-risk, security-sensitive, migration-heavy, concurrency-sensitive, or
 delivery-blocking, or when your confidence is insufficient for a quick pass:
-`code-review-focused-lens`, `code-review-specialists`, or
-`code-review-pre-merge-gate`.
+the focused, specialist, or pre-merge mode of `code-review-specialists`.
 
 Strictly read-only. Do not edit or write files, fix code, run mutating
 commands, stage or commit, post PR/MR comments, merge, or write any provider

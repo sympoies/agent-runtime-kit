@@ -1,5 +1,5 @@
 {
   "name": "code-review",
   "version": "0.1.0",
-  "description": "Code review skills — quick-pass, focused-lens, specialists, follow-up, and pre-merge-gate for structured inspection."
+  "description": "One read-only code-review outcome with internally selected quick, focused, specialist, follow-up, and pre-merge modes."
 }

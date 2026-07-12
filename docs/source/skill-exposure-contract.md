@@ -11,7 +11,7 @@ agent operation.
 Agent bookkeeping, deterministic records, policy judgment, hooks, intent docs,
 and one-command CLI primitives do not become user-facing skills merely because
 an agent needs their instructions. Issue
-[#562](https://github.com/graysurf/agent-runtime-kit/issues/562) owns the
+[#562](https://github.com/graysurf/agent-runtime-kit/issues/562) records the
 catalog-wide migration of those capabilities to the correct layer.
 
 ## Invocation Roles
@@ -57,23 +57,22 @@ exposure:
 Governance verifies that the replacement is another reviewed, non-pending
 active skill and that the retirement condition is bounded.
 
-## Pending Disposition
+## Completed Disposition
 
-The 66 skills present when schema v2 was introduced remain active and visible
-while #562 reviews them. They are listed under
-`migration.pending_disposition` and mirrored one-for-one as `status: pending`
-rows in `manifests/skill-dispositions.yaml`.
+The schema-v2 baseline contains exactly 66 immutable disposition rows. #562
+reviewed every row: 26 distinct user outcomes remain active and renderable,
+40 agent-only entrypoints are retired from source and product discovery, and
+`migration.pending_disposition` is empty.
 
-Pending is migration debt, not an exposure class. Pending skills carry no
-invented invocation or exposure metadata, and diagnostics report
-`pending_disposition: true`. The baseline contains exactly 66 durable rows and
-cannot grow or replace an original ID: governance pins the ordered baseline's
-SHA-256 digest. New skills must pass normal admission immediately.
+Pending was migration debt, never an exposure class. Governance still pins the
+ordered baseline's SHA-256 digest so no original ID can be removed, replaced,
+or reintroduced as a new pending row. New skills must pass normal admission
+immediately.
 
-When #562 reviews a row, it becomes `status: reviewed` and records the user
-outcome, destination layer, parent intents, migration path, cleanup need, and
-current CLI/hook dependencies, enforcement point, compatibility need, and
-rationale. The shared destination vocabulary is:
+Every row is `status: reviewed` and records the user outcome, destination
+layer, parent intents, migration path, cleanup need, current CLI/hook
+dependencies, enforcement point, compatibility need, and rationale. The shared
+destination vocabulary is:
 
 - `entrypoint`
 - `policy`
@@ -86,7 +85,10 @@ rationale. The shared destination vocabulary is:
 - `compatibility`
 
 Rows remain in the ledger after active removal so migration and live cleanup
-history cannot be silently replaced by a new pending ID.
+history cannot be silently replaced. Retired IDs may appear in this immutable
+ledger, the migration-progress fixture, explicit negative tests, and historical
+plan records; active manifests, policy routing, source skills, and product
+surfaces must not expose them as callable skills.
 
 ## Lifecycle And Validation
 
@@ -97,6 +99,6 @@ history cannot be silently replaced by a new pending ID.
   set, and the disposition ledger, including negative fixtures.
 - `agent-runtime list-skills --format json` reports invocation, exposure, and
   pending state against the actual Codex, Claude, and Hermes install layouts.
-- Render, install, drift, stale-prune, runtime-smoke, and hook gates continue to
-  treat pending skills as active until #562 completes their replacement and
-  cleanup work.
+- Render, install, drift, stale-prune, runtime-smoke, and hook gates require the
+  final 26-skill active set, zero pending rows, retained 66-row history, and
+  negative cleanup of retired product surfaces.

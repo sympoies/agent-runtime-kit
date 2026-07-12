@@ -1,0 +1,1 @@
+Verify the rendered web page behavior in a real browser, retain evidence for the claim, and distinguish visual or JavaScript behavior from a static HTTP response.

@@ -4,15 +4,9 @@
     "name": "graysurf"
   },
   "metadata": {
-    "description": "Claude marketplace for agent-runtime-kit — 11 plugins (browser, code-review, computer-use, conversation, dispatch, evidence, issue, media, meta, pr, reporting). Resolves to ~/.claude/plugins/<plugin>/ when installed by `agent-runtime install --product claude`."
+    "description": "Claude marketplace for agent-runtime-kit — 9 plugins (code-review, computer-use, conversation, dispatch, issue, media, meta, pr, reporting). Resolves to ~/.claude/plugins/<plugin>/ when installed by `agent-runtime install --product claude`."
   },
   "plugins": [
-    {
-      "name": "browser",
-      "version": "0.1.0",
-      "source": "./plugins/browser",
-      "description": "Browser automation + browser-facing QA — agent-browser, playwright, browser-qa, web-qa, browser-session, web-evidence."
-    },
     {
       "name": "code-review",
       "version": "0.1.0",
@@ -29,25 +23,19 @@
       "name": "conversation",
       "version": "0.1.0",
       "source": "./plugins/conversation",
-      "description": "Conversation-to-artifact workflows — discussion-to-implementation-doc, handoff-session-prompt."
+      "description": "Conversation-to-artifact workflows — discussion-to-implementation-doc, guided-feature-build, and handoff-session-prompt."
     },
     {
       "name": "dispatch",
       "version": "0.1.0",
       "source": "./plugins/dispatch",
-      "description": "Plan-driven multi-PR delivery on GitHub — create/deliver/closeout plan-tracking issues, dispatch-plan, dispatch-lane execution and review."
-    },
-    {
-      "name": "evidence",
-      "version": "0.1.0",
-      "source": "./plugins/evidence",
-      "description": "nils-cli workflow-evidence wrappers — canary-check, docs-impact, model-cross-check, review-evidence, skill-usage, test-first-evidence, web-evidence."
+      "description": "Two governed plan outcomes — L2 plan tracking and L3 multi-lane dispatch — with lifecycle phases routed internally."
     },
     {
       "name": "issue",
       "version": "0.1.0",
       "source": "./plugins/issue",
-      "description": "GitHub Issue lifecycle skills — issue-follow-up."
+      "description": "GitHub and GitLab issue outcomes — issue-follow-up and issue-triage."
     },
     {
       "name": "media",
@@ -59,13 +47,13 @@
       "name": "meta",
       "version": "0.1.0",
       "source": "./plugins/meta",
-      "description": "Workflow primitives — agent-docs, agent-out, agent-scope-lock, bootstrap, deploy, heuristic-inbox, pre-pr, release, repo-retro, semantic-commit, setup-project."
+      "description": "Explicit runtime and repository maintenance outcomes — bootstrap, deploy, skill lifecycle, release, setup, sync, version bump, and worktree triage."
     },
     {
       "name": "pr",
       "version": "0.1.0",
       "source": "./plugins/pr",
-      "description": "PR / MR lifecycle (GitHub + GitLab) — create/close/deliver × feat/fix and dispatch lane PRs. Hooked via block-direct-pr-create."
+      "description": "One governed GitHub/GitLab PR and MR delivery outcome with create, review, repair, merge, close, and abandon modes routed internally."
     },
     {
       "name": "reporting",

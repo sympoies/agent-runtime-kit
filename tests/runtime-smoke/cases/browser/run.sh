@@ -104,8 +104,19 @@ run_canary_check_probe() {
   grep -q '"status": "pass"' "$expected_fail_verify"
 }
 
+run_browser_routing_contract_probe() {
+  local policy="$REPO_ROOT/core/policies/browser-test-routing.md"
+  grep -q 'Static HTTP success must not be reported' "$policy"
+  grep -q 'Rendered page state' "$policy"
+  grep -q 'Project Playwright/browser test harness' "$policy"
+  grep -q 'macOS desktop Computer Use outcome' "$policy"
+  grep -q 'Hermes can read this policy' "$policy"
+  grep -q 'no runtime-kit hook or agent-docs injection path' "$policy"
+}
+
 failures=0
-record_case "browser.browser-session" "browser-session init, step, and verify passed with local artifacts" run_browser_session_probe
-record_case "browser.canary-check" "canary-check recorded passing and expected-nonzero local commands" run_canary_check_probe
+record_case "browser.route-by-claim.session" "browser-session init, step, and verify passed with local artifacts" run_browser_session_probe
+record_case "browser.route-by-claim.canary" "canary-check recorded passing and expected-nonzero local commands" run_canary_check_probe
+record_case "browser.route-by-claim.policy" "browser-test policy distinguishes HTTP, rendered browser, Playwright, and desktop claims" run_browser_routing_contract_probe
 
 exit "$failures"

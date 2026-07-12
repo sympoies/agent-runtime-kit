@@ -44,12 +44,22 @@
   inferences, and open questions.
 - Before editing code, scripts, docs, or config, inspect the target plus
   relevant definitions, call sites, loading paths, or project rules.
-- For testable production behavior changes, follow the canonical
-  `test-first-evidence` durable lifecycle: declare the contract/test impact and
-  capture meaningful red before production edits, or record a complete waiver.
+- For testable production behavior changes, follow the policy-owned durable
+  test-first lifecycle: declare the contract delta and affected-test decisions,
+  capture meaningful red before production edits or record a complete waiver,
+  then retain scoped validation and residual gaps in v2 CLI evidence.
 - Keep answers concise, high-signal, and easy to verify; keep
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
+
+## Intent Routing
+
+- Classify the natural-language request, then open only the relevant declared
+  intent docs in `AGENT_DOCS.toml`: `project-dev` for implementation and
+  delivery, `browser-test` for browser acceptance, and `task-tools` for
+  external or unstable facts. Hermes has no runtime-kit agent-docs hooks, so
+  this manual selection must not be reported as hook-enforced activation.
+
 
 
 ## Work Tier Levels
@@ -98,7 +108,8 @@
 
 ## Git, Commits, Issues, PRs, And MRs
 
-- Always use the `semantic-commit` skill for supported commit workflows.
+- Commit through the owning implementation or delivery workflow using the
+  `semantic-commit` CLI; direct `git commit` bypasses the managed boundary.
 - Use `git-cli worktree` for agent worktree lifecycle; direct mutating
   `git worktree` commands bypass the managed lifecycle.
 - Never enable `extensions.worktreeConfig` or set per-worktree
@@ -130,8 +141,9 @@
   through `heuristic-inbox` (version, minimal repro, upstream issue link when
   found, current workaround); archive promoted or `wontfix` inbox entries via
   `heuristic-inbox`, never by deleting them in place.
-- After the session goal is achieved, run `$heuristic-session-closeout`: it
-  reviews available evidence, drives `evidence migrate` for durable
-  `skill-usage` retention, and preserves warranted records on `main`.
+- After the session goal is achieved, follow the session-closeout procedure in
+  `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`: review available
+  evidence, run `evidence migrate` when durable `skill-usage` retention is
+  warranted, and preserve warranted records on `main`.
 - Full routing policy for turning failures and repeated lessons into durable
   knowledge: `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`.

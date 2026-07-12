@@ -115,6 +115,9 @@ DESCRIPTION_MAX_CHARS = 240
 INITIAL_DISPOSITION_COUNT = 66
 INITIAL_DISPOSITION_IDS_SHA256 = "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971aa84a34d60"
 SKILL_ID_RE = r"[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*"
+MIGRATION_PROGRESS_PATH = Path(
+    "tests/skill-exposure-contract/expected-migration-progress.json"
+)
 
 
 COUNT_TARGETS = [
@@ -372,6 +375,13 @@ def parse_dispositions(path: Path) -> dict[str, object]:
     }
 
 
+def load_migration_progress(root: Path) -> dict[str, object]:
+    progress = json.loads(read(root / MIGRATION_PROGRESS_PATH))
+    if not isinstance(progress, dict):
+        fail("migration progress contract must be an object")
+    return progress
+
+
 def exposure_contract_errors(root: Path) -> list[str]:
     errors: list[str] = []
     skills_path = root / "manifests" / "skills.yaml"
@@ -389,6 +399,7 @@ def exposure_contract_errors(root: Path) -> list[str]:
     migration = parse_skill_migration(skills_path)
     skills = parse_skills(skills_path)
     dispositions = parse_dispositions(dispositions_path)
+    progress = load_migration_progress(root)
     skill_ids = [str(entry["id"]) for entry in skills]
     skill_id_set = set(skill_ids)
     pending = migration["pending_disposition"]
@@ -398,6 +409,32 @@ def exposure_contract_errors(root: Path) -> list[str]:
     rows = dispositions["rows"]
     assert isinstance(rows, list)
     disposition_ids = [str(row["id"]) for row in rows]
+    expected_reviewed = progress.get("reviewed_ids", [])
+    expected_pending = progress.get("pending_ids", [])
+    reviewed_field_mapping = progress.get("reviewed_field_mapping", [])
+
+    if progress.get("schema") != "agent-runtime-kit.skill-migration-progress.v1":
+        errors.append("migration progress schema is invalid")
+    if progress.get("task") != "3.1" or progress.get("advance_in_task") != "complete":
+        errors.append("migration progress task lifecycle must be 3.1 -> complete")
+    if not isinstance(expected_reviewed, list) or not all(
+        isinstance(item, str) for item in expected_reviewed
+    ):
+        errors.append("migration progress reviewed_ids must be a string array")
+        expected_reviewed = []
+    if not isinstance(expected_pending, list) or not all(
+        isinstance(item, str) for item in expected_pending
+    ):
+        errors.append("migration progress pending_ids must be a string array")
+        expected_pending = []
+    if not isinstance(reviewed_field_mapping, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("disposition"), str)
+        and isinstance(item.get("manifest"), str)
+        for item in reviewed_field_mapping
+    ):
+        errors.append("migration progress reviewed_field_mapping is invalid")
+        reviewed_field_mapping = []
 
     if migration["schema_version"] != 2:
         errors.append("skills manifest schema version must be 2")
@@ -430,10 +467,20 @@ def exposure_contract_errors(root: Path) -> list[str]:
         errors.append("ordered disposition ids do not match the frozen baseline")
 
     pending_rows = [str(row["id"]) for row in rows if row.get("status") == "pending"]
+    reviewed_rows = [str(row["id"]) for row in rows if row.get("status") == "reviewed"]
     if pending_ids != [skill_id for skill_id in skill_ids if skill_id in pending_set]:
         errors.append("pending disposition ids must follow active manifest order")
     if pending_rows != pending_ids:
         errors.append("pending disposition rows must exactly match the migration pending set")
+    if reviewed_rows != expected_reviewed:
+        errors.append("reviewed disposition rows do not match the final migration progress contract")
+    if pending_rows != expected_pending:
+        errors.append("pending disposition rows do not match the final migration progress contract")
+    expected_partition = [*expected_reviewed, *expected_pending]
+    if len(expected_partition) != len(set(expected_partition)):
+        errors.append("migration progress ids must be unique across reviewed and pending sets")
+    if set(expected_partition) != set(disposition_ids):
+        errors.append("migration progress ids must partition the frozen disposition ledger")
 
     valid_destinations = {
         "entrypoint",
@@ -528,6 +575,7 @@ def exposure_contract_errors(root: Path) -> list[str]:
         except ValueError:
             return False
         return True
+    disposition_by_id = {str(row["id"]): row for row in rows}
     for entry in skills:
         skill_id = str(entry["id"])
         invocation = entry.get("invocation")
@@ -562,6 +610,24 @@ def exposure_contract_errors(root: Path) -> list[str]:
                 errors.append(f"{skill_id} compatibility retire_after must be YYYY-MM-DD")
         elif replacement is not None or retire_after is not None:
             errors.append(f"{skill_id} non-compatibility role cannot carry lifecycle metadata")
+
+        row = disposition_by_id.get(skill_id)
+        if row is None or row.get("status") != "reviewed":
+            continue
+        for mapping in reviewed_field_mapping:
+            disposition_field = str(mapping["disposition"])
+            manifest_path = str(mapping["manifest"])
+            if not manifest_path.startswith("invocation."):
+                errors.append(
+                    f"reviewed field mapping target is unsupported: {manifest_path}"
+                )
+                continue
+            manifest_field = manifest_path.removeprefix("invocation.")
+            if row.get(disposition_field) != invocation.get(manifest_field):
+                errors.append(
+                    f"{skill_id} reviewed metadata mismatch: "
+                    f"disposition.{disposition_field} != {manifest_path}"
+                )
 
     return errors
 
@@ -812,9 +878,9 @@ def audit_rendered_lifecycle_reference_packaging(root: Path) -> None:
         (
             "PR/MR lifecycle",
             root / "core" / "skills" / "pr" / "pr-lifecycle" / "README.md",
-            root / "core" / "skills" / "pr" / "create-pr" / "references" / "pr-lifecycle.md",
-            Path("plugins/pr/skills/create-pr/references/pr-lifecycle.md"),
-            Path("plugins/pr/skills/create-pr/expected/references/pr-lifecycle.md"),
+            root / "core" / "skills" / "pr" / "deliver-pr" / "references" / "pr-lifecycle.md",
+            Path("plugins/pr/skills/deliver-pr/references/pr-lifecycle.md"),
+            Path("plugins/pr/skills/deliver-pr/expected/references/pr-lifecycle.md"),
         ),
         (
             "issue lifecycle",
@@ -1077,6 +1143,7 @@ def validate_exposure_contract_fixture() -> None:
     def copy_contract_tree(destination: Path) -> None:
         (destination / "manifests").mkdir(parents=True)
         (destination / "core" / "docs" / "schemas").mkdir(parents=True)
+        (destination / MIGRATION_PROGRESS_PATH.parent).mkdir(parents=True)
         for name in ("skills.yaml", "skill-dispositions.yaml"):
             shutil.copy2(ROOT / "manifests" / name, destination / "manifests" / name)
         for name in ("skills.schema.json", "skill-dispositions.schema.json"):
@@ -1084,43 +1151,95 @@ def validate_exposure_contract_fixture() -> None:
                 ROOT / "core" / "docs" / "schemas" / name,
                 destination / "core" / "docs" / "schemas" / name,
             )
+        shutil.copy2(
+            ROOT / MIGRATION_PROGRESS_PATH,
+            destination / MIGRATION_PROGRESS_PATH,
+        )
 
-    def write_positive_retained(root: Path) -> None:
+    def write_positive_retained(root: Path) -> str | None:
         skills_path = root / "manifests" / "skills.yaml"
         dispositions_path = root / "manifests" / "skill-dispositions.yaml"
-        first_id = "reporting.daily-brief"
-        skills = read(skills_path).replace(f"    - {first_id}\n", "", 1)
+        progress_path = root / MIGRATION_PROGRESS_PATH
+        before_pending = [
+            str(item)
+            for item in parse_skill_migration(skills_path)["pending_disposition"]
+        ]
+        if not before_pending:
+            return None
+
+        promoted_id = before_pending[0]
+        skills = read(skills_path).replace(f"    - {promoted_id}\n", "", 1)
+        marker = f"  - id: {promoted_id}\n"
+        before, after = skills.split(marker, 1)
         semantics = """    invocation:
       role: workflow
-      intents: [daily-brief]
-      example_request: "Prepare my daily information brief"
-      admission_rationale: "Produces a distinct report directly requested by a user."
+      intents: [fixture-transition]
+      example_request: "Exercise the migration transition fixture"
+      admission_rationale: "Exercises one deterministic pending-to-reviewed transition."
     exposure:
       profile: default
 """
-        skills = skills.replace("    products:\n", semantics + "    products:\n", 1)
-        skills_path.write_text(skills, encoding="utf-8")
+        after = after.replace("    products:\n", semantics + "    products:\n", 1)
+        skills_path.write_text(before + marker + after, encoding="utf-8")
 
-        reviewed = """  - id: reporting.daily-brief
+        reviewed = f"""  - id: {promoted_id}
     status: reviewed
-    example_request: "Prepare my daily information brief"
+    example_request: "Exercise the migration transition fixture"
     user_outcome: yes
     destination: entrypoint
-    parent_intents: [daily-brief]
-    current_clis: [agent-out]
+    parent_intents: [fixture-transition]
+    current_clis: []
     current_hooks: []
-    enforcement_point: "Skill admission and product render governance."
-    migration_path: "Retain the existing entrypoint."
+    enforcement_point: "Migration fixture admission governance."
+    migration_path: "Promote one pending fixture row."
     compatibility_required: false
     live_cleanup_required: false
-    rationale: "Produces a distinct user-requested report."
+    rationale: "Exercises one deterministic pending-to-reviewed transition."
 """
-        dispositions = read(dispositions_path).replace(
-            "  - id: reporting.daily-brief\n    status: pending\n",
-            reviewed,
-            1,
+        chunks = re.split(
+            r"(?=^  - id: )",
+            read(dispositions_path),
+            flags=re.M,
         )
-        dispositions_path.write_text(dispositions, encoding="utf-8")
+        for index, chunk in enumerate(chunks):
+            if chunk.startswith(marker):
+                if "    status: pending\n" not in chunk:
+                    fail(
+                        "exposure-contract fixture selected a non-pending row: "
+                        f"{promoted_id}"
+                    )
+                chunks[index] = reviewed
+                break
+        else:
+            fail(
+                "exposure-contract fixture could not find pending row: "
+                f"{promoted_id}"
+            )
+        dispositions_path.write_text("".join(chunks), encoding="utf-8")
+
+        progress = load_migration_progress(root)
+        rows = parse_dispositions(dispositions_path)["rows"]
+        assert isinstance(rows, list)
+        progress["reviewed_ids"] = [
+            str(row["id"]) for row in rows if row.get("status") == "reviewed"
+        ]
+        progress["pending_ids"] = [
+            str(row["id"]) for row in rows if row.get("status") == "pending"
+        ]
+        progress_path.write_text(json.dumps(progress, indent=2) + "\n", encoding="utf-8")
+
+        after_pending = [
+            str(item)
+            for item in parse_skill_migration(skills_path)["pending_disposition"]
+        ]
+        unrelated_pending = [
+            skill_id for skill_id in before_pending if skill_id != promoted_id
+        ]
+        if after_pending != unrelated_pending:
+            fail(
+                "exposure-contract fixture did not preserve unrelated pending rows"
+            )
+        return promoted_id
 
     def write_replacement_retained(root: Path) -> None:
         skills_path = root / "manifests" / "skills.yaml"
@@ -1161,6 +1280,100 @@ def validate_exposure_contract_fixture() -> None:
         )
         dispositions_path.write_text(dispositions, encoding="utf-8")
 
+    def write_reviewed_without_active_metadata(root: Path) -> None:
+        skills_path = root / "manifests" / "skills.yaml"
+        dispositions_path = root / "manifests" / "skill-dispositions.yaml"
+        disposition_ids = set(
+            re.findall(
+                rf"^  - id: ({SKILL_ID_RE})$",
+                read(dispositions_path),
+                flags=re.M,
+            )
+        )
+        active_id = next(
+            (
+                str(entry["id"])
+                for entry in parse_skills(skills_path)
+                if str(entry["id"]) in disposition_ids
+            ),
+            None,
+        )
+        if active_id is None:
+            fail("exposure-contract fixture has no active baseline skill")
+
+        skill_chunks = re.split(
+            r"(?=^  - id: )",
+            read(skills_path),
+            flags=re.M,
+        )
+        active_marker = f"  - id: {active_id}\n"
+        rewritten_skill = False
+        for index, chunk in enumerate(skill_chunks):
+            if not chunk.startswith(active_marker):
+                continue
+            kept: list[str] = []
+            skipping_semantics = False
+            for line in chunk.splitlines(keepends=True):
+                if line.startswith("    invocation:") or line.startswith(
+                    "    exposure:"
+                ):
+                    skipping_semantics = True
+                    continue
+                if skipping_semantics and line.startswith("      "):
+                    continue
+                skipping_semantics = False
+                kept.append(line)
+            skill_chunks[index] = "".join(kept)
+            rewritten_skill = True
+            break
+        if not rewritten_skill:
+            fail(
+                "exposure-contract fixture could not find active skill "
+                f"{active_id}"
+            )
+
+        skills = "".join(skill_chunks).replace(
+            f"    - {active_id}\n",
+            "",
+            1,
+        )
+        skills_path.write_text(skills, encoding="utf-8")
+
+        reviewed = f"""  - id: {active_id}
+    status: reviewed
+    example_request: "Run the fixture user outcome"
+    user_outcome: yes
+    destination: entrypoint
+    parent_intents: [fixture]
+    current_clis: []
+    current_hooks: []
+    enforcement_point: "Fixture admission governance."
+    migration_path: "Retain the fixture entrypoint."
+    compatibility_required: false
+    live_cleanup_required: false
+    rationale: "Represents a direct fixture user outcome."
+"""
+        disposition_chunks = re.split(
+            r"(?=^  - id: )",
+            read(dispositions_path),
+            flags=re.M,
+        )
+        rewritten_disposition = False
+        for index, chunk in enumerate(disposition_chunks):
+            if chunk.startswith(active_marker):
+                disposition_chunks[index] = reviewed
+                rewritten_disposition = True
+                break
+        if not rewritten_disposition:
+            fail(
+                "exposure-contract fixture could not find disposition row "
+                f"{active_id}"
+            )
+        dispositions_path.write_text(
+            "".join(disposition_chunks),
+            encoding="utf-8",
+        )
+
     def expect_error(root: Path, needle: str) -> None:
         errors = exposure_contract_errors(root)
         if not any(needle in error for error in errors):
@@ -1174,10 +1387,28 @@ def validate_exposure_contract_fixture() -> None:
 
         retained = Path(tmp) / "retained"
         shutil.copytree(base, retained)
-        write_positive_retained(retained)
+        before_pending = [
+            str(item)
+            for item in parse_skill_migration(
+                retained / "manifests" / "skills.yaml"
+            )["pending_disposition"]
+        ]
+        promoted_id = write_positive_retained(retained)
+        if before_pending and promoted_id != before_pending[0]:
+            fail("exposure-contract fixture did not promote a pending row")
         retained_errors = exposure_contract_errors(retained)
         if retained_errors:
             fail(f"exposure-contract fixture valid retained entry failed: {retained_errors}")
+
+        zero_pending = Path(tmp) / "zero-pending"
+        shutil.copytree(base, zero_pending)
+        zero_skills_path = zero_pending / "manifests" / "skills.yaml"
+        zero_skills = read(zero_skills_path)
+        for pending_id in before_pending:
+            zero_skills = zero_skills.replace(f"    - {pending_id}\n", "", 1)
+        zero_skills_path.write_text(zero_skills, encoding="utf-8")
+        if write_positive_retained(zero_pending) is not None:
+            fail("exposure-contract fixture zero-pending state must be a no-op")
 
         block_lists = Path(tmp) / "block-lists"
         shutil.copytree(retained, block_lists)
@@ -1255,33 +1486,24 @@ def validate_exposure_contract_fixture() -> None:
 
         missing_metadata = Path(tmp) / "missing-metadata"
         shutil.copytree(base, missing_metadata)
-        dispositions_path = missing_metadata / "manifests" / "skill-dispositions.yaml"
+        write_reviewed_without_active_metadata(missing_metadata)
+        expect_error(missing_metadata, "requires invocation and exposure metadata")
+
+        metadata_mismatch = Path(tmp) / "metadata-mismatch"
+        shutil.copytree(retained, metadata_mismatch)
+        dispositions_path = metadata_mismatch / "manifests" / "skill-dispositions.yaml"
         dispositions_path.write_text(
             read(dispositions_path).replace(
-                "  - id: reporting.daily-brief\n    status: pending\n",
-                """  - id: reporting.daily-brief
-    status: reviewed
-    user_outcome: yes
-    destination: entrypoint
-    parent_intents: [daily-brief]
-    current_clis: []
-    current_hooks: []
-    enforcement_point: "Skill admission governance."
-    migration_path: "Retain it."
-    compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Direct outcome."
-""",
+                '    rationale: "Produces a distinct report directly requested by a user."\n',
+                '    rationale: "Fixture metadata mismatch."\n',
                 1,
             ),
             encoding="utf-8",
         )
-        skills_path = missing_metadata / "manifests" / "skills.yaml"
-        skills_path.write_text(
-            read(skills_path).replace("    - reporting.daily-brief\n", "", 1),
-            encoding="utf-8",
+        expect_error(
+            metadata_mismatch,
+            "reviewed metadata mismatch: disposition.rationale != invocation.admission_rationale",
         )
-        expect_error(missing_metadata, "requires invocation and exposure metadata")
 
         advanced = Path(tmp) / "advanced"
         shutil.copytree(retained, advanced)
@@ -1333,7 +1555,7 @@ def validate_exposure_contract_fixture() -> None:
         skills_path = growth / "manifests" / "skills.yaml"
         skills_path.write_text(
             read(skills_path).replace(
-                "  pending_disposition:\n",
+                "  pending_disposition: []\n",
                 "  pending_disposition:\n    - fixture.new-skill\n",
                 1,
             ),
@@ -1354,10 +1576,14 @@ def validate_exposure_contract_fixture() -> None:
         )
         expect_error(replaced_baseline, "ordered disposition ids do not match the frozen baseline")
 
+    progress = load_migration_progress(ROOT)
+    reviewed_count = len(progress["reviewed_ids"])
+    pending_count = len(progress["pending_ids"])
     print(
         "skill-governance-audit: exposure-contract fixture OK "
-        "pending=66 retained=true advanced=false opt_in=false compatibility_bounded=true "
-        "schema_types=true block_lists=true growth=false"
+        f"reviewed={reviewed_count} pending={pending_count} retained=true "
+        "advanced=false opt_in=false compatibility_bounded=true schema_types=true "
+        "block_lists=true metadata_mismatch=false growth=false"
     )
 
 
@@ -1455,6 +1681,45 @@ def validate_repo() -> None:
                     fail(f"{skill_id} missing project lifecycle contract phrase: {needle}")
 
     reminders = json.loads(read(ROOT / "core" / "hooks" / "shared" / "skill-usage-reminder.skills.json"))
+    retired = set(
+        json.loads(read(ROOT / "manifests" / "retired-skill-ids.json"))["skills"]
+    )
+    active_short_ids = {skill_id.split(".", 1)[1] for skill_id in by_id}
+    explicit_external = {
+        "browser-qa",
+        "find-and-fix-bugs",
+        "fix-bug-pr",
+        "gh-fix-ci",
+        "release-workflow",
+        "semgrep-find-and-fix",
+    }
+    for entry in reminders:
+        reminder_id = str(entry.get("skill", ""))
+        qualified_matches = {
+            skill_id
+            for skill_id in retired
+            if skill_id == reminder_id or skill_id.endswith(f".{reminder_id}")
+        }
+        if qualified_matches:
+            fail(
+                "skill-usage reminder exposes retired skill id "
+                f"{reminder_id}: {sorted(qualified_matches)}"
+            )
+        if reminder_id not in active_short_ids:
+            if entry.get("surface") != "external" or reminder_id not in explicit_external:
+                fail(f"skill-usage reminder has ungoverned non-active id: {reminder_id}")
+
+    retired_short_ids = {skill_id.split(".", 1)[1] for skill_id in retired}
+    for agent_path in sorted((ROOT / "core" / "agents").glob("**/AGENT.md.tera")):
+        body = read(agent_path)
+        stale_refs = sorted(
+            retired_id for retired_id in retired_short_ids if retired_id in body
+        )
+        if stale_refs:
+            fail(
+                "active agent template references retired skills "
+                f"{agent_path.relative_to(ROOT)}: {stale_refs}"
+            )
     exact = {
         entry.get("skill")
         for entry in reminders

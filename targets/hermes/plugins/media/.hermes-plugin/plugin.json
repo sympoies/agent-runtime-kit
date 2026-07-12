@@ -1,5 +1,5 @@
 {
   "name": "media",
   "version": "0.1.0",
-  "description": "Media skills — image-processing, screen-record for local media capture and conversion."
+  "description": "Screen recording and image processing outcomes backed by nils-cli media tools."
 }

@@ -22,10 +22,18 @@ history, logs, caches, or product state.
   `evidence`, `issue`, `code-review`, `pr`, `dispatch`, and `reporting`
   domains. The `pr` domain includes `forge-cli` dry-run probes for create,
   close, dispatch-lane create, and delivery macro surfaces.
-- `product`: runs quarantined product CLI isolation probes, installs temporary
-  product homes, and records representative prompt cases. Prompt execution is
-  skipped by default unless isolated provider/auth execution is explicitly
-  enabled.
+- `product`: runs quarantined product CLI isolation probes and installs
+  temporary product homes. It does not execute prompts; outcome routing is
+  covered deterministically, while authenticated fresh-session acceptance is a
+  separate private/live lane.
+- `convergence`: clones a clean committed source and isolated Codex, Claude,
+  and Hermes homes, then proves a historical 66-to-26-skill upgrade, baseline re-sync rollback, retired
+  managed-surface pruning, stubbed plugin registry activation, independently
+  rebuilt installed-runtime receipt entry/plan digests, active-ID read-back,
+  idempotent reapply, and four generic
+  prompt/route contract fixtures. Its public JSON summaries contain only product,
+  revision, counts, digests, booleans, and status; raw path-bearing logs remain
+  in the caller-owned artifact directory.
 
 `doctor` warnings are allowed in install mode because host tool freshness can
 vary. Blocking findings are not allowed; the runner parses the `block=<n>`
@@ -53,21 +61,33 @@ bash tests/runtime-smoke/run.sh --mode product --product claude
 bash tests/runtime-smoke/run.sh --mode product --product codex --probe-only
 bash tests/runtime-smoke/run.sh --mode product --product claude --probe-only
 bash tests/runtime-smoke/run.sh --mode product --format json
+bash tests/runtime-smoke/run.sh --mode convergence
+bash tests/runtime-smoke/run.sh --mode convergence --product hermes
+bash tests/runtime-smoke/run.sh --mode convergence --format json
 ```
 
-Use `--product codex` or `--product claude` to narrow install mode. Use
+Use `--product codex` or `--product claude` to narrow install mode. Convergence
+also accepts `--product hermes`; other modes reject it explicitly. Use
 `--keep-artifacts` for manual debugging; the command prints the temporary root
 to stderr. Use `--artifacts-dir <path>` when a caller needs persistent logs
 without keeping the temporary runtime homes.
+Portable install/product/convergence source cloning fails closed when the
+working tree is dirty, so only committed reviewed content enters retained Git
+objects.
 
 Product mode is intentionally outside default CI. It proves the product CLI can
 run with temporary runtime homes, installs the current runtime surface into
-temporary product homes, and records representative prompt cases for
-`agent-docs`, `agent-out`, `canary-check`, `skill-usage`, and `docs-impact`.
-Prompt cases default to `skip-host-capability`; set
-`RUNTIME_SMOKE_PRODUCT_EXECUTE=1` only with isolated provider/auth state when
-running the quarantined prompt path manually. Product mode must not touch real
+temporary product homes, and stops before any prompt/provider call. Product
+mode must not touch real
 `$HOME/.codex`, `$HOME/.claude`, auth, sessions, history, logs, or caches.
+Prompt routing remains residual live-product risk and is verified only by the
+private fresh-session acceptance lane after public integration.
+
+Convergence mode does not claim prompt classification or model execution. It
+validates four natural-language prompt fixtures (implementation, code review,
+rendered-browser evidence, and bounded macOS desktop operation), their declared
+active route contracts, and absence of retired bookkeeping surfaces. Task 4.1
+owns authenticated behavioral routing against the merged runtime.
 
 ## Reviewer Subagent Discovery
 

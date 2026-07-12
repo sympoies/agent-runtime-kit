@@ -24,28 +24,15 @@ plugins:
   - id: meta
     domain: meta
     contained_skills:
-      - meta.agent-docs
-      - meta.agent-out
       - meta.bootstrap
       - meta.deploy
-      - meta.agent-scope-lock
-      - meta.heuristic-inbox
-      - meta.heuristic-session-closeout
       - meta.create-skill
       - meta.create-project-skill
       - meta.remove-skill
       - meta.remove-project-skill
       - meta.sync-runtime-surfaces
-      - meta.pre-pr
       - meta.release
-      - meta.repo-retro
-      - meta.semantic-commit
       - meta.setup-project
-      - meta.plan-archive-migrate
-      - meta.plan-archive-query
-      - meta.plan-archive-discover
-      - meta.evidence-migrate
-      - meta.evidence-prune-source
       - meta.nils-cli-bump
       - meta.worktree-triage
     product_manifests:
@@ -65,17 +52,6 @@ plugins:
       hermes: targets/hermes/plugins/media/.hermes-plugin/plugin.json
     install_policy: always
 
-  - id: browser
-    domain: browser
-    contained_skills:
-      - browser.browser-session
-      - browser.canary-check
-    product_manifests:
-      codex: targets/codex/plugins/browser/.codex-plugin/plugin.json
-      claude: targets/claude/plugins/browser/.claude-plugin/plugin.json
-      hermes: targets/hermes/plugins/browser/.hermes-plugin/plugin.json
-    install_policy: always
-
   - id: computer-use
     domain: computer-use
     contained_skills:
@@ -89,32 +65,13 @@ plugins:
   - id: conversation
     domain: conversation
     contained_skills:
-      - conversation.actionable-advice
-      - conversation.actionable-knowledge
       - conversation.discussion-to-implementation-doc
       - conversation.guided-feature-build
       - conversation.handoff-session-prompt
-      - conversation.orchestrator-first
-      - conversation.parallel-first
     product_manifests:
       codex: targets/codex/plugins/conversation/.codex-plugin/plugin.json
       claude: targets/claude/plugins/conversation/.claude-plugin/plugin.json
       hermes: targets/hermes/plugins/conversation/.hermes-plugin/plugin.json
-    install_policy: always
-
-  - id: evidence
-    domain: evidence
-    contained_skills:
-      - evidence.web-evidence
-      - evidence.test-first-evidence
-      - evidence.review-evidence
-      - evidence.skill-usage
-      - evidence.docs-impact
-      - evidence.model-cross-check
-    product_manifests:
-      codex: targets/codex/plugins/evidence/.codex-plugin/plugin.json
-      claude: targets/claude/plugins/evidence/.claude-plugin/plugin.json
-      hermes: targets/hermes/plugins/evidence/.hermes-plugin/plugin.json
     install_policy: always
 
   - id: issue
@@ -122,7 +79,6 @@ plugins:
     contained_skills:
       - issue.issue-follow-up
       - issue.issue-triage
-      - issue.report-plan-issue-finding
     product_manifests:
       codex: targets/codex/plugins/issue/.codex-plugin/plugin.json
       claude: targets/claude/plugins/issue/.claude-plugin/plugin.json
@@ -132,10 +88,6 @@ plugins:
   - id: code-review
     domain: code-review
     contained_skills:
-      - code-review.code-review-focused-lens
-      - code-review.code-review-follow-up
-      - code-review.code-review-pre-merge-gate
-      - code-review.code-review-quick-pass
       - code-review.code-review-specialists
     product_manifests:
       codex: targets/codex/plugins/code-review/.codex-plugin/plugin.json
@@ -146,11 +98,7 @@ plugins:
   - id: pr
     domain: pr
     contained_skills:
-      - pr.create-pr
-      - pr.create-dispatch-lane-pr
-      - pr.close-pr
       - pr.deliver-pr
-      - pr.review-thread-cleanup
     product_manifests:
       codex: targets/codex/plugins/pr/.codex-plugin/plugin.json
       claude: targets/claude/plugins/pr/.claude-plugin/plugin.json
@@ -160,14 +108,8 @@ plugins:
   - id: dispatch
     domain: dispatch
     contained_skills:
-      - dispatch.create-plan-tracking-issue
       - dispatch.deliver-dispatch-plan
-      - dispatch.dispatch-plan-closeout
-      - dispatch.plan-tracking-issue-closeout
-      - dispatch.execute-plan-tracking-issue
       - dispatch.deliver-plan-tracking-issue
-      - dispatch.review-dispatch-lane-pr
-      - dispatch.execute-dispatch-lane
     product_manifests:
       codex: targets/codex/plugins/dispatch/.codex-plugin/plugin.json
       claude: targets/claude/plugins/dispatch/.claude-plugin/plugin.json

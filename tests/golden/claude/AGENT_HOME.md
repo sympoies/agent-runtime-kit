@@ -48,12 +48,29 @@
   inferences, and open questions.
 - Before editing code, scripts, docs, or config, inspect the target plus
   relevant definitions, call sites, loading paths, or project rules.
-- For testable production behavior changes, follow the canonical
-  `test-first-evidence` durable lifecycle: declare the contract/test impact and
-  capture meaningful red before production edits, or record a complete waiver.
+- For testable production behavior changes, follow the policy-owned durable
+  test-first lifecycle: declare the contract delta and affected-test decisions,
+  capture meaningful red before production edits or record a complete waiver,
+  then retain scoped validation and residual gaps in v2 CLI evidence.
 - Keep answers concise, high-signal, and easy to verify; keep
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
+
+## Intent Routing
+
+- Classify the natural-language request and activate only the relevant
+  `agent-docs` intents: `project-dev` for implementation and delivery,
+  `browser-test` for browser acceptance, and `task-tools` for external or
+  unstable facts. Read each activated intent's preflight documents before
+  writing; users do not need to name evidence or lifecycle primitives.
+- When the installed `agent-docs` supports durable session state, use
+  `agent-docs session activate/status/verify`; the pre-edit hook verifies
+  `project-dev` for every direct-edit target repository and for the working
+  repository of shell commands. Run cross-repository shell mutations with each
+  target repository as CWD because pre-tool hooks cannot observe expanded shell
+  destinations. Only an explicitly recognized older CLI uses
+  legacy direct preflight; missing or broken capability probes fail closed on
+  supported hooked hosts.
 
 
 ## Work Tier Levels
@@ -100,8 +117,8 @@
 
 ## Git, Commits, Issues, PRs, And MRs
 
-- Always use the `semantic-commit` skill; direct `git commit` is blocked by
-  hook.
+- Commit through the owning implementation or delivery workflow using the
+  `semantic-commit` CLI; direct `git commit` is blocked by hook.
 - Use `git-cli worktree` for agent worktree lifecycle; direct mutating
   `git worktree` commands are blocked by hook.
 - Never enable `extensions.worktreeConfig` or set per-worktree
@@ -133,8 +150,9 @@
   through `heuristic-inbox` (version, minimal repro, upstream issue link when
   found, current workaround); archive promoted or `wontfix` inbox entries via
   `heuristic-inbox`, never by deleting them in place.
-- After the session goal is achieved, run `$heuristic-session-closeout`: it
-  reviews available evidence, drives `evidence migrate` for durable
-  `skill-usage` retention, and preserves warranted records on `main`.
+- After the session goal is achieved, follow the session-closeout procedure in
+  `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`: review available
+  evidence, run `evidence migrate` when durable `skill-usage` retention is
+  warranted, and preserve warranted records on `main`.
 - Full routing policy for turning failures and repeated lessons into durable
   knowledge: `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`.

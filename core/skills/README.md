@@ -4,23 +4,22 @@ This directory contains the portable source templates for runtime-kit skills.
 `manifests/skills.yaml` is the machine-checkable inventory; this README is the
 human index for scanning the skill catalog by category and skill series.
 
-Admission roles, truthful product exposure, the frozen #562 pending cohort,
-and disposition destinations are defined in the
+Admission roles, truthful product exposure, the completed #562 migration,
+and retained retirement history are defined in the
 [skill exposure contract](../../docs/source/skill-exposure-contract.md).
 
 ## Summary
 
 | Category | Skills | Main series |
 | --- | ---: | --- |
-| `browser` | 2 | Browser-session evidence, canary checks |
-| `code-review` | 5 | Quick pass, focused lenses, pre-merge gate, follow-up, specialist review |
-| `conversation` | 7 | Advice, knowledge, handoff, work modes |
-| `dispatch` | 8 | Plan-tracking issues, dispatch plans, dispatch lanes |
-| `evidence` | 6 | Evidence records, impact scans, cross-checks |
-| `issue` | 3 | Issue triage, durable follow-up, plan-issue finding reports |
+| `code-review` | 1 | Generic read-only code review with internal mode selection |
+| `computer-use` | 1 | macOS desktop automation and GUI testing |
+| `conversation` | 3 | Discussion capture, guided build, and handoff |
+| `dispatch` | 2 | L2 plan tracking and L3 dispatch outcomes |
+| `issue` | 2 | Issue triage and durable follow-up |
 | `media` | 2 | Image conversion, screen capture |
-| `meta` | 22 | Runtime primitives, operation dispatchers, skill lifecycle, plan archive, heuristics, repo maintenance |
-| `pr` | 4 | GitHub PRs, GitLab MRs, dispatch-lane PRs |
+| `meta` | 11 | Explicit repository and runtime maintenance outcomes |
+| `pr` | 1 | Governed GitHub PR and GitLab MR delivery |
 | `reporting` | 3 | Topic radar, daily brief, project retrospective |
 
 ## Skill Body Editing Rubric
@@ -60,10 +59,9 @@ Keep:
 
 - Sentence 1 — identity: verb + object + via-what (the CLI or mechanism). One
   line.
-- At most one more clause, and only if it carries one of: the disambiguator
-  that separates this skill from its siblings (e.g. `create-pr` vs `deliver-pr`
-  vs `close-pr`), or a hard invoke/skip guard (destructive, dry-run-first, or a
-  read-vs-write boundary).
+- At most one more clause, and only if it carries a disambiguator between
+  distinct user outcomes or a hard invoke/skip guard (destructive,
+  dry-run-first, or a read-vs-write boundary).
 
 Cut (it belongs in the body, not the always-loaded description):
 
@@ -82,13 +80,6 @@ hard fail `scripts/ci/skill-governance-audit.sh` raises on any description over
 `desc_over120` / `desc_over220` counts, so drift toward the ceiling stays
 visible without blocking.
 
-## Browser
-
-| Series | Skill | Purpose |
-| --- | --- | --- |
-| Browser-session evidence | [browser-session](./browser/browser-session/) | Records browser-session goals, steps, artifacts, and verification status through `browser-session`. |
-| Canary checks | [canary-check](./browser/canary-check/) | Runs a local canary command, persists redacted evidence, and verifies status through `canary-check`. |
-
 ## Code Review
 
 Routing guidance for the skill family lives in
@@ -96,46 +87,22 @@ Routing guidance for the skill family lives in
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| Quick pass | [code-review-quick-pass](./code-review/code-review-quick-pass/) | Runs a lightweight read-only review for small or ordinary diffs before escalating to specialist review. |
-| Focused lens | [code-review-focused-lens](./code-review/code-review-focused-lens/) | Runs one or more explicitly requested specialist review lenses without invoking the full specialist bundle. |
-| Pre-merge gate | [code-review-pre-merge-gate](./code-review/code-review-pre-merge-gate/) | Runs the shared read-only specialist review gate before PR or MR merge decisions. |
-| Follow-up | [code-review-follow-up](./code-review/code-review-follow-up/) | Re-checks previous review findings after fixes and classifies each item by disposition. |
-| Specialist review | [code-review-specialists](./code-review/code-review-specialists/) | Decomposes risky or broad diffs into read-only specialist review passes and merges normalized findings. |
+| Code review | [code-review-specialists](./code-review/code-review-specialists/) | Selects quick, focused, specialist, follow-up, or pre-merge mode internally and returns evidence-grounded findings. |
 
 ## Conversation
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| Advice and knowledge | [actionable-advice](./conversation/actionable-advice/) | Structures actionable engineering advice around options, tradeoffs, assumptions, and one recommendation. |
-| Advice and knowledge | [actionable-knowledge](./conversation/actionable-knowledge/) | Explains concepts or confusion through multiple lenses with one recommended next step. |
 | Discussion capture and handoff | [discussion-to-implementation-doc](./conversation/discussion-to-implementation-doc/) | Converts completed requirements, design, feasibility, or customer-facing discussion into implementation-ready source material. |
 | Discussion capture and handoff | [handoff-session-prompt](./conversation/handoff-session-prompt/) | Generates a next-session initialization prompt from current context and user-specified references. |
-| Work modes | [orchestrator-first](./conversation/orchestrator-first/) | Makes the main agent own scope, dispatch, integration, validation, and final synthesis while subagents own lanes. |
-| Work modes | [parallel-first](./conversation/parallel-first/) | Applies the shared parallel delegation protocol for safely parallelizable sidecar work. |
+| Guided feature build | [guided-feature-build](./conversation/guided-feature-build/) | Explores, designs, implements, and reviews a feature while selecting delegation modes internally. |
 
 ## Dispatch
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| Plan-tracking issue | [create-plan-tracking-issue](./dispatch/create-plan-tracking-issue/) | Creates or previews a lightweight issue-backed plan tracker with shared dashboard and append-only lifecycle comments. |
-| Plan-tracking issue | [execute-plan-tracking-issue](./dispatch/execute-plan-tracking-issue/) | Resumes lightweight issue-backed plan execution from lifecycle comments and keeps the dashboard current. |
 | Plan-tracking issue | [deliver-plan-tracking-issue](./dispatch/deliver-plan-tracking-issue/) | Delivers a lightweight issue-backed plan through implementation, review, PR delivery, and close readiness gates. |
-| Plan-tracking issue | [plan-tracking-issue-closeout](./dispatch/plan-tracking-issue-closeout/) | Closes a lightweight plan-tracking issue after lifecycle audit, validation, approval, PR evidence, and dashboard repair. |
 | Dispatch plan | [deliver-dispatch-plan](./dispatch/deliver-dispatch-plan/) | Delivers a dispatch-ready plan by creating the shared issue record, dispatching lanes, reviewing PRs, and closing gates. |
-| Dispatch plan | [dispatch-plan-closeout](./dispatch/dispatch-plan-closeout/) | Closes out a shared dispatch plan record after lane PRs, review, validation, approval, and lifecycle gates pass. |
-| Dispatch lane | [execute-dispatch-lane](./dispatch/execute-dispatch-lane/) | Executes an assigned lane, opens or updates its PR, and reports lane state back to the shared issue record. |
-| Dispatch lane | [review-dispatch-lane-pr](./dispatch/review-dispatch-lane-pr/) | Reviews dispatch-lane PRs with retained evidence, provider comments, and issue-visible lifecycle updates. |
-
-## Evidence
-
-| Series | Skill | Purpose |
-| --- | --- | --- |
-| Web evidence | [web-evidence](./evidence/web-evidence/) | Captures redacted HTTP metadata, previews, and manifests through `web-evidence`. |
-| Review evidence | [review-evidence](./evidence/review-evidence/) | Persists review findings, validation commands, artifacts, and verification status through `review-evidence`. |
-| Test-first evidence | [test-first-evidence](./evidence/test-first-evidence/) | Governs a durable contract/test lifecycle — affected-test decisions, meaningful red or waiver, scoped validation, suite convergence, residual gaps — and produces the v2 record the `forge-cli` gate verifies. |
-| Skill usage evidence | [skill-usage](./evidence/skill-usage/) | Records skill invocation intent, linked evidence, validation, failures, and outcomes through `skill-usage`. |
-| Documentation impact | [docs-impact](./evidence/docs-impact/) | Scans Git changes for documentation impact through `docs-impact`. |
-| Model cross-check | [model-cross-check](./evidence/model-cross-check/) | Records primary and checker model observations through `model-cross-check` without owning provider calls. |
 
 ## Issue
 
@@ -146,7 +113,6 @@ Shared issue label, comment, and close discipline lives in
 | --- | --- | --- |
 | Issue triage | [issue-triage](./issue/issue-triage/) | Reviews open GitHub or GitLab issues from `forge-cli inbox`, classifies readiness and blockers, and recommends execution order. |
 | Durable issue follow-up | [issue-follow-up](./issue/issue-follow-up/) | Opens or continues a GitHub or GitLab issue as the durable timeline for a discovered problem, blocker, or handoff. |
-| Plan-issue finding report | [report-plan-issue-finding](./issue/report-plan-issue-finding/) | Files plan-issue / plan-tracking family skill, CLI, or driver drift as a labeled issue in the canonical tracker, and closes it when the upstream fix lands. |
 
 ## Media
 
@@ -168,13 +134,9 @@ classification lives in [meta/README.md](./meta/README.md).
 
 | Series | Skills | Purpose |
 | --- | --- | --- |
-| Runtime primitives | [agent-docs](./meta/agent-docs/), [agent-out](./meta/agent-out/), [agent-scope-lock](./meta/agent-scope-lock/), [sync-runtime-surfaces](./meta/sync-runtime-surfaces/) | Required docs, output paths, edit scope locks, and runtime surface sync. |
-| Repo operation dispatchers | [bootstrap](./meta/bootstrap/), [deploy](./meta/deploy/), [pre-pr](./meta/pre-pr/), [release](./meta/release/), [setup-project](./meta/setup-project/) | Repo-owned `.agents/scripts/*` dispatch and project adoption. |
+| Runtime maintenance | [sync-runtime-surfaces](./meta/sync-runtime-surfaces/), [nils-cli-bump](./meta/nils-cli-bump/), [worktree-triage](./meta/worktree-triage/) | Runtime refresh, dependency pin convergence, and safe worktree maintenance. |
+| Repo operation dispatchers | [bootstrap](./meta/bootstrap/), [deploy](./meta/deploy/), [release](./meta/release/), [setup-project](./meta/setup-project/) | Explicit repo-owned operation dispatch and project adoption. |
 | Skill lifecycle | [create-skill](./meta/create-skill/), [remove-skill](./meta/remove-skill/), [create-project-skill](./meta/create-project-skill/), [remove-project-skill](./meta/remove-project-skill/) | Managed runtime-kit skills and consuming-repo project-local skills. |
-| Plan archive | [plan-archive-query](./meta/plan-archive-query/), [plan-archive-discover](./meta/plan-archive-discover/), [plan-archive-migrate](./meta/plan-archive-migrate/) | Work-history lookup and completed plan migration. |
-| Evidence archive | [evidence-migrate](./meta/evidence-migrate/) | Durable, scrubbed skill-usage evidence migration into the agent-evidence-archive. |
-| Heuristic system | [heuristic-inbox](./meta/heuristic-inbox/), [heuristic-session-closeout](./meta/heuristic-session-closeout/) | Curated workflow-gap records and session closeout retention. |
-| Delivery and repo maintenance | [semantic-commit](./meta/semantic-commit/), [worktree-triage](./meta/worktree-triage/), [nils-cli-bump](./meta/nils-cli-bump/), [repo-retro](./meta/repo-retro/) | Semantic commits, worktree cleanup, nils-cli pin bumps, and retrospectives. |
 
 ## PR And MR
 
@@ -183,10 +145,7 @@ Shared PR/MR body, label, branch, provider, and merge gate rules live in
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| PR/MR lifecycle | [create-pr](./pr/create-pr/) | Creates a GitHub pull request or GitLab merge request through the released `forge-cli pr create` surface. |
-| PR/MR lifecycle | [close-pr](./pr/close-pr/) | Closes or merges GitHub pull requests or GitLab merge requests through released `forge-cli pr` lifecycle surfaces. |
 | PR/MR lifecycle | [deliver-pr](./pr/deliver-pr/) | Delivers GitHub pull requests or GitLab merge requests end to end through the released `forge-cli pr deliver` macro. |
-| Dispatch-lane PR | [create-dispatch-lane-pr](./pr/create-dispatch-lane-pr/) | Creates a GitHub dispatch-lane pull request after a plan issue assigns the lane. |
 
 ## Reporting
 

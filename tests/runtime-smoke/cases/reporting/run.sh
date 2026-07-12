@@ -13,6 +13,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 REPORTING_ARTIFACTS_DIR="$ARTIFACTS_DIR/reporting"
 REPORTING_WORKSPACE="$TMP_ROOT/workspaces/reporting-basic-repo"
@@ -92,10 +95,29 @@ run_topic_radar_security_probe() {
   PYTHONDONTWRITEBYTECODE=1 python3 "$REPO_ROOT/tests/reporting/test_topic_radar_security.py"
 }
 
+run_reporting_outcome_routing_probe() {
+  local daily="$REPO_ROOT/core/skills/reporting/daily-brief/SKILL.md.tera"
+  local retro="$REPO_ROOT/core/skills/reporting/project-retro/SKILL.md.tera"
+
+  grep -Fq '## Outcome Routing' "$daily"
+  grep -Fq 'invokes `topic-radar` as its' "$daily"
+  grep -Fq 'internal collection engine' "$daily"
+  grep -Fq '## Outcome Routing' "$retro"
+  grep -Fq 'canonical repository-retrospective outcome. Callers invoke the' "$retro"
+  grep -Fq 'released `repo-retro` CLI for deterministic collection' "$retro"
+  grep -Fq 'artifact allocation and CLI collection are internal bookkeeping' "$retro"
+
+  rendered_contract_assert_skill reporting daily-brief
+  rendered_contract_assert_skill reporting project-retro
+  rendered_contract_assert_all_contain reporting daily-brief '## Outcome Routing'
+  rendered_contract_assert_all_contain reporting project-retro '## Outcome Routing'
+}
+
 failures=0
 record_case "reporting.daily-brief" "daily-brief backend topic-radar sample JSON exposes brief clusters" run_daily_brief_probe
 record_case "reporting.project-retro" "project-retro repo-retro JSON report passed against temp git workspace" run_project_retro_probe
 record_case "reporting.topic-radar" "topic-radar sample JSON and markdown probes passed without network" run_topic_radar_probe
 record_case "reporting.topic-radar-security" "topic-radar rejects oversized bodies, unsafe XML, and cross-host redirects" run_topic_radar_security_probe
+record_case "reporting.outcome-routing" "report outcomes select collection and artifact bookkeeping internally" run_reporting_outcome_routing_probe
 
 exit "$failures"

@@ -176,6 +176,30 @@ with `--apply`. Keep
 `scripts/setup.sh` for first-time host bootstrap and CLI tool installation; it
 delegates the same plugin registry activation after bootstrap.
 
+Retired managed-surface cleanup has two separate sources of truth:
+`manifests/retired-skill-ids.json` owns the product-neutral ID boundary used by
+Codex, Claude, and Hermes cleanup, while
+`manifests/retired-hermes-skill-copies.json` owns Hermes exact-copy digests.
+The digest manifest names the immutable pre-retirement revision used to
+recompute every digest from historical Hermes goldens. CI checks out full Git
+history for that replay, so retired skill content does not need to remain in an
+active source or fixture tree.
+
+Exact historical Hermes copies are removed from the discoverable `skills/`
+tree by an atomic no-replace move into
+`$HERMES_HOME/.agent-runtime-kit-quarantine/hermes-retired-skills/`. The
+quarantine is ownership-marked and retained: refresh never recursively deletes
+its contents. Rollback/re-upgrade cycles retain additional deterministic
+`.generation-NNNNNN` siblings after validating every existing generation as an
+exact match. Top-level cleanup opens the Hermes home and skills components with
+no-follow descriptors and performs symlink removal and copy moves relative to
+those descriptors; empty legacy directories are harmless and deliberately
+left in place. Profile roots are classified read-only: any legacy runtime-kit
+surface there returns `review-needed` for manual migration and is never mutated
+automatically. A pre-existing unowned quarantine, non-matching destination,
+changed copy, or changed/symlinked traversal also returns `review-needed` and
+leaves operator data untouched.
+
 For non-technical operators setting up another Mac through an agent, use the
 copyable clean-reinstall prompt in
 [`docs/source/macos-agent-bootstrap-prompt.md`](docs/source/macos-agent-bootstrap-prompt.md).
@@ -421,6 +445,7 @@ bash tests/runtime-smoke/run.sh --mode product --product codex
 bash tests/runtime-smoke/run.sh --mode product --product claude
 bash tests/runtime-smoke/run.sh --mode product --product codex --probe-only
 bash tests/runtime-smoke/run.sh --mode product --product claude --probe-only
+bash tests/runtime-smoke/run.sh --mode convergence
 bash tests/runtime-smoke/run.sh --mode product --format json \
   > /tmp/runtime-smoke-product-summary.json
 diff -u tests/runtime-smoke/product/expected/product-summary.json \
@@ -475,6 +500,15 @@ Prompt execution is skipped by default. Set `RUNTIME_SMOKE_PRODUCT_EXECUTE=1`
 only when the host has isolated provider/auth state for the product prompt path.
 Product mode must not read or mutate real `$HOME/.codex`, `$HOME/.claude`,
 auth, sessions, history, logs, or caches.
+
+Portable convergence mode stays credential-free and isolated. From a clean
+committed clone, it verifies a historical 66-to-26-skill upgrade, receipt
+  revision transition, independently rebuilt receipt entry/plan digests,
+  baseline re-sync rollback, retired-surface prune, exact plugin refs and active
+  skill IDs, operator-state preservation, and idempotency. Its four
+redacted prompt/route fixtures validate only the declared routing contract;
+authenticated routing and the bounded desktop action remain the post-merge
+live acceptance lane.
 
 ## Release Boundary
 

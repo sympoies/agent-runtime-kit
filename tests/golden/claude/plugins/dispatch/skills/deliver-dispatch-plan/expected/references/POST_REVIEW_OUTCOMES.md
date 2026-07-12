@@ -2,7 +2,7 @@
 
 ## Core Rule
 
-After every `merge`, `request-followup`, or `close-pr` decision, provider-side
+After every `merge`, `request-followup`, or `close` decision, provider-side
 review action and issue runtime state sync are both required. Do not leave the
 decision only in a PR comment.
 

@@ -23,7 +23,7 @@ detail behind the one-line gates.
   backticked identifier, or a leading double-dash flag is rejected as the opener;
   auto-fix capitalizes a lowercase opening word but cannot rescue a flag or
   backtick start, so lead with a capitalized verb or noun there. The
-  semantic-commit SKILL.md carries the exact flag examples and error string.
+  `semantic-commit --help` output carries exact flag examples and error strings.
 - Draft an accurate 1-2 sentence summary grounded in the actual diff before
   committing or opening a record; never derive a title or body from
   `git log -1`.
@@ -68,6 +68,16 @@ detail behind the one-line gates.
   not hand-write body scaffolding or copy the formatter's section table into
   policy files.
 
+## Parent Workflow Routing
+
+Commit mutation and repository pre-PR validation are internal phases of the
+implementation and governed PR outcome. Parent workflows stage only their owned
+changes and invoke `semantic-commit`; they do not ask the user to select a commit
+helper. Before provider mutation, the PR parent runs the repository-owned
+`.agents/scripts/pre-pr.sh` dispatcher when present and stops on failure. Keep
+the deterministic CLI and repository dispatcher directly callable for
+diagnostics without exposing either as a separate delivery outcome.
+
 ## Labels
 
 - Labels describe the record's type, area, state or size, and workflow for
@@ -83,12 +93,11 @@ detail behind the one-line gates.
   create` / `pr deliver` require `--test-first-evidence <dir>` for `--kind
   feature` / `bug` records (both the create and adopt paths, and the
   `--dry-run` preflight). `docs` / `chore` / `ci` / `refactor` are exempt.
-- The active PR/MR delivery skills thread that flag for you: `create-pr`,
-  `deliver-pr`, `create-dispatch-lane-pr`, `execute-dispatch-lane`, and
-  `deliver-plan-tracking-issue` pass `--test-first-evidence "$EVIDENCE_DIR"` on
-  their `--kind feature` / `bug` invocations and omit it for the exempt kinds.
-  Point it at the `verify`-clean directory the `test-first-evidence` skill
-  produces.
+- The retained PR and plan parent outcomes (`deliver-pr`,
+  `deliver-plan-tracking-issue`, and `deliver-dispatch-plan`) thread that flag
+  through their internal create/deliver phases for `--kind feature` / `bug` and
+  omit it for exempt kinds. Point it at the `verify`-clean directory produced
+  by the policy-owned `test-first-evidence` CLI flow.
 - The gate is **off by default**. It is opt-in via `[test_first] require =
   true` in either a repo `.forge-cli.toml` or the user-global
   `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit
@@ -97,9 +106,11 @@ detail behind the one-line gates.
 - The evidence directory must hold a strict-verification-clean
   `test-first-evidence.record.v2`: testable classification, actual contract
   delta, affected-test decision, meaningful failing fields or a complete
-  waiver, scoped passing validation, and explicit residual gaps. Produce it
-  with the `test-first-evidence` skill; that skill owns the qualitative
-  maintenance judgment.
+  waiver, scoped passing validation, and explicit residual gaps. The parent
+  workflow owns classification, affected-test and waiver judgment, suite
+  convergence, and residual-gap disclosure;
+  `core/policies/evidence-control-plane.md` owns routing, while the
+  `test-first-evidence` CLI owns storage and strict verification.
 - Record v1 remains readable but is ineligible for feature/bug delivery. Re-run
   the v2 lifecycle rather than inferring missing impact and ownership facts.
 - A non-testable waiver records why meaningful red cannot exist and substitute
@@ -109,5 +120,6 @@ detail behind the one-line gates.
   `test_first_evidence_v1`, `test_first_evidence_classification`,
   `test_first_evidence_incomplete`, or `test_first_evidence_unreadable` (exit
   `DATA`). Pin and consumed-surface detail live in
-  `docs/source/nils-cli-surface.md`; the full engineering contract lives in the
-  `test-first-evidence` skill.
+  `docs/source/nils-cli-surface.md`; the full engineering contract lives in
+  `core/policies/evidence-control-plane.md`, and record mechanics live in the
+  `test-first-evidence` CLI.

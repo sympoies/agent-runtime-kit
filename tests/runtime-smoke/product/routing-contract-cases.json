@@ -1,0 +1,25 @@
+{
+  "schema": "agent-runtime-kit.routing-contract.v1",
+  "cases": [
+    {
+      "id": "implementation",
+      "prompt": "implementation.txt",
+      "expected_route": "conversation.guided-feature-build"
+    },
+    {
+      "id": "code-review",
+      "prompt": "code-review.txt",
+      "expected_route": "code-review.code-review-specialists"
+    },
+    {
+      "id": "browser-evidence",
+      "prompt": "browser-evidence.txt",
+      "expected_route": "intent:browser-test"
+    },
+    {
+      "id": "desktop-operation",
+      "prompt": "desktop-operation.txt",
+      "expected_route": "computer-use.macos-desktop"
+    }
+  ]
+}

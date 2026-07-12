@@ -179,14 +179,14 @@ and coupled nils-cli debug-build guidance.
 
 ## Skills
 
-Eleven skill domains are currently rendered into Codex and Claude plugins:
+Nine skill domains are currently rendered into Codex and Claude plugins:
 
-`browser` · `code-review` · `computer-use` · `conversation` · `dispatch` · `evidence` ·
-`issue` · `media` · `meta` · `pr` · `reporting`
+`code-review` · `computer-use` · `conversation` · `dispatch` · `issue` ·
+`media` · `meta` · `pr` · `reporting`
 
 Representative skills include `pr:deliver-pr`,
-`dispatch:deliver-plan-tracking-issue`, `evidence:test-first-evidence`,
-`issue:issue-triage`, `meta:semantic-commit`, `reporting:project-retro`, and
+`dispatch:deliver-plan-tracking-issue`, `issue:issue-triage`,
+`meta:sync-runtime-surfaces`, `reporting:project-retro`, and
 `computer-use:macos-desktop`.
 
 The authoritative skill list and CLI floors live in `manifests/skills.yaml`.

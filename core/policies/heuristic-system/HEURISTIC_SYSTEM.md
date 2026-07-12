@@ -68,6 +68,25 @@ runbooks.
 The goal is not to record everything. Preserve useful learning that a future
 agent can verify and reuse.
 
+## Session Closeout Procedure
+
+Session closeout is parent lifecycle policy, not a standalone user outcome.
+After the session goal is achieved, the parent performs this ordered procedure:
+
+1. Enumerate and verify the session's skill-usage records.
+2. Classify failures and reusable gaps; invoke `heuristic-inbox` directly only
+   for a warranted curated case or operation record.
+3. Run the evidence-archive migration dry-run and apply only under the clean
+   conditions defined by the evidence-archive policy.
+4. After verified migration, run archived-only source-prune dry-run and apply
+   only when every candidate is expected.
+5. Report retained, archived, skipped, and blocked records without committing
+   raw runtime evidence into the working repository.
+
+The typed CLIs retain their own validation and transaction boundaries. The
+parent owns ordering and judgment; users should not need to request each
+bookkeeping operation.
+
 ## Activation And Triage
 
 Heuristic triage activates from one signal: a workflow result that failed or
@@ -130,14 +149,14 @@ Keep these layers separate:
    - May live under project output directories or product state homes.
    - Not automatically committed or copied into this shared root.
    - Has its own durable, queryable retention lane — the
-     agent-evidence-archive, reached via the `evidence-migrate` skill (see
+     agent-evidence-archive, reached via the direct `evidence migrate` CLI (see
      `core/policies/evidence-archive/EVIDENCE_ARCHIVE.md`). That archive stores
      the machine-emitted `skill-usage` records themselves and is distinct from
      this shared root, which holds curated lessons. The two lanes join through
      a record's `promotion.heuristic_inbox_case` link: an archived record can
      point at the curated case it motivated, and vice versa.
 2. Curated improvement inbox:
-   - Written through `heuristic-inbox` when a retained follow-up is justified.
+   - Written through the direct `heuristic-inbox` CLI when a retained follow-up is justified.
    - Contains compact `ENTRY.md` case folders and optional redacted evidence
      excerpts.
    - Shared by Codex and Claude under this root.
@@ -169,7 +188,7 @@ status as `promoted` or `wontfix` and move the entry under
 `error-inbox/archive/YYYY/` so the active inbox stays focused. Archiving does
 not delete curated evidence.
 
-Use the public `heuristic-inbox` skill and nils-cli primitive to list, verify,
+Use the nils-cli `heuristic-inbox` primitive directly to list, verify,
 create, update, ingest redacted evidence, and archive these entries.
 
 ## Case Layout

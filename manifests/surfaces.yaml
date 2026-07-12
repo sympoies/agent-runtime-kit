@@ -213,7 +213,7 @@ surfaces:
         min_nils_cli: "v0.17.5"
         acceptance:
           - kind: ci
-            note: "gate 8 (runtime-smoke codex plugin-registry probes: default dry-run prints the activation plan without executing it; stubbed apply registers codex-kit and installs each <plugin>@codex-kit)"
+            note: "runtime-smoke convergence plus codex plugin-registry probes: isolated apply materializes codex-kit and installs all nine active plugins"
             descriptive_only: true
           - kind: live
             note: "`sync-runtime-surfaces.sh --apply --product codex` then `codex plugin list` includes `<plugin>@codex-kit`; `codex debug prompt-input` lists skills as `<plugin>:<skill>`"
@@ -233,7 +233,7 @@ surfaces:
         min_nils_cli: "v0.17.5"
         acceptance:
           - kind: ci
-            note: "gate 5 (audit-drift), gate 7, gate 8 (runtime-smoke Claude materialized plugin registry and setup activation fixtures)"
+            note: "runtime-smoke convergence plus Claude registry fixtures: isolated apply materializes claude-kit and installs all nine active plugins"
             descriptive_only: true
           - kind: live
             note: "`claude plugins list` includes the runtime-kit `<plugin>@claude-kit` entries after sync, with cache populated from the state-home materialized marketplace"
@@ -749,8 +749,9 @@ surfaces:
         min_nils_cli: "v1.19.2"
         acceptance:
           - kind: ci
-            note: "gate 5 (drift), gate 7 (doctor `block=0`)"
-            descriptive_only: true
+            command: "bash tests/runtime-smoke/run.sh --mode convergence"
+            success:
+              exit_status: 0
           - kind: live
             note: "—"
             descriptive_only: true
@@ -767,7 +768,7 @@ surfaces:
         min_nils_cli: "v1.19.2"
         acceptance:
           - kind: ci
-            note: "gate 5 (drift), gate 7 (doctor `block=0`)"
+            note: "`bash tests/runtime-smoke/run.sh --mode convergence` verifies a historical 66-to-26-skill upgrade, receipt transition, rollback, retired prune, exact registry refs and active IDs, operator-state preservation, and idempotency"
             descriptive_only: true
           - kind: live
             note: "—"
@@ -786,7 +787,7 @@ surfaces:
         min_nils_cli: "v1.20.0"
         acceptance:
           - kind: ci
-            note: "--"
+            note: "sandbox install rehearsal and skill-exposure contract keep Hermes rendered/discovered IDs aligned with the same 26-skill manifest"
             descriptive_only: true
           - kind: live
             note: "--"
@@ -922,7 +923,7 @@ surfaces:
             note: "live Codex session"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#17-prompt-mode-delegation-policy-agenthomemd"
+          - "docs/source/harness-shape-codex.md#17-work-tier-delegation-policy-corepolicieswork-tier-levelsmd"
           - AGENT_HOME.md
       claude:
         state: not-applicable

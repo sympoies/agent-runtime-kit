@@ -45,17 +45,6 @@ entries:
     destination: plugins/media/skills
     recursive: true
 
-  - id: browser.plugin-manifest
-    kind: plugin-manifest-copy
-    source: targets/codex/plugins/browser/.codex-plugin/plugin.json
-    destination: plugins/browser/.codex-plugin/plugin.json
-
-  - id: browser.skills-tree
-    kind: symlinked-file
-    source: build/codex/plugins/browser/skills
-    destination: plugins/browser/skills
-    recursive: true
-
   - id: computer-use.plugin-manifest
     kind: plugin-manifest-copy
     source: targets/codex/plugins/computer-use/.codex-plugin/plugin.json
@@ -76,17 +65,6 @@ entries:
     kind: symlinked-file
     source: build/codex/plugins/conversation/skills
     destination: plugins/conversation/skills
-    recursive: true
-
-  - id: evidence.plugin-manifest
-    kind: plugin-manifest-copy
-    source: targets/codex/plugins/evidence/.codex-plugin/plugin.json
-    destination: plugins/evidence/.codex-plugin/plugin.json
-
-  - id: evidence.skills-tree
-    kind: symlinked-file
-    source: build/codex/plugins/evidence/skills
-    destination: plugins/evidence/skills
     recursive: true
 
   - id: issue.plugin-manifest
@@ -158,6 +136,12 @@ entries:
       # Codex hook block body for `targets/codex/link-map.yaml`.
       [[hooks.PreToolUse]]
       matcher = "Bash"
+
+      [[hooks.PreToolUse.hooks]]
+      type = "command"
+      command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/pre-edit-intent-gate.py\""
+      timeout = 20
+      statusMessage = "agent-runtime-kit: Verify project-dev before repository commands"
 
       [[hooks.PreToolUse.hooks]]
       type = "command"
@@ -257,6 +241,12 @@ entries:
       command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/agent-scope-lock-guard.py\""
       timeout = 10
       statusMessage = "agent-runtime-kit: Validate active scope lock"
+
+      [[hooks.PreToolUse.hooks]]
+      type = "command"
+      command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/pre-edit-intent-gate.py\""
+      timeout = 20
+      statusMessage = "agent-runtime-kit: Verify project-dev intent activation"
 
       [[hooks.PreToolUse.hooks]]
       type = "command"

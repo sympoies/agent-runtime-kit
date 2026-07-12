@@ -32,9 +32,9 @@ is never a reason to escalate — *"state worth tracking"* is.
 
 | Tier | Name | Tracking artifact | Primary method |
 | --- | --- | --- | --- |
-| **L0** | Direct / PR-only | None (the PR is the record) | `semantic-commit` → `deliver-pr` |
+| **L0** | Direct / PR-only | None (the PR is the record) | `semantic-commit` CLI → `deliver-pr` |
 | **L1** | Follow-up issue | One provider issue + comment timeline | `issue-follow-up` |
-| **L2** | Plan tracking issue | Plan bundle + issue + lifecycle | `create-plan-tracking-issue` family |
+| **L2** | Plan tracking issue | Plan bundle + issue + lifecycle | `deliver-plan-tracking-issue` |
 | **L3** | Dispatch plan | Shared dispatch issue + lanes | `deliver-dispatch-plan` |
 
 L3 is for one unit of work that must be split across multiple parallel lanes
@@ -63,14 +63,14 @@ Two things ride alongside the ladder and must not be mistaken for tiers:
   set the tier; the execution tier is chosen by the judge below when the work is
   picked up. A doc captured but not yet scheduled is simply tier-undecided
   backlog.
-- **Subagents = an execution mode, not automatically L3.** `parallel-first` /
-  `orchestrator-first` can help execute L0-L2 work when the user explicitly
+- **Subagents = an execution mode, not automatically L3.** Parallel or
+  orchestrated subagent execution can help execute L0-L2 work when the user explicitly
   asks for subagents and no additional shared coordination record is needed.
   Use formal L3 only when the work also needs the dispatch issue spine. If the
   user hands the agent several existing provider issues and asks for subagents,
   either open one dispatch issue that references those issues as lanes, or state
-  that the run is ad-hoc orchestrator-first execution over the existing issue
-  set rather than formal L3.
+  that the run is ad-hoc orchestrated execution over the existing issue set
+  rather than formal L3.
 
 ## Escalation Judge
 
@@ -103,13 +103,13 @@ torn between L1 and L2, choose L1 first.
 lanes or subagents whose independent PRs, reviews, validation, and closeout need
 one shared dispatch issue. If subagents are useful but the existing artifact set
 already provides enough tracking, keep the lower tier and use
-`orchestrator-first` / `parallel-first` as execution guidance.
+  parallel/orchestrated execution guidance.
 
 ## Methods By Tier
 
 ### L0 — Direct / PR-only
 
-- Do the work, commit through `semantic-commit`, deliver through
+- Do the work, commit through the `semantic-commit` CLI, deliver through
   `deliver-pr` (squash → `main`).
 - PR body: `## Summary` + `## Test plan`, grounded in the diff.
 - If a spec doc backs the work, link it in the PR body and close the doc's loop
@@ -135,26 +135,26 @@ already provides enough tracking, keep the lower tier and use
   `discussion-to-implementation-doc` or **promoted** from an existing
   `docs/discussions/` capture (moved in and renamed, original retired); then
   author `<slug>-plan.md` + `<slug>-execution-state.md`.
-- `create-plan-tracking-issue` → `execute-plan-tracking-issue`
-  (state / session / validation checkpoints) → `deliver-plan-tracking-issue`
-  (PR) → `plan-tracking-issue-closeout` → `plan-archive-migrate` to retire the
-  bundle.
+- Use `deliver-plan-tracking-issue` for the complete parent outcome. It opens or
+  resumes the tracker, owns state/session/validation checkpoints and PR delivery,
+  performs strict closeout, then routes `plan-archive migrate` dry-run/apply as
+  an internal policy phase.
 
 ### L3 — Dispatch plan
 
-- Use for one effort split across parallel lanes / subagents that need a shared
-  dispatch spine. Open the shared dispatch issue with `deliver-dispatch-plan`,
-  run each lane through `execute-dispatch-lane`, review lane PRs with
-  `review-dispatch-lane-pr`, and close with `dispatch-plan-closeout`.
+- Use `deliver-dispatch-plan` for one effort split across parallel lanes /
+  subagents that need a shared dispatch spine. Lane execution, plan-branch PR
+  creation, independent review, orchestrator merge, and strict closeout are
+  internal phases of that parent outcome.
 - Same PR floor: each lane delivers its own PR; the dispatch issue is the spine.
 - Do not label an ad-hoc subagent run as formal L3. Existing issue sets may be
-  executed with `orchestrator-first` / `parallel-first` at their existing tier,
+  executed with ad-hoc parallel/orchestrated execution at their existing tier,
   or promoted into L3 by opening one shared dispatch issue that references those
   issues as lanes.
 
 ### Doc Lifecycle At L0 / L1
 
-L2 retires its bundle automatically (closeout + `plan-archive-migrate`). An L0/L1
+L2 retires its bundle through its internal closeout plus `plan-archive migrate`. An L0/L1
 spec lives in `docs/discussions/` and has **no** automatic retirement step, so
 when it is executed, close its loop by hand: link it from the PR or issue, mark
 it done, and retire or promote it per its retention intent. Otherwise
@@ -193,7 +193,7 @@ escalation boundary, never on routine L0 work.
 - A broad migration across many independent modules, run as parallel lanes with
   one shared dispatch issue for lane state / PRs / reviews / closeout → **L3**.
 - Several existing issues executed with subagents but no shared dispatch
-  spine → keep their existing tier and use **ad-hoc orchestrator-first**.
+  spine → keep their existing tier and use **ad-hoc orchestrated execution**.
 - A doc recorded "do Y later" that is not yet scheduled → **capture (tier
   undecided)**; classify when picked up, usually L0 or L1.
 
@@ -201,8 +201,8 @@ escalation boundary, never on routine L0 work.
 
 - `AGENT_HOME.md` carries the always-on short directive that triggers proactive
   triage; this file is the full reference it points to.
-- `issue-follow-up`, the `create-plan-tracking-issue` family, and
-  `discussion-to-implementation-doc` are the per-tier methods; their `SKILL.md`
-  files own the mechanics.
-- `create-pr` / `deliver-pr` / `close-pr` own provider PR/MR delivery (the floor).
+- `issue-follow-up`, `deliver-plan-tracking-issue`, `deliver-dispatch-plan`, and
+  `discussion-to-implementation-doc` are the retained per-tier outcomes.
+- `deliver-pr` owns provider PR/MR delivery (the floor), including create,
+  repair, merge, and close modes.
 - `forge-label-taxonomy.md` owns label selection for L1/L2 issues.

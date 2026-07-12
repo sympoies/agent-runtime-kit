@@ -29,8 +29,8 @@ project-defined validation. This file is the procedural detail behind them.
   configured) and are **not** auto-reaped — they persist until manually cleaned
   (`agent-out`) or migrated. Durable, queryable retention beyond a session is a
   separate lane: migrate records into the agent-evidence-archive with the
-  `evidence-migrate` skill (clone path from `$AGENT_EVIDENCE_ARCHIVE_HOME` / XDG;
-  never committed into a working repo). See
+  direct `evidence migrate` CLI (clone path from
+  `$AGENT_EVIDENCE_ARCHIVE_HOME` / XDG; never committed into a working repo). See
   `core/policies/evidence-archive/EVIDENCE_ARCHIVE.md`.
 
 ## Sensitive Output Inspection
@@ -57,6 +57,14 @@ project-defined validation. This file is the procedural detail behind them.
   `settings.json`).
 - Use the installed hook sync command to update the local runtime config; do not
   track or symlink the whole runtime config file.
+
+## Parent Workflow Routing
+
+`agent-docs` preflight and `agent-out` allocation are parent workflow
+responsibilities, not user-selected outcomes. The active implementation or tool workflow resolves
+its declared intent documents before edits and allocates its own temporary
+artifacts when it needs them. Keep both CLIs directly callable for deterministic
+diagnostics, audits, and explicit cleanup planning.
 
 ## Validation
 

@@ -1,7 +1,7 @@
 {
   "name": "conversation",
   "version": "0.1.0",
-  "description": "Conversation-to-artifact workflow skills for implementation handoffs and next-session prompts.",
+  "description": "Discussion capture, guided feature build, and handoff prompt outcomes.",
   "author": {
     "name": "graysurf"
   },

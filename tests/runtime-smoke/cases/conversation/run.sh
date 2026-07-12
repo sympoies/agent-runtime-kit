@@ -12,6 +12,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 CONVERSATION_ARTIFACTS_DIR="$ARTIFACTS_DIR/conversation"
 mkdir -p "$CONVERSATION_ARTIFACTS_DIR"
@@ -54,19 +57,36 @@ run_conversation_skill_probe() {
 
   if [ "$skill" = "guided-feature-build" ]; then
     for path in "$source" "$codex" "$claude"; do
-      grep -Fq 'contract delta, affected-test scan,' "$path"
-      grep -Fq 'meaningful red, scoped validation, and suite convergence.' "$path"
+      grep -Fq 'durable test-first lifecycle: contract delta, affected-test scan' "$path"
+      grep -Fq 'convergence, and explicit residual gaps' "$path"
     done
   fi
 }
 
+run_conversation_outcome_routing_probe() {
+  local home_policy="$REPO_ROOT/AGENT_HOME.md"
+  local guided="$REPO_ROOT/core/skills/conversation/guided-feature-build/SKILL.md.tera"
+  local protocol="$REPO_ROOT/core/skills/conversation/guided-feature-build/references/DELEGATION_PROTOCOL.md"
+
+  grep -Fq 'Natural-language collaboration is the default interface' "$home_policy"
+  grep -Fq '## Outcome Routing' "$guided"
+  grep -Fq 'Advice and explanation stay normal conversation behavior' "$guided"
+  grep -Fq 'selects inline, orchestrated, or' "$guided"
+  grep -Fq 'parallel execution internally' "$guided"
+  grep -Fq 'references/DELEGATION_PROTOCOL.md' "$guided"
+  test -s "$protocol"
+  grep -Fq '## Write Isolation' "$protocol"
+
+  rendered_contract_assert_skill conversation guided-feature-build
+  rendered_contract_assert_all_contain conversation guided-feature-build '## Outcome Routing'
+  rendered_contract_assert_all_contain conversation guided-feature-build 'references/DELEGATION_PROTOCOL.md'
+  rendered_contract_assert_reference conversation guided-feature-build references/DELEGATION_PROTOCOL.md
+}
+
 failures=0
-record_case "conversation.actionable-advice" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe actionable-advice
-record_case "conversation.actionable-knowledge" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe actionable-knowledge
 record_case "conversation.discussion-to-implementation-doc" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe discussion-to-implementation-doc
 record_case "conversation.guided-feature-build" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe guided-feature-build
 record_case "conversation.handoff-session-prompt" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe handoff-session-prompt
-record_case "conversation.orchestrator-first" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe orchestrator-first
-record_case "conversation.parallel-first" "prompt-style skill source and rendered surfaces exist for both products" run_conversation_skill_probe parallel-first
+record_case "conversation.outcome-routing" "normal conversation and guided build select advice, explanation, and delegation modes without child-skill selection" run_conversation_outcome_routing_probe
 
 exit "$failures"

@@ -50,6 +50,14 @@ notes = "Detailed output-artifact, hook source/sync, and validation-command mech
 
 [[document]]
 context = "project-dev"
+scope = "home"
+path = "core/policies/evidence-control-plane.md"
+required = true
+when = "always"
+notes = "Parent-owned test-first, docs-impact, review, usage, web, model-check, and closeout evidence ordering; evidence primitives are not user-selected outcomes."
+
+[[document]]
+context = "project-dev"
 scope = "project"
 path = "docs/source/docs-placement-retention-policy-v1.md"
 required = true
@@ -73,7 +81,7 @@ scope = "home"
 path = "core/policies/review-thread-convergence.md"
 required = false
 when = "always"
-notes = "Provider-agnostic discipline for dispositioning provider review threads and converging post-merge bot-review fix loops: per-finding triage, the convergence/stopping rule, and concentrate-vs-converge. Home-scoped and optional — referenced by review-cleanup-type skills (deliver-pr, code-review-follow-up, project-local review-cleanup) when a thread sweep is active, not force-injected for every project-dev task."
+notes = "Provider-agnostic discipline for dispositioning provider review threads and converging post-merge bot-review fix loops: per-finding triage, the convergence/stopping rule, and concentrate-vs-converge. Home-scoped and optional — referenced by deliver-pr, code-review-specialists follow-up mode, and project-local review-cleanup outcomes when a thread sweep is active, not force-injected for every project-dev task."
 
 [[document]]
 context = "project-dev"
@@ -85,9 +93,9 @@ product = "codex"
 notes = "Codex-only reviewer delegation requirement inherited by project-dev preflight; AGENT_HOME carries the concise always-on rendered Codex prompt policy, and Claude omits this doc."
 
 # task-tools intent: external-fact awareness plus optional CLI-tooling catalog.
-# Docs-only (no [[validation]] contract); the UserPromptSubmit cue surfaces
-# required docs alongside project-dev because the hook enumerates every declared
-# intent. Optional docs remain auditable and available through agent-docs.
+# Docs-only (no [[validation]] contract). Durable session-aware hooks expand it
+# only after activation; older agent-docs releases retain the all-intents cue.
+# Optional docs remain auditable and available through agent-docs.
 [[document]]
 context = "task-tools"
 scope = "home"
@@ -95,6 +103,30 @@ path = "core/policies/external-facts.md"
 required = true
 when = "always"
 notes = "External, unstable, or time-sensitive claims: when to run the task-tools preflight, source tags, authoritative sourcing, and which evidence/reporting skills to prefer. Home-scoped so any task-tools work inherits it when this checkout is the docs home."
+
+[[document]]
+context = "task-tools"
+scope = "home"
+path = "core/policies/evidence-control-plane.md"
+required = true
+when = "always"
+notes = "External-fact parents own any web evidence or model cross-check records and link them into one outer workflow record."
+
+[[document]]
+context = "browser-test"
+scope = "home"
+path = "core/policies/browser-test-routing.md"
+required = true
+when = "always"
+notes = "Select static HTTP, rendered browser, Playwright, or desktop execution according to the claim and retain only matching evidence."
+
+[[document]]
+context = "browser-test"
+scope = "home"
+path = "core/policies/evidence-control-plane.md"
+required = true
+when = "always"
+notes = "Browser-test parents own browser-session, HTTP, canary, and linked workflow evidence without exposing recorder primitives as user outcomes."
 
 [[document]]
 context = "task-tools"
@@ -113,3 +145,13 @@ context = "project-dev"
 commands = ["bash scripts/ci/all.sh", "bash tests/hooks/run.sh"]
 marker = ".cache/agent-validation/project-dev.ok"
 description = "Run the kit CI gate stack and hook tests before declaring a project-dev task done."
+
+# Project-owned classification consumed by nils-cli's phase-aware test-first
+# checks. Consuming repositories declare their own paths; unmatched files stay
+# fail-closed instead of inheriting language-specific guesses from this kit.
+[path_classes]
+production = ["AGENT_DOCS.toml", "core/hooks/**", "core/skills/**/*.tera", "scripts/**", "targets/**", "manifests/**"]
+test = ["tests/**"]
+docs = ["AGENT_HOME.md", "README.md", "DEVELOPMENT.md", "SUPPORT_MATRIX.md", "core/policies/**", "core/skills/**/README.md", "core/skills/**/references/**", "docs/**"]
+generated = ["build/**"]
+unmatched = "unknown"

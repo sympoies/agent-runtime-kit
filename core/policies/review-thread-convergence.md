@@ -99,7 +99,7 @@ Use released forge-cli surfaces, not raw `gh`/`glab`, where available:
 
 ## Consumers
 
-Skills that drive a thread sweep should reference this policy rather than
-restating it: the runtime-kit `deliver-pr` pre-merge thread sweep, the
-`code-review-follow-up` re-check pass, and project-local review-cleanup skills
-such as symphony-board `project-review-cleanup`.
+Outcomes that drive a thread sweep should reference this policy rather than
+restating it: the runtime-kit `deliver-pr` pre-merge sweep,
+`code-review-specialists` follow-up mode, and project-local review-cleanup
+outcomes such as symphony-board `project-review-cleanup`.

@@ -386,8 +386,7 @@ Design constraints:
 
 Acceptance:
 
-- A common `execute-plan-tracking-issue` progress update can be expressed as one
-  macro call.
+- A common tracking-outcome progress update can be expressed as one macro call.
 - The macro refuses to post if the generated visible bodies fail the visible
   completeness lint.
 - The macro refuses to post when issue evidence is newer than run state unless a
@@ -422,43 +421,28 @@ Expected behavior:
 
 Acceptance:
 
-- Skills can run close readiness before merge, final state, or approval
+- Parent outcomes can run close readiness before merge, final state, or approval
   handoff.
 - `record close` remains the only command that posts closeout and closes the
   issue.
 
-## runtime-kit Workstreams
+## runtime-kit Outcome Contract
 
-### Workstream 1: Skill Contract Simplification
-
-Rewrite the plan issue skill family from
-`core/skills/dispatch/plan-issue-spec/skill-family.md` after
-the required CLI surfaces exist locally. The rewrite should replace the current
-skill bodies instead of incrementally patching old prompt text.
-
-Expected changes:
-
-- `create-plan-tracking-issue` references the source/plan/initial-state
-  templates.
-- `execute-plan-tracking-issue` references the checkpoint rules and uses the
-  run-state controller plus checkpoint macro when released.
-- `deliver-plan-tracking-issue` references validation/review/final-state
-  closeout readiness through `tracking close-ready`.
-- `plan-tracking-issue-closeout` references visible completeness and strict
-  closeout probe behavior.
-- Dispatch plan and dispatch lane skills name their profile, lane boundary,
-  lifecycle write permissions, and forbidden actions.
+The two active plan outcomes are defined in
+`core/skills/dispatch/plan-issue-spec/skill-family.md`. Each parent owns the
+complete lifecycle and routes open/resume, implementation, review, PR, and
+closeout as internal phases.
 
 Acceptance:
 
-- Skill bodies remain concise.
-- Each skill names the exact lifecycle roles it is allowed to write.
+- Outcome bodies remain concise.
+- Each parent names the exact lifecycle roles its internal phases may write.
 - Every state example uses `--execution-state-file`.
-- Execution skills initialize or resume `run-state.json` before posting
+- Parent outcomes initialize or resume `run-state.json` before posting
   progress checkpoints.
-- Closeout skill never suggests raw closeout comments.
-- Existing skill source bodies are deleted or replaced from the new contract,
-  then Codex and Claude targets plus goldens are regenerated.
+- Neither outcome suggests raw closeout comments.
+- Codex, Claude, and Hermes targets plus goldens are regenerated after source
+  changes.
 
 ### Workstream 2: Deterministic Smoke Coverage
 

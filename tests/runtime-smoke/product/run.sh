@@ -20,9 +20,6 @@ set -euo pipefail
 
 PRODUCT_ARTIFACTS_DIR="$ARTIFACTS_DIR/product"
 PRODUCT_WORKSPACE="$TMP_ROOT/workspaces/product-basic-repo"
-PRODUCT_PROMPTS_DIR="$SCRIPT_DIR/product/prompts"
-PRODUCT_EXECUTE="${RUNTIME_SMOKE_PRODUCT_EXECUTE:-0}"
-PRODUCT_CASES="agent-docs agent-out canary-check skill-usage docs-impact"
 
 mkdir -p "$PRODUCT_ARTIFACTS_DIR" "$TMP_ROOT/workspaces"
 cp -R "$SCRIPT_DIR/workspaces/basic-repo/." "$PRODUCT_WORKSPACE"
@@ -42,47 +39,6 @@ record_product_case() {
   local skill_count="$4"
   local note="$5"
   results_add "$id" "$product" "$status" "$skill_count" "$note"
-}
-
-prompt_skill_id() {
-  case "$1" in
-    agent-docs)
-      printf 'meta.agent-docs\n'
-      ;;
-    agent-out)
-      printf 'meta.agent-out\n'
-      ;;
-    canary-check)
-      printf 'browser.canary-check\n'
-      ;;
-    skill-usage)
-      printf 'evidence.skill-usage\n'
-      ;;
-    docs-impact)
-      printf 'evidence.docs-impact\n'
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-prompt_marker() {
-  local case_name="$1"
-  local skill_id
-  skill_id="$(prompt_skill_id "$case_name")"
-  printf 'runtime-smoke:%s\n' "$skill_id"
-}
-
-record_prompt_skips() {
-  local product="$1"
-  local reason="$2"
-  local case_name skill_id
-
-  for case_name in $PRODUCT_CASES; do
-    skill_id="$(prompt_skill_id "$case_name")"
-    record_product_case "product.$product.$case_name" "$product" "skip-host-capability" "0" "$reason for $skill_id"
-  done
 }
 
 run_codex_probe() {
@@ -216,10 +172,10 @@ run_product_probe() {
     status="pass"
     case "$product" in
       codex)
-        note="isolation=supported via CODEX_HOME and ephemeral exec; prompt smoke is manual-only without provider/auth"
+        note="isolation=supported via CODEX_HOME and ephemeral exec; prompt execution is outside product mode"
         ;;
       claude)
-        note="isolation=supported via CLAUDE_CONFIG_DIR and bare print; prompt smoke is manual-only without API key"
+        note="isolation=supported via CLAUDE_CONFIG_DIR and bare print; prompt execution is outside product mode"
         ;;
     esac
   elif [ "$rc" -eq 2 ]; then
@@ -243,156 +199,13 @@ install_product_surface() {
     return 1
   fi
 
-  if runtime_install_product "$REPO_ROOT" "$TMP_ROOT" "$product" "$install_artifacts"; then
-    record_product_case "product.$product.install" "$product" "pass" "$RUNTIME_SMOKE_SKILL_COUNT" "installed current skills into temp product live_home"
+  if runtime_install_product "${RUNTIME_SMOKE_SOURCE_ROOT:-$REPO_ROOT}" "$TMP_ROOT" "$product" "$install_artifacts"; then
+    record_product_case "product.$product.install" "$product" "pass" "$RUNTIME_SMOKE_SKILL_COUNT" "installed current skills and verified receipt in temp product live_home"
     return 0
   fi
 
-  record_product_case "product.$product.install" "$product" "fail" "0" "install or doctor validation failed for temp product live_home"
+  record_product_case "product.$product.install" "$product" "fail" "0" "install, active-ID, or receipt validation failed for temp product live_home"
   return 1
-}
-
-run_codex_prompt_case() {
-  local case_name="$1"
-  local prompt_file="$2"
-  local expected_marker="$3"
-  local root="$PRODUCT_ARTIFACTS_DIR/codex/prompts/$case_name"
-  local home="$root/home"
-  local live_home
-  local xdg="$root/xdg"
-  local out="$root/stdout.jsonl"
-  local err="$root/stderr.txt"
-  local exit_file="$root/exit"
-  local exit_code
-
-  live_home="$(runtime_live_home "$TMP_ROOT" codex)"
-  mkdir -p "$home" "$xdg" "$root"
-
-  set +e
-  HOME="$home" CODEX_HOME="$live_home" XDG_CONFIG_HOME="$xdg" \
-    codex --ask-for-approval never exec \
-    --ignore-user-config \
-    --ephemeral \
-    --skip-git-repo-check \
-    --sandbox read-only \
-    --oss \
-    --local-provider "${RUNTIME_SMOKE_CODEX_LOCAL_PROVIDER:-ollama}" \
-    --model "${RUNTIME_SMOKE_CODEX_MODEL:-llama3.2}" \
-    -C "$PRODUCT_WORKSPACE" \
-    --json \
-    "$(cat "$prompt_file")" >"$out" 2>"$err"
-  exit_code="$?"
-  set -e
-
-  printf '%s\n' "$exit_code" >"$exit_file"
-  if [ "$exit_code" -ne 0 ]; then
-    grep -Eq 'No running Ollama server detected|OSS setup failed|Failed to connect to Ollama' "$err" && return 2
-    return 1
-  fi
-
-  grep -q "$expected_marker" "$out"
-}
-
-run_claude_prompt_case() {
-  local case_name="$1"
-  local prompt_file="$2"
-  local expected_marker="$3"
-  local root="$PRODUCT_ARTIFACTS_DIR/claude/prompts/$case_name"
-  local home="$root/home"
-  local live_home
-  local xdg="$root/xdg"
-  local out="$root/stdout.json"
-  local err="$root/stderr.txt"
-  local exit_file="$root/exit"
-  local exit_code
-
-  live_home="$(runtime_live_home "$TMP_ROOT" claude)"
-  mkdir -p "$home" "$xdg" "$root"
-
-  if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    printf 'missing ANTHROPIC_API_KEY\n' >"$err"
-    printf '2\n' >"$exit_file"
-    return 2
-  fi
-
-  set +e
-  HOME="$home" CLAUDE_CONFIG_DIR="$live_home" XDG_CONFIG_HOME="$xdg" \
-    claude -p \
-    --bare \
-    --no-session-persistence \
-    --setting-sources project \
-    --settings '{}' \
-    --tools '' \
-    --model "${RUNTIME_SMOKE_CLAUDE_MODEL:-sonnet}" \
-    --output-format json \
-    --max-budget-usd "${RUNTIME_SMOKE_CLAUDE_MAX_BUDGET_USD:-0.01}" \
-    "$(cat "$prompt_file")" >"$out" 2>"$err"
-  exit_code="$?"
-  set -e
-
-  printf '%s\n' "$exit_code" >"$exit_file"
-  if [ "$exit_code" -ne 0 ]; then
-    grep -q 'Not logged in' "$out" && return 2
-    return 1
-  fi
-
-  grep -q "$expected_marker" "$out"
-}
-
-run_prompt_case() {
-  local product="$1"
-  local case_name="$2"
-  local prompt_file="$PRODUCT_PROMPTS_DIR/$case_name.txt"
-  local skill_id expected_marker rc
-
-  skill_id="$(prompt_skill_id "$case_name")"
-  expected_marker="$(prompt_marker "$case_name")"
-  if [ ! -s "$prompt_file" ]; then
-    record_product_case "product.$product.$case_name" "$product" "fail" "0" "missing product prompt for $skill_id"
-    return 1
-  fi
-
-  case "$product" in
-    codex)
-      run_codex_prompt_case "$case_name" "$prompt_file" "$expected_marker"
-      rc="$?"
-      ;;
-    claude)
-      run_claude_prompt_case "$case_name" "$prompt_file" "$expected_marker"
-      rc="$?"
-      ;;
-    *)
-      rc=1
-      ;;
-  esac
-
-  if [ "$rc" -eq 0 ]; then
-    record_product_case "product.$product.$case_name" "$product" "pass" "1" "$skill_id prompt returned expected marker"
-    return 0
-  fi
-  if [ "$rc" -eq 2 ]; then
-    record_product_case "product.$product.$case_name" "$product" "skip-host-capability" "0" "$skill_id prompt requires isolated provider/auth"
-    return 0
-  fi
-
-  record_product_case "product.$product.$case_name" "$product" "fail" "0" "$skill_id prompt did not return expected marker"
-  return 1
-}
-
-run_prompt_cases() {
-  local product="$1"
-  local failures=0
-  local case_name
-
-  if [ "$PRODUCT_EXECUTE" != "1" ]; then
-    record_prompt_skips "$product" "manual-only prompt smoke; set RUNTIME_SMOKE_PRODUCT_EXECUTE=1 with isolated provider/auth"
-    return 0
-  fi
-
-  for case_name in $PRODUCT_CASES; do
-    run_prompt_case "$product" "$case_name" || failures=1
-  done
-  return "$failures"
 }
 
 if [ -n "${PRODUCT:-}" ]; then
@@ -405,7 +218,6 @@ failures=0
 for product in $products; do
   if ! run_product_probe "$product"; then
     failures=1
-    record_prompt_skips "$product" "product isolation probe failed"
     continue
   fi
 
@@ -415,11 +227,9 @@ for product in $products; do
 
   if ! install_product_surface "$product"; then
     failures=1
-    record_prompt_skips "$product" "temp product install failed"
     continue
   fi
 
-  run_prompt_cases "$product" || failures=1
 done
 
 exit "$failures"

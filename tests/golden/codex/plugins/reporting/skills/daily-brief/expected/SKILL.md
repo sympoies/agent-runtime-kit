@@ -65,6 +65,17 @@ Failure modes:
 Do not split source fetchers, ranking, cache, RSS/API parsing, or Polymarket fallback logic into `daily-brief`. If those behaviors need to
 change, update `topic-radar`.
 
+## Outcome Routing
+
+The user asks for a readable brief. This parent invokes `topic-radar` as its
+internal collection engine, selects cache or refresh behavior from the freshness
+request, allocates temporary raw output through the workflow state-out path, and
+returns synthesis plus source health. The user does not need to select source
+fetching, cache, artifact, or transport bookkeeping.
+
+Direct `topic-radar` remains a distinct outcome only for source-level scans,
+custom source controls, or machine-consumable raw output.
+
 ## Workflow
 
 1. Resolve the brief intent.

@@ -32,6 +32,57 @@ stamp="$stamp_dir/health-${product}-$(date +%Y%m%d).stamp"
 [[ -f "$stamp" ]] && exit 0
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 
+trusted_cli_path() {
+  local candidate
+  candidate="$(command -v "$1" 2>/dev/null || true)"
+  [[ "$candidate" == /* && -x "$candidate" ]] || return 1
+  "$python_bin" - "$candidate" "$repo_root" <<'PY' 2>/dev/null
+import os
+import pathlib
+import sys
+
+candidate_path = pathlib.Path(sys.argv[1]).absolute()
+candidate = candidate_path.resolve()
+repo_raw = sys.argv[2]
+configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
+if repo_raw:
+    try:
+        candidate_path.relative_to(pathlib.Path(repo_raw).resolve())
+    except ValueError:
+        pass
+    else:
+        raise SystemExit(1)
+trusted = False
+if configured:
+    roots = [
+        pathlib.Path(item).resolve()
+        for item in configured.split(os.pathsep)
+        if item
+    ]
+    trusted = candidate_path.parent in roots
+else:
+    for prefix_raw in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
+        prefix = pathlib.Path(prefix_raw)
+        if candidate_path.parent != prefix / "bin":
+            continue
+        if candidate.parent == candidate_path.parent:
+            trusted = True
+            break
+        try:
+            relative = candidate.relative_to(prefix / "Cellar" / "nils-cli")
+        except ValueError:
+            continue
+        trusted = len(relative.parts) >= 3 and candidate.parent.name == "bin"
+        if trusted:
+            break
+if candidate_path.parent == pathlib.Path("/usr/bin") and candidate.parent == candidate_path.parent:
+    trusted = True
+if not trusted or not candidate.is_file() or not os.access(candidate, os.X_OK):
+    raise SystemExit(1)
+print(candidate)
+PY
+}
+
 # --- opt-in detection for the evidence-archive lane -------------------------
 
 evidence_config_path() {
@@ -170,7 +221,8 @@ evidence_problems() {
 # --- decide whether either lane can run today -------------------------------
 
 have_agent_docs=0
-command -v agent-docs >/dev/null 2>&1 && have_agent_docs=1
+agent_docs_bin="$(trusted_cli_path agent-docs || true)"
+[[ -n "$agent_docs_bin" ]] && have_agent_docs=1
 opted_in=0
 evidence_opted_in && opted_in=1
 
@@ -199,14 +251,14 @@ if [[ "$have_agent_docs" -eq 1 && -n "$repo_root" && -f "$repo_root/AGENT_DOCS.t
   project_args=(--project-path "$repo_root")
   product_args=()
   if [[ "$product" == "codex" || "$product" == "claude" ]]; then
-    if agent-docs ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} \
+    if "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} \
       preflight --help 2>/dev/null | grep -q -- "--product"; then
       product_args=(--product "$product")
     fi
   fi
 
   list_output="$(
-    agent-docs ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} list --format json 2>&1
+    "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} list --format json 2>&1
   )"
   list_status=$?
   intents=""
@@ -244,7 +296,7 @@ ${list_output}
     while IFS= read -r intent; do
       [[ -z "$intent" ]] && continue
       out="$(
-        agent-docs ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} \
+        "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} \
           preflight --intent "$intent" ${product_args[@]+"${product_args[@]}"} --strict --format text 2>&1
       )"
       status=$?

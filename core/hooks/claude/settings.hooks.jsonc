@@ -58,6 +58,11 @@
       "hooks": [
         {
           "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/pre-edit-intent-gate.py\"",
+          "statusMessage": "agent-runtime-kit: Verify project-dev before repository commands"
+        },
+        {
+          "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-direct-git-commit.py\"",
           "statusMessage": "agent-runtime-kit: Block direct git commit"
         },
@@ -148,6 +153,11 @@
         },
         {
           "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/pre-edit-intent-gate.py\"",
+          "statusMessage": "agent-runtime-kit: Verify project-dev intent activation"
+        },
+        {
+          "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/finish-line-record.py\"",
           "statusMessage": "agent-runtime-kit: Record agent-docs code edits"
         }
@@ -170,6 +180,11 @@
           "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/agent-scope-lock-guard.py\"",
           "statusMessage": "agent-runtime-kit: Validate active scope lock"
+        },
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/pre-edit-intent-gate.py\"",
+          "statusMessage": "agent-runtime-kit: Verify project-dev intent activation"
         },
         {
           "type": "command",

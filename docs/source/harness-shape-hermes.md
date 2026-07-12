@@ -143,6 +143,10 @@ the acceptance lane, and the current ship state.
 
 - Hermes reads from: `~/.hermes` (override via the `HERMES_HOME` env var).
 - Source: `manifests/runtime-roots.yaml` hermes `state_home`.
+- Acceptance lane: sandbox install rehearsal and the shared skill-exposure
+  contract verify that Hermes renders the same 26 active IDs and no retired
+  Browser/Evidence plugin surface; runtime-kit does not claim Hermes receipt or
+  hook parity with Codex and Claude.
 - Support today: **shipped**.
 
 ### 15. Local and external skill roots
@@ -156,7 +160,13 @@ the acceptance lane, and the current ship state.
   skills tree into
   `~/.hermes/external-skills/agent-runtime-kit/<domain>` via
   `targets/hermes/link-map.yaml`. The local `~/.hermes/skills` tree remains for
-  Hermes-native or operator-managed skills.
+  Hermes-native or operator-managed skills. Exact runtime-kit copies left by
+  the retired local layout move atomically into the retained, non-discoverable
+  `.agent-runtime-kit-quarantine/hermes-retired-skills/` tree; refresh does not
+  recursively delete that quarantine. Repeated rollback/re-upgrade cycles keep
+  exact additional generations. Top-level cleanup uses descriptor-anchored
+  no-follow traversal; profile-local legacy surfaces are classified read-only
+  and return `review-needed` for manual migration instead of being mutated.
 - Support today: **shipped**.
 
 ### 16. Codex hook registration (`config.toml` managed block)

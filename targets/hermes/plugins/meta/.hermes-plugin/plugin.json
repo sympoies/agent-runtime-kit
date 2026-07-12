@@ -1,5 +1,5 @@
 {
   "name": "meta",
   "version": "0.1.0",
-  "description": "Meta skills — agent-docs, agent-out, semantic-commit, heuristic system, and runtime surface management."
+  "description": "Explicit runtime and repository maintenance outcomes: bootstrap, deploy, governed skill lifecycle, release, setup, runtime sync, nils-cli bump, and worktree triage."
 }

@@ -6,7 +6,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ALLOW_FILE="$REPO_ROOT/scripts/ci/product-leak-allow.yaml"
+ALLOW_FILE="${PRODUCT_LEAK_ALLOW_FILE:-$REPO_ROOT/scripts/ci/product-leak-allow.yaml}"
 SELF_TEST=0
 
 usage() {
@@ -168,8 +168,11 @@ def product_files() -> dict[str, list[Path]]:
     return files
 
 
+used_allow_indices: set[int] = set()
+
+
 def is_allowed(product: str, rel_path: str, sentinel: str) -> bool:
-    for entry in ALLOW:
+    for idx, entry in enumerate(ALLOW):
         entry_product = entry.get("product", "any")
         if entry_product not in {"any", product}:
             continue
@@ -177,13 +180,15 @@ def is_allowed(product: str, rel_path: str, sentinel: str) -> bool:
         if entry_sentinel and entry_sentinel != sentinel:
             continue
         if fnmatch.fnmatch(rel_path, entry["path"]):
+            used_allow_indices.add(idx)
             return True
     return False
 
 
+files_by_product = product_files()
 failures: list[tuple[str, str, int, str, str]] = []
 scanned = 0
-for product, files in product_files().items():
+for product, files in files_by_product.items():
     seen: set[Path] = set()
     for file_path in files:
         resolved = file_path.resolve()
@@ -200,6 +205,20 @@ for product, files in product_files().items():
             for sentinel, pattern in SENTINELS[product]:
                 if pattern.search(line) and not is_allowed(product, rel_path, sentinel):
                     failures.append((product, rel_path, line_no, sentinel, line.strip()))
+
+unused_allow = [
+    (idx + 1, entry)
+    for idx, entry in enumerate(ALLOW)
+    if idx not in used_allow_indices
+]
+if unused_allow:
+    print("product-leak-audit: unused allow entry", file=sys.stderr)
+    for idx, entry in unused_allow:
+        print(
+            f"  - entry={idx} product={entry.get('product', 'any')} path={entry['path']} sentinel={entry.get('sentinel', 'any')}",
+            file=sys.stderr,
+        )
+    sys.exit(1)
 
 if failures:
     print("product-leak-audit: foreign product sentinel found", file=sys.stderr)

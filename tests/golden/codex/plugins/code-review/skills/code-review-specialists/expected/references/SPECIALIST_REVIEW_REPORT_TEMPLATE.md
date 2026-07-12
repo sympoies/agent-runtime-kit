@@ -49,4 +49,5 @@
 - Review-evidence record:
 
 Note: this report distinguishes specialist review findings from merge, close,
-or request-followup decisions. Use `review-dispatch-lane-pr` for those decisions.
+or request-followup decisions. The owning PR or dispatch parent makes those
+decisions.

@@ -43,17 +43,6 @@ entries:
     destination: plugins/media/skills
     recursive: true
 
-  - id: browser.plugin-manifest
-    kind: plugin-manifest-copy
-    source: targets/claude/plugins/browser/.claude-plugin/plugin.json
-    destination: plugins/browser/.claude-plugin/plugin.json
-
-  - id: browser.skills-tree
-    kind: symlinked-file
-    source: build/claude/plugins/browser/skills
-    destination: plugins/browser/skills
-    recursive: true
-
   - id: computer-use.plugin-manifest
     kind: plugin-manifest-copy
     source: targets/claude/plugins/computer-use/.claude-plugin/plugin.json
@@ -74,17 +63,6 @@ entries:
     kind: symlinked-file
     source: build/claude/plugins/conversation/skills
     destination: plugins/conversation/skills
-    recursive: true
-
-  - id: evidence.plugin-manifest
-    kind: plugin-manifest-copy
-    source: targets/claude/plugins/evidence/.claude-plugin/plugin.json
-    destination: plugins/evidence/.claude-plugin/plugin.json
-
-  - id: evidence.skills-tree
-    kind: symlinked-file
-    source: build/claude/plugins/evidence/skills
-    destination: plugins/evidence/skills
     recursive: true
 
   - id: issue.plugin-manifest

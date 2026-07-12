@@ -6,10 +6,7 @@
 - Date: 2026-05-26
 - Owner surface: lightweight plan-tracking issue workflow
 - Primary consumers:
-  - `core/skills/dispatch/create-plan-tracking-issue/SKILL.md.tera`
-  - `core/skills/dispatch/execute-plan-tracking-issue/SKILL.md.tera`
   - `core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera`
-  - `core/skills/dispatch/plan-tracking-issue-closeout/SKILL.md.tera`
   - `sympoies/nils-cli:crates/plan-issue`
 - Related controller spec:
   - `core/skills/dispatch/plan-issue-spec/run-state-controller.md`
@@ -28,10 +25,10 @@ comments carrying `plan-issue-record:v2` markers.
 
 ## Source Inputs
 
-- [U1] The user requested a full redesign of the
-  `execute-plan-tracking-issue` comment workflow, including all comment types,
-  templates, timing rules, and a path back into `nils-cli`.
-- [F1] Runtime-kit tracking skills currently route lifecycle writes through
+- [U1] The user requested a full redesign of the plan-tracking comment
+  workflow, including all comment types, templates, timing rules, and a path
+  back into `nils-cli`.
+- [F1] The runtime-kit tracking outcome routes lifecycle writes through
   `plan-issue record open`, `record post`, `record repair-dashboard`, and
   `record close`.
 - [F2] `docs/source/nils-cli-surface.md` pins the consumed `plan-issue`

@@ -405,25 +405,18 @@ Responsibilities:
 7. If visible completeness fails, checkpoint must not post live comments unless
    an explicit repair-only override is implemented later.
 
-## Skill Usage Model
+## Outcome Usage Model
 
-Runtime-kit skills should use the controller as follows. The complete skill
-inventory, rewrite rule, and per-skill boundaries are defined in
+The complete two-outcome inventory and phase boundaries are defined in
 `core/skills/dispatch/plan-issue-spec/skill-family.md`.
 
-- `create-plan-tracking-issue`: keep using `record open`; optionally initialize
-  run state immediately after issue creation.
-- `execute-plan-tracking-issue`: start with `tracking status`, update run state
-  during implementation, and use `tracking checkpoint` for progress comments.
-- `deliver-plan-tracking-issue`: use `tracking checkpoint` for session,
-  validation, review, and final state; use `tracking close-ready` before
-  merge/closeout decisions.
-- `plan-tracking-issue-closeout`: use `tracking close-ready`, then call
-  `record close` only when ready.
-- Dispatch plan and lane skills use the same controller mechanics only within
-  their assigned profile and lane boundaries.
+- `deliver-plan-tracking-issue` opens or resumes the tracker, uses
+  `tracking checkpoint` for session, validation, review, and final state, then
+  uses `tracking close-ready` before merge/closeout decisions.
+- `deliver-dispatch-plan` uses the same controller only within the dispatch
+  profile and the lane boundaries assigned by the parent.
 
-The skill body still owns judgment:
+The parent outcome still owns judgment:
 
 - selected task
 - validation strength

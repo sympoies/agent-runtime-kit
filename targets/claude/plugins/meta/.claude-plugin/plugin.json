@@ -1,7 +1,7 @@
 {
   "name": "meta",
   "version": "0.1.0",
-  "description": "Runtime-kit maintenance skills for docs, output paths, project-local shims, skill lifecycle changes, scope locks, heuristic cases, plan archives, evidence archives, CLI pin bumps, worktree triage, retrospectives, and semantic commits.",
+  "description": "Explicit runtime and repository maintenance outcomes: bootstrap, deploy, governed skill lifecycle, release, setup, runtime sync, nils-cli bump, and worktree triage.",
   "author": {
     "name": "graysurf"
   },

@@ -1,0 +1,1 @@
+On the designated macOS desktop test role, open the sample application, perform one bounded GUI action, capture a screenshot, and report permission or transport blockers without exposing connection details.

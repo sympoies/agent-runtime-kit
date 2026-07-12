@@ -13,6 +13,9 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
+. "$SCRIPT_DIR/lib/rendered-contract.sh"
 
 ISSUE_ARTIFACTS_DIR="$ARTIFACTS_DIR/issue"
 mkdir -p "$ISSUE_ARTIFACTS_DIR"
@@ -130,9 +133,23 @@ run_report_plan_issue_finding_probe() {
   grep -q '"severity::s2"' "$create_out"
 }
 
+run_issue_outcome_routing_probe() {
+  local skill="$REPO_ROOT/core/skills/issue/issue-follow-up/SKILL.md.tera"
+
+  grep -Fq '### Plan-Family Finding Mode' "$skill"
+  grep -Fq 'The caller supplies `TRACKER_REPO`' "$skill"
+  grep -Fq 'Deduplicate before opening' "$skill"
+  grep -Fq 'plan-issue-finding' "$skill"
+
+  rendered_contract_assert_skill issue issue-follow-up
+  rendered_contract_assert_all_contain issue issue-follow-up '### Plan-Family Finding Mode'
+  rendered_contract_assert_all_contain issue issue-follow-up 'The caller supplies `TRACKER_REPO`'
+}
+
 failures=0
 record_case "issue.issue-follow-up" "forge-cli issue create/view/comment dry-run probes passed" run_issue_follow_up_probe
 record_case "issue.issue-triage" "forge-cli inbox issue triage dry-run probes passed" run_issue_triage_probe
-record_case "issue.report-plan-issue-finding" "forge-cli issue list dedup + create dry-run probes passed" run_report_plan_issue_finding_probe
+record_case "issue.outcome-routing.plan-finding" "forge-cli issue list dedup + create dry-run probes passed" run_report_plan_issue_finding_probe
+record_case "issue.outcome-routing.contract" "generic issue follow-up absorbs plan-family finding routing without a fixed provider account" run_issue_outcome_routing_probe
 
 exit "$failures"

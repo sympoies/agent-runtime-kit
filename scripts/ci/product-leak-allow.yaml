@@ -5,10 +5,6 @@
 # omit it only for files whose purpose is cross-product capability prose.
 allow:
   - product: codex
-    path: build/codex/plugins/code-review/skills/code-review-*.md
-    sentinel: Claude
-    reason: Code-review skills intentionally explain reviewer behavior across host capability classes.
-  - product: codex
     path: build/codex/plugins/meta/skills/sync-runtime-surfaces/SKILL.md
     reason: This skill operates on both runtime homes and reports both plugin registries.
   - product: codex
@@ -31,13 +27,6 @@ allow:
     path: build/codex/plugins/meta/skills/remove-project-skill/SKILL.md
     sentinel: Claude
     reason: Project-local removal describes the Claude bridge surface it may inspect.
-  - product: codex
-    path: build/codex/plugins/meta/skills/heuristic-inbox/SKILL.md
-    reason: Heuristic-system records are intentionally shared across Codex, Claude, and Hermes.
-  - product: codex
-    path: build/codex/plugins/meta/skills/agent-docs/SKILL.md
-    reason: agent-docs documents the per-product home conventions (~/.claude, ~/.codex, $HERMES_HOME).
-
   - product: claude
     path: build/claude/plugins/code-review/skills/code-review-*.md
     sentinel: Codex
@@ -57,13 +46,6 @@ allow:
     path: build/claude/plugins/meta/skills/setup-project/SKILL.md
     sentinel: Codex
     reason: Project setup explicitly refuses global runtime-home mutation for either product.
-  - product: claude
-    path: build/claude/plugins/meta/skills/heuristic-inbox/SKILL.md
-    reason: Heuristic-system records are intentionally shared across Codex, Claude, and Hermes.
-  - product: claude
-    path: build/claude/plugins/meta/skills/agent-docs/SKILL.md
-    reason: agent-docs documents the per-product home conventions (~/.claude, ~/.codex, $HERMES_HOME).
-
   # Hermes sees both Codex and Claude as foreign; these meta skills are
   # cross-product capability prose that intentionally name the other products.
   - product: hermes
@@ -84,6 +66,3 @@ allow:
   - product: hermes
     path: build/hermes/plugins/meta/skills/nils-cli-bump/SKILL.md
     reason: The bump skill references refreshing every product surface after a host upgrade.
-  - product: hermes
-    path: build/hermes/plugins/meta/skills/heuristic-inbox/SKILL.md
-    reason: Heuristic-system records are intentionally shared across Codex, Claude, and Hermes.
