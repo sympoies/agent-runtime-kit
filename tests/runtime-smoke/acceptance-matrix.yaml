@@ -274,6 +274,19 @@ cases:
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
+  - id: computer-use.macos-desktop.shared-cli.routing-contract
+    product: shared-cli
+    domain: computer-use
+    skill_id: computer-use.macos-desktop
+    mode: convergence
+    fixture_workspace: tests/runtime-smoke/product/prompts/desktop-operation.txt
+    setup: install a clean portable product home and validate the current route catalog
+    invocation: validate the generic remote macOS desktop prompt and declared computer-use route contract
+    expected_exit_code: 0
+    expected_artifacts: redacted prompt digest and route contract binding computer-use.macos-desktop
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
   - id: conversation.discussion-to-implementation-doc.shared-cli.deterministic
     product: shared-cli
     domain: conversation
@@ -297,6 +310,32 @@ cases:
     invocation: verify workflow skill source and rendered Codex/Claude SKILL.md files
     expected_exit_code: 0
     expected_artifacts: rendered skill files
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
+  - id: conversation.guided-feature-build.shared-cli.routing-contract-implementation
+    product: shared-cli
+    domain: conversation
+    skill_id: conversation.guided-feature-build
+    mode: convergence
+    fixture_workspace: tests/runtime-smoke/product/prompts/implementation.txt
+    setup: install a clean portable product home and validate the current route catalog
+    invocation: validate the generic implementation prompt and declared guided-feature-build route contract
+    expected_exit_code: 0
+    expected_artifacts: redacted prompt digest and route contract binding conversation.guided-feature-build
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
+  - id: conversation.guided-feature-build.shared-cli.routing-contract-browser-evidence
+    product: shared-cli
+    domain: conversation
+    skill_id: conversation.guided-feature-build
+    mode: convergence
+    fixture_workspace: tests/runtime-smoke/product/prompts/browser-evidence.txt
+    setup: install a clean portable product home with the browser-test intent policy
+    invocation: validate the generic browser evidence prompt and declared browser-test intent contract
+    expected_exit_code: 0
+    expected_artifacts: redacted prompt digest and route contract binding the browser-test intent without a bookkeeping skill
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
@@ -414,6 +453,19 @@ cases:
     invocation: review-specialists scope, validate, merge, and render
     expected_exit_code: 0
     expected_artifacts: scope JSON, merged JSON, and rendered report
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
+  - id: code-review.code-review-specialists.shared-cli.routing-contract
+    product: shared-cli
+    domain: code-review
+    skill_id: code-review.code-review-specialists
+    mode: convergence
+    fixture_workspace: tests/runtime-smoke/product/prompts/code-review.txt
+    setup: install a clean portable product home and validate the current route catalog
+    invocation: validate the generic code-review prompt and declared specialist route contract
+    expected_exit_code: 0
+    expected_artifacts: redacted prompt digest and route contract binding code-review.code-review-specialists
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none

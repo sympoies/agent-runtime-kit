@@ -297,8 +297,10 @@ a uniform shape:
   `manifests/product-capabilities.yaml`.
 - Install mechanism: `agent-runtime install` resolves runtime roots;
   the `agent-out` CLI allocates artifact paths at runtime.
-- Acceptance lane: drift audit + doctor verify resolution; backup
-  retention reported by `doctor`.
+- Acceptance lane: `runtime-smoke --mode convergence` verifies a clean receipt,
+  backup restore rehearsal, retired-surface prune, stubbed plugin activation,
+  active-ID read-back, installed-runtime provenance, and idempotent reapply in
+  an isolated runtime home.
 - Support today: **shipped (env var + runtime allocator)**.
 
 ### 15. Codex local skill root (`skills/<domain>/<skill>/SKILL.md`)
@@ -404,10 +406,14 @@ From `DEVELOPMENT.md`:
    when `block=0` (`DEVELOPMENT.md`).
 8. **runtime-smoke deterministic mode** — exercises representative
    installed skills across current domains (`DEVELOPMENT.md`).
-9. **project-local overlay smoke** — Codex-side project-local shims for
+9. **runtime-smoke convergence mode** — proves a portable historical
+   66-to-26-skill upgrade, rollback, prune, exact registry refs, receipt/ID
+   transition, operator-state preservation, idempotency, and redacted route
+   contract fixtures without real product credentials.
+10. **project-local overlay smoke** — Codex-side project-local shims for
    `bootstrap`, `deploy`, `pre-pr`, and `release`, plus `setup-project`
    adoption diagnostics (`DEVELOPMENT.md`).
-10. **`bash tests/hooks/run.sh`** — shared hook contract tests.
+11. **`bash tests/hooks/run.sh`** — shared hook contract tests.
 
 Quarantined (not in default CI):
 
@@ -416,6 +422,11 @@ Quarantined (not in default CI):
   execution.
 
 Live Codex acceptance:
+
+- Public convergence acceptance validates four isolated prompt/route contract
+  fixtures for implementation, review, rendered-browser evidence, and bounded
+  desktop operation. It intentionally does not claim classification or model
+  execution.
 
 - `codex debug prompt-input` in a fresh Codex Desktop session is the
   live acceptance lane. Pass signal: each required skill appears as a

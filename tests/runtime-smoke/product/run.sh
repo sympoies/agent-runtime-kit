@@ -199,12 +199,12 @@ install_product_surface() {
     return 1
   fi
 
-  if runtime_install_product "$REPO_ROOT" "$TMP_ROOT" "$product" "$install_artifacts"; then
-    record_product_case "product.$product.install" "$product" "pass" "$RUNTIME_SMOKE_SKILL_COUNT" "installed current skills into temp product live_home"
+  if runtime_install_product "${RUNTIME_SMOKE_SOURCE_ROOT:-$REPO_ROOT}" "$TMP_ROOT" "$product" "$install_artifacts"; then
+    record_product_case "product.$product.install" "$product" "pass" "$RUNTIME_SMOKE_SKILL_COUNT" "installed current skills and verified receipt in temp product live_home"
     return 0
   fi
 
-  record_product_case "product.$product.install" "$product" "fail" "0" "install or doctor validation failed for temp product live_home"
+  record_product_case "product.$product.install" "$product" "fail" "0" "install, active-ID, or receipt validation failed for temp product live_home"
   return 1
 }
 

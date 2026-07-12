@@ -273,8 +273,10 @@ a uniform shape:
   `manifests/product-capabilities.yaml`.
 - Install mechanism: `agent-runtime install` sets the env var via the
   managed block; the `agent-out` CLI allocates artifact paths at runtime.
-- Acceptance lane: drift audit + doctor verify resolution; backup
-  retention reported by `doctor`.
+- Acceptance lane: `runtime-smoke --mode convergence` verifies a clean receipt,
+  backup restore rehearsal, retired-surface prune, stubbed plugin activation,
+  active-ID read-back, installed-runtime provenance, and idempotent reapply in
+  an isolated runtime home.
 - Support today: **shipped (env var + runtime allocator)**.
 
 ## Coverage Summary
@@ -325,8 +327,12 @@ From `DEVELOPMENT.md`:
    `tests/sandbox/claude/expected-agents.txt`.
 8. **runtime-smoke deterministic mode** — exercises representative
    Claude-installed skills.
-9. project-local overlay smoke — Codex-side; not Claude.
-10. **`bash tests/hooks/run.sh`** — hook adapter contract tests.
+9. **runtime-smoke convergence mode** — proves a portable historical
+   66-to-26-skill upgrade, rollback, prune, exact registry refs, receipt/ID
+   transition, operator-state preservation, idempotency, and redacted route
+   contract fixtures without real product credentials.
+10. project-local overlay smoke — Codex-side; not Claude.
+11. **`bash tests/hooks/run.sh`** — hook adapter contract tests.
 
 Quarantined (not in default CI):
 
@@ -335,8 +341,9 @@ Quarantined (not in default CI):
   requires `RUNTIME_SMOKE_PRODUCT_EXECUTE=1` plus isolated
   provider/auth.
 
-Live Claude acceptance (a fresh Claude session reading the installed
-surface) has no in-tree CI gate today. The closest analogue on the
-Codex side is `codex debug prompt-input` in
-`docs/plans/2026-06-20-codex-plugin-marketplace-adoption/`; no
-equivalent Claude protocol exists yet.
+Public convergence acceptance validates four isolated Claude prompt/route
+contract fixtures for implementation, review, rendered-browser evidence, and
+bounded desktop operation, without calling a provider or naming retired
+bookkeeping surfaces. It does not claim classification. Authenticated Claude
+behavior remains the Task 4.1 live lane; Claude still has no direct equivalent
+of Codex `debug prompt-input`.

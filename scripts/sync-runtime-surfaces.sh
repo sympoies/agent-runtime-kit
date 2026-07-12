@@ -457,6 +457,7 @@ PY
     [ "$(cd "$source_origin_path" && pwd -P)" = "$(cd "$candidate_root" && pwd -P)" ]; then
     return 0
   fi
+
   return 1
 }
 
@@ -1696,6 +1697,8 @@ quarantine_validate_and_remove_retired_tree() {
   local skill="${6:-}"
 
   python3 - "$SOURCE_ROOT" "$live_home" "$tree_path" "$kind" "$product" "$domain" "$skill" <<'PY'
+import ctypes
+import errno
 import os
 import pathlib
 import stat
@@ -1705,6 +1708,9 @@ import sys
 source_root, live_home, tree_path, kind, product, domain, skill = sys.argv[1:8]
 open_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 fault_at = os.environ.get("AGENT_RUNTIME_KIT_TEST_RETIRE_CLEANUP_FAIL_AT", "")
+inject_after_snapshot = os.environ.get(
+    "AGENT_RUNTIME_KIT_TEST_RETIRE_CLEANUP_INJECT_AFTER_SNAPSHOT", ""
+)
 
 
 class ReviewNeeded(Exception):
@@ -1803,7 +1809,16 @@ def snapshot_dir(descriptor, relative=()):
         metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
         child_relative = relative + (name,)
         if stat.S_ISDIR(metadata.st_mode):
-            snapshot.append((child_relative, "d", stat.S_IMODE(metadata.st_mode), None))
+            snapshot.append(
+                (
+                    child_relative,
+                    "d",
+                    stat.S_IMODE(metadata.st_mode),
+                    None,
+                    metadata.st_dev,
+                    metadata.st_ino,
+                )
+            )
             child = os.open(name, open_flags, dir_fd=descriptor)
             try:
                 child_snapshot, child_links = snapshot_dir(child, child_relative)
@@ -1814,26 +1829,103 @@ def snapshot_dir(descriptor, relative=()):
         elif stat.S_ISLNK(metadata.st_mode):
             target = os.readlink(name, dir_fd=descriptor)
             validate_link(target, "/".join(child_relative))
-            snapshot.append((child_relative, "l", None, target))
+            snapshot.append(
+                (child_relative, "l", None, target, metadata.st_dev, metadata.st_ino)
+            )
             links += 1
         else:
             raise ReviewNeeded("retired managed tree contains a non-symlink object")
     return snapshot, links
 
 
-def delete_dir(descriptor):
-    for name in sorted(os.listdir(descriptor)):
+def rename_noreplace(descriptor, source, destination):
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_raw = os.fsencode(source)
+    destination_raw = os.fsencode(destination)
+    if hasattr(libc, "renameat2"):
+        result = libc.renameat2(
+            descriptor,
+            ctypes.c_char_p(source_raw),
+            descriptor,
+            ctypes.c_char_p(destination_raw),
+            1,  # RENAME_NOREPLACE
+        )
+    elif hasattr(libc, "renameatx_np"):
+        result = libc.renameatx_np(
+            descriptor,
+            ctypes.c_char_p(source_raw),
+            descriptor,
+            ctypes.c_char_p(destination_raw),
+            4,  # RENAME_EXCL
+        )
+    else:
+        raise ReviewNeeded("atomic no-replace rename is unavailable")
+    if result == 0:
+        return
+    error = ctypes.get_errno()
+    if error == errno.EEXIST:
+        raise ReviewNeeded("quarantined entry tombstone collision")
+    raise OSError(error, os.strerror(error), destination)
+
+
+def delete_dir(descriptor, expected, relative=()):
+    expected_names = sorted(
+        path[-1] for path in expected if len(path) == len(relative) + 1 and path[:-1] == relative
+    )
+    if sorted(os.listdir(descriptor)) != expected_names:
+        raise ReviewNeeded("quarantined tree changed after validation")
+    for name in expected_names:
+        child_relative = relative + (name,)
+        _, entry_type, mode, target, device, inode = expected[child_relative]
         metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        if stat.S_ISDIR(metadata.st_mode):
-            child = os.open(name, open_flags, dir_fd=descriptor)
+        if metadata.st_dev != device or metadata.st_ino != inode:
+            raise ReviewNeeded("quarantined tree identity changed after validation")
+        if inject_after_snapshot == "replace" and relative == () and name == "SKILL.md":
+            os.symlink("operator-replacement", ".operator-replacement", dir_fd=descriptor)
+            os.replace(
+                ".operator-replacement",
+                name,
+                src_dir_fd=descriptor,
+                dst_dir_fd=descriptor,
+            )
+        tombstone = f".{name}.agent-runtime-kit-delete.{os.getpid()}.{inode}"
+        if inject_after_snapshot == "tombstone" and relative == () and name == "SKILL.md":
+            os.symlink("operator-tombstone", tombstone, dir_fd=descriptor)
+        rename_noreplace(descriptor, name, tombstone)
+        captured = os.stat(tombstone, dir_fd=descriptor, follow_symlinks=False)
+        if captured.st_dev != device or captured.st_ino != inode:
+            raise ReviewNeeded("quarantined tombstone captured an unvalidated entry")
+        if entry_type == "d" and stat.S_ISDIR(captured.st_mode):
+            if stat.S_IMODE(captured.st_mode) != mode:
+                raise ReviewNeeded("quarantined directory mode changed after validation")
+            child = os.open(tombstone, open_flags, dir_fd=descriptor)
             try:
-                delete_dir(child)
-            finally:
+                delete_dir(child, expected, child_relative)
+                final_metadata = os.fstat(child)
+                if final_metadata.st_dev != device or final_metadata.st_ino != inode:
+                    raise ReviewNeeded("quarantined directory identity changed during deletion")
+            except BaseException:
                 os.close(child)
-            os.rmdir(name, dir_fd=descriptor)
+                child = None
+                try:
+                    os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    os.rename(
+                        tombstone, name, src_dir_fd=descriptor, dst_dir_fd=descriptor
+                    )
+                raise
+            finally:
+                if child is not None:
+                    os.close(child)
+            os.rmdir(tombstone, dir_fd=descriptor)
             maybe_fail("during-delete")
-        elif stat.S_ISLNK(metadata.st_mode):
-            os.unlink(name, dir_fd=descriptor)
+        elif entry_type == "l" and stat.S_ISLNK(captured.st_mode):
+            if os.readlink(tombstone, dir_fd=descriptor) != target:
+                raise ReviewNeeded("quarantined symlink changed after validation")
+            final_metadata = os.stat(tombstone, dir_fd=descriptor, follow_symlinks=False)
+            if final_metadata.st_dev != device or final_metadata.st_ino != inode:
+                raise ReviewNeeded("quarantined symlink identity changed during deletion")
+            os.unlink(tombstone, dir_fd=descriptor)
             maybe_fail("during-delete")
         else:
             raise ReviewNeeded("quarantined tree changed after validation")
@@ -1855,7 +1947,7 @@ def open_snapshot_dir(root_fd, parts):
 def restore_snapshot(root_fd, snapshot):
     directories = [entry for entry in snapshot if entry[1] == "d"]
     links = [entry for entry in snapshot if entry[1] == "l"]
-    for relative, _, mode, _ in sorted(directories, key=lambda entry: len(entry[0])):
+    for relative, _, mode, _, _, _ in sorted(directories, key=lambda entry: len(entry[0])):
         parent = open_snapshot_dir(root_fd, relative[:-1])
         try:
             name = relative[-1]
@@ -1868,7 +1960,7 @@ def restore_snapshot(root_fd, snapshot):
                 raise OSError("rollback directory path changed type")
         finally:
             os.close(parent)
-    for relative, _, _, target in links:
+    for relative, _, _, target, _, _ in links:
         parent = open_snapshot_dir(root_fd, relative[:-1])
         try:
             name = relative[-1]
@@ -1881,7 +1973,7 @@ def restore_snapshot(root_fd, snapshot):
                     raise OSError("rollback symlink path changed")
         finally:
             os.close(parent)
-    for relative, _, mode, _ in sorted(
+    for relative, _, mode, _, _, _ in sorted(
         directories, key=lambda entry: len(entry[0]), reverse=True
     ):
         descriptor = open_snapshot_dir(root_fd, relative)
@@ -1952,7 +2044,9 @@ try:
     snapshot, link_count = snapshot_dir(tree_fd)
     if link_count == 0:
         raise ReviewNeeded("retired managed tree contains no symlinks")
-    delete_dir(tree_fd)
+    if inject_after_snapshot == "add":
+        os.symlink("operator-added-after-snapshot", "operator-added", dir_fd=tree_fd)
+    delete_dir(tree_fd, {entry[0]: entry for entry in snapshot})
     maybe_fail("before-rmdir")
     os.close(tree_fd)
     tree_fd = None
@@ -2506,6 +2600,11 @@ doctor_product() {
   local block
   local checks
   local exit_code
+  local installed_json
+  local installed_code
+  local installed_block
+  local installed_checks
+  local installed_exit_code
 
   live_home="$(product_live_home "$product")"
   state_home="$(product_state_home "$product")"
@@ -2517,6 +2616,13 @@ doctor_product() {
       --live-home "$live_home" \
       --state-home "$state_home" \
       --class skill-surface \
+      --format json
+    run_cmd agent-runtime doctor \
+      --source-root "$SOURCE_ROOT" \
+      --product "$product" \
+      --live-home "$live_home" \
+      --state-home "$state_home" \
+      --class installed-runtime \
       --format json
     return 0
   fi
@@ -2551,6 +2657,37 @@ doctor_product() {
   fi
 
   log "doctor product=$product ok (checks=${checks:-unknown} block=$block exit=${exit_code:-$code})"
+
+  print_cmd agent-runtime doctor \
+    --source-root "$SOURCE_ROOT" \
+    --product "$product" \
+    --live-home "$live_home" \
+    --state-home "$state_home" \
+    --class installed-runtime \
+    --format json
+
+  set +e
+  installed_json="$(agent-runtime doctor \
+    --source-root "$SOURCE_ROOT" \
+    --product "$product" \
+    --live-home "$live_home" \
+    --state-home "$state_home" \
+    --class installed-runtime \
+    --format json 2>&1)"
+  installed_code=$?
+  set -e
+
+  installed_block="$(printf '%s\n' "$installed_json" | json_number block)"
+  installed_checks="$(printf '%s\n' "$installed_json" | json_number checks)"
+  installed_exit_code="$(printf '%s\n' "$installed_json" | json_number exit_code)"
+
+  if [ "$installed_code" -ne 0 ] || [ -z "$installed_block" ] || [ "$installed_block" -gt 0 ]; then
+    printf '%s\n' "$installed_json" >&2
+    err "installed-runtime doctor failed for product=$product (exit=$installed_code block=${installed_block:-unknown}); rerun with --class installed-runtime for receipt details"
+    return 1
+  fi
+
+  log "installed-runtime doctor product=$product verified (checks=${installed_checks:-unknown} block=$installed_block exit=${installed_exit_code:-$installed_code})"
 }
 
 verify_codex_prompt_input() {

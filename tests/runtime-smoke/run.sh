@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Runtime skill smoke harness.
+# Sourced helpers intentionally mutate their own globals inside subshells.
+# shellcheck disable=SC2031
 
 set -euo pipefail
 
@@ -24,12 +26,12 @@ ARTIFACTS_DIR=""
 
 usage() {
   cat <<'USAGE'
-Usage: tests/runtime-smoke/run.sh --mode <matrix|install|deterministic|product> [options]
+Usage: tests/runtime-smoke/run.sh --mode <matrix|install|deterministic|product|convergence> [options]
 
 Options:
   --mode <mode>           Smoke mode to run.
   --format <text|json>    Output format. Default: text.
-  --product <product>     Product for install/product mode: codex or claude. Default: both.
+  --product <product>     Product for install/product/convergence mode: codex or claude. Default: both.
   --domain <domain>       Deterministic smoke domain. Default: all available domains.
   --probe-only            Product mode only: run isolation probes without product prompt assertions.
   --artifacts-dir <path>  Write run logs and observed files to this directory.
@@ -87,7 +89,7 @@ if [ -z "$MODE" ]; then
 fi
 
 case "$MODE" in
-  matrix | install | deterministic | product)
+  matrix | install | deterministic | product | convergence)
     ;;
   *)
     echo "runtime-smoke: unsupported mode: $MODE" >&2
@@ -273,9 +275,10 @@ run_matrix_mode() {
 }
 
 run_install_mode() {
-  local products product status note skill_count
+  local products product status note skill_count portable_source_root
   require_bin agent-runtime
   results_init "$RESULTS_FILE"
+  portable_source_root="$(runtime_prepare_portable_source "$REPO_ROOT" "$TMP_ROOT/install-portable-source")"
 
   if [ -n "$PRODUCT" ]; then
     products="$PRODUCT"
@@ -284,13 +287,13 @@ run_install_mode() {
   fi
 
   for product in $products; do
-    if runtime_install_product "$REPO_ROOT" "$TMP_ROOT" "$product" "$ARTIFACTS_DIR"; then
+    if runtime_install_product "$portable_source_root" "$TMP_ROOT" "$product" "$ARTIFACTS_DIR"; then
       status="pass"
-      note="install apply and doctor block=0"
+      note="install apply, active IDs, and installed-runtime receipt verified"
       skill_count="$RUNTIME_SMOKE_SKILL_COUNT"
     else
       status="fail"
-      note="install or doctor validation failed"
+      note="install, active-ID, or receipt validation failed"
       skill_count="0"
     fi
     results_add "install.$product" "$product" "$status" "$skill_count" "$note"
@@ -357,8 +360,15 @@ run_deterministic_mode() {
 
 run_product_mode() {
   results_init "$RESULTS_FILE"
-  export REPO_ROOT SCRIPT_DIR TMP_ROOT ARTIFACTS_DIR RESULTS_FILE PRODUCT PROBE_ONLY
+  RUNTIME_SMOKE_SOURCE_ROOT="$(runtime_prepare_portable_source "$REPO_ROOT" "$TMP_ROOT/product-portable-source")"
+  export REPO_ROOT RUNTIME_SMOKE_SOURCE_ROOT SCRIPT_DIR TMP_ROOT ARTIFACTS_DIR RESULTS_FILE PRODUCT PROBE_ONLY
   bash "$SCRIPT_DIR/product/run.sh"
+}
+
+run_convergence_mode() {
+  results_init "$RESULTS_FILE"
+  export REPO_ROOT SCRIPT_DIR TMP_ROOT ARTIFACTS_DIR RESULTS_FILE PRODUCT
+  bash "$SCRIPT_DIR/convergence/run.sh"
 }
 
 RUN_STATUS=0
@@ -374,6 +384,9 @@ case "$MODE" in
     ;;
   product)
     run_product_mode || RUN_STATUS=$?
+    ;;
+  convergence)
+    run_convergence_mode || RUN_STATUS=$?
     ;;
 esac
 

@@ -430,6 +430,7 @@ bash tests/runtime-smoke/run.sh --mode product --product codex
 bash tests/runtime-smoke/run.sh --mode product --product claude
 bash tests/runtime-smoke/run.sh --mode product --product codex --probe-only
 bash tests/runtime-smoke/run.sh --mode product --product claude --probe-only
+bash tests/runtime-smoke/run.sh --mode convergence
 bash tests/runtime-smoke/run.sh --mode product --format json \
   > /tmp/runtime-smoke-product-summary.json
 diff -u tests/runtime-smoke/product/expected/product-summary.json \
@@ -484,6 +485,15 @@ Prompt execution is skipped by default. Set `RUNTIME_SMOKE_PRODUCT_EXECUTE=1`
 only when the host has isolated provider/auth state for the product prompt path.
 Product mode must not read or mutate real `$HOME/.codex`, `$HOME/.claude`,
 auth, sessions, history, logs, or caches.
+
+Portable convergence mode stays credential-free and isolated. From a clean
+committed clone, it verifies a historical 66-to-26-skill upgrade, receipt
+  revision transition, independently rebuilt receipt entry/plan digests,
+  baseline re-sync rollback, retired-surface prune, exact plugin refs and active
+  skill IDs, operator-state preservation, and idempotency. Its four
+redacted prompt/route fixtures validate only the declared routing contract;
+authenticated routing and the bounded desktop action remain the post-merge
+live acceptance lane.
 
 ## Release Boundary
 

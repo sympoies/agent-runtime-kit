@@ -1275,6 +1275,10 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
   local fixture_source fixture_live fixture_file fixture_case
   local integration_home="$root/integration-home"
   local integration_modified_home="$root/integration-modified-home"
+  local mutation_home="$root/post-snapshot-mutation-home"
+  local mutation_skill="$mutation_home/plugins/browser/skills/canary-check"
+  local tombstone_home="$root/tombstone-collision-home"
+  local tombstone_skill="$tombstone_home/plugins/browser/skills/canary-check"
   local escape_home="$root/quarantine-escape-home"
   local escape_external="$root/quarantine-escape-external"
   local stub_bin="$root/bin"
@@ -1443,6 +1447,72 @@ PY
     test -z "$(find "$(dirname "$fault_skill")" -maxdepth 1 -name '.*.agent-runtime-kit-retired.*' -print -quit)"
     grep -q "restored retired managed tree after cleanup failure" "$out"
   done
+
+  mkdir -p "$mutation_skill"
+  ln -s "$previous_source/build/codex/plugins/browser/skills/canary-check/SKILL.md" \
+    "$mutation_skill/SKILL.md"
+  expected_target="$(readlink "$mutation_skill/SKILL.md")"
+  out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-managed-post-snapshot.txt"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_RETIRE_CLEANUP_INJECT_AFTER_SNAPSHOT=replace
+    cleanup_retired_managed_product_links codex "$mutation_home"
+  ) >"$out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ]
+  test -L "$mutation_skill/SKILL.md"
+  [ "$(readlink "$mutation_skill/SKILL.md")" = "$expected_target" ]
+  python3 - "$mutation_skill" <<'PY'
+import os
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+assert any(
+    path.name != "SKILL.md" and path.is_symlink() and os.readlink(path) == "operator-replacement"
+    for path in root.iterdir()
+)
+PY
+  grep -q "quarantined tombstone captured an unvalidated entry" "$out"
+  grep -q "restored retired managed tree after cleanup failure" "$out"
+
+  mkdir -p "$tombstone_skill"
+  ln -s "$previous_source/build/codex/plugins/browser/skills/canary-check/SKILL.md" \
+    "$tombstone_skill/SKILL.md"
+  expected_target="$(readlink "$tombstone_skill/SKILL.md")"
+  out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.retired-managed-tombstone-collision.txt"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_RETIRE_CLEANUP_INJECT_AFTER_SNAPSHOT=tombstone
+    cleanup_retired_managed_product_links codex "$tombstone_home"
+  ) >"$out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ]
+  test -L "$tombstone_skill/SKILL.md"
+  [ "$(readlink "$tombstone_skill/SKILL.md")" = "$expected_target" ]
+  python3 - "$tombstone_skill" <<'PY'
+import os
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+assert any(
+    path.name != "SKILL.md" and path.is_symlink() and os.readlink(path) == "operator-tombstone"
+    for path in root.iterdir()
+)
+PY
+  grep -q "quarantined entry tombstone collision" "$out"
+  grep -q "restored retired managed tree after cleanup failure" "$out"
 
   skill_root="$escape_external/browser/skills/canary-check"
   mkdir -p "$skill_root" "$escape_home"
