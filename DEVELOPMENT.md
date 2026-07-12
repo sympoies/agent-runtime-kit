@@ -185,6 +185,14 @@ recompute every digest from historical Hermes goldens. CI checks out full Git
 history for that replay, so retired skill content does not need to remain in an
 active source or fixture tree.
 
+Exact historical Hermes copies are removed from the discoverable `skills/`
+tree by an atomic no-replace move into
+`$HERMES_HOME/.agent-runtime-kit-quarantine/hermes-retired-skills/`. The
+quarantine is ownership-marked and retained: refresh never recursively deletes
+its contents. A pre-existing unowned quarantine, destination collision, changed
+copy, or symlinked traversal returns `review-needed` and leaves operator data
+untouched.
+
 For non-technical operators setting up another Mac through an agent, use the
 copyable clean-reinstall prompt in
 [`docs/source/macos-agent-bootstrap-prompt.md`](docs/source/macos-agent-bootstrap-prompt.md).

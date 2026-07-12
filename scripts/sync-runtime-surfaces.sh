@@ -2325,6 +2325,9 @@ inject_after_classification = os.environ.get(
 inject_after_validation = os.environ.get(
     "AGENT_RUNTIME_KIT_TEST_HERMES_COPY_INJECT_AFTER_VALIDATION", ""
 )
+inject_swap_root_to = os.environ.get(
+    "AGENT_RUNTIME_KIT_TEST_HERMES_COPY_SWAP_ROOT_TO", ""
+)
 
 if not legacy_root.exists():
     sys.exit(0)
@@ -2401,23 +2404,23 @@ def tree_digest(root):
     return digest.hexdigest()
 
 
-def rename_noreplace(descriptor, source, destination):
+def rename_noreplace(source_descriptor, source, destination_descriptor, destination):
     libc = ctypes.CDLL(None, use_errno=True)
     source_raw = os.fsencode(source)
     destination_raw = os.fsencode(destination)
     if hasattr(libc, "renameat2"):
         result = libc.renameat2(
-            descriptor,
+            source_descriptor,
             ctypes.c_char_p(source_raw),
-            descriptor,
+            destination_descriptor,
             ctypes.c_char_p(destination_raw),
             1,
         )
     elif hasattr(libc, "renameatx_np"):
         result = libc.renameatx_np(
-            descriptor,
+            source_descriptor,
             ctypes.c_char_p(source_raw),
-            descriptor,
+            destination_descriptor,
             ctypes.c_char_p(destination_raw),
             4,
         )
@@ -2431,56 +2434,69 @@ def rename_noreplace(descriptor, source, destination):
     raise OSError(error, os.strerror(error), destination)
 
 
-def snapshot_copy(descriptor, relative=()):
-    snapshot = {}
-    for name in sorted(os.listdir(descriptor)):
-        metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        child_relative = relative + (name,)
-        if stat.S_ISDIR(metadata.st_mode):
-            snapshot[child_relative] = (
-                "d", stat.S_IMODE(metadata.st_mode), None,
-                metadata.st_dev, metadata.st_ino,
-            )
-            child = os.open(
-                name,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=descriptor,
-            )
-            try:
-                snapshot.update(snapshot_copy(child, child_relative))
-            finally:
-                os.close(child)
-        elif stat.S_ISREG(metadata.st_mode):
-            child = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=descriptor)
-            try:
-                opened = os.fstat(child)
-                if opened.st_dev != metadata.st_dev or opened.st_ino != metadata.st_ino:
-                    raise ValueError("copy file identity changed during validation")
-                with os.fdopen(child, "rb", closefd=False) as handle:
-                    content = handle.read()
-                final = os.fstat(child)
-                if final.st_dev != metadata.st_dev or final.st_ino != metadata.st_ino:
-                    raise ValueError("copy file identity changed during validation")
-            finally:
-                os.close(child)
-            snapshot[child_relative] = (
-                "f", stat.S_IMODE(metadata.st_mode), content,
-                metadata.st_dev, metadata.st_ino,
-            )
-        else:
-            raise ValueError("copy contains a symlink or special entry")
-    return snapshot
+def descriptor_tree_digest(root_fd):
+    entries = []
 
+    def visit(descriptor, relative=()):
+        for name in sorted(os.listdir(descriptor)):
+            metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            child_relative = relative + (name,)
+            if stat.S_ISDIR(metadata.st_mode):
+                entries.append(("/".join(child_relative), "d", "0755", None))
+                child = os.open(
+                    name,
+                    os.O_RDONLY
+                    | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=descriptor,
+                )
+                try:
+                    opened = os.fstat(child)
+                    if opened.st_dev != metadata.st_dev or opened.st_ino != metadata.st_ino:
+                        raise ValueError("copy directory identity changed during validation")
+                    visit(child, child_relative)
+                finally:
+                    os.close(child)
+            elif stat.S_ISREG(metadata.st_mode):
+                child = os.open(
+                    name,
+                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=descriptor,
+                )
+                try:
+                    opened = os.fstat(child)
+                    if opened.st_dev != metadata.st_dev or opened.st_ino != metadata.st_ino:
+                        raise ValueError("copy file identity changed during validation")
+                    chunks = []
+                    while True:
+                        chunk = os.read(child, 1024 * 1024)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    final = os.fstat(child)
+                    if final.st_dev != metadata.st_dev or final.st_ino != metadata.st_ino:
+                        raise ValueError("copy file identity changed during validation")
+                finally:
+                    os.close(child)
+                entries.append(
+                    (
+                        "/".join(child_relative),
+                        "f",
+                        "0755" if metadata.st_mode & 0o111 else "0644",
+                        b"".join(chunks),
+                    )
+                )
+            else:
+                raise ValueError("copy contains a symlink or special entry")
 
-def snapshot_digest(snapshot):
+    visit(root_fd)
     digest = hashlib.sha256()
-    for relative, (entry_type, mode, content, _, _) in sorted(snapshot.items()):
-        digest.update("/".join(relative).encode("utf-8"))
+    for relative, entry_type, mode, content in sorted(entries):
+        digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(entry_type.encode("ascii"))
         digest.update(b"\0")
-        normalized_mode = "0755" if entry_type == "d" or mode & 0o111 else "0644"
-        digest.update(normalized_mode.encode("ascii"))
+        digest.update(mode.encode("ascii"))
         digest.update(b"\0")
         if content is not None:
             digest.update(str(len(content)).encode("ascii"))
@@ -2489,145 +2505,139 @@ def snapshot_digest(snapshot):
     return digest.hexdigest()
 
 
-def delete_snapshot(descriptor, snapshot, relative=()):
-    expected_names = sorted(
-        path[-1]
-        for path in snapshot
-        if len(path) == len(relative) + 1 and path[:-1] == relative
-    )
-    if sorted(os.listdir(descriptor)) != expected_names:
-        raise ValueError("copy changed after quarantine validation")
-    for name in expected_names:
-        child_relative = relative + (name,)
-        entry_type, mode, content, device, inode = snapshot[child_relative]
-        metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        if metadata.st_dev != device or metadata.st_ino != inode:
-            raise ValueError("copy entry identity changed after validation")
-        tombstone = f".{name}.agent-runtime-kit-delete.{os.getpid()}.{inode}"
-        rename_noreplace(descriptor, name, tombstone)
-        captured = os.stat(tombstone, dir_fd=descriptor, follow_symlinks=False)
-        if captured.st_dev != device or captured.st_ino != inode:
-            raise ValueError("copy tombstone captured an unvalidated entry")
-        if entry_type == "d" and stat.S_ISDIR(captured.st_mode):
-            child = os.open(
-                tombstone,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=descriptor,
-            )
-            try:
-                delete_snapshot(child, snapshot, child_relative)
-                final = os.fstat(child)
-                if final.st_dev != device or final.st_ino != inode:
-                    raise ValueError("copy directory identity changed during deletion")
-            finally:
-                os.close(child)
-            os.rmdir(tombstone, dir_fd=descriptor)
-        elif entry_type == "f" and stat.S_ISREG(captured.st_mode):
-            child = os.open(tombstone, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=descriptor)
-            try:
-                opened = os.fstat(child)
-                with os.fdopen(child, "rb", closefd=False) as handle:
-                    observed = handle.read()
-                final = os.fstat(child)
-                if (
-                    opened.st_dev != device or opened.st_ino != inode
-                    or final.st_dev != device or final.st_ino != inode
-                    or observed != content
-                ):
-                    raise ValueError("copy file changed during deletion")
-            finally:
-                os.close(child)
-            os.unlink(tombstone, dir_fd=descriptor)
-        else:
-            raise ValueError("copy entry type changed after validation")
-    if os.listdir(descriptor):
-        raise ValueError("copy gained an entry during deletion")
+def write_all(descriptor, content):
+    offset = 0
+    while offset < len(content):
+        written = os.write(descriptor, content[offset:])
+        if written <= 0:
+            raise OSError("short write while creating quarantine ownership marker")
+        offset += written
 
 
-def open_snapshot_dir(root_fd, parts):
-    descriptor = os.dup(root_fd)
+def open_owned_quarantine(home_fd):
+    root_name = ".agent-runtime-kit-quarantine"
+    marker_name = ".agent-runtime-kit-owner"
+    marker_content = b"agent-runtime-kit hermes retired skills v1\n"
+    created = False
     try:
-        for part in parts:
-            child = os.open(
-                part,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=descriptor,
+        os.mkdir(root_name, mode=0o700, dir_fd=home_fd)
+        created = True
+    except FileExistsError:
+        pass
+    root_fd = os.open(
+        root_name,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=home_fd,
+    )
+    try:
+        if created:
+            marker_fd = os.open(
+                marker_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                mode=0o600,
+                dir_fd=root_fd,
             )
-            os.close(descriptor)
-            descriptor = child
-        return descriptor
+            try:
+                write_all(marker_fd, marker_content)
+                os.fsync(marker_fd)
+            finally:
+                os.close(marker_fd)
+        else:
+            marker_fd = os.open(
+                marker_name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=root_fd,
+            )
+            try:
+                metadata = os.fstat(marker_fd)
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise ValueError("quarantine ownership marker is not a regular file")
+                chunks = []
+                while True:
+                    chunk = os.read(marker_fd, 4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            finally:
+                os.close(marker_fd)
+            if b"".join(chunks) != marker_content:
+                raise ValueError("quarantine ownership marker does not match")
+        child_name = "hermes-retired-skills"
+        try:
+            os.mkdir(child_name, mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        child_fd = os.open(
+            child_name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+        return root_fd, child_fd
     except BaseException:
-        os.close(descriptor)
+        os.close(root_fd)
         raise
 
 
-def restore_snapshot(root_fd, snapshot):
-    directories = [entry for entry in snapshot.items() if entry[1][0] == "d"]
-    files = [entry for entry in snapshot.items() if entry[1][0] == "f"]
-    for relative, (_, mode, _, _, _) in sorted(directories, key=lambda entry: len(entry[0])):
-        parent = open_snapshot_dir(root_fd, relative[:-1])
-        try:
-            name = relative[-1]
-            try:
-                metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            except FileNotFoundError:
-                os.mkdir(name, mode=mode, dir_fd=parent)
-            else:
-                if not stat.S_ISDIR(metadata.st_mode):
-                    raise OSError("rollback directory path changed type")
-        finally:
-            os.close(parent)
-    for relative, (_, mode, content, _, _) in files:
-        parent = open_snapshot_dir(root_fd, relative[:-1])
-        try:
-            name = relative[-1]
-            try:
-                metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            except FileNotFoundError:
-                descriptor = os.open(
-                    name, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                    mode=mode, dir_fd=parent,
-                )
-                try:
-                    os.write(descriptor, content)
-                    os.fchmod(descriptor, mode)
-                finally:
-                    os.close(descriptor)
-            else:
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise OSError("rollback file path changed type")
-                descriptor = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
-                try:
-                    with os.fdopen(descriptor, "rb", closefd=False) as handle:
-                        observed = handle.read()
-                finally:
-                    os.close(descriptor)
-                if observed != content:
-                    raise OSError("rollback file path contains operator content")
-        finally:
-            os.close(parent)
+def open_or_create_directory(parent_fd, name):
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+    except FileExistsError:
+        pass
+    return os.open(
+        name,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=parent_fd,
+    )
 
 
-def quarantine_validate_and_remove_copy(skill_dir, expected_skill_dir, retired_digest):
-    parent = skill_dir.parent
+def quarantine_validate_and_retain_copy(
+    skill_dir,
+    expected_skill_dir,
+    retired_digest,
+    candidate_device,
+    candidate_inode,
+):
+    live_home = legacy_root.parent
+    domain = skill_dir.parent.name
     leaf = skill_dir.name
-    quarantine = f".{leaf}.agent-runtime-kit-retired-copy.{os.getpid()}"
     open_flags = (
         os.O_RDONLY
         | getattr(os, "O_DIRECTORY", 0)
         | getattr(os, "O_NOFOLLOW", 0)
     )
-    parent_fd = os.open(parent, open_flags)
+    descriptors = []
     renamed = False
-    tree_fd = None
-    snapshot = None
+    source_domain_fd = None
+    quarantine_domain_fd = None
     try:
-        rename_noreplace(parent_fd, leaf, quarantine)
+        home_fd = os.open(live_home, open_flags)
+        descriptors.append(home_fd)
+        skills_fd = os.open("skills", open_flags, dir_fd=home_fd)
+        descriptors.append(skills_fd)
+        source_domain_fd = os.open(domain, open_flags, dir_fd=skills_fd)
+        descriptors.append(source_domain_fd)
+        candidate = os.stat(leaf, dir_fd=source_domain_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(candidate.st_mode)
+            or candidate.st_dev != candidate_device
+            or candidate.st_ino != candidate_inode
+        ):
+            raise ValueError("copy identity changed after classification")
+
+        quarantine_root_fd, quarantine_skills_fd = open_owned_quarantine(home_fd)
+        descriptors.extend((quarantine_root_fd, quarantine_skills_fd))
+        quarantine_domain_fd = open_or_create_directory(quarantine_skills_fd, domain)
+        descriptors.append(quarantine_domain_fd)
+
+        rename_noreplace(source_domain_fd, leaf, quarantine_domain_fd, leaf)
         renamed = True
-        quarantined = parent / quarantine
-        tree_fd = os.open(quarantine, open_flags, dir_fd=parent_fd)
-        snapshot = snapshot_copy(tree_fd)
-        observed_digest = snapshot_digest(snapshot)
+        tree_fd = os.open(leaf, open_flags, dir_fd=quarantine_domain_fd)
+        descriptors.append(tree_fd)
+        quarantined = os.fstat(tree_fd)
+        if quarantined.st_dev != candidate_device or quarantined.st_ino != candidate_inode:
+            raise ValueError("quarantine captured an unvalidated copy")
+
+        observed_digest = descriptor_tree_digest(tree_fd)
         exact_active = (
             expected_skill_dir.is_dir()
             and tree_digest(expected_skill_dir) == observed_digest
@@ -2639,62 +2649,42 @@ def quarantine_validate_and_remove_copy(skill_dir, expected_skill_dir, retired_d
         )
         if not (exact_active or exact_retired):
             raise ValueError("copy changed after classification")
+
         if inject_after_validation == "add":
             descriptor = os.open(
                 "operator-added-after-validation",
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
                 mode=0o600,
                 dir_fd=tree_fd,
             )
             try:
-                os.write(descriptor, b"operator content\n")
+                write_all(descriptor, b"operator content\n")
             finally:
                 os.close(descriptor)
-        delete_snapshot(tree_fd, snapshot)
-        os.close(tree_fd)
-        tree_fd = None
-        os.rmdir(quarantine, dir_fd=parent_fd)
+            if descriptor_tree_digest(tree_fd) != observed_digest:
+                raise ValueError("copy changed after quarantine validation")
+
         renamed = False
         return True
     except (FileExistsError, OSError, ValueError) as exc:
         if renamed:
-            if tree_fd is None:
-                try:
-                    tree_fd = os.open(quarantine, open_flags, dir_fd=parent_fd)
-                except OSError:
-                    tree_fd = None
-            if tree_fd is not None and snapshot is not None:
-                try:
-                    restore_snapshot(tree_fd, snapshot)
-                except OSError as rollback_exc:
-                    print(
-                        "Hermes copy cleanup rollback failed; "
-                        f"quarantine retained at {parent / quarantine}: {rollback_exc}",
-                        file=sys.stderr,
-                    )
-                    print(f"review-needed Hermes copy changed after classification: {exc}")
-                    return False
             try:
-                os.stat(leaf, dir_fd=parent_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                os.rename(quarantine, leaf, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                rename_noreplace(quarantine_domain_fd, leaf, source_domain_fd, leaf)
                 renamed = False
-            else:
+            except (FileExistsError, OSError) as rollback_exc:
                 print(
-                    "Hermes copy cleanup rollback destination changed; "
-                    f"quarantine retained at {parent / quarantine}",
+                    "Hermes copy quarantine rollback blocked; retained for review: "
+                    f"{rollback_exc}",
                     file=sys.stderr,
                 )
-                raise
         print(f"review-needed Hermes copy changed after classification: {exc}")
         return False
     finally:
-        if tree_fd is not None:
-            os.close(tree_fd)
-        os.close(parent_fd)
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
-# Classify each complete skill tree before any apply-mode deletion. In
+# Classify each complete skill tree before any apply-mode quarantine move. In
 # particular, a managed active/retired tree containing a local symlink is a
 # modified copy and must remain byte-for-byte and link-for-link untouched for
 # operator review.
@@ -2722,8 +2712,16 @@ for domain_dir in sorted(legacy_root.iterdir()):
             and tree_digest(skill_dir) == retired_digest
         )
         if exact_active_copy or exact_retired_copy:
+            candidate_metadata = skill_dir.stat(follow_symlinks=False)
             copy_removal_roots.append(
-                (skill_dir, domain_dir, expected_skill_dir, retired_digest)
+                (
+                    skill_dir,
+                    domain_dir,
+                    expected_skill_dir,
+                    retired_digest,
+                    candidate_metadata.st_dev,
+                    candidate_metadata.st_ino,
+                )
             )
             continue
         if expected_skill_dir.is_dir() or isinstance(retired_digest, str):
@@ -2771,25 +2769,40 @@ for domain_dir in sorted(legacy_root.iterdir()):
             removed_symlinks += 1
             remember_cleanup_dirs(link_path.parent, domain_dir)
 
-for index, (skill_dir, domain_dir, expected_skill_dir, retired_digest) in enumerate(
+for index, (
+    skill_dir,
+    domain_dir,
+    expected_skill_dir,
+    retired_digest,
+    candidate_device,
+    candidate_inode,
+) in enumerate(
     copy_removal_roots
 ):
     rel_live = skill_dir.relative_to(legacy_root.parent)
     if apply:
+        if inject_swap_root_to and index == 0:
+            original_root = legacy_root.parent / ".skills.agent-runtime-kit-test-original"
+            os.rename(legacy_root, original_root)
+            os.symlink(inject_swap_root_to, legacy_root)
         if inject_after_classification == "add" and index == 0:
             (skill_dir / "operator-added-after-classification").write_text(
                 "operator\n", encoding="utf-8"
             )
-        if not quarantine_validate_and_remove_copy(
-            skill_dir, expected_skill_dir, retired_digest
+        if not quarantine_validate_and_retain_copy(
+            skill_dir,
+            expected_skill_dir,
+            retired_digest,
+            candidate_device,
+            candidate_inode,
         ):
             review_needed += 1
             review_needed_roots.append(skill_dir)
             print(f"review-needed legacy Hermes runtime-kit skill copy {rel_live}")
             continue
-        print(f"removed legacy Hermes runtime-kit skill copy {rel_live}")
+        print(f"quarantined legacy Hermes runtime-kit skill copy {rel_live}")
     else:
-        print(f"would remove legacy Hermes runtime-kit skill copy {rel_live}")
+        print(f"would quarantine legacy Hermes runtime-kit skill copy {rel_live}")
     removed_copies += 1
     remember_cleanup_dirs(skill_dir, domain_dir)
 

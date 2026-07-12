@@ -1183,6 +1183,9 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   local stale_ref="$hermes_home/skills/conversation/actionable-advice/references/prompts/actionable-advice.md"
   local copied_skill="$hermes_home/skills/meta/bootstrap"
   local retired_copy="$hermes_home/skills/browser/canary-check"
+  local quarantine_root="$hermes_home/.agent-runtime-kit-quarantine/hermes-retired-skills"
+  local quarantined_copy="$quarantine_root/meta/bootstrap"
+  local quarantined_retired="$quarantine_root/browser/canary-check"
   local foreign="$hermes_home/skills/meta/foreign-skill/SKILL.md"
   local regular="$hermes_home/skills/meta/user-note/SKILL.md"
   local development_policy="$hermes_home/skills/development-policy/SKILL.md"
@@ -1221,14 +1224,20 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
 
   grep -q "removed legacy Hermes runtime-kit skill symlink skills/meta/agent-docs/SKILL.md" "$out"
   grep -q "removed legacy Hermes runtime-kit skill symlink skills/conversation/actionable-advice/references/prompts/actionable-advice.md" "$out"
-  grep -q "removed legacy Hermes runtime-kit skill copy skills/meta/bootstrap" "$out"
-  grep -q "removed legacy Hermes runtime-kit skill copy skills/browser/canary-check" "$out"
+  grep -q "quarantined legacy Hermes runtime-kit skill copy skills/meta/bootstrap" "$out"
+  grep -q "quarantined legacy Hermes runtime-kit skill copy skills/browser/canary-check" "$out"
   grep -q "removed empty legacy Hermes runtime-kit skill directory skills/conversation/actionable-advice" "$out"
   grep -q "legacy Hermes runtime-kit skill cleanup removed: symlinks=2 copies=2 review_needed=0" "$out"
   test ! -e "$stale_skill"
   test ! -d "$hermes_home/skills/conversation/actionable-advice"
   test ! -d "$copied_skill"
   test ! -d "$retired_copy"
+  test -f "$quarantined_copy/SKILL.md"
+  test -f "$quarantined_retired/SKILL.md"
+  cmp "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$quarantined_copy/SKILL.md"
+  cmp "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check/SKILL.md" \
+    "$quarantined_retired/SKILL.md"
   test -L "$foreign"
   test -f "$regular"
   test -L "$development_policy"
@@ -1329,7 +1338,67 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   }
   grep -q "review-needed legacy Hermes runtime-kit skill copy" "$delete_race_out"
   test -f "$delete_race_retired/operator-added-after-validation"
+  [ "$(cat "$delete_race_retired/operator-added-after-validation")" = "operator content" ]
   test -f "$delete_race_retired/SKILL.md"
+
+  local collision_home="$TMP_ROOT/sync-prune/hermes-quarantine-collision"
+  local collision_retired="$collision_home/skills/browser/canary-check"
+  local collision_target="$collision_home/.agent-runtime-kit-quarantine/hermes-retired-skills/browser/canary-check"
+  local collision_out="$out.quarantine-collision"
+  mkdir -p "$(dirname "$collision_retired")" "$collision_target"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$collision_retired"
+  printf 'operator quarantine\n' >"$collision_target/operator-sentinel"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$collision_home"
+  ) >"$collision_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes cleanup replaced an existing quarantine destination" >&2
+    return 1
+  }
+  test -f "$collision_retired/SKILL.md"
+  [ "$(cat "$collision_target/operator-sentinel")" = "operator quarantine" ]
+  grep -q "review-needed legacy Hermes runtime-kit skill copy" "$collision_out"
+
+  local root_swap_home="$TMP_ROOT/sync-prune/hermes-root-swap"
+  local root_swap_retired="$root_swap_home/skills/browser/canary-check"
+  local root_swap_original="$root_swap_home/.skills.agent-runtime-kit-test-original/browser/canary-check"
+  local root_swap_external="$TMP_ROOT/sync-prune/hermes-root-swap-external/skills"
+  local root_swap_external_retired="$root_swap_external/browser/canary-check"
+  local root_swap_out="$out.root-swap"
+  mkdir -p "$(dirname "$root_swap_retired")" "$(dirname "$root_swap_external_retired")"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$root_swap_retired"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$root_swap_external_retired"
+  printf 'external operator data\n' >"$root_swap_external/operator-sentinel"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_HERMES_COPY_SWAP_ROOT_TO="$root_swap_external"
+    cleanup_hermes_legacy_runtime_kit_skill_root "$root_swap_home"
+  ) >"$root_swap_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes cleanup followed a swapped skills-root symlink" >&2
+    return 1
+  }
+  test -L "$root_swap_home/skills"
+  test -f "$root_swap_original/SKILL.md"
+  test -f "$root_swap_external_retired/SKILL.md"
+  [ "$(cat "$root_swap_external/operator-sentinel")" = "external operator data" ]
+  grep -q "review-needed legacy Hermes runtime-kit skill copy" "$root_swap_out"
 
   local profile_home="$TMP_ROOT/sync-prune/hermes-profile-symlink"
   local external_profile="$TMP_ROOT/sync-prune/operator-external-profile"
@@ -2840,7 +2909,7 @@ record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces appl
 record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
 record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktree source roots" run_sync_runtime_surfaces_worktree_guard_probe
 record_case "meta.sync-runtime-surfaces.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
-record_case "meta.sync-runtime-surfaces.hermes-legacy" "sync-runtime-surfaces removes owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
+record_case "meta.sync-runtime-surfaces.hermes-legacy" "sync-runtime-surfaces quarantines owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
 record_case "meta.sync-runtime-surfaces.retired-managed-links" "sync-runtime-surfaces removes repository-owned retired symlink trees and preserves modified trees" run_sync_runtime_surfaces_retired_managed_links_probe
 record_case "meta.sync-runtime-surfaces.registry-preflight" "sync-runtime-surfaces validates provider registry data before any apply mutation" run_sync_runtime_surfaces_registry_preflight_probe
 record_case "meta.sync-runtime-surfaces.recursive-stale" "prune-stale skips retired recursive-file managed skill directory (upstream gap characterization)" run_sync_runtime_surfaces_prune_recursive_stale_probe

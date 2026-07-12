@@ -160,7 +160,10 @@ the acceptance lane, and the current ship state.
   skills tree into
   `~/.hermes/external-skills/agent-runtime-kit/<domain>` via
   `targets/hermes/link-map.yaml`. The local `~/.hermes/skills` tree remains for
-  Hermes-native or operator-managed skills.
+  Hermes-native or operator-managed skills. Exact runtime-kit copies left by
+  the retired local layout move atomically into the retained, non-discoverable
+  `.agent-runtime-kit-quarantine/hermes-retired-skills/` tree; refresh does not
+  recursively delete that quarantine.
 - Support today: **shipped**.
 
 ### 16. Codex hook registration (`config.toml` managed block)
