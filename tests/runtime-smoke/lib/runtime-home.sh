@@ -90,6 +90,14 @@ runtime_collect_installed_skills() {
         sed 's#/SKILL\.md$##' |
         sort -u
       ;;
+    hermes)
+      find "$live_home/external-skills/agent-runtime-kit" \
+        -mindepth 3 -maxdepth 3 -path '*/SKILL.md' -print |
+        sed "s#^$live_home/external-skills/agent-runtime-kit/##" |
+        sed 's#/#.#g' |
+        sed 's#\.SKILL\.md$##' |
+        sort -u
+      ;;
     *)
       find "$live_home/plugins" -path '*/skills/*/SKILL.md' -print |
         sed "s#^$live_home/plugins/##" |

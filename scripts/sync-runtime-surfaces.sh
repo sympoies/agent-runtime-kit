@@ -2268,6 +2268,8 @@ PY
 
 cleanup_hermes_legacy_runtime_kit_skill_root() {
   local live_home="$1"
+  local anchor_home="${2:-$live_home}"
+  local profile_name="${3:-}"
   local legacy_root="$live_home/skills"
 
   if [ -L "$legacy_root" ]; then
@@ -2279,8 +2281,8 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   fi
 
   log "cleaning retired Hermes local runtime-kit skill links live_home=$live_home"
-  print_cmd python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY"
-python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY" <<'PY'
+  print_cmd python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY"
+python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" <<'PY'
 import ctypes
 import errno
 import os
@@ -2291,8 +2293,11 @@ import stat
 import sys
 
 source_root = pathlib.Path(sys.argv[1]).resolve()
-legacy_root = pathlib.Path(sys.argv[2])
-apply = sys.argv[3] == "1"
+anchor_home = pathlib.Path(sys.argv[2])
+profile_name = sys.argv[3]
+apply = sys.argv[4] == "1"
+live_home = anchor_home / "profiles" / profile_name if profile_name else anchor_home
+legacy_root = live_home / "skills"
 build_plugins = (source_root / "build" / "hermes" / "plugins").resolve()
 retired_manifest_path = source_root / "manifests" / "retired-hermes-skill-copies.json"
 retired_ids_path = source_root / "manifests" / "retired-skill-ids.json"
@@ -2316,7 +2321,6 @@ if list(retired_copy_digests) != retired_ids:
 removed_symlinks = 0
 removed_copies = 0
 review_needed = 0
-candidate_dirs = set()
 copy_removal_roots = []
 review_needed_roots = []
 inject_after_classification = os.environ.get(
@@ -2328,41 +2332,85 @@ inject_after_validation = os.environ.get(
 inject_swap_root_to = os.environ.get(
     "AGENT_RUNTIME_KIT_TEST_HERMES_COPY_SWAP_ROOT_TO", ""
 )
+inject_symlink_swap_root_to = os.environ.get(
+    "AGENT_RUNTIME_KIT_TEST_HERMES_SYMLINK_SWAP_ROOT_TO", ""
+)
 
 if not legacy_root.exists():
     sys.exit(0)
 
 
-def remember_cleanup_dirs(path, stop):
-    cleanup_dir = path
-    while cleanup_dir != legacy_root and cleanup_dir != legacy_root.parent:
-        candidate_dirs.add(cleanup_dir)
-        if cleanup_dir == stop:
-            break
-        cleanup_dir = cleanup_dir.parent
+if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+    print("review-needed Hermes cleanup requires descriptor no-follow support")
+    raise SystemExit(3)
+
+open_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
-def trees_match(left, right):
-    for root, dirnames, filenames in os.walk(left):
-        current = pathlib.Path(root)
-        rel = current.relative_to(left)
-        expected_current = right / rel
-        if not expected_current.is_dir():
-            return False
+def open_absolute_dir_nofollow(path):
+    if not path.is_absolute():
+        raise ValueError("Hermes home must be absolute")
+    descriptor = os.open("/", open_flags)
+    try:
+        for component in path.parts[1:]:
+            if component in ("", ".", ".."):
+                raise ValueError("Hermes home contains an unsafe path component")
+            child = os.open(component, open_flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
 
-        if any((current / name).is_symlink() for name in dirnames + filenames):
-            return False
 
-        expected_dirs = sorted(path.name for path in expected_current.iterdir() if path.is_dir())
-        expected_files = sorted(path.name for path in expected_current.iterdir() if path.is_file())
-        if sorted(dirnames) != expected_dirs or sorted(filenames) != expected_files:
-            return False
+def open_child_dir(parent_fd, name):
+    metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError(f"Hermes cleanup component is not a directory: {name}")
+    descriptor = os.open(name, open_flags, dir_fd=parent_fd)
+    opened = os.fstat(descriptor)
+    if opened.st_dev != metadata.st_dev or opened.st_ino != metadata.st_ino:
+        os.close(descriptor)
+        raise ValueError(f"Hermes cleanup component changed while opening: {name}")
+    return descriptor, (metadata.st_dev, metadata.st_ino)
 
-        for filename in filenames:
-            actual_file = current / filename
-            expected_file = expected_current / filename
-            if actual_file.read_bytes() != expected_file.read_bytes():
+
+root_descriptors = []
+anchor_chain = []
+try:
+    anchor_home_fd = open_absolute_dir_nofollow(anchor_home)
+    root_descriptors.append(anchor_home_fd)
+    runtime_home_fd = anchor_home_fd
+    if profile_name:
+        profiles_fd, profiles_identity = open_child_dir(anchor_home_fd, "profiles")
+        root_descriptors.append(profiles_fd)
+        anchor_chain.append((anchor_home_fd, "profiles", *profiles_identity))
+        profile_fd, profile_identity = open_child_dir(profiles_fd, profile_name)
+        root_descriptors.append(profile_fd)
+        anchor_chain.append((profiles_fd, profile_name, *profile_identity))
+        runtime_home_fd = profile_fd
+    skills_fd, skills_identity = open_child_dir(runtime_home_fd, "skills")
+    root_descriptors.append(skills_fd)
+    anchor_chain.append((runtime_home_fd, "skills", *skills_identity))
+    home_fd = runtime_home_fd
+except (OSError, ValueError) as exc:
+    print(f"review-needed Hermes cleanup root changed: {exc}")
+    raise SystemExit(3)
+
+
+def anchor_chain_matches():
+    try:
+        for parent_fd, name, device, inode in anchor_chain:
+            metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_dev != device
+                or metadata.st_ino != inode
+            ):
                 return False
+    except OSError:
+        return False
     return True
 
 
@@ -2590,6 +2638,30 @@ def open_or_create_directory(parent_fd, name):
     )
 
 
+def unlink_classified_symlink(relative_parts, expected_device, expected_inode, expected_target):
+    descriptors = []
+    parent_fd = os.dup(skills_fd)
+    descriptors.append(parent_fd)
+    try:
+        for component in relative_parts[:-1]:
+            child_fd, _ = open_child_dir(parent_fd, component)
+            descriptors.append(child_fd)
+            parent_fd = child_fd
+        leaf = relative_parts[-1]
+        metadata = os.stat(leaf, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_dev != expected_device
+            or metadata.st_ino != expected_inode
+            or os.readlink(leaf, dir_fd=parent_fd) != expected_target
+        ):
+            raise ValueError("managed symlink changed after classification")
+        os.unlink(leaf, dir_fd=parent_fd)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
 def quarantine_validate_and_retain_copy(
     skill_dir,
     expected_skill_dir,
@@ -2597,23 +2669,14 @@ def quarantine_validate_and_retain_copy(
     candidate_device,
     candidate_inode,
 ):
-    live_home = legacy_root.parent
     domain = skill_dir.parent.name
     leaf = skill_dir.name
-    open_flags = (
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-    )
     descriptors = []
     renamed = False
     source_domain_fd = None
     quarantine_domain_fd = None
+    destination_leaf = leaf
     try:
-        home_fd = os.open(live_home, open_flags)
-        descriptors.append(home_fd)
-        skills_fd = os.open("skills", open_flags, dir_fd=home_fd)
-        descriptors.append(skills_fd)
         source_domain_fd = os.open(domain, open_flags, dir_fd=skills_fd)
         descriptors.append(source_domain_fd)
         candidate = os.stat(leaf, dir_fd=source_domain_fd, follow_symlinks=False)
@@ -2624,30 +2687,60 @@ def quarantine_validate_and_retain_copy(
         ):
             raise ValueError("copy identity changed after classification")
 
+        source_tree_fd = os.open(leaf, open_flags, dir_fd=source_domain_fd)
+        descriptors.append(source_tree_fd)
+        source_tree = os.fstat(source_tree_fd)
+        if source_tree.st_dev != candidate_device or source_tree.st_ino != candidate_inode:
+            raise ValueError("copy identity changed during descriptor validation")
+        source_digest = descriptor_tree_digest(source_tree_fd)
+        expected_digest = (
+            tree_digest(expected_skill_dir)
+            if expected_skill_dir.is_dir()
+            else retired_digest
+        )
+        if not isinstance(expected_digest, str) or source_digest != expected_digest:
+            raise ValueError("copy changed after classification")
+
         quarantine_root_fd, quarantine_skills_fd = open_owned_quarantine(home_fd)
         descriptors.extend((quarantine_root_fd, quarantine_skills_fd))
         quarantine_domain_fd = open_or_create_directory(quarantine_skills_fd, domain)
         descriptors.append(quarantine_domain_fd)
 
-        rename_noreplace(source_domain_fd, leaf, quarantine_domain_fd, leaf)
-        renamed = True
-        tree_fd = os.open(leaf, open_flags, dir_fd=quarantine_domain_fd)
+        generation = 2
+        while True:
+            try:
+                rename_noreplace(
+                    source_domain_fd,
+                    leaf,
+                    quarantine_domain_fd,
+                    destination_leaf,
+                )
+                renamed = True
+                break
+            except FileExistsError:
+                existing_fd = os.open(
+                    destination_leaf,
+                    open_flags,
+                    dir_fd=quarantine_domain_fd,
+                )
+                try:
+                    if descriptor_tree_digest(existing_fd) != source_digest:
+                        raise ValueError(
+                            "quarantine destination contains non-matching operator data"
+                        )
+                finally:
+                    os.close(existing_fd)
+                destination_leaf = f"{leaf}.generation-{generation:06d}"
+                generation += 1
+
+        tree_fd = os.open(destination_leaf, open_flags, dir_fd=quarantine_domain_fd)
         descriptors.append(tree_fd)
         quarantined = os.fstat(tree_fd)
         if quarantined.st_dev != candidate_device or quarantined.st_ino != candidate_inode:
             raise ValueError("quarantine captured an unvalidated copy")
 
         observed_digest = descriptor_tree_digest(tree_fd)
-        exact_active = (
-            expected_skill_dir.is_dir()
-            and tree_digest(expected_skill_dir) == observed_digest
-        )
-        exact_retired = (
-            not expected_skill_dir.is_dir()
-            and isinstance(retired_digest, str)
-            and observed_digest == retired_digest
-        )
-        if not (exact_active or exact_retired):
+        if observed_digest != source_digest:
             raise ValueError("copy changed after classification")
 
         if inject_after_validation == "add":
@@ -2669,7 +2762,12 @@ def quarantine_validate_and_retain_copy(
     except (FileExistsError, OSError, ValueError) as exc:
         if renamed:
             try:
-                rename_noreplace(quarantine_domain_fd, leaf, source_domain_fd, leaf)
+                rename_noreplace(
+                    quarantine_domain_fd,
+                    destination_leaf,
+                    source_domain_fd,
+                    leaf,
+                )
                 renamed = False
             except (FileExistsError, OSError) as rollback_exc:
                 print(
@@ -2688,6 +2786,7 @@ def quarantine_validate_and_retain_copy(
 # particular, a managed active/retired tree containing a local symlink is a
 # modified copy and must remain byte-for-byte and link-for-link untouched for
 # operator review.
+symlink_candidates = []
 for domain_dir in sorted(legacy_root.iterdir()):
     if domain_dir.is_symlink() or not domain_dir.is_dir():
         continue
@@ -2704,7 +2803,13 @@ for domain_dir in sorted(legacy_root.iterdir()):
             continue
         expected_skill_dir = build_plugins / domain_dir.name / "skills" / skill_dir.name
         skill_id = f"{domain_dir.name}.{skill_dir.name}"
-        exact_active_copy = expected_skill_dir.is_dir() and trees_match(skill_dir, expected_skill_dir)
+        expected_active_digest = (
+            tree_digest(expected_skill_dir) if expected_skill_dir.is_dir() else None
+        )
+        exact_active_copy = (
+            isinstance(expected_active_digest, str)
+            and tree_digest(skill_dir) == expected_active_digest
+        )
         retired_digest = retired_copy_digests.get(skill_id)
         exact_retired_copy = (
             not expected_skill_dir.is_dir()
@@ -2760,14 +2865,48 @@ for domain_dir in sorted(legacy_root.iterdir()):
             ):
                 continue
 
-            rel_live = link_path.relative_to(legacy_root.parent)
-            if apply:
-                link_path.unlink()
-                print(f"removed legacy Hermes runtime-kit skill symlink {rel_live}")
-            else:
-                print(f"would remove legacy Hermes runtime-kit skill symlink {rel_live}")
-            removed_symlinks += 1
-            remember_cleanup_dirs(link_path.parent, domain_dir)
+            metadata = link_path.lstat()
+            symlink_candidates.append(
+                (
+                    link_path,
+                    link_path.relative_to(legacy_root).parts,
+                    metadata.st_dev,
+                    metadata.st_ino,
+                    target_raw,
+                )
+            )
+
+mutation_allowed = True
+if apply:
+    if inject_after_classification == "add" and copy_removal_roots:
+        (copy_removal_roots[0][0] / "operator-added-after-classification").write_text(
+            "operator\n", encoding="utf-8"
+        )
+    swap_target = inject_swap_root_to or inject_symlink_swap_root_to
+    if swap_target:
+        original_root = legacy_root.parent / ".skills.agent-runtime-kit-test-original"
+        os.rename(legacy_root, original_root)
+        os.symlink(swap_target, legacy_root)
+    if not anchor_chain_matches():
+        mutation_allowed = False
+        review_needed += 1
+        print("review-needed Hermes cleanup root changed after discovery")
+
+for link_path, relative_parts, device, inode, target_raw in symlink_candidates:
+    rel_live = link_path.relative_to(legacy_root.parent)
+    if apply:
+        if not mutation_allowed:
+            continue
+        try:
+            unlink_classified_symlink(relative_parts, device, inode, target_raw)
+        except (OSError, ValueError) as exc:
+            review_needed += 1
+            print(f"review-needed legacy Hermes runtime-kit skill symlink {rel_live}: {exc}")
+            continue
+        print(f"removed legacy Hermes runtime-kit skill symlink {rel_live}")
+    else:
+        print(f"would remove legacy Hermes runtime-kit skill symlink {rel_live}")
+    removed_symlinks += 1
 
 for index, (
     skill_dir,
@@ -2781,14 +2920,8 @@ for index, (
 ):
     rel_live = skill_dir.relative_to(legacy_root.parent)
     if apply:
-        if inject_swap_root_to and index == 0:
-            original_root = legacy_root.parent / ".skills.agent-runtime-kit-test-original"
-            os.rename(legacy_root, original_root)
-            os.symlink(inject_swap_root_to, legacy_root)
-        if inject_after_classification == "add" and index == 0:
-            (skill_dir / "operator-added-after-classification").write_text(
-                "operator\n", encoding="utf-8"
-            )
+        if not mutation_allowed:
+            continue
         if not quarantine_validate_and_retain_copy(
             skill_dir,
             expected_skill_dir,
@@ -2804,23 +2937,10 @@ for index, (
     else:
         print(f"would quarantine legacy Hermes runtime-kit skill copy {rel_live}")
     removed_copies += 1
-    remember_cleanup_dirs(skill_dir, domain_dir)
 
-for path in sorted(candidate_dirs, key=lambda item: len(item.parts), reverse=True):
-    if path == legacy_root or not path.exists() or path.is_symlink():
-        continue
-    try:
-        is_empty = not any(path.iterdir())
-    except FileNotFoundError:
-        continue
-    if not is_empty:
-        continue
-    rel_live = path.relative_to(legacy_root.parent)
-    if apply:
-        path.rmdir()
-        print(f"removed empty legacy Hermes runtime-kit skill directory {rel_live}")
-    else:
-        print(f"would remove empty legacy Hermes runtime-kit skill directory {rel_live}")
+if apply and mutation_allowed and not anchor_chain_matches():
+    review_needed += 1
+    print("review-needed Hermes cleanup root changed during mutation")
 
 status = "removed" if apply else "planned"
 print(
@@ -2846,6 +2966,15 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
     return 0
   fi
 
+  if [ -n "${AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_ROOT_TO:-}" ]; then
+    mv "$profiles_root" "$live_home/.profiles.agent-runtime-kit-test-original"
+    ln -s "$AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_ROOT_TO" "$profiles_root"
+  fi
+  if [ -L "$profiles_root" ]; then
+    log "review-needed Hermes profiles root changed after discovery"
+    return 3
+  fi
+
   for profile_home in "$profiles_root"/*; do
     if [ -L "$profile_home" ]; then
       log "review-needed symlinked Hermes profile ${profile_home##*/}"
@@ -2853,7 +2982,8 @@ cleanup_hermes_legacy_runtime_kit_profile_roots() {
       continue
     fi
     if [ -d "$profile_home/skills" ]; then
-      if ! cleanup_hermes_legacy_runtime_kit_skill_root "$profile_home"; then
+      if ! cleanup_hermes_legacy_runtime_kit_skill_root \
+        "$profile_home" "$live_home" "${profile_home##*/}"; then
         review_needed=1
       fi
     fi

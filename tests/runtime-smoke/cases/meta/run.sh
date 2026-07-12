@@ -1181,10 +1181,10 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   local hermes_home="$TMP_ROOT/sync-prune/hermes-home"
   local stale_skill="$hermes_home/skills/meta/agent-docs/SKILL.md"
   local stale_ref="$hermes_home/skills/conversation/actionable-advice/references/prompts/actionable-advice.md"
-  local copied_skill="$hermes_home/skills/meta/bootstrap"
+  local copied_skill="$hermes_home/skills/conversation/guided-feature-build"
   local retired_copy="$hermes_home/skills/browser/canary-check"
   local quarantine_root="$hermes_home/.agent-runtime-kit-quarantine/hermes-retired-skills"
-  local quarantined_copy="$quarantine_root/meta/bootstrap"
+  local quarantined_copy="$quarantine_root/conversation/guided-feature-build"
   local quarantined_retired="$quarantine_root/browser/canary-check"
   local foreign="$hermes_home/skills/meta/foreign-skill/SKILL.md"
   local regular="$hermes_home/skills/meta/user-note/SKILL.md"
@@ -1198,7 +1198,8 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
     "$(dirname "$foreign")" "$(dirname "$regular")" "$(dirname "$development_policy")"
   ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" "$stale_skill"
   ln -s "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build/SKILL.md" "$stale_ref"
-  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap" "$copied_skill"
+  cp -R "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build" \
+    "$copied_skill"
   mkdir -p "$(dirname "$retired_copy")"
   cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" "$retired_copy"
   ln -s /var/empty/foreign-skill "$foreign"
@@ -1224,23 +1225,72 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
 
   grep -q "removed legacy Hermes runtime-kit skill symlink skills/meta/agent-docs/SKILL.md" "$out"
   grep -q "removed legacy Hermes runtime-kit skill symlink skills/conversation/actionable-advice/references/prompts/actionable-advice.md" "$out"
-  grep -q "quarantined legacy Hermes runtime-kit skill copy skills/meta/bootstrap" "$out"
+  grep -q "quarantined legacy Hermes runtime-kit skill copy skills/conversation/guided-feature-build" "$out"
   grep -q "quarantined legacy Hermes runtime-kit skill copy skills/browser/canary-check" "$out"
-  grep -q "removed empty legacy Hermes runtime-kit skill directory skills/conversation/actionable-advice" "$out"
   grep -q "legacy Hermes runtime-kit skill cleanup removed: symlinks=2 copies=2 review_needed=0" "$out"
   test ! -e "$stale_skill"
-  test ! -d "$hermes_home/skills/conversation/actionable-advice"
+  test -d "$hermes_home/skills/conversation/actionable-advice"
+  test -z "$(find "$hermes_home/skills/conversation/actionable-advice" -type l -print -quit)"
   test ! -d "$copied_skill"
   test ! -d "$retired_copy"
   test -f "$quarantined_copy/SKILL.md"
   test -f "$quarantined_retired/SKILL.md"
-  cmp "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
-    "$quarantined_copy/SKILL.md"
+  diff -r "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build" \
+    "$quarantined_copy"
+  python3 - \
+    "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build" \
+    "$quarantined_copy" <<'PY'
+import hashlib
+import pathlib
+import stat
+import sys
+
+def inventory(root):
+    rows = []
+    for path in sorted(pathlib.Path(root).rglob("*")):
+        metadata = path.lstat()
+        if path.is_dir():
+            kind = "d"
+            payload = b""
+        elif path.is_file():
+            kind = "f"
+            payload = path.read_bytes()
+        else:
+            raise AssertionError(f"unexpected entry: {path}")
+        rows.append((
+            path.relative_to(root).as_posix(),
+            kind,
+            stat.S_IMODE(metadata.st_mode),
+            hashlib.sha256(payload).hexdigest(),
+        ))
+    return rows
+
+assert inventory(sys.argv[1]) == inventory(sys.argv[2])
+PY
   cmp "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check/SKILL.md" \
     "$quarantined_retired/SKILL.md"
   test -L "$foreign"
   test -f "$regular"
   test -L "$development_policy"
+
+  local first_quarantine_digest
+  first_quarantine_digest="$(sha256sum "$quarantined_retired/SKILL.md" | cut -d' ' -f1)"
+  mkdir -p "$(dirname "$retired_copy")"
+  cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" \
+    "$retired_copy"
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$hermes_home"
+  ) >"$out.reupgrade" 2>&1
+  test ! -d "$retired_copy"
+  [ "$(sha256sum "$quarantined_retired/SKILL.md" | cut -d' ' -f1)" = \
+    "$first_quarantine_digest" ]
+  [ "$(find "$quarantine_root/browser" -maxdepth 1 -type d -name 'canary-check*' | wc -l)" -eq 2 ]
+  grep -q "quarantined legacy Hermes runtime-kit skill copy skills/browser/canary-check" \
+    "$out.reupgrade"
 
   for mutation in empty-dir mode symlink; do
     modified_home="$TMP_ROOT/sync-prune/hermes-modified-$mutation"
@@ -1291,6 +1341,45 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
         "$REPO_ROOT/build/hermes/plugins/browser/skills/canary-check/SKILL.md"
     fi
   done
+
+  local active_mode_home="$TMP_ROOT/sync-prune/hermes-active-mode"
+  local active_mode_copy="$active_mode_home/skills/meta/bootstrap"
+  local active_mode_out="$out.active-mode"
+  mkdir -p "$(dirname "$active_mode_copy")"
+  cp -R "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap" "$active_mode_copy"
+  chmod 755 "$active_mode_copy/SKILL.md"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=0
+    cleanup_hermes_legacy_runtime_kit_skill_root "$active_mode_home"
+  ) >"$active_mode_out.preview" 2>&1
+  preview_status=$?
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$active_mode_home"
+  ) >"$active_mode_out" 2>&1
+  status=$?
+  set -e
+  [ "$preview_status" -eq 3 ] || {
+    echo "Hermes cleanup preview accepted an active copy with mode drift" >&2
+    return 1
+  }
+  [ "$status" -eq 3 ] || {
+    echo "Hermes cleanup accepted an active copy with mode drift" >&2
+    return 1
+  }
+  grep -q "review-needed legacy Hermes runtime-kit skill copy skills/meta/bootstrap" \
+    "$active_mode_out.preview"
+  grep -q "review-needed legacy Hermes runtime-kit skill copy skills/meta/bootstrap" \
+    "$active_mode_out"
+  test -f "$active_mode_copy/SKILL.md"
+  test "$(stat -c '%a' "$active_mode_copy/SKILL.md")" = "755"
 
   local race_home="$TMP_ROOT/sync-prune/hermes-race-add"
   local race_retired="$race_home/skills/browser/canary-check"
@@ -1398,7 +1487,39 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   test -f "$root_swap_original/SKILL.md"
   test -f "$root_swap_external_retired/SKILL.md"
   [ "$(cat "$root_swap_external/operator-sentinel")" = "external operator data" ]
-  grep -q "review-needed legacy Hermes runtime-kit skill copy" "$root_swap_out"
+  grep -q "review-needed Hermes cleanup root changed after discovery" "$root_swap_out"
+
+  local symlink_swap_home="$TMP_ROOT/sync-prune/hermes-symlink-root-swap"
+  local symlink_swap_original="$symlink_swap_home/.skills.agent-runtime-kit-test-original"
+  local symlink_swap_external="$TMP_ROOT/sync-prune/hermes-symlink-root-swap-external/skills"
+  local symlink_swap_local_link="$symlink_swap_home/skills/meta/agent-docs/SKILL.md"
+  local symlink_swap_original_link="$symlink_swap_original/meta/agent-docs/SKILL.md"
+  local symlink_swap_external_link="$symlink_swap_external/meta/agent-docs/SKILL.md"
+  local symlink_swap_out="$out.symlink-root-swap"
+  mkdir -p "$(dirname "$symlink_swap_local_link")" \
+    "$(dirname "$symlink_swap_external_link")"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$symlink_swap_local_link"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$symlink_swap_external_link"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_HERMES_SYMLINK_SWAP_ROOT_TO="$symlink_swap_external"
+    cleanup_hermes_legacy_runtime_kit_skill_root "$symlink_swap_home"
+  ) >"$symlink_swap_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes symlink cleanup did not reject a swapped skills root" >&2
+    return 1
+  }
+  test -L "$symlink_swap_home/skills"
+  test -L "$symlink_swap_original_link"
+  test -L "$symlink_swap_external_link"
 
   local profile_home="$TMP_ROOT/sync-prune/hermes-profile-symlink"
   local external_profile="$TMP_ROOT/sync-prune/operator-external-profile"
@@ -1423,6 +1544,38 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   }
   grep -q "review-needed symlinked Hermes profile" "$profile_out"
   test -f "$external_retired/SKILL.md"
+
+  local profiles_swap_home="$TMP_ROOT/sync-prune/hermes-profiles-root-swap"
+  local profiles_swap_original="$profiles_swap_home/.profiles.agent-runtime-kit-test-original"
+  local profiles_swap_external="$TMP_ROOT/sync-prune/hermes-profiles-root-swap-external/profiles"
+  local profiles_swap_local_link="$profiles_swap_home/profiles/default/skills/meta/agent-docs/SKILL.md"
+  local profiles_swap_original_link="$profiles_swap_original/default/skills/meta/agent-docs/SKILL.md"
+  local profiles_swap_external_link="$profiles_swap_external/default/skills/meta/agent-docs/SKILL.md"
+  local profiles_swap_out="$out.profiles-root-swap"
+  mkdir -p "$(dirname "$profiles_swap_local_link")" \
+    "$(dirname "$profiles_swap_external_link")"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$profiles_swap_local_link"
+  ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" \
+    "$profiles_swap_external_link"
+  set +e
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    export AGENT_RUNTIME_KIT_TEST_HERMES_PROFILE_SWAP_ROOT_TO="$profiles_swap_external"
+    cleanup_hermes_legacy_runtime_kit_profile_roots "$profiles_swap_home"
+  ) >"$profiles_swap_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 3 ] || {
+    echo "Hermes profile cleanup did not reject a swapped profiles root" >&2
+    return 1
+  }
+  test -L "$profiles_swap_home/profiles"
+  test -L "$profiles_swap_original_link"
+  test -L "$profiles_swap_external_link"
 }
 
 run_sync_runtime_surfaces_retired_managed_links_probe() {

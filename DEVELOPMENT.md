@@ -189,9 +189,14 @@ Exact historical Hermes copies are removed from the discoverable `skills/`
 tree by an atomic no-replace move into
 `$HERMES_HOME/.agent-runtime-kit-quarantine/hermes-retired-skills/`. The
 quarantine is ownership-marked and retained: refresh never recursively deletes
-its contents. A pre-existing unowned quarantine, destination collision, changed
-copy, or symlinked traversal returns `review-needed` and leaves operator data
-untouched.
+its contents. Rollback/re-upgrade cycles retain additional deterministic
+`.generation-NNNNNN` siblings after validating every existing generation as an
+exact match. Cleanup opens the Hermes home, profile, and skills components with
+no-follow descriptors and performs symlink removal and copy moves relative to
+those descriptors; empty legacy directories are harmless and deliberately
+left in place. A pre-existing unowned quarantine, non-matching destination,
+changed copy, or changed/symlinked traversal returns `review-needed` and leaves
+operator data untouched.
 
 For non-technical operators setting up another Mac through an agent, use the
 copyable clean-reinstall prompt in

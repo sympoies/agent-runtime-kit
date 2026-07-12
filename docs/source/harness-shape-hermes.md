@@ -163,7 +163,9 @@ the acceptance lane, and the current ship state.
   Hermes-native or operator-managed skills. Exact runtime-kit copies left by
   the retired local layout move atomically into the retained, non-discoverable
   `.agent-runtime-kit-quarantine/hermes-retired-skills/` tree; refresh does not
-  recursively delete that quarantine.
+  recursively delete that quarantine. Repeated rollback/re-upgrade cycles keep
+  exact additional generations, while descriptor-anchored no-follow traversal
+  rejects changed roots or profile components before mutating operator paths.
 - Support today: **shipped**.
 
 ### 16. Codex hook registration (`config.toml` managed block)

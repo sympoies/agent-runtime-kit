@@ -145,6 +145,141 @@ PY
 )"
 }
 
+materialize_hermes_retired_copies() {
+  local baseline_root="$1"
+  local current_root="$2"
+  local live_home="$3"
+  local skill_id domain skill source destination
+
+  while IFS= read -r skill_id; do
+    domain="${skill_id%%.*}"
+    skill="${skill_id#*.}"
+    source="$baseline_root/build/hermes/plugins/$domain/skills/$skill"
+    destination="$live_home/skills/$domain/$skill"
+    test -d "$source" || return 1
+    mkdir -p "$(dirname "$destination")"
+    cp -a "$source" "$destination"
+  done < <(python3 - "$current_root/manifests/retired-skill-ids.json" <<'PY'
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+print("\n".join(data["skills"]))
+PY
+  )
+}
+
+collect_hermes_active_ids() {
+  local live_home="$1"
+  {
+    find "$live_home/external-skills/agent-runtime-kit" \
+      -mindepth 3 -maxdepth 3 -path '*/SKILL.md' -print 2>/dev/null |
+      sed "s#^$live_home/external-skills/agent-runtime-kit/##" |
+      sed 's#/#.#g' |
+      sed 's#\.SKILL\.md$##'
+    find "$live_home/skills" -mindepth 3 -maxdepth 3 -path '*/SKILL.md' -print 2>/dev/null |
+      sed "s#^$live_home/skills/##" |
+      sed 's#/#.#g' |
+      sed 's#\.SKILL\.md$##'
+  } | sort -u
+}
+
+runtime_convergence_hermes() {
+  local repo_root="$1"
+  local baseline_root="$2"
+  local tmp_root="$3"
+  local artifacts_dir="$4"
+  local live_home state_home observed
+
+  live_home="$(runtime_live_home "$tmp_root" hermes)"
+  state_home="$(runtime_state_home "$tmp_root" hermes)"
+  mkdir -p "$live_home" "$state_home" "$artifacts_dir"
+
+  runtime_install_product "$baseline_root" "$tmp_root" hermes \
+    "$artifacts_dir/baseline" || return 1
+  materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
+  observed="$artifacts_dir/hermes.baseline-active.txt"
+  collect_hermes_active_ids "$live_home" >"$observed"
+  diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
+  test "$(wc -l <"$observed" | tr -d '[:space:]')" = 66 || return 1
+
+  agent-runtime render --source-root "$repo_root" --product hermes \
+    >"$artifacts_dir/hermes.upgrade-first-render.log" 2>&1 || return 1
+  agent-runtime install --source-root "$repo_root" --product hermes \
+    --live-home "$live_home" --state-home "$state_home" --no-overlay --apply \
+    >"$artifacts_dir/hermes.upgrade-first-install.log" 2>&1 || return 1
+  runtime_remove_retired_surface "$repo_root" hermes "$live_home" \
+    >"$artifacts_dir/hermes.external-cleanup-first.log" 2>&1 || return 1
+  agent-runtime prune-stale --source-root "$repo_root" --product hermes \
+    --live-home "$live_home" --no-overlay --apply --format json \
+    >"$artifacts_dir/hermes.prune-first.json" 2>&1 || return 1
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$repo_root/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$repo_root"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$live_home"
+  ) >"$artifacts_dir/hermes.cleanup-first.log" 2>&1 || return 1
+  runtime_install_product "$repo_root" "$tmp_root" hermes \
+    "$artifacts_dir/upgrade-first" || return 1
+  observed="$artifacts_dir/hermes.upgrade-first-active.txt"
+  collect_hermes_active_ids "$live_home" >"$observed"
+  diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
+  test "$(wc -l <"$observed" | tr -d '[:space:]')" = 26 || return 1
+
+  runtime_install_product "$baseline_root" "$tmp_root" hermes \
+    "$artifacts_dir/rollback" || return 1
+  materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
+  observed="$artifacts_dir/hermes.rollback-active.txt"
+  collect_hermes_active_ids "$live_home" >"$observed"
+  diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
+  test "$(wc -l <"$observed" | tr -d '[:space:]')" = 66 || return 1
+
+  agent-runtime install --source-root "$repo_root" --product hermes \
+    --live-home "$live_home" --state-home "$state_home" --no-overlay --apply \
+    >"$artifacts_dir/hermes.upgrade-second-install.log" 2>&1 || return 1
+  runtime_remove_retired_surface "$repo_root" hermes "$live_home" \
+    >"$artifacts_dir/hermes.external-cleanup-second.log" 2>&1 || return 1
+  agent-runtime prune-stale --source-root "$repo_root" --product hermes \
+    --live-home "$live_home" --no-overlay --apply --format json \
+    >"$artifacts_dir/hermes.prune-second.json" 2>&1 || return 1
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$repo_root/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$repo_root"
+    APPLY=1
+    cleanup_hermes_legacy_runtime_kit_skill_root "$live_home"
+  ) >"$artifacts_dir/hermes.cleanup-second.log" 2>&1 || return 1
+  runtime_install_product "$repo_root" "$tmp_root" hermes \
+    "$artifacts_dir/upgrade-second" || return 1
+  observed="$artifacts_dir/hermes.upgrade-second-active.txt"
+  collect_hermes_active_ids "$live_home" >"$observed"
+  diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
+  test "$(wc -l <"$observed" | tr -d '[:space:]')" = 26 || return 1
+  test -d "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills/conversation/orchestrator-first"
+  test -d "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills/conversation/orchestrator-first.generation-000002"
+
+  python3 - "$artifacts_dir/hermes.portable-summary.json" <<'PY'
+import json
+import pathlib
+import sys
+
+pathlib.Path(sys.argv[1]).write_text(json.dumps({
+    "schema": "portable-convergence-summary.v1",
+    "product": "hermes",
+    "baseline_skill_count": 66,
+    "skill_count": 26,
+    "rollback_verified": True,
+    "upgrade_verified": True,
+    "retired_pruned": True,
+    "retained_generations": True,
+    "idempotent": True,
+}, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  RUNTIME_SMOKE_SKILL_COUNT=26
+}
+
 PORTABLE_SOURCE_ROOT="$(runtime_prepare_portable_source "$REPO_ROOT" "$TMP_ROOT/portable-source")"
 BASELINE_REVISION="$(python3 - "$PORTABLE_SOURCE_ROOT/manifests/retired-hermes-skill-copies.json" <<'PY'
 import json
@@ -156,7 +291,7 @@ PY
 )"
 BASELINE_SOURCE_ROOT="$(runtime_prepare_revision_source \
   "$PORTABLE_SOURCE_ROOT" "$BASELINE_REVISION" "$TMP_ROOT/baseline-source")"
-products="${PRODUCT:-codex claude}"
+products="${PRODUCT:-codex claude hermes}"
 failures=0
 if validate_dirty_source_rejected && validate_snapshot_ref_boundary; then
   results_add "convergence.portable-source-boundary" shared-cli pass 1 \
@@ -167,9 +302,17 @@ else
   failures=1
 fi
 for product in $products; do
-  if runtime_convergence_product \
-    "$PORTABLE_SOURCE_ROOT" "$BASELINE_SOURCE_ROOT" "$TMP_ROOT" "$product" \
-    "$CONVERGENCE_ARTIFACTS_DIR/$product" &&
+  lifecycle_status=0
+  if [ "$product" = hermes ]; then
+    runtime_convergence_hermes \
+      "$PORTABLE_SOURCE_ROOT" "$BASELINE_SOURCE_ROOT" "$TMP_ROOT" \
+      "$CONVERGENCE_ARTIFACTS_DIR/$product" || lifecycle_status=$?
+  else
+    runtime_convergence_product \
+      "$PORTABLE_SOURCE_ROOT" "$BASELINE_SOURCE_ROOT" "$TMP_ROOT" "$product" \
+      "$CONVERGENCE_ARTIFACTS_DIR/$product" || lifecycle_status=$?
+  fi
+  if [ "$lifecycle_status" -eq 0 ] &&
     python3 - "$CONVERGENCE_ARTIFACTS_DIR/$product/$product.portable-summary.json" <<'PY'
 import json
 import pathlib
