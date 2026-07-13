@@ -37,7 +37,10 @@ from hook_common import (
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
 SESSION_FLOOR = (1, 21, 17)
-SIMPLE_SHELL_CONTROL = re.compile(r"[\r\n;&|<>`$(){}#]")
+# Include Bash pathname expansion and Zsh extended-glob operators so the shell
+# cannot execute a different argv than the literal tokens validated below.
+UNQUOTED_SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~")
+DOUBLE_QUOTED_SHELL_CONTROL = frozenset("`$")
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -112,6 +115,7 @@ def run_probe(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None,
                 capture_output=True,
                 text=True,
                 check=False,
+                shell=False,
                 timeout=probe_timeout(),
             ),
             "completed",
@@ -195,8 +199,39 @@ def containing_repo(path: Path) -> str | None:
     return git_toplevel(str(probe))
 
 
+def contains_active_shell_control(command: str) -> bool:
+    quote = ""
+    escaped = False
+    for char in command:
+        if quote == "'":
+            if char == "'":
+                quote = ""
+            continue
+        if char in "\r\n":
+            if quote == '"' and not escaped:
+                continue
+            return True
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if quote == '"':
+            if char == '"':
+                quote = ""
+            elif char in DOUBLE_QUOTED_SHELL_CONTROL:
+                return True
+            continue
+        if char in {"'", '"'}:
+            quote = char
+        elif char in UNQUOTED_SHELL_CONTROL:
+            return True
+    return False
+
+
 def simple_shell_words(command: str) -> list[str] | None:
-    if not command.strip() or SIMPLE_SHELL_CONTROL.search(command):
+    if not command.strip() or contains_active_shell_control(command):
         return None
     try:
         words = shlex.split(command, posix=True)
@@ -222,89 +257,55 @@ def path_within(path: str, root: str) -> bool:
         return False
 
 
-def option_pairs(words: list[str]) -> dict[str, list[str]] | None:
-    parsed: dict[str, list[str]] = {}
-    index = 0
-    while index < len(words):
-        option = words[index]
-        if not option.startswith("--") or index + 1 >= len(words):
-            return None
-        parsed.setdefault(option, []).append(words[index + 1])
-        index += 2
-    return parsed
+def recovery_activation_args(
+    *, repo_root: str, executable: str, current_session: str, product: str
+) -> list[str]:
+    return agent_docs_args(repo_root, executable) + [
+        "session",
+        "activate",
+        "--session-id",
+        current_session,
+        "--product",
+        product,
+        "--state-home",
+        state_home(product),
+        "--intent",
+        "project-dev",
+    ]
 
 
-def activation_bootstrap(
+def activation_bootstrap_args(
     command: str,
     *,
-    payload: Mapping[str, Any],
+    current_session: str,
     product: str,
-    repos: list[str],
+    repo_root: str,
     agent_docs_executable: str,
-) -> bool:
+) -> list[str] | None:
     words = simple_shell_words(command)
-    if not words or words[0] != agent_docs_executable:
-        return False
-    try:
-        session_index = words.index("session", 1)
-    except ValueError:
-        return False
-    if words[session_index : session_index + 2] != ["session", "activate"]:
-        return False
-
-    globals_by_name = option_pairs(words[1:session_index])
-    activate_by_name = option_pairs(words[session_index + 2 :])
-    if globals_by_name is None or activate_by_name is None:
-        return False
-    if set(globals_by_name) - {"--docs-home", "--project-path"}:
-        return False
-    if set(activate_by_name) - {
-        "--format",
-        "--intent",
-        "--product",
-        "--session-id",
-        "--state-home",
-    }:
-        return False
-    singleton_globals = {"--docs-home", "--project-path"}
-    singleton_activate = {"--format", "--product", "--session-id", "--state-home"}
-    if any(len(globals_by_name.get(name, [])) > 1 for name in singleton_globals):
-        return False
-    if any(len(activate_by_name.get(name, [])) > 1 for name in singleton_activate):
-        return False
-
-    project_values = globals_by_name.get("--project-path", [])
-    session_values = activate_by_name.get("--session-id", [])
-    product_values = activate_by_name.get("--product", [])
-    state_values = activate_by_name.get("--state-home", [])
-    intent_values = activate_by_name.get("--intent", [])
-    if not all((project_values, session_values, product_values, state_values, intent_values)):
-        return False
-    if any(not value.strip() for value in intent_values):
-        return False
-    if session_values != [session_id(payload)] or product_values != [product]:
-        return False
-    if os.path.realpath(state_values[0]) != state_home(product):
-        return False
-    project_path = os.path.realpath(project_values[0])
-    if project_path not in repos:
-        return False
-
-    expected_docs_home = os.environ.get("AGENT_RUNTIME_DOCS_HOME") or os.environ.get(
-        "AGENT_DOCS_HOME"
+    expected = recovery_activation_args(
+        repo_root=repo_root,
+        executable=agent_docs_executable,
+        current_session=current_session,
+        product=product,
     )
-    if not expected_docs_home and runtime_kit_source_checkout(project_path):
-        expected_docs_home = project_path
-    docs_values = globals_by_name.get("--docs-home", [])
-    if expected_docs_home:
-        if not docs_values or os.path.realpath(docs_values[0]) != os.path.realpath(
-            expected_docs_home
-        ):
-            return False
-    elif docs_values:
-        return False
-    format_values = activate_by_name.get("--format", [])
-    return not format_values or format_values == ["json"]
+    return expected if words == expected else None
+
+
+def recovery_commands(
+    *, repo_root: str, executable: str, current_session: str, product: str
+) -> tuple[str, str]:
+    base_args = agent_docs_args(repo_root, executable)
+    activation = shlex.join(
+        recovery_activation_args(
+            repo_root=repo_root,
+            executable=executable,
+            current_session=current_session,
+            product=product,
+        )
+    )
+    preflight = shlex.join(base_args + ["preflight", "--intent", "project-dev"])
+    return activation, preflight
 
 
 def target_repositories(payload: Mapping[str, Any], tool: str) -> list[str]:
@@ -442,17 +443,6 @@ def main() -> int:
             "repository mutation; restore the managed runtime CLI path before retrying."
         )
         return ALLOW
-    if tool in COMMAND_TOOLS:
-        command = command_from(payload)
-        if activation_bootstrap(
-            command,
-            payload=payload,
-            product=product,
-            repos=repos,
-            agent_docs_executable=agent_docs_executable,
-        ):
-            return ALLOW
-
     capability, detail = session_capability(
         agent_docs_args(repos[0], agent_docs_executable)
     )
@@ -473,6 +463,48 @@ def main() -> int:
         )
         return ALLOW
 
+    if tool in COMMAND_TOOLS and len(repos) == 1:
+        bootstrap_args = activation_bootstrap_args(
+            command_from(payload),
+            current_session=current_session,
+            product=product,
+            repo_root=repos[0],
+            agent_docs_executable=agent_docs_executable,
+        )
+        if bootstrap_args is not None:
+            completed, outcome = run_probe(bootstrap_args)
+            if completed is None:
+                emit_block(
+                    "Trusted project-dev activation failed inside the hook "
+                    f"({outcome}); the recovery shell command was consumed and not executed."
+                )
+                return ALLOW
+            verified, code = verify_intent(
+                agent_docs_args(repos[0], agent_docs_executable),
+                current_session=current_session,
+                product=product,
+            )
+            if completed.returncode != 0 or not verified:
+                emit_block(
+                    "Trusted project-dev activation did not verify inside the hook "
+                    f"(exit={completed.returncode}, verification={code}); the recovery "
+                    "shell command was consumed and not executed."
+                )
+                return ALLOW
+            _, preflight = recovery_commands(
+                repo_root=repos[0],
+                executable=agent_docs_executable,
+                current_session=current_session,
+                product=product,
+            )
+            emit_block(
+                "Trusted project-dev activation completed inside the hook; the recovery "
+                "shell command was consumed and not executed. "
+                f"Run `{preflight}` to read the activated contract, then retry the "
+                "original command."
+            )
+            return ALLOW
+
     failures: list[str] = []
     for repo_root in repos:
         verified, code = verify_intent(
@@ -484,13 +516,26 @@ def main() -> int:
             failures.append(code)
     if not failures:
         return ALLOW
-    emit_block(
+    reason = (
         "Activate and read project-dev before mutating the target repository, then retry. "
-        "Run agent-docs session activate for the current session/product and agent-docs "
-        "preflight --intent project-dev. Shell enforcement is CWD-scoped; run "
-        "cross-repository shell mutations with each target repository as CWD. "
-        f"Verification code: {failures[0]}."
+        "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
+        "executable and complete session context. "
     )
+    if tool in COMMAND_TOOLS and len(repos) == 1:
+        activation, preflight = recovery_commands(
+            repo_root=repos[0],
+            executable=agent_docs_executable,
+            current_session=current_session,
+            product=product,
+        )
+        reason += f"Run `{activation}`, then `{preflight}`. "
+    else:
+        reason += "Use the exact activation command from the latest agent-docs intent cue. "
+    reason += (
+        "Shell enforcement is CWD-scoped; run cross-repository shell mutations with each "
+        f"target repository as CWD. Verification code: {failures[0]}."
+    )
+    emit_block(reason)
     return ALLOW
 
 

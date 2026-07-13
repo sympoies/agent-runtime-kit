@@ -3111,6 +3111,109 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "project-dev")
 
+    def test_pre_edit_intent_gate_block_message_includes_copyable_recovery_commands(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "R&D (runtime)#1\nline"
+            root.mkdir()
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            active_marker = root / "active"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session activate"* ]]; then
+  printf 'active\n' > {shlex.quote(str(active_marker))}
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  if [[ -f {shlex.quote(str(active_marker))} ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            state_home = (repo / "state").resolve()
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            activation = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "activate",
+                    "--session-id",
+                    "intent-recovery",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home),
+                    "--intent",
+                    "project-dev",
+                ]
+            )
+            preflight = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "preflight",
+                    "--intent",
+                    "project-dev",
+                ]
+            )
+            payload = command_payload("git status --short")
+            payload["session_id"] = "intent-recovery"
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            assert decision is not None
+            reason = str(decision.get("reason", ""))
+            self.assertIn(activation, reason)
+            self.assertIn(preflight, reason)
+
+            payload = command_payload(activation)
+            payload["session_id"] = "intent-recovery"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "consumed")
+            self.assertTrue(active_marker.is_file())
+
+            payload = command_payload(preflight)
+            payload["session_id"] = "intent-recovery"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
     def test_pre_edit_intent_gate_allows_only_trusted_bootstrap_before_activation(
         self,
     ) -> None:
@@ -3122,13 +3225,22 @@ exit 64
             (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
             bin_dir = root / "runtime-bin"
             bin_dir.mkdir()
+            active_marker = root / "active"
             self._write_fake_agent_docs(
                 bin_dir,
-                """#!/usr/bin/env bash
+                f"""#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session activate"* ]]; then
+  printf 'active\n' > {shlex.quote(str(active_marker))}
+  exit 0
+fi
 if [[ "$*" == *"session verify"* ]]; then
-  echo '{"ok":false,"error":{"code":"required-intent-not-active"}}'
+  if [[ -f {shlex.quote(str(active_marker))} ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"ok":false,"error":{{"code":"required-intent-not-active"}}}}'
   exit 1
 fi
 exit 64
@@ -3149,21 +3261,33 @@ exit 64
                 f"--state-home {shlex.quote(str(state_home.resolve()))} "
                 "--intent project-dev"
             )
-            payload = command_payload(activation)
-            payload["session_id"] = "shell-bootstrap"
-            code, decision, stderr = run_hook(
-                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            preflight = (
+                f"{shlex.quote(str((bin_dir / 'agent-docs').resolve()))} "
+                f"--docs-home {shlex.quote(str(repo.resolve()))} "
+                f"--project-path {shlex.quote(str(repo.resolve()))} "
+                "preflight --intent task-tools"
             )
-            self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
-
             bare_activation = activation.replace(
                 str((bin_dir / "agent-docs").resolve()), "agent-docs", 1
+            )
+            bare_preflight = preflight.replace(
+                str((bin_dir / "agent-docs").resolve()), "agent-docs", 1
+            )
+            wrong_project_preflight = (
+                f"{shlex.quote(str((bin_dir / 'agent-docs').resolve()))} "
+                f"--docs-home {shlex.quote(str(repo.resolve()))} "
+                f"--project-path {shlex.quote(str(root.resolve()))} "
+                "preflight --intent task-tools"
             )
             untrusted = (
                 "git status --short",
                 "git diff --output=src/diff.txt",
                 bare_activation,
+                bare_preflight,
+                preflight,
+                wrong_project_preflight,
+                f"{preflight} --output src/preflight.json",
+                f"{preflight} --product claude",
                 f"alias agent-docs='printf x > src/lib.rs'; {bare_activation}",
                 f"agent-docs() {{ printf x > src/lib.rs; }}; {bare_activation}",
             )
@@ -3212,6 +3336,223 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "project-dev")
             self.assertIn("session --help", repo_bin_log.read_text(encoding="utf-8"))
+
+            payload = command_payload(activation)
+            payload["session_id"] = "shell-bootstrap"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "consumed")
+            self.assertTrue(active_marker.is_file())
+
+            payload = command_payload(preflight)
+            payload["session_id"] = "shell-bootstrap"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_pre_edit_intent_gate_blocks_unquoted_glob_executable_substitution(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+
+            trusted_bin = root / "runtime[1]"
+            expanded_bin = root / "runtime1"
+            trusted_bin.mkdir()
+            expanded_bin.mkdir()
+            active_marker = root / "active"
+            self._write_fake_agent_docs(
+                trusted_bin,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session activate"* ]]; then
+  printf 'active\n' > {shlex.quote(str(active_marker))}
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  if [[ -f {shlex.quote(str(active_marker))} ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            self._write_fake_agent_docs(expanded_bin, "#!/bin/sh\nexit 0\n")
+
+            state_home = repo / "state"
+            agent_docs = str((trusted_bin / "agent-docs").resolve())
+            activation = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "activate",
+                    "--session-id",
+                    "glob-bootstrap",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home.resolve()),
+                    "--intent",
+                    "project-dev",
+                ]
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "PATH": f"{trusted_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            unquoted_activation = activation.replace(
+                shlex.quote(agent_docs), agent_docs, 1
+            )
+            self.assertNotEqual(unquoted_activation, activation)
+            payload = command_payload(unquoted_activation)
+            payload["session_id"] = "glob-bootstrap"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+
+            payload = command_payload(activation)
+            payload["session_id"] = "glob-bootstrap"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "consumed")
+            self.assertTrue(active_marker.is_file())
+
+    def test_pre_edit_intent_gate_consumes_activation_before_shell_dispatch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            active_marker = root / "active"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session activate"* ]]; then
+  if [[ "${{ACTIVATION_FAIL:-0}}" == 1 ]]; then exit 70; fi
+  printf 'active\n' > {shlex.quote(str(active_marker))}
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  if [[ -f {shlex.quote(str(active_marker))} ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+
+            state_home = repo / "state"
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            activation = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "activate",
+                    "--session-id",
+                    "function-shadow",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home.resolve()),
+                    "--intent",
+                    "project-dev",
+                ]
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            payload = command_payload(activation)
+            payload["session_id"] = "function-shadow"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={**env, "ACTIVATION_FAIL": "1"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "consumed")
+            self.assertFalse(active_marker.exists())
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "consumed")
+            self.assertTrue(active_marker.is_file())
+
+            shell_probes = (
+                (
+                    f"function {agent_docs} {{ printf path-shadow; }}; {activation}",
+                    "path-shadow",
+                ),
+                (
+                    f"function command {{ printf command-shadow; }}; command {activation}",
+                    "command-shadow",
+                ),
+                (
+                    f"function builtin {{ printf builtin-shadow; }}; builtin command {activation}",
+                    "builtin-shadow",
+                ),
+            )
+            shells = (
+                (shutil.which("bash"), "-c"),
+                (shutil.which("zsh"), "-fc"),
+            )
+            for shell, flag in shells:
+                if shell is None:
+                    continue
+                for script, expected in shell_probes:
+                    with self.subTest(shell=shell, expected=expected):
+                        completed = subprocess.run(
+                            [shell, flag, script],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        self.assertEqual(completed.stdout, expected)
 
     def test_pre_edit_intent_gate_allows_unrelated_workspace_shell_commands(
         self,
