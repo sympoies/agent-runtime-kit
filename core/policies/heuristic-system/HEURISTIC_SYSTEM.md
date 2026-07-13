@@ -126,6 +126,26 @@ in that envelope's failures list, then decide whether a curated follow-up is
 also warranted. Do not commit raw stderr or ordinary authoring mistakes as
 retained artifacts.
 
+## Discovered-Defect Routing
+
+A failed command or validation waiver is a triage signal, not proof that a bug
+exists. Confirm the evidence and route any unresolved defect to the system that
+owns the broken behavior:
+
+| Observed outcome | Durable route |
+| --- | --- |
+| Fixed in the same turn, transient, or not reproducible | Mention it in the result when useful; create no retained record. |
+| Repository-owned product, test, build, or CI defect | Use L1 `issue-follow-up` in the owning repository. |
+| Agent workflow, skill, hook, CLI, or primitive gap | Use the shared `heuristic-inbox` lifecycle. |
+| Project defect exposing a reusable cross-project workflow gap | Make the project issue primary; add a heuristic case only for the distinct reusable gap. |
+
+Closeout owns detection, evidence review, and a deterministic route proposal.
+It does not own the project backlog and must not silently create a provider
+issue. Work-tier policy still requires a user decision before L1+ provider
+mutation. A retained heuristic case likewise needs concrete evidence, a clear
+owner boundary, and a reusable or unresolved workflow lesson; it is not a
+catch-all bug inbox.
+
 ## Promotion Ladder
 
 | Signal | Preferred durable form |

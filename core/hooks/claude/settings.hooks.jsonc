@@ -119,7 +119,7 @@
         {
           "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/finish-line-record.py\"",
-          "statusMessage": "agent-runtime-kit: Record agent-docs validation runs"
+          "statusMessage": "agent-runtime-kit: Prepare agent-docs validation outcome recording"
         }
       ]
     },

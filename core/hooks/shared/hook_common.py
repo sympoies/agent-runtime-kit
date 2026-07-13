@@ -20,6 +20,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterable, Mapping
 from pathlib import PurePosixPath
 from typing import Any
@@ -290,6 +291,25 @@ def _runtime_product() -> str | None:
     return product if product in {"codex", "claude"} else None
 
 
+def validation_tombstone_dir(repo_root: str) -> str:
+    """Return shared runtime state for fail-closed validation attempts."""
+    override = (
+        os.environ.get("AGENT_RUNTIME_VALIDATION_STATE_HOME", "").strip()
+        or os.environ.get("AGENT_RUNTIME_STATE_HOME", "").strip()
+    )
+    if override:
+        state_root = os.path.realpath(os.path.expanduser(override))
+    else:
+        xdg_state = os.environ.get("XDG_STATE_HOME", "").strip()
+        if not xdg_state:
+            xdg_state = os.path.join(os.path.expanduser("~"), ".local", "state")
+        state_root = os.path.realpath(
+            os.path.join(os.path.expanduser(xdg_state), "agent-runtime-kit")
+        )
+    repo_key = hashlib.sha256(os.path.realpath(repo_root).encode("utf-8")).hexdigest()
+    return os.path.join(state_root, "validation-outcomes", repo_key)
+
+
 def _agent_docs_base_args(repo_root: str) -> list[str]:
     docs_home = _docs_home(repo_root)
     args = ["agent-docs"]
@@ -530,26 +550,82 @@ def validation_marker_set(repo_root: str, marker: str) -> dict[str, str]:
     The dirty marker is shared across products so one product can notice code
     edits made from another runtime. Per-command run markers are product-scoped
     when the active runtime product is known, preventing one product's
-    validation command from satisfying another product's contract.
+    validation command from satisfying another product's contract. Marker
+    paths must be repository-relative and their directory must remain beneath
+    the real repository root through every existing symlink component. Final
+    marker names are atomically replaced rather than followed.
     """
-    rel = marker.strip().lstrip("/")
-    rel_dir = os.path.dirname(rel) or "."
-    stem = os.path.splitext(os.path.basename(rel))[0] or "project-dev"
-    abs_dir = os.path.join(repo_root, rel_dir)
+    rel = marker.strip()
+    if not rel or os.path.isabs(rel):
+        raise ValueError("validation marker must be repository-relative")
+    root = os.path.realpath(repo_root)
+    raw_target = os.path.join(root, rel)
+    lexical_target = os.path.abspath(raw_target)
+    if lexical_target == root:
+        raise ValueError("validation marker resolves to repository root")
+    target_name = os.path.basename(lexical_target)
+    if target_name in {"", ".", ".."}:
+        raise ValueError("validation marker must name a file")
+    resolved_parent = os.path.realpath(os.path.dirname(raw_target))
+    resolved_target = os.path.join(resolved_parent, target_name)
+    try:
+        if os.path.commonpath((root, lexical_target)) != root:
+            raise ValueError("validation marker escapes repository")
+        if os.path.commonpath((root, resolved_parent)) != root:
+            raise ValueError("validation marker directory escapes repository")
+        if os.path.commonpath((root, resolved_target)) != root:
+            raise ValueError("validation marker target escapes repository")
+    except ValueError as error:
+        raise ValueError("unsafe validation marker") from error
+    stem = os.path.splitext(os.path.basename(resolved_target))[0] or "project-dev"
+    abs_dir = os.path.dirname(resolved_target)
+    relative_identity = os.path.relpath(lexical_target, root).replace(os.sep, "/")
+    contract_key = hashlib.sha256(relative_identity.encode("utf-8")).hexdigest()
     product = _runtime_product()
     command_stem = f"{stem}.{product}" if product else stem
     return {
         "dir": abs_dir,
-        "ok": os.path.join(repo_root, rel),
+        "ok": resolved_target,
         "dirty": os.path.join(abs_dir, f"{stem}.dirty"),
         "stem": stem,
         "command_stem": command_stem,
+        "contract_key": contract_key,
+        "product": product or "shared",
     }
 
 
 def command_ran_marker(marker_set: Mapping[str, str], index: int) -> str:
     stem = marker_set.get("command_stem") or marker_set["stem"]
     return os.path.join(marker_set["dir"], f"{stem}.cmd{index}.ran")
+
+
+def validation_command_target_key(
+    marker_set: Mapping[str, str], index: int, declared: str
+) -> str:
+    """Stable logical identity for one product-scoped declared command."""
+    identity = (
+        f"{marker_set['contract_key']}\0"
+        f"{marker_set.get('command_stem') or marker_set['stem']}\0"
+        f"{index}\0{declared.strip()}"
+    )
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def command_failed_marker(marker_set: Mapping[str, str], index: int) -> str:
+    stem = marker_set.get("command_stem") or marker_set["stem"]
+    return os.path.join(marker_set["dir"], f"{stem}.cmd{index}.failed.json")
+
+
+def routing_review_marker(marker_set: Mapping[str, str]) -> str:
+    stem = marker_set.get("command_stem") or marker_set["stem"]
+    return os.path.join(marker_set["dir"], f"{stem}.routing-reviewed")
+
+
+def validation_pending_marker(
+    marker_set: Mapping[str, str], token: str
+) -> str:
+    stem = marker_set.get("command_stem") or marker_set["stem"]
+    return os.path.join(marker_set["dir"], f"{stem}.pending.{token}.json")
 
 
 SHELL_SEPARATOR_TOKENS = {";", "&&", "||", "|", "(", ")"}
@@ -2087,12 +2163,23 @@ def command_matches_validation(actual: str, declared: str) -> bool:
 
 
 def touch_marker(path: str) -> bool:
-    """Create/refresh an empty marker file; return False on failure."""
+    """Atomically create/refresh an empty marker without following a final symlink."""
+    temporary = ""
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8"):
-            pass
-        os.utime(path, None)
+        directory = os.path.dirname(path)
+        os.makedirs(directory, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{os.path.basename(path)}.",
+            suffix=".tmp",
+            dir=directory,
+        )
+        os.close(descriptor)
+        os.replace(temporary, path)
         return True
     except OSError:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
         return False

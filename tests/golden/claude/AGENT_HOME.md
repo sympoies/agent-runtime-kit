@@ -150,6 +150,14 @@
 
 - Same-turn transient fixes need no retained record; mention them in the
   reply.
+- Before deferring a reproducible failure or validation waiver, route it by
+  owner: repository-owned product, test, or CI defects use L1
+  `issue-follow-up` in that repository; unresolved agent workflow, skill,
+  hook, CLI, or primitive gaps use `heuristic-inbox`. If both apply, the
+  project issue is primary and a heuristic case is warranted only for a
+  reusable cross-project gap. L1+ provider mutation still requires the user's
+  decision; closeout may detect and propose a route but must not silently open
+  an issue.
 - Important unresolved workflow gaps or suspected nils-cli / primitive bugs go
   through `heuristic-inbox` (version, minimal repro, upstream issue link when
   found, current workaround); archive promoted or `wontfix` inbox entries via

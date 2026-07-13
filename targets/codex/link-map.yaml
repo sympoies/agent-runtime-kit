@@ -207,7 +207,7 @@ entries:
       type = "command"
       command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/finish-line-record.py\""
       timeout = 20
-      statusMessage = "agent-runtime-kit: Record agent-docs validation runs"
+      statusMessage = "agent-runtime-kit: Prepare agent-docs validation outcome recording"
 
       [[hooks.PreToolUse]]
       matcher = "Write|Edit|NotebookEdit|apply_patch"
