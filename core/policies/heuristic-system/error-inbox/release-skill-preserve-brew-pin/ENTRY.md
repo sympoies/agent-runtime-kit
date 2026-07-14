@@ -6,6 +6,7 @@
 - First observed: 2026-07-13
 - Area: release
 - Severity: medium
+- Cluster: managed-homebrew-pin-preservation
 
 ## Signal
 
