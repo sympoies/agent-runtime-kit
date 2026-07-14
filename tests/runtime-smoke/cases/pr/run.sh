@@ -115,6 +115,113 @@ assert_delivery_skills_thread_test_first_evidence() {
   return "$rc"
 }
 
+# Native-review timing and provider gate mechanics belong to released
+# forge-cli. Active delivery parents still own the semantic read/disposition
+# loop, but must not duplicate polling recipes or unconditional provider
+# sweeps. Keep all three merge-owning outcomes on the same minimum surface and
+# typed retry contract.
+assert_delivery_skills_use_native_review_convergence() {
+  local rc=0 skill gitlab_reviews_output gitlab_reviews_status
+
+  set +e
+  gitlab_reviews_output="$(forge-cli --provider gitlab --repo fixture/project \
+    --format json pr reviews 1 2>&1)"
+  gitlab_reviews_status=$?
+  set -e
+  if [ "$gitlab_reviews_status" -ne 64 ] || \
+    ! grep -q '"code":"provider_unsupported"' <<<"$gitlab_reviews_output"; then
+    echo "runtime-smoke pr: GitLab pr reviews did not preserve its v1 provider boundary" >&2
+    rc=1
+  fi
+
+  for skill in \
+    core/skills/pr/deliver-pr/SKILL.md.tera \
+    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
+    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
+    if ! grep -q 'forge-cli >=1.21.34' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not require forge-cli 1.21.34" >&2
+      rc=1
+    fi
+    if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill omits native review summary inspection" >&2
+      rc=1
+    fi
+    if ! grep -q 'review_convergence_activity_changed' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill omits typed late-activity retry routing" >&2
+      rc=1
+    fi
+    if ! grep -q 'review_convergence_head_changed' "$REPO_ROOT/$skill" || \
+      ! grep -q 're-run validation and affected review' "$REPO_ROOT/$skill" || \
+      ! grep -Eq 'requires rebinding (lane )?delivery' "$REPO_ROOT/$skill" || \
+      ! grep -q 'the new head' "$REPO_ROOT/$skill" || \
+      ! grep -q 'new owner outcome' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill can reuse stale validation or approval after head drift" >&2
+      rc=1
+    fi
+    if ! grep -q 'summary_truncated' "$REPO_ROOT/$skill" || \
+      ! grep -q 'full review body' "$REPO_ROOT/$skill" || \
+      ! grep -q 'stop if it is unavailable' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill can semantically disposition a truncated review summary" >&2
+      rc=1
+    fi
+    if ! grep -q 'REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not preserve GitLab delivery under a user-global GitHub convergence policy" >&2
+      rc=1
+    fi
+    if ! grep -q '"${REVIEW_CONVERGENCE_ARGS\[@\]}"' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not pass its provider convergence override to merge" >&2
+      rc=1
+    fi
+  done
+
+  # `pr reviews` is GitHub-only in v1. Every executable occurrence must stay
+  # inside an explicit provider guard; prose references are backtick-quoted and
+  # intentionally ignored here.
+  if ! python3 - "$REPO_ROOT" \
+    core/skills/pr/deliver-pr/SKILL.md.tera \
+    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
+    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+for relative in sys.argv[2:]:
+    path = root / relative
+    guarded = False
+    commands = 0
+    for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+        stripped = line.strip()
+        if stripped == 'if [ "$PROVIDER" = github ]; then':
+            guarded = True
+            continue
+        if stripped == "fi":
+            guarded = False
+            continue
+        if "pr reviews" in line and "`" not in line and not stripped.startswith("#"):
+            commands += 1
+            if not guarded:
+                raise SystemExit(f"{relative}:{line_number}: unguarded GitHub-only pr reviews command")
+    if commands == 0:
+        raise SystemExit(f"{relative}: no executable pr reviews command found")
+PY
+  then
+    echo "runtime-smoke pr: delivery skills expose an unguarded GitHub-only pr reviews command" >&2
+    rc=1
+  fi
+
+  if grep -q 'Sweep provider review threads immediately before merge' \
+    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"; then
+    echo "runtime-smoke pr: deliver-pr still mandates an unconditional manual thread sweep" >&2
+    rc=1
+  fi
+  if grep -q '# Disposition every review thread and task-list item before merge.' \
+    "$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"; then
+    echo "runtime-smoke pr: tracking delivery still duplicates unconditional merge-gate reads" >&2
+    rc=1
+  fi
+  return "$rc"
+}
+
 write_test_first_gate_records() {
   local v2_dir="$1"
   local v1_dir="$2"
@@ -605,6 +712,7 @@ run_deliver_pr_probe() {
   run_deliver_gitlab_probe || rc=1
   run_pr_comment_provider_payload_privacy_gate_probe || rc=1
   assert_delivery_skills_thread_test_first_evidence || rc=1
+  assert_delivery_skills_use_native_review_convergence || rc=1
   run_deliver_test_first_v2_gate_probe || rc=1
   return "$rc"
 }

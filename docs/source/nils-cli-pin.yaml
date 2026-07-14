@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.21.24"
+  pinned_tag: "v1.21.34"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "815c416d0c57d7b113c9d18d069acd14bd13d397a0a6eb7e9111f91bade7e088"
-    linux_arm64: "bef39d14550506db4c68c751b0a79cc6e1b9f9c6b1e0c6c7b7330e00d2adedee"
+    linux_amd64: "cc9c0a7efe93ae9395cd9124d46928b80a66a085e7d444aea128e5493826035d"
+    linux_arm64: "346bd564d1b365bbf9984d7eecd144aa81ba567ce0727abb8fc5a8a5ad024ad8"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -42,8 +42,8 @@ required_clis:
     min: "1.0.1"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
-  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads
-    min: "1.21.19"
+  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence
+    min: "1.21.34"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
     min: "1.21.19"
   - bin: plan-archive     # discover / migrate / refresh / query

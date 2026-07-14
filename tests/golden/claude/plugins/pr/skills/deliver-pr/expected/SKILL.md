@@ -10,11 +10,12 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.21.19`, `plan-issue >=1.1.0`, and
+- `agent-runtime`, `forge-cli >=1.21.34`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
   available on `PATH`. The generic code-review outcome uses
-  `review-specialists` in pre-merge mode; the review-thread sweep and merge gate need
-  `forge-cli` 1.0.16, the task-list sweep and merge gate 1.0.17, and
+  `review-specialists` in pre-merge mode; native review summaries and observed
+  convergence need `forge-cli` 1.21.34, the review-thread merge gate needs
+  1.0.16, the task-list merge gate needs 1.0.17, and
   existing-PR adoption in `pr deliver` needs 1.1.0. Linked issue closeout
   relies on the unified terminal task-row contract in `plan-issue` 1.1.0.
 - Shared provider, branch, body, and label rules in
@@ -71,12 +72,14 @@ Outputs:
   `forge-cli pr review` (a native `APPROVE` / `REQUEST_CHANGES` review event on
   GitHub via `--submit-review`); combined owner outcomes set
   `FORGE_BOT_PROFILE=dobi`, and own final finding dispositions.
-- A provider review-thread sweep completed immediately before merge, with
-  every unresolved thread (bot or human) dispositioned: repaired, resolved as
-  accepted, or converted to a follow-up issue.
-- A task-list sweep completed immediately before merge, with every unchecked
-  `- [ ]` item in the PR/MR description dispositioned: completed and checked
-  off, or rewritten as deferred with a follow-up issue ref.
+- On GitHub, current-head native review summaries inspected through
+  `forge-cli pr reviews` and semantically dispositioned before the final owner
+  outcome. Stale-head reviews remain informational. GitLab retains its outcome
+  note flow because native review snapshots are GitHub-only in v1.
+- Mechanical convergence, unresolved-thread, unchecked-task, and provider-head
+  gates executed by `forge-cli pr merge`. A typed gate failure routes to the
+  matching read/disposition/retry path instead of an agent-authored polling
+  loop.
 - A merged PR/MR through `forge-cli pr merge`, unless `--no-merge` is supplied.
 - When a linked issue closeout runs, `plan-issue record close` posts closeout
   evidence, repairs the dashboard, verifies linked records, and closes the
@@ -91,11 +94,15 @@ Failure modes:
 - Selected labels fail catalog validation or the provider rejects label
   application.
 - Mandatory pre-merge review gate findings are unresolved or undispositioned.
-- Provider review threads — typically from bot reviewers posting minutes after
-  PR creation — remain unresolved and undispositioned at merge time. CI checks
-  and the local review gate do not surface them; `forge-cli pr merge` fails
-  closed with `unresolved_review_threads`, and the sweep is how the workflow
-  dispositions them before that gate trips.
+- Current-head native review summaries are unread or contain actionable
+  feedback that has not been repaired, accepted with rationale, or moved to a
+  follow-up.
+- `forge-cli pr merge` returns `review_changes_requested`,
+  `review_convergence_activity_changed`, `review_convergence_head_changed`,
+  `review_convergence_timeout`, `review_snapshot_incomplete`,
+  `unresolved_review_threads`, or `unchecked_task_items`. Read and disposition
+  the matching provider evidence before retrying; do not replace the CLI gate
+  with a custom timing loop.
 - Unchecked `- [ ]` task-list items remain in the PR/MR description at merge
   time. The description is the delivery contract; `forge-cli pr merge` fails
   closed with `unchecked_task_items`, and the task-list sweep is how the
@@ -119,13 +126,15 @@ The user requests the PR/MR outcome, not a lifecycle helper.
   record with `forge-cli pr create`, return its URL, and stop before checks,
   review, merge, or linked-issue closeout.
 - **Deliver** — create or adopt the record, wait for checks, run the mandatory
-  review gate, repair findings, sweep threads/tasks, and merge unless the user
-  requested a readiness stop.
+  review gate, inspect and disposition native summaries, then merge through the
+  CLI-owned convergence/thread/task gates unless the user requested a readiness
+  stop.
 - **Review repair** — adopt the existing record, classify unresolved review
   threads, make authorized fixes, rerun validation and affected review modes,
   and return to the delivery gates.
-- **Merge** — adopt an existing ready record and run every remaining review,
-  task, thread, linked-lifecycle, and checks gate before `forge-cli pr merge`.
+- **Merge** — adopt an existing ready record, inspect native review evidence,
+  and satisfy every remaining semantic, linked-lifecycle, and provider gate
+  before `forge-cli pr merge`.
 - **Close unmerged** — only when the user explicitly abandons the record; read
   current state, record the reason, and call `forge-cli pr close` without
   pretending delivery succeeded.
@@ -199,16 +208,26 @@ review-specialists scope \
   --testing \
   --maintainability \
   --format json
+# Read native review bodies after specialist posting and repair. Current-head
+# summaries are semantic evidence; stale-head summaries are informational.
+if [ "$PROVIDER" = github ]; then
+  forge-cli --provider "$PROVIDER" --format json pr reviews "$PR_NUMBER"
+fi
 # Native review events are GitHub-only; GitLab posts an outcome note instead.
 SUBMIT_REVIEW=()
 [ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+# Observed convergence is GitHub-only in v1. Preserve GitLab delivery even when
+# the user's global forge-cli config enables it.
+REVIEW_CONVERGENCE_ARGS=()
+[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
 FORGE_BOT_PROFILE=dobi forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --decision "$REVIEW_DECISION" \
   "${SUBMIT_REVIEW[@]}" \
   --comment-file "$DELIVERY_REVIEW_OUTCOME" \
   --lens testing \
   --lens maintainability
-forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash
+forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash \
+  "${REVIEW_CONVERGENCE_ARGS[@]}"
 ```
 
 Map the final delivery review outcome to `approve` when delivery may merge and
@@ -237,43 +256,43 @@ When the specialist report has actionable GitHub findings, include
 surfaces those findings. Omit `--thread-file` for clean reviews, informational
 notes, follow-up pass summaries, and the final combined approval outcome.
 
-Immediately before the merge call, sweep provider review threads. Bot
-reviewers post asynchronously — often minutes after PR creation — so the sweep
-runs at the last action before merge, not only at creation time:
+Before the final owner outcome, read native provider reviews once:
 
 ```bash
-forge-cli --provider "$PROVIDER" --format json pr review-threads list "$PR_NUMBER"
+if [ "$PROVIDER" = github ]; then
+  forge-cli --provider "$PROVIDER" --format json pr reviews "$PR_NUMBER"
+fi
 ```
 
-`data.unresolved == 0` is the gate. Disposition every unresolved thread before
-merge per `core/policies/review-thread-convergence.md` (the per-finding triage
-table and the convergence/stopping rule): repair it in this workflow, reply and
-resolve it as an accepted tradeoff, or convert it to a follow-up issue and
-resolve the thread with the link. `forge-cli pr merge` (and the `pr deliver`
-merge step) also enforces
-this mechanically — merging with unresolved threads fails closed with
-`unresolved_review_threads` (sympoies/nils-cli#808, shipped in v1.0.16). Never
-pass `--allow-unresolved-threads` to silence the gate without dispositioning
-the threads and recording the reason in the delivery review outcome.
+On GitHub, treat `data.current_head_reviews[].summary` as evidence, never as a
+machine verdict: repair actionable feedback, accept it with rationale, or move
+it to a follow-up before posting the final combined owner outcome. Stale-head
+reviews are informational. GitLab has no native snapshot in v1 and keeps the
+existing specialist/outcome-note flow. If `summary_truncated` is true, retrieve
+the full review body through provider read tooling before disposition; stop if
+the full body cannot be read. Do not poll or sleep in agent instructions; the
+released `forge-cli pr merge` owns the configured observed-bot quiet period,
+timeout, complete snapshot, final recheck, native `CHANGES_REQUESTED`,
+unresolved-thread, unchecked-task, and provider-head gates.
 
-In the same pre-merge pass, sweep the PR/MR description's task list:
+Observed convergence is GitHub-only in v1. On GitLab, pass
+`--review-convergence=false` explicitly so a user-global GitHub policy does not
+turn a supported MR delivery into `provider_unsupported`.
 
-```bash
-forge-cli --provider "$PROVIDER" --format json pr tasks "$PR_NUMBER"
-```
-
-`data.unchecked == 0` is the gate. Disposition every unchecked `- [ ]` item
-before merge: finish the work and check it off (`- [x]`), or rewrite the item
-as deferred with a follow-up issue ref. `forge-cli pr merge` (and the
-`pr deliver` merge step) also enforces this mechanically — merging with
-unchecked items fails closed with `unchecked_task_items`
-(sympoies/nils-cli#814, shipped in v1.0.17). The bypass pair
-`--allow-unchecked-tasks` + `--allow-unchecked-tasks-reason` records its
-reason in the merge payload; use it only after dispositioning the items is
-genuinely not possible, and repeat the reason in the delivery review outcome.
-Author `## Test plan` checklists in their final state — a checklist you do
-not intend to finish before merge belongs in a follow-up issue, not the
-description.
+If merge returns `review_convergence_activity_changed`, read `pr reviews`
+again, disposition the new current-head evidence, refresh the final owner
+outcome, and retry. For `review_changes_requested` or
+`review_snapshot_incomplete`, inspect `pr reviews` and stop until the native
+state is cleared or complete. For `unresolved_review_threads`, use
+`forge-cli pr review-threads list`, then repair, reply and resolve as accepted,
+or create a follow-up and resolve with its link per
+`core/policies/review-thread-convergence.md`. For `unchecked_task_items`, use
+`forge-cli pr tasks`, then finish/check the item or rewrite it as deferred with
+a follow-up ref. `review_convergence_head_changed` requires rebinding delivery
+evidence to the new head, then re-run validation and affected review lenses,
+read current-head summaries again, and post a new owner outcome before retrying.
+Timeout failures require a stable provider state before retry. Bypass flags
+remain exceptional and their rationale belongs in the delivery review outcome.
 
 For linked tracking or dispatch issues, run a pre-merge lifecycle audit before
 the merge. This is not closeout yet, because `record close` verifies the merged
@@ -350,41 +369,44 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 11. Repair concrete findings in this delivery workflow, then rerun validation,
    checks, and affected review lenses. Post each focused follow-up specialist
    review comment with the same bot-profile selection before continuing.
-12. Post the final combined delivery review outcome body produced by the
+12. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
+    semantically disposition every actionable current-head summary; stale-head
+    reviews are informational. When `summary_truncated` is true, obtain the full
+    review body and stop if it is unavailable. On GitLab, retain the outcome-note
+    path and do not invoke the unsupported snapshot. Do not implement a polling
+    or sleep loop in the workflow.
+13. Post the final combined delivery review outcome body produced by the
    generic review's pre-merge mode with `forge-cli pr review` (a native
    `APPROVE` / `REQUEST_CHANGES` review event via `--submit-review` on GitHub)
    before merge. Set `FORGE_BOT_PROFILE=dobi` for combined delivery-owner
    outcomes so they stay on `dobi-bot`; set a reviewer bot profile only for
    mapped specialist review comments.
-13. Sweep provider review threads immediately before merge with
-    `forge-cli pr review-threads` (see Entrypoint) — bot reviewers post
-    asynchronously, so this runs as the last gate, not only at creation.
-    Disposition every unresolved thread: repair, reply-and-resolve as
-    accepted, or convert to a follow-up issue. `pr merge` refuses
-    undispositioned threads (`unresolved_review_threads`); do not bypass with
-    `--allow-unresolved-threads` without recording the reason.
-14. In the same pass, sweep the description's task list with
-    `forge-cli pr tasks` (see Entrypoint). Disposition every unchecked
-    `- [ ]` item: check it off or rewrite it as deferred with a follow-up
-    ref. `pr merge` refuses unchecked items (`unchecked_task_items`); do not
-    bypass with `--allow-unchecked-tasks` without its required reason flag
-    and a matching note in the delivery review outcome.
-15. Before merge, if the PR/MR references a linked tracking or dispatch issue,
+14. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are
     present. If not, stop and route to the matching plan delivery workflow.
-16. Merge with `forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER"` unless
-    `--no-merge` is the requested final stop.
-17. After merge, if the body referenced a linked tracking or dispatch issue
+15. Merge with `forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER"` unless
+    `--no-merge` is the requested final stop. The CLI owns observed quiet
+    timing, complete/final native-review reads, native change requests,
+    thread/task gates, and head CAS. On
+    `review_convergence_activity_changed`, re-read `pr reviews`, disposition
+    the new evidence, refresh the final owner outcome, and retry. Route other
+    typed review/thread/task failures through the matching read surface and the
+    same repair/accept/follow-up discipline before retrying.
+    `review_convergence_head_changed` additionally requires delivery-evidence
+    rebinding, validation and affected-review reruns, and a new owner outcome on
+    the new head before retry.
+16. After merge, if the body referenced a linked tracking or dispatch issue
     and `--no-closeout` was not supplied, run `plan-issue record close` with
     the correct profile. On gate fail, leave the issue open with the blocked
     code surfaced by `plan-issue` and route to the matching closeout skill.
-18. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
+17. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
     commit, chained closeout result, and any fallback used in delivery notes.
 
 ## Boundary
 
-`forge-cli` owns provider create, checks/pipeline wait, ready, and merge calls.
+`forge-cli` owns provider create, checks/pipeline wait, ready, native-review
+convergence, thread/task enforcement, provider-head binding, and merge calls.
 `plan-issue record` owns linked issue lifecycle closeout. The workflow owner
 owns scope judgment, code changes, local validation, pre-merge gate decisions,
 repair loops, delivery outcome comments, and any temporary provider fallback

@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.21.19`, `review-specialists`.
+  `forge-cli >=1.21.34`, `review-specialists`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge mode and posts
@@ -55,12 +55,16 @@ Outputs:
   `COMMENT` per specialist lens (mapped reviewer bot profile) and one combined
   `APPROVE`/`REQUEST_CHANGES` outcome (`FORGE_BOT_PROFILE=dobi`), with a
   `--mirror-issue` breadcrumb to the tracking issue.
-- Pre-merge disposition of every review thread (`pr review-threads`) and
-  unchecked task item (`pr tasks`).
+- On GitHub, current-head native review summaries read through
+  `forge-cli pr reviews` and semantically dispositioned before the combined
+  owner outcome. GitLab retains the outcome-note flow because native snapshots
+  are GitHub-only in v1.
 - Delivery checkpoint: `tracking checkpoint --live --post state,review`, whose
   `review` role records the native review outcome URL and is posted before merge.
 - Per-task ledger sync through `plan-tooling ledger-update`.
-- `forge-cli pr merge` after the gate, sweeps, and review checkpoint pass.
+- `forge-cli pr merge` after semantic review and the issue-side review
+  checkpoint; the CLI owns convergence, thread/task enforcement, and head
+  binding.
 - Strict `tracking close-ready --expect-visible`, followed by
   `record close --profile tracking` only when readiness and approval are complete.
 - Post-close provider read-back plus `record audit --expect-visible`, followed
@@ -77,11 +81,13 @@ Failure modes:
   paths before retrying.
 - Stop on `ledger-rows-pending`; repair the named task rows with
   `plan-tooling ledger-update` before retrying the gate.
-- Stop when `pr merge` fails closed on `unresolved_review_threads` or
-  `unchecked_task_items`; disposition every thread and task item, then retry.
+- Stop when `pr merge` fails closed on review convergence, native change
+  requests, unresolved threads, unchecked tasks, or head drift. Read the
+  matching provider surface, disposition the evidence, update the owner
+  outcome/checkpoint when it changed, and only then retry.
 - Forbidden writes: dispatch-profile posts, raw lifecycle comments, raw
   `gh pr review` / `glab mr approve` for recorded review evidence, or merging before the review
-  gate, sweeps, and `review` checkpoint complete.
+  gate and `review` checkpoint complete.
 
 ## Outcome Routing
 
@@ -172,6 +178,8 @@ review-specialists scope --base "$BASE_REF" --testing --maintainability --format
 # COMMENT per lens with its reviewer bot profile as each lens returns, then the
 # combined APPROVE/REQUEST_CHANGES outcome as dobi.
 SUBMIT_REVIEW=(); [ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+REVIEW_CONVERGENCE_ARGS=()
+[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
 
 # Repeat this specialist block once for each returned lens: testing,
 # maintainability, plus any risk lens selected by generic pre-merge review.
@@ -198,6 +206,15 @@ FORGE_BOT_PROFILE="$REVIEW_BOT_PROFILE" forge-cli --provider "$PROVIDER" pr revi
   --lens "$REVIEW_LENS" \
   --issue "$ISSUE" --mirror-issue --format json
 
+# Read native review bodies after specialist posting and repair. Disposition
+# actionable current-head summaries before the combined owner outcome; stale
+# summaries are informational. When summary_truncated is true, retrieve the
+# full review body through provider read tooling and stop if it is unavailable.
+if [ "$PROVIDER" = github ]; then
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr reviews "$PR_NUMBER"
+fi
+
 FORGE_BOT_PROFILE=dobi forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision "$REVIEW_DECISION" \
@@ -205,10 +222,6 @@ FORGE_BOT_PROFILE=dobi forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --comment-file "$DELIVERY_REVIEW_OUTCOME" \
   --lens testing --lens maintainability \
   --issue "$ISSUE" --mirror-issue --format json
-
-# Disposition every review thread and task-list item before merge.
-forge-cli --provider "$PROVIDER" --format json pr review-threads list "$PR_NUMBER"
-forge-cli --provider "$PROVIDER" --format json pr tasks "$PR_NUMBER"
 
 # Record issue-side review evidence from the native outcome, then post the final
 # state + review checkpoint before merging.
@@ -231,8 +244,12 @@ plan-issue --format json tracking checkpoint \
   --post state,review \
   --repair-dashboard
 
-# Merge only after the gate, sweeps, and review checkpoint pass.
-forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash
+# Merge only after semantic disposition and the review checkpoint pass. The
+# CLI owns observed quiet timing, native change requests, thread/task gates,
+# and provider-head binding.
+forge-cli --provider "$PROVIDER" pr ready "$PR_NUMBER"
+forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash \
+  "${REVIEW_CONVERGENCE_ARGS[@]}"
 
 plan-issue --format json tracking close-ready \
   --provider-repo "$OWNER_REPO" \
@@ -267,22 +284,33 @@ plan-archive discover --source-repo "$PWD" --format json
 plan-archive migrate --plan "$PLAN_BUNDLE" --issue "$ISSUE_URL" --format json
 ```
 
-`forge-cli pr deliver --no-merge` creates, checks, and marks the PR ready without
-merging, leaving the window for the review gate; `forge-cli pr merge` performs the
-merge only after the gate, the thread/task sweeps, and the issue-side `review`
-checkpoint complete. When `LINKED_PR` already exists, adopt and verify it through
-`pr deliver` existing-PR adoption instead of re-creating it, and record the ref
-with `tracking run update --linked-pr`.
+`forge-cli pr deliver --no-merge` creates or adopts the draft and completes its
+check wait without merging, leaving the window for review. Inspect native
+summaries and post the owner outcome before the issue-side `review` checkpoint;
+then mark the PR ready and call `forge-cli pr merge`. The merge primitive owns
+the observed quiet window, complete/final native-review reads, native change
+requests, thread/task gates, and provider-head binding. When `LINKED_PR` already
+exists, adopt and verify it through `pr deliver` existing-PR adoption instead of
+re-creating it, and record the ref with `tracking run update --linked-pr`.
+Observed convergence is GitHub-only in v1, so GitLab merge calls explicitly pass
+`--review-convergence=false` to neutralize any user-global GitHub policy.
 
 Post one compact specialist review comment per lens as it returns — before any
 repair — using the mapped reviewer bot profile (`FORGE_BOT_PROFILE=dobi` for
 unmapped lenses), with `--thread-file "$REVIEW_THREAD_FILE"` for actionable GitHub
 findings; the combined delivery outcome posts last as `dobi`.
-The generic review outcome owns the read-only lenses and mode selection; this
-skill owns the provider writes, bot-profile resolution, sweeps, and merge, and
-reviewer subagents never post. `pr merge` fails closed on
-`unresolved_review_threads` / `unchecked_task_items`, so disposition every thread
-and task item first.
+On GitHub, read native summaries before the combined outcome; on GitLab, retain
+the outcome-note path and do not invoke the unsupported snapshot. A
+`summary_truncated` item requires the full review body before disposition; stop
+if it cannot be read. The generic review outcome owns the read-only lenses and
+mode selection; this
+skill owns the provider writes, bot-profile resolution, semantic disposition,
+checkpoint, and merge, and reviewer subagents never post. On
+`review_convergence_activity_changed`, read `forge-cli pr reviews` again,
+disposition the new evidence, refresh the final outcome/checkpoint, and retry.
+For `unresolved_review_threads` or `unchecked_task_items`, call the matching
+`pr review-threads list` or `pr tasks` read surface, disposition the returned
+items, and retry. Do not duplicate quiet-period polling in skill prose.
 
 Plan-tracking PRs are `--kind feature` records, so when the test-first gate is
 enabled (`[test_first].require = true` in a repo `.forge-cli.toml` or the
@@ -305,29 +333,35 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    `maintainability`; add risk lenses per scope). Post each lens's specialist
    review comment through `forge-cli pr review` as it returns (native `COMMENT`
    on GitHub via `--submit-review`, mapped reviewer bot profile; `--thread-file`
-   for actionable findings), then the combined delivery outcome (native
+   for actionable findings). After repairs, read `forge-cli pr reviews` and
+   disposition every actionable current-head summary; stale summaries are
+   informational. Then post the combined delivery outcome (native
    `APPROVE`/`REQUEST_CHANGES`, `FORGE_BOT_PROFILE=dobi`, `--mirror-issue`), per
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`. Every tracking PR runs the full gate —
    there is no single-author self-review shortcut. Repair concrete findings in
    this delivery branch and rerun affected lenses before continuing.
-5. **Pre-merge sweeps** — disposition every unresolved review thread
-   (`pr review-threads`, `unresolved==0`) and unchecked task item (`pr tasks`,
-   `unchecked==0`); `pr merge` fails closed otherwise.
-6. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked
+5. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked
    PR, review decision, lenses, and `--review-outcome-comment` (the native review
    event URL); add `--review-findings-file "$REVIEW_FINDINGS_JSON"` when findings
    exist; then post `state,review` in one live checkpoint. This issue-side
    `review` evidence is posted before merge.
-7. **Merge** — `forge-cli pr merge` once the gate, sweeps, and review checkpoint
-   pass.
-8. **Close-ready / closeout** — run `tracking close-ready --expect-visible`.
+6. **Merge** — mark the PR ready, then call `forge-cli pr merge` once semantic
+   review and the issue-side checkpoint pass. Let the CLI enforce convergence,
+   native state, threads, tasks, and head binding. On a typed failure, read and
+   disposition the matching evidence; `review_convergence_activity_changed`
+   requires a refreshed owner outcome/checkpoint before retry.
+   `review_convergence_head_changed` requires rebinding delivery evidence to
+   the new head, then re-run validation and affected review lenses, read the
+   current-head summaries, post a new owner outcome, and refresh the
+   validation/review checkpoint before retry.
+7. **Close-ready / closeout** — run `tracking close-ready --expect-visible`.
    Stop on every blocker. On `ready: true`, write the closing summary, perform
    only controller-authorized final-role/dashboard repair, and call `record
    close --profile tracking` with linked PR and approval evidence.
-9. **Closeout read-back** — fetch the closed provider issue with comments and
+8. **Closeout read-back** — fetch the closed provider issue with comments and
    run `record audit --profile tracking --expect-visible`; stop unless the
    closeout role is visible and lint-clean.
-10. **Archive maintenance** — only after closeout read-back succeeds, run
+9. **Archive maintenance** — only after closeout read-back succeeds, run
     `plan-archive discover`, then the default dry-run `plan-archive migrate`;
     apply only
     after explicit confirmation and a clean plan.
@@ -338,14 +372,15 @@ Owns:
 
 - Delivery-scope judgement, validation strength, review-gate orchestration and
   the provider review writes (per-lens specialist comments + the combined native
-  outcome), pre-merge thread/task disposition, final state/review checkpoint
-  timing, the merge, strict closeout, read-back, and archive routing.
+  outcome), native-summary disposition, typed merge-failure repair, final
+  state/review checkpoint timing, the merge, strict closeout, read-back, and
+  archive routing.
 
 Must not:
 
 - Use dispatch-profile semantics, let reviewer subagents post provider comments,
   close with any blocker, archive before close read-back, or merge before the
-  review gate, sweeps, and `review` checkpoint complete.
+  review gate and `review` checkpoint complete.
 
 Internal phases:
 

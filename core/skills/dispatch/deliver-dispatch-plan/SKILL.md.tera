@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `dispatch`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.21.19`.
+  `forge-cli >=1.21.34`.
 - The dispatch issue is either not opened yet, or the existing issue is
   the same shared plan being resumed by the orchestrator.
 - Dispatch `run-state.json` is either uninitialized or reconciled.
@@ -29,7 +29,7 @@ Inputs:
   `CLOSED_ISSUE_JSON`, and `CLOSED_ISSUE_BODY`.
 - `RUN_STATE` for the dispatch run.
 - Lane assignments with `TASK_ID` / sprint / PR group, `PLAN_BRANCH`,
-  exact task context, and the dispatch bundle
+  exact task context, `LANE_PR_NUMBER`, and the dispatch bundle
   (`TASK_PROMPT_PATH`, `PLAN_SNAPSHOT_PATH`, `DISPATCH_RECORD_PATH`).
 - Dispatch labels. GitHub uses `workflow::plan` plus
   `workflow::dispatch`; GitLab uses only `workflow::dispatch` plus bare
@@ -49,6 +49,10 @@ Outputs:
   dispatch --live --post state[,session[,validation[,review]]]`.
 - Final per-lane ledger repair through `plan-tooling ledger-update`.
 - Independent lane review and orchestrator-owned merge after approval.
+- On GitHub, current-head native review summaries inspected through
+  `forge-cli pr reviews` and semantically dispositioned before lane approval;
+  GitLab retains the outcome-note flow. The merge primitive owns observed
+  convergence and provider gate mechanics.
 - Strict `tracking close-ready --profile dispatch --expect-visible`, followed
   by `record close --profile dispatch` only when every lane and integration
   gate passes.
@@ -64,6 +68,10 @@ Failure modes:
   paths before retrying.
 - Stop on `ledger-rows-pending`; repair only the named task rows before
   retrying close-ready.
+- Stop on typed review-convergence, native change-request, thread/task, or head
+  gate failures. Read and disposition the matching evidence; on
+  `review_convergence_activity_changed`, refresh lane review approval before
+  retrying merge.
 - Forbidden writes: lane-scoped implementation posts by the orchestrator, lane
   review posts by lane executors, lightweight-tracking closeout rules, multiple
   shared issues for one dispatch plan, or raw lifecycle comments.
@@ -129,6 +137,27 @@ plan-tooling ledger-update \
   --status done \
   --evidence "$LANE_PR_1"
 
+# After independent lane review, inspect native review bodies once. Repair,
+# accept with rationale, or move actionable current-head feedback to a
+# follow-up before the lane approval/checkpoint is final. Stale reviews are
+# informational. When summary_truncated is true, retrieve the full review body
+# through provider read tooling and stop if it is unavailable. Do not poll for
+# absent observed bots.
+if [ "$PROVIDER" = github ]; then
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr reviews "$LANE_PR_NUMBER"
+fi
+
+# The orchestrator merges only after approval. forge-cli owns observed quiet
+# timing, native change requests, thread/task gates, and provider-head binding.
+REVIEW_CONVERGENCE_ARGS=()
+[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
+forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+  pr ready "$LANE_PR_NUMBER"
+forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+  pr merge "$LANE_PR_NUMBER" --allow-non-default-base \
+  "${REVIEW_CONVERGENCE_ARGS[@]}"
+
 plan-issue --format json tracking close-ready \
   --provider-repo "$OWNER_REPO" \
   --issue "$ISSUE" \
@@ -176,11 +205,23 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    validates, creates the plan-branch PR, posts lane state/session/validation,
    and stops ready for independent review.
 5. **Independent lane review** — a different reviewer runs the generic review
-   outcome with retained evidence, posts provider review activity, and writes
-   the lane review checkpoint. The lane executor never self-reviews.
+   outcome with retained evidence and posts provider review activity. On
+   GitHub, read `forge-cli pr reviews` and disposition actionable current-head
+   summaries; on GitLab, retain the outcome-note path. Then finalize lane
+   approval and the review checkpoint. The lane executor never self-reviews.
 6. **Orchestrator merge** — after approval and provider gates, the orchestrator
    merges the lane PR through `forge-cli pr merge
-   --allow-non-default-base`. A reviewer does not merge.
+   --allow-non-default-base`. The CLI owns observed convergence, native state,
+   threads/tasks, and head binding. On
+   `review_convergence_activity_changed`, re-read summaries and refresh lane
+   approval/checkpoint before retrying; other typed failures route to their
+   matching read/disposition path. Observed convergence is GitHub-only in v1,
+   so GitLab merge calls explicitly pass `--review-convergence=false` to
+   neutralize any user-global GitHub policy.
+   `review_convergence_head_changed` requires rebinding lane delivery evidence
+   to the new head, then re-run validation and affected review lenses, read the
+   current-head summaries, post a new owner outcome, and refresh lane
+   approval/checkpoint before retry. A reviewer does not merge.
 7. **Dispatch checkpoints** — post plan-level state/session/validation/review
    only when orchestration truth changes across lanes.
 8. **Ledger finalize branch** — before close-ready, patch any lane row not
@@ -199,7 +240,8 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
 Owns:
 
 - Plan-level orchestration, lane assignment, integration judgement,
-  dispatch dashboard freshness, approved lane integration, and strict closeout.
+  dispatch dashboard freshness, native-summary disposition, typed merge retry,
+  approved lane integration, and strict closeout.
 
 Must not:
 
