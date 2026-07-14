@@ -521,7 +521,7 @@ def main() -> int:
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
         "executable and complete session context. "
     )
-    if tool in COMMAND_TOOLS and len(repos) == 1:
+    if len(repos) == 1:
         activation, preflight = recovery_commands(
             repo_root=repos[0],
             executable=agent_docs_executable,

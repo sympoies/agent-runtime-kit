@@ -12,6 +12,7 @@ stays in `targets/<product>/`.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -21,11 +22,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import stat
 from collections.abc import Iterable, Mapping
 from pathlib import PurePosixPath
 from typing import Any
 
 ALLOW = 0
+# Contract stems may begin with `.terminal-`; only these exact filenames are
+# reserved for the cross-product terminal handshake.
+TERMINAL_OWNER_MARKER_NAMES = frozenset(
+    {".terminal-codex", ".terminal-claude", ".terminal-shared"}
+)
 
 
 def read_payload() -> dict[str, Any]:
@@ -52,6 +59,21 @@ def command_from(payload: Mapping[str, Any]) -> str:
         command = tool_input.get("command", "")
         return command if isinstance(command, str) else str(command)
     return ""
+
+
+def session_id_from_payload(payload: Mapping[str, Any]) -> str:
+    """Return the opaque runtime session identifier when the hook supplies one."""
+    for key in ("session_id", "sessionId", "session", "conversation_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def session_marker_key(payload: Mapping[str, Any]) -> str:
+    """Hash a hook session identifier for privacy-safe marker names."""
+    identity = session_id_from_payload(payload)
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest() if identity else ""
 
 
 def iter_text_values(value: Any) -> Iterable[str]:
@@ -291,7 +313,7 @@ def _runtime_product() -> str | None:
     return product if product in {"codex", "claude"} else None
 
 
-def validation_tombstone_dir(repo_root: str) -> str:
+def validation_tombstone_dir(repo_root: str, session_key: str = "") -> str:
     """Return shared runtime state for fail-closed validation attempts."""
     override = (
         os.environ.get("AGENT_RUNTIME_VALIDATION_STATE_HOME", "").strip()
@@ -307,7 +329,37 @@ def validation_tombstone_dir(repo_root: str) -> str:
             os.path.join(os.path.expanduser(xdg_state), "agent-runtime-kit")
         )
     repo_key = hashlib.sha256(os.path.realpath(repo_root).encode("utf-8")).hexdigest()
-    return os.path.join(state_root, "validation-outcomes", repo_key)
+    directory = os.path.join(state_root, "validation-outcomes", repo_key)
+    if session_key:
+        if re.fullmatch(r"[0-9a-f]{64}", session_key) is None:
+            raise ValueError("invalid validation session key")
+        directory = os.path.join(
+            directory, "sessions", f"session-{session_key}"
+        )
+    return directory
+
+
+def acquire_validation_state_lock(repo_root: str):
+    """Serialize validation state transitions for one repository."""
+    directory = validation_tombstone_dir(repo_root)
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, ".agent-runtime-validation.lock")
+    flags = os.O_RDWR | os.O_APPEND | os.O_CREAT
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise OSError("validation state lock is not a regular file")
+        handle = os.fdopen(descriptor, "a+", encoding="utf-8")
+        descriptor = -1
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        return handle
+    except Exception:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
 
 
 def _agent_docs_base_args(repo_root: str) -> list[str]:
@@ -544,16 +596,18 @@ def project_dev_validation_contract(repo_root: str) -> dict[str, Any] | None:
     return None
 
 
-def validation_marker_set(repo_root: str, marker: str) -> dict[str, str]:
+def validation_marker_set(
+    repo_root: str, marker: str, *, session_key: str = ""
+) -> dict[str, str]:
     """Derive marker file paths for a repo from the contract `marker`.
 
-    The dirty marker is shared across products so one product can notice code
-    edits made from another runtime. Per-command run markers are product-scoped
-    when the active runtime product is known, preventing one product's
-    validation command from satisfying another product's contract. Marker
-    paths must be repository-relative and their directory must remain beneath
-    the real repository root through every existing symlink component. Final
-    marker names are atomically replaced rather than followed.
+    Identified sessions receive an opaque session namespace. Within that
+    namespace the dirty marker remains shared across products, while command
+    outcome markers are also product-scoped. Payloads without a session keep
+    the legacy shared paths. Marker paths must be repository-relative and their
+    directory must remain beneath the real repository root through every
+    existing symlink component. Final marker names are atomically replaced
+    rather than followed.
     """
     rel = marker.strip()
     if not rel or os.path.isabs(rel):
@@ -581,16 +635,40 @@ def validation_marker_set(repo_root: str, marker: str) -> dict[str, str]:
     abs_dir = os.path.dirname(resolved_target)
     relative_identity = os.path.relpath(lexical_target, root).replace(os.sep, "/")
     contract_key = hashlib.sha256(relative_identity.encode("utf-8")).hexdigest()
+    if session_key and re.fullmatch(r"[0-9a-f]{64}", session_key) is None:
+        raise ValueError("invalid validation session key")
     product = _runtime_product()
-    command_stem = f"{stem}.{product}" if product else stem
+    target_stem = f"{stem}.{product}" if product else stem
+    command_stem = target_stem
+    marker_dir = abs_dir
+    if session_key:
+        marker_dir = os.path.join(abs_dir, f"session-{session_key}")
+        if os.path.lexists(marker_dir):
+            metadata = os.lstat(marker_dir)
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(
+                metadata.st_mode
+            ):
+                raise ValueError("unsafe validation session directory")
+            try:
+                if os.path.commonpath((root, os.path.realpath(marker_dir))) != root:
+                    raise ValueError("validation session directory escapes repository")
+            except ValueError as error:
+                raise ValueError("unsafe validation session directory") from error
     return {
-        "dir": abs_dir,
+        "dir": marker_dir,
+        "lock_dir": abs_dir,
         "ok": resolved_target,
-        "dirty": os.path.join(abs_dir, f"{stem}.dirty"),
+        "dirty": os.path.join(marker_dir, f"{stem}.dirty"),
+        "legacy_dirty": os.path.join(abs_dir, f"{stem}.dirty"),
+        "terminal": os.path.join(
+            marker_dir, f".terminal-{product or 'shared'}"
+        ),
         "stem": stem,
         "command_stem": command_stem,
+        "target_stem": target_stem,
         "contract_key": contract_key,
         "product": product or "shared",
+        "session_key": session_key,
     }
 
 
@@ -605,7 +683,7 @@ def validation_command_target_key(
     """Stable logical identity for one product-scoped declared command."""
     identity = (
         f"{marker_set['contract_key']}\0"
-        f"{marker_set.get('command_stem') or marker_set['stem']}\0"
+        f"{marker_set.get('target_stem') or marker_set['stem']}\0"
         f"{index}\0{declared.strip()}"
     )
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()

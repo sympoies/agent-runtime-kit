@@ -1921,6 +1921,1174 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_finish_line_dirty_state_is_scoped_per_session(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = "editing-session"
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, read_only_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "read-only-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(read_only_decision)
+
+            code, editing_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "editing-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(editing_decision, "scripts/ci/all.sh")
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = "editing-session"
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, editing_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "editing-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(editing_decision)
+
+    def test_finish_line_completed_session_state_is_cleaned(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            session_id = "completed-session"
+
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            marker_dir = repo / ".cache" / "agent-validation"
+            session_dir = marker_dir / f"session-{session_key}"
+            self.assertTrue(session_dir.is_dir())
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_completed_cross_product_session_state_is_cleaned(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            session_id = "cross-product-session"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            marker_dir = repo / ".cache" / "agent-validation"
+            session_dir = marker_dir / f"session-{session_key}"
+
+            for product in ("codex", "claude"):
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                }
+                edit = write_payload(f"src/{product}.rs", f"fn {product}() {{}}\n")
+                edit["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py", edit, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+
+            for product in ("codex", "claude"):
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                }
+                validation = command_payload("bash scripts/ci/all.sh")
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py", validation, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+
+            codex_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=codex_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue(session_dir.is_dir())
+
+            claude_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "claude",
+            }
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=claude_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_edit_invalidates_cross_product_terminal_state(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            session_id = "cross-product-edit-after-terminal"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            session_dir = (
+                repo
+                / ".cache"
+                / "agent-validation"
+                / f"session-{session_key}"
+            )
+            codex_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            claude_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "claude",
+            }
+
+            edit = write_payload("src/lib.rs", "fn first() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=codex_env
+            )
+            self.assertEqual(code, 0, stderr)
+            for env in (codex_env, claude_env):
+                validation = command_payload("bash scripts/ci/all.sh")
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py", validation, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=codex_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            codex_terminal = session_dir / ".terminal-codex"
+            self.assertTrue(codex_terminal.is_file())
+
+            edit = write_payload("src/lib.rs", "fn second() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=claude_env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertFalse(codex_terminal.exists())
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=claude_env
+            )
+            self.assertEqual(code, 0, stderr)
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=claude_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue(session_dir.is_dir())
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=codex_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=codex_env
+            )
+            self.assertEqual(code, 0, stderr)
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=codex_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_attempt_invalidates_product_terminal_state(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            script = repo / "scripts" / "ci" / "all.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            script.chmod(0o755)
+            session_id = "cross-product-attempt-after-terminal"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            session_dir = (
+                repo
+                / ".cache"
+                / "agent-validation"
+                / f"session-{session_key}"
+            )
+            codex_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            claude_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "claude",
+            }
+
+            edit = write_payload("src/lib.rs", "fn first() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=codex_env
+            )
+            self.assertEqual(code, 0, stderr)
+            for env in (codex_env, claude_env):
+                validation = command_payload("bash scripts/ci/all.sh")
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py", validation, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=codex_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            codex_terminal = session_dir / ".terminal-codex"
+            self.assertTrue(codex_terminal.is_file())
+
+            validation = command_event_payload(
+                "PreToolUse",
+                "bash scripts/ci/all.sh",
+                tool_use_id="codex-after-terminal",
+            )
+            validation["session_id"] = session_id
+            code, rewrite, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=codex_env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(rewrite)
+            assert rewrite is not None
+            hook_output = rewrite.get("hookSpecificOutput")
+            self.assertIsInstance(hook_output, dict)
+            assert isinstance(hook_output, dict)
+            updated_input = hook_output.get("updatedInput")
+            self.assertIsInstance(updated_input, dict)
+            assert isinstance(updated_input, dict)
+            wrapped = str(updated_input.get("command", ""))
+            self.assertFalse(codex_terminal.exists())
+            pending = list(session_dir.glob("project-dev.codex.pending.*.json"))
+            self.assertEqual(len(pending), 1)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=claude_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue(session_dir.is_dir())
+            self.assertTrue(pending[0].is_file())
+
+            completed = subprocess.run(
+                ["bash", "-lc", wrapped],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(pending[0].exists())
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=codex_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_contract_stem_product_tokens_do_not_confuse_ownership(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        cases = (
+            ("codex", "codex", "claude"),
+            ("claude", "claude", "codex"),
+            ("shared", "codex", "claude"),
+        )
+        for token, newer_product, stale_product in cases:
+            with self.subTest(token=token), tempfile.TemporaryDirectory() as tmp:
+                marker = f".cache/agent-validation/foo.{token}.bar.ok"
+                repo = self._init_contract_repo(tmp, marker=marker)
+                session_id = f"contract-stem-{token}-product-token"
+                session_key = hashlib.sha256(
+                    session_id.encode("utf-8")
+                ).hexdigest()
+                session_dir = (
+                    repo
+                    / ".cache"
+                    / "agent-validation"
+                    / f"session-{session_key}"
+                )
+                envs = {
+                    product: {
+                        "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                        "AGENT_RUNTIME_PRODUCT": product,
+                    }
+                    for product in ("codex", "claude")
+                }
+
+                edit = write_payload("src/lib.rs", "fn first() {}\n")
+                edit["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py",
+                    edit,
+                    cwd=repo,
+                    env=envs[newer_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                for product in ("codex", "claude"):
+                    validation = command_payload("bash scripts/ci/all.sh")
+                    validation["session_id"] = session_id
+                    code, _, stderr = run_hook(
+                        "finish-line-record.py",
+                        validation,
+                        cwd=repo,
+                        env=envs[product],
+                    )
+                    self.assertEqual(code, 0, stderr)
+
+                code, decision, stderr = run_hook(
+                    "stop-finish-line-gate.py",
+                    {"session_id": session_id},
+                    cwd=repo,
+                    env=envs[newer_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                self.assertTrue(session_dir.is_dir())
+
+                edit = write_payload("src/lib.rs", "fn second() {}\n")
+                edit["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py",
+                    edit,
+                    cwd=repo,
+                    env=envs[newer_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                validation = command_payload("bash scripts/ci/all.sh")
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py",
+                    validation,
+                    cwd=repo,
+                    env=envs[newer_product],
+                )
+                self.assertEqual(code, 0, stderr)
+
+                code, decision, stderr = run_hook(
+                    "stop-finish-line-gate.py",
+                    {"session_id": session_id},
+                    cwd=repo,
+                    env=envs[newer_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                self.assertTrue(session_dir.is_dir())
+
+                code, decision, stderr = run_hook(
+                    "stop-finish-line-gate.py",
+                    {"session_id": session_id},
+                    cwd=repo,
+                    env=envs[stale_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "scripts/ci/all.sh")
+
+                validation = command_payload("bash scripts/ci/all.sh")
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py",
+                    validation,
+                    cwd=repo,
+                    env=envs[stale_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                code, decision, stderr = run_hook(
+                    "stop-finish-line-gate.py",
+                    {"session_id": session_id},
+                    cwd=repo,
+                    env=envs[stale_product],
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                self.assertFalse(session_dir.exists())
+
+    def test_finish_line_reserved_terminal_prefix_contract_state_is_preserved(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = ".cache/agent-validation/.terminal-codex.ok"
+            repo = self._init_contract_repo(tmp, marker=marker)
+            session_id = "reserved-terminal-prefix-contract"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            session_dir = (
+                repo
+                / ".cache"
+                / "agent-validation"
+                / f"session-{session_key}"
+            )
+            envs = {
+                product: {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                }
+                for product in ("codex", "claude")
+            }
+
+            edit = write_payload("src/lib.rs", "fn first() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=envs["codex"]
+            )
+            self.assertEqual(code, 0, stderr)
+            for product in ("codex", "claude"):
+                validation = command_payload("bash scripts/ci/all.sh")
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py",
+                    validation,
+                    cwd=repo,
+                    env=envs[product],
+                )
+                self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["codex"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue((session_dir / ".terminal-codex").is_file())
+
+            edit = write_payload("src/lib.rs", "fn second() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=envs["codex"]
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue((session_dir / ".terminal-codex.dirty").is_file())
+            self.assertTrue(
+                (session_dir / ".terminal-codex.claude.cmd0.ran").is_file()
+            )
+            self.assertFalse((session_dir / ".terminal-codex").exists())
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                validation,
+                cwd=repo,
+                env=envs["codex"],
+            )
+            self.assertEqual(code, 0, stderr)
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["codex"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue(session_dir.is_dir())
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                validation,
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_unknown_terminal_prefix_entry_is_retained(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            session_id = "unknown-terminal-prefix-entry"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            session_dir = (
+                repo
+                / ".cache"
+                / "agent-validation"
+                / f"session-{session_key}"
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            unknown = session_dir / ".terminal-unknown"
+            unknown.touch()
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue(session_dir.is_dir())
+            self.assertTrue(unknown.is_file())
+
+    def test_finish_line_overlapping_contract_stems_preserve_foreign_owner(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            (repo / "AGENT_DOCS.toml").write_text(
+                "[[validation]]\n"
+                'context = "project-dev"\n'
+                'commands = ["bash scripts/ci/primary.sh"]\n'
+                'marker = ".cache/agent-validation/foo.ok"\n\n'
+                "[[validation]]\n"
+                'context = "project-dev-secondary"\n'
+                'commands = ["bash scripts/ci/secondary.sh"]\n'
+                'marker = ".cache/agent-validation/foo.codex.ok"\n',
+                encoding="utf-8",
+            )
+            session_id = "overlapping-contract-stems"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            session_dir = (
+                repo
+                / ".cache"
+                / "agent-validation"
+                / f"session-{session_key}"
+            )
+            envs = {
+                product: {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                }
+                for product in ("codex", "claude")
+            }
+
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=envs["codex"]
+            )
+            self.assertEqual(code, 0, stderr)
+            for command in (
+                "bash scripts/ci/primary.sh",
+                "bash scripts/ci/secondary.sh",
+            ):
+                validation = command_payload(command)
+                validation["session_id"] = session_id
+                code, _, stderr = run_hook(
+                    "finish-line-record.py",
+                    validation,
+                    cwd=repo,
+                    env=envs["codex"],
+                )
+                self.assertEqual(code, 0, stderr)
+            validation = command_payload("bash scripts/ci/secondary.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                validation,
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(
+                (session_dir / "foo.codex.claude.cmd0.ran").is_file()
+            )
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["codex"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertTrue(session_dir.is_dir())
+            self.assertTrue(
+                (session_dir / "foo.codex.claude.cmd0.ran").is_file()
+            )
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "bash scripts/ci/primary.sh")
+
+            validation = command_payload("bash scripts/ci/primary.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                validation,
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=envs["claude"],
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_cleanup_preserves_a_newer_dirty_generation(self) -> None:
+        import importlib.util
+
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            session_id = "cleanup-race-session"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            marker_dir = repo / ".cache" / "agent-validation"
+            session_dir = marker_dir / f"session-{session_key}"
+
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(session_dir.is_dir())
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            dirty = session_dir / "project-dev.dirty"
+            spec = importlib.util.spec_from_file_location(
+                "stop_finish_line_gate_cleanup",
+                HOOK_DIR / "stop-finish-line-gate.py",
+            )
+            self.assertIsNotNone(spec)
+            assert spec is not None and spec.loader is not None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            markers = {
+                "dir": str(session_dir),
+                "dirty": str(dirty),
+                "legacy_dirty": str(
+                    marker_dir / "project-dev.dirty"
+                ),
+                "command_stem": "project-dev.codex",
+                "product": "codex",
+                "session_key": session_key,
+            }
+            states = [(markers, False)]
+            snapshot = module.completed_state_snapshot(states)
+            self.assertIsNotNone(snapshot)
+            assert snapshot is not None
+
+            newer_generation = time.time_ns()
+            os.utime(dirty, ns=(newer_generation, newer_generation))
+            self.assertFalse(
+                module.cleanup_completed_session_state(
+                    states, expected_snapshot=snapshot
+                )
+            )
+            self.assertTrue(dirty.is_file())
+
+    def test_finish_line_completed_shared_directory_contracts_are_cleaned(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            (repo / "AGENT_DOCS.toml").write_text(
+                "[[validation]]\n"
+                'context = "project-dev"\n'
+                'commands = ["bash scripts/ci/all.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n\n'
+                "[[validation]]\n"
+                'context = "project-dev-secondary"\n'
+                'commands = ["bash scripts/ci/all.sh"]\n'
+                'marker = ".cache/agent-validation/secondary.ok"\n',
+                encoding="utf-8",
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            session_id = "shared-directory-contracts"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            session_dir = (
+                repo
+                / ".cache"
+                / "agent-validation"
+                / f"session-{session_key}"
+            )
+
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(session_dir.is_dir())
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = session_id
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": session_id},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_legacy_dirty_requires_transition_validation(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/legacy.rs", "fn legacy() {}\n"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            code, read_only_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "post-upgrade-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+
+            self.assert_blocked(read_only_decision, "scripts/ci/all.sh")
+
+            validation = command_payload("bash scripts/ci/all.sh")
+            validation["session_id"] = "post-upgrade-session"
+            code, _, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, upgraded_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "post-upgrade-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(upgraded_decision)
+
+            code, fresh_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "fresh-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(fresh_decision)
+
+            code, legacy_decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(legacy_decision)
+
+    def test_finish_line_failure_tombstone_is_scoped_per_session(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_path = root / "repo"
+            repo_path.mkdir()
+            command = "bash scripts/validate.sh"
+            repo = self._init_contract_repo(str(repo_path), (command,))
+            script = repo / "scripts" / "validate.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                "#!/usr/bin/env bash\n"
+                "rm -rf .cache/agent-validation\n"
+                "mkdir -p .cache/agent-validation\n"
+                "chmod 0555 .cache/agent-validation\n"
+                "exit 17\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "claude",
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+            }
+
+            validation = command_event_payload(
+                "PreToolUse", command, tool_use_id="session-failure"
+            )
+            validation["session_id"] = "failing-session"
+            code, rewrite, stderr = run_hook(
+                "finish-line-record.py", validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert rewrite is not None
+            output = rewrite["hookSpecificOutput"]
+            assert isinstance(output, dict)
+            updated_input = output["updatedInput"]
+            assert isinstance(updated_input, dict)
+            completed = subprocess.run(
+                ["bash", "-lc", str(updated_input["command"])],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 17)
+
+            repo_key = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()
+            failing_key = hashlib.sha256(
+                "failing-session".encode("utf-8")
+            ).hexdigest()
+            tombstone_dir = (
+                root
+                / "runtime-state"
+                / "validation-outcomes"
+                / repo_key
+                / "sessions"
+                / f"session-{failing_key}"
+            )
+            self.assertEqual(len(list(tombstone_dir.glob("attempt-*.json"))), 1)
+
+            code, read_only_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "read-only-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(read_only_decision)
+
+            code, failing_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "failing-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(failing_decision, "failed with exit code 17")
+            (repo / ".cache" / "agent-validation").chmod(0o755)
+
+            script.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            successful_validation = command_event_payload(
+                "PreToolUse", command, tool_use_id="session-success"
+            )
+            successful_validation["session_id"] = "successful-session"
+            code, rewrite, stderr = run_hook(
+                "finish-line-record.py", successful_validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert rewrite is not None
+            output = rewrite["hookSpecificOutput"]
+            assert isinstance(output, dict)
+            updated_input = output["updatedInput"]
+            assert isinstance(updated_input, dict)
+            completed = subprocess.run(
+                ["bash", "-lc", str(updated_input["command"])],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0)
+
+            code, successful_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "successful-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(successful_decision)
+
+            code, failing_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "failing-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(failing_decision, "failed with exit code 17")
+
+            script.write_text(
+                "#!/usr/bin/env bash\n"
+                "rm -rf .cache/agent-validation\n"
+                "mkdir -p .cache/agent-validation\n"
+                "chmod 0555 .cache/agent-validation\n"
+                "exit 17\n",
+                encoding="utf-8",
+            )
+
+            legacy_validation = command_event_payload(
+                "PreToolUse", command, tool_use_id="legacy-failure"
+            )
+            code, rewrite, stderr = run_hook(
+                "finish-line-record.py", legacy_validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert rewrite is not None
+            output = rewrite["hookSpecificOutput"]
+            assert isinstance(output, dict)
+            updated_input = output["updatedInput"]
+            assert isinstance(updated_input, dict)
+            completed = subprocess.run(
+                ["bash", "-lc", str(updated_input["command"])],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 17)
+
+            code, read_only_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "post-upgrade-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(read_only_decision, command)
+
+            (repo / ".cache" / "agent-validation").chmod(0o755)
+            failed_transition = command_event_payload(
+                "PreToolUse", command, tool_use_id="upgraded-failure"
+            )
+            failed_transition["session_id"] = "post-upgrade-session"
+            code, rewrite, stderr = run_hook(
+                "finish-line-record.py", failed_transition, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert rewrite is not None
+            output = rewrite["hookSpecificOutput"]
+            assert isinstance(output, dict)
+            updated_input = output["updatedInput"]
+            assert isinstance(updated_input, dict)
+
+            code, pending_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "fresh-during-transition"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(pending_decision, command)
+
+            completed = subprocess.run(
+                ["bash", "-lc", str(updated_input["command"])],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 17)
+
+            code, upgraded_failure_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "post-upgrade-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(upgraded_failure_decision, command)
+            code, fresh_failure_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "fresh-after-transition-failure"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(fresh_failure_decision, command)
+
+            (repo / ".cache" / "agent-validation").chmod(0o755)
+            script.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            upgraded_validation = command_event_payload(
+                "PreToolUse", command, tool_use_id="upgraded-success"
+            )
+            upgraded_validation["session_id"] = "post-upgrade-session"
+            code, rewrite, stderr = run_hook(
+                "finish-line-record.py", upgraded_validation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert rewrite is not None
+            output = rewrite["hookSpecificOutput"]
+            assert isinstance(output, dict)
+            updated_input = output["updatedInput"]
+            assert isinstance(updated_input, dict)
+            completed = subprocess.run(
+                ["bash", "-lc", str(updated_input["command"])],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0)
+
+            code, upgraded_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "post-upgrade-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(upgraded_decision)
+
+            code, fresh_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "fresh-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(fresh_decision)
+
+            code, legacy_decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(legacy_decision)
+
     def test_finish_line_gate_uses_completed_status_and_routes_failed_validation(
         self,
     ) -> None:
@@ -3111,7 +4279,7 @@ class SharedHookTests(unittest.TestCase):
             failed = marker_dir / "project-dev.cmd0.failed.json"
             repo_key = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()
             tombstone_dir = state_home / "validation-outcomes" / repo_key
-            tombstone_dir.mkdir(parents=True)
+            tombstone_dir.mkdir(parents=True, exist_ok=True)
             started = time.time_ns() - 10_000
             contract_key = hashlib.sha256(
                 b".cache/agent-validation/project-dev.ok"
@@ -3192,9 +4360,12 @@ class SharedHookTests(unittest.TestCase):
 
             marker_a = repo / ".cache" / "a"
             dirty_a = marker_a / "project-dev.dirty"
+            terminal_a = marker_a / ".terminal-shared"
+            terminal_a.touch()
+            terminal_mtime = terminal_a.stat().st_mtime_ns
             repo_key = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()
             tombstone_dir = state_home / "validation-outcomes" / repo_key
-            tombstone_dir.mkdir(parents=True)
+            tombstone_dir.mkdir(parents=True, exist_ok=True)
             old = tombstone_dir / f"attempt-{'a' * 32}.json"
             contract_key = hashlib.sha256(b".cache/a/project-dev.ok").hexdigest()
             target_key = hashlib.sha256(
@@ -3260,6 +4431,8 @@ class SharedHookTests(unittest.TestCase):
                 {path.name for path in marker_a.glob("*.pending.*.json")},
                 before_pending,
             )
+            self.assertTrue(terminal_a.is_file())
+            self.assertEqual(terminal_a.stat().st_mtime_ns, terminal_mtime)
 
     def test_finish_line_multi_contract_edit_registration_is_transactional(
         self,
@@ -4008,6 +5181,35 @@ class SharedHookTests(unittest.TestCase):
 
     def test_finish_line_derived_marker_symlinks_fail_closed(self) -> None:
         self._require_agent_docs()
+
+        with self.subTest(marker="session-directory"), tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_path = root / "repo"
+            repo_path.mkdir()
+            repo = self._init_contract_repo(str(repo_path))
+            marker_dir = repo / ".cache" / "agent-validation"
+            marker_dir.mkdir(parents=True)
+            victim = root / "victim"
+            victim.mkdir()
+            session_id = "symlinked-session-directory"
+            session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            (marker_dir / f"session-{session_key}").symlink_to(
+                victim, target_is_directory=True
+            )
+            base_env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            edit = write_payload("src/lib.rs", "fn main() {}\n")
+            edit["session_id"] = session_id
+
+            _, decision, _ = run_hook(
+                "finish-line-record.py", edit, cwd=repo, env=base_env
+            )
+            self.assert_blocked(
+                decision, "could not register validation dirty state"
+            )
+            self.assertEqual(list(victim.iterdir()), [])
 
         with self.subTest(marker="dirty"), tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
@@ -5552,7 +6754,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "project-dev")
-            self.assertNotIn(str(repo), str(decision))
+            self.assertIn("session activate", str(decision))
+            self.assertIn("preflight --intent project-dev", str(decision))
+            self.assertIn(str(repo), str(decision))
 
     def test_pre_edit_intent_gate_rejects_repo_local_agent_docs_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5781,6 +6985,18 @@ exit 64
             reason = str(decision.get("reason", ""))
             self.assertIn(activation, reason)
             self.assertIn(preflight, reason)
+
+            direct_edit = write_payload("src/lib.rs", "fn main() {}\n")
+            direct_edit["session_id"] = "intent-recovery"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", direct_edit, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            assert decision is not None
+            direct_reason = str(decision.get("reason", ""))
+            self.assertIn(activation, direct_reason)
+            self.assertIn(preflight, direct_reason)
 
             payload = command_payload(activation)
             payload["session_id"] = "intent-recovery"

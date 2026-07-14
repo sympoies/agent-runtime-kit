@@ -30,16 +30,42 @@ Code-edit hooks are also fail-closed before the edit starts when shared dirty
 state cannot be registered, preventing an unwritable marker directory from
 hiding a later real edit. Multi-contract edits acquire every marker-directory
 lock in stable order and roll back provisional markers if any write fails;
-generation checks preserve a newer marker from a concurrent edit.
-Tombstones use a stable lexical contract identity plus product-scoped target
-keys that include the declared command. A newer attempt reduces only the exact
-matching targets; removed, replaced, or reordered commands become an explicit
-contract-change blocker. Each tombstone also retains the original shared edit
-generation (or an explicit no-edit value), so another product sees a real edit
-without inheriting its failure or being invalidated by retries for the same
-edit. Unmatched contract state remains scoped to its owning product. Each
-product can therefore release its own commands with newer success evidence
-while another product's unresolved failure remains blocked.
+generation checks preserve a newer marker from a concurrent edit. A
+repo-scoped runtime-state lock serializes edit, validation-outcome, Stop, and
+terminal-cleanup transitions; cleanup also compares the exact satisfied state
+snapshot after taking the local namespace lock and fails closed on change.
+Tombstones use a stable lexical contract identity plus target keys that include
+the product and declared command. When the hook payload identifies a runtime
+session, dirty markers, command outcomes, and tombstones live in directly
+addressable namespaces keyed by an opaque hash of that session identifier, so
+unrelated retained state is not scanned on the current session's hot path. An
+editing session still
+shares its dirty generation across products, but unrelated and newly started
+sessions do not inherit its outstanding session-scoped work. Unresolved
+pre-upgrade legacy state remains transitional authority until an identified
+session completes a newer successful validation. Pending or failed transition
+attempts retain the legacy authority; success clears it or suppresses it with
+the shared success marker. Payloads without a session
+identifier retain the legacy shared marker contract. A newer attempt reduces
+only its exact session and command targets, plus matching legacy targets during
+that transition; it cannot clear another identified session's state.
+Successful Stop retires the completed session's repo-local marker namespace.
+When products share a session, terminal product markers let the last successful
+product retire the whole namespace. Any later shared edit invalidates every
+product's terminal marker, and a new validation attempt invalidates its active
+product's terminal marker until the attempt completes. Cleanup also rejects a
+foreign terminal generation older than the current dirty generation; any
+foreign evidence owner is parsed from its complete contract stem and structured
+product suffix, with unknown or ambiguous names retained fail-closed. Any
+unresolved product therefore keeps the namespace fail-closed. Removed,
+replaced, or reordered commands become an explicit contract-change blocker.
+Only the exact internal names `.terminal-codex`, `.terminal-claude`, and
+`.terminal-shared` are terminal metadata; validation contract stems may safely
+begin with `.terminal-` or overlap another contract stem.
+Each tombstone also retains the original edit generation (or an explicit
+no-edit value), so another product in the same session sees a real edit without
+inheriting its failure or being invalidated by retries for the same edit.
+Unmatched contract state remains scoped to its owning product.
 Marker paths and their derived state directory must remain beneath the real
 repository root; atomic marker writes do not follow final symlinks, and marker
 ordering accepts only non-symlink regular files.
@@ -57,7 +83,10 @@ injecting their runbooks. `pre-edit-intent-gate.py` then verifies
 `project-dev` for every canonical target repository before direct edits. Bash
 is gated against its working repository because a pre-tool payload cannot
 reliably expose shell-expanded destinations; cross-repository shell mutations
-must run with each target repository as CWD. Only a successfully probed,
+must run with each target repository as CWD. When verification blocks a
+single-repository edit or shell mutation, the reason includes complete,
+copyable `session activate` and `preflight` commands with the trusted executable
+and session context. Only a successfully probed,
 explicitly versioned pre-session `agent-docs` release retains compatibility
 behavior; a missing, timed-out, crashed, malformed, or on-floor binary without
 the session surface fails closed. Before any probe, the hooks require the

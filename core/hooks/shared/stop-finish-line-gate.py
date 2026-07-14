@@ -3,11 +3,12 @@
 not run since.
 
 Reads the repo's declared validation contracts (commands + marker) via
-agent-docs. When any `<stem>.dirty` marker (written by finish-line-record.py on
-a code edit) is newer than a per-command `<stem>[.<product>].cmd<i>.ran` marker,
-or when the latest completed result is failed, the stop is blocked with the
-outstanding commands. Shared runtime tombstones keep an attempt outstanding
-when its repo-local state becomes unwritable. A waiver requires one
+agent-docs. Identified hook sessions use directly addressable, opaque
+session-scoped dirty, command, and recovery state, so an unrelated read-only
+session is not charged for an edit or failure it did not create. Payloads
+without a session identifier retain
+the legacy shared-marker contract. Shared runtime tombstones keep an attempt
+outstanding when its repo-local state becomes unwritable. A waiver requires one
 discovered-defect routing review before release; a host suppress env releases
 immediately.
 
@@ -18,6 +19,7 @@ for both Claude and Codex.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -31,12 +33,15 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    TERMINAL_OWNER_MARKER_NAMES,
+    acquire_validation_state_lock,
     command_failed_marker,
     command_ran_marker,
     emit_block,
     git_toplevel,
     read_payload,
     routing_review_marker,
+    session_marker_key,
     touch_marker,
     validation_command_target_key,
     validation_contracts,
@@ -57,6 +62,10 @@ WAIVER_ENVS = (
 PENDING_SCHEMA = "agent-runtime-validation.pending.v1"
 TOMBSTONE_SCHEMA = "agent-runtime-validation.tombstone.v1"
 TOMBSTONE_MAX_BYTES = 64 * 1024
+SESSION_PRODUCTS = ("codex", "claude", "shared")
+SESSION_COMMAND_STATE_SUFFIX = re.compile(
+    r"(?:cmd[0-9]+\.(?:ran|failed\.json)|pending\.[0-9a-f]+\.json|routing-reviewed)"
+)
 
 
 def env_enabled(names: Iterable[str]) -> bool:
@@ -77,16 +86,239 @@ def regular_file_mtime(path: str) -> float | None:
     return metadata.st_mtime
 
 
-def external_tombstones(
-    repo_root: str,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    directory = validation_tombstone_dir(repo_root)
+def session_state_is_active(
+    state_session_key: str | None, active_session_key: str
+) -> bool:
+    """Legacy state remains transitional authority for identified sessions."""
+    if active_session_key:
+        return state_session_key in {None, active_session_key}
+    return state_session_key is None
+
+
+def completed_state_snapshot(
+    states: list[tuple[dict[str, str], bool]],
+) -> tuple[tuple[Any, ...], ...] | None:
+    """Capture the exact terminal generation that cleanup may retire."""
+    directory = states[0][0]["dir"]
+    snapshot: list[tuple[Any, ...]] = []
     try:
-        entries = list(os.scandir(directory))
-    except FileNotFoundError:
-        return [], []
+        for entry in os.scandir(directory):
+            if entry.name == ".agent-runtime-validation.lock":
+                continue
+            metadata = entry.stat(follow_symlinks=False)
+            snapshot.append(
+                (
+                    "session",
+                    entry.name,
+                    metadata.st_mode,
+                    metadata.st_dev,
+                    metadata.st_ino,
+                    metadata.st_size,
+                    metadata.st_mtime_ns,
+                )
+            )
+        legacy_paths = {
+            markers["legacy_dirty"]
+            for markers, remove_legacy in states
+            if remove_legacy
+        }
+        for path in sorted(legacy_paths):
+            try:
+                metadata = os.stat(path, follow_symlinks=False)
+            except FileNotFoundError:
+                snapshot.append(("legacy", path, "missing"))
+                continue
+            snapshot.append(
+                (
+                    "legacy",
+                    path,
+                    metadata.st_mode,
+                    metadata.st_dev,
+                    metadata.st_ino,
+                    metadata.st_size,
+                    metadata.st_mtime_ns,
+                )
+            )
     except OSError:
-        return [], [directory]
+        return None
+    return tuple(sorted(snapshot, key=repr))
+
+
+def session_command_state_owners(
+    entry_name: str, contract_stems: set[str]
+) -> set[tuple[str, str]]:
+    """Return complete contract/product identities for structured state."""
+    owners: set[tuple[str, str]] = set()
+    for stem in contract_stems:
+        for product in SESSION_PRODUCTS:
+            prefix = f"{stem}.{product}."
+            if not entry_name.startswith(prefix):
+                continue
+            suffix = entry_name[len(prefix) :]
+            if SESSION_COMMAND_STATE_SUFFIX.fullmatch(suffix):
+                owners.add((stem, product))
+    return owners
+
+
+def cleanup_completed_session_state(
+    states: list[tuple[dict[str, str], bool]],
+    *,
+    expected_snapshot: tuple[tuple[Any, ...], ...],
+) -> bool:
+    """Atomically retire all terminal owners in one session directory."""
+    markers = states[0][0]
+    if not markers.get("session_key"):
+        return True
+    directory = markers["dir"]
+    lock_path = os.path.join(directory, ".agent-runtime-validation.lock")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    remove_directory = False
+    try:
+        descriptor = os.open(lock_path, flags, 0o600)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            return False
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        if completed_state_snapshot(states) != expected_snapshot:
+            return False
+
+        entries = list(os.scandir(directory))
+        dirty_names = {os.path.basename(item[0]["dirty"]) for item in states}
+        contract_stems = {item[0]["stem"] for item in states}
+        products = {item[0]["product"] for item in states}
+
+        foreign_products: set[str] = set()
+        unknown_foreign = False
+        for entry in entries:
+            if (
+                entry.name == ".agent-runtime-validation.lock"
+                or entry.name in TERMINAL_OWNER_MARKER_NAMES
+                or entry.name in dirty_names
+            ):
+                continue
+            matched_owners = session_command_state_owners(
+                entry.name, contract_stems
+            )
+            if len(matched_owners) != 1:
+                unknown_foreign = True
+                continue
+            _, owner_product = next(iter(matched_owners))
+            if owner_product not in products:
+                foreign_products.add(owner_product)
+
+        if unknown_foreign or foreign_products:
+            for product in products:
+                if not touch_marker(os.path.join(directory, f".terminal-{product}")):
+                    return False
+            dirty_generation = max(
+                (
+                    regular_file_mtime(item[0]["dirty"]) or 0.0
+                    for item in states
+                ),
+                default=0.0,
+            )
+            if unknown_foreign or any(
+                (
+                    regular_file_mtime(
+                        os.path.join(directory, f".terminal-{product}")
+                    )
+                    or 0.0
+                )
+                < dirty_generation
+                for product in foreign_products
+            ):
+                return True
+
+        for entry in os.scandir(directory):
+            if entry.name == ".agent-runtime-validation.lock":
+                continue
+            entry_metadata = entry.stat(follow_symlinks=False)
+            if not (
+                stat.S_ISREG(entry_metadata.st_mode)
+                or stat.S_ISLNK(entry_metadata.st_mode)
+            ):
+                return False
+            os.unlink(entry.path)
+        for legacy_path in {
+            item[0]["legacy_dirty"] for item in states if item[1]
+        }:
+            if os.path.lexists(legacy_path):
+                legacy_metadata = os.stat(legacy_path, follow_symlinks=False)
+                if not (
+                    stat.S_ISREG(legacy_metadata.st_mode)
+                    or stat.S_ISLNK(legacy_metadata.st_mode)
+                ):
+                    return False
+                os.unlink(legacy_path)
+        remove_directory = True
+    except OSError:
+        return False
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+    if remove_directory:
+        try:
+            os.unlink(lock_path)
+            os.rmdir(directory)
+        except OSError:
+            return False
+    return True
+
+
+def session_namespace_has_state(markers: dict[str, str]) -> bool:
+    if os.path.lexists(markers["dirty"]):
+        return True
+    command_prefix = f"{markers['command_stem']}."
+    try:
+        return any(
+            entry.name.startswith(command_prefix)
+            for entry in os.scandir(markers["dir"])
+        )
+    except OSError:
+        return False
+
+
+def cleanup_failure_reason(repo_root: str) -> str:
+    name = os.path.basename(os.path.abspath(repo_root))
+    return (
+        f"Code validation passed in {name}, but the completed session marker "
+        "namespace could not be retired safely. Repair the validation marker "
+        "directory permissions and retry Stop."
+    )
+
+
+def state_lock_failure_reason(repo_root: str) -> str:
+    name = os.path.basename(os.path.abspath(repo_root))
+    return (
+        f"Code validation state for {name} could not be locked safely. Repair "
+        "the shared runtime validation-state permissions and retry Stop."
+    )
+
+
+def external_tombstones(
+    repo_root: str, active_session_key: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    directories = [validation_tombstone_dir(repo_root)]
+    if active_session_key:
+        directories.append(
+            validation_tombstone_dir(repo_root, active_session_key)
+        )
+    entries: list[os.DirEntry[str]] = []
+    invalid_directories: list[str] = []
+    for directory in directories:
+        try:
+            entries.extend(os.scandir(directory))
+        except FileNotFoundError:
+            pass
+        except OSError:
+            invalid_directories.append(directory)
+    if invalid_directories:
+        return [], invalid_directories
 
     tombstones: list[dict[str, Any]] = []
     invalid: list[str] = []
@@ -123,6 +355,7 @@ def external_tombstones(
         started = body.get("attempt_started_ns")
         dirty_started = body.get("dirty_started_ns")
         product = body.get("product")
+        session_key = body.get("session_key")
         contract_key = body.get("contract_key")
         dirty = body.get("dirty")
         commands = body.get("commands")
@@ -131,6 +364,13 @@ def external_tombstones(
         if (
             body.get("repo_root") != root
             or product not in {"codex", "claude", "shared"}
+            or (
+                session_key is not None
+                and (
+                    not isinstance(session_key, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", session_key) is None
+                )
+            )
             or not isinstance(contract_key, str)
             or re.fullmatch(r"[0-9a-f]{64}", contract_key) is None
             or not isinstance(started, int)
@@ -188,6 +428,7 @@ def external_tombstones(
                 "attempt_started_ns": started,
                 "dirty_started_ns": dirty_started,
                 "product": product,
+                "session_key": session_key,
                 "contract_key": contract_key,
                 "dirty": dirty,
                 "commands": normalized_commands,
@@ -403,7 +644,8 @@ def unmatched_target_reason(
 
 
 def main() -> int:
-    read_payload()  # consume the Stop payload (unused)
+    payload = read_payload()
+    active_session_key = session_marker_key(payload)
     if env_enabled(SUPPRESS_ENVS):
         return ALLOW
 
@@ -411,7 +653,14 @@ def main() -> int:
     if not repo_root:
         return ALLOW
     contracts = validation_contracts(repo_root)
-    tombstones, invalid_tombstones = external_tombstones(repo_root)
+    try:
+        state_lock = acquire_validation_state_lock(repo_root)
+    except OSError:
+        emit_block(state_lock_failure_reason(repo_root))
+        return ALLOW
+    tombstones, invalid_tombstones = external_tombstones(
+        repo_root, active_session_key
+    )
     raw_product = os.environ.get("AGENT_RUNTIME_PRODUCT", "").strip()
     active_product = (
         raw_product if raw_product in {"codex", "claude"} else "shared"
@@ -420,6 +669,9 @@ def main() -> int:
         tombstone
         for tombstone in tombstones
         if tombstone["product"] == active_product
+        and session_state_is_active(
+            tombstone["session_key"], active_session_key
+        )
     ]
     if not contracts:
         if invalid_tombstones:
@@ -429,12 +681,17 @@ def main() -> int:
         return ALLOW
     tombstones_by_contract: dict[str, list[dict[str, Any]]] = {}
     for tombstone in tombstones:
+        if not session_state_is_active(
+            tombstone["session_key"], active_session_key
+        ):
+            continue
         tombstones_by_contract.setdefault(
             tombstone["contract_key"], []
         ).append(tombstone)
 
     outstanding: list[tuple[str, str, bool, int | None]] = []
     satisfied_markers: list[dict[str, str]] = []
+    terminal_markers: list[tuple[dict[str, str], bool]] = []
     routing_signals: list[tuple[dict[str, str], float]] = []
     invalid_markers: list[tuple[str, str]] = []
     invalid_state_markers: list[tuple[str, str]] = []
@@ -442,7 +699,9 @@ def main() -> int:
     matched_contract_keys: set[str] = set()
     for contract in contracts:
         try:
-            markers = validation_marker_set(repo_root, contract["marker"])
+            markers = validation_marker_set(
+                repo_root, contract["marker"], session_key=active_session_key
+            )
         except ValueError:
             invalid_markers.append(
                 (
@@ -454,9 +713,18 @@ def main() -> int:
         matched_contract_keys.add(markers["contract_key"])
         context = str(contract.get("context") or "validation")
         dirty = markers["dirty"]
+        ok_mtime = regular_file_mtime(markers["ok"])
         contract_tombstones = tombstones_by_contract.get(
             markers["contract_key"], []
         )
+        if active_session_key and ok_mtime is not None:
+            contract_tombstones = [
+                tombstone
+                for tombstone in contract_tombstones
+                if tombstone["session_key"] is not None
+                or ok_mtime
+                < int(tombstone["attempt_started_ns"]) / 1_000_000_000
+            ]
         active_contract_tombstones = [
             tombstone
             for tombstone in contract_tombstones
@@ -524,8 +792,25 @@ def main() -> int:
             )
             continue
 
+        legacy_dirty_mtime = 0.0
+        cleanup_legacy_dirty = False
+        if active_session_key:
+            legacy_dirty = markers["legacy_dirty"]
+            legacy_dirty_exists = os.path.lexists(legacy_dirty)
+            raw_legacy_dirty_mtime = (
+                regular_file_mtime(legacy_dirty) if legacy_dirty_exists else None
+            )
+            if legacy_dirty_exists and raw_legacy_dirty_mtime is None:
+                invalid_state_markers.append((context, legacy_dirty))
+                continue
+            if raw_legacy_dirty_mtime is not None:
+                cleanup_legacy_dirty = True
+                if ok_mtime is None or ok_mtime < raw_legacy_dirty_mtime:
+                    legacy_dirty_mtime = raw_legacy_dirty_mtime
+
         validation_signal = max(
             dirty_mtime or 0.0,
+            legacy_dirty_mtime,
             max(
                 (
                     int(tombstone["dirty_started_ns"]) / 1_000_000_000
@@ -569,6 +854,8 @@ def main() -> int:
             routing_signals.append((markers, latest_signal))
         elif validation_signal:
             satisfied_markers.append(markers)
+        if cleanup_legacy_dirty or session_namespace_has_state(markers):
+            terminal_markers.append((markers, cleanup_legacy_dirty))
 
     if invalid_tombstones:
         emit_block(unsafe_tombstone_reason(repo_root, invalid_tombstones))
@@ -594,6 +881,22 @@ def main() -> int:
     if not outstanding:
         for markers in satisfied_markers:
             touch_marker(markers["ok"])
+        grouped_terminal_markers: dict[
+            str, list[tuple[dict[str, str], bool]]
+        ] = {}
+        for markers, remove_legacy_dirty in terminal_markers:
+            grouped_terminal_markers.setdefault(markers["dir"], []).append(
+                (markers, remove_legacy_dirty)
+            )
+        cleanup_failed = False
+        for states in grouped_terminal_markers.values():
+            snapshot = completed_state_snapshot(states)
+            if snapshot is None or not cleanup_completed_session_state(
+                states, expected_snapshot=snapshot
+            ):
+                cleanup_failed = True
+        if cleanup_failed:
+            emit_block(cleanup_failure_reason(repo_root))
         return ALLOW
 
     if env_enabled(WAIVER_ENVS):

@@ -5,12 +5,17 @@ Writes evidence markers under each declared validation marker directory so the
 Stop gate (stop-finish-line-gate.py) can tell whether every declared validation
 contract has passed since code was last edited:
 
-- a `<stem>.dirty` marker, refreshed when a non-Markdown file under the repo is
-  edited (Write/Edit/MultiEdit/NotebookEdit/apply_patch);
-- a `<stem>[.<product>].cmd<i>.ran` marker per declared validation command in
-  each contract, refreshed only after the completed command exits zero;
-- a `<stem>[.<product>].cmd<i>.failed.json` marker containing bounded outcome
-  metadata when the latest completed command exits non-zero.
+- a session-scoped `session-<hash>/<stem>.dirty` marker, refreshed when a
+  non-Markdown file under the repo is edited
+  (Write/Edit/MultiEdit/NotebookEdit/apply_patch);
+- a session- and product-scoped command marker per declared validation command,
+  refreshed only after the completed command exits zero;
+- a matching failed-outcome marker containing bounded metadata when the latest
+  completed command exits non-zero.
+
+Payloads without a session identifier retain the legacy shared marker names.
+Identified repo-local and runtime tombstone state lives in directly addressable
+session directories; one repo-scoped runtime lock serializes state transitions.
 
 On PreToolUse, matching validation commands are transparently wrapped with a
 tokenized EXIT trap. The trap writes the outcome directly through this script
@@ -46,6 +51,8 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    TERMINAL_OWNER_MARKER_NAMES,
+    acquire_validation_state_lock,
     command_failed_marker,
     command_from,
     command_matches_validation,
@@ -55,6 +62,7 @@ from hook_common import (
     git_toplevel,
     normalize_command_separators,
     read_payload,
+    session_marker_key,
     strip_heredoc_bodies,
     touch_marker,
     tool_input_dict,
@@ -205,10 +213,13 @@ def remove_marker(path: str) -> bool:
         return False
 
 
-def external_tombstone_path(repo_root: str, pending_path: str) -> str:
+def external_tombstone_path(
+    repo_root: str, pending_path: str, *, session_key: str = ""
+) -> str:
     digest = hashlib.sha256(pending_path.encode("utf-8")).hexdigest()[:32]
     return os.path.join(
-        validation_tombstone_dir(repo_root), f"attempt-{digest}.json"
+        validation_tombstone_dir(repo_root, session_key),
+        f"attempt-{digest}.json",
     )
 
 
@@ -223,6 +234,7 @@ def tombstone_body(
         "schema_version": TOMBSTONE_SCHEMA,
         "repo_root": recovery["repo_root"],
         "product": recovery["product"],
+        "session_key": recovery.get("session_key") or None,
         "contract_key": recovery["contract_key"],
         "pending": recovery["pending"],
         "dirty": recovery["dirty"],
@@ -295,14 +307,19 @@ def outcome_targets(raw: Any) -> frozenset[str] | None:
 
 
 def supersede_recovery_tombstones(
-    recovery: Mapping[str, Any], *, include_current: bool
+    recovery: Mapping[str, Any], *, include_current: bool, include_legacy: bool
 ) -> None:
     """Remove only logical targets covered by this newer recovery attempt."""
-    directory = os.path.dirname(str(recovery["tombstone"]))
-    try:
-        entries = list(os.scandir(directory))
-    except OSError:
-        return
+    current_session = recovery.get("session_key") or None
+    directories = [os.path.dirname(str(recovery["tombstone"]))]
+    if current_session is not None and include_legacy:
+        directories.append(validation_tombstone_dir(str(recovery["repo_root"])))
+    entries: list[os.DirEntry[str]] = []
+    for directory in dict.fromkeys(directories):
+        try:
+            entries.extend(os.scandir(directory))
+        except OSError:
+            pass
     current_targets = outcome_targets(recovery["commands"])
     if current_targets is None:
         return
@@ -318,6 +335,12 @@ def supersede_recovery_tombstones(
         if body.get("repo_root") != recovery["repo_root"]:
             continue
         if body.get("product") != recovery["product"]:
+            continue
+        previous_session = body.get("session_key")
+        active_sessions = {current_session}
+        if current_session is None or include_legacy:
+            active_sessions.add(None)
+        if previous_session not in active_sessions:
             continue
         if body.get("contract_key") != recovery["contract_key"]:
             continue
@@ -341,16 +364,29 @@ def supersede_recovery_tombstones(
             write_json_marker(entry.path, retained, mtime_ns=started)
         else:
             remove_marker(entry.path)
+    current_directory = os.path.dirname(str(recovery["tombstone"]))
+    if current_session is not None:
+        try:
+            os.rmdir(current_directory)
+            os.rmdir(os.path.dirname(current_directory))
+        except OSError:
+            pass
 
 
 def prune_superseded_tombstones(recovery: Mapping[str, Any]) -> None:
     """Let the newest registered attempt represent every older active one."""
-    supersede_recovery_tombstones(recovery, include_current=False)
+    supersede_recovery_tombstones(
+        recovery, include_current=False, include_legacy=False
+    )
 
 
-def clear_recovery_tombstones(recovery: Mapping[str, Any]) -> None:
+def clear_recovery_tombstones(
+    recovery: Mapping[str, Any], *, include_legacy: bool
+) -> None:
     """Clear this and older attempts after repo-local outcome persistence."""
-    supersede_recovery_tombstones(recovery, include_current=True)
+    supersede_recovery_tombstones(
+        recovery, include_current=True, include_legacy=include_legacy
+    )
 
 
 def write_failure(
@@ -402,6 +438,7 @@ def recovery_record(
     commands = raw.get("commands")
     declared_root = raw.get("repo_root")
     product = raw.get("product")
+    session_key = raw.get("session_key")
     contract_key = raw.get("contract_key")
     tombstone = raw.get("tombstone")
     if (
@@ -420,6 +457,13 @@ def recovery_record(
         or not isinstance(dirty, str)
         or not isinstance(declared_root, str)
         or product not in {"codex", "claude", "shared"}
+        or (
+            session_key is not None
+            and (
+                not isinstance(session_key, str)
+                or re.fullmatch(r"[0-9a-f]{64}", session_key) is None
+            )
+        )
         or not isinstance(contract_key, str)
         or re.fullmatch(r"[0-9a-f]{64}", contract_key) is None
         or not isinstance(tombstone, str)
@@ -444,7 +488,9 @@ def recovery_record(
         return None
     if os.path.realpath(resolved.stdout.strip()) != root:
         return None
-    if tombstone != external_tombstone_path(root, pending_path):
+    if tombstone != external_tombstone_path(
+        root, pending_path, session_key=session_key or ""
+    ):
         return None
     try:
         if os.path.commonpath((root, directory)) != root:
@@ -478,6 +524,7 @@ def recovery_record(
         "pending": pending_path,
         "tombstone": tombstone,
         "product": product,
+        "session_key": session_key,
         "contract_key": contract_key,
         "attempt_started_ns": started,
         "dirty_started_ns": dirty_started,
@@ -536,6 +583,19 @@ def acquire_edit_locks(dirty_paths: list[str]) -> list[Any] | None:
         for handle in reversed(handles):
             handle.close()
         return None
+
+
+def terminal_markers_for_edit(dirty_paths: list[str]) -> list[str] | None:
+    """Return every terminal owner invalidated by a shared edit generation."""
+    terminals: list[str] = []
+    for directory in sorted({os.path.dirname(path) for path in dirty_paths}):
+        try:
+            for entry in os.scandir(directory):
+                if entry.name in TERMINAL_OWNER_MARKER_NAMES:
+                    terminals.append(entry.path)
+        except OSError:
+            return None
+    return terminals
 
 
 def marker_mtime_ns(path: str) -> int | None:
@@ -699,11 +759,22 @@ def shared_dirty_generation_ns(
     current = marker_mtime_ns(markers["dirty"])
     if current is not None:
         generations.append(current)
-    try:
-        entries = list(os.scandir(validation_tombstone_dir(repo_root)))
-    except OSError:
-        entries = []
     root = os.path.realpath(repo_root)
+    current_session = markers.get("session_key") or None
+    active_sessions = (
+        {None, current_session} if current_session is not None else {None}
+    )
+    directories = [validation_tombstone_dir(repo_root)]
+    if current_session is not None:
+        directories.append(
+            validation_tombstone_dir(repo_root, current_session)
+        )
+    entries: list[os.DirEntry[str]] = []
+    for directory in directories:
+        try:
+            entries.extend(os.scandir(directory))
+        except OSError:
+            pass
     for entry in entries:
         if not entry.name.startswith("attempt-") or not entry.name.endswith(".json"):
             continue
@@ -713,6 +784,7 @@ def shared_dirty_generation_ns(
             or body.get("schema_version") != TOMBSTONE_SCHEMA
             or body.get("repo_root") != root
             or body.get("contract_key") != markers["contract_key"]
+            or body.get("session_key") not in active_sessions
         ):
             continue
         attempted = body.get("attempt_started_ns")
@@ -769,6 +841,14 @@ def record_pending_outcome(
     recovery = recovery_record(pending_path, raw_recovery)
     if raw_recovery is not None and recovery is None:
         return
+    state_lock = None
+    if recovery is not None:
+        try:
+            state_lock = acquire_validation_state_lock(
+                str(recovery["repo_root"])
+            )
+        except OSError:
+            return
     if recovery is not None:
         write_tombstone(
             recovery,
@@ -862,7 +942,9 @@ def record_pending_outcome(
                 persisted = False
         if persisted and valid_entries and remove_marker(pending_path):
             if recovery is not None:
-                clear_recovery_tombstones(recovery)
+                clear_recovery_tombstones(
+                    recovery, include_legacy=status == 0
+                )
             return
         if valid_entries:
             retained = dict(body)
@@ -906,12 +988,18 @@ def record_outcome_cli(argv: list[str]) -> int:
 
 
 def validation_matches(
-    repo_root: str, contracts: list[dict[str, Any]], command: str
+    repo_root: str,
+    contracts: list[dict[str, Any]],
+    command: str,
+    *,
+    session_key: str = "",
 ) -> list[ValidationMatch]:
     matches: list[ValidationMatch] = []
     for contract in contracts:
         try:
-            markers = validation_marker_set(repo_root, contract["marker"])
+            markers = validation_marker_set(
+                repo_root, contract["marker"], session_key=session_key
+            )
         except ValueError:
             continue
         for index, declared in enumerate(contract["commands"]):
@@ -1184,6 +1272,8 @@ def pending_records(
     attempts: list[dict[str, Any]] = []
     registration_failed = False
     attempt_started_ns = time.time_ns()
+    terminal_snapshots: dict[str, dict[str, Any]] = {}
+    invalidated_terminals: list[str] = []
     for markers, indexed_commands in grouped.values():
         lock_path = os.path.join(
             markers["dir"], ".agent-runtime-validation.lock"
@@ -1200,6 +1290,18 @@ def pending_records(
             except OSError:
                 registration_failed = True
                 continue
+            terminal = markers["terminal"]
+            if terminal not in terminal_snapshots:
+                snapshot = dirty_marker_snapshot(terminal)
+                if snapshot is None:
+                    registration_failed = True
+                    continue
+                terminal_snapshots[terminal] = snapshot
+                if not remove_marker(terminal):
+                    registration_failed = True
+                    continue
+                if snapshot["kind"] != "missing":
+                    invalidated_terminals.append(terminal)
             prune_pending_records(markers)
             path = validation_pending_marker(markers, token)
             commands = [
@@ -1228,6 +1330,7 @@ def pending_records(
                 "pending": path,
                 "repo_root": os.path.realpath(repo_root),
                 "product": markers["product"],
+                "session_key": markers.get("session_key") or None,
                 "contract_key": markers["contract_key"],
                 "dirty": markers["dirty"],
                 "dirty_started_ns": shared_dirty_generation_ns(
@@ -1237,7 +1340,11 @@ def pending_records(
                 "attempt_started_ns": attempt_started_ns,
                 "commands": commands,
             }
-            recovery["tombstone"] = external_tombstone_path(repo_root, path)
+            recovery["tombstone"] = external_tombstone_path(
+                repo_root,
+                path,
+                session_key=markers.get("session_key") or "",
+            )
             if write_tombstone(recovery):
                 attempts.append(recovery)
             else:
@@ -1246,13 +1353,33 @@ def pending_records(
     if not registration_failed:
         for attempt in attempts:
             prune_superseded_tombstones(attempt)
+    elif invalidated_terminals:
+        lock_handles = acquire_edit_locks(invalidated_terminals)
+        if lock_handles is not None:
+            try:
+                for terminal in reversed(invalidated_terminals):
+                    restore_dirty_marker(
+                        terminal,
+                        terminal_snapshots[terminal],
+                        expected_generation_ns=attempt_started_ns,
+                    )
+            finally:
+                for handle in reversed(lock_handles):
+                    handle.close()
     return attempts, registration_failed
 
 
 def discard_registered_attempts(attempts: list[dict[str, Any]]) -> None:
     for attempt in attempts:
         remove_marker(str(attempt["pending"]))
-        remove_marker(str(attempt["tombstone"]))
+        tombstone = str(attempt["tombstone"])
+        remove_marker(tombstone)
+        if attempt.get("session_key"):
+            try:
+                os.rmdir(os.path.dirname(tombstone))
+                os.rmdir(os.path.dirname(os.path.dirname(tombstone)))
+            except OSError:
+                pass
 
 
 def registration_block_reason() -> str:
@@ -1281,11 +1408,11 @@ def wrapped_command(command: str, token: str, pending: list[dict[str, Any]]) -> 
     function = f"__agent_runtime_validation_report_{token}"
     status = f"__agent_runtime_validation_status_{token}"
     recorder = shlex.quote(os.path.abspath(__file__))
-    validation_state_home = shlex.quote(
-        os.path.dirname(
-            os.path.dirname(os.path.dirname(str(pending[0]["tombstone"])))
-        )
-    )
+    validation_state_path = str(pending[0]["tombstone"])
+    parent_levels = 5 if pending[0].get("session_key") else 3
+    for _ in range(parent_levels):
+        validation_state_path = os.path.dirname(validation_state_path)
+    validation_state_home = shlex.quote(validation_state_path)
     pending_args = " ".join(
         f"--pending {shlex.quote(str(attempt['pending']))} "
         f"--recovery {shlex.quote(encode_recovery(attempt))}"
@@ -1328,6 +1455,7 @@ def main() -> int:
         return record_outcome_cli(sys.argv)
 
     payload = read_payload()
+    active_session_key = session_marker_key(payload)
     tool = tool_name(payload)
     event = hook_event(payload)
     command = command_from(payload) if tool == "Bash" else ""
@@ -1342,8 +1470,15 @@ def main() -> int:
         return ALLOW
 
     if tool == "Bash":
-        matches = validation_matches(repo_root, contracts, command)
+        matches = validation_matches(
+            repo_root, contracts, command, session_key=active_session_key
+        )
         if not matches:
+            return ALLOW
+        try:
+            state_lock = acquire_validation_state_lock(repo_root)
+        except OSError:
+            emit_block(registration_block_reason())
             return ALLOW
         if event == "PreToolUse":
             if generated_wrapper_token(command) is None and outcome_status_is_provable(
@@ -1369,10 +1504,19 @@ def main() -> int:
             if path.endswith(".md"):
                 continue
             if under_repo(path, repo_root):
+                try:
+                    state_lock = acquire_validation_state_lock(repo_root)
+                except OSError:
+                    emit_block(edit_registration_block_reason())
+                    return ALLOW
                 dirty_paths: list[str] = []
                 for contract in contracts:
                     try:
-                        markers = validation_marker_set(repo_root, contract["marker"])
+                        markers = validation_marker_set(
+                            repo_root,
+                            contract["marker"],
+                            session_key=active_session_key,
+                        )
                     except ValueError:
                         emit_block(edit_registration_block_reason())
                         return ALLOW
@@ -1385,15 +1529,29 @@ def main() -> int:
                 registration_failed = False
                 rollback_failed = False
                 try:
+                    terminal_paths = terminal_markers_for_edit(dirty_paths)
+                    if terminal_paths is None:
+                        registration_failed = True
+                        terminal_paths = []
                     snapshots: dict[str, dict[str, Any]] = {}
-                    for dirty in dirty_paths:
-                        snapshot = dirty_marker_snapshot(dirty)
-                        if snapshot is None:
-                            registration_failed = True
-                            break
-                        snapshots[dirty] = snapshot
+                    if not registration_failed:
+                        for dirty in dirty_paths:
+                            snapshot = dirty_marker_snapshot(dirty)
+                            if snapshot is None:
+                                registration_failed = True
+                                break
+                            snapshots[dirty] = snapshot
+                    terminal_snapshots: dict[str, dict[str, Any]] = {}
+                    if not registration_failed:
+                        for terminal in terminal_paths:
+                            snapshot = dirty_marker_snapshot(terminal)
+                            if snapshot is None:
+                                registration_failed = True
+                                break
+                            terminal_snapshots[terminal] = snapshot
                     edit_generation_ns = time.time_ns()
                     touched: list[str] = []
+                    removed_terminals: list[str] = []
                     if not registration_failed:
                         for dirty in dirty_paths:
                             if write_empty_marker(
@@ -1403,7 +1561,22 @@ def main() -> int:
                                 continue
                             registration_failed = True
                             break
+                    if not registration_failed:
+                        for terminal in terminal_paths:
+                            if remove_marker(terminal):
+                                if terminal_snapshots[terminal]["kind"] != "missing":
+                                    removed_terminals.append(terminal)
+                                continue
+                            registration_failed = True
+                            break
                     if registration_failed:
+                        for terminal in reversed(removed_terminals):
+                            if not restore_dirty_marker(
+                                terminal,
+                                terminal_snapshots[terminal],
+                                expected_generation_ns=edit_generation_ns,
+                            ):
+                                rollback_failed = True
                         for dirty in reversed(touched):
                             if not restore_dirty_marker(
                                 dirty,
