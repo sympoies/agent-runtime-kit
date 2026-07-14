@@ -102,7 +102,25 @@ def completed_state_snapshot(
     directory = states[0][0]["dir"]
     snapshot: list[tuple[Any, ...]] = []
     try:
-        for entry in os.scandir(directory):
+        try:
+            directory_metadata = os.stat(directory, follow_symlinks=False)
+        except FileNotFoundError:
+            snapshot.append(("session-directory", "missing"))
+            entries = []
+        else:
+            if not stat.S_ISDIR(directory_metadata.st_mode):
+                return None
+            snapshot.append(
+                (
+                    "session-directory",
+                    "present",
+                    directory_metadata.st_mode,
+                    directory_metadata.st_dev,
+                    directory_metadata.st_ino,
+                )
+            )
+            entries = list(os.scandir(directory))
+        for entry in entries:
             if entry.name == ".agent-runtime-validation.lock":
                 continue
             metadata = entry.stat(follow_symlinks=False)
@@ -176,12 +194,43 @@ def cleanup_completed_session_state(
     descriptor = -1
     remove_directory = False
     try:
+        created_directory = False
+        try:
+            os.mkdir(directory, 0o700)
+            created_directory = True
+        except FileExistsError:
+            pass
+        directory_metadata = os.stat(directory, follow_symlinks=False)
+        if not stat.S_ISDIR(directory_metadata.st_mode):
+            return False
         descriptor = os.open(lock_path, flags, 0o600)
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             return False
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        if completed_state_snapshot(states) != expected_snapshot:
+
+        current_snapshot = completed_state_snapshot(states)
+        if current_snapshot is None:
+            return False
+        missing_directory = ("session-directory", "missing")
+        if created_directory and missing_directory in expected_snapshot:
+            current_directory = next(
+                item
+                for item in current_snapshot
+                if item[0] == "session-directory"
+            )
+            expected_snapshot = tuple(
+                sorted(
+                    (
+                        current_directory
+                        if item == missing_directory
+                        else item
+                        for item in expected_snapshot
+                    ),
+                    key=repr,
+                )
+            )
+        if current_snapshot != expected_snapshot:
             return False
 
         entries = list(os.scandir(directory))
@@ -210,7 +259,9 @@ def cleanup_completed_session_state(
 
         if unknown_foreign or foreign_products:
             for product in products:
-                if not touch_marker(os.path.join(directory, f".terminal-{product}")):
+                if not touch_marker(
+                    os.path.join(directory, f".terminal-{product}")
+                ):
                     return False
             dirty_generation = max(
                 (

@@ -2714,6 +2714,50 @@ class SharedHookTests(unittest.TestCase):
             )
             self.assertTrue(dirty.is_file())
 
+    def test_finish_line_cleanup_rejects_newly_created_session_namespace(
+        self,
+    ) -> None:
+        import importlib.util
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            marker_dir = repo / ".cache" / "agent-validation"
+            marker_dir.mkdir(parents=True)
+            legacy_dirty = marker_dir / "project-dev.dirty"
+            legacy_dirty.touch()
+            session_key = hashlib.sha256(b"created-during-cleanup").hexdigest()
+            session_dir = marker_dir / f"session-{session_key}"
+
+            spec = importlib.util.spec_from_file_location(
+                "stop_finish_line_gate_namespace_race",
+                HOOK_DIR / "stop-finish-line-gate.py",
+            )
+            self.assertIsNotNone(spec)
+            assert spec is not None and spec.loader is not None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            markers = {
+                "dir": str(session_dir),
+                "dirty": str(session_dir / "project-dev.dirty"),
+                "legacy_dirty": str(legacy_dirty),
+                "stem": "project-dev",
+                "command_stem": "project-dev.codex",
+                "product": "codex",
+                "session_key": session_key,
+            }
+            states = [(markers, True)]
+            snapshot = module.completed_state_snapshot(states)
+            self.assertIsNotNone(snapshot)
+            assert snapshot is not None
+
+            session_dir.mkdir()
+            self.assertFalse(
+                module.cleanup_completed_session_state(
+                    states, expected_snapshot=snapshot
+                )
+            )
+            self.assertTrue(legacy_dirty.is_file())
+
     def test_finish_line_completed_shared_directory_contracts_are_cleaned(
         self,
     ) -> None:
@@ -2766,6 +2810,57 @@ class SharedHookTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+            self.assertFalse(session_dir.exists())
+
+    def test_finish_line_identified_session_retires_satisfied_legacy_only_state(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/legacy.rs", "fn legacy() {}\n"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                command_payload("bash scripts/ci/all.sh"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            code, legacy_decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(legacy_decision)
+
+            marker_dir = repo / ".cache" / "agent-validation"
+            legacy_dirty = marker_dir / "project-dev.dirty"
+            session_key = hashlib.sha256(
+                b"post-upgrade-read-only-session"
+            ).hexdigest()
+            session_dir = marker_dir / f"session-{session_key}"
+            self.assertTrue(legacy_dirty.is_file())
+            self.assertFalse(session_dir.exists())
+
+            code, upgraded_decision, stderr = run_hook(
+                "stop-finish-line-gate.py",
+                {"session_id": "post-upgrade-read-only-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(upgraded_decision)
+            self.assertFalse(legacy_dirty.exists())
             self.assertFalse(session_dir.exists())
 
     def test_finish_line_legacy_dirty_requires_transition_validation(self) -> None:
