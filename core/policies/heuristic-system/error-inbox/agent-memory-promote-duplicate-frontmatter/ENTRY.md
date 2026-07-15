@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-15
 - Area: cli
 - Severity: medium
@@ -48,6 +48,9 @@ more than one frontmatter block. Validate, then link the fix from this entry.
 
 ## Next Action
 
-Implement the fix in nils-cli (`sympoies/nils-cli`, issue #1230). A handoff
-prompt for the next implementation session is prepared; the deterministic floor
-is the crate tests + `check global --strict` on a promoted fixture.
+Release a nils-cli version containing `ba78a944` only after explicit user
+consent. Until then, installed version 1.22.3 still requires the documented
+manual single-header workaround.
+
+Lifecycle link: [nils-cli PR #1231](https://github.com/sympoies/nils-cli/pull/1231)
+([squash commit `ba78a944`](https://github.com/sympoies/nils-cli/commit/ba78a94452176614560d86ae96b7fdaa1afc3522))
