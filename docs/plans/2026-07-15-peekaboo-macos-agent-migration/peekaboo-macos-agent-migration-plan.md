@@ -481,18 +481,16 @@ Codex, Claude, and Hermes in one reviewed runtime-kit PR.
   - `docs/source/nils-cli-pin.yaml`
   - `docs/source/nils-cli-surface.md`
   - `manifests/skills.yaml`
-  - `build/codex/`
-  - `build/claude/`
-  - `build/hermes/`
   - `tests/golden/codex/`
   - `tests/golden/claude/`
   - `tests/golden/hermes/`
   - runtime smoke/product/sandbox expectations
 - **Description**: Use `meta:nils-cli-bump` to pin the exact tag from Task 3.3,
   refresh release digests/surface docs, set the `macos-agent` minimum to the
-  release that introduced the adapter, render all products, refresh goldens,
-  and prove install/prune behavior removes the old helper. Run full on-pin
-  validation and specialist review, then deliver the single cutover PR.
+  release that introduced the adapter, render all products into their generated
+  build outputs, refresh the tracked goldens, and prove install/prune behavior
+  removes the old helper. Run full on-pin validation and specialist review, then
+  deliver the single cutover PR.
 - **Dependencies**:
   - Task 4.1
 - **Complexity**: 8
