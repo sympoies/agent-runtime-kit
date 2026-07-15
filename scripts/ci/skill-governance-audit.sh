@@ -172,6 +172,7 @@ HISTORICAL_RECORD_MARKERS = {
     ("docs", "discussions"),
     ("docs", "plans"),
 }
+GENERATED_OUTPUT_ROOTS = {"build"}
 
 
 def fail(message: str) -> None:
@@ -676,7 +677,12 @@ def stale_endpoint_count_claims(root: Path) -> list[str]:
         if path.is_symlink() or not path.is_file():
             continue
         rel = path.relative_to(root)
-        if path.suffix not in MAINTAINED_TEXT_SUFFIXES or is_historical_record(rel):
+        if (
+            not rel.parts
+            or rel.parts[0] in GENERATED_OUTPUT_ROOTS
+            or path.suffix not in MAINTAINED_TEXT_SUFFIXES
+            or is_historical_record(rel)
+        ):
             continue
         for line_number, line in enumerate(read(path).splitlines(), start=1):
             for match in STALE_ENDPOINT_COUNT_RE.finditer(line):
@@ -1965,6 +1971,12 @@ def validate_count_refresh_fixture() -> None:
         maintained_claim_path = work_root / "docs" / "source" / "convergence.md"
         maintained_claim_path.write_text(
             f"Maintained endpoint claim: {stale_claim}.\n",
+            encoding="utf-8",
+        )
+        generated_claim_path = work_root / "build" / "shared" / "SUPPORT_MATRIX.md"
+        generated_claim_path.parent.mkdir(parents=True, exist_ok=True)
+        generated_claim_path.write_text(
+            f"Generated endpoint claim: {stale_claim}.\n",
             encoding="utf-8",
         )
         stale_claims = stale_endpoint_count_claims(work_root)
