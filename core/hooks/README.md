@@ -100,6 +100,29 @@ rejected. These hooks are mechanical guardrails, not a security sandbox: the
 product launch environment, managed runtime home, and an explicit trusted-root
 override remain host trust boundaries. Hermes has no runtime-kit hook runner.
 
+`checkout-lease-guard.py` coordinates one writer per physical Git checkout
+across Codex and Claude. Explicit edit tools always participate; Bash
+participates only for conservative high-confidence mutations, including known
+nested shell / `agent-run exec` forms and managed worktree removal, so read-only
+recovery remains available. Managed worktree slugs resolve through the
+authoritative `git-cli` inventory, and removal must be the command's sole
+mutation with exactly one removal target. Nested repositories and submodules
+retain independent lease boundaries. A clean linked worktree may acquire a
+lease. The primary checkout may acquire one only while clean, on its resolved
+default branch, and outside a pre-existing Git operation. The owning session
+refreshes the lease after its own edits; live foreign ownership and unowned
+dirty state block with managed-worktree guidance. Lease files contain hashed
+session identity,
+timestamps, and local checkout identity paths under shared XDG runtime state;
+they never retain the raw session identifier. A random sentinel under the
+checkout's Git admin directory distinguishes a removed/recreated linked
+worktree at the same path. Expired leases are reclaimable only while clean;
+`AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS` tunes the eight-hour default. Stop
+releases clean matching owner leases across the current repository and prunes
+lease state for physically removed worktrees while retaining the stable
+per-checkout lock inode; dirty or mismatched ownership is retained and reported.
+Stop never removes a worktree, branch, commit, or dirty file.
+
 Install surfaces:
 
 - Codex: `targets/codex/link-map.yaml` installs shared scripts under

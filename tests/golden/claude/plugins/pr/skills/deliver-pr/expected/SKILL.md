@@ -44,6 +44,11 @@ Inputs:
 - Optional `--no-closeout` to stop after delivery readiness checks and before
   linked issue closeout.
 - Mandatory generic code review in pre-merge mode.
+- Local terminal identity captured before merge: checkout root, branch,
+  delivered head SHA, base ref, and whether the checkout is primary or a
+  managed linked worktree. When an outer L2/L3 or requested post-merge workflow
+  still owns terminal duties, pass this identity outward instead of cleaning
+  early.
 - If the body references a linked tracking or dispatch issue, use non-closing
   references such as `Refs #<issue>`; provider auto-close keywords are refused.
   Carry the references through `pr-body render --issues-file` — rendered as
@@ -84,6 +89,10 @@ Outputs:
 - When a linked issue closeout runs, `plan-issue record close` posts closeout
   evidence, repairs the dashboard, verifies linked records, and closes the
   issue.
+- When this is the outermost successful workflow, a terminal local cleanup
+  result: the clean primary checkout is restored to base, or the safe merged
+  managed worktree is removed through `git-cli worktree remove`; retained
+  unsafe state includes its reason and recovery command.
 
 Failure modes:
 
@@ -117,6 +126,9 @@ Failure modes:
   merge. Route to `deliver-plan-tracking-issue` or `deliver-dispatch-plan`
   instead of merging and backfilling after the fact.
 - `plan-issue record close` rejects linked issue closeout.
+- Terminal cleanup cannot prove a clean checkout, provider-confirmed merge of
+  the captured delivered head, or safe ownership. Retain the worktree and
+  branch, report the failed proof, and do not force removal.
 
 ## Lifecycle Mode Selection
 
@@ -402,6 +414,17 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     code surfaced by `plan-issue` and route to the matching closeout skill.
 17. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
     commit, chained closeout result, and any fallback used in delivery notes.
+18. If this workflow is the outermost terminal owner, finish any requested
+    post-merge deployment, activation, archive, evidence, and local closeout
+    duties, then apply `core/policies/git-delivery.md` terminal cleanup. Recheck
+    status and provider merge/head truth. Restore a clean primary checkout to
+    base, or invoke `git-cli worktree remove <path-or-slug> --format json` from
+    the primary checkout through the supported hooked shell; the target-aware
+    lease guard must confirm no live foreign owner before removal. If that proof
+    or hook is unavailable, retain the worktree. Delete the local
+    branch only when its tip equals the provider-confirmed delivered head;
+    otherwise retain and report it. If an outer L2/L3 workflow remains, hand it
+    the captured identity and defer this step.
 
 ## Boundary
 
@@ -410,5 +433,6 @@ convergence, thread/task enforcement, provider-head binding, and merge calls.
 `plan-issue record` owns linked issue lifecycle closeout. The workflow owner
 owns scope judgment, code changes, local validation, pre-merge gate decisions,
 repair loops, delivery outcome comments, and any temporary provider fallback
-decision. Provider auto-close keywords against issue-backed plan records remain
-banned.
+decision. The outermost workflow also owns terminal local cleanup after all
+downstream duties; child delivery workflows hand off rather than clean early.
+Provider auto-close keywords against issue-backed plan records remain banned.

@@ -115,6 +115,27 @@ assert_delivery_skills_thread_test_first_evidence() {
   return "$rc"
 }
 
+assert_delivery_skills_own_terminal_worktree_cleanup() {
+  local rc=0 skill
+  for skill in \
+    core/skills/pr/deliver-pr/SKILL.md.tera \
+    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
+    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
+    if ! grep -q 'core/policies/git-delivery.md' "$REPO_ROOT/$skill" || \
+      ! grep -q 'git-cli worktree remove <path-or-slug> --format json' "$REPO_ROOT/$skill" || \
+      ! grep -q 'provider-confirmed delivered head' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill omits safe terminal worktree cleanup" >&2
+      rc=1
+    fi
+    if ! grep -Eqi 'retain|do not force|never force' "$REPO_ROOT/$skill" || \
+      ! grep -Eqi 'dirty|unsafe|ambiguous|unverifiable' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill omits unsafe-state retention" >&2
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
 # Native-review timing and provider gate mechanics belong to released
 # forge-cli. Active delivery parents still own the semantic read/disposition
 # loop, but must not duplicate polling recipes or unconditional provider
@@ -712,6 +733,7 @@ run_deliver_pr_probe() {
   run_deliver_gitlab_probe || rc=1
   run_pr_comment_provider_payload_privacy_gate_probe || rc=1
   assert_delivery_skills_thread_test_first_evidence || rc=1
+  assert_delivery_skills_own_terminal_worktree_cleanup || rc=1
   assert_delivery_skills_use_native_review_convergence || rc=1
   run_deliver_test_first_v2_gate_probe || rc=1
   return "$rc"

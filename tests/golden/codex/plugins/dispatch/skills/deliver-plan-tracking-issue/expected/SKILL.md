@@ -42,6 +42,8 @@ Inputs:
   `forge-cli pr review --submit-review` (or a retained evidence path).
   `REVIEW_FINDINGS_JSON` is optional and contains finding rows when findings
   exist.
+- Local terminal identity captured before merge: checkout root, branch,
+  delivered head SHA, base ref, and primary-versus-managed-worktree kind.
 
 Outputs:
 
@@ -70,6 +72,10 @@ Outputs:
 - Post-close provider read-back plus `record audit --expect-visible`, followed
   by `plan-archive discover` and dry-run-first `plan-archive migrate` routing;
   apply remains confirmation-gated.
+- After all plan-required post-merge activation/deployment, closeout, archive,
+  and evidence duties, one terminal cleanup result under
+  `core/policies/git-delivery.md`: safe removal/restoration, or explicit
+  retained state with its failed proof and recovery command.
 
 Failure modes:
 
@@ -88,6 +94,9 @@ Failure modes:
 - Forbidden writes: dispatch-profile posts, raw lifecycle comments, raw
   `gh pr review` / `glab mr approve` for recorded review evidence, or merging before the review
   gate and `review` checkpoint complete.
+- Stop cleanup when the checkout is dirty/locked, provider merge truth does not
+  match the captured delivered head, or a downstream terminal duty is still
+  pending. Never force-remove or delete ambiguous local work.
 
 ## Outcome Routing
 
@@ -365,6 +374,16 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
     `plan-archive discover`, then the default dry-run `plan-archive migrate`;
     apply only
     after explicit confirmation and a clean plan.
+10. **Terminal local cleanup** — after archive and every plan-required
+    post-merge deployment, activation, evidence, or local closeout duty, recheck
+    provider merge/head truth and local status. Restore a clean primary checkout
+    to base, or run `git-cli worktree remove <path-or-slug> --format json` from
+    the primary checkout through the supported hooked shell; the target-aware
+    lease guard must confirm no live foreign owner before removal. If that proof
+    or hook is unavailable, retain the worktree. Delete the local
+    branch only when its tip equals the provider-confirmed delivered head,
+    including after squash merge. Retain and report dirty, locked, missing, or
+    unverifiable state.
 
 ## Boundary
 
@@ -375,6 +394,8 @@ Owns:
   outcome), native-summary disposition, typed merge-failure repair, final
   state/review checkpoint timing, the merge, strict closeout, read-back, and
   archive routing.
+- Plan-required post-merge duties and exactly-once terminal local cleanup after
+  strict provider closeout/read-back.
 
 Must not:
 

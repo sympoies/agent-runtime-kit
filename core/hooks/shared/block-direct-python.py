@@ -20,10 +20,12 @@ from hook_common import (
     ALLOW,
     command_from,
     emit_block,
-    env_split_expanded_tokens,
+    invocation_is_opaque,
     invocation_tokens,
+    marker_environment_before_invocation,
     nested_shell_payload,
     normalize_command_separators,
+    opaque_invocation_has_unresolved_nested,
     read_payload,
     tool_input_dict,
 )
@@ -55,11 +57,12 @@ class PythonInvocation:
     cwd: Path
 
 
-def has_bypass(command: str) -> bool:
-    for env_name in BYPASS_ENV_NAMES:
-        if os.environ.get(env_name) in BYPASS_TRUE_VALUES:
-            return True
-    return False
+def process_bypass_environment() -> dict[str, str]:
+    return {
+        name: value
+        for name in BYPASS_ENV_NAMES
+        if (value := os.environ.get(name)) is not None
+    }
 
 
 def pyproject_declares_uv(path: Path) -> bool:
@@ -136,149 +139,24 @@ def is_direct_python_token(token: str) -> bool:
     return "/" not in token or token.startswith("/")
 
 
-def skip_env_prefix(tokens: list[str], index: int) -> int:
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return index + 1
-        if is_assignment(token):
-            index += 1
-            continue
-        if token in {"-i", "--ignore-environment", "-0", "--null"}:
-            index += 1
-            continue
-        if token in {"-u", "--unset"}:
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return index
-    return index
-
-
 def command_python_token(simple_command: list[str]) -> str | None:
     invocation = invocation_tokens(simple_command)
     if not invocation:
         return None
+    if invocation_is_opaque(invocation):
+        if opaque_invocation_has_unresolved_nested(invocation):
+            return "unresolved nested shell"
+        return next(
+            (token for token in invocation[1:] if is_direct_python_token(token)),
+            None,
+        )
     return invocation[0] if is_direct_python_token(invocation[0]) else None
 
 
-def command_python_index(simple_command: list[str]) -> int | None:
-    invocation = invocation_tokens(simple_command)
-    if invocation and is_direct_python_token(invocation[0]):
-        return max(0, len(simple_command) - len(invocation))
-
-    index = 0
-    while index < len(simple_command) and is_assignment(simple_command[index]):
-        index += 1
-    if index >= len(simple_command):
-        return None
-
-    command = basename(simple_command[index])
-    if command == "env":
-        index = skip_env_prefix(simple_command, index + 1)
-    elif command == "time":
-        index += 1
-        while index < len(simple_command) and simple_command[index].startswith("-"):
-            index += 1
-    elif command in {"command", "exec"}:
-        if index + 1 < len(simple_command) and simple_command[index + 1] in {"-v", "-V"}:
-            return None
-        index += 1
-
-    if index >= len(simple_command):
-        return None
-    return index if is_direct_python_token(simple_command[index]) else None
-
-
-def bypass_assignment_enabled(token: str) -> bool:
-    if not is_assignment(token):
-        return False
-    name, value = token.split("=", 1)
-    return name in BYPASS_ENV_NAMES and value.strip("\"'") in BYPASS_TRUE_VALUES
-
-
-def env_bypass_in_tokens(tokens: list[str], marker_enabled: bool = False) -> bool:
-    tokens = env_split_expanded_tokens(tokens)
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return marker_enabled
-        if bypass_assignment_enabled(token):
-            marker_enabled = True
-            index += 1
-            continue
-        if token in {"-u", "--unset"} and index + 1 < len(tokens):
-            if tokens[index + 1] in BYPASS_ENV_NAMES:
-                marker_enabled = False
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            if token.split("=", 1)[1] in BYPASS_ENV_NAMES:
-                marker_enabled = False
-            index += 1
-            continue
-        if is_assignment(token):
-            index += 1
-            continue
-        if token in {"-i", "--ignore-environment", "-0", "--null"}:
-            index += 1
-            continue
-        if token in {"-C", "--chdir", "-P", "--path"}:
-            index += 2
-            continue
-        if token.startswith(("--chdir=", "--path=")):
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return marker_enabled
-    return marker_enabled
-
-
-def simple_command_bypass_enabled(simple_command: list[str]) -> bool:
-    marker_enabled = False
-    index = 0
-    while index < len(simple_command) and is_assignment(simple_command[index]):
-        if bypass_assignment_enabled(simple_command[index]):
-            marker_enabled = True
-        index += 1
-    if index < len(simple_command) and basename(simple_command[index]) == "env":
-        return env_bypass_in_tokens(simple_command[index + 1 :], marker_enabled)
-
-    command_index = command_python_index(simple_command)
-    if command_index is None:
-        invocation = invocation_tokens(simple_command)
-        if not invocation:
-            return False
-        command_index = len(simple_command) - len(invocation)
-    index = 0
-    while index < command_index:
-        token = simple_command[index]
-        if bypass_assignment_enabled(token):
-            marker_enabled = True
-            index += 1
-            continue
-        if token in {"-u", "--unset"} and index + 1 < command_index:
-            if simple_command[index + 1] in BYPASS_ENV_NAMES:
-                marker_enabled = False
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            if token.split("=", 1)[1] in BYPASS_ENV_NAMES:
-                marker_enabled = False
-            index += 1
-            continue
-        if basename(token) == "env":
-            return env_bypass_in_tokens(simple_command[index + 1 :], marker_enabled)
-        index += 1
-    return marker_enabled
+def bypass_enabled(environment: Mapping[str, str]) -> bool:
+    return any(
+        environment.get(name, "") in BYPASS_TRUE_VALUES for name in BYPASS_ENV_NAMES
+    )
 
 
 def cd_target(simple_command: list[str], cwd: Path) -> Path | None:
@@ -377,28 +255,38 @@ def direct_python_invocation(
     command: str,
     start_cwd: Path,
     *,
-    inherited_bypass: bool = False,
+    inherited_bypass_environment: Mapping[str, str] | None = None,
     depth: int = 0,
     max_depth: int = 5,
 ) -> PythonInvocation | None:
     if depth > max_depth:
         return None
+    base_environment = (
+        dict(inherited_bypass_environment)
+        if inherited_bypass_environment is not None
+        else process_bypass_environment()
+    )
     simple_command: list[str] = []
     current_cwd = start_cwd
 
     def inspect(simple: list[str], cwd: Path) -> PythonInvocation | None:
         if not simple:
             return None
-        command_bypass = inherited_bypass or simple_command_bypass_enabled(simple)
+        command_environment = marker_environment_before_invocation(
+            simple, BYPASS_ENV_NAMES, base_environment
+        )
+        command_bypass = bypass_enabled(command_environment)
         found = command_python_token(simple)
         if found and not command_bypass:
             return PythonInvocation(found, cwd)
         payload = nested_shell_payload(invocation_tokens(simple))
         if payload:
+            if depth >= max_depth and not command_bypass:
+                return PythonInvocation("unresolved nested shell", cwd)
             return direct_python_invocation(
                 payload,
                 cwd,
-                inherited_bypass=command_bypass,
+                inherited_bypass_environment=command_environment,
                 depth=depth + 1,
                 max_depth=max_depth,
             )
@@ -445,7 +333,7 @@ def main() -> int:
     invocation = direct_python_invocation(
         command,
         path_from_payload(payload),
-        inherited_bypass=has_bypass(command),
+        inherited_bypass_environment=process_bypass_environment(),
     )
     if not invocation:
         return ALLOW

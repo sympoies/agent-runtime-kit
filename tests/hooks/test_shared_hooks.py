@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -267,11 +268,431 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "uv run --locked python")
 
+    def test_block_hooks_parse_combined_wrapper_options(self) -> None:
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                "/usr/bin/time -af %e git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "/usr/bin/time -pvo /dev/null git worktree remove ../victim",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "exec -ca renamed gh pr create --draft",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook, command=command):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload("exec -aname python -m pytest", workdir=str(repo)),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_hooks_fail_closed_on_opaque_wrapper_candidates(self) -> None:
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                "/usr/bin/time --future-option git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "exec --future-option git worktree remove ../victim",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "agent-run exec --future-option gh pr create --draft",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "/usr/bin/time --future-option env -S 'git commit -m test'",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "agent-run exec --future-option bash -c 'gh pr create --draft'",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook, command=command):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        opaque_nested = "git commit -m test"
+        for _ in range(6):
+            opaque_nested = f"bash -c {shlex.quote(opaque_nested)}"
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py",
+            command_payload(f"/usr/bin/time --future-option {opaque_nested}"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "semantic-commit")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload("command --future-option python -m pytest", workdir=str(repo)),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_hooks_parse_gnu_time_values_and_unique_abbreviations(self) -> None:
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                "/usr/bin/time -fV git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "/usr/bin/time -pvoV git worktree remove ../victim",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "/usr/bin/time --fo=V env -S 'git commit -m test'",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "/usr/bin/time --fo=V bash -c 'gh pr create --draft'",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook, command=command):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload(
+                    "/usr/bin/time --fo=V agent-run exec --cwd . -- "
+                    "command -- python -m pytest",
+                    workdir=str(repo),
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_hooks_parse_gnu_env_lone_dash_and_attached_values(self) -> None:
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                "env - git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "env -uSOMETHING git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "env -iuSOMETHING git worktree remove ../victim",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "env - gh pr create --draft",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "env --block-signal=PIPE git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "env --default-signal git worktree remove ../victim",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "env --ignore-signal=PIPE gh pr create --draft",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook, command=command):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            for command in (
+                "env -uSOMETHING python -m pytest",
+                "env --debug python -m pytest",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-python.py",
+                        command_payload(command, workdir=str(repo)),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_hooks_fail_closed_at_nested_shell_depth_limit(self) -> None:
+        def nested(command: str) -> str:
+            for _ in range(6):
+                command = f"bash -c {shlex.quote(command)}"
+            return command
+
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                nested("git commit -m test"),
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                nested("git worktree remove ../victim"),
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                nested("gh pr create --draft"),
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        read_only = "git status --short"
+        for _ in range(5):
+            read_only = f"bash -c {shlex.quote(read_only)}"
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(read_only)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload(nested("python -m pytest"), workdir=str(repo)),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_hooks_fail_closed_at_env_split_depth_limit(self) -> None:
+        def nested(command: str) -> str:
+            split_value = command
+            for _ in range(5):
+                split_value = f"-S {shlex.quote(split_value)}"
+            return f"env -S {shlex.quote(split_value)}"
+
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                nested("git commit -m test"),
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                nested("git worktree remove ../victim"),
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                nested("gh pr create --draft"),
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload(nested("python -m pytest"), workdir=str(repo)),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_hooks_fail_closed_on_env_split_variable_expansion(self) -> None:
+        cases = (
+            (
+                "block-direct-git-commit.py",
+                "CMD=git env -S '${CMD} commit -m test'",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "CMD=git env -S '\"${CMD}\" commit -m test'",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "export CMD=git; env -S \"'${CMD}' commit -m test\"",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "env -S \"'`printf git`' commit -m test\"",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "CMD=git env -S '${CMD} worktree remove ../victim'",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "CMD=gh env -S '${CMD} pr create --draft'",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "export CMD=git; env -S \"'${CMD}' worktree remove ../victim\"",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "export CMD=gh; env -S \"'${CMD}' pr create --draft\"",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "env -S \"'`printf git`' worktree remove ../victim\"",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "env -S \"'`printf gh`' pr create --draft\"",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "env -S '# ignored' git commit -m test",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "env -S '# ignored' git worktree remove ../victim",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "env -S '# ignored' gh pr create --draft",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+            (
+                "block-direct-git-commit.py",
+                "env -S 'git\\_commit -m test'",
+                "semantic-commit",
+            ),
+            (
+                "block-direct-git-worktree.py",
+                "env -S 'git\\_worktree remove ../victim'",
+                "git-cli worktree",
+            ),
+            (
+                "block-direct-pr-create.py",
+                "env -S 'gh\\_pr create --draft'",
+                "AGENT_RUNTIME_PR_SKILL",
+            ),
+        )
+        for hook, command, fragment in cases:
+            with self.subTest(hook=hook):
+                code, decision, stderr = run_hook(hook, command_payload(command))
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload(
+                    "CMD=python env -S '${CMD} -m pytest'", workdir=str(repo)
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
+            for command in (
+                "export CMD=python; env -S \"'${CMD}' -m pytest\"",
+                "env -S \"'`printf python`' -m pytest\"",
+                "env -S '# ignored' python -m pytest",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-python.py",
+                        command_payload(command, workdir=str(repo)),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "uv run --locked python")
+
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload("env -S 'python\\_-m pytest'", workdir=str(repo)),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
+
     def test_block_hooks_allow_legitimate_nested_shell_commands(self) -> None:
         cases = (
             ("block-direct-git-commit.py", "bash -c 'git status'"),
             ("block-direct-git-worktree.py", "bash -c 'git worktree list'"),
             ("block-direct-pr-create.py", "sh -c 'gh pr view 123'"),
+            ("block-direct-git-commit.py", "/usr/bin/time --future-option printf ok"),
+            ("block-direct-git-worktree.py", "exec --future-option printf ok"),
+            ("block-direct-pr-create.py", "agent-run exec --future-option printf ok"),
+            ("block-direct-git-commit.py", "env if git commit -m test"),
+            ("block-direct-git-worktree.py", "env then git worktree remove ../victim"),
+            ("block-direct-pr-create.py", "env do gh pr create --draft"),
+            ("block-direct-git-commit.py", "env -S 'printf foo#bar'"),
+            ("block-direct-git-worktree.py", "env -S 'printf foo#bar'"),
+            ("block-direct-pr-create.py", "env -S 'printf foo#bar'"),
+            ("block-direct-git-commit.py", "env -S 'printf foo\u00a0#bar'"),
+            ("block-direct-git-worktree.py", "env -S 'printf foo\u00a0#bar'"),
+            ("block-direct-pr-create.py", "env -S 'printf foo\u00a0#bar'"),
         )
         for hook, command in cases:
             with self.subTest(hook=hook, command=command):
@@ -320,6 +741,7 @@ class SharedHookTests(unittest.TestCase):
             "ALLOW_DIRECT_GIT_WORKTREE=1 git worktree add ../repo-topic",
             "env ALLOW_DIRECT_GIT_WORKTREE=1 git worktree add ../repo-topic",
             "env -S 'ALLOW_DIRECT_GIT_WORKTREE=1 git worktree add ../repo-topic'",
+            "env -uSOMETHING ALLOW_DIRECT_GIT_WORKTREE=1 git worktree add ../repo-topic",
             "ALLOW_DIRECT_GIT_WORKTREE=1 bash -lc 'git worktree add ../repo-topic'",
         )
         for command in allowed_commands:
@@ -338,6 +760,53 @@ class SharedHookTests(unittest.TestCase):
         )
         self.assertEqual(code, 0, stderr)
         self.assert_allowed(decision)
+
+    def test_git_worktree_override_respects_env_option_boundaries(self) -> None:
+        blocked_commands = (
+            "env -iC ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
+            "env --ch ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 env - git worktree remove ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i git worktree remove ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -u ALLOW_DIRECT_GIT_WORKTREE git worktree remove ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 /usr/bin/time -f x env -i git worktree remove ../victim",
+        )
+        for command in blocked_commands:
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-worktree.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "git-cli worktree")
+
+        code, decision, stderr = run_hook(
+            "block-direct-git-worktree.py",
+            command_payload(
+                "env -iC . ALLOW_DIRECT_GIT_WORKTREE=1 "
+                "git worktree remove ../victim"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
+        for command in (
+            "env -- ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree remove ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim'",
+        ):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-worktree.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        code, decision, stderr = run_hook(
+            "block-direct-git-worktree.py",
+            command_payload("env -i git worktree remove ../victim"),
+            env={"ALLOW_DIRECT_GIT_WORKTREE": "1"},
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "git-cli worktree")
 
     def test_python_hooks_do_not_write_bytecode_in_source_checkout(self) -> None:
         pycache = HOOK_DIR / "__pycache__"
@@ -637,6 +1106,7 @@ class SharedHookTests(unittest.TestCase):
 
             for command in (
                 "env -S 'AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 python -m pytest'",
+                "env -uSOMETHING AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 python -m pytest",
                 "AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 bash -lc 'python -m pytest'",
             ):
                 with self.subTest(command=command):
@@ -657,6 +1127,11 @@ class SharedHookTests(unittest.TestCase):
                 "printf AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1; python -m pytest",
                 "python -m pytest --note AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1",
                 "# AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1\npython -m pytest",
+                "AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 env - python -m pytest",
+                "AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 bash -c 'env -i python -m pytest'",
+                "AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 bash -c 'env -u AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON python -m pytest'",
+                "/usr/bin/time -f AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 python -m pytest",
+                "exec -a AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 python -m pytest",
             )
             for command in blocked:
                 with self.subTest(command=command):
@@ -667,6 +1142,28 @@ class SharedHookTests(unittest.TestCase):
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "uv run --locked python")
+
+            for command in (
+                "env -- AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 python -m pytest",
+                "AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 bash -c 'env -i AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON=1 python -m pytest'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-python.py",
+                        command_payload(command, workdir=str(repo)),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload("env -i python -m pytest", workdir=str(repo)),
+                cwd=repo,
+                env={"AGENT_RUNTIME_ALLOW_SYSTEM_PYTHON": "1"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "uv run --locked python")
 
     def test_nested_direct_python_uses_current_shell_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -731,6 +1228,8 @@ class SharedHookTests(unittest.TestCase):
             "gh pr create --draft --body 'AGENT_RUNTIME_PR_SKILL=deliver-pr'",
             "AGENT_RUNTIME_PR_SKILL=deliver-pr printf ok; gh pr create --draft",
             "# AGENT_RUNTIME_PR_SKILL=deliver-pr\ngh pr create --draft",
+            "AGENT_RUNTIME_PR_SKILL=deliver-pr env - gh pr create --draft",
+            "AGENT_RUNTIME_PR_SKILL=deliver-pr /usr/bin/time -f x env -i gh pr create --draft",
         ):
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
@@ -747,8 +1246,18 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_allowed(decision)
 
+        code, decision, stderr = run_hook(
+            "block-direct-pr-create.py",
+            command_payload(
+                "env -- AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
         for command in (
             "env -S 'AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft'",
+            "env -uSOMETHING AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft",
             "AGENT_RUNTIME_PR_SKILL=deliver-pr bash -lc 'gh pr create --draft'",
         ):
             with self.subTest(command=command):
@@ -1075,9 +1584,15 @@ class SharedHookTests(unittest.TestCase):
     def test_blocks_forge_cli_wrapper_bypass(self) -> None:
         blocked_commands = (
             "env -u FORGE_BOT_PROFILE forge-cli pr review 448",
+            "env - forge-cli pr review 448",
+            "env -uSOMETHING forge-cli pr review 448",
+            "env --block-signal=PIPE forge-cli pr review 448",
             "env FORGE_BOT_PROFILE=dobi forge-cli pr review 448",
             "env -S 'forge-cli pr review 448'",
             "env -S 'FORGE_BOT_PROFILE=dobi forge-cli pr review 448'",
+            "export CMD=forge-cli; env -S \"'${CMD}' pr review 448\"",
+            "env -S \"'`printf forge-cli`' pr review 448\"",
+            "env -S '# ignored' forge-cli pr review 448",
             "env -S'forge-cli pr review 448'",
             "env -iS'forge-cli pr review 448'",
             "env -C /tmp forge-cli pr review 448",
@@ -1091,8 +1606,12 @@ class SharedHookTests(unittest.TestCase):
             "time FORGE_BOT_PROFILE=dobi env forge-cli pr review 448",
             "/usr/bin/time -o /dev/null env forge-cli pr review 448",
             "/usr/bin/time --output=/dev/null env forge-cli pr review 448",
+            "/usr/bin/time -af %e forge-cli pr review 448",
+            "/usr/bin/time --fo=V env forge-cli pr review 448",
+            "exec -ca reviewed forge-cli pr review 448",
             "agent-run exec --cwd /repo -- time env forge-cli pr review 448",
             "agent-run exec --cwd /repo -- env -u FORGE_BOT_PROFILE forge-cli pr review 448",
+            "agent-run exec --cwd /repo env -u FORGE_BOT_PROFILE forge-cli pr review 448",
             "agent-run exec --cwd /repo -- env -S 'forge-cli pr review 448'",
             "bash -lc 'env -u FORGE_BOT_PROFILE forge-cli pr review 448'",
             "zsh -lc '/opt/homebrew/bin/forge-cli pr review 448'",
@@ -8451,6 +8970,7 @@ exit 65
             "block-direct-pr-create.py",
             "block-direct-python.py",
             "block-project-memory-write.py",
+            "checkout-lease-guard.py",
             "finish-line-record.py",
             "forge-label-reminder.py",
             "mcp-secret-scan.py",
@@ -8571,6 +9091,1189 @@ exit 65
             if path.is_file()
         )
         self.assertNotIn("pre-edit-intent-gate.py", hermes_sources)
+
+    def test_checkout_lease_guard_is_wired_for_mutation_and_stop(self) -> None:
+        codex_hooks = tomllib.loads(
+            (
+                REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml"
+            ).read_text(encoding="utf-8")
+        )["hooks"]
+        claude_hooks = load_claude_hook_fragment()["hooks"]
+
+        for product, hooks in (("codex", codex_hooks), ("claude", claude_hooks)):
+            pre_tool_groups = hooks["PreToolUse"]
+            mutation_matchers = {
+                group["matcher"]
+                for group in pre_tool_groups
+                if any(
+                    "checkout-lease-guard.py" in hook["command"]
+                    for hook in group["hooks"]
+                )
+            }
+            self.assertIn("Bash", mutation_matchers, product)
+            self.assertTrue(
+                any("Write" in matcher.split("|") for matcher in mutation_matchers),
+                product,
+            )
+            self.assertTrue(
+                any(
+                    "checkout-lease-guard.py" in hook["command"]
+                    for group in hooks["Stop"]
+                    for hook in group["hooks"]
+                ),
+                product,
+            )
+
+        hermes_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (REPO_ROOT / "targets" / "hermes").rglob("*")
+            if path.is_file()
+        )
+        self.assertNotIn("checkout-lease-guard.py", hermes_sources)
+
+    @staticmethod
+    def _init_checkout_lease_repo(path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=path,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Hook Test"], cwd=path, check=True
+        )
+        (path / "README.md").write_text("# lease fixture\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=path, check=True)
+        subprocess.run(
+            [
+                "git",
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+            cwd=path,
+            check=True,
+        )
+
+    @staticmethod
+    def _checkout_lease_payload(
+        session_id: str,
+        path: Path,
+        *,
+        tool_name: str = "Write",
+        command: str = "",
+    ) -> dict[str, Any]:
+        if tool_name == "Bash":
+            tool_input: dict[str, Any] = {"command": command}
+        else:
+            tool_input = {"file_path": str(path), "content": "updated\n"}
+        return {
+            "session_id": session_id,
+            "hook_event_name": "PreToolUse",
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+        }
+
+    @staticmethod
+    def _checkout_lease_files(state: Path) -> list[Path]:
+        return list((state / "checkout-leases").rglob("lease.json"))
+
+    def test_checkout_lease_multi_edit_resolves_one_checkout_once(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                checkout = module.Checkout(
+                    root=root,
+                    git_dir=root / ".git",
+                    common_dir=root / ".git",
+                    primary=True,
+                )
+                probes: list[Path] = []
+
+                def fake_checkout_from(path: Path):
+                    probes.append(path)
+                    return checkout
+
+                module.checkout_from = fake_checkout_from
+                payload = {
+                    "cwd": str(root),
+                    "tool_input": {
+                        "edits": [
+                            {"file_path": str(root / f"file-{index}.txt")}
+                            for index in range(30)
+                        ]
+                    },
+                }
+                self.assertEqual(
+                    module.target_checkouts(payload, "MultiEdit"), [checkout]
+                )
+                self.assertEqual(probes, [root])
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_owner_refreshes_dirty_checkout_and_blocks_foreign_writer(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            owner_payload = self._checkout_lease_payload(
+                "owner-session", repo / "README.md"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner_payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            (repo / "owned.txt").write_text("owner change\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner_payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            foreign_payload = self._checkout_lease_payload(
+                "foreign-session", repo / "README.md"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", foreign_payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+    def test_checkout_lease_owner_refresh_is_throttled_until_renewal_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            owner = self._checkout_lease_payload("owner", repo / "README.md")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lease_file = self._checkout_lease_files(state)[0]
+            initial = lease_file.read_bytes()
+            initial_mtime = lease_file.stat().st_mtime_ns
+            time.sleep(0.02)
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(lease_file.read_bytes(), initial)
+            self.assertEqual(lease_file.stat().st_mtime_ns, initial_mtime)
+
+    def test_checkout_lease_lock_wait_is_bounded(self) -> None:
+        import fcntl
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            payload = self._checkout_lease_payload("owner", repo / "README.md")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lock_file = next((state / "checkout-leases").rglob("lease.lock"))
+
+            with lock_file.open("a+", encoding="utf-8") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                started = time.monotonic()
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py", payload, cwd=repo, env=env
+                )
+                elapsed = time.monotonic() - started
+            self.assertEqual(code, 0, stderr)
+            self.assertLess(elapsed, 3.0)
+            self.assert_blocked(decision, "lock timed out")
+
+    def test_checkout_lease_blocks_unowned_dirty_and_non_default_primary_checkout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dirty_repo = root / "dirty"
+            branch_repo = root / "branch"
+            state = root / "state"
+            self._init_checkout_lease_repo(dirty_repo)
+            self._init_checkout_lease_repo(branch_repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            (dirty_repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", dirty_repo / "README.md"),
+                cwd=dirty_repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "unowned changes")
+
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feature/direct-edit"],
+                cwd=branch_repo,
+                check=True,
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", branch_repo / "README.md"),
+                cwd=branch_repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "default branch")
+
+    def test_checkout_lease_primary_requires_authoritative_default_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "init.defaultBranch", "main"], cwd=repo, check=True
+            )
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "default=unknown")
+
+    def test_checkout_lease_reclaims_expired_clean_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("first", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            lease_file = self._checkout_lease_files(state)[0]
+            lease = json.loads(lease_file.read_text(encoding="utf-8"))
+            lease["expires_at"] = 0
+            lease_file.write_text(json.dumps(lease) + "\n", encoding="utf-8")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("second", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_checkout_lease_does_not_reclaim_expired_dirty_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("first", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lease_file = self._checkout_lease_files(state)[0]
+            lease = json.loads(lease_file.read_text(encoding="utf-8"))
+            lease["expires_at"] = 0
+            lease_file.write_text(json.dumps(lease) + "\n", encoding="utf-8")
+            (repo / "dirty.txt").write_text("unowned\n", encoding="utf-8")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("second", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "unowned changes")
+
+    def test_checkout_lease_rejects_cross_checkout_edit_without_partial_claim(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first"
+            second = root / "second"
+            state = root / "state"
+            self._init_checkout_lease_repo(first)
+            self._init_checkout_lease_repo(second)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            payload = {
+                "session_id": "writer",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "MultiEdit",
+                "cwd": str(first),
+                "tool_input": {
+                    "edits": [
+                        {"file_path": str(first / "README.md")},
+                        {"file_path": str(second / "README.md")},
+                    ]
+                },
+            }
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", payload, cwd=first, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "spans multiple checkouts")
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_checkout_lease_atomic_race_has_exactly_one_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            def attempt(session: str) -> tuple[int, dict[str, object] | None, str]:
+                return run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload(session, repo / "README.md"),
+                    cwd=repo,
+                    env=env,
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(attempt, ("racer-one", "racer-two")))
+
+            self.assertTrue(all(code == 0 for code, _, _ in results), results)
+            allowed = [decision for _, decision, _ in results if decision is None]
+            blocked = [decision for _, decision, _ in results if decision is not None]
+            self.assertEqual(len(allowed), 1, results)
+            self.assertEqual(len(blocked), 1, results)
+            self.assert_blocked(blocked[0], "another agent session")
+
+            lease_files = list((state / "checkout-leases").rglob("lease.json"))
+            self.assertEqual(len(lease_files), 1)
+            lease = json.loads(lease_files[0].read_text(encoding="utf-8"))
+            lease["expires_at"] = 0
+            lease_files[0].write_text(
+                json.dumps(lease, sort_keys=True) + "\n", encoding="utf-8"
+            )
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("second", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_checkout_lease_recreated_worktree_gets_a_new_instance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/one", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("first", linked / "README.md"),
+                cwd=linked,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            subprocess.run(
+                ["git", "worktree", "remove", str(linked)], cwd=primary, check=True
+            )
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/two", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("second", linked / "README.md"),
+                cwd=linked,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_checkout_lease_blocks_git_operation_and_missing_mutation_identity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            git_dir = subprocess.run(
+                ["git", "rev-parse", "--absolute-git-dir"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            (Path(git_dir) / "MERGE_HEAD").write_text("fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "Git operation")
+            (Path(git_dir) / "MERGE_HEAD").unlink()
+
+            missing_session = self._checkout_lease_payload("", repo / "README.md")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", missing_session, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "session identity")
+
+    def test_checkout_lease_unavailable_state_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state_file = root / "state-is-a-file"
+            self._init_checkout_lease_repo(repo)
+            state_file.write_text("not a directory\n", encoding="utf-8")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state_file)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "fails closed")
+
+    def test_checkout_lease_preserves_read_only_bash_and_stop_is_non_destructive(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            for command in (
+                "git status --short",
+                "git branch --show-current",
+                "git branch --list",
+                "git branch -avv",
+                "git branch --contains HEAD",
+                "git branch --merged HEAD --format='%(refname:short)'",
+                "git tag --list",
+                "git tag -n",
+                "git tag --points-at HEAD",
+                "git tag --contains HEAD --format='%(refname:short)'",
+                "git stash list",
+                "git bisect log",
+                "git bisect terms",
+                "command -v git-cli",
+                "command -V git-cli",
+                "/usr/bin/time -V",
+                "/usr/bin/time --vers",
+                "env --help",
+                "env --version",
+                "env -uSOMETHING printf ok",
+                "env -S 'printf foo\u00a0#bar'",
+                "env if touch wrapper-argument.txt",
+                "wc -l < README.md",
+            ):
+                with self.subTest(command=command):
+                    read_only = self._checkout_lease_payload(
+                        "", repo, tool_name="Bash", command=command
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", read_only, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command in (
+                "git branch topic",
+                "git tag v1",
+                "git stash push",
+                "git bisect start",
+                "git pull --ff-only",
+                "bash -c 'touch nested.txt'",
+                "agent-run exec --cwd . -- touch wrapped.txt",
+                "env - touch empty-env.txt",
+                "env -uSOMETHING touch unset-env.txt",
+                "env --block-signal=PIPE touch signal-env.txt",
+                "! touch bang-control.txt",
+                "if true; then touch if-control.txt; fi",
+                "while true; do touch while-control.txt; break; done",
+                "mutate() { touch function-control.txt; }; mutate",
+                "function mutate { touch function-bash.txt; }; mutate",
+                "function mutate() { touch function-bash-parens.txt; }; mutate",
+                'CMD=touch; "$CMD" dynamic-variable.txt',
+                "`printf touch` dynamic-backtick.txt",
+                "$(printf touch) dynamic-substitution.txt",
+                "bash -c 'CMD=touch; \"$CMD\" nested-dynamic.txt'",
+                "printf x >generated.txt",
+                "printf x 2>errors.txt",
+                "printf x >>generated.txt",
+                "printf x &>combined.txt",
+                "printf x >|clobber.txt",
+            ):
+                with self.subTest(command=command):
+                    mutation = self._checkout_lease_payload(
+                        "", repo, tool_name="Bash", command=command
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", mutation, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "session identity")
+
+            mutation = self._checkout_lease_payload(
+                "", repo, tool_name="Bash", command="touch generated.txt"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", mutation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "session identity")
+
+            nested_mutation = "touch depth-limited.txt"
+            for _ in range(6):
+                nested_mutation = f"bash -c {shlex.quote(nested_mutation)}"
+            mutation = self._checkout_lease_payload(
+                "", repo, tool_name="Bash", command=nested_mutation
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", mutation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "session identity")
+
+            nested_env_split = "touch env-depth-limited.txt"
+            for _ in range(5):
+                nested_env_split = f"-S {shlex.quote(nested_env_split)}"
+            nested_env_mutation = f"env -S {shlex.quote(nested_env_split)}"
+            mutation = self._checkout_lease_payload(
+                "", repo, tool_name="Bash", command=nested_env_mutation
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", mutation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "session identity")
+
+            variable_env_mutation = self._checkout_lease_payload(
+                "",
+                repo,
+                tool_name="Bash",
+                command="CMD=touch env -S '${CMD} variable-expanded.txt'",
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", variable_env_mutation, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "session identity")
+
+            for command in (
+                "export CMD=touch; env -S \"'${CMD}' quote-expanded.txt\"",
+                "env -S \"'`printf touch`' backtick-expanded.txt\"",
+                "env -S '# ignored' touch comment-hidden.txt",
+            ):
+                with self.subTest(command=command):
+                    opaque_mutation = self._checkout_lease_payload(
+                        "", repo, tool_name="Bash", command=command
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        opaque_mutation,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "session identity")
+
+            owner = self._checkout_lease_payload("owner", repo / "README.md")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lease_files = list((state / "checkout-leases").rglob("lease.json"))
+            self.assertEqual(len(lease_files), 1)
+
+            stop_payload = {"session_id": "owner", "hook_event_name": "Stop"}
+            code, audit, stderr = run_hook(
+                "checkout-lease-guard.py", stop_payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(audit)
+            assert audit is not None
+            self.assertIn("released", str(audit.get("systemMessage", "")))
+            self.assertFalse(lease_files[0].exists())
+
+    def test_checkout_lease_stop_retains_dirty_owner_and_prunes_removed_worktree(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/prune", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            owner = self._checkout_lease_payload("owner", primary / "README.md")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            (primary / "dirty.txt").write_text("owned\n", encoding="utf-8")
+            code, audit, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {"session_id": "owner", "hook_event_name": "Stop"},
+                cwd=primary,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(audit)
+            self.assertIn("retained", str(audit.get("systemMessage", "")))
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+            (primary / "dirty.txt").unlink()
+
+            linked_owner = self._checkout_lease_payload("linked-owner", linked / "README.md")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", linked_owner, cwd=linked, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            linked_lease = next(
+                lease_path
+                for lease_path in self._checkout_lease_files(state)
+                if json.loads(lease_path.read_text(encoding="utf-8"))[
+                    "checkout_root"
+                ]
+                == str(linked.resolve())
+            )
+            linked_lock = linked_lease.parent / "lease.lock"
+            lock_inode = linked_lock.stat().st_ino
+            subprocess.run(
+                ["git", "worktree", "remove", str(linked)], cwd=primary, check=True
+            )
+            code, _audit, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {"session_id": "other", "hook_event_name": "Stop"},
+                cwd=primary,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+            self.assertTrue(linked_lock.exists())
+            self.assertEqual(linked_lock.stat().st_ino, lock_inode)
+
+    def test_checkout_lease_worktree_remove_targets_the_foreign_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/remove", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", linked / "README.md"),
+                cwd=linked,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            remove = self._checkout_lease_payload(
+                "delivery",
+                primary,
+                tool_name="Bash",
+                command=f"git-cli worktree remove {shlex.quote(str(linked))} --format json",
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", remove, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+            target = shlex.quote(str(linked))
+            primary_arg = shlex.quote(str(primary))
+            for command in (
+                f"command -- git-cli worktree remove {target}",
+                f"command -p git-cli worktree remove {target}",
+                f"exec -- git-cli worktree remove {target}",
+                f"exec -a managed git-cli worktree remove {target}",
+                f"env - git-cli worktree remove {target}",
+                f"env -uSOMETHING git-cli worktree remove {target}",
+                f"/usr/bin/time -f %e git-cli worktree remove {target}",
+                (
+                    f"agent-run exec --cwd {primary_arg} "
+                    f"git-cli worktree remove {target}"
+                ),
+                (
+                    f"agent-run exec --cwd={primary_arg} --direnv off -- "
+                    f"/usr/bin/time --format %e command -- "
+                    f"git-cli worktree remove {target}"
+                ),
+            ):
+                with self.subTest(command=command):
+                    wrapped = self._checkout_lease_payload(
+                        "delivery",
+                        primary,
+                        tool_name="Bash",
+                        command=command,
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", wrapped, cwd=primary, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "another agent session")
+
+            for command in (
+                f"! git-cli worktree remove {target}",
+                f"if true; then git-cli worktree remove {target}; fi",
+                (
+                    "while true; do git-cli worktree remove "
+                    f"{target}; break; done"
+                ),
+                (
+                    "remove_target() { git-cli worktree remove "
+                    f"{target}; }}; remove_target"
+                ),
+                (
+                    "function remove_target { git-cli worktree remove "
+                    f"{target}; }}; remove_target"
+                ),
+                (
+                    "function remove_target() { git-cli worktree remove "
+                    f"{target}; }}; remove_target"
+                ),
+            ):
+                with self.subTest(command=command):
+                    controlled = self._checkout_lease_payload(
+                        "delivery",
+                        primary,
+                        tool_name="Bash",
+                        command=command,
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", controlled, cwd=primary, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "another agent session")
+
+            unresolved_commands = [
+                (
+                    "CMD=git-cli env -S '${CMD} worktree remove "
+                    f"{target}'"
+                ),
+                (
+                    "export CMD=git-cli; env -S \"'${CMD}' worktree remove "
+                    f"{target}\""
+                ),
+                (
+                    "env -S \"'`printf git-cli`' worktree remove "
+                    f"{target}\""
+                ),
+                f"env -S '# ignored' git-cli worktree remove {target}",
+                f'CMD=git-cli; "$CMD" worktree remove {target}',
+                f"`printf git-cli` worktree remove {target}",
+                f"$(printf git-cli) worktree remove {target}",
+                (
+                    "bash -c "
+                    + shlex.quote(
+                        f'CMD=git-cli; "$CMD" worktree remove {target}'
+                    )
+                ),
+            ]
+            split_value = f"git-cli worktree remove {target}"
+            for _ in range(5):
+                split_value = f"-S {shlex.quote(split_value)}"
+            unresolved_commands.append(f"env -S {shlex.quote(split_value)}")
+            for command in unresolved_commands:
+                with self.subTest(command=command):
+                    wrapped = self._checkout_lease_payload(
+                        "delivery",
+                        primary,
+                        tool_name="Bash",
+                        command=command,
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", wrapped, cwd=primary, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be verified")
+
+    def test_checkout_lease_worktree_remove_slug_targets_the_foreign_lease(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/slug", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            (primary / "linked").mkdir()
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", linked / "README.md"),
+                cwd=linked,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            remove = self._checkout_lease_payload(
+                "delivery",
+                primary,
+                tool_name="Bash",
+                command="git-cli worktree remove linked --format json",
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", remove, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+    def test_checkout_lease_detects_nested_checkout_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outer = root / "outer"
+            nested = outer / "nested"
+            state = root / "state"
+            self._init_checkout_lease_repo(outer)
+            (outer / ".git" / "info" / "exclude").write_text(
+                "nested/\n", encoding="utf-8"
+            )
+            self._init_checkout_lease_repo(nested)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", nested / "README.md"),
+                cwd=nested,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            multi = {
+                "session_id": "outer-writer",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "MultiEdit",
+                "cwd": str(outer),
+                "tool_input": {
+                    "edits": [
+                        {"file_path": str(outer / "README.md")},
+                        {"file_path": str(nested / "README.md")},
+                    ]
+                },
+            }
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", multi, cwd=outer, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "spans multiple checkouts")
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "outer-writer", nested / "README.md"
+                ),
+                cwd=outer,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+    def test_checkout_lease_fails_closed_on_broken_nested_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outer = root / "outer"
+            broken = outer / "broken"
+            state = root / "state"
+            self._init_checkout_lease_repo(outer)
+            (outer / ".git" / "info" / "exclude").write_text(
+                "broken/\n", encoding="utf-8"
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", outer / "README.md"),
+                cwd=outer,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            broken.mkdir()
+            (broken / ".git").write_text(
+                "gitdir: /definitely/missing/gitdir\n", encoding="utf-8"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "other", broken / "generated.txt"
+                ),
+                cwd=outer,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "fails closed")
+
+    def test_checkout_lease_rejects_compound_worktree_removal_mutation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "feature/compound",
+                    str(linked),
+                ],
+                cwd=primary,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", primary / "README.md"),
+                cwd=primary,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            remove = self._checkout_lease_payload(
+                "delivery",
+                primary,
+                tool_name="Bash",
+                command=(
+                    "git-cli worktree remove linked --format json; "
+                    "touch collision.txt"
+                ),
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", remove, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "sole mutating command")
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+
+    def test_checkout_lease_worktree_remove_parses_option_before_target(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            json_worktree = root / "json"
+            victim = root / "victim"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            for branch, path in (
+                ("feature/json", json_worktree),
+                ("feature/victim", victim),
+            ):
+                subprocess.run(
+                    ["git", "worktree", "add", "-q", "-b", branch, str(path)],
+                    cwd=primary,
+                    check=True,
+                )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", victim / "README.md"),
+                cwd=victim,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            remove = self._checkout_lease_payload(
+                "delivery",
+                primary,
+                tool_name="Bash",
+                command="git-cli worktree remove --format json victim",
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", remove, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+
+    def test_checkout_lease_rejects_multiple_worktree_removals_before_claim(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            available = root / "a-available"
+            foreign = root / "z-foreign"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            for branch, path in (
+                ("feature/available", available),
+                ("feature/foreign", foreign),
+            ):
+                subprocess.run(
+                    ["git", "worktree", "add", "-q", "-b", branch, str(path)],
+                    cwd=primary,
+                    check=True,
+                )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", foreign / "README.md"),
+                cwd=foreign,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            remove = self._checkout_lease_payload(
+                "delivery",
+                primary,
+                tool_name="Bash",
+                command=(
+                    "git-cli worktree remove a-available --format json; "
+                    "git-cli worktree remove z-foreign --format json"
+                ),
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", remove, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "exactly one")
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+
+    def test_checkout_lease_stop_releases_clean_failed_removal_target(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/fail", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            remove = self._checkout_lease_payload(
+                "delivery",
+                primary,
+                tool_name="Bash",
+                command=f"git-cli worktree remove {shlex.quote(str(linked))}",
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", remove, cwd=primary, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+
+            code, audit, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {"session_id": "delivery", "hook_event_name": "Stop"},
+                cwd=primary,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(audit)
+            assert audit is not None
+            self.assertIn("released", str(audit.get("systemMessage", "")))
+            self.assertEqual(self._checkout_lease_files(state), [])
+            self.assertTrue(linked.is_dir())
 
     def test_claude_memory_reminder_matches_all_edit_tools(self) -> None:
         claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]

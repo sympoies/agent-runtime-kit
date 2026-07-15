@@ -10,6 +10,12 @@ statusMessage = "agent-runtime-kit: Verify project-dev before repository command
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/checkout-lease-guard.py\""
+timeout = 10
+statusMessage = "agent-runtime-kit: Coordinate checkout writer lease"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
 command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/block-direct-git-commit.py\""
 timeout = 10
 statusMessage = "agent-runtime-kit: Block direct git commit"
@@ -115,6 +121,12 @@ statusMessage = "agent-runtime-kit: Verify project-dev intent activation"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/checkout-lease-guard.py\""
+timeout = 10
+statusMessage = "agent-runtime-kit: Coordinate checkout writer lease"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
 command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/finish-line-record.py\""
 timeout = 20
 statusMessage = "agent-runtime-kit: Record agent-docs code edits"
@@ -163,6 +175,12 @@ type = "command"
 command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/agent-scope-lock-guard.py\""
 timeout = 10
 statusMessage = "agent-runtime-kit: Report scope lock violations"
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/checkout-lease-guard.py\""
+timeout = 10
+statusMessage = "agent-runtime-kit: Audit checkout writer lease"
 
 [[hooks.Stop.hooks]]
 type = "command"

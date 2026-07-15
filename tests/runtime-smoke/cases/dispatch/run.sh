@@ -1253,9 +1253,13 @@ run_dispatch_outcome_routing_probe() {
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'record audit'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'issue view "$ISSUE" --with-comments'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue '--expect-visible'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'git-cli worktree remove <path-or-slug> --format json'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'provider-confirmed delivered head'
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'record audit'
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'issue view "$ISSUE" --with-comments'
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan '--expect-visible'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'git-cli worktree remove <path-or-slug> --format json'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'provider-confirmed delivered head'
   rendered_contract_assert_reference dispatch deliver-plan-tracking-issue references/outcome-routing.md
   rendered_contract_assert_reference dispatch deliver-dispatch-plan references/outcome-routing.md
 }

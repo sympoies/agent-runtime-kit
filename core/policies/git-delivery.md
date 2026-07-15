@@ -41,6 +41,71 @@ detail behind the one-line gates.
   the branch ref in place; delete a merged throwaway branch explicitly, or use
   `meta:worktree-triage` to batch-clean stale worktrees and branches.
 
+### Adaptive checkout writer lease
+
+- Supported PreToolUse hooks coordinate one writer lease per physical Git
+  checkout. Explicit edit tools participate unconditionally; Bash participates
+  only for conservative high-confidence mutations, recursively recognizing
+  known shell / `agent-run exec` wrappers. Read-only inspection stays available.
+  Cross-repository shell mutations must still run with each target repository
+  as CWD except for explicitly target-aware managed worktree removal.
+- A clean linked worktree can acquire a lease. The primary checkout has a
+  narrow direct-edit exception: it must be clean, on the resolved default
+  branch, outside an existing Git operation, and free of a live foreign lease.
+  This keeps small changes cheap without treating a one-time `git status` as a
+  concurrency lock.
+- Once acquired, the owning session refreshes its lease and may continue after
+  its own edits dirty the checkout, including resolving a Git operation it
+  initiated after acquisition. A live foreign lease, dirty checkout without a
+  matching lease, or pre-existing merge/rebase/cherry-pick/revert/bisect state
+  blocks mutation and routes the agent to a managed worktree.
+- Lease state uses a privacy-safe session digest plus a checkout-instance
+  sentinel stored under the checkout's Git admin directory. Removing and
+  recreating a linked worktree therefore cannot inherit its predecessor's
+  ownership. The default lease lifetime is eight hours and may be tuned with
+  `AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS`; an expired foreign lease is
+  reclaimable only while the checkout is clean.
+- Missing session identity or unwritable/malformed lease state fails closed for
+  explicit mutations. Stop releases only a clean lease owned by its matching
+  session and prunes stale lease records for physically removed worktrees while
+  retaining stable per-checkout lock inodes; otherwise it reports and retains
+  ownership. Stop never deletes a worktree, branch, commit, or dirty file.
+
+### Terminal local cleanup
+
+- Capture the checkout root, branch, and delivered head SHA before merge.
+  Cleanup becomes eligible only after provider merge truth is read back and
+  matches that delivered head, and after linked issue closeout, archive duties,
+  requested deployment/activation, evidence migration, and other parent-owned
+  terminal work have completed.
+- Recheck local status immediately before cleanup. Dirty, locked, missing,
+  provider-unverified, or otherwise ambiguous state is retained and reported;
+  never force removal merely to make the local tree look tidy.
+- Managed worktree removal must run through a supported hooked shell. The
+  checkout lease guard resolves the removal target, claims or refreshes its
+  lease, and blocks a live foreign owner before `git-cli` executes. If the
+  target lease cannot be verified or the hook is unavailable, retain the
+  worktree and report the failed proof instead of removing it.
+- Run exactly one managed worktree removal as the shell command's sole mutation.
+  Do not combine removals or combine removal with branch deletion, redirection,
+  or another checkout write; execute each lifecycle step separately so its
+  lease scope stays explicit.
+- For a primary checkout, switch a clean completed branch back to the intended
+  base and fast-forward it from the provider before deleting the disposable
+  local branch. For a managed linked worktree, run `git-cli worktree remove
+  <path-or-slug> --format json` from the primary checkout. Direct mutating
+  `git worktree` remains forbidden. The session's final Stop releases a clean
+  primary-checkout lease and prunes lease state left by a successfully removed
+  managed worktree.
+- `git-cli worktree remove` intentionally leaves the branch. Delete it only
+  after the provider-confirmed delivered head matches the local branch tip.
+  This explicit proof permits cleanup after a squash merge, where
+  `git branch -d` cannot infer provider equivalence from ancestry alone.
+- A child PR workflow defers cleanup when its L2/L3 parent or another requested
+  post-merge workflow still owns terminal duties, handing the captured checkout
+  identity to that parent. The outermost successful workflow performs cleanup
+  exactly once; failed or readiness-only workflows retain the checkout.
+
 ## Branches
 
 - Branch names carry a Conventional-Commits-style prefix matching the eventual

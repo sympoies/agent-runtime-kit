@@ -18,11 +18,12 @@ sys.dont_write_bytecode = True
 from hook_common import (
     ALLOW,
     command_from,
-    env_target_tokens,
-    env_split_expanded_tokens,
     emit_block,
+    invocation_is_unresolved_nested,
     invocation_tokens,
+    marker_environment_before_invocation,
     nested_shell_payload,
+    opaque_invocation_candidates,
     read_payload,
     simple_commands,
 )
@@ -217,15 +218,6 @@ def invokes_glab_api_mr_create(simple_command: list[str]) -> bool:
     return api_method_is_post(api_args) and api_has_merge_requests_endpoint(api_args)
 
 
-def marker_assignment_value(token: str) -> str | None:
-    if not is_assignment(token):
-        return None
-    name, value = token.split("=", 1)
-    if name not in MARKER_ENV_NAMES:
-        return None
-    return value.strip("\"'")
-
-
 def marker_value_before_command(
     simple_command: list[str], command_name: str, marker: str | None = None
 ) -> str | None:
@@ -238,62 +230,11 @@ def marker_value_before_command(
 def marker_value_before_invocation(
     tokens: list[str], marker: str | None = None
 ) -> str | None:
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        value = marker_assignment_value(token)
-        if value is not None:
-            marker = value
-            index += 1
-            continue
-        if basename(token) == "env":
-            return marker_value_from_env_tokens(tokens[index + 1 :], marker)
-        if basename(token) in {"time", "command", "exec"}:
-            index += 1
-            continue
-        return marker
-    return marker
-
-
-def marker_value_from_env_tokens(tokens: list[str], marker: str | None) -> str | None:
-    tokens = env_split_expanded_tokens(tokens)
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return marker
-        value = marker_assignment_value(token)
-        if value is not None:
-            marker = value
-            index += 1
-            continue
-        if token in {"-u", "--unset"} and index + 1 < len(tokens):
-            if tokens[index + 1] in MARKER_ENV_NAMES:
-                marker = None
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            if token.split("=", 1)[1] in MARKER_ENV_NAMES:
-                marker = None
-            index += 1
-            continue
-        if token in {"-C", "--chdir", "-P", "--path"}:
-            index += 2
-            continue
-        if token.startswith(("--chdir=", "--path=")):
-            index += 1
-            continue
-        if token in {"-S", "--split-string"} and index + 1 < len(tokens):
-            return marker_value_from_env_tokens(env_target_tokens(tokens, index), marker)
-        if token.startswith("--split-string="):
-            return marker_value_from_env_tokens(env_target_tokens(tokens, index), marker)
-        if token.startswith("-") and not token.startswith("--") and "S" in token[1:]:
-            return marker_value_from_env_tokens(env_target_tokens(tokens, index), marker)
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return marker
-    return marker
+    inherited = {MARKER_ENV_NAMES[0]: marker} if marker is not None else {}
+    environment = marker_environment_before_invocation(
+        tokens, MARKER_ENV_NAMES, inherited
+    )
+    return environment.get(MARKER_ENV_NAMES[0])
 
 
 def command_creates_pr_or_mr(
@@ -307,6 +248,20 @@ def command_creates_pr_or_mr(
     if depth > max_depth:
         return None
     for simple_command in simple_commands(command):
+        invocation = invocation_tokens(simple_command)
+        for candidate in opaque_invocation_candidates(invocation, {"gh", "glab"}):
+            if invocation_is_unresolved_nested(candidate):
+                return BLOCK_REASON_PR
+            executable = basename(candidate[0])
+            if executable == "gh" and (
+                invokes_gh_pr_create(candidate) or invokes_gh_api_pr_create(candidate)
+            ):
+                return BLOCK_REASON_PR
+            if executable == "glab" and (
+                invokes_glab_mr_create(candidate)
+                or invokes_glab_api_mr_create(candidate)
+            ):
+                return BLOCK_REASON_MR
         pr_marker = marker_value_before_command(
             simple_command, "gh", inherited_pr_marker
         )
@@ -323,8 +278,10 @@ def command_creates_pr_or_mr(
             or invokes_glab_api_mr_create(simple_command)
         ) and mr_marker not in ALLOWED_MR_SKILLS:
             return BLOCK_REASON_MR
-        payload = nested_shell_payload(invocation_tokens(simple_command))
+        payload = nested_shell_payload(invocation)
         if payload:
+            if depth >= max_depth:
+                return BLOCK_REASON_PR
             blocked = command_creates_pr_or_mr(
                 payload,
                 inherited_pr_marker=marker_value_before_invocation(

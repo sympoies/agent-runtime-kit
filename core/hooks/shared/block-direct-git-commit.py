@@ -18,7 +18,9 @@ from hook_common import (
     ALLOW,
     command_from,
     emit_block,
+    invocation_is_unresolved_nested,
     invocation_tokens,
+    opaque_invocation_candidates,
     read_payload,
     simple_commands_with_nested_shells,
 )
@@ -113,10 +115,19 @@ def git_subcommand(simple_command: list[str]) -> str | None:
 
 
 def invokes_git_commit(command: str) -> bool:
-    return any(
-        git_subcommand(simple_command) == "commit"
-        for simple_command in simple_commands_with_nested_shells(command)
-    )
+    for simple_command in simple_commands_with_nested_shells(command):
+        if git_subcommand(simple_command) == "commit":
+            return True
+        invocation = invocation_tokens(simple_command)
+        if invocation_is_unresolved_nested(invocation):
+            return True
+        if any(
+            invocation_is_unresolved_nested(candidate)
+            or git_subcommand(candidate) == "commit"
+            for candidate in opaque_invocation_candidates(invocation, {"git"})
+        ):
+            return True
+    return False
 
 
 def main() -> int:

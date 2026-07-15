@@ -707,6 +707,10 @@ def validation_pending_marker(
 
 
 SHELL_SEPARATOR_TOKENS = {";", "&&", "||", "|", "(", ")"}
+SHELL_CONTROL_PREFIX_TOKENS = frozenset(
+    {"!", "if", "then", "elif", "else", "while", "until", "do", "{"}
+)
+SHELL_CONTROL_TERMINATOR_TOKENS = frozenset({"fi", "done", "}"})
 CLOBBER_REDIRECT_MARKER = "__AGENT_CLOBBER_REDIRECT__"
 
 
@@ -1457,9 +1461,105 @@ ENV_OPTIONS_WITH_VALUE_PREFIXES = (
     "--split-string=",
 )
 ENV_OPTIONS_WITHOUT_VALUE = {"-i", "--ignore-environment", "-0", "--null"}
+ENV_LONG_OPTION_KINDS = {
+    "block-signal": "optional",
+    "chdir": "value",
+    "debug": "flag",
+    "default-signal": "optional",
+    "help": "stop",
+    "ignore-environment": "flag",
+    "ignore-signal": "optional",
+    "list-signal-handling": "flag",
+    "null": "flag",
+    "path": "value",
+    "split-string": "split",
+    "unset": "value",
+    "version": "stop",
+}
+ENV_SPLIT_WORD_SEPARATORS = frozenset({" ", "\t", "\r", "\n"})
+
+
+def _unique_long_option(
+    token: str, option_kinds: Mapping[str, str]
+) -> tuple[str, str, bool] | None:
+    name, separator, _value = token[2:].partition("=")
+    matches = [option for option in option_kinds if option.startswith(name)]
+    if len(matches) != 1:
+        return None
+    option = matches[0]
+    return option, option_kinds[option], bool(separator)
+
+
+def _unique_long_option_kind(
+    token: str, option_kinds: Mapping[str, str]
+) -> tuple[str, bool] | None:
+    resolved = _unique_long_option(token, option_kinds)
+    if resolved is None:
+        return None
+    _option, kind, attached_value = resolved
+    return kind, attached_value
+
+
+def _env_split_requires_opaque(value: str) -> bool:
+    """Detect GNU env split syntax that POSIX shlex cannot model safely."""
+    # shell_tokens() cannot retain whether apparent split-string quotes were
+    # themselves literal content inside an outer double-quoted shell argument.
+    # Expansion syntax that now looks single-quoted may therefore run before
+    # env receives the value. Without that provenance, dollars and legacy
+    # backtick substitutions are both unresolved.
+    if "$" in value or "`" in value:
+        return True
+    quote = ""
+    word_started = False
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote == "'":
+            if character == "'":
+                quote = ""
+            elif character == "\\" and index + 1 < len(value):
+                if value[index + 1] in {"'", "\\"}:
+                    return True
+            index += 1
+            continue
+        if quote == '"':
+            if character == '"':
+                quote = ""
+            elif character == "\\":
+                return True
+            index += 1
+            continue
+        if character == "'":
+            quote = "'"
+            word_started = True
+            index += 1
+            continue
+        if character == '"':
+            quote = '"'
+            word_started = True
+            index += 1
+            continue
+        # GNU env discards an active unquoted comment and can then execute argv
+        # appended after the split value. Preserve that hidden scope as opaque.
+        if character == "#" and not word_started:
+            return True
+        if character == "\\" or character in {"\f", "\v"}:
+            return True
+        if character in ENV_SPLIT_WORD_SEPARATORS:
+            word_started = False
+            index += 1
+            continue
+        word_started = True
+        index += 1
+    return False
 
 
 def _split_env_string(value: str) -> list[str]:
+    # GNU env -S has variable and escape semantics beyond POSIX shlex. Retain
+    # an opaque marker whenever syntax could alter token boundaries or hide
+    # appended argv from the shared command classifiers.
+    if _env_split_requires_opaque(value):
+        return _opaque_wrapper_invocation([OPAQUE_NESTED_SHELL_COMMAND])
     try:
         return shlex.split(value, posix=True)
     except ValueError:
@@ -1469,58 +1569,117 @@ def _split_env_string(value: str) -> list[str]:
 def env_split_expanded_tokens(
     tokens: list[str], index: int = 0, *, depth: int = 0, max_depth: int = 5
 ) -> list[str]:
-    """Expand GNU env -S split strings without stripping assignments."""
+    """Normalize a GNU env prefix and expand split strings.
+
+    Option values stay distinct from environment assignments so authorization
+    consumers can inspect the normalized prefix without reimplementing GNU
+    env's short-cluster and unique-long-option grammar.
+    """
     if depth > max_depth:
-        return []
+        return _opaque_wrapper_invocation([OPAQUE_NESTED_SHELL_COMMAND])
     expanded: list[str] = []
     while index < len(tokens):
         token = tokens[index]
-        if token in {"-S", "--split-string"}:
-            if index + 1 >= len(tokens):
-                return expanded
-            expanded.extend(
-                env_split_expanded_tokens(
-                    _split_env_string(tokens[index + 1]),
-                    0,
-                    depth=depth + 1,
-                    max_depth=max_depth,
-                )
-            )
-            index += 2
-            continue
-        split_prefix = "--split-string="
-        if token.startswith(split_prefix):
-            expanded.extend(
-                env_split_expanded_tokens(
-                    _split_env_string(token.removeprefix(split_prefix)),
-                    0,
-                    depth=depth + 1,
-                    max_depth=max_depth,
-                )
-            )
+        if token == "--":
+            return [*expanded, token, *tokens[index + 1 :]]
+        if token == "-":
+            expanded.append("-i")
             index += 1
             continue
-        if token.startswith("-") and not token.startswith("--") and "S" in token[1:]:
-            split_index = token.find("S", 1)
-            if split_index == len(token) - 1:
-                if index + 1 >= len(tokens):
-                    return expanded
-                split_value = tokens[index + 1]
-                index += 2
-            else:
-                split_value = token[split_index + 1 :]
-                index += 1
-            expanded.extend(
-                env_split_expanded_tokens(
-                    _split_env_string(split_value),
-                    0,
-                    depth=depth + 1,
-                    max_depth=max_depth,
-                )
-            )
+        if is_assignment(token):
+            expanded.append(token)
+            index += 1
             continue
-        expanded.append(token)
-        index += 1
+        if token.startswith("--"):
+            resolved = _unique_long_option(token, ENV_LONG_OPTION_KINDS)
+            if resolved is None:
+                return [*expanded, *_opaque_wrapper_invocation(tokens[index:])]
+            option, kind, attached_value = resolved
+            if kind == "stop":
+                return (
+                    [*expanded, *_opaque_wrapper_invocation(tokens[index:])]
+                    if attached_value
+                    else expanded
+                )
+            if kind == "flag":
+                if attached_value:
+                    return [*expanded, *_opaque_wrapper_invocation(tokens[index:])]
+                normalized = {
+                    "ignore-environment": "-i",
+                    "null": "-0",
+                }.get(option, f"--{option}")
+                expanded.append(normalized)
+                index += 1
+                continue
+            if kind == "optional":
+                expanded.append(token)
+                index += 1
+                continue
+            if attached_value:
+                value = token.split("=", 1)[1]
+                rest = tokens[index + 1 :]
+            elif index + 1 < len(tokens):
+                value = tokens[index + 1]
+                rest = tokens[index + 2 :]
+            else:
+                return [*expanded, *_opaque_wrapper_invocation(tokens[index:])]
+            if kind == "split":
+                return [
+                    *expanded,
+                    *env_split_expanded_tokens(
+                        _split_env_string(value) + rest,
+                        0,
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                    ),
+                ]
+            normalized = {
+                "unset": "-u",
+                "chdir": "-C",
+                "path": "-P",
+            }[option]
+            expanded.extend((normalized, value))
+            tokens = rest
+            index = 0
+            continue
+        if token.startswith("-"):
+            cluster = token[1:]
+            position = 0
+            while position < len(cluster):
+                option = cluster[position]
+                if option in {"i", "0", "v"}:
+                    expanded.append(f"-{option}")
+                    position += 1
+                    continue
+                if option not in {"u", "C", "P", "S"}:
+                    return [*expanded, *_opaque_wrapper_invocation(tokens[index:])]
+                attached_value = cluster[position + 1 :]
+                if attached_value:
+                    value = attached_value
+                    rest = tokens[index + 1 :]
+                elif index + 1 < len(tokens):
+                    value = tokens[index + 1]
+                    rest = tokens[index + 2 :]
+                else:
+                    return [*expanded, *_opaque_wrapper_invocation(tokens[index:])]
+                if option == "S":
+                    return [
+                        *expanded,
+                        *env_split_expanded_tokens(
+                            _split_env_string(value) + rest,
+                            0,
+                            depth=depth + 1,
+                            max_depth=max_depth,
+                        ),
+                    ]
+                expanded.extend((f"-{option}", value))
+                tokens = rest
+                index = 0
+                break
+            else:
+                index += 1
+            continue
+        return [*expanded, *tokens[index:]]
     return expanded
 
 
@@ -1528,14 +1687,56 @@ def env_target_tokens(
     tokens: list[str], index: int = 0, *, depth: int = 0, max_depth: int = 5
 ) -> list[str]:
     if depth > max_depth:
-        return []
+        return _opaque_wrapper_invocation([OPAQUE_NESTED_SHELL_COMMAND])
     while index < len(tokens):
         token = tokens[index]
         if token == "--":
             return tokens[index + 1 :]
+        if token == "-":
+            index += 1
+            continue
+        if token.startswith("--"):
+            resolved = _unique_long_option_kind(token, ENV_LONG_OPTION_KINDS)
+            if resolved is None:
+                return _opaque_wrapper_invocation(tokens[index:])
+            kind, attached_value = resolved
+            if kind == "stop":
+                return (
+                    _opaque_wrapper_invocation(tokens[index:])
+                    if attached_value
+                    else []
+                )
+            if kind == "flag":
+                if attached_value:
+                    return _opaque_wrapper_invocation(tokens[index:])
+                index += 1
+                continue
+            if kind == "optional":
+                index += 1
+                continue
+            if attached_value:
+                value = token.split("=", 1)[1]
+                rest = tokens[index + 1 :]
+            elif index + 1 < len(tokens):
+                value = tokens[index + 1]
+                rest = tokens[index + 2 :]
+            else:
+                return _opaque_wrapper_invocation(tokens[index:])
+            if kind == "split":
+                return env_target_tokens(
+                    _split_env_string(value) + rest,
+                    0,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                )
+            tokens = rest
+            index = 0
+            continue
         if is_assignment(token):
             index += 1
             continue
+        if token in {"--help", "--version"}:
+            return []
         if token in ENV_OPTIONS_WITHOUT_VALUE:
             index += 1
             continue
@@ -1564,25 +1765,37 @@ def env_target_tokens(
         if any(token.startswith(prefix) for prefix in ENV_OPTIONS_WITH_VALUE_PREFIXES):
             index += 1
             continue
-        if token.startswith("-") and not token.startswith("--") and "S" in token[1:]:
-            split_index = token.find("S", 1)
-            if split_index == len(token) - 1:
-                if index + 1 >= len(tokens):
-                    return []
-                split_value = tokens[index + 1]
-                rest = tokens[index + 2 :]
+        if token.startswith("-") and not token.startswith("--"):
+            cluster = token[1:]
+            position = 0
+            while position < len(cluster):
+                option = cluster[position]
+                if option in {"i", "0", "v"}:
+                    position += 1
+                    continue
+                if option not in {"u", "C", "P", "S"}:
+                    return _opaque_wrapper_invocation(tokens[index:])
+                attached_value = cluster[position + 1 :]
+                if attached_value:
+                    value = attached_value
+                    rest = tokens[index + 1 :]
+                elif index + 1 < len(tokens):
+                    value = tokens[index + 1]
+                    rest = tokens[index + 2 :]
+                else:
+                    return _opaque_wrapper_invocation(tokens[index:])
+                if option == "S":
+                    return env_target_tokens(
+                        _split_env_string(value) + rest,
+                        0,
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                    )
+                tokens = rest
+                index = 0
+                break
             else:
-                split_value = token[split_index + 1 :]
-                rest = tokens[index + 1 :]
-            split_tokens = _split_env_string(split_value)
-            return env_target_tokens(
-                split_tokens + rest,
-                0,
-                depth=depth + 1,
-                max_depth=max_depth,
-            )
-        if token.startswith("-") and token != "-":
-            index += 1
+                index += 1
             continue
         return tokens[index:]
     return []
@@ -1612,24 +1825,317 @@ def skip_env_prefix(tokens: list[str], index: int) -> int:
     return index
 
 
-def invocation_tokens(simple_command: list[str]) -> list[str]:
+OPAQUE_WRAPPER_COMMAND = "__agent_runtime_opaque_wrapper__"
+OPAQUE_NESTED_SHELL_COMMAND = "__agent_runtime_opaque_nested_shell__"
+
+
+def _opaque_wrapper_invocation(tokens: list[str] | None = None) -> list[str]:
+    """Return a conservative marker when wrapper option parsing is ambiguous."""
+    return [OPAQUE_WRAPPER_COMMAND, *(tokens or [])]
+
+
+def invocation_is_opaque(invocation: list[str]) -> bool:
+    return bool(invocation) and invocation[0] == OPAQUE_WRAPPER_COMMAND
+
+
+def invocation_is_unresolved_nested(invocation: list[str]) -> bool:
+    return bool(invocation) and invocation[0] == OPAQUE_NESTED_SHELL_COMMAND
+
+
+def opaque_invocation_candidates(
+    invocation: list[str],
+    executables: set[str] | frozenset[str],
+    *,
+    max_depth: int = 4,
+) -> list[list[str]]:
+    """Return governed command slices retained beneath an opaque wrapper parse."""
+    if not invocation_is_opaque(invocation):
+        return []
+    candidates: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    def inspect(tokens: list[str], depth: int) -> None:
+        if not tokens or depth > max_depth:
+            return
+        if invocation_is_unresolved_nested(tokens):
+            candidates.append(tokens)
+            return
+        key = tuple(tokens)
+        if key in seen:
+            return
+        seen.add(key)
+        for index, token in enumerate(tokens):
+            suffix = tokens[index:]
+            if PurePosixPath(token).name in executables:
+                candidates.append(suffix)
+            parsed = invocation_tokens(suffix, shell_boundary=False)
+            if invocation_is_opaque(parsed):
+                if depth == max_depth:
+                    candidates.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    continue
+                inspect(parsed[1:], depth + 1)
+                continue
+            payload = nested_shell_payload(parsed)
+            if depth == max_depth:
+                if payload:
+                    candidates.append([OPAQUE_NESTED_SHELL_COMMAND])
+                continue
+            if parsed != suffix:
+                inspect(parsed, depth + 1)
+            if payload:
+                for nested in simple_commands_with_nested_shells(
+                    payload, max_depth=max_depth - depth - 1
+                ):
+                    inspect(invocation_tokens(nested), depth + 1)
+
+    inspect(invocation[1:], 0)
+    return candidates
+
+
+def opaque_invocation_has_unresolved_nested(invocation: list[str]) -> bool:
+    return any(
+        invocation_is_unresolved_nested(candidate)
+        for candidate in opaque_invocation_candidates(invocation, set())
+    )
+
+
+def _short_option_cluster_next_index(
+    tokens: list[str],
+    index: int,
+    *,
+    flag_options: frozenset[str],
+    value_options: frozenset[str],
+    stop_options: frozenset[str] = frozenset(),
+) -> int | None:
+    """Consume one getopt-style short option cluster, including value flags."""
+    cluster = tokens[index][1:]
+    for position, option in enumerate(cluster):
+        if option in stop_options:
+            return None
+        if option in flag_options:
+            continue
+        if option not in value_options:
+            return -1
+        if position + 1 < len(cluster):
+            return index + 1
+        return index + 2 if index + 1 < len(tokens) else -1
+    return index + 1
+
+
+TIME_LONG_OPTION_KINDS = {
+    "append": "flag",
+    "format": "value",
+    "help": "stop",
+    "output": "value",
+    "portability": "flag",
+    "quiet": "flag",
+    "verbose": "flag",
+    "version": "stop",
+}
+
+
+def _time_long_option(token: str) -> tuple[str, bool] | None:
+    return _unique_long_option_kind(token, TIME_LONG_OPTION_KINDS)
+
+
+def _time_target_index(tokens: list[str], index: int) -> int | None:
+    """Return the command index following shell/GNU ``time`` options."""
+    index += 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            return index + 1
+        if token in {"-h", "-V"}:
+            return None
+        if token.startswith("-") and token != "-" and not token.startswith("--"):
+            next_index = _short_option_cluster_next_index(
+                tokens,
+                index,
+                flag_options=frozenset("apqv"),
+                value_options=frozenset("fo"),
+                stop_options=frozenset("hV"),
+            )
+            if next_index is None:
+                return None
+            if next_index >= 0:
+                index = next_index
+                continue
+            return -1
+        if token.startswith("--"):
+            resolved = _time_long_option(token)
+            if resolved is None:
+                return -1
+            kind, attached_value = resolved
+            if kind == "stop":
+                return -1 if attached_value else None
+            if kind == "flag":
+                if attached_value:
+                    return -1
+                index += 1
+                continue
+            if attached_value:
+                index += 1
+                continue
+            if index + 1 >= len(tokens):
+                return -1
+            index += 2
+            continue
+        return index
+    return index
+
+
+def _command_target_index(tokens: list[str], index: int) -> int | None:
+    """Return the command index following POSIX ``command`` options."""
+    index += 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            return index + 1
+        if token.startswith("-") and token != "-":
+            flags = token[1:]
+            if "v" in flags or "V" in flags:
+                return None
+            if flags and set(flags) == {"p"}:
+                index += 1
+                continue
+            return -1
+        return index
+    return index
+
+
+def _exec_target_index(tokens: list[str], index: int) -> int | None:
+    """Return the command index following Bash/POSIX ``exec`` options."""
+    index += 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            return index + 1
+        if token in {"-a", "--argv0"}:
+            if index + 1 >= len(tokens):
+                return -1
+            index += 2
+            continue
+        if token.startswith("--argv0="):
+            index += 1
+            continue
+        if token.startswith("-") and token != "-" and not token.startswith("--"):
+            next_index = _short_option_cluster_next_index(
+                tokens,
+                index,
+                flag_options=frozenset("cl"),
+                value_options=frozenset("a"),
+            )
+            if next_index is None:
+                return -1
+            if next_index >= 0:
+                index = next_index
+                continue
+            return -1
+        if token.startswith("--"):
+            return -1
+        return index
+    return index
+
+
+def _agent_run_exec_target_index(tokens: list[str], index: int) -> int | None:
+    """Return the command index following supported ``agent-run exec`` options."""
+    index += 2
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            return index + 1
+        if token in {"-h", "--help"}:
+            return None
+        if token in {"--cwd", "--direnv"}:
+            if index + 1 >= len(tokens):
+                return -1
+            index += 2
+            continue
+        if token.startswith(("--cwd=", "--direnv=")):
+            index += 1
+            continue
+        if token.startswith("-") and token != "-":
+            return -1
+        return index
+    return index
+
+
+def _invocation_start_index(
+    simple_command: list[str], *, shell_boundary: bool = True
+) -> int:
+    """Skip assignments and shell control words before a command position."""
     index = 0
-    while index < len(simple_command) and is_assignment(simple_command[index]):
-        index += 1
+    while index < len(simple_command):
+        token = simple_command[index]
+        if is_assignment(token):
+            index += 1
+            continue
+        if shell_boundary and token == "function":
+            # Bash accepts `function name { ...; }` without the POSIX `()`
+            # separator that otherwise exposes the brace body as a new command.
+            index += 2  # declaration keyword plus function name
+            if index < len(simple_command) and simple_command[index] == "()":
+                index += 1
+            if index < len(simple_command) and simple_command[index] == "{":
+                index += 1
+            continue
+        if shell_boundary and token in SHELL_CONTROL_PREFIX_TOKENS:
+            index += 1
+            continue
+        if shell_boundary and token in SHELL_CONTROL_TERMINATOR_TOKENS:
+            return len(simple_command)
+        break
+    return index
+
+
+def invocation_command_position_is_dynamic(
+    simple_command: list[str], *, shell_boundary: bool = True
+) -> bool:
+    """Whether the shell must expand the executable before it can be known."""
+    index = _invocation_start_index(simple_command, shell_boundary=shell_boundary)
+    if index >= len(simple_command):
+        return False
+    token = simple_command[index]
+    return "$" in token or "`" in token
+
+
+def invocation_tokens(
+    simple_command: list[str], *, shell_boundary: bool = True
+) -> list[str]:
+    index = _invocation_start_index(simple_command, shell_boundary=shell_boundary)
     if index >= len(simple_command):
         return []
+    if invocation_command_position_is_dynamic(
+        simple_command, shell_boundary=shell_boundary
+    ):
+        return _opaque_wrapper_invocation(simple_command[index:])
 
     command = PurePosixPath(simple_command[index]).name
     if command == "env":
-        return invocation_tokens(env_target_tokens(simple_command, index + 1))
-    elif command == "time":
-        index += 1
-        while index < len(simple_command) and simple_command[index].startswith("-"):
-            index += 1
-    elif command in {"command", "exec"}:
-        if index + 1 < len(simple_command) and simple_command[index + 1] in {"-v", "-V"}:
+        return invocation_tokens(
+            env_target_tokens(simple_command, index + 1), shell_boundary=False
+        )
+    if command == "time":
+        target_index = _time_target_index(simple_command, index)
+        if target_index is None:
             return []
-        index += 1
+        if target_index < 0:
+            return _opaque_wrapper_invocation(simple_command[index + 1 :])
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+    if command == "command":
+        target_index = _command_target_index(simple_command, index)
+        if target_index is None:
+            return []
+        if target_index < 0:
+            return _opaque_wrapper_invocation(simple_command[index + 1 :])
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+    if command == "exec":
+        target_index = _exec_target_index(simple_command, index)
+        if target_index is None:
+            return []
+        if target_index < 0:
+            return _opaque_wrapper_invocation(simple_command[index + 1 :])
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
 
     if index >= len(simple_command):
         return []
@@ -1637,12 +2143,106 @@ def invocation_tokens(simple_command: list[str]) -> list[str]:
     command = PurePosixPath(simple_command[index]).name
     if command == "agent-run" and index + 1 < len(simple_command):
         if simple_command[index + 1] == "exec":
-            for next_index in range(index + 2, len(simple_command)):
-                if simple_command[next_index] == "--":
-                    return simple_command[next_index + 1 :]
-            return simple_command[index + 2 :]
+            target_index = _agent_run_exec_target_index(simple_command, index)
+            if target_index is None:
+                return []
+            if target_index < 0:
+                return _opaque_wrapper_invocation(simple_command[index + 2 :])
+            return invocation_tokens(
+                simple_command[target_index:], shell_boundary=False
+            )
 
     return simple_command[index:]
+
+
+def marker_environment_before_invocation(
+    tokens: list[str],
+    marker_names: Iterable[str],
+    inherited: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return marker variables visible to the final wrapped executable.
+
+    The walk follows the same wrapper target grammar as ``invocation_tokens``
+    while preserving ordered assignment, reset, and unset effects. Ambiguous
+    wrappers and split-string expansion fail closed by returning no markers.
+    """
+    names = frozenset(marker_names)
+    state = {
+        name: value
+        for name, value in (inherited or {}).items()
+        if name in names
+    }
+
+    def apply_assignment(token: str) -> bool:
+        if not is_assignment(token):
+            return False
+        name, value = token.split("=", 1)
+        if name in names:
+            state[name] = value.strip("\"'")
+        return True
+
+    index = 0
+    while index < len(tokens) and apply_assignment(tokens[index]):
+        index += 1
+    if index >= len(tokens):
+        return state
+
+    command = PurePosixPath(tokens[index]).name
+    if command == "env":
+        normalized = env_split_expanded_tokens(tokens[index + 1 :])
+        option_mode = True
+        env_index = 0
+        while env_index < len(normalized):
+            token = normalized[env_index]
+            if invocation_is_opaque(normalized[env_index:]):
+                return {}
+            if option_mode and token == "--":
+                option_mode = False
+                env_index += 1
+                continue
+            if option_mode and token in {"-i", "--ignore-environment"}:
+                state.clear()
+                env_index += 1
+                continue
+            if option_mode and token in {"-u", "--unset"}:
+                if env_index + 1 >= len(normalized):
+                    return {}
+                state.pop(normalized[env_index + 1], None)
+                env_index += 2
+                continue
+            if option_mode and token in {"-C", "--chdir", "-P", "--path"}:
+                if env_index + 1 >= len(normalized):
+                    return {}
+                env_index += 2
+                continue
+            if option_mode and token.startswith("-") and token != "-":
+                env_index += 1
+                continue
+            if apply_assignment(token):
+                env_index += 1
+                continue
+            return marker_environment_before_invocation(
+                normalized[env_index:], names, state
+            )
+        return state
+
+    target_index: int | None = index
+    if command == "time":
+        target_index = _time_target_index(tokens, index)
+    elif command == "command":
+        target_index = _command_target_index(tokens, index)
+    elif command == "exec":
+        target_index = _exec_target_index(tokens, index)
+    elif command == "agent-run" and tokens[index + 1 : index + 2] == ["exec"]:
+        target_index = _agent_run_exec_target_index(tokens, index)
+    else:
+        return state
+
+    if target_index is None:
+        return state
+    if target_index < 0:
+        return {}
+    return marker_environment_before_invocation(tokens[target_index:], names, state)
 
 
 def shell_c_payload(tokens: list[str], index: int = 0) -> str | None:
@@ -1703,13 +2303,16 @@ def simple_commands_with_nested_shells(
             commands.append(tokens)
             payload = nested_shell_payload(invocation_tokens(tokens))
             if payload:
-                visit(payload, depth + 1)
+                if depth >= max_depth:
+                    commands.append([OPAQUE_NESTED_SHELL_COMMAND])
+                else:
+                    visit(payload, depth + 1)
 
     visit(command, 0)
     return commands
 
 
-def _output_redirect_targets(tokens: list[str]) -> list[tuple[str, bool]]:
+def output_redirect_targets(tokens: list[str]) -> list[tuple[str, bool]]:
     """Return output redirection targets and whether stdout content is inspectable."""
     targets: list[tuple[str, bool]] = []
     index = 0
@@ -1760,13 +2363,13 @@ def _output_redirect_targets(tokens: list[str]) -> list[tuple[str, bool]]:
 
 def _stdout_redirect_targets(tokens: list[str]) -> list[str]:
     return [
-        target for target, inspectable in _output_redirect_targets(tokens) if inspectable
+        target for target, inspectable in output_redirect_targets(tokens) if inspectable
     ]
 
 
 def _opaque_output_redirect_targets(tokens: list[str]) -> list[str]:
     return [
-        target for target, inspectable in _output_redirect_targets(tokens) if not inspectable
+        target for target, inspectable in output_redirect_targets(tokens) if not inspectable
     ]
 
 

@@ -33,11 +33,14 @@ from hook_common import (
     _line_has_unquoted_continuation,
     command_from,
     emit_block,
+    env_target_tokens,
     is_assignment,
+    invocation_is_opaque,
     invocation_tokens,
+    opaque_invocation_candidates,
+    opaque_invocation_has_unresolved_nested,
     read_payload,
     simple_commands,
-    shell_tokens,
     strip_heredoc_bodies,
 )
 
@@ -80,39 +83,6 @@ FORGE_GLOBAL_OPTIONS_WITH_VALUE = {
     "--repo",
     "--store-root",
 }
-
-ENV_OPTIONS_WITH_VALUE = {
-    "-C",
-    "--chdir",
-    "-P",
-    "--path",
-}
-
-ENV_OPTION_VALUE_PREFIXES = (
-    "--chdir=",
-    "--path=",
-)
-
-ENV_SPLIT_OPTIONS = {
-    "-S",
-    "--split-string",
-}
-
-ENV_SPLIT_PREFIXES = (
-    "--split-string=",
-)
-
-TIME_OPTIONS_WITH_VALUE = {
-    "-f",
-    "--format",
-    "-o",
-    "--output",
-}
-
-TIME_OPTION_VALUE_PREFIXES = (
-    "--format=",
-    "--output=",
-)
 
 SHELL_COMMANDS = {"bash", "dash", "ksh", "sh", "zsh"}
 
@@ -178,120 +148,19 @@ def skip_assignments(tokens: list[str], index: int = 0) -> int:
     return index
 
 
-def expand_env_split_tokens(tokens: list[str], index: int) -> list[str]:
-    expanded: list[str] = []
-    while index < len(tokens):
-        token = tokens[index]
-        if token in ENV_SPLIT_OPTIONS:
-            if index + 1 < len(tokens):
-                expanded.extend(shell_tokens(tokens[index + 1]))
-            index += 2
-            continue
-        matched_prefix = next(
-            (prefix for prefix in ENV_SPLIT_PREFIXES if token.startswith(prefix)),
-            None,
-        )
-        if matched_prefix is not None:
-            expanded.extend(shell_tokens(token[len(matched_prefix) :]))
-            index += 1
-            continue
-        if token.startswith("-") and not token.startswith("--"):
-            split_index = token.find("S")
-            if split_index > 0:
-                prefix_flags = token[1:split_index]
-                payload = token[split_index + 1 :]
-                expanded.extend(f"-{flag}" for flag in prefix_flags)
-                if payload:
-                    expanded.extend(shell_tokens(payload))
-                    index += 1
-                    continue
-                if index + 1 < len(tokens):
-                    expanded.extend(shell_tokens(tokens[index + 1]))
-                index += 2
-                continue
-        expanded.append(token)
-        index += 1
-    return expanded
-
-
-def env_target_tokens(tokens: list[str], index: int) -> list[str]:
-    tokens = expand_env_split_tokens(tokens, index)
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return tokens[index + 1 :]
-        if is_assignment(token):
-            index += 1
-            continue
-        if token in {"-i", "--ignore-environment", "-0", "--null"}:
-            index += 1
-            continue
-        if token in {"-u", "--unset"}:
-            index += 2
-            continue
-        if token in ENV_OPTIONS_WITH_VALUE:
-            index += 2
-            continue
-        if token.startswith("--unset=") or any(
-            token.startswith(prefix) for prefix in ENV_OPTION_VALUE_PREFIXES
-        ):
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return tokens[index:]
-    return []
-
-
 def time_target_tokens(tokens: list[str], index: int) -> list[str]:
-    index += 1
-    while index < len(tokens) and tokens[index].startswith("-"):
-        token = tokens[index]
-        if token in TIME_OPTIONS_WITH_VALUE:
-            index += 2
-            continue
-        if any(token.startswith(prefix) for prefix in TIME_OPTION_VALUE_PREFIXES):
-            index += 1
-            continue
-        index += 1
-    return tokens[index:]
+    target = invocation_tokens(tokens[index:])
+    return [] if invocation_is_opaque(target) else target
 
 
 def command_target_tokens(tokens: list[str], index: int) -> list[str] | None:
-    index += 1
-    if index < len(tokens) and tokens[index] in {"-v", "-V"}:
-        return None
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return tokens[index + 1 :]
-        if token == "-p":
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            return None
-        return tokens[index:]
-    return None
+    target = invocation_tokens(tokens[index:])
+    return None if not target or invocation_is_opaque(target) else target
 
 
 def exec_target_tokens(tokens: list[str], index: int) -> list[str] | None:
-    index += 1
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return tokens[index + 1 :]
-        if token in {"-c", "-l"}:
-            index += 1
-            continue
-        if token == "-a":
-            index += 2
-            continue
-        if token.startswith("-") and token != "-":
-            return None
-        return tokens[index:]
-    return None
+    target = invocation_tokens(tokens[index:])
+    return None if not target or invocation_is_opaque(target) else target
 
 
 def unwrap_agent_run(tokens: list[str], index: int) -> tuple[list[str], int] | None:
@@ -299,10 +168,23 @@ def unwrap_agent_run(tokens: list[str], index: int) -> tuple[list[str], int] | N
         return None
     if tokens[index + 1] != "exec":
         return None
-    for next_index in range(index + 2, len(tokens)):
-        if tokens[next_index] == "--":
+    next_index = index + 2
+    while next_index < len(tokens):
+        token = tokens[next_index]
+        if token == "--":
             return tokens[next_index + 1 :], 0
-    return tokens[index + 2 :], 0
+        if token in {"--cwd", "--direnv"}:
+            if next_index + 1 >= len(tokens):
+                return None
+            next_index += 2
+            continue
+        if token.startswith(("--cwd=", "--direnv=")):
+            next_index += 1
+            continue
+        if token in {"-h", "--help"} or token.startswith("-"):
+            return None
+        return tokens, next_index
+    return None
 
 
 def shell_c_payload(tokens: list[str], index: int) -> str | None:
@@ -375,6 +257,11 @@ def shell_heredoc_bypasses_forge_cli_wrapper(command: str) -> bool:
 def command_bypasses_forge_cli_wrapper(
     tokens: list[str], *, bare_forge_is_bypass: bool = False
 ) -> bool:
+    invocation = invocation_tokens(tokens)
+    if invocation_is_opaque(invocation):
+        return bool(opaque_invocation_candidates(invocation, {"forge-cli"})) or (
+            opaque_invocation_has_unresolved_nested(invocation)
+        )
     index = skip_assignments(tokens)
     if index >= len(tokens):
         return False
@@ -384,7 +271,7 @@ def command_bypasses_forge_cli_wrapper(
     if command == "time":
         target = time_target_tokens(tokens, index)
         return bool(target) and command_bypasses_forge_cli_wrapper(
-            target, bare_forge_is_bypass=bare_forge_is_bypass
+            target, bare_forge_is_bypass=True
         )
     unwrapped = unwrap_agent_run(tokens, index)
     if unwrapped is not None:

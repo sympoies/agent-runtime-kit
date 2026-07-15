@@ -36,6 +36,9 @@ Inputs:
   `plan` because scoped labels collapse per `key::` scope.
 - Lane approval URLs, review evidence paths, linked PRs, and final
   integration evidence for close-ready.
+- Captured terminal identity for each lane and the integration checkout:
+  checkout root, branch, delivered head SHA, base ref, and
+  primary-versus-managed-worktree kind.
 
 Outputs:
 
@@ -58,6 +61,10 @@ Outputs:
   gate passes.
 - Post-close provider read-back plus
   `record audit --profile dispatch --expect-visible` before completion.
+- After all dispatch-required post-merge activation/deployment, closeout,
+  archive, and evidence duties, terminal cleanup for every safe completed
+  managed checkout under `core/policies/git-delivery.md`, with retained-state
+  diagnostics for every unsafe one.
 
 Failure modes:
 
@@ -75,6 +82,9 @@ Failure modes:
 - Forbidden writes: lane-scoped implementation posts by the orchestrator, lane
   review posts by lane executors, lightweight-tracking closeout rules, multiple
   shared issues for one dispatch plan, or raw lifecycle comments.
+- Stop cleanup when a checkout is dirty/locked, provider merge truth does not
+  match its captured delivered head, or any downstream terminal duty is still
+  pending. Never force-remove ambiguous lane or integration work.
 
 ## Outcome Routing
 
@@ -234,6 +244,16 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
 11. **Closeout read-back** — fetch the closed provider issue with comments and
     run `record audit --profile dispatch --expect-visible`; stop unless the
     closeout role is visible and lint-clean.
+12. **Terminal local cleanup** — after dispatch-required deployment,
+    activation, archive, evidence, and local closeout duties, recheck each
+    provider-confirmed delivered head and local checkout. Restore a clean
+    primary integration checkout to base. From the primary checkout, run
+    `git-cli worktree remove <path-or-slug> --format json` through the supported
+    hooked shell for each safe managed lane/integration worktree; the
+    target-aware lease guard must confirm no live foreign owner before removal.
+    If that proof or hook is unavailable, retain the worktree. Delete a local branch only when its tip equals
+    the provider-confirmed delivered head. Retain and report dirty, locked,
+    missing, or unverifiable state.
 
 ## Boundary
 
@@ -242,6 +262,8 @@ Owns:
 - Plan-level orchestration, lane assignment, integration judgement,
   dispatch dashboard freshness, native-summary disposition, typed merge retry,
   approved lane integration, and strict closeout.
+- Dispatch-required post-merge duties and exactly-once terminal cleanup for
+  safe lane and integration checkouts after strict provider closeout/read-back.
 
 Must not:
 
