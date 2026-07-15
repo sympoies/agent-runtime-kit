@@ -4,10 +4,11 @@
 ## Execution State
 
 - Source document: `docs/plans/2026-07-15-peekaboo-macos-agent-migration/peekaboo-macos-agent-migration-plan.md`
-- Tracking issue: not opened; use the L2 `dispatch:deliver-plan-tracking-issue` workflow when execution is authorized
+- Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/610>
 - Current sprint: Sprint 1
 - Status: ready to start; implementation and release have not begun
-- Current gate: open the L2 tracker, create a managed nils-cli worktree, then run Task 1.1
+- Current gate: create a managed nils-cli worktree from fresh `origin/main`,
+  then run Task 1.1
 - Current task: none
 - Next task: Task 1.1 — review and freeze the Peekaboo candidate
 - Plan branches: `feat/peekaboo-macos-agent-adapter` (nils-cli), then `feat/peekaboo-macos-agent-cutover` (runtime-kit)
@@ -15,7 +16,9 @@
 - Release prerequisite: later explicit release consent through `project-release-nils-cli`
 - Blockers: none
 - Last updated: 2026-07-15
-- Branch/commit/PR: none
+- Branch/commit/PR: plan CI repair merged via
+  <https://github.com/graysurf/agent-runtime-kit/pull/609> at `611ef5e`;
+  implementation branches and PRs have not started
 
 ## Validation Plan
 
@@ -68,6 +71,16 @@
   policy/audit. The sole validation waiver is the clean-source convergence
   execution in position 8; it must run without waiver when the plan bundle is
   committed through the L2 delivery workflow.
+- 2026-07-15: GitHub Actions run
+  <https://github.com/graysurf/agent-runtime-kit/actions/runs/29405300885>
+  exposed three clean-checkout `location-directory-missing` errors because
+  Task 4.2 listed ignored generated build directories. PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/609> removed those
+  invalid locations while retaining product rendering as required validation.
+- 2026-07-15: On the committed repair and pinned nils-cli `v1.22.3`,
+  `plan-tooling validate`, all 16 `scripts/ci/all.sh` positions, hooks
+  178/178, required provider checks, CodeQL, testing review, and maintainability
+  review passed. The prior clean-source convergence waiver is resolved.
 
 ## Session Notes
 
