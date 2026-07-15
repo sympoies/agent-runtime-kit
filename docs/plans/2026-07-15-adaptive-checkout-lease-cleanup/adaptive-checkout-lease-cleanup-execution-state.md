@@ -5,13 +5,15 @@
 - Source document: docs/plans/2026-07-15-adaptive-checkout-lease-cleanup/adaptive-checkout-lease-cleanup-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/614>
 - Current sprint: Sprint 3
-- Status: complete
-- Current gate: closeout record merge
+- Status: complete; tracking issue closed
+- Current gate: none
 - Plan branch: `feat/adaptive-checkout-lease-cleanup`
 - Integration PR: <https://github.com/graysurf/agent-runtime-kit/pull/615>
-- Next task: none
+- Next task: none; tracking issue closed
 - Blockers: none
 - Last updated: 2026-07-16
+- Current task: none; tracking issue closed
+- Branch/commit/PR: graysurf/agent-runtime-kit#615 merged (<https://github.com/graysurf/agent-runtime-kit/pull/615>); graysurf/agent-runtime-kit#617 merged (<https://github.com/graysurf/agent-runtime-kit/pull/617>)
 
 ## Task Ledger
 
@@ -158,3 +160,7 @@
   in the clean `peekaboo-macos-agent-cutover` managed worktree at `c8fd51e`, so
   the duplicate primary copies were safely discarded. The Peekaboo work remains
   intact in its owning worktree and the primary checkout is clean.
+
+## Handoff
+
+- Tracking issue <https://github.com/graysurf/agent-runtime-kit/issues/614> is closed; terminal execution state is synchronized. No closeout or merge action remains.
