@@ -5,13 +5,13 @@
 - Source document: docs/plans/2026-07-15-adaptive-checkout-lease-cleanup/adaptive-checkout-lease-cleanup-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/614>
 - Current sprint: Sprint 3
-- Status: in progress
-- Current gate: delegated follow-up review and final provider convergence
+- Status: complete
+- Current gate: closeout record merge
 - Plan branch: `feat/adaptive-checkout-lease-cleanup`
 - Integration PR: <https://github.com/graysurf/agent-runtime-kit/pull/615>
-- Next task: Task 3.1
+- Next task: none
 - Blockers: none
-- Last updated: 2026-07-15
+- Last updated: 2026-07-16
 
 ## Task Ledger
 
@@ -21,9 +21,9 @@
 | 1.2 | Implement and render the shared checkout lease guard | done | Atomic lease, dirty/foreign/stale/recreated/operation/read-only/Stop tests 9/9 pass | Codex and Claude wired; Hermes capability ceiling retained |
 | 2.1 | Add terminal workflow cleanup policy and workflow contracts | done | PR runtime smoke 6/6; dispatch runtime smoke 14/14 | PR, L2, and L3 terminal cleanup contracts aligned |
 | 2.2 | Refresh generated product surfaces and documentation mirrors | done | Codex, Claude, and Hermes renders refreshed; nine governed skill goldens updated | Generated outputs match canonical templates |
-| 3.1 | Run full validation and delegated pre-merge review | in-progress | Pinned full CI positions 1-16 pass at `d539e8a`; latest repairs pass focused lease tests 24/24, hooks 210/210, PR smoke 6/6, and dispatch smoke 14/14 | Review produced 59 provider-visible finding rows covering 49 unique issues; all are repaired locally and await final follow-up review |
-| 3.2 | Deliver and merge the tracked PR | pending | pending | governed PR lifecycle |
-| 3.3 | Activate both runtime roles and perform strict closeout | pending | pending | merged revision only |
+| 3.1 | Run full validation and delegated pre-merge review | done | Final head `8859a92`: pinned full CI positions 1-16, focused lease 24/24, hooks 210/210, PR smoke 6/6, dispatch smoke 14/14 | 59 provider finding rows covering 49 unique issues fixed; 59/59 threads resolved; five final lenses reported zero findings |
+| 3.2 | Deliver and merge the tracked PR | done | PR #615 squash-merged as `f81799d`; provider CI and CodeQL passed | Combined owner approval: review #4708921109 |
+| 3.3 | Activate both runtime roles and perform strict closeout | done | `f81799d` activated on sympoies and m4; Codex and Claude installed-runtime doctors verified clean receipts on both hosts | Canonical sync also refreshed Hermes; tracker validation/review evidence visible and closeout record prepared |
 
 ## Validation Log
 
@@ -134,8 +134,17 @@
   only outer shell commands consume control syntax, wrapper targets retain
   literal executable names, and Bash function headers expose their bodies.
   Focused tests, the 24/24 lease suite, hooks 210/210, PR smoke 6/6, and dispatch
-  smoke 14/14 pass. Final specialist read-back and full CI remain before the
-  owner decision.
+  smoke 14/14 pass.
+- 2026-07-15: final testing, maintainability, performance, security, and
+  red-team follow-up reviews all reported zero findings at `8859a92`. All 59
+  provider threads were resolved, the combined delivery-owner review approved
+  the exact head, and provider CI plus CodeQL passed.
+- 2026-07-15: PR #615 squash-merged to `main` as `f81799d`.
+- 2026-07-16: `scripts/sync-runtime-surfaces.sh --apply --product both`
+  activated the merged revision on sympoies and m4. Both hosts reported
+  successful render, install, prune, doctor, Codex prompt-input, and Codex /
+  Claude plugin-registry convergence. Codex and Claude installed-runtime
+  doctors read back clean verified receipts for `f81799d` on both hosts.
 
 ## Session Notes
 
@@ -145,3 +154,7 @@
   requested end-to-end delivery.
 - 2026-07-15: the primary checkout contains another active agent's edits. It is
   intentionally preserved; this plan executes in a separate managed worktree.
+- 2026-07-16: the primary-checkout edits were byte-identical to committed files
+  in the clean `peekaboo-macos-agent-cutover` managed worktree at `c8fd51e`, so
+  the duplicate primary copies were safely discarded. The Peekaboo work remains
+  intact in its owning worktree and the primary checkout is clean.
