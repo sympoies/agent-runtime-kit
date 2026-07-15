@@ -328,7 +328,7 @@ From `DEVELOPMENT.md`:
 8. **runtime-smoke deterministic mode** — exercises representative
    Claude-installed skills.
 9. **runtime-smoke convergence mode** — proves a portable historical
-   66-to-26-skill upgrade, rollback, prune, exact registry refs, receipt/ID
+   66-to-current-skill upgrade, rollback, prune, exact registry refs, receipt/ID
    transition, operator-state preservation, idempotency, and redacted route
    contract fixtures without real product credentials.
 10. project-local overlay smoke — Codex-side; not Claude.

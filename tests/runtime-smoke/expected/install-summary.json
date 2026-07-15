@@ -8,7 +8,7 @@
     "blocked-design": 0
   },
   "results": [
-    {"id":"install.codex","product":"codex","status":"pass","skill_count":26,"note":"install apply, active IDs, and installed-runtime receipt verified"},
-    {"id":"install.claude","product":"claude","status":"pass","skill_count":26,"note":"install apply, active IDs, and installed-runtime receipt verified"}
+    {"id":"install.codex","product":"codex","status":"pass","skill_count":27,"note":"install apply, active IDs, and installed-runtime receipt verified"},
+    {"id":"install.claude","product":"claude","status":"pass","skill_count":27,"note":"install apply, active IDs, and installed-runtime receipt verified"}
   ]
 }

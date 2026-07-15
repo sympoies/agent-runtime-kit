@@ -38,7 +38,8 @@ assert len(skill_ids) == len(set(skill_ids))
 assert set(pending_ids).issubset(skill_ids)
 assert pending_ids == [skill_id for skill_id in skill_ids if skill_id in set(pending_ids)]
 assert pending_ids == progress["pending_ids"]
-assert skill_ids == progress["retained_ids"]
+reviewed_id_set = set(progress["reviewed_ids"])
+assert [skill_id for skill_id in skill_ids if skill_id in reviewed_id_set] == progress["retained_ids"]
 
 disposition_text = (root / "manifests/skill-dispositions.yaml").read_text()
 assert 'source_skill_ids_sha256: "16b2fc145c6d2a556360dc43cddd6a30ea79ad90837d5bcd647971aa84a34d60"' in disposition_text
@@ -252,7 +253,7 @@ pending_ids = set(
 )
 reported = {item["id"]: item for item in skills}
 assert set(reported) == set(active_ids), (product, set(active_ids) - set(reported), set(reported) - set(active_ids))
-assert len(active_ids) == 26, (product, len(active_ids))
+assert len(active_ids) == 27, (product, len(active_ids))
 assert not pending_ids, (product, pending_ids)
 
 manifest_semantics = {}

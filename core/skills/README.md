@@ -18,7 +18,7 @@ and retained retirement history are defined in the
 | `dispatch` | 2 | L2 plan tracking and L3 dispatch outcomes |
 | `issue` | 2 | Issue triage and durable follow-up |
 | `media` | 2 | Image conversion, screen capture |
-| `meta` | 11 | Explicit repository and runtime maintenance outcomes |
+| `meta` | 12 | Explicit repository, documentation, and runtime maintenance outcomes |
 | `pr` | 1 | Governed GitHub PR and GitLab MR delivery |
 | `reporting` | 3 | Topic radar, daily brief, project retrospective |
 
@@ -137,6 +137,7 @@ classification lives in [meta/README.md](./meta/README.md).
 | Runtime maintenance | [sync-runtime-surfaces](./meta/sync-runtime-surfaces/), [nils-cli-bump](./meta/nils-cli-bump/), [worktree-triage](./meta/worktree-triage/) | Runtime refresh, dependency pin convergence, and safe worktree maintenance. |
 | Repo operation dispatchers | [bootstrap](./meta/bootstrap/), [deploy](./meta/deploy/), [release](./meta/release/), [setup-project](./meta/setup-project/) | Explicit repo-owned operation dispatch and project adoption. |
 | Skill lifecycle | [create-skill](./meta/create-skill/), [remove-skill](./meta/remove-skill/), [create-project-skill](./meta/create-project-skill/), [remove-project-skill](./meta/remove-project-skill/) | Managed runtime-kit skills and consuming-repo project-local skills. |
+| Repository documentation | [repo-docs-boundary](./meta/repo-docs-boundary/) | README, contributor setup, and durable docs placement under active repository policy. |
 
 ## PR And MR
 

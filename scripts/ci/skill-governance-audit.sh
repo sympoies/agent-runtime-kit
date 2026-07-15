@@ -153,6 +153,26 @@ COUNT_TARGETS = [
     },
 ]
 
+STALE_ENDPOINT_COUNT_RE = re.compile(
+    rf"\b(?:{INITIAL_DISPOSITION_COUNT}-to-\d+(?:-skill)?|\d+-skill manifest)\b"
+)
+MAINTAINED_TEXT_SUFFIXES = {
+    ".json",
+    ".md",
+    ".py",
+    ".rs",
+    ".sh",
+    ".tera",
+    ".toml",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
+HISTORICAL_RECORD_MARKERS = {
+    ("docs", "discussions"),
+    ("docs", "plans"),
+}
+
 
 def fail(message: str) -> None:
     print(f"skill-governance-audit: {message}", file=sys.stderr)
@@ -642,6 +662,37 @@ def active_skill_count(root: Path) -> int:
     return len(parse_skills(root / "manifests" / "skills.yaml"))
 
 
+def is_historical_record(path: Path) -> bool:
+    parts = path.parts
+    return any(
+        parts[index : index + 2] in HISTORICAL_RECORD_MARKERS
+        for index in range(len(parts) - 1)
+    )
+
+
+def stale_endpoint_count_claims(root: Path) -> list[str]:
+    claims: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if path.suffix not in MAINTAINED_TEXT_SUFFIXES or is_historical_record(rel):
+            continue
+        for line_number, line in enumerate(read(path).splitlines(), start=1):
+            for match in STALE_ENDPOINT_COUNT_RE.finditer(line):
+                claims.append(f"{rel}:{line_number}: {match.group(0)}")
+    return claims
+
+
+def validate_endpoint_count_claims(root: Path) -> None:
+    claims = stale_endpoint_count_claims(root)
+    if claims:
+        fail(
+            "stale exact endpoint-count claims outside historical records: "
+            + "; ".join(claims)
+        )
+
+
 def apply_count_targets(root: Path, update: bool) -> tuple[int, list[str]]:
     count = active_skill_count(root)
     changes: list[str] = []
@@ -681,11 +732,13 @@ def validate_counts(root: Path) -> int:
     count, changes = apply_count_targets(root, update=False)
     if changes:
         fail("active skill count drift: " + "; ".join(changes))
+    validate_endpoint_count_claims(root)
     return count
 
 
 def update_counts(root: Path) -> None:
     count, changes = apply_count_targets(root, update=True)
+    validate_endpoint_count_claims(root)
     if changes:
         print(
             "skill-governance-audit: counts updated "
@@ -1902,7 +1955,32 @@ def validate_count_refresh_fixture() -> None:
         work_root = Path(tmp) / "fixture"
         shutil.copytree(fixture, work_root)
 
-        history_before = read(work_root / history_rel)
+        history_path = work_root / history_rel
+        stale_claim = f"66-to-{active_skill_count(work_root) - 1}-skill"
+        history_path.write_text(
+            read(history_path) + f"\nHistorical endpoint claim: {stale_claim}.\n",
+            encoding="utf-8",
+        )
+        history_before = read(history_path)
+        maintained_claim_path = work_root / "docs" / "source" / "convergence.md"
+        maintained_claim_path.write_text(
+            f"Maintained endpoint claim: {stale_claim}.\n",
+            encoding="utf-8",
+        )
+        stale_claims = stale_endpoint_count_claims(work_root)
+        expected_claim = f"docs/source/convergence.md:1: {stale_claim}"
+        if stale_claims != [expected_claim]:
+            fail(
+                "count-refresh fixture did not isolate the maintained stale claim: "
+                + repr(stale_claims)
+            )
+        maintained_claim_path.write_text(
+            "Maintained endpoint claim: 66-to-current-skill.\n",
+            encoding="utf-8",
+        )
+        if stale_endpoint_count_claims(work_root):
+            fail("count-refresh fixture retained a stale exact endpoint claim")
+
         _, drift = apply_count_targets(work_root, update=False)
         if not drift:
             fail("count-refresh fixture did not start with stale maintained counts")
@@ -1927,7 +2005,8 @@ def validate_count_refresh_fixture() -> None:
 
     print(
         "skill-governance-audit: count-refresh fixture OK "
-        f"updated_targets={len(COUNT_TARGETS)} historical_docs_retained=true"
+        f"updated_targets={len(COUNT_TARGETS)} historical_docs_retained=true "
+        "stale_endpoint_claim_guard=true"
     )
 
 

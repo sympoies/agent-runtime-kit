@@ -246,6 +246,28 @@ skills:
     required_clis: {}
     state_out_mode: runtime
 
+  - id: meta.repo-docs-boundary
+    domain: meta
+    source: core/skills/meta/repo-docs-boundary
+    invocation:
+      role: maintenance
+      intents: [project-dev]
+      example_request: "Audit this repository's README and contributor docs boundaries"
+      admission_rationale: "Repository documentation placement is a deliberate audit or editing outcome."
+    exposure:
+      profile: default
+    products:
+      codex:
+        name: repo-docs-boundary
+        render_to: plugins/meta/skills/repo-docs-boundary/SKILL.md
+      claude:
+        name: repo-docs-boundary
+        render_to: plugins/meta/skills/repo-docs-boundary/SKILL.md
+      hermes:
+        render_to: plugins/meta/skills/repo-docs-boundary/SKILL.md
+    required_clis: {}
+    state_out_mode: runtime
+
   - id: meta.release
     domain: meta
     source: core/skills/meta/release

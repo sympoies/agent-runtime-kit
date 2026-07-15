@@ -27,7 +27,7 @@ history, logs, caches, or product state.
   covered deterministically, while authenticated fresh-session acceptance is a
   separate private/live lane.
 - `convergence`: clones a clean committed source and isolated Codex, Claude,
-  and Hermes homes, then proves a historical 66-to-26-skill upgrade, baseline re-sync rollback, retired
+  and Hermes homes, then proves a historical 66-to-current-skill upgrade, baseline re-sync rollback, retired
   managed-surface pruning, stubbed plugin registry activation, independently
   rebuilt installed-runtime receipt entry/plan digests, active-ID read-back,
   idempotent reapply, and four generic

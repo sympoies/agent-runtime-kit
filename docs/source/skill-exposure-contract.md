@@ -100,5 +100,7 @@ surfaces must not expose them as callable skills.
 - `agent-runtime list-skills --format json` reports invocation, exposure, and
   pending state against the actual Codex, Claude, and Hermes install layouts.
 - Render, install, drift, stale-prune, runtime-smoke, and hook gates require the
-  final 26-skill active set, zero pending rows, retained 66-row history, and
-  negative cleanup of retired product surfaces.
+  current admitted active set, zero pending rows, retained 66-row migration
+  history, and negative cleanup of retired product surfaces. The frozen
+  migration retained 26 outcomes; newly admitted skills do not alter its
+  disposition ledger.

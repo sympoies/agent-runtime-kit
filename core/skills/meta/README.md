@@ -16,6 +16,7 @@ human routing index for choosing the right meta skill without scanning every
 | Runtime maintenance | 3 | Refreshing installed surfaces, converging a nils-cli pin, or triaging worktrees |
 | Repo operation dispatchers | 4 | Running repo-owned bootstrap, deploy, release, or adoption workflows |
 | Skill lifecycle | 4 | Creating or removing managed runtime-kit skills or consuming-repo project skills |
+| Repository documentation | 1 | Auditing or applying README, contributor setup, and durable docs placement |
 
 ## Runtime Maintenance
 
@@ -42,3 +43,9 @@ human routing index for choosing the right meta skill without scanning every
 | [remove-skill](./remove-skill/) | Removes a repo-owned runtime-kit skill with dry-run-first reference audit and retained historical records. |
 | [create-project-skill](./create-project-skill/) | Scaffolds a consuming-repo project-local skill under `.agents/skills` without mutating runtime-kit manifests. |
 | [remove-project-skill](./remove-project-skill/) | Removes a consuming-repo project-local skill with dry-run-first inventory and explicit approval for cleanup. |
+
+## Repository Documentation
+
+| Skill | Purpose |
+| --- | --- |
+| [repo-docs-boundary](./repo-docs-boundary/) | Audits or maintains README, contributor setup, and durable documentation placement under active repository policy. |

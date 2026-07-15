@@ -370,6 +370,45 @@ runtime_remove_retired_surface() {
   )
 }
 
+# Remove skills admitted after the frozen convergence baseline before a
+# rollback rehearsal. Reuse the production cleanup ownership validator so the
+# harness removes only runtime-kit link trees from the current portable source.
+runtime_remove_post_baseline_skills() {
+  local current_root="$1"
+  local baseline_root="$2"
+  local product="$3"
+  local live_home="$4"
+  local current_only skill_id domain skill skill_dir
+
+  current_only="$(comm -23 \
+    "$current_root/tests/sandbox/${product}/expected-skills.txt" \
+    "$baseline_root/tests/sandbox/${product}/expected-skills.txt")"
+  [ -n "$current_only" ] || return 0
+
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$current_root/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$current_root"
+    APPLY=1
+    while IFS= read -r skill_id; do
+      [ -n "$skill_id" ] || continue
+      domain="${skill_id%%.*}"
+      skill="${skill_id#*.}"
+      case "$product" in
+        codex | claude) skill_dir="$live_home/plugins/$domain/skills/$skill" ;;
+        hermes) skill_dir="$live_home/external-skills/agent-runtime-kit/$domain/$skill" ;;
+        *) return 2 ;;
+      esac
+      [ -d "$skill_dir" ] || return 1
+      quarantine_validate_and_remove_retired_tree \
+        "$skill_dir" "$live_home" skill "$product" "$domain" "$skill" || return 1
+      log "removed post-baseline managed skill link tree product=$product path=$skill_dir"
+    done <<EOF_POST_BASELINE_SKILLS
+$current_only
+EOF_POST_BASELINE_SKILLS
+  )
+}
+
 runtime_assert_operator_config() {
   local product="$1"
   local config_path="$2"
@@ -397,7 +436,7 @@ runtime_convergence_product() {
   local product="$4"
   local artifacts_dir="$5"
   local live_home state_home config_path rollback_path baseline_surface operator_surface
-  local idempotent_log public_summary baseline_skill_count
+  local idempotent_log public_summary baseline_skill_count current_skill_count
 
   live_home="$(runtime_live_home "$tmp_root" "$product")"
   state_home="$(runtime_state_home "$tmp_root" "$product")"
@@ -406,6 +445,9 @@ runtime_convergence_product() {
   operator_surface="$artifacts_dir/${product}.operator-owned"
   idempotent_log="$artifacts_dir/${product}.idempotent-install.log"
   public_summary="$artifacts_dir/${product}.portable-summary.json"
+  current_skill_count="$(
+    wc -l <"$repo_root/tests/sandbox/${product}/expected-skills.txt" | tr -d '[:space:]'
+  )"
   mkdir -p "$live_home" "$state_home" "$artifacts_dir"
 
   case "$product" in
@@ -457,6 +499,9 @@ runtime_convergence_product() {
     "$repo_root" "$tmp_root" "$product" "$artifacts_dir/head-first" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
+  runtime_remove_post_baseline_skills \
+    "$repo_root" "$prior_root" "$product" "$live_home" \
+    >"$artifacts_dir/${product}.rollback-cleanup.log" 2>&1 || return 1
   runtime_install_product \
     "$prior_root" "$tmp_root" "$product" "$artifacts_dir/rollback" || return 1
   runtime_activate_product_registry \
@@ -510,7 +555,8 @@ runtime_convergence_product() {
     "$artifacts_dir/upgrade/${product}.receipt-summary.json" \
     "$public_summary" \
     "$RUNTIME_SMOKE_SKILL_COUNT" \
-    "$baseline_skill_count" <<'PY'
+    "$baseline_skill_count" \
+    "$current_skill_count" <<'PY'
 import json
 import pathlib
 import re
@@ -520,10 +566,11 @@ baseline = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 receipt = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 skill_count = int(sys.argv[4])
 baseline_skill_count = int(sys.argv[5])
+current_skill_count = int(sys.argv[6])
 assert baseline["source_revision"] != receipt["source_revision"]
 assert baseline["managed_entry_count"] > receipt["managed_entry_count"]
 assert baseline_skill_count == 66
-assert skill_count == 26
+assert skill_count == current_skill_count
 summary = {
     "schema": "portable-convergence-summary.v1",
     "product": receipt["product"],

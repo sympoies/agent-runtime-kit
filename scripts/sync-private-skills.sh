@@ -6,11 +6,21 @@
 # render, install through nils-cli, or touch any runtime-kit manifest. It only
 # symlinks already-native project-local skills (the create-project-skill layout:
 # <home>/.agents/skills/<name>/SKILL.md) from a PRIVATE source tree into the
-# global per-user skill directories that Codex and Claude discover directly:
+# global per-user skill directories that each declared product discovers:
 #
 #   Codex : $CODEX_HOME/skills/<name>      (default $HOME/.codex/skills/<name>)
 #   Claude: $HOME/.claude/skills/<name>    (personal global skill namespace)
 #   Hermes: $HOME/.hermes/external-skills/private/<name>
+#
+# A skill may opt into a product subset with <skill>/agents/products.txt. The
+# file contains one exact product name (codex, claude, or hermes) per line. A
+# missing file preserves the legacy all-product behavior. Existing metadata is
+# validated for the whole catalog before any runtime directory, link, or prune
+# mutation so a malformed declaration fails closed. The source root and every
+# consumed path below each skill must be real paths inside the declared private
+# home; symlinked or canonically escaped sources fail closed at the same boundary.
+# Every selected product's skills target is also preflighted before the first
+# product mutation, so a redirected target cannot receive links or prune data.
 #
 # The Hermes target is presence-gated: it participates in the default product
 # set only when $HOME/.hermes exists. Hermes does not read that directory by
@@ -62,6 +72,19 @@ Overlay private project-local skills into the live Codex, Claude, and Hermes
 runtime homes by symlinking <private-home>/.agents/skills/<name> into each
 product's skill directory.
 
+Each skill may declare a product subset in agents/products.txt, with one exact
+codex, claude, or hermes entry per line. Missing metadata means all products
+for backward compatibility. Existing metadata must be non-empty and contain no
+blank, duplicate, or unknown entries; the full catalog is validated before any
+runtime mutation.
+
+The .agents/skills source root, each skill directory, and every resource below
+each skill must be real paths contained by the declared private home. Symlinked
+or canonically escaped sources are rejected before any runtime-home mutation.
+Each selected product's skills target components must likewise be real,
+canonical children of its configured runtime home. All selected targets are
+preflighted before apply or prune starts, preventing partial multi-product work.
+
 The private source tree is located via \$AGENT_PRIVATE_SKILLS_HOME (a
 create-project-skill root containing .agents/skills/). When that env is unset
 and --private-home is not given, this script reports "no private home" and
@@ -84,10 +107,11 @@ Options:
   --private-home PATH
       Use a specific private skills root, overriding \$AGENT_PRIVATE_SKILLS_HOME.
   --prune
-      Remove stale overlay symlinks: target-home entries that are symlinks
-      pointing into the private home but whose source skill no longer exists.
-      Only ever removes symlinks this script owns; never touches real
-      directories or foreign symlinks.
+      Remove stale or newly excluded overlay symlinks: target-home entries that
+      point to the exact expected private skill source but whose source skill no
+      longer exists or no longer declares that product. Only ever removes
+      symlinks this script owns; never touches real directories or links to a
+      different private-home path.
   -h, --help
       Print this help and exit.
 EOF
@@ -251,14 +275,102 @@ selected_products() {
 
 product_skills_dir() {
   case "$1" in
-    claude) printf '%s\n' "$HOME/.claude/skills" ;;
-    codex) printf '%s\n' "${CODEX_HOME:-$HOME/.codex}/skills" ;;
-    hermes) printf '%s\n' "$(hermes_home)/external-skills/private" ;;
+    claude) printf '%s\n' "$(product_home_dir claude)/skills" ;;
+    codex) printf '%s\n' "$(product_home_dir codex)/skills" ;;
+    hermes) printf '%s\n' "$(product_home_dir hermes)/external-skills/private" ;;
     *)
       err "unknown product: $1"
       exit 2
       ;;
   esac
+}
+
+product_home_dir() {
+  case "$1" in
+    claude) printf '%s\n' "$HOME/.claude" ;;
+    codex) printf '%s\n' "${CODEX_HOME:-$HOME/.codex}" ;;
+    hermes) hermes_home ;;
+    *)
+      err "unknown product: $1"
+      exit 2
+      ;;
+  esac
+}
+
+join_path() {
+  local parent="$1"
+  local child="$2"
+  case "$parent" in
+    /) printf '/%s\n' "$child" ;;
+    *) printf '%s/%s\n' "${parent%/}" "$child" ;;
+  esac
+}
+
+# Resolve a directory path physically without creating it. Missing tail
+# components are appended to the nearest existing physical parent, allowing the
+# target preflight to verify the exact path that mkdir -p would create.
+physical_path_allow_missing() {
+  local path="$1"
+  local parent base parent_physical
+
+  if [ -d "$path" ]; then
+    (cd "$path" && pwd -P)
+    return
+  fi
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    return 1
+  fi
+
+  parent="$(dirname "$path")"
+  base="$(basename "$path")"
+  [ "$parent" != "$path" ] || return 1
+  parent_physical="$(physical_path_allow_missing "$parent")" || return 1
+  join_path "$parent_physical" "$base"
+}
+
+# The configured product home itself may be an operator-selected symlink. Each
+# overlay-specific component below that resolved home must be a real directory
+# at the exact expected physical path, or an as-yet-uncreated path whose nearest
+# existing parent is exact. This prevents apply and prune from following a
+# redirected skills root outside the selected runtime home.
+validate_product_target_root() {
+  local product="$1"
+  local logical_path physical_path component actual_physical components
+
+  logical_path="$(product_home_dir "$product")"
+  physical_path="$(physical_path_allow_missing "$logical_path")" || {
+    err "invalid [$product] runtime home: $logical_path must be a directory or creatable path"
+    return 1
+  }
+
+  case "$product" in
+    codex | claude) components="skills" ;;
+    hermes) components="external-skills private" ;;
+  esac
+
+  for component in $components; do
+    logical_path="$(join_path "$logical_path" "$component")"
+    physical_path="$(join_path "$physical_path" "$component")"
+
+    if [ -L "$logical_path" ]; then
+      err "invalid [$product] skills target: $logical_path must not be a symlink"
+      return 1
+    fi
+    if [ -e "$logical_path" ] && [ ! -d "$logical_path" ]; then
+      err "invalid [$product] skills target: $logical_path must be a directory"
+      return 1
+    fi
+    if [ -d "$logical_path" ]; then
+      actual_physical="$(cd "$logical_path" && pwd -P)" || {
+        err "invalid [$product] skills target: cannot resolve $logical_path"
+        return 1
+      }
+      if [ "$actual_physical" != "$physical_path" ]; then
+        err "invalid [$product] skills target: $logical_path escapes its canonical runtime-home location"
+        return 1
+      fi
+    fi
+  done
 }
 
 # Hermes only reads the external-skills root when a profile config registers
@@ -293,6 +405,8 @@ hermes_config_hint() {
 
 # Resolve the private skills root and the .agents/skills source dir.
 SKILLS_SRC_DIR=""
+PRIVATE_HOME_PHYSICAL=""
+SKILLS_SRC_PHYSICAL=""
 resolve_private_home() {
   if [ -z "$PRIVATE_HOME" ]; then
     return 1
@@ -302,27 +416,197 @@ resolve_private_home() {
     exit 2
   fi
   PRIVATE_HOME="$(abs_path "$PRIVATE_HOME")"
+  PRIVATE_HOME_PHYSICAL="$(cd "$PRIVATE_HOME" && pwd -P)" || {
+    err "cannot resolve private home: $PRIVATE_HOME"
+    exit 2
+  }
   SKILLS_SRC_DIR="$PRIVATE_HOME/.agents/skills"
   return 0
+}
+
+path_is_within() {
+  local candidate="$1"
+  local root="$2"
+  case "$candidate" in
+    "$root" | "$root"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Validate the source-root boundary before any product runtime path is created,
+# linked, or pruned. PRIVATE_HOME itself may be reached through an
+# operator-selected symlink, but .agents and .agents/skills must be real paths
+# at their canonical location below that resolved home.
+validate_skills_source_root() {
+  local expected_physical
+
+  if [ -L "$PRIVATE_HOME/.agents" ]; then
+    err "invalid private skills source: $PRIVATE_HOME/.agents must not be a symlink"
+    return 1
+  fi
+  if [ -L "$SKILLS_SRC_DIR" ]; then
+    err "invalid private skills source: $SKILLS_SRC_DIR must not be a symlink"
+    return 1
+  fi
+  if [ ! -d "$SKILLS_SRC_DIR" ]; then
+    return 0
+  fi
+
+  SKILLS_SRC_PHYSICAL="$(cd "$SKILLS_SRC_DIR" && pwd -P)" || {
+    err "cannot resolve private skills source: $SKILLS_SRC_DIR"
+    return 1
+  }
+  expected_physical="$PRIVATE_HOME_PHYSICAL/.agents/skills"
+  if ! path_is_within "$SKILLS_SRC_PHYSICAL" "$PRIVATE_HOME_PHYSICAL" ||
+    [ "$SKILLS_SRC_PHYSICAL" != "$expected_physical" ]; then
+    err "invalid private skills source: $SKILLS_SRC_DIR escapes its canonical private-home location"
+    return 1
+  fi
+}
+
+# Validate one optional per-skill product declaration. Metadata is deliberately
+# strict: exact lowercase product names, one per line, with no blank or
+# duplicate entries. A missing file retains the all-product legacy behavior.
+validate_products_file() {
+  local src="$1"
+  local metadata="$src/agents/products.txt"
+  local agents_dir="$src/agents"
+  local agents_physical src_physical
+  local line count=0
+  local seen_codex=0 seen_claude=0 seen_hermes=0
+
+  if [ ! -e "$metadata" ] && [ ! -L "$metadata" ]; then
+    return 0
+  fi
+  if [ -L "$metadata" ] || [ ! -f "$metadata" ]; then
+    err "invalid products metadata: $metadata must be a regular file"
+    return 1
+  fi
+  if [ -L "$agents_dir" ]; then
+    err "invalid products metadata: $agents_dir must not be a symlink"
+    return 1
+  fi
+  agents_physical="$(cd "$agents_dir" && pwd -P)" || {
+    err "invalid products metadata: cannot resolve $agents_dir"
+    return 1
+  }
+  src_physical="$(cd "$src" && pwd -P)" || {
+    err "invalid products metadata: cannot resolve $src"
+    return 1
+  }
+  if ! path_is_within "$agents_physical" "$SKILLS_SRC_PHYSICAL" ||
+    [ "$agents_physical" != "$src_physical/agents" ]; then
+    err "invalid products metadata: $metadata escapes its skill source"
+    return 1
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    count=$((count + 1))
+    case "$line" in
+      codex)
+        if [ "$seen_codex" = "1" ]; then
+          err "invalid products metadata: $metadata contains duplicate entry 'codex'"
+          return 1
+        fi
+        seen_codex=1
+        ;;
+      claude)
+        if [ "$seen_claude" = "1" ]; then
+          err "invalid products metadata: $metadata contains duplicate entry 'claude'"
+          return 1
+        fi
+        seen_claude=1
+        ;;
+      hermes)
+        if [ "$seen_hermes" = "1" ]; then
+          err "invalid products metadata: $metadata contains duplicate entry 'hermes'"
+          return 1
+        fi
+        seen_hermes=1
+        ;;
+      "")
+        err "invalid products metadata: $metadata contains a blank line"
+        return 1
+        ;;
+      *)
+        err "invalid products metadata: $metadata contains unknown entry '$line' (expected codex|claude|hermes)"
+        return 1
+        ;;
+    esac
+  done <"$metadata"
+
+  if [ "$count" = "0" ]; then
+    err "invalid products metadata: $metadata is empty (expected codex|claude|hermes)"
+    return 1
+  fi
+}
+
+# Validate the complete private catalog before overlay or prune has a chance to
+# mutate a runtime home. This is intentionally separate from per-product work.
+validate_skill_catalog() {
+  local entry name skill_physical expected_physical linked_resource
+  for entry in "$SKILLS_SRC_DIR"/*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    if [ -L "$entry" ]; then
+      err "invalid private skill source: $entry must not be a symlink"
+      return 1
+    fi
+    [ -d "$entry" ] || continue
+
+    name="$(basename "$entry")"
+    skill_physical="$(cd "$entry" && pwd -P)" || {
+      err "cannot resolve private skill source: $entry"
+      return 1
+    }
+    expected_physical="$SKILLS_SRC_PHYSICAL/$name"
+    if ! path_is_within "$skill_physical" "$SKILLS_SRC_PHYSICAL" ||
+      [ "$skill_physical" != "$expected_physical" ]; then
+      err "invalid private skill source: $entry escapes the private skills root"
+      return 1
+    fi
+    if [ -L "$entry/SKILL.md" ]; then
+      err "invalid private skill source: $entry/SKILL.md must not be a symlink"
+      return 1
+    fi
+    linked_resource="$(find "$entry" -type l -print | sed -n '1p')" || {
+      err "cannot inspect private skill source: $entry"
+      return 1
+    }
+    if [ -n "$linked_resource" ]; then
+      err "invalid private skill source: $linked_resource must not be a symlink"
+      return 1
+    fi
+    validate_products_file "$entry" || return 1
+  done
+}
+
+skill_targets_product() {
+  local src="$1"
+  local product="$2"
+  local metadata="$src/agents/products.txt"
+
+  if [ ! -e "$metadata" ] && [ ! -L "$metadata" ]; then
+    return 0
+  fi
+  grep -Fxq "$product" "$metadata"
 }
 
 # -----------------------------------------------------------------------------
 # Overlay
 # -----------------------------------------------------------------------------
 
-# Is $1 a symlink that resolves into the private home? (an overlay we own)
+# Is $1 a symlink that resolves to the exact expected source in $2?
 is_owned_overlay() {
   local target="$1"
-  local resolved
+  local expected_source="$2"
+  local resolved expected_resolved
   if [ ! -L "$target" ]; then
     return 1
   fi
   # Resolve the symlink's stored destination to an absolute path.
   resolved="$(cd "$(dirname "$target")" 2>/dev/null && abs_path "$(readlink "$target")" 2>/dev/null)" || return 1
-  case "$resolved" in
-    "$PRIVATE_HOME"/*) return 0 ;;
-    *) return 1 ;;
-  esac
+  expected_resolved="$(abs_path "$expected_source" 2>/dev/null)" || return 1
+  [ "$resolved" = "$expected_resolved" ]
 }
 
 ensure_skills_dir() {
@@ -347,7 +631,7 @@ link_one() {
   # symlink at the target path is a collision (e.g. a runtime-kit domain dir
   # such as $CODEX_HOME/skills/meta). Skip it loudly.
   if [ -e "$target" ] || [ -L "$target" ]; then
-    if is_owned_overlay "$target"; then
+    if is_owned_overlay "$target" "$src"; then
       : # ours; refresh below (ln -sfn is idempotent)
     else
       err "collision [$product]: $target exists and is not a private overlay; skipping '$name'"
@@ -367,10 +651,10 @@ overlay_product() {
 
   ensure_skills_dir "$(product_skills_dir "$product")"
 
-  for entry in "$SKILLS_SRC_DIR"/*/; do
+  for entry in "$SKILLS_SRC_DIR"/*; do
     [ -d "$entry" ] || continue
     name="$(basename "$entry")"
-    src="${entry%/}"
+    src="$entry"
 
     if [ ! -f "$src/SKILL.md" ]; then
       err "skip [$product]: $name has no SKILL.md (not a project-local skill)"
@@ -387,23 +671,34 @@ overlay_product() {
         ;;
     esac
 
+    if ! skill_targets_product "$src" "$product"; then
+      log "skip-target [$product]: $name (not declared in agents/products.txt)"
+      continue
+    fi
+
     link_one "$name" "$src" "$product"
   done
 }
 
 prune_product() {
   local product="$1"
-  local skills_dir entry name
+  local skills_dir entry name expected_src
 
   skills_dir="$(product_skills_dir "$product")"
   [ -d "$skills_dir" ] || return 0
 
   for entry in "$skills_dir"/*; do
     [ -L "$entry" ] || continue
-    is_owned_overlay "$entry" || continue
     name="$(basename "$entry")"
-    if [ ! -d "$SKILLS_SRC_DIR/$name" ]; then
+    expected_src="$SKILLS_SRC_DIR/$name"
+    is_owned_overlay "$entry" "$expected_src" || continue
+    if [ ! -d "$SKILLS_SRC_DIR/$name" ] ||
+      [ ! -f "$SKILLS_SRC_DIR/$name/SKILL.md" ]; then
       log "prune [$product]: stale overlay $name"
+      run_cmd rm -f "$entry"
+      PRUNED=$((PRUNED + 1))
+    elif ! skill_targets_product "$SKILLS_SRC_DIR/$name" "$product"; then
+      log "prune [$product]: excluded overlay $name"
       run_cmd rm -f "$entry"
       PRUNED=$((PRUNED + 1))
     fi
@@ -416,11 +711,16 @@ prune_product() {
 
 main() {
   parse_args "$@"
-  require_commands ln basename dirname
+  require_commands ln basename dirname find grep readlink sed
 
   if ! resolve_private_home; then
     log "$PROG_NAME: no private home (AGENT_PRIVATE_SKILLS_HOME unset, no --private-home); nothing to do."
     exit 0
+  fi
+
+  if ! validate_skills_source_root; then
+    err "private skill source validation failed; no runtime changes were made"
+    exit 2
   fi
 
   if [ ! -d "$SKILLS_SRC_DIR" ]; then
@@ -435,6 +735,20 @@ main() {
     exit 2
   fi
 
+  if ! validate_skill_catalog; then
+    err "private skill catalog validation failed; no runtime changes were made"
+    exit 2
+  fi
+
+  local product selected_product_list
+  selected_product_list="$(selected_products)"
+  for product in $selected_product_list; do
+    if ! validate_product_target_root "$product"; then
+      err "product skills target validation failed; no runtime changes were made"
+      exit 2
+    fi
+  done
+
   local mode="dry-run"
   [ "$APPLY" = "1" ] && mode="apply"
   log "$PROG_NAME: mode=$mode product=$PRODUCT private-home=$PRIVATE_HOME"
@@ -444,8 +758,7 @@ main() {
   fi
   log ""
 
-  local product
-  for product in $(selected_products); do
+  for product in $selected_product_list; do
     overlay_product "$product"
     if [ "$PRUNE" = "1" ]; then
       prune_product "$product"

@@ -319,6 +319,7 @@ runtime_convergence_hermes() {
   local artifacts_dir="$4"
   local live_home state_home observed expected_retired external_ids legacy_ids
   local quarantine_first quarantine_second quarantine_after_idempotent
+  local current_skill_count
 
   live_home="$(runtime_live_home "$tmp_root" hermes)"
   state_home="$(runtime_state_home "$tmp_root" hermes)"
@@ -329,6 +330,9 @@ runtime_convergence_hermes() {
   quarantine_first="$artifacts_dir/hermes.quarantine-first.txt"
   quarantine_second="$artifacts_dir/hermes.quarantine-second.txt"
   quarantine_after_idempotent="$artifacts_dir/hermes.quarantine-after-idempotent.txt"
+  current_skill_count="$(
+    wc -l <"$repo_root/tests/sandbox/hermes/expected-skills.txt" | tr -d '[:space:]'
+  )"
   write_hermes_retired_ids "$repo_root" "$expected_retired"
 
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
@@ -370,8 +374,11 @@ runtime_convergence_hermes() {
   observed="$artifacts_dir/hermes.upgrade-first-active.txt"
   collect_hermes_active_ids "$live_home" >"$observed"
   diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
-  test "$(wc -l <"$observed" | tr -d '[:space:]')" = 26 || return 1
+  test "$(wc -l <"$observed" | tr -d '[:space:]')" = "$current_skill_count" || return 1
 
+  runtime_remove_post_baseline_skills \
+    "$repo_root" "$baseline_root" hermes "$live_home" \
+    >"$artifacts_dir/hermes.rollback-cleanup.log" 2>&1 || return 1
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
     "$artifacts_dir/rollback" || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
@@ -409,7 +416,7 @@ runtime_convergence_hermes() {
   observed="$artifacts_dir/hermes.upgrade-second-active.txt"
   collect_hermes_active_ids "$live_home" >"$observed"
   diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$observed" || return 1
-  test "$(wc -l <"$observed" | tr -d '[:space:]')" = 26 || return 1
+  test "$(wc -l <"$observed" | tr -d '[:space:]')" = "$current_skill_count" || return 1
   test -d "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills/conversation/orchestrator-first"
   test -d "$live_home/.agent-runtime-kit-quarantine/hermes-retired-skills/conversation/orchestrator-first.generation-000002"
 
@@ -432,16 +439,17 @@ runtime_convergence_hermes() {
   collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
   test ! -s "$legacy_ids" || return 1
 
-  python3 - "$artifacts_dir/hermes.portable-summary.json" <<'PY'
+  python3 - "$artifacts_dir/hermes.portable-summary.json" "$current_skill_count" <<'PY'
 import json
 import pathlib
 import sys
 
+current_skill_count = int(sys.argv[2])
 pathlib.Path(sys.argv[1]).write_text(json.dumps({
     "schema": "portable-convergence-summary.v1",
     "product": "hermes",
     "baseline_skill_count": 66,
-    "skill_count": 26,
+    "skill_count": current_skill_count,
     "rollback_verified": True,
     "upgrade_verified": True,
     "retired_pruned": True,
@@ -449,7 +457,7 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({
     "idempotent": True,
 }, sort_keys=True) + "\n", encoding="utf-8")
 PY
-  RUNTIME_SMOKE_SKILL_COUNT=26
+  RUNTIME_SMOKE_SKILL_COUNT="$current_skill_count"
 }
 
 PORTABLE_SOURCE_ROOT="$(runtime_prepare_portable_source "$REPO_ROOT" "$TMP_ROOT/portable-source")"
@@ -485,14 +493,17 @@ for product in $products; do
       "$CONVERGENCE_ARTIFACTS_DIR/$product" || lifecycle_status=$?
   fi
   if [ "$lifecycle_status" -eq 0 ] &&
-    python3 - "$CONVERGENCE_ARTIFACTS_DIR/$product/$product.portable-summary.json" <<'PY'
+    python3 - \
+      "$CONVERGENCE_ARTIFACTS_DIR/$product/$product.portable-summary.json" \
+      "$PORTABLE_SOURCE_ROOT/tests/sandbox/$product/expected-skills.txt" <<'PY'
 import json
 import pathlib
 import sys
 
 summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+current_skill_count = len(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines())
 assert summary["baseline_skill_count"] == 66
-assert summary["skill_count"] == 26
+assert summary["skill_count"] == current_skill_count
 PY
   then
     results_add "convergence.$product.lifecycle" "$product" pass \

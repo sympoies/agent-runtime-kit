@@ -768,7 +768,7 @@ surfaces:
         min_nils_cli: "v1.19.2"
         acceptance:
           - kind: ci
-            note: "`bash tests/runtime-smoke/run.sh --mode convergence` verifies a historical 66-to-26-skill upgrade, receipt transition, rollback, retired prune, exact registry refs and active IDs, operator-state preservation, and idempotency"
+            note: "`bash tests/runtime-smoke/run.sh --mode convergence` verifies a historical 66-to-current-skill upgrade, receipt transition, rollback, retired prune, exact registry refs and active IDs, operator-state preservation, and idempotency"
             descriptive_only: true
           - kind: live
             note: "—"
@@ -787,7 +787,7 @@ surfaces:
         min_nils_cli: "v1.20.0"
         acceptance:
           - kind: ci
-            note: "sandbox install rehearsal and skill-exposure contract keep Hermes rendered/discovered IDs aligned with the same 26-skill manifest"
+            note: "sandbox install rehearsal and skill-exposure contract keep Hermes rendered/discovered IDs aligned with the current skill manifest"
             descriptive_only: true
           - kind: live
             note: "--"

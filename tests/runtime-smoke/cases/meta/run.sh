@@ -3153,6 +3153,29 @@ run_meta_outcome_routing_probe() {
   rendered_contract_assert_skill reporting project-retro
 }
 
+run_repo_docs_boundary_probe() {
+  local source="$REPO_ROOT/core/skills/meta/repo-docs-boundary/SKILL.md.tera"
+
+  test -s "$source"
+  grep -Fq 'name: repo-docs-boundary' "$source"
+  grep -Fq 'README.md' "$source"
+  grep -Fq 'DEVELOPMENT.md' "$source"
+  grep -Fq 'audit' "$source"
+  grep -Fq 'apply' "$source"
+  grep -Fq 'active repository policy' "$source"
+  grep -Fq '`task-tools`' "$source"
+  grep -Fq 'agent-docs preflight --intent task-tools' "$source"
+  grep -Fq 'core/policies/external-facts.md' "$source"
+
+  rendered_contract_assert_skill meta repo-docs-boundary
+  rendered_contract_assert_all_contain meta repo-docs-boundary 'README.md'
+  rendered_contract_assert_all_contain meta repo-docs-boundary 'DEVELOPMENT.md'
+  rendered_contract_assert_all_contain meta repo-docs-boundary '## Boundary'
+  rendered_contract_assert_all_contain meta repo-docs-boundary '`task-tools`'
+  rendered_contract_assert_all_contain meta repo-docs-boundary 'agent-docs preflight --intent task-tools'
+  rendered_contract_assert_all_contain meta repo-docs-boundary 'core/policies/external-facts.md'
+}
+
 failures=0
 record_case "meta.outcome-routing.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
 record_case "meta.home-prompt-render" "home prompt render isolates Codex-only delegation and product sentinel text" run_home_prompt_render_probe
@@ -3178,6 +3201,7 @@ record_case "meta.outcome-routing.evidence-migrate" "evidence migrate dry-run JS
 record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
 record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
 record_case "meta.nils-cli-bump" "version-alignment doctor probe blocked v0.0.0 drift and passed host-aligned pin" run_nils_cli_bump_probe
+record_case "meta.repo-docs-boundary" "repo docs placement contract rendered consistently for all products" run_repo_docs_boundary_probe
 record_case "meta.worktree-triage" "worktree triage scan classified safe-merged, safe-superseded, and rescue-candidate worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe
 record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe

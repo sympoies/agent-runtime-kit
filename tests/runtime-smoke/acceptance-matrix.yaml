@@ -27,6 +27,19 @@ dispositions:
   - blocked-design
 
 cases:
+  - id: meta.repo-docs-boundary.shared-cli.deterministic
+    product: shared-cli
+    domain: meta
+    skill_id: meta.repo-docs-boundary
+    mode: deterministic
+    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
+    setup: render current product surfaces
+    invocation: verify repository docs placement contract and rendered Codex Claude and Hermes skill files
+    expected_exit_code: 0
+    expected_artifacts: rendered skill files
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
   - id: meta.create-skill.shared-cli.deterministic
     product: shared-cli
     domain: meta

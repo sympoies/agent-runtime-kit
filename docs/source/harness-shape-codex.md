@@ -161,7 +161,7 @@ a uniform shape:
   marketplace, Codex discovers each bundled `skills/<skill>/SKILL.md` and
   surfaces it as `<plugin>:<skill>`.
 - Source: `build/codex/plugins/<domain>/skills/<skill>/` is the rendered tree;
-  26 Codex plugin-scoped skill entries are declared in `manifests/skills.yaml`
+  27 Codex plugin-scoped skill entries are declared in `manifests/skills.yaml`
   (count auto-maintained by
   `scripts/ci/skill-governance-audit.sh --update-counts`);
   the marketplace materialization copies it symlink-free beside each plugin's
@@ -171,7 +171,7 @@ a uniform shape:
   skill root install (surface 15) is retired.
 - Acceptance lane: gate 3 render, gate 4 golden, gate 5 drift, and the gate 8
   runtime-smoke codex plugin-registry probe; sandbox install rehearsal diffs
-  `tests/sandbox/codex/expected-skills.txt:1-26`.
+  `tests/sandbox/codex/expected-skills.txt:1-27`.
 - Support today: **shipped** — plugin-scoped discovery is the default
   runtime-kit-managed Codex skill path.
 
@@ -411,7 +411,7 @@ From `DEVELOPMENT.md`:
 8. **runtime-smoke deterministic mode** — exercises representative
    installed skills across current domains (`DEVELOPMENT.md`).
 9. **runtime-smoke convergence mode** — proves a portable historical
-   66-to-26-skill upgrade, rollback, prune, exact registry refs, receipt/ID
+   66-to-current-skill upgrade, rollback, prune, exact registry refs, receipt/ID
    transition, operator-state preservation, idempotency, and redacted route
    contract fixtures without real product credentials.
 10. **project-local overlay smoke** — Codex-side project-local shims for

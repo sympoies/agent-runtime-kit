@@ -231,8 +231,28 @@ the runtime-kit managed surface (Codex domain dirs, Claude
 refuses to clobber any path it does not own, so a private skill named after a
 runtime-kit domain dir is skipped rather than overwriting it. The script is
 dry-run by default; pass `--apply` to write, and `--prune` to drop overlay
-symlinks whose source skill was removed. When `$AGENT_PRIVATE_SKILLS_HOME` is
-unset it is a safe no-op, so hosts without a private tree are unaffected.
+symlinks whose source skill was removed or no longer targets that product.
+When `$AGENT_PRIVATE_SKILLS_HOME` is unset it is a safe no-op, so hosts without
+a private tree are unaffected.
+
+By default a private skill is exposed to every available product. To target a
+subset, add `<skill>/agents/products.txt` with one exact product per line:
+`codex`, `claude`, or `hermes`. A missing file preserves the all-product
+behavior. An existing file must be non-empty and must not contain blank,
+duplicate, or unknown entries. The sync validates every declaration before it
+creates a runtime directory, updates a link, or prunes an owned link, so invalid
+metadata fails closed without partial runtime mutation. Product narrowing takes
+effect on existing owned links when `--prune` is supplied; real directories and
+foreign symlinks remain untouched.
+
+The private `.agents/skills` root, each skill directory, and every subordinate
+resource inside a skill must resolve to real paths below the declared private
+home. Symlinked resources or canonically escaped source boundaries fail closed
+before apply or prune can mutate a runtime home. Each selected product's skills
+target components must also be real, canonical children of its configured
+runtime home. The sync preflights every selected target before starting the
+first product, so one redirected Codex, Claude, or Hermes root cannot receive
+links, lose pruned entries, or leave a partial multi-product update.
 
 The Hermes target deliberately mounts through Hermes's read-only
 `skills.external_dirs` mechanism instead of the local `$HERMES_HOME/skills/`
@@ -503,7 +523,7 @@ Product mode must not read or mutate real `$HOME/.codex`, `$HOME/.claude`,
 auth, sessions, history, logs, or caches.
 
 Portable convergence mode stays credential-free and isolated. From a clean
-committed clone, it verifies a historical 66-to-26-skill upgrade, receipt
+committed clone, it verifies a historical 66-to-current-skill upgrade, receipt
   revision transition, independently rebuilt receipt entry/plan digests,
   baseline re-sync rollback, retired-surface prune, exact plugin refs and active
   skill IDs, operator-state preservation, and idempotency. Its four

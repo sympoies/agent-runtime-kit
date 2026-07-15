@@ -31,6 +31,10 @@
       "source": "core/skills/meta/remove-project-skill"
     },
     {
+      "id": "repo-docs-boundary",
+      "source": "core/skills/meta/repo-docs-boundary"
+    },
+    {
       "id": "sync-runtime-surfaces",
       "source": "core/skills/meta/sync-runtime-surfaces"
     },

@@ -17,6 +17,7 @@ meta.nils-cli-bump
 meta.release
 meta.remove-project-skill
 meta.remove-skill
+meta.repo-docs-boundary
 meta.setup-project
 meta.sync-runtime-surfaces
 meta.worktree-triage

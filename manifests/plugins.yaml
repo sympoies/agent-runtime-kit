@@ -30,6 +30,7 @@ plugins:
       - meta.create-project-skill
       - meta.remove-skill
       - meta.remove-project-skill
+      - meta.repo-docs-boundary
       - meta.sync-runtime-surfaces
       - meta.release
       - meta.setup-project
