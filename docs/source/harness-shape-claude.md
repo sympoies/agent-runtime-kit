@@ -33,7 +33,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude
-  surface) ships inside nils-cli; pinned snapshot **v1.21.39**
+  surface) ships inside nils-cli; pinned snapshot **v1.22.3**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,
