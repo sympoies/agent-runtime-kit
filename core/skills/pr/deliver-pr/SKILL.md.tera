@@ -66,17 +66,19 @@ Outputs:
   `testing` and `maintainability`.
 - Compact specialist reviews posted to the PR/MR as each reviewer lens returns
   (native `COMMENT` review events on GitHub via `--submit-review`, outcome notes
-  on GitLab). Mapped lenses use their reviewer bot profile; unmapped specialist
-  lenses use `FORGE_BOT_PROFILE=dobi`. These use `comments-only` and report
-  findings and evidence only. On GitHub, actionable findings that require owner
+  on GitLab). These use portable `--decision comments-only` and `--lens`
+  semantics and report findings and evidence only; the active environment owns
+  any optional identity mapping. On GitHub, actionable findings that require owner
   changes are also passed through `--thread-file` so the owning agent can fix and
   resolve them; no-finding reports omit `--thread-file` and stay summary-only.
   If a linked tracking or dispatch issue is present, mirror the compact review
   URL breadcrumb to that issue.
 - A delivery review outcome posted to the PR/MR before merge through
-  `forge-cli pr review` (a native `APPROVE` / `REQUEST_CHANGES` review event on
-  GitHub via `--submit-review`); combined owner outcomes set
-  `FORGE_BOT_PROFILE=dobi`, and own final finding dispositions.
+  `forge-cli pr review`; combined owner outcomes use the final `--decision`
+  plus repeated selected lenses and own final finding dispositions. GitHub uses
+  a native `APPROVE` / `REQUEST_CHANGES` review only when an environment-owned
+  router guarantees an identity independent from the PR author; other paths use
+  the outcome-note form.
 - On GitHub, current-head native review summaries inspected through
   `forge-cli pr reviews` and semantically dispositioned before the final owner
   outcome. Stale-head reviews remain informational. GitLab retains its outcome
@@ -225,19 +227,31 @@ review-specialists scope \
 if [ "$PROVIDER" = github ]; then
   forge-cli --provider "$PROVIDER" --format json pr reviews "$PR_NUMBER"
 fi
-# Native review events are GitHub-only; GitLab posts an outcome note instead.
-SUBMIT_REVIEW=()
-[ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+# Reuse the complete selected lens set for the final provider outcome.
+SELECTED_REVIEW_LENSES=(testing maintainability)
+# Append every risk lens selected by review-specialists scope.
+REVIEW_LENS_ARGS=()
+for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
+  REVIEW_LENS_ARGS+=(--lens "$selected_lens")
+done
+# Native combined approval requires an environment-owned router that guarantees
+# a GitHub review identity independent from the PR author. Otherwise post an
+# outcome note with the same semantic decision and lenses.
+FINAL_SUBMIT_REVIEW=()
+case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
+    ;;
+esac
 # Observed convergence is GitHub-only in v1. Preserve GitLab delivery even when
 # the user's global forge-cli config enables it.
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
-FORGE_BOT_PROFILE=dobi forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --decision "$REVIEW_DECISION" \
-  "${SUBMIT_REVIEW[@]}" \
+  "${FINAL_SUBMIT_REVIEW[@]}" \
   --comment-file "$DELIVERY_REVIEW_OUTCOME" \
-  --lens testing \
-  --lens maintainability
+  "${REVIEW_LENS_ARGS[@]}"
 forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash \
   "${REVIEW_CONVERGENCE_ARGS[@]}"
 ```
@@ -247,20 +261,17 @@ Map the final delivery review outcome to `approve` when delivery may merge and
 specialist review comments or other non-decisional notes, not for the final
 combined delivery-owner outcome. On GitHub, `--submit-review` makes this a native
 pull request review event (`approve`→`APPROVE`, `request-changes`→`REQUEST_CHANGES`)
-authored by `dobi-bot`; on GitLab `forge-cli pr review` records the decision as
-outcome-note metadata only and does not mutate native approval state.
+authored by the adapter-selected independent identity. Without the capability,
+GitHub uses the same outcome-note path as GitLab, records the semantic decision,
+and does not mutate native approval state.
 
-For bot identity and issue mirroring: post a compact specialist review comment
-after each reviewer lens returns and after each focused follow-up rerun. Set the
-matching profile for that one command only when the lens is mapped:
-`red-team` -> `review-red-team`, `testing` -> `review-testing-bot`,
-`maintainability` -> `review-maintainability`, `performance` ->
-`review-performance`, `security` -> `review-security`, `api-contract` ->
-`review-api-contract`, and `data-migration` -> `review-data-migration`. Any
-other or unknown lens uses `FORGE_BOT_PROFILE=dobi` with
-`--decision comments-only`. For the final combined delivery-owner outcome,
-set `FORGE_BOT_PROFILE=dobi` so `dobi-bot` authors it. When the PR/MR is linked
-to a tracking or dispatch issue and the issue number is available, add
+For identity and issue mirroring: post a compact specialist review comment
+after each reviewer lens returns and after each focused follow-up rerun. Pass
+only the portable `--provider`, `--decision`, and `--lens` semantics; do not
+set private identity-profile environment variables in this public workflow.
+The active provider CLI uses ambient identity unless an environment-owned
+adapter maps those semantic flags. When the PR/MR is linked to a tracking or
+dispatch issue and the issue number is available, add
 `--issue "$ISSUE" --mirror-issue` so the issue activity shows review progress
 without duplicating full outcome bodies.
 When the specialist report has actionable GitHub findings, include
@@ -370,8 +381,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 10. Keep review workers read-only. As each reviewer lens returns,
    post one compact specialist review comment through `forge-cli pr review`
    (a native `COMMENT` review event via `--submit-review` on GitHub)
-   with the mapped reviewer bot profile, or `FORGE_BOT_PROFILE=dobi` for
-   unmapped specialist lenses. The parent delivery workflow posts; reviewer
+   with `--decision comments-only` and that semantic `--lens`. The parent
+   delivery workflow posts; reviewer
    subagents never call the provider. Post the moment each lens returns — before
    the repair in step 11, never batched after it; the comment is the finding the
    step-11 fix responds to, so it must exist first (see
@@ -380,7 +391,7 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    thread; summary-only reviews omit it.
 11. Repair concrete findings in this delivery workflow, then rerun validation,
    checks, and affected review lenses. Post each focused follow-up specialist
-   review comment with the same bot-profile selection before continuing.
+   review comment with the same semantic lens before continuing.
 12. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
     semantically disposition every actionable current-head summary; stale-head
     reviews are informational. When `summary_truncated` is true, obtain the full
@@ -388,11 +399,10 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     path and do not invoke the unsupported snapshot. Do not implement a polling
     or sleep loop in the workflow.
 13. Post the final combined delivery review outcome body produced by the
-   generic review's pre-merge mode with `forge-cli pr review` (a native
-   `APPROVE` / `REQUEST_CHANGES` review event via `--submit-review` on GitHub)
-   before merge. Set `FORGE_BOT_PROFILE=dobi` for combined delivery-owner
-   outcomes so they stay on `dobi-bot`; set a reviewer bot profile only for
-   mapped specialist review comments.
+   generic review's pre-merge mode with `forge-cli pr review` before merge. Use
+   the final `--decision` and repeat every selected `--lens`; add native GitHub
+   approval only through the declared independent-identity capability, and keep
+   identity selection outside the public skill.
 14. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are

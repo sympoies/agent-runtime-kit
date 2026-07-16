@@ -1543,7 +1543,9 @@ class SharedHookTests(unittest.TestCase):
         for command in reminded_commands:
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
-                    "forge-label-reminder.py", command_payload(command)
+                    "forge-label-reminder.py",
+                    command_payload(command),
+                    env={"AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED": ""},
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "--label")
@@ -1581,15 +1583,15 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_allowed(decision)
 
-    def test_blocks_forge_cli_wrapper_bypass(self) -> None:
-        blocked_commands = (
-            "env -u FORGE_BOT_PROFILE forge-cli pr review 448",
+    def test_forge_cli_identity_routing_is_environment_owned(self) -> None:
+        environment_routed_commands = (
+            "env -u SOME_SETTING forge-cli pr review 448",
             "env - forge-cli pr review 448",
             "env -uSOMETHING forge-cli pr review 448",
             "env --block-signal=PIPE forge-cli pr review 448",
-            "env FORGE_BOT_PROFILE=dobi forge-cli pr review 448",
+            "env SOME_SETTING=value forge-cli pr review 448",
             "env -S 'forge-cli pr review 448'",
-            "env -S 'FORGE_BOT_PROFILE=dobi forge-cli pr review 448'",
+            "env -S 'SOME_SETTING=value forge-cli pr review 448'",
             "export CMD=forge-cli; env -S \"'${CMD}' pr review 448\"",
             "env -S \"'`printf forge-cli`' pr review 448\"",
             "env -S '# ignored' forge-cli pr review 448",
@@ -1603,49 +1605,136 @@ class SharedHookTests(unittest.TestCase):
             "exec forge-cli pr review 448",
             "/opt/homebrew/bin/forge-cli pr review 448",
             "time /opt/homebrew/bin/forge-cli pr review 448",
-            "time FORGE_BOT_PROFILE=dobi env forge-cli pr review 448",
+            "time SOME_SETTING=value env forge-cli pr review 448",
             "/usr/bin/time -o /dev/null env forge-cli pr review 448",
             "/usr/bin/time --output=/dev/null env forge-cli pr review 448",
             "/usr/bin/time -af %e forge-cli pr review 448",
             "/usr/bin/time --fo=V env forge-cli pr review 448",
             "exec -ca reviewed forge-cli pr review 448",
             "agent-run exec --cwd /repo -- time env forge-cli pr review 448",
-            "agent-run exec --cwd /repo -- env -u FORGE_BOT_PROFILE forge-cli pr review 448",
-            "agent-run exec --cwd /repo env -u FORGE_BOT_PROFILE forge-cli pr review 448",
+            "agent-run exec --cwd /repo -- env -u SOME_SETTING forge-cli pr review 448",
+            "agent-run exec --cwd /repo env -u SOME_SETTING forge-cli pr review 448",
             "agent-run exec --cwd /repo -- env -S 'forge-cli pr review 448'",
-            "bash -lc 'env -u FORGE_BOT_PROFILE forge-cli pr review 448'",
+            "agent-run exec --cwd /repo -- forge-cli pr review 448",
+            "nice forge-cli pr review 448",
+            "nohup forge-cli pr review 448",
+            "timeout 5 forge-cli pr review 448",
+            "setsid forge-cli pr review 448",
+            "stdbuf -oL forge-cli pr review 448",
+            "printf '448\\n' | xargs -n1 forge-cli pr review",
+            "printf '448\\n' | xargs --replace forge-cli pr review {}",
+            "printf '448\\n' | xargs -J % forge-cli pr review %",
+            "printf '448\\n' | xargs -J% forge-cli pr review %",
+            "printf '448\\n' | xargs -I {} -R 2 forge-cli pr review {}",
+            "printf '448\\n' | xargs -I{} -R2 forge-cli pr review {}",
+            "printf '448\\n' | xargs -I {} -S 255 forge-cli pr review {}",
+            "printf '448\\n' | xargs -I{} -S255 forge-cli pr review {}",
+            "bash -lc 'env -u SOME_SETTING forge-cli pr review 448'",
             "zsh -lc '/opt/homebrew/bin/forge-cli pr review 448'",
             "dash -c 'forge-cli pr review 448'",
             "ksh -c 'forge-cli pr review 448'",
+            "bash -c 'exec \"$@\"' _ forge-cli pr review 448",
+            "zsh -c 'exec \"$@\"' _ forge-cli pr review 448",
+            "dash -c 'exec \"$@\"' _ forge-cli pr review 448",
+            "ksh -c 'exec \"$@\"' _ forge-cli pr review 448",
+            "bash -c 'eval \"$0\"' 'forge-cli pr review 448'",
+            "bash -c 'exec \"$1\"' _ forge-cli pr review 448",
+            "zsh -c 'exec \"$1\"' _ forge-cli pr review 448",
+            "dash -c 'exec \"$1\"' _ forge-cli pr review 448",
+            "ksh -c 'exec \"$1\"' _ forge-cli pr review 448",
+            "bash -c '\"$1\" pr review 448' _ forge-cli",
+            "bash -c 'exec \"$2\" pr review 448' _ true forge-cli",
+            "zsh -c '\"$1\" pr review 448' _ forge-cli",
+            "dash -c '\"$1\" pr review 448' _ forge-cli",
+            "ksh -c '\"$1\" pr review 448' _ forge-cli",
+            "bash -c 'nice \"$1\" pr review 448' _ forge-cli",
+            "bash -c 'nohup \"$1\" pr review 448' _ forge-cli",
+            "bash -c 'timeout 5 \"$1\" pr review 448' _ forge-cli",
+            "bash -c 'stdbuf -oL \"$1\" pr review 448' _ forge-cli",
+            "CMD=forge-cli bash -c 'exec \"$CMD\" pr review 448'",
+            "bash -c 'source /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "zsh -c 'source /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "dash -c '. /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "ksh -c '. /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'bash /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "zsh -c 'zsh /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "dash -c 'sh /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "ksh -c 'ksh /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'bash -e /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c '/bin/bash /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'exec bash /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'env -i /bin/bash -e /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'command /bin/bash /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'nice bash -e /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'bash -s' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'bash -' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'bash' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'bash -e' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'time bash /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'agent-run exec -- bash /dev/stdin' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(cat)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(cat -)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(cat --)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(cat </dev/stdin)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(< /dev/stdin)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(/bin/cat -)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(command cat -)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(cat <&0)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'eval \"$(cat < /dev/stdin)\"' <<'EOF'\nforge-cli pr review 448\nEOF",
             "bash <<'EOF'\nforge-cli pr review 448\nEOF",
             "dash <<'EOF'\nforge-cli pr review 448\nEOF",
             "ksh <<'EOF'\nforge-cli pr review 448\nEOF",
-            "agent-run exec --cwd /repo -- bash -lc 'env -u FORGE_BOT_PROFILE forge-cli pr review 448'",
-            "FORGE_NO_LABELS=1 env -u FORGE_BOT_PROFILE forge-cli pr review 448",
+            "agent-run exec --cwd /repo -- bash -lc 'env -u SOME_SETTING forge-cli pr review 448'",
+            "FORGE_NO_LABELS=1 env -u SOME_SETTING forge-cli pr review 448",
         )
-        for command in blocked_commands:
-            with self.subTest(command=command):
+
+        # Public runtime-kit installs do not assume an identity router exists.
+        for command in environment_routed_commands:
+            with self.subTest(command=command, router_required=False):
                 code, decision, stderr = run_hook(
-                    "forge-label-reminder.py", command_payload(command)
+                    "forge-label-reminder.py",
+                    command_payload(command),
+                    env={"AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED": ""},
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "forge-cli wrapper")
+                self.assert_allowed(decision)
+
+        # Identity routing remains environment-owned even when the environment
+        # advertises an independent review identity capability.
+        for command in environment_routed_commands:
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "forge-label-reminder.py",
+                    command_payload(command),
+                    env={"AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED": "1"},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
 
         allowed_commands = (
             "forge-cli pr review 448",
-            "FORGE_BOT_PROFILE=dobi forge-cli pr review 448",
-            "FORGE_AS=bot FORGE_BOT_PROFILE=dobi forge-cli pr review 448",
-            "agent-run exec --cwd /repo -- forge-cli pr review 448",
+            "SOME_SETTING=value forge-cli pr review 448",
             "env printf forge-cli",
             "command -v forge-cli",
             "bash -- -c 'forge-cli pr review 448'",
             "cat <<'EOF'\nforge-cli pr review 448\nEOF",
             "bash -lc 'true' <<'EOF'\nforge-cli pr review 448\nEOF",
+            "bash -c 'echo \"$@\"' _ forge-cli pr review 448",
+            "bash -c 'printf \"%s\\n\" \"$1\"' _ forge-cli",
+            "CMD=forge-cli bash -c 'echo \"$CMD\"'",
+            "bash -c 'nice echo \"$1\"' _ forge-cli",
+            "bash -c 'echo forge-cli; exec \"$1\"' _ true",
+            "bash -c 'printf \"%s\\n\" forge-cli; nice \"$1\"' _ true",
+            "CMD=forge-cli RUN=echo bash -c 'exec \"$RUN\" ok'",
+            "CMD=forge-cli bash -c 'exec \"$OTHER\" ok'",
+            "bash -c 'exec \"$2\"' _ forge-cli true",
         )
         for command in allowed_commands:
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
-                    "forge-label-reminder.py", command_payload(command)
+                    "forge-label-reminder.py",
+                    command_payload(command),
+                    env={"AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED": "true"},
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)

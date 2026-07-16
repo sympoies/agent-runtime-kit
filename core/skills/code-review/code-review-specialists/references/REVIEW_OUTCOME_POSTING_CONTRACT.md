@@ -3,11 +3,13 @@
 Use this contract when a review workflow needs provider-visible PR/MR review
 activity for either a single-lens specialist report or a combined delivery-owner
 outcome. `forge-cli pr review` is the only provider primitive for this path. On
-GitHub, pass `--submit-review` so each post is a native pull request review event
-(the `#pullrequestreview-` object) authored by the chosen reviewer bot, with
-`--decision` mapped to the review event: specialist reports post as `COMMENT`
-reviews and the combined delivery-owner outcome posts as an `APPROVE` /
-`REQUEST_CHANGES` review. On GitHub, actionable findings that need owner
+GitHub specialist reports pass `--submit-review` so each post is a native
+`COMMENT` pull request review event (the `#pullrequestreview-` object) authored
+by the active provider identity. A combined delivery-owner outcome becomes a
+native `APPROVE` / `REQUEST_CHANGES` review only when an environment-owned
+router guarantees an identity independent from the PR author; otherwise it is
+an outcome note with the same semantic decision and lenses. On GitHub,
+actionable findings that need owner
 changes should be passed as `--thread-file` so they become native, resolvable
 review threads under the same review event; clean or informational reviews omit
 `--thread-file` and keep the summary-only review body. GitLab has no equivalent
@@ -73,13 +75,14 @@ the disposition posts last.
 For delivery review gates, the required posting order is:
 
 1. After each reviewer lens returns, the parent posts a compact single-lens
-   specialist review comment with that lens's bot profile.
+   specialist review comment with that semantic `--lens`.
 2. If the lens blocks delivery, the parent repairs in the delivery branch,
    commits, reruns validation, and reruns the affected lens.
-3. The parent posts the follow-up specialist review comment with the same lens
-   bot profile.
+3. The parent posts the follow-up specialist review comment with the same
+   semantic lens.
 4. After all selected lenses pass or are explicitly dispositioned, the parent
-   posts one combined delivery-owner outcome with `FORGE_BOT_PROFILE=dobi`.
+   posts one combined delivery-owner outcome with the selected lenses and final
+   `--decision`.
 
 The subagent never calls the provider. This keeps provider credentials in the
 parent workflow while still making review progress visible in PR/MR and optional
@@ -105,110 +108,87 @@ combined delivery-owner outcome records final dispositions.
 - `REVIEW_LENS`: the single specialist lens for a specialist review comment.
   For combined owner outcomes, pass repeated `--lens` flags from the selected
   lens list.
-- `REVIEW_BOT_PROFILE`: shell variable resolved from the table below when
-  posting exactly one mapped specialist lens. Use `dobi` for combined owner
-  outcomes.
 - Optional `ISSUE`: tracking or dispatch issue that should receive a compact
   activity mirror.
 
 ## Identity
 
-Set `FORGE_BOT_PROFILE` on every `forge-cli pr review` post. Use `dobi` for
-combined owner outcomes or unknown-lens owner summaries, and use the mapped
-reviewer profile only when the comment represents exactly one mapped specialist
-lens:
+Runtime-kit expresses review identity only through portable forge semantics:
+`--provider`, `--decision`, and repeatable `--lens`. Do not set or document
+environment-specific identity-profile variables in public skills.
 
-| Lens | `FORGE_BOT_PROFILE` |
-| --- | --- |
-| `red-team` | `review-red-team` |
-| `testing` | `review-testing-bot` |
-| `maintainability` | `review-maintainability` |
-| `performance` | `review-performance` |
-| `security` | `review-security` |
-| `api-contract` | `review-api-contract` |
-| `data-migration` | `review-data-migration` |
+By default, `forge-cli` uses the provider CLI's ambient identity. An optional
+environment-owned adapter may map semantic lens and decision flags to separate
+accounts, but that configuration stays outside runtime-kit, must be
+provider-aware, and must fail closed when a required identity cannot be
+selected. Public workflows must continue to work when no adapter exists.
 
-Copy this resolver into shell entrypoints that need `REVIEW_BOT_PROFILE`:
+Environments that install an executable forge identity router may export
+`AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED=1`. The router should occupy the
+canonical `forge-cli` position on PATH so interactive calls, subprocesses, and
+nested shells share the same policy. Runtime-kit does not parse arbitrary shell
+execution or enforce a private wrapper. Exporting the capability asserts that
+the environment selects a GitHub review identity independent from the PR author
+for combined native approval outcomes. Without it, runtime-kit posts the
+combined decision as an outcome note instead of attempting native self-approval.
 
-```bash
-case "$REVIEW_LENS" in
-  red-team) REVIEW_BOT_PROFILE=review-red-team ;;
-  testing) REVIEW_BOT_PROFILE=review-testing-bot ;;
-  maintainability) REVIEW_BOT_PROFILE=review-maintainability ;;
-  performance) REVIEW_BOT_PROFILE=review-performance ;;
-  security) REVIEW_BOT_PROFILE=review-security ;;
-  api-contract) REVIEW_BOT_PROFILE=review-api-contract ;;
-  data-migration) REVIEW_BOT_PROFILE=review-data-migration ;;
-  *) REVIEW_BOT_PROFILE=dobi ;;
-esac
-```
-
-Every standard specialist lens now has a dedicated reviewer bot (the table
-above). Any other or unknown lens still uses the specialist report body and
-`comments-only` authored by `dobi-bot` as an owner summary — the resolver's `*`
-fallback.
-
-Do not wrap `forge-cli` with `env`, `command`, or `exec`; those forms bypass the
-local forge-cli shell wrapper that mints the GitHub App token. Pass identity
-selection as an inline assignment immediately before `forge-cli` instead.
-
-Do not let a reviewer subagent post directly. If an explicit reviewer profile
-cannot mint a token or cannot write the provider comment, stop and surface the
-provider error instead of retrying as the user.
+Do not let a reviewer subagent post directly. If the active provider identity
+cannot write the review, stop and surface the provider error.
 
 ## Command
 
-Native review events and `--thread-file` are GitHub-only. Guard
-`--submit-review` and `--thread-file` on the provider once and reuse the arrays
-in the snippets (on GitLab both arrays are empty and the post falls back to an
-outcome note):
+Native specialist review events and `--thread-file` are GitHub-only. A combined
+native approval additionally requires the environment capability that promises
+an independent review identity. Without it, the final semantic decision is an
+outcome note, which keeps ambient-identity workflows usable without asking a PR
+author to approve their own change:
 
 ```bash
 SUBMIT_REVIEW=()
+FINAL_SUBMIT_REVIEW=()
 THREAD_FILE_ARGS=()
 [ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
+    ;;
+esac
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
 fi
 ```
 
-Single known specialist lens report:
+Single specialist lens report:
 
 ```bash
-case "$REVIEW_LENS" in
-  red-team) REVIEW_BOT_PROFILE=review-red-team ;;
-  testing) REVIEW_BOT_PROFILE=review-testing-bot ;;
-  maintainability) REVIEW_BOT_PROFILE=review-maintainability ;;
-  performance) REVIEW_BOT_PROFILE=review-performance ;;
-  security) REVIEW_BOT_PROFILE=review-security ;;
-  api-contract) REVIEW_BOT_PROFILE=review-api-contract ;;
-  data-migration) REVIEW_BOT_PROFILE=review-data-migration ;;
-  *) REVIEW_BOT_PROFILE=dobi ;;
-esac
-
-FORGE_BOT_PROFILE="$REVIEW_BOT_PROFILE" \
-  forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
-    --repo "$OWNER_REPO" \
-    --decision comments-only \
-    "${SUBMIT_REVIEW[@]}" \
-    "${THREAD_FILE_ARGS[@]}" \
-    --comment-file "$REVIEW_COMMENT_FILE" \
-    --lens "$REVIEW_LENS" \
-    --format json
+forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+  --repo "$OWNER_REPO" \
+  --decision comments-only \
+  "${SUBMIT_REVIEW[@]}" \
+  "${THREAD_FILE_ARGS[@]}" \
+  --comment-file "$REVIEW_COMMENT_FILE" \
+  --lens "$REVIEW_LENS" \
+  --format json
 ```
 
-Combined owner outcome after all specialist reports are resolved:
+Build the selected lens list once, including every risk lens chosen by scope,
+then reuse its repeated flags for the combined owner outcome:
 
 ```bash
-FORGE_BOT_PROFILE=dobi \
-  forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
-    --repo "$OWNER_REPO" \
-    --decision "$REVIEW_DECISION" \
-    "${SUBMIT_REVIEW[@]}" \
-    --comment-file "$REVIEW_COMMENT_FILE" \
-    --lens testing \
-    --lens maintainability \
-    --format json
+SELECTED_REVIEW_LENSES=(testing maintainability)
+# Append every selected risk lens, for example: SELECTED_REVIEW_LENSES+=(security)
+REVIEW_LENS_ARGS=()
+for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
+  REVIEW_LENS_ARGS+=(--lens "$selected_lens")
+done
+
+forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+  --repo "$OWNER_REPO" \
+  --decision "$REVIEW_DECISION" \
+  "${FINAL_SUBMIT_REVIEW[@]}" \
+  --comment-file "$REVIEW_COMMENT_FILE" \
+  "${REVIEW_LENS_ARGS[@]}" \
+  --format json
 ```
 
 Add issue mirroring only when an owning tracking or dispatch issue should show a
@@ -221,10 +201,11 @@ compact activity breadcrumb:
 The issue mirror records the PR/MR review URL and metadata. It does not
 duplicate the full review body.
 
-Always set `FORGE_BOT_PROFILE=dobi` for combined or default-owner posts. Only
-the single-lens branch should set a reviewer profile for one command.
+Keep identity selection out of the command. Single-lens and combined-owner posts
+are distinguished by semantic `--lens` cardinality and `--decision`.
 
 ## Read-Back
 
-For live bot-profile smoke tests, read the created comment back from the
-provider and confirm its author before declaring the identity path verified.
+For live identity-adapter smoke tests, read the created comment back from the
+provider and confirm its author. Portable runtime-kit validation checks the
+semantic command shape and does not require a bot account.

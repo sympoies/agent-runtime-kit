@@ -53,16 +53,18 @@ Outputs:
   state[,session[,validation]]`.
 - PR delivery through `forge-cli pr deliver --no-merge`, or adoption of an
   already linked PR, so the review gate runs before merge.
-- Native review events through `forge-cli pr review --submit-review`: one
-  `COMMENT` per specialist lens (mapped reviewer bot profile) and one combined
-  `APPROVE`/`REQUEST_CHANGES` outcome (`FORGE_BOT_PROFILE=dobi`), with a
-  `--mirror-issue` breadcrumb to the tracking issue.
+- Provider review activity through `forge-cli pr review`: one native GitHub
+  `COMMENT` per specialist lens and one combined semantic outcome, expressed
+  only through portable provider / decision / lens flags, with a
+  `--mirror-issue` breadcrumb to the tracking issue. The combined outcome is a
+  native GitHub approval only when an environment-owned router guarantees an
+  identity independent from the PR author; otherwise it is an outcome note.
 - On GitHub, current-head native review summaries read through
   `forge-cli pr reviews` and semantically dispositioned before the combined
   owner outcome. GitLab retains the outcome-note flow because native snapshots
   are GitHub-only in v1.
 - Delivery checkpoint: `tracking checkpoint --live --post state,review`, whose
-  `review` role records the native review outcome URL and is posted before merge.
+  `review` role records the provider review outcome URL and is posted before merge.
 - Per-task ledger sync through `plan-tooling ledger-update`.
 - `forge-cli pr merge` after semantic review and the issue-side review
   checkpoint; the CLI owns convergence, thread/task enforcement, and head
@@ -184,11 +186,26 @@ forge-cli pr deliver --repo "$OWNER_REPO" \
 review-specialists scope --base "$BASE_REF" --testing --maintainability --format json
 
 # Native review events (GitHub) per REVIEW_OUTCOME_POSTING_CONTRACT.md: one
-# COMMENT per lens with its reviewer bot profile as each lens returns, then the
-# combined APPROVE/REQUEST_CHANGES outcome as dobi.
+# COMMENT per semantic lens as each lens returns, then the combined
+# APPROVE/REQUEST_CHANGES outcome.
 SUBMIT_REVIEW=(); [ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+FINAL_SUBMIT_REVIEW=()
+case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
+    ;;
+esac
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
+
+SELECTED_REVIEW_LENSES=(testing maintainability)
+# Append every risk lens selected by generic pre-merge review.
+REVIEW_LENS_ARGS=()
+TRACKING_LENS_ARGS=()
+for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
+  REVIEW_LENS_ARGS+=(--lens "$selected_lens")
+  TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")
+done
 
 # Repeat this specialist block once for each returned lens: testing,
 # maintainability, plus any risk lens selected by generic pre-merge review.
@@ -196,17 +213,7 @@ THREAD_FILE_ARGS=()
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
 fi
-case "$REVIEW_LENS" in
-  red-team) REVIEW_BOT_PROFILE=review-red-team ;;
-  testing) REVIEW_BOT_PROFILE=review-testing-bot ;;
-  maintainability) REVIEW_BOT_PROFILE=review-maintainability ;;
-  performance) REVIEW_BOT_PROFILE=review-performance ;;
-  security) REVIEW_BOT_PROFILE=review-security ;;
-  api-contract) REVIEW_BOT_PROFILE=review-api-contract ;;
-  data-migration) REVIEW_BOT_PROFILE=review-data-migration ;;
-  *) REVIEW_BOT_PROFILE=dobi ;;
-esac
-FORGE_BOT_PROFILE="$REVIEW_BOT_PROFILE" forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision comments-only \
   "${SUBMIT_REVIEW[@]}" \
@@ -224,12 +231,12 @@ if [ "$PROVIDER" = github ]; then
     --format json pr reviews "$PR_NUMBER"
 fi
 
-FORGE_BOT_PROFILE=dobi forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision "$REVIEW_DECISION" \
-  "${SUBMIT_REVIEW[@]}" \
+  "${FINAL_SUBMIT_REVIEW[@]}" \
   --comment-file "$DELIVERY_REVIEW_OUTCOME" \
-  --lens testing --lens maintainability \
+  "${REVIEW_LENS_ARGS[@]}" \
   --issue "$ISSUE" --mirror-issue --format json
 
 # Record issue-side review evidence from the native outcome, then post the final
@@ -239,8 +246,7 @@ plan-issue --format json tracking run update \
   --phase ready-for-close \
   --linked-pr "$OWNER_REPO#$PR_NUMBER" \
   --review-decision approve \
-  --review-lens testing \
-  --review-lens maintainability \
+  "${TRACKING_LENS_ARGS[@]}" \
   --review-outcome-comment "$REVIEW_OUTCOME_COMMENT" \
   --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -305,15 +311,15 @@ Observed convergence is GitHub-only in v1, so GitLab merge calls explicitly pass
 `--review-convergence=false` to neutralize any user-global GitHub policy.
 
 Post one compact specialist review comment per lens as it returns — before any
-repair — using the mapped reviewer bot profile (`FORGE_BOT_PROFILE=dobi` for
-unmapped lenses), with `--thread-file "$REVIEW_THREAD_FILE"` for actionable GitHub
-findings; the combined delivery outcome posts last as `dobi`.
+repair — using `--decision comments-only` plus the semantic `--lens`, with
+`--thread-file "$REVIEW_THREAD_FILE"` for actionable GitHub findings; the
+combined delivery outcome posts last with the final decision and selected lenses.
 On GitHub, read native summaries before the combined outcome; on GitLab, retain
 the outcome-note path and do not invoke the unsupported snapshot. A
 `summary_truncated` item requires the full review body before disposition; stop
 if it cannot be read. The generic review outcome owns the read-only lenses and
 mode selection; this
-skill owns the provider writes, bot-profile resolution, semantic disposition,
+skill owns the provider writes, semantic disposition,
 checkpoint, and merge, and reviewer subagents never post. On
 `review_convergence_activity_changed`, read `forge-cli pr reviews` again,
 disposition the new evidence, refresh the final outcome/checkpoint, and retry.
@@ -341,17 +347,18 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
 4. **Review gate** — run the generic code-review outcome in pre-merge mode (min `testing` +
    `maintainability`; add risk lenses per scope). Post each lens's specialist
    review comment through `forge-cli pr review` as it returns (native `COMMENT`
-   on GitHub via `--submit-review`, mapped reviewer bot profile; `--thread-file`
+   on GitHub via `--submit-review`, semantic `--lens`; `--thread-file`
    for actionable findings). After repairs, read `forge-cli pr reviews` and
    disposition every actionable current-head summary; stale summaries are
-   informational. Then post the combined delivery outcome (native
-   `APPROVE`/`REQUEST_CHANGES`, `FORGE_BOT_PROFILE=dobi`, `--mirror-issue`), per
+   informational. Then post the combined delivery outcome (native GitHub
+   approval only with the independent-identity capability; repeated selected
+   lenses; `--mirror-issue`), per
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`. Every tracking PR runs the full gate —
    there is no single-author self-review shortcut. Repair concrete findings in
    this delivery branch and rerun affected lenses before continuing.
 5. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked
-   PR, review decision, lenses, and `--review-outcome-comment` (the native review
-   event URL); add `--review-findings-file "$REVIEW_FINDINGS_JSON"` when findings
+   PR, review decision, lenses, and `--review-outcome-comment` (the provider
+   outcome URL); add `--review-findings-file "$REVIEW_FINDINGS_JSON"` when findings
    exist; then post `state,review` in one live checkpoint. This issue-side
    `review` evidence is posted before merge.
 6. **Merge** — mark the PR ready, then call `forge-cli pr merge` once semantic

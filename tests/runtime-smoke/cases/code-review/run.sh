@@ -48,6 +48,25 @@ run_testing_specialist_contract_probe() {
   done
 }
 
+run_portable_review_identity_contract_probe() {
+  local gate="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
+  local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+  local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+
+  if grep -R -E 'FORGE_BOT_PROFILE|lens bot profile|same lens bot profile|review-testing-bot|review-maintainability|dobi-bot' \
+    "$REPO_ROOT/core/skills"; then
+    return 1
+  fi
+  grep -Fq 'FINAL_SUBMIT_REVIEW' "$posting"
+  grep -Fq 'AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED' "$posting"
+  grep -Fq 'FINAL_SUBMIT_REVIEW' "$delivery"
+  grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
+  grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
+  grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
+  grep -Fq -- '--decision comments-only' "$gate"
+}
+
 init_diff_fixture() {
   local tree commit
 
@@ -255,6 +274,7 @@ run_code_review_outcome_routing_probe() {
 
 failures=0
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
+record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
 record_case "code-review.outcome-routing.pre-merge" "pre-merge gate mandatory forced specialists passed" run_pre_merge_gate_probe

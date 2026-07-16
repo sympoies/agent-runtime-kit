@@ -70,8 +70,9 @@ Internal phases:
 3. Reconcile live issue evidence when resuming.
 4. Implement and validate tasks; keep the task ledger current.
 5. Deliver or adopt the linked PR without merging.
-6. Run the generic specialist review outcome and post native provider review
-   events through `forge-cli`.
+6. Run the generic specialist review outcome and post provider review activity
+   through `forge-cli`; native combined approval requires an independent
+   reviewer identity.
 7. Resolve review threads and unchecked task items.
 8. Post the issue-side review checkpoint, then merge through the active PR
    workflow.

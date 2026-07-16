@@ -10,7 +10,7 @@ Disposition vocabulary and reason/evidence rules are canonical in
 `references/DELIVERY_REVIEW_OUTCOME_SCHEMA.md`.
 Provider posting ownership, bot identity, and optional issue mirroring are
 canonical in `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`.
-Single-lens reviewer bot progress comments use
+Single-lens specialist progress comments use
 `references/SPECIALIST_REVIEW_COMMENT.md` instead.
 Resolvable GitHub review threads for actionable findings are attached to the
 specialist progress comments that first surface those findings, not to the final
@@ -29,11 +29,11 @@ combined approval summary.
 ## Timing
 
 - Post one final combined outcome comment after the review and repair pass,
-  before final merge/close. Use `FORGE_BOT_PROFILE=dobi` for the combined owner
-  outcome.
+  before final merge/close. Express the owner outcome through its final
+  `--decision` and repeated selected `--lens` flags.
 - If review blocks delivery, post a blocked outcome comment before stopping when
   provider auth and permissions allow it.
-- Do not use this format for individual reviewer bot reports. Those comments
+- Do not use this format for individual specialist reports. Those comments
   report findings only; the parent/main agent owns the dispositions recorded
   here.
 - If outcome posting fails, stop before merge and report the provider command,
@@ -44,28 +44,41 @@ combined approval summary.
 
 Use the provider-aware primitive for GitHub and GitLab. Follow
 `references/REVIEW_OUTCOME_POSTING_CONTRACT.md` for the parent-owned posting
-flow, the lens-to-`FORGE_BOT_PROFILE` table, and optional issue mirroring:
+flow, portable identity boundary, and optional issue mirroring:
 
 ```bash
-# Native review events are GitHub-only; GitLab posts an outcome note instead.
-SUBMIT_REVIEW=()
-[ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+# Native combined approval requires an environment-owned executable router that
+# guarantees a GitHub review identity independent from the PR author. Other
+# paths post an outcome note with the same semantic decision and lenses.
+FINAL_SUBMIT_REVIEW=()
+case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
+    ;;
+esac
+SELECTED_REVIEW_LENSES=(testing maintainability)
+REVIEW_LENS_ARGS=()
+for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
+  REVIEW_LENS_ARGS+=(--lens "$selected_lens")
+done
 
-FORGE_BOT_PROFILE=dobi forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --decision "$REVIEW_DECISION" \
-  "${SUBMIT_REVIEW[@]}" \
+  "${FINAL_SUBMIT_REVIEW[@]}" \
   --comment-file comment.md \
-  --lens testing \
-  --lens maintainability
+  "${REVIEW_LENS_ARGS[@]}"
 ```
 
 Set `REVIEW_DECISION=approve` for `proceed-to-merge` or
 `proceed-with-accepted-residual`, and `request-changes` for `blocked`. Use
-provider repository flags when local remotes are ambiguous. With `--submit-review`
-on GitHub the decision maps to a native pull request review event
+provider repository flags when local remotes are ambiguous. When the independent
+identity capability adds `--submit-review` on GitHub, the decision maps to a
+native pull request review event
 (`approve`→`APPROVE`, `request-changes`→`REQUEST_CHANGES`,
-`comments-only`→`COMMENT`) authored by the `dobi` reviewer bot; on GitLab the
+`comments-only`→`COMMENT`) authored by the active provider identity; on GitLab the
 decision is recorded as outcome-note metadata only (no native approval state).
+GitHub without that capability also uses the outcome-note path so the ambient
+PR author is not asked to self-approve.
 Use `SPECIALIST_REVIEW_COMMENT.md` with `--decision comments-only` for
 non-decisional specialist notes, adding `--thread-file` only when that note
 surfaces actionable findings that need owner changes.

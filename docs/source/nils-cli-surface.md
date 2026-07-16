@@ -428,12 +428,12 @@
   host alignment with `v1.17.0`.
 - `v1.16.0` is a lock-step minor over `v1.15.0`. It adds
   `forge-cli pr review --submit-review`, which posts a native GitHub
-  pull-request review event (`#pullrequestreview-`) authored by the chosen
-  reviewer bot — mapping `--decision` to a `COMMENT` / `APPROVE` /
+  pull-request review event (`#pullrequestreview-`) authored by the active
+  provider identity — mapping `--decision` to a `COMMENT` / `APPROVE` /
   `REQUEST_CHANGES` review event — instead of an issue-style outcome comment
   (GitHub-only; GitLab keeps the outcome-note form)
   ([#947](https://github.com/sympoies/nils-cli/pull/947)). The review posting
-  contract and reviewer-bot wiring that consume this flag land in a separate
+  contract and portable identity boundary that consume this flag land in a separate
   runtime-kit change, so this pin bump moves no `required_clis[]` floor — the
   `forge-cli` floor still records the minimum currently-consumed surface and
   the exact `pinned_tag` gate (now `v1.16.0`) covers the host.

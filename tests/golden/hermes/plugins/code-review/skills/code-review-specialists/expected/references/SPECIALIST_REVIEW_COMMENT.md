@@ -2,15 +2,15 @@
 
 Use this comment contract when the owning parent workflow posts provider-visible
 activity for exactly one reviewer lens. The reviewer subagent remains read-only;
-the parent posts the comment with the mapped reviewer bot profile when one
-exists, or `FORGE_BOT_PROFILE=dobi` for unmapped specialist lenses.
+the parent posts the comment with `--decision comments-only` and that semantic
+`--lens`.
 
 This is not a delivery decision. It reports what one specialist lens found or
 verified. The parent/main agent owns repair, tradeoff decisions, and final
 delivery disposition in `DELIVERY_REVIEW_OUTCOME_COMMENT.md`.
 Post specialist review comments with `--decision comments-only` — on GitHub add
 `--submit-review` so the report posts as a native `COMMENT` review event
-(`#pullrequestreview-`) authored by the mapped reviewer bot; on GitLab it posts
+(`#pullrequestreview-`) authored by the active provider identity; on GitLab it posts
 an outcome note. The lens verdict inside the body carries the specialist result.
 When the specialist found actionable items that require owner changes, GitHub
 posts should include `--thread-file` so those findings become resolvable review

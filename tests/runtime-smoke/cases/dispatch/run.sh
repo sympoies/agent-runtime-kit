@@ -269,7 +269,7 @@ JSON
 write_review_payload() {
   local path="$1"
   cat >"$path" <<'JSON'
-{"decision":"approve","lenses":["testing","maintainability"],"findings":[]}
+{"decision":"approve","lenses":["testing","maintainability","api-contract"],"findings":[]}
 JSON
 }
 
@@ -1001,7 +1001,7 @@ run_deliver_tracking_issue_probe() {
     pr checks 123 >"$checks_out" 2>&1
   printf 'Runtime smoke specialist review.\n' >"$review_body"
   printf '[{"path":"dispatch-fixture.txt","line":1,"body":"Runtime smoke actionable finding thread."}]\n' >"$review_threads"
-  FORGE_BOT_PROFILE=review-testing-bot forge-cli --provider github --repo graysurf/agent-runtime-kit \
+  forge-cli --provider github --repo graysurf/agent-runtime-kit \
     --dry-run --format json \
     pr review 123 \
     --decision comments-only \
@@ -1011,7 +1011,7 @@ run_deliver_tracking_issue_probe() {
     --lens testing \
     --issue 1 \
     --mirror-issue >"$testing_review_out" 2>&1
-  FORGE_BOT_PROFILE=review-maintainability forge-cli --provider github --repo graysurf/agent-runtime-kit \
+  forge-cli --provider github --repo graysurf/agent-runtime-kit \
     --dry-run --format json \
     pr review 123 \
     --decision comments-only \
@@ -1020,7 +1020,7 @@ run_deliver_tracking_issue_probe() {
     --lens maintainability \
     --issue 1 \
     --mirror-issue >"$maintainability_review_out" 2>&1
-  FORGE_BOT_PROFILE=dobi forge-cli --provider github --repo graysurf/agent-runtime-kit \
+  forge-cli --provider github --repo graysurf/agent-runtime-kit \
     --dry-run --format json \
     pr review 123 \
     --decision approve \
@@ -1028,6 +1028,7 @@ run_deliver_tracking_issue_probe() {
     --comment-file "$review_body" \
     --lens testing \
     --lens maintainability \
+    --lens api-contract \
     --issue 1 \
     --mirror-issue >"$final_review_out" 2>&1
   write_record_content "$session_md" tracking
@@ -1069,7 +1070,7 @@ run_deliver_tracking_issue_probe() {
   grep -q '"mirror_issue":true' "$maintainability_review_out"
   grep -q '"schema_version":"cli.forge-cli.pr.review.v1"' "$final_review_out"
   grep -q '"decision":"approve"' "$final_review_out"
-  grep -q '"lenses":\["testing","maintainability"\]' "$final_review_out"
+  grep -q '"lenses":\["testing","maintainability","api-contract"\]' "$final_review_out"
   grep -q '"planned_review_threads":0' "$final_review_out"
   grep -q '"mirror_issue":true' "$final_review_out"
   grep -q 'plan-issue.record.post.v2' "$session_out"
@@ -1116,6 +1117,7 @@ run_dispatch_pr_review_probe() {
     --comment-file "$review_body" \
     --lens testing \
     --lens maintainability \
+    --lens api-contract \
     --issue 2 \
     --mirror-issue >"$provider_review_out" 2>&1
   write_record_content "$review_md" dispatch
@@ -1136,11 +1138,12 @@ run_dispatch_pr_review_probe() {
   grep -q '"planned_review_threads"' "$specialist_provider_review_out"
   grep -q '"schema_version":"cli.forge-cli.pr.review.v1"' "$provider_review_out"
   grep -q '"decision":"approve"' "$provider_review_out"
+  grep -q '"lenses":\["testing","maintainability","api-contract"\]' "$provider_review_out"
   grep -q '"planned_review_threads":0' "$provider_review_out"
   grep -q '"mirror_issue":true' "$provider_review_out"
   grep -q 'plan-issue.record.post.v2' "$review_out"
   grep -q 'Decision: approve' "$review_out"
-  grep -q 'testing, maintainability' "$review_out"
+  grep -q 'testing, maintainability, api-contract' "$review_out"
 }
 
 run_dispatch_subagent_pr_probe() {
