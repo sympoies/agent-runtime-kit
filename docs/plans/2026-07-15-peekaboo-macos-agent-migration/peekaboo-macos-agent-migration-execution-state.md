@@ -5,23 +5,22 @@
 
 - Source document: `docs/plans/2026-07-15-peekaboo-macos-agent-migration/peekaboo-macos-agent-migration-plan.md`
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/610>
-- Current sprint: Sprint 4 delivery on released nils-cli v1.22.6
-- Status: direct runtime-kit source cutover and governed v1.22.6 pin are green;
-  final follow-up maintainability and API findings are repaired and
-  focused-green; exact-repair-head full validation, review closure, and merge
-  remain
-- Current gate: pass exact-repair-head full validation and review closure,
-  then promote and merge runtime-kit PR #621
-- Current task: Task 4.2 — review and deliver the governed nils-cli pin and
-  generated-surface refresh
-- Next task: complete Task 4.2 delivery, then Task 5.1 merged-source runtime
-  synchronization and fresh-agent acceptance
+- Current sprint: Sprint 5 activation and closeout on released nils-cli v1.22.7
+- Status: complete at the plan-task boundary; implementation, release,
+  fixed-fleet deployment, governed runtime-kit pin, managed-surface
+  synchronization, live functional acceptance, recovery readiness, evidence
+  review, defect routing, and strict tracker close-ready all passed
+- Current gate: merge this final ledger update, then atomically write the
+  provider closeout, verify its read-back, route the archive, and perform
+  terminal worktree cleanup
+- Current task: none; Tasks 1.1 through 5.2 are complete
+- Next task: L2 tracker closeout and archive handoff
 - Plan branches: `feat/peekaboo-macos-agent-adapter` (nils-cli), then `feat/peekaboo-macos-agent-cutover` (runtime-kit)
 - Upstream candidate: Peekaboo `v3.9.3`, verified tag commit
   `3cfd612adbcb1b43e8431a7a1f3b02ec45d01269`; newly released v3.9.4 was
   freshness-reviewed and is not adopted for this delivery because the already
   reviewed v3.9.3 exact tuple remains the controlled candidate
-- Release prerequisite: satisfied by nils-cli v1.22.6 release and fixed-fleet
+- Release prerequisite: satisfied by nils-cli v1.22.7 release and fixed-fleet
   deploy verification
 - Blockers: none at the implementation or active-GUI acceptance boundary. The
   v3.9.3 CLI notary failure is an approved exact-artifact waiver. Peekaboo's
@@ -35,13 +34,16 @@
   `2e55e376306f8d69894576c0a3ee9a844a115efd`; exact-head local/provider gates,
   testing follow-up, approval, and zero unresolved review threads passed, and
   the source branch was deleted; follow-up PR
-  <https://github.com/sympoies/nils-cli/pull/1245> merged as `01e1993`, release
-  <https://github.com/sympoies/nils-cli/releases/tag/v1.22.6> was cut from that
-  approved source, and broker run
-  <https://github.com/serenvia/sympoies-infra/actions/runs/29465243199>
-  verified nils-cli 1.22.6 on MacBook and sympoies; runtime-kit draft PR
-  <https://github.com/graysurf/agent-runtime-kit/pull/621> passes required CI
-  and CodeQL on signed head `a36ba6e`
+  <https://github.com/sympoies/nils-cli/pull/1245> merged as `01e1993`; follow-up
+  release <https://github.com/sympoies/nils-cli/releases/tag/v1.22.7> was cut
+  from approved source `a75455c9`, and broker run
+  <https://github.com/serenvia/sympoies-infra/actions/runs/29473807996>
+  verified nils-cli 1.22.7 on the fixed fleet. Runtime-kit PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/630> merged as `ff0c975`
+  with the exact v1.22.7 pin and refreshed surfaces; acceptance-contract PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/633> merged as `4fcd298`
+  after current-head CI, API-contract, maintainability, testing, and native
+  approval gates passed
 
 ## Validation Plan
 
@@ -72,9 +74,9 @@
 | 3.2 | done | Run the private macOS capability and journal canary | Exact branch binary passes local and adapter-SSH launch/observe/click/type/postcondition, three no-retry runs, journal redaction/privacy scan, guarded never-replay refusal, and rollback to official 1.22.5 | Active-GUI contract accepted. With private Mac `display_count=0`, pinned snapshot element-ID clicks remain an explicit non-blocking residual; fresh observed global-coordinate fallback passed |
 | 3.3 | done | Review, merge, release, and verify nils-cli | nils-cli PR #1234 merged as `2e55e376`; latest-main integration, 6187-case full local gate, exact-head provider CI, testing follow-up, approval, and zero unresolved threads pass; nils-cli v1.22.6 released from 01e1993 and fixed-fleet deploy verified by broker run 29465243199 | PR #1234 and prior-root follow-up PR #1245 are included in release tag v1.22.6; MacBook and sympoies both verified on 1.22.6 |
 | 4.1 | done | Replace the computer-use skill and publish the capability matrix | Direct-adapter skill, setup, canonical capability matrix, helper removal, and new test-first red→2/2 focused green plus 37-skill matrix gate are implemented on the managed cutover branch; released v1.22.6 focused deterministic computer-use 2/2 and acceptance matrix 37 skills pass | Direct-adapter source and all Codex/Claude/Hermes goldens are on the released binary; Linux live GUI probes remain host-inapplicable by contract |
-| 4.2 | in-progress | Apply the governed nils-cli pin and deliver the cutover PR | v1.22.6 pin, SHA256 digests, agent-runtime/macos-agent floors, README/harness/surface mirrors, and three product goldens updated; latest origin/main integrated as signed merge c46edf3; first-wave review red reproduced stale helper goldens, prior-root forwarding, stale floor, fabricated adapter schemas, MCP/SSH replay wording, and mixed-mode journal reuse; signed repairs 20823a5 and 347615a are focused-green; signed head 5ca4078 passes all 16 CI positions, hooks 212/212, deterministic runtime smoke 101 pass/0 fail/1 Linux host-capability skip, version baseline 24/24, verified test-first/docs-impact evidence, and PR #621 required checks plus CodeQL; final follow-up red reproduced heterogeneous example roots, incorrect MCP denial continuity, incomplete result shapes, and missing backend-digest homogeneity before focused 2/2 repair | Validate the exact repair head, close review convergence, then promote and merge PR #621 |
-| 5.1 | pending | Synchronize the runtime and run fresh-agent acceptance | — | Only merged/pinned source; no disabled tools or stale helper |
-| 5.2 | pending | Review retained evidence and close the L2 tracker | — | Route every significant defect; raw desktop evidence stays local |
+| 4.2 | done | Apply the governed nils-cli pin and deliver the cutover PR | Runtime-kit PR #621 merged as `0c3919f` with the cutover, CLI floors, and Codex/Claude/Hermes goldens; follow-up PR #630 merged as `ff0c975` with the exact v1.22.7 pin, digests, README/harness/surface mirrors, Docker fallback, and exact-version fixture; local CI positions 1-16 and current-head provider checks 4/4 pass | Independent testing and maintainability reviews pass after one stale release-wording repair; transient checkout-lease race CI failure was isolated, rerun green, and routed to ready follow-up issue #632 |
+| 5.1 | done | Synchronize the runtime and run fresh-agent acceptance | Merged `main` synchronized to Codex, Claude, and Hermes with prune/doctor/prompt-input checks; strict backend verify, doctor, and capabilities pass through the private SSH transport; Calculator clear action succeeds and AX inspection observes display value `0` | Fresh install has no previous receipt: rollback dry-run deterministically refuses with exit 69 and a subsequent status read-back preserves Peekaboo v3.9.3 commit `3cfd612a` |
+| 5.2 | done | Review retained evidence and close the L2 tracker | Required journals summarize cleanly; successful steps have no review candidates, the fail-closed selector mistake is non-significant, remote replay is correctly ineligible, PR #633 clarifies both recovery branches, issue #632 owns the only reproducible CI defect, and strict `tracking close-ready --expect-visible` returns `ready=true` with no blockers | Raw desktop evidence remains private. The exact-artifact notary/reduced-security waiver and displayless element-ID limitation remain disclosed non-blocking residuals; no privacy, wrong-target, false-success, or usability blocker remains. Provider `record close`, read-back, archive routing, and cleanup are the workflow finalizers after this ledger PR merges |
 
 ## Validation Log
 
@@ -359,6 +361,45 @@
   its model, backend, journal, MCP, and scenario defining sources are
   byte-identical to the inspected release checkout. Focused computer-use
   returns 2/2; exact-head full validation and review closure remain.
+- 2026-07-16: nils-cli v1.22.7 release request run
+  <https://github.com/serenvia/sympoies-infra/actions/runs/29473796577>
+  published <https://github.com/sympoies/nils-cli/releases/tag/v1.22.7> from
+  approved source `a75455c930d8761b1ce9e735b7d74f7862225fa1`; broker run
+  <https://github.com/serenvia/sympoies-infra/actions/runs/29473807996>
+  deployed and verified 1.22.7 on the fixed fleet.
+- 2026-07-16: Runtime-kit PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/630> merged as `ff0c975`.
+  Local validation passed CI positions 1-16, deterministic runtime smoke 101
+  pass / zero fail / one declared host-capability skip, hooks 218/218, baseline
+  24/24, and focused evidence 7/7. Current-head provider CI and CodeQL passed
+  4/4. A checkout-lease race reason-string flake preserved one-winner safety,
+  passed 100 focused repetitions and the failed-job rerun, and is owned by
+  ready follow-up issue <https://github.com/graysurf/agent-runtime-kit/issues/632>.
+- 2026-07-16: Merged `main` synchronized Codex, Claude, and Hermes surfaces
+  with prune, doctor, plugin activation, home-prompt wiring, and Codex
+  prompt-input verification all green. On the private macOS role, strict
+  backend verification, doctor, permissions, Bridge, and required capability
+  probes pass. A freshly observed Calculator action clicked `All Clear`; a
+  subsequent AX-tree inspection read the display value as `0`. Journal summary,
+  review, redaction, and remote replay-ineligibility checks pass; the initial
+  text-selector misuse failed before mutation and is non-significant.
+- 2026-07-16: Recovery acceptance followed the fresh-install branch because
+  `backend status` reported `previous=null`. Strict rollback dry-run refused
+  deterministically with exit 69 and `no previous backend receipt exists`; a
+  subsequent status read-back preserved current Peekaboo v3.9.3 commit
+  `3cfd612adbcb1b43e8431a7a1f3b02ec45d01269`. Runtime-kit PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/633> encoded both the
+  strict verified-previous and fresh-install refusal branches, passed local CI
+  positions 1-16 and current-head remote checks 4/4, received API-contract,
+  maintainability, testing, and final native approval, and merged as `4fcd298`.
+- 2026-07-16: The final L2 run-state records phase `ready-for-close`, validation
+  `pass`, linked implementation/acceptance PR #633, and its current-head native
+  approval. A live `tracking checkpoint` posted state, session, validation, and
+  review roles and repaired the #610 dashboard. Strict `tracking close-ready
+  --expect-visible` then returned `ready=true`, `blockers=[]`, and complete
+  visible-role coverage. Provider `record close`, closeout read-back, archive
+  routing, and terminal worktree cleanup remain ordered lifecycle finalizers
+  after this ledger update merges; they are not hidden plan-task gaps.
 
 ## Session Notes
 
@@ -388,3 +429,9 @@
   active-GUI operation, explicit postconditions, redacted journals, and guarded
   no-replay behavior; it records but does not block on displayless element-ID
   targeting or a generalized notarization guarantee beyond the locked waiver.
+- 2026-07-16: Final closeout retained the exact-artifact CLI notary and
+  displayless element-ID limitations as explicit non-blocking residuals. It did
+  not weaken digest, signer, Team ID, architecture, version, app-notary,
+  privacy, target, postcondition, journal, or replay gates. The only deferred
+  reproducible product defect is the independently ready checkout-lease race
+  classification issue #632.
