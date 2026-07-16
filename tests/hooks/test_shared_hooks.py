@@ -9351,6 +9351,149 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "default branch")
 
+    def test_checkout_lease_allows_worktree_add_on_non_default_primary(self) -> None:
+        # Regression for issue #622 (Bug 1): the guard must not block
+        # `git-cli worktree add`, the exact escape `worktree_guidance()`
+        # recommends. A primary checkout on a non-default branch blocks a direct
+        # edit but must allow a sole `git-cli worktree add`, or the agent
+        # deadlocks on the guard's own remediation command.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feature/lease-guard"],
+                cwd=repo,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            # A direct edit is still gated to the resolved default branch.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "default branch")
+
+            # The recommended escape is allowed from the very same checkout.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "writer",
+                    repo,
+                    tool_name="Bash",
+                    command="git-cli worktree add feature-lane",
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A resolved shell wrapper around the sole add is unwrapped and still
+            # allowed, so the sanctioned escape survives a `bash -c '…'` form.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "writer",
+                    repo,
+                    tool_name="Bash",
+                    command="bash -c 'git-cli worktree add wrapped-lane'",
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # The escape short-circuits: it claims no lease on the current
+            # checkout rather than acquiring or refreshing one.
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_checkout_lease_worktree_add_allow_flows_through_carveout(self) -> None:
+        # Pin that the escape is admitted via the worktree-add carve-out, not the
+        # earlier "not a high-confidence mutation" return: `git-cli worktree add`
+        # must stay classified as a mutation AND be cleared by the carve-out.
+        # Also pins the carve-out's narrowness at the unit boundary so a
+        # regression that widens any guard branch fails here.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_carveout",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            self.assertTrue(
+                module.high_confidence_shell_mutation("git-cli worktree add lane")
+            )
+            self.assertTrue(module.sole_managed_worktree_add("git-cli worktree add lane"))
+            self.assertTrue(
+                module.sole_managed_worktree_add(
+                    "bash -c 'git-cli worktree add lane'"
+                )
+            )
+            for command in (
+                "git-cli worktree add a && git-cli worktree add b",
+                "git-cli worktree add a; git-cli worktree add b",
+                "git-cli worktree add a && rm -rf b",
+                "git-cli worktree add a > out.txt",
+                'bash -c "$UNRESOLVED"',
+            ):
+                self.assertFalse(
+                    module.sole_managed_worktree_add(command), command
+                )
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_worktree_add_carveout_does_not_cover_co_mutation(
+        self,
+    ) -> None:
+        # The carve-out must not smuggle another working-tree write past the
+        # gate: a co-resident mutation or an output redirection falls back to
+        # normal fail-closed gating on the non-default primary checkout.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feature/lease-guard"],
+                cwd=repo,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            # A co-resident mutation, an output redirection, or a second add all
+            # fall back to the primary-checkout admission gate; an unresolved
+            # nested shell fails closed on the unresolvable-scope path. In every
+            # case the carve-out declines to admit the command.
+            for command, fragment in (
+                ("git-cli worktree add feature-lane && rm -rf README.md", "default branch"),
+                ("git-cli worktree add feature-lane > escape.txt", "default branch"),
+                (
+                    "git-cli worktree add feature-lane && git-cli worktree add other-lane",
+                    "default branch",
+                ),
+                ('bash -c "$UNRESOLVED"', "unresolved"),
+            ):
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload(
+                        "writer", repo, tool_name="Bash", command=command
+                    ),
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+
     def test_checkout_lease_primary_requires_authoritative_default_branch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -525,6 +525,14 @@ def is_managed_worktree_remove(invocation: list[str]) -> bool:
     )
 
 
+def is_managed_worktree_add(invocation: list[str]) -> bool:
+    return (
+        len(invocation) >= 3
+        and os.path.basename(invocation[0]) == "git-cli"
+        and invocation[1:3] == ["worktree", "add"]
+    )
+
+
 def worktree_remove_target_argument(invocation: list[str]) -> str:
     target = ""
     index = 3
@@ -633,6 +641,45 @@ def high_confidence_shell_mutation(command: str) -> bool:
         simple_command_mutates(tokens)
         for tokens in simple_commands_with_nested_shells(command)
     )
+
+
+def sole_managed_worktree_add(command: str) -> bool:
+    """True when the command's only mutation is one ``git-cli worktree add``.
+
+    ``git-cli worktree add`` creates a brand-new checkout; it never writes the
+    current checkout's working tree, so it needs no lease on the current
+    checkout. It is also the exact command ``worktree_guidance()`` tells a
+    blocked agent to run, so gating it deadlocks an agent on a non-default
+    primary checkout: the recommended escape is refused by the same gate.
+
+    This mirrors only the single-mutation narrowness of the ``worktree remove``
+    carve-out: clear it only when it is the sole mutating command with no output
+    redirection, so it can never smuggle another working-tree write past the
+    admission gate. Any ambiguity — a dynamic command position, an unresolved
+    nested shell, a second add, or a co-resident mutation — falls through to
+    normal fail-closed gating. Unlike ``worktree remove`` (which redirects the
+    lease onto the removed checkout and so still requires a verifiable session
+    and lease), ``main()`` short-circuits a matched add to ALLOW before the
+    session-identity gate and acquires no lease, because add takes no lease on
+    the current checkout.
+    """
+    found_add = False
+    for tokens in simple_commands_with_nested_shells(command):
+        if invocation_command_position_is_dynamic(tokens):
+            return False
+        invocation = invocation_tokens(tokens)
+        if invocation_is_unresolved_nested(
+            invocation
+        ) or opaque_invocation_has_unresolved_nested(invocation):
+            return False
+        if is_managed_worktree_add(invocation):
+            if found_add or has_output_redirection(tokens):
+                return False
+            found_add = True
+            continue
+        if simple_command_mutates(tokens):
+            return False
+    return found_add
 
 
 def lease_ttl_seconds() -> int:
@@ -934,7 +981,13 @@ def new_lease(
 
 
 def worktree_guidance() -> str:
-    return "Create an isolated checkout with `git-cli worktree add`, then retry there."
+    return (
+        "Create an isolated checkout with `git-cli worktree add <slug>`, then move "
+        "into it with the harness worktree-entry affordance (for example Claude "
+        "Code's `EnterWorktree`) and retry there. A shell `cd` does not change the "
+        "checkout this guard evaluates, and a sole `git-cli worktree add` is itself "
+        "allowed even from a blocked checkout."
+    )
 
 
 def renewal_due(lease: Mapping[str, Any], now: float) -> bool:
@@ -1176,8 +1229,18 @@ def main() -> int:
     tool = tool_name(payload)
     if tool not in EDIT_TOOLS | COMMAND_TOOLS:
         return ALLOW
-    if tool in COMMAND_TOOLS and not high_confidence_shell_mutation(command_from(payload)):
-        return ALLOW
+    if tool in COMMAND_TOOLS:
+        command = command_from(payload)
+        if not high_confidence_shell_mutation(command):
+            return ALLOW
+        # `git-cli worktree add` creates a new checkout and is the sanctioned
+        # escape the guard recommends; never let the admission gate block its own
+        # remediation. Restricted to a sole, redirect-free add so it cannot cover
+        # a co-resident working-tree write. This intentionally short-circuits
+        # before the session-identity gate and acquires no lease: add takes no
+        # lease on the current checkout.
+        if sole_managed_worktree_add(command):
+            return ALLOW
     if tool in EDIT_TOOLS and not edit_paths(payload):
         emit_block(
             "Checkout lease enforcement could not resolve an explicit edit target and "
