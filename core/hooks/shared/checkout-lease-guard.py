@@ -176,6 +176,10 @@ def existing_ancestor(path: Path) -> Path:
 
 
 def run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    environment = dict(os.environ)
+    # Admission probes are read-only; optional index refreshes can otherwise
+    # expose a transient index.lock that a concurrent admission misclassifies.
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
     try:
         return subprocess.run(
             ["git", *args],
@@ -184,6 +188,7 @@ def run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
             text=True,
             check=False,
             timeout=GIT_TIMEOUT_SECONDS,
+            env=environment,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise LeaseError(f"git probe failed: {exc}") from exc

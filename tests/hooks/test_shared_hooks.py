@@ -9657,6 +9657,44 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_checkout_lease_read_only_git_probes_disable_optional_locks(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_git_probe_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            captured: dict[str, object] = {}
+            real_run = module.subprocess.run
+
+            def inspect_run(
+                *args: object, **kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                captured.update(kwargs)
+                return subprocess.CompletedProcess(args[0], 0, "", "")
+
+            module.subprocess.run = inspect_run
+            try:
+                completed = module.run_git(REPO_ROOT, "status", "--short")
+            finally:
+                module.subprocess.run = real_run
+
+            self.assertEqual(completed.returncode, 0)
+            environment = captured.get("env")
+            self.assertIsInstance(environment, dict)
+            assert isinstance(environment, dict)
+            self.assertEqual(environment.get("GIT_OPTIONAL_LOCKS"), "0")
+            self.assertEqual(environment.get("PATH"), os.environ.get("PATH"))
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_checkout_lease_instance_publication_is_complete_and_cleans_temp(
         self,
     ) -> None:
@@ -9872,6 +9910,34 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "session identity")
+
+    def test_checkout_lease_blocks_preexisting_index_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            git_dir = subprocess.run(
+                ["git", "rev-parse", "--absolute-git-dir"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            (Path(git_dir) / "index.lock").write_text("fixture\n", encoding="utf-8")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "Git operation (index update)")
+            self.assertEqual(self._checkout_lease_files(state), [])
 
     def test_checkout_lease_unavailable_state_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
