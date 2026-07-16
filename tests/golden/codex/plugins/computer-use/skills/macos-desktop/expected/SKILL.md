@@ -258,8 +258,12 @@ A functional claim passes only when all applicable checks hold:
 6. For installed-surface acceptance, a fresh product session discovers this
    skill, uses direct `macos-agent`, and never invokes retired mechanics or a
    disabled tool.
-7. Rollback dry-run and previous-release read-back prove recovery without
-   changing the accepted live state.
+7. Recovery is proven without changing the accepted live state: when an exact
+   allowlisted previous receipt passes strict verification, rollback dry-run
+   and previous-release read-back succeed; on a fresh install where `backend
+   status` reports no previous receipt, rollback dry-run refuses
+   deterministically and a subsequent status read-back reports the unchanged
+   current receipt.
 
 The canonical status/evidence inventory is
 [`docs/source/macos-agent-capability-matrix.md`](https://github.com/graysurf/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
