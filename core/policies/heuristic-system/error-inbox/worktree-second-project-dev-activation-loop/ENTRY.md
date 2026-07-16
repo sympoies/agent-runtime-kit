@@ -4,86 +4,98 @@
 
 - Status: open
 - First observed: 2026-07-16
-- Area: cli
+- Area: hooks
 - Severity: medium
 - Versions: agent-docs 1.22.7, git-cli 1.22.7 (nils-cli 1.22.7)
-- Upstream issue: not yet filed
+- Related issue: graysurf/agent-runtime-kit#601
+- Upstream issue: not filed; exact reproduction evidence is still required
 
 ## Signal
 
-During a single live session, `project-dev` auto-activation worked for the
-**first** managed worktree of `serenvia/agent-console` but then appeared to
-refuse for a **second, newly created** worktree. The pattern: after
-`git-cli worktree add` + `EnterWorktree`, the pre-edit / pre-bash hook reported
-`project-dev` as unactivated for the new checkout path, and every attempt to
-run the printed `agent-docs session activate` command was itself blocked as a
-"bare agent-docs invocation" — an unrecoverable `missing-activation` loop.
+During one live `serenvia/agent-console` session, `project-dev` activation
+worked for the first managed worktree but the workflow became stuck after
+creating and entering a second worktree (`review-cleanup-base`). The pre-edit /
+pre-bash hook repeatedly reported `missing-activation`; Bash and edit attempts
+remained blocked until the operator intervened, so the review-thread cleanup
+did not finish in that session.
 
-Root mechanism (confirmed by reproducing and escaping it on 2026-07-16, same
-tool versions): the loop is triggered specifically because `EnterWorktree` pins
-the Bash-tool CWD into the not-yet-activated worktree. The pre-bash hook is
-CWD-scoped, so with the shell pinned inside an unactivated checkout it blocks
-**all** bash — including the very `agent-docs session activate` command needed
-to clear the state, and even read-only `ls`. It is not that activation is
-impossible for the second worktree; it is that you cannot reach a shell context
-from which activation is allowed while the session is entered into it.
+The observed stall is real, but its root cause is not yet confirmed. The
+original session did not retain the exact recovery argv, hook payload, command
+result, or `session verify` JSON. A later controlled check with the same 1.22.7
+surface successfully activated, preflighted, and verified two managed
+worktrees of one repository in one session. That rules out a generic
+"second/Nth project record cannot initialize" defect, but it does not exercise
+the original `EnterWorktree` transition or prove that the Bash tool's effective
+working repository matched the recovery command's `--project-path`.
+
+The leading hypothesis is therefore a recovery-context mismatch at the hook /
+tool-envelope boundary, already related to the real-workdir work in #601, not a
+confirmed per-worktree record-initialization defect.
 
 ## Evidence
 
-- Raw record: not captured (manual diagnosis, 2026-07-16). No `skill-usage`
-  envelope was retained; attach redacted evidence later via
-  `heuristic-inbox ingest-evidence` if the loop recurs and can be captured.
-- Environment: agent-docs / git-cli 1.22.7 on Linux; `AGENT_HOME` at
-  `<workspace>/.local/state/agent-runtime-kit`.
-- The first worktree of the same repo activated and edited normally in the same
-  session; only the second concurrent worktree exhibited the refusal, which
-  points at per-checkout-path activation state that does not initialize cleanly
-  for an additional worktree created later in the session (suspected
-  one-time / residual session state rather than a repo-content problem).
+- Raw record: not captured (manual diagnosis, 2026-07-16). No
+  `skill-usage` envelope was retained. If the loop recurs, attach only redacted
+  evidence through `heuristic-inbox ingest-evidence`.
+- Environment: Linux; agent-docs / git-cli / nils-cli 1.22.7. Activation state
+  must be compared using the resolved state home, session ID, product, and
+  canonical project path; `AGENT_HOME` alone does not identify that state.
+- Follow-up diagnostic: two existing managed worktrees accepted
+  `session activate`, required preflight, and `session verify` in the same
+  Codex session; both returned `verified=true`.
+- Missing evidence: the original exact fully-qualified activation command,
+  submitted shell text, effective tool CWD, exit code, stdout/stderr, verify
+  result, and presence/absence of the expected hashed record.
 
 ## Impact
 
-When an agent needs a second managed worktree of the same repository in one
-session (a normal pattern when the primary checkout is dirty and blocked by the
-`unowned-changes` guard), the second worktree can become permanently
-un-actionable: no bash mutation and no edits pass the `project-dev` gate. The
-only observed escape was manual host-side intervention, so an unattended agent
-would be hard-blocked.
+In the observed session, the second-worktree workflow was not self-recovering
+and required operator intervention. An unattended agent encountering the same
+context mismatch could be hard-blocked. The evidence does not establish that
+all second worktrees, or the current 1.22.7 activation primitive by itself, are
+permanently unactionable.
 
 ## Current Workaround
 
-Confirmed self-serve recovery (no host-side reset needed): **activate the
-worktree before entering it, and do not stay entered while activating.**
+Before entering a newly created worktree, activate `project-dev` for its exact
+canonical path and read its preflight using the complete trusted commands
+printed by the hook. Keep the session ID, product, resolved state home, docs
+home, and `--project-path` identical through activation and verification.
 
-1. `git-cli worktree add <slug>` (allowed even from a blocked checkout).
-2. From the parent-anchored shell — NOT inside an `EnterWorktree` session —
-   run the printed `agent-docs ... session activate` and `... preflight`
-   commands with an explicit `cd <worktree-path> &&` prefix so the hook's
-   CWD-scoped check sees the matching checkout. (If already stuck inside the
-   worktree, `ExitWorktree` with `keep` first; the shell returns to the parent
-   checkout where bash works again.)
-3. Do the edits via **absolute worktree paths** with the file tools, and run
-   commands `cd <worktree> && …`, without re-entering the worktree via
-   `EnterWorktree`. Edits and bash then pass the guard normally.
+If already stuck after `EnterWorktree`, attempt recovery only with the Bash
+tool envelope's `workdir` (effective CWD) set to the target worktree and submit
+the exact printed activation argv by itself. Do not prefix it with `cd`, append
+shell control, or attempt absolute-path edits before the target worktree
+verifies. Run preflight and verification with the same tool workdir and state
+tuple before editing.
 
-The earlier host-side reset (remove the stale worktree checkout and re-sync
-`main`) also works but is unnecessary once the above is used. Do not copy raw
-hook logs or tokens into this entry.
+If the host cannot expose or retain that target workdir, or the hook blocks the
+exact activation argv there, no self-serve recovery is currently verified.
+Preserve the worktree, return to an activated checkout, request operator
+intervention, and route the effective-workdir gap through #601. Removing the
+worktree and resyncing `main` remains a last resort.
 
 ## Promotion Criteria
 
-Promote once the root cause is confirmed and a durable fix lands: either
-`agent-docs session activate` reliably initializes activation state for a
-second/Nth worktree created mid-session, or the hook surfaces a deterministic,
-self-serve recovery instead of an unrecoverable `missing-activation` loop.
-Reproduce with two managed worktrees of one repo in a single session, validate
-the second activates and edits cleanly, then link the fix from this entry.
+Capture a minimal fresh-session reproduction that creates two managed
+worktrees, enters the second before activation, and records redacted evidence
+for the hook-selected repository plus the exact activate/preflight/verify
+sequence. All commands must use the same session, product, state home, and
+canonical project path.
+
+- If the exact trusted activation succeeds, classify the incident under #601
+  as an invocation / effective-workdir recovery gap and promote the durable
+  workaround or host fix.
+- If the exact trusted activation is itself blocked or fails verification,
+  file the owning nils-cli / agent-docs issue with the deterministic repro and
+  link its fix here.
+
+After a fix or a supported recovery is validated end to end, update this entry
+to `promoted` or `wontfix` and archive it through the heuristic-inbox lifecycle.
 
 ## Next Action
 
-Repro is confirmed and a self-serve workaround exists (above). File an upstream
-nils-cli / agent-docs issue proposing that the pre-bash hook special-case its
-own `agent-docs session activate` command — it must never block the exact
-command it prints as the remedy, even when the pinned CWD is an unactivated
-checkout — so an agent entered into a fresh worktree can always recover without
-`ExitWorktree`. Link the issue here when filed.
+Keep this entry open as the durable tracker. On recurrence, ingest the redacted
+command/payload/verification evidence above and link the resulting #601 or
+upstream resolution. Do not change runtime behavior based only on the original
+uncaptured session.
