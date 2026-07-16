@@ -9431,13 +9431,16 @@ exit 65
         sys.modules[spec.name] = module
         try:
             spec.loader.exec_module(module)
+            base = Path(HOOK_DIR)
             self.assertTrue(
                 module.high_confidence_shell_mutation("git-cli worktree add lane")
             )
-            self.assertTrue(module.sole_managed_worktree_add("git-cli worktree add lane"))
+            self.assertTrue(
+                module.sole_managed_worktree_add("git-cli worktree add lane", base)
+            )
             self.assertTrue(
                 module.sole_managed_worktree_add(
-                    "bash -c 'git-cli worktree add lane'"
+                    "bash -c 'git-cli worktree add lane'", base
                 )
             )
             for command in (
@@ -9448,7 +9451,7 @@ exit 65
                 'bash -c "$UNRESOLVED"',
             ):
                 self.assertFalse(
-                    module.sole_managed_worktree_add(command), command
+                    module.sole_managed_worktree_add(command, base), command
                 )
         finally:
             sys.modules.pop(spec.name, None)
@@ -10258,6 +10261,149 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "could not be verified")
+
+    @staticmethod
+    def _harness_wrapped(command: str, cwd_sentinel: str) -> str:
+        # Reproduce the Claude Bash tool's command wrapper: a shell-snapshot
+        # source, setopt, the real command under `eval '…' < /dev/null`, and a
+        # trailing cwd-capture `pwd -P >| <sentinel>`. The PreToolUse hook sees
+        # this whole string, not the raw command. `cwd_sentinel` is an absolute
+        # path outside every checkout (kept under the test tree so the fixture
+        # does not depend on /tmp being a non-repo).
+        return (
+            "source /home/x/.claude/shell-snapshots/snap.sh 2>/dev/null || true && "
+            "setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && "
+            f"eval {shlex.quote(command)} < /dev/null && "
+            f"pwd -P >| {shlex.quote(cwd_sentinel)}"
+        )
+
+    def test_checkout_lease_worktree_remove_survives_harness_command_wrapper(
+        self,
+    ) -> None:
+        # Regression for issue #628: `git-cli worktree remove` must survive the
+        # agent Bash tool's command wrapper. Pre-fix the trailing `< /dev/null`
+        # was read as a second target ("multiple targets") and the wrapper's
+        # `2>/dev/null` / `pwd >| <cwd>` tripped the sole-mutation guard. The
+        # removal must instead reach lease evaluation, while a genuine
+        # co-resident repository write is still rejected.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            linked = root / "linked"
+            state = root / "state"
+            sentinel = str(root / "cwd-sentinel")  # absolute, outside every checkout
+            self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/wrap", str(linked)],
+                cwd=primary,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            # A foreign session owns the linked checkout's lease.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", linked / "README.md"),
+                cwd=linked,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            target = shlex.quote(str(linked))
+            wrapped = self._harness_wrapped(
+                f"git-cli worktree remove {target}", sentinel
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "delivery", primary, tool_name="Bash", command=wrapped
+                ),
+                cwd=primary,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            # Reached lease evaluation (foreign owner), not a parse/scope refusal.
+            self.assert_blocked(decision, "another agent session")
+
+            # Genuine co-resident repository writes are still rejected as not the
+            # sole mutation, even inside the wrapper: an executable mutation, an
+            # absolute in-repo redirect, a relative redirect (unsafe under `cd`,
+            # so fail closed), and a dynamic redirect target.
+            in_repo = shlex.quote(str(primary / "README.md"))
+            for co_resident in (
+                f"rm -rf {in_repo}",
+                f"printf x > {in_repo}",
+                "cd .git && printf x > ../pwned",
+                "echo x > $OUT",
+            ):
+                with self.subTest(co_resident=co_resident):
+                    with_write = self._harness_wrapped(
+                        f"git-cli worktree remove {target} && {co_resident}", sentinel
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "delivery", primary, tool_name="Bash", command=with_write
+                        ),
+                        cwd=primary,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "sole mutating command")
+
+    def test_checkout_lease_worktree_add_survives_harness_command_wrapper(
+        self,
+    ) -> None:
+        # Regression: the issue #622 `git-cli worktree add` carve-out must also
+        # survive the agent Bash tool wrapper. Without redirect scoping the
+        # wrapper's `2>/dev/null` defeated the carve-out, so a non-default primary
+        # checkout still deadlocked in the live environment.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            sentinel = str(root / "cwd-sentinel")
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feature/wrap-add"],
+                cwd=repo,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            wrapped_add = self._harness_wrapped(
+                "git-cli worktree add feature-lane", sentinel
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "writer", repo, tool_name="Bash", command=wrapped_add
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_invocation_without_redirections_strips_operators(self) -> None:
+        import hook_common
+
+        clobber = f">{hook_common.CLOBBER_REDIRECT_MARKER}"
+        for invocation, expected in (
+            (["git-cli", "worktree", "remove", "slug", "<", "/dev/null"],
+             ["git-cli", "worktree", "remove", "slug"]),
+            (["cmd", "arg", "2>/dev/null"], ["cmd", "arg"]),
+            (["cmd", ">>", "log", "arg"], ["cmd", "arg"]),
+            (["cmd", "arg", clobber, "out"], ["cmd", "arg"]),
+            (["cmd", "1>", "a", "2>", "b", "arg"], ["cmd", "arg"]),
+            (["cmd", "arg"], ["cmd", "arg"]),
+        ):
+            with self.subTest(invocation=invocation):
+                self.assertEqual(
+                    hook_common.invocation_without_redirections(invocation), expected
+                )
 
     def test_checkout_lease_worktree_remove_slug_targets_the_foreign_lease(
         self,

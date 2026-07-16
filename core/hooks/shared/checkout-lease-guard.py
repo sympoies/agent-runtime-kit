@@ -36,6 +36,7 @@ from hook_common import (
     invocation_command_position_is_dynamic,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    invocation_without_redirections,
     opaque_invocation_has_unresolved_nested,
     output_redirect_targets,
     patch_text_candidates,
@@ -534,6 +535,11 @@ def is_managed_worktree_add(invocation: list[str]) -> bool:
 
 
 def worktree_remove_target_argument(invocation: list[str]) -> str:
+    # Drop redirections and their operands first: the agent Bash tool wraps every
+    # command as `eval '…' < /dev/null && pwd -P >| <cwd>`, so the recursed
+    # removal arrives as `git-cli worktree remove <slug> < /dev/null`. Without
+    # this, the `< /dev/null` operand is misread as a second removal target.
+    invocation = invocation_without_redirections(invocation)
     target = ""
     index = 3
     while index < len(invocation):
@@ -567,10 +573,13 @@ def worktree_remove_target_argument(invocation: list[str]) -> str:
     return target
 
 
-def simple_command_mutates(tokens: list[str]) -> bool:
-    if has_output_redirection(tokens):
-        return True
-    invocation = invocation_tokens(tokens)
+def executable_invocation_mutates(invocation: list[str]) -> bool:
+    """Whether the invoked executable is a working-tree mutation on its own.
+
+    This is the executable-based half of ``simple_command_mutates``, independent
+    of any shell redirection. It lets the worktree-removal scope test count a
+    redirection as a mutation only when its target actually writes a repository
+    (see ``co_command_is_repo_mutation``)."""
     if not invocation:
         return False
     executable = os.path.basename(invocation[0])
@@ -598,6 +607,60 @@ def simple_command_mutates(tokens: list[str]) -> bool:
     )
 
 
+def simple_command_mutates(tokens: list[str]) -> bool:
+    if has_output_redirection(tokens):
+        return True
+    return executable_invocation_mutates(invocation_tokens(tokens))
+
+
+def redirect_target_is_repo_write(raw_target: str, base: Path) -> bool:
+    """Whether an output-redirect target is (or may be) a write into a checkout.
+
+    A redirect to ``/dev/null`` is never a real write, and an **absolute** target
+    that resolves outside every Git checkout is not a repository mutation — this
+    is what lets the harness command wrapper's ``2>/dev/null`` and
+    ``pwd -P >| <cwd-sentinel>`` (both absolute) pass the sole-mutation test.
+
+    A **relative** target is treated as a write: it resolves against the shell's
+    live working directory, which an intervening ``cd`` can move into the
+    checkout, so a static resolution against ``base`` cannot prove it lands
+    outside. Dynamic (``$``/backtick) and otherwise unresolvable targets fail
+    closed for the same reason.
+    """
+    if "$" in raw_target or "`" in raw_target:
+        return True
+    expanded = Path(raw_target).expanduser()
+    if not expanded.is_absolute():
+        return True
+    if expanded == Path(os.devnull):
+        return False
+    try:
+        return checkout_from(expanded) is not None
+    except LeaseError:
+        return True
+
+
+def command_writes_repo(tokens: list[str], base: Path) -> bool:
+    """Whether any output redirection in a simple command writes a checkout."""
+    return any(
+        redirect_target_is_repo_write(target, base)
+        for target, _inspectable in output_redirect_targets(tokens)
+    )
+
+
+def coresident_command_is_repo_mutation(tokens: list[str], base: Path) -> bool:
+    """Whether a non-managed simple command mutates a repository.
+
+    Unlike ``simple_command_mutates``, an output redirection counts only when its
+    target writes into a checkout (``command_writes_repo``); redirections to
+    ``/dev/null`` or an absolute out-of-repo path do not, so the trusted harness
+    command wrapper does not defeat the managed carve-outs.
+    """
+    return executable_invocation_mutates(invocation_tokens(tokens)) or command_writes_repo(
+        tokens, base
+    )
+
+
 def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
     target_arguments: list[str] = []
     other_mutation = False
@@ -614,9 +677,11 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
                 "shell mutation target scope is unresolved and cannot be leased safely"
             )
         if not is_managed_worktree_remove(invocation):
-            other_mutation = other_mutation or simple_command_mutates(tokens)
+            other_mutation = other_mutation or coresident_command_is_repo_mutation(
+                tokens, base
+            )
             continue
-        if has_output_redirection(tokens):
+        if command_writes_repo(tokens, base):
             other_mutation = True
         target_arguments.append(worktree_remove_target_argument(invocation))
     if len(target_arguments) > 1:
@@ -643,7 +708,7 @@ def high_confidence_shell_mutation(command: str) -> bool:
     )
 
 
-def sole_managed_worktree_add(command: str) -> bool:
+def sole_managed_worktree_add(command: str, base: Path) -> bool:
     """True when the command's only mutation is one ``git-cli worktree add``.
 
     ``git-cli worktree add`` creates a brand-new checkout; it never writes the
@@ -653,15 +718,17 @@ def sole_managed_worktree_add(command: str) -> bool:
     primary checkout: the recommended escape is refused by the same gate.
 
     This mirrors only the single-mutation narrowness of the ``worktree remove``
-    carve-out: clear it only when it is the sole mutating command with no output
-    redirection, so it can never smuggle another working-tree write past the
-    admission gate. Any ambiguity — a dynamic command position, an unresolved
-    nested shell, a second add, or a co-resident mutation — falls through to
-    normal fail-closed gating. Unlike ``worktree remove`` (which redirects the
-    lease onto the removed checkout and so still requires a verifiable session
-    and lease), ``main()`` short-circuits a matched add to ALLOW before the
-    session-identity gate and acquires no lease, because add takes no lease on
-    the current checkout.
+    carve-out: clear it only when it is the sole repository-mutating command, so
+    it can never smuggle another working-tree write past the admission gate. Any
+    ambiguity — a dynamic command position, an unresolved nested shell, a second
+    add, or a co-resident repository write — falls through to normal fail-closed
+    gating. Redirect scoping (``command_writes_repo``) matches the removal
+    carve-out so the trusted harness command wrapper (``2>/dev/null``,
+    ``pwd -P >| <cwd>``) does not defeat it. Unlike ``worktree remove`` (which
+    redirects the lease onto the removed checkout and so still requires a
+    verifiable session and lease), ``main()`` short-circuits a matched add to
+    ALLOW before the session-identity gate and acquires no lease, because add
+    takes no lease on the current checkout.
     """
     found_add = False
     for tokens in simple_commands_with_nested_shells(command):
@@ -673,11 +740,11 @@ def sole_managed_worktree_add(command: str) -> bool:
         ) or opaque_invocation_has_unresolved_nested(invocation):
             return False
         if is_managed_worktree_add(invocation):
-            if found_add or has_output_redirection(tokens):
+            if found_add or command_writes_repo(tokens, base):
                 return False
             found_add = True
             continue
-        if simple_command_mutates(tokens):
+        if coresident_command_is_repo_mutation(tokens, base):
             return False
     return found_add
 
@@ -1235,11 +1302,11 @@ def main() -> int:
             return ALLOW
         # `git-cli worktree add` creates a new checkout and is the sanctioned
         # escape the guard recommends; never let the admission gate block its own
-        # remediation. Restricted to a sole, redirect-free add so it cannot cover
-        # a co-resident working-tree write. This intentionally short-circuits
-        # before the session-identity gate and acquires no lease: add takes no
-        # lease on the current checkout.
-        if sole_managed_worktree_add(command):
+        # remediation. Restricted to a sole add with no co-resident repository
+        # write so it cannot cover a working-tree mutation. This intentionally
+        # short-circuits before the session-identity gate and acquires no lease:
+        # add takes no lease on the current checkout.
+        if sole_managed_worktree_add(command, payload_base(payload)):
             return ALLOW
     if tool in EDIT_TOOLS and not edit_paths(payload):
         emit_block(

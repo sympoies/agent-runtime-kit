@@ -1086,6 +1086,28 @@ def _skip_redirections(invocation: list[str], cursor: int) -> int:
     return cursor
 
 
+def invocation_without_redirections(invocation: list[str]) -> list[str]:
+    """Return ``invocation`` with redirection operators and their operands removed.
+
+    A simple command's tokens can carry redirections (``2>/dev/null``,
+    ``< /dev/null``, ``>| file``) that the shell consumes before the executable
+    runs. Callers that inspect an invocation's executable and real arguments —
+    for example when selecting a single positional target — must not mistake a
+    redirection operand for an argument. Reuses the same redirection grammar as
+    ``_skip_redirections``.
+    """
+    result: list[str] = []
+    index = 0
+    while index < len(invocation):
+        token = invocation[index]
+        if _REDIRECT_TOKEN_RE.match(token):
+            index += 2 if _redirect_consumes_next(token) else 1
+            continue
+        result.append(token)
+        index += 1
+    return result
+
+
 # A token that begins an stdin/input redirection: optional fd digits then an
 # input operator. Output operators (`>`, `>>`, `>&`) are deliberately excluded.
 _INPUT_REDIRECT_TOKEN_RE = re.compile(r"^\d*(?:<<<|<<-?|<>|<&|<)")
