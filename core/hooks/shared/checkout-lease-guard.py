@@ -9,6 +9,7 @@ only: it never removes a worktree, branch, or lease.
 from __future__ import annotations
 
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -37,11 +38,13 @@ from hook_common import (
     invocation_is_unresolved_nested,
     invocation_tokens,
     invocation_without_redirections,
+    nested_shell_payload,
     opaque_invocation_has_unresolved_nested,
     output_redirect_targets,
     patch_text_candidates,
     read_payload,
     session_marker_key,
+    simple_commands,
     simple_commands_with_nested_shells,
     tool_input_dict,
 )
@@ -57,6 +60,8 @@ GIT_TIMEOUT_SECONDS = 5
 LOCK_WAIT_SECONDS = 2.0
 LOCK_POLL_SECONDS = 0.05
 MAX_RENEWAL_WINDOW_SECONDS = 15 * 60
+MAX_REDIRECT_TARGETS = 32
+SHELL_REDIRECT_EXPANSION_CHARS = frozenset("$`*?[{(")
 
 MUTATING_EXECUTABLES = frozenset(
     {
@@ -112,6 +117,14 @@ class Checkout:
 
 class LeaseError(RuntimeError):
     """Raised when lease identity or state cannot be trusted."""
+
+
+class MutationScopeError(LeaseError):
+    """Raised when a shell mutation cannot be bound to a checkout safely."""
+
+
+class LeaseStatePathError(LeaseError):
+    """Raised when the managed checkout-lease state path is unavailable."""
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -205,28 +218,35 @@ def listed_worktree_paths(base: Path) -> list[Path]:
             timeout=GIT_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise LeaseError(f"managed worktree inventory failed: {exc}") from exc
+        raise MutationScopeError(
+            f"managed worktree inventory failed: {exc}"
+        ) from exc
     if completed.returncode != 0:
-        raise LeaseError("managed worktree inventory failed")
+        raise MutationScopeError("managed worktree inventory failed")
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        raise LeaseError("managed worktree inventory is malformed") from exc
+        raise MutationScopeError("managed worktree inventory is malformed") from exc
     data = payload.get("data") if isinstance(payload, Mapping) else None
     entries = data.get("entries") if isinstance(data, Mapping) else None
     if not isinstance(entries, list):
-        raise LeaseError("managed worktree inventory is malformed")
+        raise MutationScopeError("managed worktree inventory is malformed")
     paths: list[Path] = []
     for entry in entries:
         raw_path = entry.get("path") if isinstance(entry, Mapping) else None
         if not isinstance(raw_path, str) or not raw_path:
-            raise LeaseError("managed worktree inventory is malformed")
+            raise MutationScopeError("managed worktree inventory is malformed")
         paths.append(Path(raw_path).resolve(strict=False))
     return paths
 
 
 def resolve_worktree_remove_target(raw: str, base: Path) -> Path:
-    candidate = canonical_path(raw, base)
+    try:
+        candidate = canonical_path(raw, base)
+    except (OSError, RuntimeError) as exc:
+        raise MutationScopeError(
+            f"managed worktree target could not be resolved: {raw}"
+        ) from exc
     expanded = Path(raw).expanduser()
     slug = (
         expanded.name
@@ -238,14 +258,18 @@ def resolve_worktree_remove_target(raw: str, base: Path) -> Path:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            raise LeaseError(f"managed worktree slug is ambiguous: {raw}")
-        raise LeaseError(f"managed worktree slug could not be resolved: {raw}")
+            raise MutationScopeError(f"managed worktree slug is ambiguous: {raw}")
+        raise MutationScopeError(
+            f"managed worktree slug could not be resolved: {raw}"
+        )
     if candidate.exists():
         return candidate
     exact = [path for path in listed_worktree_paths(base) if path == candidate]
     if len(exact) == 1:
         return exact[0]
-    raise LeaseError(f"managed worktree target could not be resolved: {raw}")
+    raise MutationScopeError(
+        f"managed worktree target could not be resolved: {raw}"
+    )
 
 
 def absolute_git_path(raw: str, base: Path) -> Path:
@@ -553,28 +577,34 @@ def worktree_remove_target_argument(invocation: list[str]) -> str:
             index += 1
             while index < len(invocation):
                 if target:
-                    raise LeaseError("managed worktree removal has multiple targets")
+                    raise MutationScopeError(
+                        "managed worktree removal has multiple targets"
+                    )
                 target = invocation[index]
                 index += 1
             break
         if argument == "--format":
             if index + 1 >= len(invocation):
-                raise LeaseError("managed worktree removal --format needs a value")
+                raise MutationScopeError(
+                    "managed worktree removal --format needs a value"
+                )
             index += 2
             continue
         if argument.startswith("--format="):
             index += 1
             continue
         if argument.startswith("-"):
-            raise LeaseError(
+            raise MutationScopeError(
                 f"managed worktree removal option is unsupported: {argument}"
             )
         if target:
-            raise LeaseError("managed worktree removal has multiple targets")
+            raise MutationScopeError(
+                "managed worktree removal has multiple targets"
+            )
         target = argument
         index += 1
     if not target:
-        raise LeaseError("managed worktree removal target is missing")
+        raise MutationScopeError("managed worktree removal target is missing")
     return target
 
 
@@ -612,10 +642,58 @@ def executable_invocation_mutates(invocation: list[str]) -> bool:
     )
 
 
-def simple_command_mutates(tokens: list[str]) -> bool:
-    if has_output_redirection(tokens):
+def simple_command_mutates(tokens: list[str], base: Path) -> bool:
+    return executable_invocation_mutates(invocation_tokens(tokens)) or command_writes_repo(
+        tokens, base
+    )
+
+
+@functools.lru_cache(maxsize=256)
+def resolved_target_may_touch_checkout(raw_target: str) -> bool:
+    """Whether a canonical absolute target is or may alias a Git checkout.
+
+    Redirect admission needs only a conservative membership decision, not full
+    checkout identity. Walking for a .git marker avoids repeated Git subprocess
+    probes in the per-command hook hot path. Symlinks are resolved first,
+    multiply-linked regular files fail closed, and any untrusted filesystem
+    result is treated as a possible checkout write.
+    """
+    try:
+        target = Path(raw_target).expanduser().resolve(strict=False)
+        metadata = target.stat()
+    except FileNotFoundError:
+        metadata = None
+        try:
+            target = Path(raw_target).expanduser().resolve(strict=False)
+        except (OSError, RuntimeError):
+            return True
+    except (OSError, RuntimeError):
         return True
-    return executable_invocation_mutates(invocation_tokens(tokens))
+
+    if (
+        metadata is not None
+        and stat.S_ISREG(metadata.st_mode)
+        and metadata.st_nlink > 1
+    ):
+        return True
+
+    candidate = (
+        target
+        if metadata is not None and stat.S_ISDIR(metadata.st_mode)
+        else target.parent
+    )
+    while True:
+        try:
+            (candidate / ".git").lstat()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return True
+        else:
+            return True
+        if candidate == candidate.parent:
+            return False
+        candidate = candidate.parent
 
 
 def redirect_target_is_repo_write(raw_target: str, base: Path) -> bool:
@@ -629,72 +707,191 @@ def redirect_target_is_repo_write(raw_target: str, base: Path) -> bool:
     A **relative** target is treated as a write: it resolves against the shell's
     live working directory, which an intervening ``cd`` can move into the
     checkout, so a static resolution against ``base`` cannot prove it lands
-    outside. Dynamic (``$``/backtick) and otherwise unresolvable targets fail
-    closed for the same reason.
+    outside. Dynamic, pathname-expanded, brace-expanded, and otherwise
+    unresolvable targets fail closed for the same reason.
     """
-    if "$" in raw_target or "`" in raw_target:
+    if any(character in raw_target for character in SHELL_REDIRECT_EXPANSION_CHARS):
         return True
-    expanded = Path(raw_target).expanduser()
+    try:
+        expanded = Path(raw_target).expanduser()
+    except (OSError, RuntimeError):
+        return True
     if not expanded.is_absolute():
         return True
     if expanded == Path(os.devnull):
         return False
-    try:
-        return checkout_from(expanded) is not None
-    except LeaseError:
-        return True
+    return resolved_target_may_touch_checkout(str(expanded))
 
 
 def command_writes_repo(tokens: list[str], base: Path) -> bool:
     """Whether any output redirection in a simple command writes a checkout."""
+    targets = output_redirect_targets(tokens)
+    if len(targets) > MAX_REDIRECT_TARGETS:
+        return True
     return any(
         redirect_target_is_repo_write(target, base)
-        for target, _inspectable in output_redirect_targets(tokens)
+        for target, _inspectable in targets
     )
 
 
 def coresident_command_is_repo_mutation(tokens: list[str], base: Path) -> bool:
-    """Whether a non-managed simple command mutates a repository.
+    """Apply the shared mutation policy to a worktree-removal peer command."""
+    return simple_command_mutates(tokens, base)
 
-    Unlike ``simple_command_mutates``, an output redirection counts only when its
-    target writes into a checkout (``command_writes_repo``); redirections to
-    ``/dev/null`` or an absolute out-of-repo path do not, so the trusted harness
-    command wrapper does not defeat the managed carve-outs.
+
+@functools.lru_cache(maxsize=32)
+def parsed_shell_commands(command: str) -> tuple[list[str], ...]:
+    """Parse one shell command once for all admission decisions."""
+    return tuple(simple_commands_with_nested_shells(command))
+
+
+def source_has_parenthesized_redirect_word(source: str) -> bool:
+    """Detect an unquoted ``(`` in an output-redirect word before tokenization.
+
+    The shared best-effort shell lexer treats parentheses as command separators.
+    That is correct for subshells, but it discards redirect-word provenance for
+    Bash extglob and similar expansion forms before ``output_redirect_targets``
+    can fail closed. Scan the raw source narrowly at output redirects so ordinary
+    subshell syntax does not turn otherwise read-only commands into mutations.
     """
-    return executable_invocation_mutates(invocation_tokens(tokens)) or command_writes_repo(
-        tokens, base
-    )
+    quote: str | None = None
+    index = 0
+    while index < len(source):
+        character = source[index]
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == '"':
+            if character == "\\" and index + 1 < len(source):
+                index += 2
+                continue
+            if character == '"':
+                quote = None
+            index += 1
+            continue
+        if character == "\\" and index + 1 < len(source):
+            index += 2
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            index += 1
+            continue
+        if character != ">":
+            index += 1
+            continue
+
+        target_index = index + 1
+        if target_index < len(source) and source[target_index] in {">", "|"}:
+            target_index += 1
+        while target_index < len(source) and source[target_index].isspace():
+            target_index += 1
+
+        target_quote: str | None = None
+        while target_index < len(source):
+            target_character = source[target_index]
+            if target_quote == "'":
+                if target_character == "'":
+                    target_quote = None
+                target_index += 1
+                continue
+            if target_quote == '"':
+                if target_character == "\\" and target_index + 1 < len(source):
+                    target_index += 2
+                    continue
+                if target_character == '"':
+                    target_quote = None
+                target_index += 1
+                continue
+            if target_character == "\\" and target_index + 1 < len(source):
+                target_index += 2
+                continue
+            if target_character in {"'", '"'}:
+                target_quote = target_character
+                target_index += 1
+                continue
+            if target_character == "(":
+                return True
+            if target_character.isspace() or target_character in ";&|<>":
+                break
+            target_index += 1
+        index = max(index + 1, target_index)
+    return False
+
+
+@functools.lru_cache(maxsize=32)
+def shell_command_has_parenthesized_redirect_word(command: str) -> bool:
+    """Inspect direct and nested shell sources for lexer-splitting redirects."""
+    pending = [(command, 0)]
+    seen: set[tuple[int, str]] = set()
+    while pending:
+        source, depth = pending.pop()
+        key = (depth, source)
+        if key in seen:
+            continue
+        seen.add(key)
+        if source_has_parenthesized_redirect_word(source):
+            return True
+        if depth >= 5:
+            continue
+        for tokens in simple_commands(source):
+            payload = nested_shell_payload(invocation_tokens(tokens))
+            if payload:
+                pending.append((payload, depth + 1))
+    return False
+
+
+def redirect_budget_exceeded(commands: Iterable[list[str]]) -> bool:
+    redirect_count = 0
+    for tokens in commands:
+        redirect_count += len(output_redirect_targets(tokens))
+        if redirect_count > MAX_REDIRECT_TARGETS:
+            return True
+    return False
+
+
+@functools.lru_cache(maxsize=32)
+def shell_command_exceeds_redirect_budget(command: str) -> bool:
+    return redirect_budget_exceeded(parsed_shell_commands(command))
 
 
 def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
+    commands = parsed_shell_commands(command)
+    over_redirect_budget = shell_command_exceeds_redirect_budget(command)
     target_arguments: list[str] = []
-    other_mutation = False
-    for tokens in simple_commands_with_nested_shells(command):
+    other_mutation = shell_command_has_parenthesized_redirect_word(command)
+    for tokens in commands:
         if invocation_command_position_is_dynamic(tokens):
-            raise LeaseError(
+            raise MutationScopeError(
                 "shell mutation target scope is unresolved and cannot be leased safely"
             )
         invocation = invocation_tokens(tokens)
         if invocation_is_unresolved_nested(
             invocation
         ) or opaque_invocation_has_unresolved_nested(invocation):
-            raise LeaseError(
+            raise MutationScopeError(
                 "shell mutation target scope is unresolved and cannot be leased safely"
             )
         if not is_managed_worktree_remove(invocation):
-            other_mutation = other_mutation or coresident_command_is_repo_mutation(
-                tokens, base
-            )
+            if not over_redirect_budget:
+                other_mutation = other_mutation or coresident_command_is_repo_mutation(
+                    tokens, base
+                )
             continue
+        if over_redirect_budget:
+            raise MutationScopeError(
+                "shell redirect target count exceeds the safe inspection limit"
+            )
         if command_writes_repo(tokens, base):
             other_mutation = True
         target_arguments.append(worktree_remove_target_argument(invocation))
     if len(target_arguments) > 1:
-        raise LeaseError(
+        raise MutationScopeError(
             "exactly one managed worktree removal is allowed per shell command"
         )
     if target_arguments and other_mutation:
-        raise LeaseError(
+        raise MutationScopeError(
             "managed worktree removal must be the sole mutating command"
         )
     if not target_arguments:
@@ -702,14 +899,16 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
     return [resolve_worktree_remove_target(target_arguments[0], base)]
 
 
-def has_output_redirection(tokens: list[str]) -> bool:
-    return bool(output_redirect_targets(tokens))
-
-
-def high_confidence_shell_mutation(command: str) -> bool:
+def high_confidence_shell_mutation(command: str, base: Path | None = None) -> bool:
+    resolved_base = base if base is not None else Path.cwd()
+    commands = parsed_shell_commands(command)
+    if shell_command_exceeds_redirect_budget(
+        command
+    ) or shell_command_has_parenthesized_redirect_word(command):
+        return True
     return any(
-        simple_command_mutates(tokens)
-        for tokens in simple_commands_with_nested_shells(command)
+        simple_command_mutates(tokens, resolved_base)
+        for tokens in commands
     )
 
 
@@ -735,8 +934,13 @@ def sole_managed_worktree_add(command: str, base: Path) -> bool:
     ALLOW before the session-identity gate and acquires no lease, because add
     takes no lease on the current checkout.
     """
+    commands = parsed_shell_commands(command)
+    if shell_command_exceeds_redirect_budget(
+        command
+    ) or shell_command_has_parenthesized_redirect_word(command):
+        return False
     found_add = False
-    for tokens in simple_commands_with_nested_shells(command):
+    for tokens in commands:
         if invocation_command_position_is_dynamic(tokens):
             return False
         invocation = invocation_tokens(tokens)
@@ -784,13 +988,19 @@ def private_directory(path: Path) -> None:
     try:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
     except OSError as exc:
-        raise LeaseError(f"checkout lease state directory unavailable: {exc}") from exc
+        raise LeaseStatePathError(
+            f"checkout lease state directory unavailable: {exc}"
+        ) from exc
     if path.is_symlink() or not path.is_dir():
-        raise LeaseError("checkout lease state directory is not a trusted directory")
+        raise LeaseStatePathError(
+            "checkout lease state directory is not a trusted directory"
+        )
     try:
         path.chmod(0o700)
     except OSError as exc:
-        raise LeaseError(f"checkout lease state permissions failed: {exc}") from exc
+        raise LeaseStatePathError(
+            f"checkout lease state permissions failed: {exc}"
+        ) from exc
 
 
 def repository_state_dir(checkout: Checkout, *, create: bool = True) -> Path:
@@ -817,11 +1027,15 @@ def acquire_lock(directory: Path):
     try:
         descriptor = os.open(path, flags, 0o600)
     except OSError as exc:
-        raise LeaseError(f"checkout lease lock unavailable: {exc}") from exc
+        raise LeaseStatePathError(
+            f"checkout lease lock unavailable: {exc}"
+        ) from exc
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
-            raise LeaseError("checkout lease lock is not a regular file")
+            raise LeaseStatePathError(
+                "checkout lease lock is not a regular file"
+            )
         handle = os.fdopen(descriptor, "a+", encoding="utf-8")
         descriptor = -1
         deadline = time.monotonic() + LOCK_WAIT_SECONDS
@@ -920,27 +1134,36 @@ def read_instance(checkout: Checkout, *, create: bool) -> str:
 
 
 def load_lease(path: Path) -> dict[str, Any] | None:
-    raw = read_regular_file(path, max_bytes=MAX_LEASE_BYTES)
+    try:
+        raw = read_regular_file(path, max_bytes=MAX_LEASE_BYTES)
+    except LeaseError as exc:
+        raise LeaseStatePathError(str(exc)) from exc
     if not raw:
         return None
     try:
         lease = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise LeaseError("checkout lease state is malformed") from exc
+        raise LeaseStatePathError("checkout lease state is malformed") from exc
     if not isinstance(lease, dict) or lease.get("schema") != LEASE_SCHEMA:
-        raise LeaseError("checkout lease state has an unsupported schema")
+        raise LeaseStatePathError(
+            "checkout lease state has an unsupported schema"
+        )
     if re.fullmatch(r"[0-9a-f]{64}", str(lease.get("session_key", ""))) is None:
-        raise LeaseError("checkout lease session identity is malformed")
+        raise LeaseStatePathError(
+            "checkout lease session identity is malformed"
+        )
     if re.fullmatch(r"[0-9a-f]{32}", str(lease.get("checkout_instance", ""))) is None:
-        raise LeaseError("checkout lease instance identity is malformed")
+        raise LeaseStatePathError(
+            "checkout lease instance identity is malformed"
+        )
     if not isinstance(lease.get("expires_at"), int | float):
-        raise LeaseError("checkout lease expiry is malformed")
+        raise LeaseStatePathError("checkout lease expiry is malformed")
     for key in ("checkout_root", "checkout_git_dir"):
         value = lease.get(key)
         if value is not None and (
             not isinstance(value, str) or not value or not Path(value).is_absolute()
         ):
-            raise LeaseError(f"checkout lease {key} is malformed")
+            raise LeaseStatePathError(f"checkout lease {key} is malformed")
     return lease
 
 
@@ -965,7 +1188,9 @@ def write_lease(path: Path, lease: Mapping[str, Any]) -> None:
         finally:
             os.close(directory_fd)
     except OSError as exc:
-        raise LeaseError(f"checkout lease state write failed: {exc}") from exc
+        raise LeaseStatePathError(
+            f"checkout lease state write failed: {exc}"
+        ) from exc
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -1059,6 +1284,25 @@ def worktree_guidance() -> str:
         "Code's `EnterWorktree`) and retry there. A shell `cd` does not change the "
         "checkout this guard evaluates, and a sole `git-cli worktree add` is itself "
         "allowed even from a blocked checkout."
+    )
+
+
+def lease_error_block_reason(error: LeaseError) -> str:
+    if isinstance(error, MutationScopeError):
+        return (
+            "Checkout mutation scope could not be verified and fails closed: "
+            f"{error}. Use a concrete executable and, for managed worktree removal, "
+            "an explicit target, then retry."
+        )
+    if isinstance(error, LeaseStatePathError):
+        return (
+            "Checkout lease state path could not be verified, so repository mutation "
+            f"fails closed: {error}. Restore the managed runtime state path, then "
+            "retry."
+        )
+    return (
+        "Checkout lease state could not be verified, so repository mutation fails "
+        f"closed: {error}."
     )
 
 
@@ -1303,7 +1547,7 @@ def main() -> int:
         return ALLOW
     if tool in COMMAND_TOOLS:
         command = command_from(payload)
-        if not high_confidence_shell_mutation(command):
+        if not high_confidence_shell_mutation(command, payload_base(payload)):
             return ALLOW
         # `git-cli worktree add` creates a new checkout and is the sanctioned
         # escape the guard recommends; never let the admission gate block its own
@@ -1342,10 +1586,7 @@ def main() -> int:
                 emit_block(reason)
                 return ALLOW
     except LeaseError as exc:
-        emit_block(
-            "Checkout lease state could not be verified, so repository mutation fails "
-            f"closed: {exc}. Restore the managed runtime state path, then retry."
-        )
+        emit_block(lease_error_block_reason(exc))
     return ALLOW
 
 

@@ -9312,6 +9312,119 @@ exit 65
         finally:
             sys.modules.pop(spec.name, None)
 
+    def test_checkout_lease_redirect_membership_is_bounded_without_git_probes(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_redirect_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                outside = root / "outside"
+                (repo / ".git").mkdir(parents=True)
+                outside.mkdir()
+                target = repo / "README.md"
+                target.write_text("fixture\n", encoding="utf-8")
+                alias = outside / "alias"
+                alias.symlink_to(target)
+                dangling_alias = outside / "dangling-alias"
+                dangling_alias.symlink_to(repo / "future.txt")
+                hard_alias = outside / "hard-alias"
+                os.link(target, hard_alias)
+
+                def unexpected_run_git(*_args, **_kwargs):
+                    raise AssertionError("redirect membership must not invoke Git")
+
+                module.run_git = unexpected_run_git
+                self.assertTrue(
+                    module.redirect_target_is_repo_write(str(target), repo)
+                )
+                self.assertTrue(
+                    module.redirect_target_is_repo_write(str(alias), repo)
+                )
+                self.assertTrue(
+                    module.redirect_target_is_repo_write(str(dangling_alias), repo)
+                )
+                self.assertTrue(
+                    module.redirect_target_is_repo_write(str(hard_alias), repo)
+                )
+                for expanded_alias in (
+                    str(outside / "alia?.md"),
+                    str(outside / "alias.m{d..d}"),
+                    str(outside / "alias.@(md)"),
+                ):
+                    with self.subTest(expanded_alias=expanded_alias):
+                        self.assertTrue(
+                            module.redirect_target_is_repo_write(
+                                expanded_alias, repo
+                            )
+                        )
+                extglob_source = f"printf x > {outside / 'alias.@(md)'}"
+                self.assertTrue(
+                    module.shell_command_has_parenthesized_redirect_word(
+                        f"bash -O extglob -c {shlex.quote(extglob_source)}"
+                    )
+                )
+                self.assertFalse(
+                    module.shell_command_has_parenthesized_redirect_word(
+                        f"printf x > {shlex.quote(str(outside / 'literal.(md)'))}"
+                    )
+                )
+                self.assertFalse(
+                    module.shell_command_has_parenthesized_redirect_word(
+                        f"printf x > {outside / 'sentinel'}; (true)"
+                    )
+                )
+                external = outside / "sentinel"
+                self.assertFalse(
+                    module.redirect_target_is_repo_write(str(external), repo)
+                )
+                repeated = next(
+                    iter(
+                        module.simple_commands_with_nested_shells(
+                            f"true > {external} 2> {external}"
+                        )
+                    )
+                )
+                self.assertFalse(module.command_writes_repo(repeated, repo))
+
+                targets = " ".join(
+                    f"> {outside / f'sentinel-{index}'}"
+                    for index in range(module.MAX_REDIRECT_TARGETS + 1)
+                )
+                bounded = next(
+                    iter(module.simple_commands_with_nested_shells(f"true {targets}"))
+                )
+                self.assertTrue(module.command_writes_repo(bounded, repo))
+
+                probes: list[str] = []
+                original_membership = module.resolved_target_may_touch_checkout
+
+                def counted_membership(raw_target: str) -> bool:
+                    probes.append(raw_target)
+                    return original_membership(raw_target)
+
+                module.resolved_target_may_touch_checkout = counted_membership
+                split_redirects = "; ".join(
+                    f"true > {outside / f'split-{index}'}"
+                    for index in range(module.MAX_REDIRECT_TARGETS + 1)
+                )
+                self.assertTrue(
+                    module.high_confidence_shell_mutation(split_redirects, repo)
+                )
+                self.assertLessEqual(len(probes), module.MAX_REDIRECT_TARGETS)
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_checkout_lease_owner_refreshes_dirty_checkout_and_blocks_foreign_writer(
         self,
     ) -> None:
@@ -10045,6 +10158,111 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "fails closed")
 
+    def test_checkout_lease_reports_cause_specific_remediation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+
+            dynamic = self._checkout_lease_payload(
+                "writer",
+                repo,
+                tool_name="Bash",
+                command='CMD=echo; "$CMD" hi',
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                dynamic,
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "Use a concrete executable")
+            assert decision is not None
+            self.assertNotIn(
+                "Restore the managed runtime state path",
+                str(decision.get("reason", "")),
+            )
+
+            state_file = root / "state-is-a-file"
+            state_file.write_text("not a directory\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state_file)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "Restore the managed runtime state path")
+
+    def test_checkout_lease_reports_remaining_cause_specific_remediation(
+        self,
+    ) -> None:
+        for command in (
+            "git-cli worktree remove one two",
+            "git-cli worktree remove missing-worktree",
+        ):
+            with self.subTest(scope_command=command), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                state = root / "state"
+                self._init_checkout_lease_repo(repo)
+                payload = self._checkout_lease_payload(
+                    "writer",
+                    repo,
+                    tool_name="Bash",
+                    command=command,
+                )
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    payload,
+                    cwd=repo,
+                    env={"AGENT_RUNTIME_STATE_HOME": str(state)},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "an explicit target")
+                assert decision is not None
+                self.assertNotIn(
+                    "Restore the managed runtime state path",
+                    str(decision.get("reason", "")),
+                )
+
+        for failure in ("lock-path", "lease-file"):
+            with self.subTest(state_failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                state = root / "state"
+                self._init_checkout_lease_repo(repo)
+                env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload("owner", repo / "README.md"),
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                lease_file = self._checkout_lease_files(state)[0]
+                if failure == "lock-path":
+                    lock_path = lease_file.parent / "lease.lock"
+                    lock_path.unlink()
+                    lock_path.symlink_to(os.devnull)
+                else:
+                    lease_file.write_text("{malformed\n", encoding="utf-8")
+
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload("reader", repo / "README.md"),
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(
+                    decision, "Restore the managed runtime state path"
+                )
+
     def test_checkout_lease_preserves_read_only_bash_and_stop_is_non_destructive(
         self,
     ) -> None:
@@ -10431,6 +10649,115 @@ exit 65
             f"eval {shlex.quote(command)} < /dev/null && "
             f"pwd -P >| {shlex.quote(cwd_sentinel)}"
         )
+
+    def test_checkout_lease_harness_wrapped_read_only_ignores_foreign_lease(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            sentinel = str(root / "cwd-sentinel")
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("owner", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            wrapped_read = self._harness_wrapped("git status --short", sentinel)
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "reader", repo, tool_name="Bash", command=wrapped_read
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(len(self._checkout_lease_files(state)), 1)
+
+            in_repo = shlex.quote(str(repo / "README.md"))
+            wrapped_write = self._harness_wrapped(
+                f"printf x > {in_repo}", sentinel
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "reader", repo, tool_name="Bash", command=wrapped_write
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+            outside = root / "outside"
+            outside.mkdir()
+            outside_alias = outside / "alias.md"
+            outside_alias.symlink_to(repo / "README.md")
+            for redirect_target in (
+                str(outside_alias),
+                str(outside / "alia?.md"),
+                str(outside / "alias.m{d..d}"),
+            ):
+                with self.subTest(redirect_target=redirect_target):
+                    alias_write = f"printf x > {redirect_target}"
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "reader", repo, tool_name="Bash", command=alias_write
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "another agent session")
+
+    def test_checkout_lease_extglob_redirect_alias_respects_foreign_lease(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            outside = root / "outside"
+            self._init_checkout_lease_repo(repo)
+            outside.mkdir()
+            target = repo / "README.md"
+            alias = outside / "alias.md"
+            alias.symlink_to(target)
+            original = target.read_text(encoding="utf-8")
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("owner", target),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            nested = f"printf x > {outside / 'alias.@(md)'}"
+            command = f"bash -O extglob -c {shlex.quote(nested)}"
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "reader", repo, tool_name="Bash", command=command
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+            self.assertEqual(target.read_text(encoding="utf-8"), original)
 
     def test_checkout_lease_worktree_remove_survives_harness_command_wrapper(
         self,
