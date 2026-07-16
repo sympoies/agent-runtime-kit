@@ -6,15 +6,12 @@
 - Source document: `docs/plans/2026-07-15-peekaboo-macos-agent-migration/peekaboo-macos-agent-migration-plan.md`
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/610>
 - Current sprint: Sprint 5 activation and closeout on released nils-cli v1.22.7
-- Status: complete at the plan-task boundary; implementation, release,
-  fixed-fleet deployment, governed runtime-kit pin, managed-surface
-  synchronization, live functional acceptance, recovery readiness, evidence
-  review, defect routing, and strict tracker close-ready all passed
-- Current gate: merge this final ledger update, then atomically write the
-  provider closeout, verify its read-back, route the archive, and perform
-  terminal worktree cleanup
-- Current task: none; Tasks 1.1 through 5.2 are complete
-- Next task: L2 tracker closeout and archive handoff
+- Status: complete; tracking issue closed
+- Current gate: none; provider closeout and read-back audit passed, and archive
+  apply remains confirmation-gated workflow maintenance rather than an
+  execution blocker; session-owned worktree removal is terminal local hygiene
+- Current task: none; tracking issue closed
+- Next task: none; tracking issue closed
 - Plan branches: `feat/peekaboo-macos-agent-adapter` (nils-cli), then `feat/peekaboo-macos-agent-cutover` (runtime-kit)
 - Upstream candidate: Peekaboo `v3.9.3`, verified tag commit
   `3cfd612adbcb1b43e8431a7a1f3b02ec45d01269`; newly released v3.9.4 was
@@ -43,7 +40,8 @@
   with the exact v1.22.7 pin and refreshed surfaces; acceptance-contract PR
   <https://github.com/graysurf/agent-runtime-kit/pull/633> merged as `4fcd298`
   after current-head CI, API-contract, maintainability, testing, and native
-  approval gates passed
+  approval gates passed; closeout ledger PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/635> merged as `335062b`
 
 ## Validation Plan
 
@@ -76,7 +74,7 @@
 | 4.1 | done | Replace the computer-use skill and publish the capability matrix | Direct-adapter skill, setup, canonical capability matrix, helper removal, and new test-first red→2/2 focused green plus 37-skill matrix gate are implemented on the managed cutover branch; released v1.22.6 focused deterministic computer-use 2/2 and acceptance matrix 37 skills pass | Direct-adapter source and all Codex/Claude/Hermes goldens are on the released binary; Linux live GUI probes remain host-inapplicable by contract |
 | 4.2 | done | Apply the governed nils-cli pin and deliver the cutover PR | Runtime-kit PR #621 merged as `0c3919f` with the cutover, CLI floors, and Codex/Claude/Hermes goldens; follow-up PR #630 merged as `ff0c975` with the exact v1.22.7 pin, digests, README/harness/surface mirrors, Docker fallback, and exact-version fixture; local CI positions 1-16 and current-head provider checks 4/4 pass | Independent testing and maintainability reviews pass after one stale release-wording repair; transient checkout-lease race CI failure was isolated, rerun green, and routed to ready follow-up issue #632 |
 | 5.1 | done | Synchronize the runtime and run fresh-agent acceptance | Merged `main` synchronized to Codex, Claude, and Hermes with prune/doctor/prompt-input checks; strict backend verify, doctor, and capabilities pass through the private SSH transport; Calculator clear action succeeds and AX inspection observes display value `0` | Fresh install has no previous receipt: rollback dry-run deterministically refuses with exit 69 and a subsequent status read-back preserves Peekaboo v3.9.3 commit `3cfd612a` |
-| 5.2 | done | Review retained evidence and close the L2 tracker | Required journals summarize cleanly; successful steps have no review candidates, the fail-closed selector mistake is non-significant, remote replay is correctly ineligible, PR #633 clarifies both recovery branches, issue #632 owns the only reproducible CI defect, and strict `tracking close-ready --expect-visible` returns `ready=true` with no blockers | Raw desktop evidence remains private. The exact-artifact notary/reduced-security waiver and displayless element-ID limitation remain disclosed non-blocking residuals; no privacy, wrong-target, false-success, or usability blocker remains. Provider `record close`, read-back, archive routing, and cleanup are the workflow finalizers after this ledger PR merges |
+| 5.2 | done | Review retained evidence and close the L2 tracker | Required journals summarize cleanly; successful steps have no review candidates, the fail-closed selector mistake is non-significant, remote replay is correctly ineligible, PR #633 clarifies both recovery branches, issue #632 owns the only reproducible CI defect, and strict `tracking close-ready --expect-visible` returns `ready=true` with no blockers | Raw desktop evidence remains private. The exact-artifact notary/reduced-security waiver and displayless element-ID limitation remain disclosed non-blocking residuals; no privacy, wrong-target, false-success, or usability blocker remains. Provider close and read-back passed; archive migration dry-run is prepared with apply confirmation-gated, and session-owned worktrees are removed as terminal local hygiene after this sync lands |
 
 ## Validation Log
 
@@ -400,6 +398,14 @@
   visible-role coverage. Provider `record close`, closeout read-back, archive
   routing, and terminal worktree cleanup remain ordered lifecycle finalizers
   after this ledger update merges; they are not hidden plan-task gaps.
+- 2026-07-16: Closeout ledger PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/635> merged as `335062b`;
+  `record close` closed issue #610 with `state::closed`, and the provider
+  read-back audit passed with all seven required roles visible. Archive
+  discovery and the default migration dry-run resolved the target; apply
+  remains explicitly confirmation-gated and was not performed. This terminal
+  sync records that result; after it merges, only removal of this session's
+  managed worktrees remains, while unrelated worktrees stay untouched.
 
 ## Session Notes
 
@@ -435,3 +441,10 @@
   privacy, target, postcondition, journal, or replay gates. The only deferred
   reproducible product defect is the independently ready checkout-lease race
   classification issue #632.
+
+## Handoff
+
+- Tracking issue <https://github.com/graysurf/agent-runtime-kit/issues/610> is
+  closed; terminal execution state is synchronized. After this sync lands, only
+  session-owned worktree removal remains; no plan closeout or product action
+  remains.
