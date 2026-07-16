@@ -32,6 +32,12 @@ old Hammerspoon/AppleScript/cliclick engine as a second path.
 - [U3] Every computer-use run must leave useful debugging/self-improvement
   evidence so diagnosis can resume near the failure instead of repeating the
   whole UI journey; material defects must be reviewable later.
+- [U4] After reviewing the distinction between functional correctness and
+  Apple distribution assurance, the maintainer approved one transparent
+  notarization waiver for the exact locked v3.9.3 standalone CLI. The waiver
+  must not weaken digest, Developer ID, Team ID, architecture, version, app
+  Gatekeeper/notarization, live usability, or future-release review gates; no
+  Peekaboo fork is introduced for this delivery.
 - [F1] The current `crates/macos-agent` has about 15,600 Rust source lines and
   7,400 Rust test lines implementing native backends, AX, input, screenshot,
   wait, scenario, retry, and profile behavior.
@@ -90,13 +96,20 @@ old Hammerspoon/AppleScript/cliclick engine as a second path.
 - `v3.9.3` is the initial candidate, never a floating `latest`. Execution begins
   with a freshness/security recheck; any candidate change is a reviewed lock
   diff and reruns all candidate tests.
-- Install the official universal CLI archive plus signed/notarized app. Do not
-  use `npx`, floating Homebrew, or a source build as production authority.
+- Install the official universal CLI archive plus signed/notarized app. The
+  standalone v3.9.3 CLI's missing notarization ticket is accepted only through
+  a machine-readable waiver that repeats and matches the exact repository,
+  tag, commit, archive/executable digests, Developer ID authority, and Team ID.
+  Do not use `npx`, floating Homebrew, or a source build as production
+  authority.
 - Use user-scoped versioned backend storage, a stable app path, atomic current
   receipt, and one previous receipt. Refuse conflicting/unowned installs.
 - Verify SHA256 before extraction, then architecture/version, `codesign
-  --verify --deep --strict`, signing metadata, and `spctl` Gatekeeper/notary
-  acceptance. Drift fails before any action.
+  --verify --deep --strict`, and exact signing metadata. App
+  Gatekeeper/notarization remains mandatory. The CLI notarization command still
+  runs under strict verification and must report either `pass` or the exact
+  lock-owned `waived` status; any identity drift or undeclared/future waiver
+  fails before action.
 - Fast receipt/version/digest checks precede normal actions; `doctor --strict`
   runs full signature, app, Bridge, permission, and capability checks.
 - `--runtime app` is the production default TCC authority. `daemon`, `auto`,
@@ -240,7 +253,9 @@ linked from the skill. Disabled/unsupported rows require negative assertions.
   v2 journal.
 - **Add:** supply-chain lock/install/doctor/capabilities/rollback; app-held TCC;
   native snapshots/background input/menu/dialog/Dock/Spaces/MCP/scripts;
-  guarded replay, failure clustering, redaction report, and improvement routing.
+  guarded replay, failure clustering, redaction report, improvement routing,
+  and a visible reduced-security posture when the exact CLI notary waiver is
+  exercised.
 - **Remove:** released custom native backends, coordinate profiles, duplicate
   skill transport/evidence mechanics, and exit-zero-as-success claims.
 
@@ -271,19 +286,29 @@ sanitized signatures, and artifact hashes.
 ## Acceptance Criteria
 
 - Adapter source contains no replacement native UI engine.
-- Tag/commit/assets/SHA256/signing/notary/version/architecture/capability probes
-  verify and drift fails closed.
+- Tag/commit/assets/SHA256/signing/version/architecture/capability probes verify
+  and drift fails closed. App notarization remains a hard gate; CLI
+  notarization is either `pass` or an explicit exact-artifact `waived` result
+  and is never silently represented as passing.
 - Local/SSH outputs and journals are equivalent and contain no host, user/home,
   key, secret, or raw remote command.
-- Journals survive interruption and safe/conditional replay cannot cross secret,
-  destructive, external, stale, or unknown-outcome boundaries.
+- Journals survive interruption and replay cannot cross secret, destructive,
+  external, stale, or unknown-outcome boundaries. Conditional replay receives
+  live acceptance only when the host can produce valid snapshot lineage;
+  otherwise deterministic coverage and a recorded residual are sufficient.
 - Seeded privacy, wrong-target, false-success, cleanup, drift, and repeated
   failures are identified and routed correctly.
 - Every supported matrix row has deterministic or live evidence; every
   disabled/unsupported row has a negative test/capability ceiling.
-- The private macOS role passes local and SSH AX/synthetic paths, observation,
-  capture, scenario, MCP stdio, journal/review, and rollback without creating a
-  real credential merely for testing.
+- The private macOS role passes a repeatable local and controller-side SSH
+  critical path: fresh AX observation, foreground action, synthetic background
+  input, explicit postconditions, privacy-clean journaling, guarded no-replay,
+  and rollback, without creating a real credential merely for testing.
+- Displayless element-ID snapshot targeting is not claimed as supported. When
+  the engine reports `display_count=0`, a fresh-observation coordinate fallback
+  may satisfy the active-GUI canary only with an explicit postcondition; a
+  future requirement for displayless element targeting triggers a separate
+  controlled Peekaboo-fork decision, not an upstream scheduling dependency.
 - Full nils-cli/runtime-kit validation and specialist review pass; the released
   nils tag is pinned; fresh sessions use the replacement.
 - Old engine/helper sources and installed managed surfaces are absent after
@@ -291,7 +316,8 @@ sanitized signatures, and artifact hashes.
 
 ## Non-Goals
 
-- Forking/vendoring Peekaboo or reproducing its command grammar in Rust.
+- Forking/vendoring Peekaboo for a capability that is not part of the current
+  active-GUI contract, or reproducing its command grammar in Rust.
 - Exposing Peekaboo AI, browser MCP, shell, audio, or permission mutation now.
 - Unlocking/logging into a Mac, bypassing TCC, uploading telemetry, recording
   the whole desktop, retaining secrets, or filing every transient as an issue.

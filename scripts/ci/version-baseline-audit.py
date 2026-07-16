@@ -41,6 +41,7 @@ RUNTIME_ROOTS = "manifests/runtime-roots.yaml"
 README = "README.md"
 NILS_PIN = "docs/source/nils-cli-pin.yaml"
 NILS_SURFACE = "docs/source/nils-cli-surface.md"
+SKILLS_MANIFEST = "manifests/skills.yaml"
 HARNESS = {
     "codex": "docs/source/harness-shape-codex.md",
     "claude": "docs/source/harness-shape-claude.md",
@@ -158,6 +159,31 @@ def harness_values(product: str):
     return {"floor": floor, "effective": effective, "pin": pin}
 
 
+def harness_required_cli_examples(product: str):
+    """Return the documented ``required_clis`` examples as (name, floor)."""
+    text = _read(HARNESS[product])
+    match = re.search(
+        r"Per-skill nils-cli floors come from .*?These gate skill\n"
+        r"\s*bodies, not the harness load path\.",
+        text,
+        re.DOTALL,
+    )
+    if not match:
+        return []
+    return re.findall(r'`([a-z][a-z0-9-]*): \">=([^\"]+)\"`', match.group(0))
+
+
+def manifest_required_cli_pairs():
+    """Return every exact CLI floor declared by a skill manifest entry."""
+    return set(
+        re.findall(
+            r'^      ([a-z][a-z0-9-]*): \">=([^\"]+)\"$',
+            _read(SKILLS_MANIFEST),
+            re.MULTILINE,
+        )
+    )
+
+
 def surface_describe() -> str:
     return _search(
         r"Active `git describe --tags` output:\s*`([^`]+)`",
@@ -204,6 +230,7 @@ def run_check() -> Result:
     roots = runtime_roots_floor()
     pin = pinned_tag()
     readme = readme_rows()
+    manifest_cli_pairs = manifest_required_cli_pairs()
 
     # Product floor: runtime-roots is the source of truth.
     for product in ("codex", "claude", "hermes"):
@@ -235,6 +262,13 @@ def run_check() -> Result:
             harness_values(product)["pin"],
             "harness-shape",
         )
+        for cli, floor in harness_required_cli_examples(product):
+            res.add(
+                (cli, floor) in manifest_cli_pairs,
+                "required-cli-example.%s.%s" % (product, cli),
+                "documented=>=%s manifest-pair=%s"
+                % (floor, "present" if (cli, floor) in manifest_cli_pairs else "missing"),
+            )
     return res
 
 

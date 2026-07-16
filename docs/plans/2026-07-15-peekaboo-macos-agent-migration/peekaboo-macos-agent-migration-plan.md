@@ -40,10 +40,11 @@ released package/backend receipt, not an in-process legacy switch.
   removal of custom native backends; docs/completions/licenses; deterministic
   and private live acceptance; nils-cli release; runtime-kit skill/matrix/pin
   cutover; installed-surface and fresh-session acceptance.
-- Out of scope: forking/vendoring Peekaboo; translating its entire CLI grammar;
-  AI agent/analysis, browser MCP, shell, audio, permission mutation, HTTP/SSE
-  MCP, macOS before 15, locked-session automation, TCC bypass, or retaining the
-  old native engine in the new release.
+- Out of scope: forking/vendoring Peekaboo for displayless element-ID targeting
+  unless that behavior is later promoted to a required product contract;
+  translating its entire CLI grammar; AI agent/analysis, browser MCP, shell,
+  audio, permission mutation, HTTP/SSE MCP, macOS before 15, locked-session
+  automation, TCC bypass, or retaining the old native engine in the new release.
 
 ## Execution Model
 
@@ -63,8 +64,10 @@ released package/backend receipt, not an in-process legacy switch.
 
 ## Assumptions
 
-1. The private macOS role continues to provide an active, unlocked GUI session
-   during live tests; tests do not attempt to create that session.
+1. The private macOS role continues to provide an unlocked GUI login with AX
+   available during live tests; tests do not attempt to create that session.
+   Snapshot element targeting additionally requires an active display and is
+   not claimed when the engine reports `display_count=0`.
 2. Peekaboo `v3.9.3` remains the candidate unless Task 1.1 finds a newer release
    or security fact that justifies an explicit reviewed lock change.
 3. Runtime-kit's existing `meta:nils-cli-bump` workflow remains the owner of the
@@ -112,8 +115,11 @@ layout, and public capability claim machine-reviewable before production edits.
     capability probes.
   - Tag commit is verified and every downloaded digest matches both the lock and
     official checksum asset.
-  - CLI and app pass architecture, code-signature, Gatekeeper/notary, and
-    version probes; failures are retained as blockers, not waived.
+  - CLI and app pass architecture, exact code-signature identity, and version
+    probes; app Gatekeeper/notarization remains mandatory. The exact v3.9.3 CLI
+    may report notarization `waived` only when the machine-readable waiver
+    repeats and matches the repository, tag, commit, archive/executable
+    digests, Developer ID authority, Team ID, approval record, and rationale.
   - MIT license/notice obligations and redistribution/install model are
     reflected in nils-cli third-party docs.
   - No archive content can escape the staging root or replace an unowned path.
@@ -178,15 +184,22 @@ control plane while preserving outcome behavior and adding the journal.
   `capabilities`. Use a user-scoped versioned install, stable app path, atomic
   receipts/current switch, one previous version, strict ownership checks, and
   dry-run. Verify before activation and on every operation at the appropriate
-  fast/strict level. Never mutate TCC or overwrite an unowned Peekaboo install.
+  fast/strict level. Strict verification always attempts CLI notarization; it
+  may continue only for a lock-owned waiver bound to the exact active artifact,
+  and reports `security_posture=reduced` plus `notary=waived`. Never mutate TCC,
+  expose a runtime bypass flag, or overwrite an unowned Peekaboo install.
 - **Dependencies**:
   - Task 1.2
 - **Complexity**: 9
 - **Acceptance criteria**:
   - Install is idempotent for the locked version and atomic under interruption.
-  - Digest, version, architecture, signing, notary, app/CLI mismatch, truncated
-    download, archive traversal, symlink escape, and conflicting install fail
-    closed with typed JSON errors.
+  - Digest, version, architecture, signing, app notarization, undeclared or
+    mismatched CLI waiver, app/CLI mismatch, truncated download, archive
+    traversal, symlink escape, and conflicting install fail closed with typed
+    JSON errors.
+  - The exact waived CLI remains ready only when all non-notary trust checks
+    pass; JSON/text status exposes `notary=waived` and reduced security rather
+    than converting the failed Apple assessment into a pass.
   - Dry-run performs no filesystem/network-visible mutation beyond approved
     evidence output.
   - Rollback only selects the verified previous receipt and itself supports
@@ -332,7 +345,10 @@ and better debuggable before any runtime-kit consumer pin changes.
   docs/license/completion audits, coverage, leak scans, installer/replay fault
   injection, and release dry-runs. Exercise Linux-compatible fake tests and
   macOS-only gates without conflating host-capability skips with passes. Finalize
-  the nils-cli test-first record with no unclassified residual gap.
+  the nils-cli test-first record with no unclassified residual gap. The scope
+  adjustment reopens this task to capture meaningful red and validate exact
+  waiver admission, mismatch rejection, visible reduced posture, and unchanged
+  app-notary enforcement before live acceptance.
 - **Dependencies**:
   - Task 2.4
 - **Complexity**: 7
@@ -358,43 +374,48 @@ and better debuggable before any runtime-kit consumer pin changes.
   - private macOS runtime role
   - private `agent-out` live-acceptance directory
 - **Description**: Install the candidate into an isolated backend path with the
-  branch binary and exercise both local and SSH transport. Use Calculator and a
-  disposable text fixture for action-first and synthetic input; app/window/menu
-  operations; background and foreground delivery; inspect UI, snapshots,
-  screenshots, set-value/action, gestures, waits, scenario partial failure,
-  MCP stdio, tool denials, and journal/replay/review. Inspect one authenticated
-  browser settings journey read-only and stop before any credential creation or
-  external submission. Compare local/SSH envelopes, run repeated stability
-  loops, and execute an isolated install/rollback/reinstall drill.
+  branch binary and exercise the release-critical workflow through both local
+  and controller-side SSH transport. On an active GUI, use Calculator and
+  synthetic non-secret input to prove fresh observation, foreground action,
+  background typing, explicit postconditions, redacted journaling, guarded
+  no-replay behavior, repeated no-retry operation, and rollback. Capability
+  families not needed by this canary remain governed by deterministic owner and
+  integration tests instead of becoming an unbounded live-device checklist.
+  A host with no active display may classify snapshot element targeting as an
+  environment-limited residual; it must not be reported as passed, and the
+  canary may accept a coordinate fallback only when the coordinate comes from a
+  fresh observation and the mutation has an observed postcondition.
 - **Dependencies**:
   - Task 3.1
 - **Complexity**: 10
 - **Acceptance criteria**:
-  - `doctor --strict` proves locked version/digest/signature/notary, app runtime,
-    Bridge health, TCC readiness, and exact tool profile.
-  - Action-first click and direct AX action independently pass; synthetic input
-    independently passes; every mutation has an observed postcondition.
-  - Local/SSH inspect, capture, scenario, artifact transfer, MCP, journal, and
-    review results are semantically equivalent and privacy-clean.
+  - `doctor --strict` proves locked version/digest/signature, app
+    Gatekeeper/notarization, app runtime, Bridge health, TCC readiness, and the
+    exact tool profile. CLI notarization is visibly `pass` or exact-artifact
+    `waived`; the waived path reports reduced security and still must execute
+    successfully through the real production install/quarantine path.
+  - Fresh observation plus foreground action and synthetic background input
+    pass through the real engine; every mutation has an observed postcondition.
+  - The release-critical local and controller-side SSH envelopes are
+    semantically equivalent; retained journal evidence is privacy-clean.
   - Sensitive-mode typing uses synthetic non-secret text, retains no value or
     screenshot, and is classified `never` for replay.
-  - Scenario fail-fast/continue modes preserve per-step timing and partial
-    results; safe replay resumes at a failed observation without repeating
-    protected mutations.
-  - Observe/interact/extended profiles have positive cases; all hard-denied
-    tools and unsupported HTTP/SSE/browser/locked-session claims have negative
-    evidence.
-  - Repeated read-only and bounded action loops complete within explicit
-    timeouts with zero hang/crash; p50/p95 and retry counts are recorded.
+  - A deliberately unsafe or lineage-free mutation is refused by guarded replay
+    and the observed application state remains unchanged. Conditional replay in
+    an environment that cannot produce valid snapshot lineage is a recorded
+    security-only residual rather than a functional release blocker.
+  - Three consecutive bounded action runs complete without retry, hang, or
+    crash. Unsupported displayless snapshot targeting is recorded separately
+    from active-GUI product correctness.
   - Rollback selects the previous verified receipt, doctor passes, and the
     candidate can be reinstalled without new drift or losing the stable app
     identity.
   - No real private key/token/account mutation is created solely for testing.
 - **Validation**:
-  - machine-readable live capability matrix with pass/fail/unsupported rows
-  - local and SSH journal/redaction/leak audits
-  - `journal summarize`, `journal review`, and guarded replay read-back
-  - install -> verify -> rollback -> verify -> reinstall -> verify drill
+  - machine-readable live critical-path matrix with pass/fail/unsupported rows
+  - local and controller-side SSH journal/redaction/leak audits
+  - guarded replay refusal and unchanged-state read-back
+  - install -> verify -> live workflow -> rollback -> verify drill
 
 ### Task 3.3: Review, merge, release, and verify nils-cli
 
@@ -610,16 +631,25 @@ and retain sanitized improvement evidence with a tested rollback.
 
 ### Live macOS layers
 
-- Supply chain and TCC: real downloaded assets, architecture, codesign/notary,
-  app Bridge, permission status, effective runtime.
-- Observation/action: inspect UI, snapshot, screenshot, action-only AX,
-  set-value/action, synth-only pointer/keyboard, gestures, background/foreground,
-  window/menu and optional extended surfaces.
-- Workflow: `.peekaboo.json` success and partial failure, safe resume,
-  conditional/never negative replay, debug/sensitive evidence.
-- Transport/MCP: repeat the same assertions over SSH and stdio MCP.
-- Stability: repeated bounded read/action loops with explicit timeout, zero
-  hang/crash target, and recorded latency/retry distributions.
+- Supply chain and TCC: real downloaded assets, architecture, exact codesign,
+  visible CLI notary pass/waiver status, mandatory app notarization/Gatekeeper,
+  production-path launch behavior, app Bridge, permission status, and effective
+  runtime.
+- Release-critical workflow: fresh AX observation, observed foreground action,
+  synthetic background input, explicit pre/postconditions, and cleanup. Prefer
+  element-ID/snapshot targeting when the display supports it; otherwise record
+  the unsupported row and accept only a fresh-observation coordinate fallback
+  with a verified postcondition.
+- Workflow safety: refuse a lineage-free protected mutation and prove unchanged
+  state. Conditional replay is live-tested only when the host can produce valid
+  snapshot lineage; otherwise deterministic coverage plus an explicit residual
+  is sufficient for this release.
+- Transport: repeat the release-critical assertions locally and through the
+  controller-side SSH adapter. MCP, scenario partial-failure, gestures, and
+  optional extended surfaces retain deterministic integration coverage and may
+  be sampled live without becoming unbounded release blockers.
+- Stability: three consecutive bounded action runs with explicit timeout, zero
+  hang/crash, and zero retry target.
 - Safety ceiling: hard-denied tools, HTTP/SSE, browser MCP, locked session,
   permission mutation, shell/AI/audio, and credential retention are negative
   claims, not skipped positive tests.
@@ -650,7 +680,10 @@ quarantined and reviewed; it is never auto-uploaded.
 - **Upstream release churn**: immutable lock plus explicit freshness review; no
   runtime `latest`.
 - **Supply-chain compromise**: official assets, Git verification, SHA256,
-  codesign/notary, architecture/version/capability probes, atomic ownership.
+  exact codesign identity, mandatory app notarization, an exact-tuple and
+  approval-bound CLI notarization waiver with visible reduced posture,
+  architecture/version/capability probes, and atomic ownership. A new release
+  or any tuple drift invalidates the waiver.
 - **TCC identity drift**: stable signed app default, effective-runtime journal,
   strict doctor and live local/SSH test through the real transport.
 - **Breaking old CLI consumers**: inventory callers before removal; runtime-kit

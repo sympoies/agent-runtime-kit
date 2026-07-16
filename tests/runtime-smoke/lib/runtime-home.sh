@@ -429,6 +429,37 @@ PY
   esac
 }
 
+runtime_macos_skill_dir() {
+  local live_home="$1"
+  local product="$2"
+
+  case "$product" in
+    codex | claude)
+      printf '%s\n' "$live_home/plugins/computer-use/skills/macos-desktop"
+      ;;
+    hermes)
+      printf '%s\n' "$live_home/external-skills/agent-runtime-kit/computer-use/macos-desktop"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+runtime_assert_macos_helpers_present() {
+  local skill_dir
+  skill_dir="$(runtime_macos_skill_dir "$1" "$2")" || return 1
+  test -e "$skill_dir/bin/macos_desktop.py" || return 1
+  test -e "$skill_dir/scripts/macos-desktop.sh" || return 1
+}
+
+runtime_assert_macos_helpers_absent() {
+  local skill_dir
+  skill_dir="$(runtime_macos_skill_dir "$1" "$2")" || return 1
+  test ! -e "$skill_dir/bin/macos_desktop.py" || return 1
+  test ! -e "$skill_dir/scripts/macos-desktop.sh" || return 1
+}
+
 runtime_convergence_product() {
   local repo_root="$1"
   local prior_root="$2"
@@ -464,6 +495,7 @@ runtime_convergence_product() {
   cp "$live_home/operator-owned.txt" "$operator_surface"
 
   runtime_install_product "$prior_root" "$tmp_root" "$product" "$artifacts_dir/baseline" || return 1
+  runtime_assert_macos_helpers_present "$live_home" "$product" || return 1
   baseline_skill_count="$(
     wc -l <"$artifacts_dir/baseline/${product}.observed-skills.txt" | tr -d '[:space:]'
   )"
@@ -489,6 +521,7 @@ runtime_convergence_product() {
     >"$artifacts_dir/${product}.retired-cleanup-first.log" 2>&1 || return 1
   agent-runtime prune-stale \
     --source-root "$repo_root" \
+    --owned-source-root "$prior_root" \
     --product "$product" \
     --live-home "$live_home" \
     --no-overlay \
@@ -497,6 +530,7 @@ runtime_convergence_product() {
     "$repo_root" "$product" "$live_home" "$state_home" "$artifacts_dir/head-first" || return 1
   runtime_install_product \
     "$repo_root" "$tmp_root" "$product" "$artifacts_dir/head-first" || return 1
+  runtime_assert_macos_helpers_absent "$live_home" "$product" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
   runtime_remove_post_baseline_skills \
@@ -504,6 +538,7 @@ runtime_convergence_product() {
     >"$artifacts_dir/${product}.rollback-cleanup.log" 2>&1 || return 1
   runtime_install_product \
     "$prior_root" "$tmp_root" "$product" "$artifacts_dir/rollback" || return 1
+  runtime_assert_macos_helpers_present "$live_home" "$product" || return 1
   runtime_activate_product_registry \
     "$prior_root" "$product" "$live_home" "$state_home" "$artifacts_dir/rollback" || return 1
   runtime_assert_operator_config "$product" "$config_path" || return 1
@@ -528,6 +563,7 @@ runtime_convergence_product() {
 
   agent-runtime prune-stale \
     --source-root "$repo_root" \
+    --owned-source-root "$prior_root" \
     --product "$product" \
     --live-home "$live_home" \
     --no-overlay \
@@ -537,6 +573,7 @@ runtime_convergence_product() {
     "$repo_root" "$product" "$live_home" "$state_home" "$artifacts_dir" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
   runtime_install_product "$repo_root" "$tmp_root" "$product" "$artifacts_dir/upgrade" || return 1
+  runtime_assert_macos_helpers_absent "$live_home" "$product" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
   agent-runtime install \
@@ -547,6 +584,7 @@ runtime_convergence_product() {
     --no-overlay \
     --apply >"$idempotent_log" 2>&1 || return 1
   grep -q 'changes=0' "$idempotent_log" || return 1
+  runtime_assert_macos_helpers_absent "$live_home" "$product" || return 1
   runtime_assert_operator_config "$product" "$config_path" || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
@@ -582,6 +620,8 @@ summary = {
     "rollback_verified": True,
     "upgrade_verified": True,
     "retired_pruned": True,
+    "retired_macos_helpers_pruned": True,
+    "rollback_macos_helpers_restored": True,
     "registry_activated": True,
     "idempotent": True,
 }

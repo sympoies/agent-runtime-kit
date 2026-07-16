@@ -2,205 +2,277 @@
 name: macos-desktop
 description: >
   Operate and test a local or SSH-reachable macOS desktop through nils-cli
-  macos-agent, with AX-first actions, screenshots, scenarios, permission
-  degradation, and retained local evidence.
+  macos-agent, with AX-first actions, screenshots, scenarios, explicit
+  postconditions, guarded replay, and privacy-preserving journals.
 ---
 
 # macOS Desktop Computer Use
 
 ## Contract
 
-Prereqs:
+Use the released `macos-agent` adapter as the only mechanics layer. Peekaboo
+owns native macOS observation and input. `macos-agent` owns the immutable
+backend lock, install/verify/rollback, local and SSH transport, tool policy,
+artifact transfer, redaction, journal integrity, and replay enforcement. This
+skill owns intent, target selection, side-effect approval, postcondition
+quality, visual interpretation, defect significance, and final acceptance.
 
-- The action target is a Mac with an active, unlocked graphical login session.
-- `macos-agent >=1.21.13` is installed on the target Mac; Python 3.11+ is
-  available where this skill runs.
-- Local operation has macOS Accessibility, Automation, and Screen Recording
-  permissions; SSH operation has those permissions for the remote execution
-  context.
-- For SSH, the operator has already configured a trusted SSH alias and
-  non-interactive authentication. Never store hostnames, usernames, keys, or
-  machine-specific paths in this public skill.
-- Read [references/setup.md](references/setup.md) when installing dependencies,
-  granting permissions, or diagnosing local-versus-SSH permission differences.
+Prerequisites:
+
+- The target runs macOS 15 or newer with an active, unlocked graphical login.
+- `macos-agent >=1.22.6` is installed on the controller and target. For SSH,
+  both ends must report the same adapter version and Peekaboo lock.
+- The locked backend is installed and verified. Do not install or select a
+  floating Peekaboo release outside `macos-agent backend`.
+- Accessibility, Automation, and Screen Recording permissions are granted to
+  the effective runtime authority. `macos-agent` reports permission state but
+  never mutates TCC.
+- A trusted SSH alias and non-interactive authentication already exist when a
+  remote target is used. Pass the alias only through runtime `--host`.
+- Read [references/setup.md](references/setup.md) for install, permission,
+  transport, and rollback checks.
 
 Inputs:
 
-- A concrete application or window target, acceptance goal, allowed mutation
-  scope, and stopping conditions.
-- Local mode, or a runtime-only SSH alias passed with `--host`.
-- Optional project-scoped evidence directory. The workflow allocates one with
-  `agent-out` when the caller did not supply it.
-- Optional declarative `macos-agent scenario` JSON for repeatable flows.
+- One named app/window or bounded desktop fixture, the desired outcome,
+  allowed mutation scope, and stopping conditions.
+- A local target or a runtime-only trusted SSH alias.
+- Optional scenario JSON, runtime mode, evidence mode, or MCP tool profile.
+- Optional output directory. Allocate one internally when absent.
 
 Outputs:
 
-- Machine-readable `macos-agent` results wrapped with local/SSH transport
-  metadata that deliberately omits the host identifier.
-- `session.jsonl`, `preflight.json`, screenshots, scenario results, and any
-  unresolved `pending-user-actions.json` under the caller's evidence directory.
-- A final pass/fail/blocked summary tied to observed postconditions and
-  artifacts.
-
-Failure modes:
-
-- No active graphical login session, locked desktop, sleeping target, failed
-  SSH batch authentication, or unreachable host.
-- Missing Accessibility, Automation, or Screen Recording permission. Record the
-  gap, continue with unaffected capabilities, and report unresolved user action
-  at handoff instead of abandoning the whole test run.
-- AX selectors are missing or ambiguous, focus drifts, animation delays an
-  element, or coordinate fallback is unsafe.
-- A mutating action times out after the UI already changed. Treat the outcome
-  as unknown, observe current state, and never blindly retry a non-idempotent
-  action.
-- The requested action is destructive, externally communicating, financial,
-  credential-bearing, or otherwise outside the declared test scope. Stop for
-  explicit confirmation.
+- A versioned adapter result for every non-MCP command. `macos-agent mcp`
+  reserves stdout for JSON-RPC 2.0 frames only; session status is represented
+  by its process exit and structural journal rather than an adapter envelope.
+- One homogeneous adapter run directory per interface and execution tuple,
+  containing `manifest.json`, `steps.jsonl`, `artifacts/index.json`,
+  `summary.json`, and `redaction.json`; `review.json` appears after review. A
+  broader workflow may retain several sibling run directories under one
+  caller-owned session root.
+- A pass/fail/blocked conclusion grounded in an observed postcondition, not
+  merely process exit zero.
+- Explicit residuals for skipped capabilities or reduced distribution posture.
 
 ## Outcome Routing
 
-The user requests a bounded desktop operation or test and names the target.
-Transport and evidence bookkeeping are selected internally: infer local versus
-SSH from the reachable target context, allocate output when absent, transfer
-remote artifacts through the helper, redact transport identity, and retain the
-minimum evidence needed for the claim. Never ask the user to choose a transport
-or evidence substep; ask only when the target itself is ambiguous or the action
-needs approval.
+Infer local versus SSH from the named reachable target, select the narrowest
+evidence mode and runtime that satisfy the outcome, and allocate the journal
+root without asking the user to choose transport or evidence substeps. Ask only
+when the target is ambiguous or an action crosses the approval boundary.
 
-## Entrypoint
-
-Allocate evidence internally when the caller did not provide a directory:
-
-```bash
-out="$(agent-out project --topic macos-computer-use --repo "$PWD" --mkdir)"
-```
-
-Preflight a local Mac:
+Allocate one caller-owned session root. Each child run directory is homogeneous
+for one interface and `(backend_digest, runtime, transport, evidence_mode,
+tool_profile)` tuple; reuse that child only while every dimension remains
+unchanged and the 512-step journal rotation bound is not reached. Allocate a
+new sibling child before switching between `exec`, `scenario`, or `mcp`, before
+changing any tuple dimension, or after any backend install, rollback, or
+replacement:
 
 ```bash
-$CODEX_HOME/plugins/computer-use/skills/macos-desktop/scripts/macos-desktop.sh \
-  preflight --out-dir "$out" --include-probes
+session_root="$(agent-out project --topic macos-computer-use --repo "$PWD" --mkdir)"
+exec_out="$session_root/local-exec-minimal-app"
+mkdir -p "$exec_out"
 ```
 
-Preflight an SSH-reachable Mac. Supply the alias only at runtime:
+Add `--host "$MACOS_SSH_HOST"` to `backend`, `doctor`, `capabilities`, `exec`,
+`scenario`, or `mcp` for an SSH target. Never copy SSH, transfer, or redaction
+logic into the skill; the adapter owns those mechanics.
+
+## Readiness And Backend Lifecycle
+
+Inspect status before mutation. Install only when the locked backend is absent,
+after first reviewing the dry-run:
 
 ```bash
-$CODEX_HOME/plugins/computer-use/skills/macos-desktop/scripts/macos-desktop.sh \
-  preflight --host "$MACOS_SSH_HOST" --out-dir "$out" --include-probes
+macos-agent backend status --format json
+macos-agent backend install --dry-run --strict --format json
+macos-agent backend install --strict --format json
+macos-agent backend verify --strict --format json
+macos-agent doctor --strict --format json
+macos-agent capabilities --strict --format json
 ```
 
-Run any structured `macos-agent` primitive:
+For SSH, pass the runtime alias to each command. `doctor --strict` is a hard
+readiness gate for a live mutation. Report-only doctor may be used to inventory
+degraded capabilities. A locked standalone-CLI notary waiver is visible as
+`notary=waived` / `security_posture=reduced`; never relabel it as passing.
+
+## Execute And Prove Postconditions
+
+Peekaboo arguments follow `--` unchanged. Read-only observation may omit
+`--expected`:
 
 ```bash
-$CODEX_HOME/plugins/computer-use/skills/macos-desktop/scripts/macos-desktop.sh \
-  run --host "$MACOS_SSH_HOST" --out-dir "$out" -- \
-  ax list --app "Example App" --role AXButton
+macos-agent exec \
+  --out-dir "$exec_out" \
+  --intent "Inspect Calculator controls" \
+  --runtime app \
+  -- see --app Calculator --json
 ```
 
-Capture a local evidence image even when the target is remote:
+Every mutation requires a fresh, externally observable postcondition:
 
 ```bash
-$CODEX_HOME/plugins/computer-use/skills/macos-desktop/scripts/macos-desktop.sh \
-  capture --host "$MACOS_SSH_HOST" --out-dir "$out" \
-  --path "$out/active-window.png" -- --active-window
+macos-agent exec \
+  --out-dir "$exec_out" \
+  --intent "Clear Calculator" \
+  --expected "Calculator display is zero" \
+  --runtime app \
+  -- click --app Calculator --on C --json
 ```
 
-Run a declarative scenario locally or remotely:
+Prefer stable app/window/AX descriptions and fresh snapshot lineage. Use
+coordinates only after fresh observation proves the target geometry and the
+coordinate remains inside the declared app. Re-observe after every mutation.
+When a displayless controller reports `display_count=0`, do not claim snapshot
+element-ID targeting; a fresh-observation coordinate fallback is acceptable
+only with an explicit postcondition on the active GUI target.
+
+Treat timeout or signal termination during a mutation as unknown. Observe the
+current UI before deciding what to do and never blindly retry a non-idempotent
+action. Exit zero confirms adapter execution, not user-visible success.
+
+## Scenarios
+
+Use a reviewed, regular `.peekaboo.json` file for a repeatable multi-step flow:
 
 ```bash
-$CODEX_HOME/plugins/computer-use/skills/macos-desktop/scripts/macos-desktop.sh \
-  scenario --host "$MACOS_SSH_HOST" --out-dir "$out" --file scenario.json
+scenario_out="$session_root/local-scenario-minimal-app"
+mkdir -p "$scenario_out"
+macos-agent scenario \
+  --out-dir "$scenario_out" \
+  --file ./flow.peekaboo.json \
+  --runtime app \
+  --evidence-mode minimal
 ```
 
-Omit `--host` for local execution. The helper never persists the SSH target in
-its evidence envelope and removes temporary remote capture/scenario files after
-transfer.
+Keep setup/reset steps and assertions explicit so each run is independent.
+After partial failure, inspect the journal and resume only from a newly observed
+state; never assume all prior steps completed.
 
-## Action Matrix
+## MCP Tool Profiles
 
-Use the helper's `run -- ...` form for every command below. Omit `--host` for a
-local Mac and keep global `--retries` at its default of zero for mutations.
+Use stdio MCP only when an interactive agent needs a bounded tool catalog:
 
-| Intent | `macos-agent` primitive |
+```bash
+mcp_out="$session_root/local-mcp-sensitive-app-observe"
+mkdir -p "$mcp_out"
+macos-agent mcp --out-dir "$mcp_out" --runtime app --tool-profile observe
+```
+
+Profiles are monotonic:
+
+| Profile | Admitted capability families |
 | --- | --- |
-| Inspect apps/windows | `apps list`, `windows list`, `window activate` |
-| Inspect or target UI elements | `ax list`, `ax attr`, `ax action`, `ax click`, `ax type` |
-| Screenshot/full window/cropped element | `observe screenshot` through `capture`; use an AX selector and padding for a focused crop |
-| Click/right/middle/double/triple | `input click --x X --y Y [--button ...] [--count 1-3]` |
-| Modifier-assisted click | `input click --x X --y Y --mods cmd,shift` |
-| Move pointer | `input move --x X --y Y` |
-| Atomic drag | `input drag --from-x X --from-y Y --to-x X --to-y Y [--duration-ms N] [--steps N] [--mods ...]` |
-| Scroll | `input scroll --delta-x N --delta-y N --unit pixel|line [--mods ...]` |
-| Type text | `input type --text TEXT [--submit]` |
-| Press one key | `input key --key tab|return|escape|space|left|right|up|down|delete [--count N]` |
-| Press a chord | `input hotkey --mods cmd,ctrl,alt,shift,fn --key KEY` |
-| Stabilize | `wait app-active`, `wait window-present`, `wait ax-present`, `wait sleep` |
+| `observe` | `see`, `inspect_ui`, `list`, `permissions`, `sleep` |
+| `interact` | observe plus click/type/hotkey/scroll/swipe/drag/move, AX value/action, and bounded app/window/menu operations |
+| `extended` | interact plus dialog, Dock, Spaces, capture, and paste |
 
-Prefer an atomic `input drag` over exposing separate mouse-down/mouse-up steps:
-the backend validates duration against the action timeout and performs
-best-effort mouse/modifier release cleanup after failure. `--mods` attaches
-modifiers to click, drag, and scroll without leaving keys held between process
-invocations. A successful input exit only confirms event delivery; always
-verify the resulting UI state.
+Choose `observe` by default, `interact` for a declared mutation, and `extended`
+only for a named extended operation. Agent/analysis, audio, browser, clipboard,
+configuration/credentials, image, `mcp_agent`, permission mutation, shell, HTTP
+MCP, and SSE MCP remain hard-disabled. Do not attempt a different interface or
+upstream configuration to recover a denied tool.
 
-## Workflow
+## Evidence And Runtime Choices
 
-1. **Define the test boundary.** Name the target app, expected state, allowed
-   data, permitted side effects, and completion assertions. Use synthetic or
-   dedicated test data. Do not inspect unrelated apps or windows.
-2. **Preflight through the real transport.** Run local or SSH preflight before
-   acting. If `pending-user-actions.json` appears, retain it and continue with
-   capabilities whose status is ready. Do not repeatedly retry a TCC-denied
-   action.
-3. **Discover before acting.** List apps/windows, activate the intended window,
-   and inspect AX nodes. Prefer stable AX role/title/identifier/value selectors
-   over coordinates.
-4. **Plan one bounded action.** Use `--dry-run` when selector or focus safety is
-   uncertain. For AX mutations, enable uniqueness gates and postconditions.
-5. **Act, then observe.** Perform one key/type/hotkey/click/move/drag/scroll/AX
-   action, wait for the expected state, and verify an AX attribute, window
-   state, log line, or screenshot. Never infer success only because the input
-   command exited zero.
-6. **Stabilize and recover.** Use `wait app-active`, `wait window-present`,
-   `wait ax-present`, and small polling intervals. Use automatic retries only
-   for observation or demonstrably idempotent actions. After any mutating
-   timeout, observe first because the action may already have taken effect.
-   Re-discover after navigation or layout changes instead of reusing stale
-   coordinates.
-7. **Use coordinate fallback narrowly.** Only after AX-first attempts fail,
-   capture the current target, confirm display/window geometry, and restrict
-   coordinates to the declared app. Re-observe immediately after the action.
-8. **Automate repeatable flows.** Move proven action chains into a declarative
-   scenario. Keep assertions and reset/setup steps explicit so reruns are
-   independent.
-9. **Retain evidence.** Keep `session.jsonl`, screenshots, debug bundles, logs,
-   and pass/fail assertions under the allocated output directory. Do not commit
-   runtime evidence containing machine or user data.
-10. **Finish with an audit.** Report passed assertions, failed assertions,
-    skipped capabilities, flaky/retried steps, artifacts, and every remaining
-    entry in `pending-user-actions.json`.
+Evidence modes:
 
-## Safety Boundary
+| Mode | Use |
+| --- | --- |
+| `minimal` | Default structural journal and sanitized upstream response. |
+| `debug` | Diagnose a reproducible failure; additionally retain a sanitized upstream result artifact. |
+| `sensitive` | Suppress values, titles, paths, and payload fields; retain no replay material or screenshots for sensitive input. |
 
-- Normal automation inside an explicitly declared test fixture may proceed
-  without per-click confirmation.
-- Ask before sending messages, submitting forms to external systems, deleting
-  persistent data, purchasing, changing accounts or permissions, entering
-  credentials, exposing private content, or crossing outside the named test
-  target.
-- Never read or capture unrelated windows merely because desktop-wide access is
-  available. Use app/window selectors and crop evidence to the narrowest useful
-  surface.
-- Treat screenshots, window titles, AX values, logs, SSH aliases, and home paths
-  as runtime data. Keep them out of source, fixtures, goldens, issues, and PRs.
+Runtime modes:
 
-## Boundary
+| Mode | Use |
+| --- | --- |
+| `app` | Stable default and preferred TCC authority. |
+| `daemon` | Verified CLI daemon when a GUI Bridge is not the intended authority. |
+| `auto` | Reuse an exact compatible Bridge, otherwise start the verified daemon. |
+| `process` | Diagnostic direct process with `--no-remote`; not the normal acceptance path. |
 
-The helper owns transport, structured invocation, remote artifact transfer,
-permission-gap recording, and session evidence. `macos-agent` owns desktop
-discovery, AX/input/window actions, waits, screenshots, scenarios, and its JSON
-contracts. The calling agent owns test intent, visual interpretation,
-postcondition quality, side-effect approval, and final acceptance. This skill
-does not expose a general remote shell, configure SSH credentials, unlock a
-Mac, bypass TCC, or silently widen the test scope.
+Never promote raw screenshots, window titles, typed values, host identities,
+home paths, or provider payloads into source, issues, PRs, or durable evidence.
+
+## Journal Review And Replay
+
+Close every run by rebuilding the summary and reviewing failures:
+
+```bash
+run_out="$exec_out" # select the completed homogeneous child to inspect
+macos-agent journal summarize --out-dir "$run_out" --format json
+macos-agent journal review --out-dir "$run_out" --format json
+macos-agent journal replay-plan --out-dir "$run_out" --format json
+```
+
+Use replay classifications as hard ceilings:
+
+- `safe`: replay only a reconstructable read-only local step when it still
+  serves the same intent.
+- `conditional`: require explicit confirmation, a fresh matching current
+  snapshot, and a fresh `--expected` postcondition.
+- Steps classified as `never` are not replayable. Sensitive input, typed/pasted
+  values, policy blocks, unknown mutations, destructive/external actions,
+  tampered metadata, and changed backend digests stay in this class.
+- SSH steps retain the derived `safe|conditional|never` classification for
+  review, but every SSH replay-plan row is `eligible=false` and remote
+  `replay-step` is refused. Classification never implies remote eligibility.
+
+For a conditional local replay, supply every guard explicitly:
+
+```bash
+macos-agent journal replay-step \
+  --out-dir "$run_out" \
+  --step step-000001 \
+  --confirm-conditional \
+  --current-snapshot snapshot-current \
+  --expected "The newly observed postcondition"
+```
+
+Significant review classes include privacy/redaction, wrong target, false
+success, unknown mutation, held input, remote cleanup, journal/replay integrity,
+backend drift, and permission drift. Reproduce safely, assign one explicit
+owner (`adapter`, `Peekaboo/adapter`, `runtime skill policy`, or `TCC
+environment`), and retain sanitized evidence. Never create an issue automatically.
+Use the active issue-backed workflow only after the user selects
+that outcome. Do not open an upstream issue merely to unblock scheduling; if a
+required native capability has no acceptable workaround, evaluate a controlled
+fork as a separate implementation decision.
+
+## Acceptance Standard
+
+A functional claim passes only when all applicable checks hold:
+
+1. Readiness and exact backend verification succeeded through the real local or
+   SSH transport.
+2. The target was freshly observed before mutation and the action stayed inside
+   the declared scope.
+3. An explicit postcondition was observed after mutation; exit zero alone is
+   insufficient.
+4. The same fixture can run independently without a blind mutation retry.
+5. Required journal files validate, sensitive suppression is clean, and every
+   significant review candidate has an owner.
+6. For installed-surface acceptance, a fresh product session discovers this
+   skill, uses direct `macos-agent`, and never invokes retired mechanics or a
+   disabled tool.
+7. Rollback dry-run and previous-release read-back prove recovery without
+   changing the accepted live state.
+
+The canonical status/evidence inventory is
+[`docs/source/macos-agent-capability-matrix.md`](https://github.com/graysurf/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
+Do not infer support beyond that matrix. A disclosed, exact-artifact
+distribution-security residual may remain non-blocking when the functional
+path passes and all non-waived hard gates remain enforced; privacy leaks, wrong
+targets, false success, or unusable behavior are always functional blockers.
+
+## Approval Boundary
+
+Normal interaction inside an explicitly declared disposable fixture may
+proceed without per-click confirmation. Ask before sending messages, submitting
+external forms, deleting persistent data, purchasing, changing accounts or
+permissions, entering real credentials, exposing unrelated private content, or
+leaving the named test target. This skill does not unlock or log into a Mac,
+bypass TCC, expose a remote shell, or widen scope silently.

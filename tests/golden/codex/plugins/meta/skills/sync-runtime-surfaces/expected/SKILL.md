@@ -30,6 +30,9 @@ Inputs:
 - Optional product: `codex`, `claude`, or `both`.
 - Optional source checkout path when the active directory is not the desired
   `agent-runtime-kit` checkout.
+- Optional repeatable, absolute `--owned-source-root <prior-checkout>` only
+  when the operator explicitly identifies a previous runtime-kit checkout
+  whose managed links should be eligible for ownership-verified pruning.
 
 Outputs:
 
@@ -89,6 +92,11 @@ bash scripts/sync-runtime-surfaces.sh --apply --no-pull
 
 # Skip stale managed-surface pruning for a one-off refresh.
 bash scripts/sync-runtime-surfaces.sh --apply --no-prune
+
+# Preview a relocated-checkout upgrade while explicitly trusting the prior
+# checkout only for prune-stale ownership verification.
+bash scripts/sync-runtime-surfaces.sh \
+  --owned-source-root /absolute/path/to/prior/agent-runtime-kit
 ```
 
 ## Workflow
@@ -113,6 +121,9 @@ bash scripts/sync-runtime-surfaces.sh --apply --no-prune
    - `--no-prune`
    - `--no-verify`
    - `--source-root <path>`
+   - repeatable `--owned-source-root <absolute-prior-checkout>` only for paths
+     explicitly supplied or confirmed by the operator; never infer a trust
+     root from arbitrary live symlink targets
 4. Let the script run its read-only
    `bash scripts/ci/skill-governance-audit.sh --check-counts` source readiness
    gate after checkout resolution/pull and before render/install. `--no-verify`
@@ -130,6 +141,9 @@ bash scripts/sync-runtime-surfaces.sh --apply --no-prune
    refresh installed `<plugin>@codex-kit` / `<plugin>@claude-kit` entries by
    reinstalling them from the materialized marketplace. By default, `--apply`
    also prunes stale managed skill surfaces with `agent-runtime prune-stale`;
+   each explicit `--owned-source-root` is forwarded unchanged in preview and
+   apply mode so links owned by a relocated prior checkout can be proven and
+   removed without widening ownership to foreign links or regular files;
    when `--no-prune` is passed, warn that stale managed runtime surfaces may
    remain. For Codex, the prune phase also removes retired runtime-kit-owned flat
    `$CODEX_HOME/skills/<domain>/<skill>` symlinks that point back into this

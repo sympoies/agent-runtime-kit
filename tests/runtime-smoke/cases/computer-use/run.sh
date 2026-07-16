@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Deterministic probes for the macOS computer-use skill helper.
+# Deterministic probes for the direct macos-agent adapter skill contract.
+# Functions are passed by name to the shared results harness.
+# shellcheck disable=SC2317
 
 set -euo pipefail
 
@@ -16,218 +18,644 @@ set -euo pipefail
 # shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
 . "$SCRIPT_DIR/lib/rendered-contract.sh"
 
-HELPER="$REPO_ROOT/core/skills/computer-use/macos-desktop/bin/macos_desktop.py"
 CASE_ROOT="$TMP_ROOT/computer-use"
 FAKE_BIN="$CASE_ROOT/bin"
-REMOTE_HOME="$CASE_ROOT/remote-home"
 CASE_ARTIFACTS="$ARTIFACTS_DIR/computer-use"
-mkdir -p "$FAKE_BIN" "$REMOTE_HOME" "$CASE_ARTIFACTS"
+mkdir -p "$FAKE_BIN" "$CASE_ARTIFACTS"
+REAL_MACOS_AGENT="$(command -v macos-agent || true)"
 
-make_fakes() {
+make_fake_macos_agent() {
   cat >"$FAKE_BIN/macos-agent" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
-args=" $* "
-if [[ "$args" == *" preflight "* ]]; then
-  if [[ "${COMPUTER_USE_TEST_UNKNOWN_PERMISSIONS:-}" == "1" ]]; then
-    printf '%s\n' '{"schema_version":1,"ok":true,"command":"preflight","result":{"status":"degraded","permissions":{"accessibility":"ready","ready":false,"hints":["Permission state is incomplete."]}}}'
-    exit 0
+write_journal() {
+  local out_dir="$1"
+  local command="$2"
+  local transport="$3"
+  local evidence_mode="$4"
+  local status="$5"
+  local failure_class="$6"
+  local tool_profile="${7:-}"
+  local tool_profile_json=""
+  local backend_digest="${COMPUTER_USE_TEST_BACKEND_DIGEST:-sha256:synthetic}"
+
+  local replay_class=safe
+  local replay_argv='["see"]'
+  local failure_json=null
+  local failed=0
+  local policy_blocked=0
+  if [[ "$evidence_mode" == sensitive || "$status" != passed ]]; then
+    replay_class=never
+    replay_argv=null
   fi
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"preflight","result":{"status":"degraded","permissions":{"screen_recording":"missing","accessibility":"ready","automation":"ready","ready":false,"hints":["Enable Screen Recording for the terminal host."]}}}'
-  exit 0
-fi
+  if [[ "$failure_class" != none ]]; then
+    failure_json='"'"$failure_class"'"'
+  fi
+  if [[ "$status" == failed ]]; then
+    failed=1
+  elif [[ "$status" == policy_blocked ]]; then
+    policy_blocked=1
+  fi
+  if [[ -n "$tool_profile" ]]; then
+    tool_profile_json=',"tool_profile":"'"$tool_profile"'"'
+  fi
 
-if [[ "$args" == *" observe screenshot "* ]]; then
-  output=""
-  while [[ "$#" -gt 0 ]]; do
-    if [[ "$1" == "--path" ]]; then
-      output="$2"
-      break
-    fi
-    shift
-  done
-  test -n "$output"
-  mkdir -p "$(dirname "$output")"
-  printf 'synthetic-png' >"$output"
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"observe.screenshot","result":{"captured":true}}'
-  exit 0
-fi
+  mkdir -p "$out_dir/artifacts"
+  printf '%s\n' "{\"schema_version\":\"macos-agent.journal.v2\",\"run_id\":\"synthetic-run\",\"adapter_version\":\"1.22.6\",\"peekaboo_tag\":\"v3.9.3\",\"peekaboo_commit\":\"3cfd612adbcb1b43e8431a7a1f3b02ec45d01269\",\"backend_digest\":\"$backend_digest\",\"runtime\":\"app\",\"transport\":\"$transport\",\"evidence_mode\":\"$evidence_mode\"${tool_profile_json},\"started_at\":\"2026-07-16T00:00:00Z\",\"closed_at\":\"2026-07-16T00:00:01Z\",\"state\":\"closed\"}" >"$out_dir/manifest.json"
+  printf '%s\n' '{"schema_version":"macos-agent.journal-step.v2","sequence":1,"id":"step-000001","correlation_id":"correlation-000001","recorded_at":"2026-07-16T00:00:00Z","command":"'"$command"'","argv_shape":["fixture"],"replay_argv":'"$replay_argv"',"backend_digest":"'"$backend_digest"'","runtime":"app","transport":"'"$transport"'","status":"'"$status"'","failure_class":'"$failure_json"',"duration_ms":1,"retries":0,"replay_class":"'"$replay_class"'"}' >"$out_dir/steps.jsonl"
+  printf '%s\n' '{"schema_version":"macos-agent.artifact-index.v1","artifacts":[]}' >"$out_dir/artifacts/index.json"
+  printf '%s\n' '{"schema_version":"macos-agent.journal-summary.v1","total_steps":1,"passed":'"$([[ "$status" == passed ]] && printf 1 || printf 0)"',"failed":'"$failed"',"unknown":0,"policy_blocked":'"$policy_blocked"',"failure_signatures":[],"replay_candidates":[],"defect_candidates":[],"assertions":[],"residual_user_actions":[],"recovered_tail":false}' >"$out_dir/summary.json"
+  printf '%s\n' '{"schema_version":"macos-agent.redaction.v1","rules":[],"suppressed_fields":[],"failures":[],"private_identifier_matches":0,"secret_matches":0}' >"$out_dir/redaction.json"
+}
 
-if [[ "$args" == *" scenario run "* ]]; then
-  scenario=""
-  while [[ "$#" -gt 0 ]]; do
-    if [[ "$1" == "--file" ]]; then
-      scenario="$2"
-      break
-    fi
-    shift
-  done
-  test -s "$scenario"
-  grep -q 'Synthetic App' "$scenario"
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"scenario.run","result":{"steps":2}}'
-  exit 0
-fi
+assert_compatible_journal() {
+  local out_dir="$1"
+  local transport="$2"
+  local evidence_mode="$3"
+  local tool_profile="${4:-}"
+  if [[ ! -e "$out_dir/manifest.json" ]]; then
+    return 0
+  fi
+  if ! python3 - "$out_dir/manifest.json" "$transport" "$evidence_mode" "$tool_profile" <<'PY'
+import json
+import pathlib
+import sys
 
-if [[ "$args" == *" input key "* ]]; then
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"input.key","result":{"key":"escape","policy":{"retries":0}}}'
-  exit 0
-fi
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_profile = sys.argv[4] or None
+expected_digest = "sha256:changed" if __import__("os").environ.get("COMPUTER_USE_TEST_BACKEND_DIGEST") == "sha256:changed" else "sha256:synthetic"
+assert manifest["runtime"] == "app"
+assert manifest["transport"] == sys.argv[2]
+assert manifest["evidence_mode"] == sys.argv[3]
+assert manifest.get("tool_profile") == expected_profile
+assert manifest["backend_digest"] == expected_digest
+PY
+  then
+    printf '%s\n' 'error: journal manifest does not match this execution session' >&2
+    exit 74
+  fi
+}
 
-if [[ "$args" == *" input move "* ]]; then
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"input.move","result":{"x":20,"y":30,"policy":{"retries":0}}}'
-  exit 0
-fi
-
-if [[ "$args" == *" input drag "* ]]; then
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"input.drag","result":{"mods":["shift"],"policy":{"retries":0}}}'
-  exit 0
-fi
-
-if [[ "$args" == *" input scroll "* ]]; then
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"input.scroll","result":{"mods":["shift"],"policy":{"retries":0}}}'
-  exit 0
-fi
-
-if [[ "$args" == *" input click "* ]]; then
-  printf '%s\n' '{"schema_version":1,"ok":true,"command":"input.click","result":{"mods":["cmd"],"policy":{"retries":0}}}'
-  exit 0
-fi
-
-printf '%s\n' '{"schema_version":1,"ok":true,"command":"ax.list","result":{"nodes":[]}}'
-SH
-
-  cat >"$FAKE_BIN/ssh" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-
+args=()
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    -o)
+    --format | --error-format)
       shift 2
       ;;
-    --)
-      shift
-      break
-      ;;
     *)
-      break
+      args+=("$1")
+      shift
       ;;
   esac
 done
+set -- "${args[@]}"
 
-test "$#" -ge 2
-host="$1"
-shift
-if [[ "$host" == "private-alias.invalid" ]]; then
-  printf 'ssh: Could not resolve hostname %s: Name or service not known\n' "$host" >&2
-  exit 255
-fi
-test "$host" = "example-mac"
-HOME="${COMPUTER_USE_TEST_REMOTE_HOME:?}" PATH="${COMPUTER_USE_TEST_PATH:?}" bash -c "$1"
+command="${1:-}"
+shift || true
+case "$command" in
+  backend)
+    test "${1:-}" = status
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"backend.status","result":{"locked_tag":"v3.9.3","locked_commit":"3cfd612adbcb1b43e8431a7a1f3b02ec45d01269","strict":false,"security_posture":"reduced","cli_notarization_policy":"waived","installed":true,"verified":true,"current":{"tag":"v3.9.3","commit":"3cfd612adbcb1b43e8431a7a1f3b02ec45d01269","installed_at":"2026-07-16T00:00:00Z"},"previous":null,"app_owned":true,"dry_run":false}}'
+    ;;
+  capabilities)
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"capabilities","result":{"transport":["local","ssh"],"interfaces":["exec","scenario","mcp_stdio"],"runtime":["app","daemon","auto","process"],"tool_profiles":["observe","interact","extended"],"disabled":["agent","analyze","audio","browser","clipboard","config","credentials","http_mcp","image","mcp_agent","permission_mutation","shell","sse_mcp"]}}'
+    ;;
+  doctor)
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --host)
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"doctor","result":{"locked_tag":"v3.9.3","strict":true,"ready":true,"backend":{"locked_tag":"v3.9.3","active_tag":"v3.9.3","rollback_active":false,"strict":true,"security_posture":"reduced","ready":true,"checks":[{"id":"notary","status":"waived","message":"exact locked waiver"}]},"runtime":{"id":"runtime","status":"pass","message":"ready"},"permissions":{"id":"permissions","status":"pass","message":"ready"},"bridge":{"id":"bridge","status":"pass","message":"ready"},"capabilities":[]}}'
+    ;;
+  exec)
+    out_dir=""
+    transport=local
+    evidence_mode=minimal
+    expected=""
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --host)
+          transport=ssh
+          shift 2
+          ;;
+        --out-dir)
+          out_dir="$2"
+          shift 2
+          ;;
+        --evidence-mode)
+          evidence_mode="$2"
+          shift 2
+          ;;
+        --intent | --runtime | --timeout-seconds)
+          shift 2
+          ;;
+        --expected)
+          expected="$2"
+          shift 2
+          ;;
+        --)
+          shift
+          break
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    test -n "$out_dir"
+    assert_compatible_journal "$out_dir" "$transport" "$evidence_mode"
+    upstream_command="${1:-unknown}"
+    case "$upstream_command" in
+      click | type | hotkey | scroll | swipe | drag | move | set-value | perform-action | window | app | menu | dialog | dock | space | capture | paste)
+        if [[ -z "$expected" ]]; then
+          printf '%s\n' 'error: mutating command requires an observable --expected postcondition' >&2
+          exit 78
+        fi
+        ;;
+    esac
+    write_journal "$out_dir" "exec.$upstream_command" "$transport" "$evidence_mode" passed none
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"step-000001","upstream":{"exit_code":0,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"json":{"success":true}}}}'
+    ;;
+  scenario)
+    out_dir=""
+    transport=local
+    evidence_mode=minimal
+    scenario=""
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --host)
+          transport=ssh
+          shift 2
+          ;;
+        --out-dir)
+          out_dir="$2"
+          shift 2
+          ;;
+        --file)
+          scenario="$2"
+          shift 2
+          ;;
+        --evidence-mode)
+          evidence_mode="$2"
+          shift 2
+          ;;
+        --runtime | --timeout-seconds)
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    test -s "$scenario"
+    assert_compatible_journal "$out_dir" "$transport" "$evidence_mode"
+    write_journal "$out_dir" scenario "$transport" "$evidence_mode" failed wrong_target
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"scenario","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"step-000001","upstream":{"exit_code":9,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"diagnostic":"synthetic scenario stopped after a significant wrong-target failure"}}}'
+    exit 70
+    ;;
+  mcp)
+    out_dir=""
+    transport=local
+    profile=interact
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --host)
+          transport=ssh
+          shift 2
+          ;;
+        --out-dir)
+          out_dir="$2"
+          shift 2
+          ;;
+        --tool-profile)
+          profile="$2"
+          shift 2
+          ;;
+        --runtime)
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    assert_compatible_journal "$out_dir" "$transport" sensitive "$profile"
+    input="$(cat)"
+    if [[ "$input" == *'"name":"shell"'* ]]; then
+      write_journal "$out_dir" mcp.tools_call "$transport" sensitive policy_blocked policy "$profile"
+      printf '%s\n' \
+        '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"tool denied by adapter profile"}}' \
+        '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+      exit 0
+    fi
+    write_journal "$out_dir" mcp "$transport" sensitive passed none "$profile"
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+    ;;
+  journal)
+    journal_command="${1:-}"
+    shift || true
+    out_dir=""
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --out-dir)
+          out_dir="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    test -s "$out_dir/manifest.json"
+    case "$journal_command" in
+      summarize)
+        printf '%s' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"journal.summarize","result":'
+        cat "$out_dir/summary.json"
+        printf '}\n'
+        ;;
+      review)
+        review='{"schema_version":"macos-agent.journal-review.v1","candidates":[{"signature":"scenario:wrong_target","count":1,"significant":true,"proposed_owner":"runtime_skill_policy","step_ids":["step-000001"]}],"clean":false}'
+        printf '%s\n' "$review" >"$out_dir/review.json"
+        printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"journal.review","result":'"$review"'}'
+        ;;
+      replay-plan)
+        replay_class=safe
+        eligible=true
+        reason=eligible
+        if grep -q '"replay_class":"never"' "$out_dir/steps.jsonl"; then
+          replay_class=never
+          eligible=false
+          reason=never
+        elif grep -q '"transport":"ssh"' "$out_dir/manifest.json"; then
+          eligible=false
+          reason='remote journal replay is not supported'
+        fi
+        printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"journal.replay-plan","result":{"steps":[{"id":"step-000001","replay_class":"'"$replay_class"'","eligible":'"$eligible"',"reason":"'"$reason"'"}]}}'
+        ;;
+      *)
+        exit 64
+        ;;
+    esac
+    ;;
+  *)
+    exit 64
+    ;;
+esac
 SH
-
-  chmod +x "$FAKE_BIN/macos-agent" "$FAKE_BIN/ssh"
+  chmod +x "$FAKE_BIN/macos-agent"
 }
 
-run_probe() {
-  test -x "$HELPER"
-  make_fakes
+assert_journal() {
+  local out_dir="$1"
+  test -s "$out_dir/manifest.json"
+  test -s "$out_dir/steps.jsonl"
+  test -s "$out_dir/artifacts/index.json"
+  test -s "$out_dir/summary.json"
+  test -s "$out_dir/redaction.json"
+  python3 - "$out_dir" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+expected = {
+    "manifest.json": "macos-agent.journal.v2",
+    "artifacts/index.json": "macos-agent.artifact-index.v1",
+    "summary.json": "macos-agent.journal-summary.v1",
+    "redaction.json": "macos-agent.redaction.v1",
+}
+for relative, schema in expected.items():
+    payload = json.loads((root / relative).read_text(encoding="utf-8"))
+    assert payload["schema_version"] == schema, (relative, payload)
+manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+assert manifest["state"] == "closed", manifest
+for field in ("backend_digest", "runtime", "transport", "evidence_mode", "started_at", "closed_at"):
+    assert field in manifest, (field, manifest)
+step = json.loads((root / "steps.jsonl").read_text(encoding="utf-8").splitlines()[0])
+assert step["schema_version"] == "macos-agent.journal-step.v2", step
+for field in ("id", "command", "transport", "status", "replay_class"):
+    assert field in step, (field, step)
+PY
+}
+
+run_direct_adapter_probe() {
+  make_fake_macos_agent
+  test -x "$REAL_MACOS_AGENT"
 
   local local_out="$CASE_ROOT/local"
-  local unknown_out="$CASE_ROOT/unknown-permissions"
   local remote_out="$CASE_ROOT/remote"
-  local capture="$CASE_ROOT/captured.png"
-  local scenario="$CASE_ROOT/scenario.json"
-  local invalid_err="$CASE_ARTIFACTS/invalid-host.stderr.txt"
+  local mutation_out="$CASE_ROOT/mutation"
+  local sensitive_out="$CASE_ROOT/sensitive"
+  local scenario_out="$CASE_ROOT/scenario"
+  local mcp_out="$CASE_ROOT/mcp"
+  local scenario="$CASE_ROOT/partial-failure.peekaboo.json"
+  local secret='SYNTHETIC_SECRET_CANARY_7f90'
 
-  printf '%s\n' '{"name":"synthetic","steps":[{"action":"activate","app":"Synthetic App"},{"action":"wait","ms":10}]}' >"$scenario"
+  "$REAL_MACOS_AGENT" capabilities --format json >"$CASE_ARTIFACTS/capabilities.json"
+  python3 - "$CASE_ARTIFACTS/capabilities.json" <<'PY'
+import json
+import pathlib
+import sys
 
-  PATH="$FAKE_BIN:$PATH" python3 "$HELPER" preflight --out-dir "$local_out" \
-    >"$CASE_ARTIFACTS/local-preflight.json"
-  grep -q '"status": "degraded"' "$CASE_ARTIFACTS/local-preflight.json"
-  grep -q 'screen_recording' "$local_out/pending-user-actions.json"
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+assert payload["command"] == "capabilities", payload
+result = payload["result"]
+assert result["transport"] == ["local", "ssh"], result
+assert result["interfaces"] == ["exec", "scenario", "mcp_stdio"], result
+assert result["runtime"] == ["app", "daemon", "auto", "process"], result
+assert result["tool_profiles"] == ["observe", "interact", "extended"], result
+for denied in ("browser", "permission_mutation", "shell", "http_mcp", "sse_mcp"):
+    assert denied in result["disabled"], (denied, result)
+PY
 
-  PATH="$FAKE_BIN:$PATH" COMPUTER_USE_TEST_UNKNOWN_PERMISSIONS=1 \
-    python3 "$HELPER" preflight --out-dir "$unknown_out" \
-    >"$CASE_ARTIFACTS/unknown-permissions-preflight.json"
-  grep -q 'screen_recording' "$unknown_out/pending-user-actions.json"
-  grep -q '"status": "unknown"' "$unknown_out/pending-user-actions.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent backend status --format json >"$CASE_ARTIFACTS/backend-status.json"
+  python3 - "$CASE_ARTIFACTS/backend-status.json" <<'PY'
+import json
+import pathlib
+import sys
 
-  PATH="$FAKE_BIN:$PATH" COMPUTER_USE_TEST_REMOTE_HOME="$REMOTE_HOME" COMPUTER_USE_TEST_PATH="$FAKE_BIN:$PATH" \
-    python3 "$HELPER" run --host example-mac --out-dir "$remote_out" -- ax list --app "Synthetic App" \
-    >"$CASE_ARTIFACTS/remote-run.json"
-  grep -q '"transport": "ssh"' "$CASE_ARTIFACTS/remote-run.json"
-  grep -q '"ok": true' "$CASE_ARTIFACTS/remote-run.json"
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+assert payload["command"] == "backend.status", payload
+result = payload["result"]
+assert set(result) == {
+    "locked_tag", "locked_commit", "strict", "security_posture",
+    "cli_notarization_policy", "installed", "verified", "current",
+    "previous", "app_owned", "dry_run",
+}, result
+assert result["verified"] is True, result
+assert result["security_posture"] == "reduced", result
+assert set(result["current"]) == {"tag", "commit", "installed_at"}, result
+PY
 
-  local action command_slug
-  for action in \
-    'input key --key escape' \
-    'input move --x 20 --y 30' \
-    'input click --x 20 --y 30 --mods cmd' \
-    'input drag --from-x 20 --from-y 30 --to-x 40 --to-y 50 --mods shift' \
-    'input scroll --delta-y -1 --unit line --mods shift'; do
-    command_slug="$(printf '%s' "$action" | awk '{print $1 "." $2}')"
-    # shellcheck disable=SC2086
-    PATH="$FAKE_BIN:$PATH" python3 "$HELPER" run --out-dir "$local_out" -- $action \
-      >"$CASE_ARTIFACTS/${command_slug}.json"
-    grep -q "\"command\": \"${command_slug}\"" "$CASE_ARTIFACTS/${command_slug}.json"
-    grep -q '"retries": 0' "$CASE_ARTIFACTS/${command_slug}.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent doctor --strict --format json >"$CASE_ARTIFACTS/local-doctor.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent doctor --host example-mac --strict --format json >"$CASE_ARTIFACTS/remote-doctor.json"
+  python3 - "$CASE_ARTIFACTS/local-doctor.json" "$CASE_ARTIFACTS/remote-doctor.json" <<'PY'
+import json
+import pathlib
+import sys
+
+for path in sys.argv[1:]:
+    payload = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+    assert payload["command"] == "doctor", payload
+    result = payload["result"]
+    assert set(result) == {
+        "locked_tag", "strict", "ready", "backend", "runtime",
+        "permissions", "bridge", "capabilities",
+    }, result
+    assert "transport" not in result, result
+    assert set(result["backend"]) == {
+        "locked_tag", "active_tag", "rollback_active", "strict",
+        "security_posture", "ready", "checks",
+    }, result["backend"]
+    checks = [result["runtime"], result["permissions"], result["bridge"], *result["capabilities"], *result["backend"]["checks"]]
+    assert all(set(check) == {"id", "status", "message"} for check in checks), checks
+    assert all(check["status"] in {"pass", "waived"} for check in checks), checks
+PY
+
+  PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$local_out" --intent 'Inspect the synthetic app' --runtime app -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/local-exec.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent exec --host example-mac --out-dir "$remote_out" --intent 'Inspect the synthetic app remotely' --runtime app -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/remote-exec.json"
+  python3 - "$CASE_ARTIFACTS/local-exec.json" "$CASE_ARTIFACTS/remote-exec.json" <<'PY'
+import json
+import pathlib
+import sys
+
+for path in sys.argv[1:]:
+    payload = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+    assert payload["command"] == "exec", payload
+    result = payload["result"]
+    assert set(result) == {"transport", "runtime", "evidence_mode", "journal_step", "upstream"}, result
+    assert set(result["upstream"]) == {
+        "exit_code", "timed_out", "stdout_truncated", "stderr_truncated", "json",
+    }, result["upstream"]
+PY
+  assert_journal "$local_out"
+  assert_journal "$remote_out"
+  grep -q '"transport":"local"' "$local_out/manifest.json"
+  grep -q '"transport":"ssh"' "$remote_out/manifest.json"
+  if PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$local_out" --tool-profile interact --runtime app >"$CASE_ARTIFACTS/mixed-exec-mcp.stdout.txt" 2>"$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt"; then
+    return 1
+  fi
+  grep -q 'journal manifest does not match this execution session' "$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt"
+  if PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$local_out" --intent 'Change evidence mode' --evidence-mode sensitive -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/mixed-evidence.stdout.txt" 2>"$CASE_ARTIFACTS/mixed-evidence.stderr.txt"; then
+    return 1
+  fi
+  grep -q 'journal manifest does not match this execution session' "$CASE_ARTIFACTS/mixed-evidence.stderr.txt"
+  if COMPUTER_USE_TEST_BACKEND_DIGEST=sha256:changed PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$local_out" --intent 'Reuse after backend change' --runtime app -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/mixed-backend.stdout.txt" 2>"$CASE_ARTIFACTS/mixed-backend.stderr.txt"; then
+    return 1
+  fi
+  grep -q 'journal manifest does not match this execution session' "$CASE_ARTIFACTS/mixed-backend.stderr.txt"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal replay-plan --out-dir "$remote_out" --format json >"$CASE_ARTIFACTS/remote-replay-plan.json"
+  python3 - "$CASE_ARTIFACTS/remote-replay-plan.json" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+row = payload["result"]["steps"][0]
+assert row["replay_class"] == "safe", row
+assert row["eligible"] is False, row
+assert "remote" in row["reason"], row
+PY
+
+  if PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$mutation_out" -- click --app 'Synthetic App' --on Submit --json >"$CASE_ARTIFACTS/unguarded-mutation.stdout.txt" 2>"$CASE_ARTIFACTS/unguarded-mutation.stderr.txt"; then
+    return 1
+  fi
+  grep -q 'observable --expected postcondition' "$CASE_ARTIFACTS/unguarded-mutation.stderr.txt"
+
+  PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$mutation_out" --intent 'Submit the synthetic fixture' --expected 'The fixture reports submitted' --runtime app -- click --app 'Synthetic App' --on Submit --json >"$CASE_ARTIFACTS/guarded-mutation.json"
+  assert_journal "$mutation_out"
+
+  PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$sensitive_out" --intent 'Enter a private synthetic value' --expected 'The private fixture reports populated' --evidence-mode sensitive -- type --app 'Synthetic App' --text "$secret" --json >"$CASE_ARTIFACTS/sensitive-exec.json"
+  assert_journal "$sensitive_out"
+  grep -q '"evidence_mode":"sensitive"' "$sensitive_out/manifest.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal replay-plan --out-dir "$sensitive_out" --format json >"$CASE_ARTIFACTS/sensitive-replay-plan.json"
+  grep -q '"replay_class":"never"' "$CASE_ARTIFACTS/sensitive-replay-plan.json"
+
+  printf '%s\n' '{"name":"synthetic-partial-failure","steps":[{"command":"see","app":"Synthetic App"}]}' >"$scenario"
+  if PATH="$FAKE_BIN:$PATH" macos-agent scenario --host example-mac --out-dir "$scenario_out" --file "$scenario" --runtime app --evidence-mode minimal >"$CASE_ARTIFACTS/scenario.json" 2>"$CASE_ARTIFACTS/scenario.stderr.txt"; then
+    return 1
+  fi
+  test ! -s "$CASE_ARTIFACTS/scenario.stderr.txt"
+  python3 - "$CASE_ARTIFACTS/scenario.json" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+assert payload["command"] == "scenario", payload
+result = payload["result"]
+assert set(result) == {"transport", "runtime", "evidence_mode", "journal_step", "upstream"}, result
+assert set(result["upstream"]) == {
+    "exit_code", "timed_out", "stdout_truncated", "stderr_truncated", "diagnostic",
+}, result["upstream"]
+assert result["upstream"]["exit_code"] != 0, result
+PY
+  assert_journal "$scenario_out"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal summarize --out-dir "$scenario_out" --format json >"$CASE_ARTIFACTS/scenario-summary.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal review --out-dir "$scenario_out" --format json >"$CASE_ARTIFACTS/scenario-review.json"
+  grep -q '"significant":true' "$CASE_ARTIFACTS/scenario-review.json"
+  grep -q '"proposed_owner":"runtime_skill_policy"' "$CASE_ARTIFACTS/scenario-review.json"
+  if grep -q '"provider_mutation"' "$CASE_ARTIFACTS/scenario-review.json"; then
+    return 1
+  fi
+
+  for profile in observe interact extended; do
+    PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$mcp_out-$profile" --tool-profile "$profile" --runtime app >"$CASE_ARTIFACTS/mcp-$profile.json"
+    python3 - "$CASE_ARTIFACTS/mcp-$profile.json" <<'PY'
+import json
+import pathlib
+import sys
+
+frames = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
+assert frames, "MCP emitted no JSON-RPC frames"
+assert all(frame.get("jsonrpc") == "2.0" for frame in frames), frames
+assert all(frame.get("schema_version") != "macos-agent.adapter.v2" for frame in frames), frames
+PY
+    assert_journal "$mcp_out-$profile"
   done
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shell","arguments":{}}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' |
+    PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$mcp_out-denied" --tool-profile extended >"$CASE_ARTIFACTS/mcp-denied.stdout.txt" 2>"$CASE_ARTIFACTS/mcp-denied.stderr.txt"
+  test ! -s "$CASE_ARTIFACTS/mcp-denied.stderr.txt"
+  python3 - "$CASE_ARTIFACTS/mcp-denied.stdout.txt" <<'PY'
+import json
+import pathlib
+import sys
 
-  PATH="$FAKE_BIN:$PATH" COMPUTER_USE_TEST_REMOTE_HOME="$REMOTE_HOME" COMPUTER_USE_TEST_PATH="$FAKE_BIN:$PATH" \
-    python3 "$HELPER" capture --host example-mac --out-dir "$remote_out" --path "$capture" -- --app "Synthetic App" \
-    >"$CASE_ARTIFACTS/remote-capture.json"
-  test "$(cat "$capture")" = "synthetic-png"
+frames = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
+assert len(frames) == 2, frames
+assert frames[0]["id"] == 1 and frames[0]["error"]["code"] == -32001, frames
+assert frames[1]["id"] == 2 and "result" in frames[1], frames
+PY
+  grep -q '"status":"policy_blocked"' "$mcp_out-denied/steps.jsonl"
 
-  PATH="$FAKE_BIN:$PATH" COMPUTER_USE_TEST_REMOTE_HOME="$REMOTE_HOME" COMPUTER_USE_TEST_PATH="$FAKE_BIN:$PATH" \
-    python3 "$HELPER" scenario --host example-mac --out-dir "$remote_out" --file "$scenario" \
-    >"$CASE_ARTIFACTS/remote-scenario.json"
-  grep -q '"ok": true' "$CASE_ARTIFACTS/remote-scenario.json"
-
-  if PATH="$FAKE_BIN:$PATH" python3 "$HELPER" run --host=-unsafe --out-dir "$remote_out" -- apps list \
-    >"$CASE_ARTIFACTS/invalid-host.stdout.txt" 2>"$invalid_err"; then
+  if rg -n --fixed-strings "$secret" "$CASE_ROOT" "$CASE_ARTIFACTS"; then
     return 1
   fi
-  grep -q 'must not start with' "$invalid_err"
-
-  if PATH="$FAKE_BIN:$PATH" python3 "$HELPER" run --host private-alias.invalid \
-    --out-dir "$remote_out" -- apps list \
-    >"$CASE_ARTIFACTS/ssh-failure.json" 2>"$CASE_ARTIFACTS/ssh-failure.stderr.txt"; then
+  if rg -n 'example-mac|/home/|/Users/|HostName|IdentityFile|BEGIN OPENSSH PRIVATE KEY' \
+    "$local_out" "$remote_out" "$mutation_out" "$sensitive_out" "$scenario_out" "$mcp_out"-* "$CASE_ARTIFACTS"; then
     return 1
   fi
-  grep -q '<ssh-target>' "$CASE_ARTIFACTS/ssh-failure.json"
-  ! rg -n 'private-alias\.invalid' "$CASE_ARTIFACTS/ssh-failure.json" "$remote_out/session.jsonl"
-
-  test -s "$local_out/session.jsonl"
-  test -s "$remote_out/session.jsonl"
-  ! rg -n '/home/|/Users/|HostName|IdentityFile|BEGIN OPENSSH PRIVATE KEY' \
-    "$REPO_ROOT/core/skills/computer-use" "$CASE_ARTIFACTS"
 }
 
-run_outcome_routing_probe() {
+assert_homogeneous_run_contract() {
+  local skill="$1"
+
+  grep -Fq 'for one interface and' "$skill"
+  grep -Fq 'backend_digest, runtime, transport, evidence_mode,' "$skill"
+  grep -Fq '512-step journal rotation bound' "$skill"
+  grep -Fq "exec_out=\"\$session_root/local-exec-minimal-app\"" "$skill"
+  grep -Fq "scenario_out=\"\$session_root/local-scenario-minimal-app\"" "$skill"
+  grep -Fq "mcp_out=\"\$session_root/local-mcp-sensitive-app-observe\"" "$skill"
+  grep -Fq "mkdir -p \"\$exec_out\"" "$skill"
+  grep -Fq "mkdir -p \"\$scenario_out\"" "$skill"
+  grep -Fq "mkdir -p \"\$mcp_out\"" "$skill"
+  grep -Fq "run_out=\"\$exec_out\"" "$skill"
+  grep -Fq "journal summarize --out-dir \"\$run_out\"" "$skill"
+  grep -Fq "journal review --out-dir \"\$run_out\"" "$skill"
+  grep -Fq "journal replay-plan --out-dir \"\$run_out\"" "$skill"
+  python3 - "$skill" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+required_counts = {
+    "or after any backend install, rollback, or\nreplacement:": 1,
+    'macos-agent exec \\\n  --out-dir "$exec_out" \\\n  --intent "Inspect Calculator controls" \\': 1,
+    'macos-agent exec \\\n  --out-dir "$exec_out" \\\n  --intent "Clear Calculator" \\\n  --expected "Calculator display is zero" \\': 1,
+    'macos-agent scenario \\\n  --out-dir "$scenario_out" \\': 1,
+    'macos-agent mcp --out-dir "$mcp_out" --runtime app --tool-profile observe': 1,
+    'macos-agent journal replay-step \\\n  --out-dir "$run_out" \\': 1,
+}
+for required, expected_count in required_counts.items():
+    assert text.count(required) == expected_count, (required, text.count(required))
+PY
+}
+
+run_skill_and_matrix_contract_probe() {
   local skill="$REPO_ROOT/core/skills/computer-use/macos-desktop/SKILL.md.tera"
+  local setup="$REPO_ROOT/core/skills/computer-use/macos-desktop/references/setup.md"
+  local matrix="$REPO_ROOT/docs/source/macos-agent-capability-matrix.md"
 
-  grep -Fq '## Outcome Routing' "$skill"
-  grep -Fq 'workflow allocates one with' "$skill"
-  grep -Fq '`agent-out` when the caller did not supply it' "$skill"
-  grep -Fq 'Transport and evidence bookkeeping are selected internally' "$skill"
-  grep -Fq 'Never ask the user to choose a transport' "$skill"
-  grep -Fq 'or evidence substep' "$skill"
+  test ! -e "$REPO_ROOT/core/skills/computer-use/macos-desktop/bin/macos_desktop.py"
+  test ! -e "$REPO_ROOT/core/skills/computer-use/macos-desktop/scripts/macos-desktop.sh"
 
-  rendered_contract_assert_skill computer-use macos-desktop
-  rendered_contract_assert_all_contain computer-use macos-desktop '## Outcome Routing'
-  rendered_contract_assert_all_contain computer-use macos-desktop 'Never ask the user to choose a transport'
+  grep -Fq 'macos-agent backend install' "$skill"
+  grep -Fq 'macos-agent doctor' "$skill"
+  grep -Fq 'macos-agent exec' "$skill"
+  grep -Fq 'macos-agent scenario' "$skill"
+  grep -Fq 'macos-agent mcp' "$skill"
+  grep -Fq 'macos-agent journal summarize' "$skill"
+  grep -Fq 'macos-agent journal review' "$skill"
+  assert_homogeneous_run_contract "$skill"
+  grep -Fq 'Never create an issue automatically' "$skill"
+  grep -Fq 'docs/source/macos-agent-capability-matrix.md' "$skill"
+  if grep -Fq 'macos-desktop.sh' "$skill"; then
+    return 1
+  fi
+  if grep -Fq 'Python' "$skill"; then
+    return 1
+  fi
+
+  grep -Fq 'macos-agent backend install --strict --format json' "$setup"
+  if grep -Eq 'brew install .*peekaboo|npx .*peekaboo|latest' "$setup"; then
+    return 1
+  fi
+
+  test -s "$matrix"
+  for status in supported adapter optional disabled unsupported; do
+    grep -Eq "\\| ${status} \\|" "$matrix"
+  done
+  for capability in 'Local / SSH execution' 'Execution journal' 'MCP stdio' 'MCP HTTP/SSE' 'Browser DOM/CDP' 'Locked/logged-out desktop'; do
+    grep -Fq "$capability" "$matrix"
+  done
+  grep -Fq 'Evidence' "$matrix"
+
+  for product in codex claude hermes; do
+    rendered_contract_prepare_product "$product"
+    rendered="$REPO_ROOT/build/$product/plugins/computer-use/skills/macos-desktop/SKILL.md"
+    expected_root="$REPO_ROOT/tests/golden/$product/plugins/computer-use/skills/macos-desktop/expected"
+    test -s "$rendered"
+    grep -Fq 'macos-agent exec' "$rendered"
+    assert_homogeneous_run_contract "$rendered"
+    if grep -Fq 'macos-desktop.sh' "$rendered"; then
+      return 1
+    fi
+    test ! -e "$REPO_ROOT/build/$product/plugins/computer-use/skills/macos-desktop/bin/macos_desktop.py"
+    test ! -e "$REPO_ROOT/build/$product/plugins/computer-use/skills/macos-desktop/scripts/macos-desktop.sh"
+    (
+      cd "$(dirname "$rendered")"
+      find . -type f -print | sort
+    ) >"$CASE_ARTIFACTS/$product-rendered-files.txt"
+    (
+      cd "$expected_root"
+      find . -type f -print | sort
+    ) >"$CASE_ARTIFACTS/$product-golden-files.txt"
+    diff -u "$CASE_ARTIFACTS/$product-rendered-files.txt" "$CASE_ARTIFACTS/$product-golden-files.txt"
+  done
 }
 
 failures=0
 results_record_case \
   "computer-use.macos-desktop" \
-  "local and SSH transports preserve structured output, artifacts, degraded permissions, scenarios, and safe host parsing" \
-  run_probe
+  "direct adapter routing preserves journal, privacy, postcondition, local/SSH, MCP ceiling, and review contracts" \
+  run_direct_adapter_probe
 results_record_case \
-  "computer-use.outcome-routing" \
-  "desktop outcome selects transport, transfer, and evidence bookkeeping internally" \
-  run_outcome_routing_probe
+  "computer-use.capability-contract" \
+  "source and rendered skills remove duplicate mechanics and publish complete capability choices" \
+  run_skill_and_matrix_contract_probe
 
 exit "$failures"

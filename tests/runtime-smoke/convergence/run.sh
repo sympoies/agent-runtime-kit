@@ -337,6 +337,7 @@ runtime_convergence_hermes() {
 
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
     "$artifacts_dir/baseline" || return 1
+  runtime_assert_macos_helpers_present "$live_home" hermes || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
   runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
   diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
@@ -355,6 +356,7 @@ runtime_convergence_hermes() {
   runtime_remove_retired_surface "$repo_root" hermes "$live_home" \
     >"$artifacts_dir/hermes.external-cleanup-first.log" 2>&1 || return 1
   agent-runtime prune-stale --source-root "$repo_root" --product hermes \
+    --owned-source-root "$baseline_root" \
     --live-home "$live_home" --no-overlay --apply --format json \
     >"$artifacts_dir/hermes.prune-first.json" 2>&1 || return 1
   (
@@ -366,6 +368,7 @@ runtime_convergence_hermes() {
   ) >"$artifacts_dir/hermes.cleanup-first.log" 2>&1 || return 1
   runtime_install_product "$repo_root" "$tmp_root" hermes \
     "$artifacts_dir/upgrade-first" || return 1
+  runtime_assert_macos_helpers_absent "$live_home" hermes || return 1
   runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
   diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
   collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
@@ -381,6 +384,7 @@ runtime_convergence_hermes() {
     >"$artifacts_dir/hermes.rollback-cleanup.log" 2>&1 || return 1
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
     "$artifacts_dir/rollback" || return 1
+  runtime_assert_macos_helpers_present "$live_home" hermes || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
   runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
   diff -u "$baseline_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
@@ -397,6 +401,7 @@ runtime_convergence_hermes() {
   runtime_remove_retired_surface "$repo_root" hermes "$live_home" \
     >"$artifacts_dir/hermes.external-cleanup-second.log" 2>&1 || return 1
   agent-runtime prune-stale --source-root "$repo_root" --product hermes \
+    --owned-source-root "$baseline_root" \
     --live-home "$live_home" --no-overlay --apply --format json \
     >"$artifacts_dir/hermes.prune-second.json" 2>&1 || return 1
   (
@@ -408,6 +413,7 @@ runtime_convergence_hermes() {
   ) >"$artifacts_dir/hermes.cleanup-second.log" 2>&1 || return 1
   runtime_install_product "$repo_root" "$tmp_root" hermes \
     "$artifacts_dir/upgrade-second" || return 1
+  runtime_assert_macos_helpers_absent "$live_home" hermes || return 1
   runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
   diff -u "$repo_root/tests/sandbox/hermes/expected-skills.txt" "$external_ids" || return 1
   collect_hermes_legacy_ids "$live_home" >"$legacy_ids"
@@ -424,6 +430,7 @@ runtime_convergence_hermes() {
     --live-home "$live_home" --state-home "$state_home" --no-overlay --apply \
     >"$artifacts_dir/hermes.idempotent-install.log" 2>&1 || return 1
   grep -q 'changes=0' "$artifacts_dir/hermes.idempotent-install.log" || return 1
+  runtime_assert_macos_helpers_absent "$live_home" hermes || return 1
   (
     # shellcheck disable=SC1091
     SYNC_RUNTIME_SURFACES_LIB=1 . "$repo_root/scripts/sync-runtime-surfaces.sh"
@@ -453,6 +460,8 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({
     "rollback_verified": True,
     "upgrade_verified": True,
     "retired_pruned": True,
+    "retired_macos_helpers_pruned": True,
+    "rollback_macos_helpers_restored": True,
     "retained_generations": True,
     "idempotent": True,
 }, sort_keys=True) + "\n", encoding="utf-8")
@@ -504,11 +513,13 @@ summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 current_skill_count = len(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines())
 assert summary["baseline_skill_count"] == 66
 assert summary["skill_count"] == current_skill_count
+assert summary["retired_macos_helpers_pruned"] is True
+assert summary["rollback_macos_helpers_restored"] is True
 PY
   then
     results_add "convergence.$product.lifecycle" "$product" pass \
       "$RUNTIME_SMOKE_SKILL_COUNT" \
-      "historical upgrade, rollback rehearsal, retired prune, exact registry activation, receipt transition, and idempotent apply passed"
+      "historical upgrade, helper prune, rollback restore, exact registry activation, receipt transition, and idempotent apply passed"
   else
     results_add "convergence.$product.lifecycle" "$product" fail 0 \
       "portable lifecycle acceptance failed"

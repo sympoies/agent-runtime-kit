@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.22.3"
+  pinned_tag: "v1.22.6"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "6df063438cb62bb31cc8246fbff1f4469157c6654c4e4603105175811831cb0a"
-    linux_arm64: "85ea17d6197301e39be2d8bd59948746e7b053c20365e2386a97582eec17ca7c"
+    linux_amd64: "ccd79e4ce8ce45e057e873ed9589792e7b32e552152192e401ff185823f3f1c3"
+    linux_arm64: "69ae6a0291765969d9b13ee072c294feab7cd66c0552caad4b54e2ad76088e5a"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -60,10 +60,10 @@ required_clis:
     min: "1.21.17"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos
     min: "1.0.9"
-  - bin: agent-runtime    # home-prompt render plus skills-manifest v2 parsing and semantic `list-skills` diagnostics
-    min: "1.21.15"
-  - bin: macos-agent      # macOS Computer Use skill: AX/window/screenshot/wait/scenario plus key, move, bounded drag, scroll, modifier-assisted mouse actions, and held-input cleanup
-    min: "1.21.13"
+  - bin: agent-runtime    # home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning
+    min: "1.22.6"
+  - bin: macos-agent      # Peekaboo-backed macOS Computer Use adapter: locked backend lifecycle, local/SSH exec and scenarios, MCP profiles, journal/redaction/replay, doctor, and rollback
+    min: "1.22.6"
   - bin: docs-impact      # durable scan disposition record/show/verify workflow
     min: "1.21.17"
   - bin: skill-usage      # v2 skill/workflow/intent owner records with v1 compatibility

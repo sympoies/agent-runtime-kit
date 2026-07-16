@@ -1176,6 +1176,47 @@ run_sync_runtime_surfaces_prune_fixture_probe() {
   test -f "$claude_regular"
 }
 
+run_sync_runtime_surfaces_prior_owned_root_probe() {
+  local root="$TMP_ROOT/sync-prior-owned-root"
+  local stub_bin="$root/bin"
+  local live_home="$root/codex-home"
+  local prior_root="$root/prior-source"
+  local args_log="$root/prune-args.txt"
+
+  mkdir -p "$stub_bin" "$live_home" "$prior_root"
+  cat >"$stub_bin/agent-runtime" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"$PRUNE_ARGS_LOG"
+printf '%s\n' '{"ok":true,"data":{"changes":0,"skipped":0,"records":[]},"changes":0,"skipped":0}'
+SH
+  chmod +x "$stub_bin/agent-runtime"
+
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    NO_PRUNE=0
+    CODEX_HOME="$live_home"
+    OWNED_SOURCE_ROOTS=("$prior_root")
+    PATH="$stub_bin:$PATH"
+    PRUNE_ARGS_LOG="$args_log"
+    export PATH PRUNE_ARGS_LOG CODEX_HOME
+    prune_product codex
+  ) >"$META_ARTIFACTS_DIR/sync-runtime-surfaces.prior-owned-root.txt" 2>&1
+
+  python3 - "$args_log" "$prior_root" <<'PY'
+import pathlib
+import sys
+
+args = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+expected = ["--owned-source-root", sys.argv[2]]
+if not any(args[index:index + 2] == expected for index in range(len(args) - 1)):
+    raise SystemExit("public sync did not forward the explicitly authorized prior root")
+PY
+}
+
 run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
   local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.hermes-legacy-cleanup.txt"
   local hermes_home="$TMP_ROOT/sync-prune/hermes-home"
@@ -3209,6 +3250,7 @@ record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces appl
 record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
 record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktree source roots" run_sync_runtime_surfaces_worktree_guard_probe
 record_case "meta.sync-runtime-surfaces.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
+record_case "meta.sync-runtime-surfaces.prior-owned-root" "sync-runtime-surfaces forwards an explicitly authorized prior source root to prune-stale" run_sync_runtime_surfaces_prior_owned_root_probe
 record_case "meta.sync-runtime-surfaces.hermes-legacy" "sync-runtime-surfaces quarantines owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
 record_case "meta.sync-runtime-surfaces.retired-managed-links" "sync-runtime-surfaces removes repository-owned retired symlink trees and preserves modified trees" run_sync_runtime_surfaces_retired_managed_links_probe
 record_case "meta.sync-runtime-surfaces.registry-preflight" "sync-runtime-surfaces validates provider registry data before any apply mutation" run_sync_runtime_surfaces_registry_preflight_probe

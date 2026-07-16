@@ -18,6 +18,7 @@ NO_PULL=0
 NO_VERIFY=0
 NO_PRUNE=0
 SOURCE_ROOT=""
+OWNED_SOURCE_ROOTS=()
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CODEX_PROMPT_STATUS="not-run"
 HOME_PROMPT_STATUS="not-run"
@@ -40,7 +41,7 @@ CODEX_PREFLIGHT_MARKETPLACES_JSON=""
 
 print_help() {
   cat <<EOF
-Usage: $PROG_NAME [--apply] [--product codex|claude|both] [--source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
+Usage: $PROG_NAME [--apply] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
 
 Refresh graysurf/agent-runtime-kit managed runtime surfaces into local Codex
 and Claude runtime homes. This is the daily runtime surface refresh entrypoint
@@ -60,6 +61,11 @@ Options:
       Use a specific agent-runtime-kit checkout. Defaults to this script's
       repository root. For --apply, this must be a durable primary checkout;
       linked git worktrees and Codex transient worktrees are refused.
+  --owned-source-root PATH
+      Explicitly trust one prior agent-runtime-kit source root when pruning
+      stale managed links after a checkout relocation. Repeatable. The path
+      must be absolute and is forwarded to agent-runtime prune-stale in both
+      preview and apply mode; it never authorizes foreign links or real files.
   --no-pull
       Skip git pull --ff-only and refresh the current checkout state.
   --no-prune
@@ -155,6 +161,18 @@ parse_args() {
         SOURCE_ROOT="${1#--source-root=}"
         shift
         ;;
+      --owned-source-root)
+        if [ "$#" -lt 2 ]; then
+          err "--owned-source-root requires a value"
+          exit 2
+        fi
+        OWNED_SOURCE_ROOTS+=("$2")
+        shift 2
+        ;;
+      --owned-source-root=*)
+        OWNED_SOURCE_ROOTS+=("${1#--owned-source-root=}")
+        shift
+        ;;
       --no-pull)
         NO_PULL=1
         shift
@@ -217,6 +235,29 @@ resolve_source_root() {
   fi
 
   SOURCE_ROOT="$(cd "$top_level" && pwd)"
+}
+
+resolve_owned_source_roots() {
+  local -a resolved=()
+  local root
+  local physical
+
+  for root in "${OWNED_SOURCE_ROOTS[@]}"; do
+    case "$root" in
+      /*) ;;
+      *)
+        err "--owned-source-root must be absolute: $root"
+        exit 2
+        ;;
+    esac
+    if [ ! -d "$root" ]; then
+      err "owned source root does not exist: $root"
+      exit 2
+    fi
+    physical="$(cd "$root" && pwd -P)"
+    resolved+=("$physical")
+  done
+  OWNED_SOURCE_ROOTS=("${resolved[@]}")
 }
 
 absolute_git_dir() {
@@ -3047,6 +3088,8 @@ prune_product() {
   local prune_json
   local code
   local changes
+  local owned_root
+  local -a prune_cmd
 
   live_home="$(product_live_home "$product")"
 
@@ -3062,12 +3105,18 @@ prune_product() {
   log "pruning stale managed surfaces product=$product live_home=$live_home"
   cleanup_retired_managed_product_links "$product" "$live_home"
 
+  prune_cmd=(
+    agent-runtime prune-stale
+    --source-root "$SOURCE_ROOT"
+    --product "$product"
+    --live-home "$live_home"
+  )
+  for owned_root in "${OWNED_SOURCE_ROOTS[@]}"; do
+    prune_cmd+=(--owned-source-root "$owned_root")
+  done
+
   if [ "$APPLY" = "0" ]; then
-    run_cmd agent-runtime prune-stale \
-      --source-root "$SOURCE_ROOT" \
-      --product "$product" \
-      --live-home "$live_home" \
-      --dry-run
+    run_cmd "${prune_cmd[@]}" --dry-run
     if [ "$product" = "codex" ]; then
       cleanup_codex_legacy_flat_skill_root "$live_home"
     fi
@@ -3078,18 +3127,10 @@ prune_product() {
     return 0
   fi
 
-  print_cmd agent-runtime prune-stale \
-    --source-root "$SOURCE_ROOT" \
-    --product "$product" \
-    --live-home "$live_home" \
-    --apply --format json
+  print_cmd "${prune_cmd[@]}" --apply --format json
 
   set +e
-  prune_json="$(agent-runtime prune-stale \
-    --source-root "$SOURCE_ROOT" \
-    --product "$product" \
-    --live-home "$live_home" \
-    --apply --format json 2>&1)"
+  prune_json="$("${prune_cmd[@]}" --apply --format json 2>&1)"
   code=$?
   set -e
 
@@ -3298,6 +3339,7 @@ main() {
   parse_args "$@"
   require_commands git python3
   resolve_source_root
+  resolve_owned_source_roots
   validate_live_sync_source_root
 
   if [ "$APPLY" = "1" ]; then

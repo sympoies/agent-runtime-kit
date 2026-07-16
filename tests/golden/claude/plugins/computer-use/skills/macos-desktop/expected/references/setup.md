@@ -1,85 +1,105 @@
 # macOS Computer Use Setup
 
-## Install
+## Install The Released Adapter
 
-Install the released nils-cli package on every Mac that will execute desktop
-actions. The controlling Linux or macOS host only needs Python 3 and OpenSSH
-when it uses `--host`.
+Install the released nils-cli package on every controller and Mac that will
+execute desktop actions:
 
 ```bash
 brew tap sympoies/tap
 brew install sympoies/tap/nils-cli
-brew install cliclick im-select
-brew install --cask hammerspoon
+macos-agent --version
 ```
 
-Enable the Hammerspoon CLI by adding this line to
-`~/.hammerspoon/init.lua`, then reload Hammerspoon:
+The Peekaboo release, commit, assets, hashes, architectures, signatures,
+minimum macOS, and capability probes are embedded in the nils-cli lock. Do not
+install Peekaboo through a separate package, floating tag, or package runner.
 
-```lua
-require("hs.ipc")
+Review the backend lifecycle before applying it:
+
+```bash
+macos-agent backend status --format json
+macos-agent backend install --dry-run --strict --format json
+macos-agent backend install --strict --format json
+macos-agent backend verify --strict --format json
 ```
 
-`osascript` and the macOS Accessibility APIs are supplied by macOS. The
-`screen-record` binary ships with nils-cli and is useful for video evidence;
-the skill's still-image path uses `macos-agent observe screenshot`.
+The exact locked v3.9.3 standalone CLI may report the reviewed
+`notary=waived` / `security_posture=reduced` posture. That result is disclosed,
+not equivalent to notarization success. App notarization, Gatekeeper, archive
+and executable hashes, architecture, version, bundle metadata, signing
+identities, and locked capability checks remain enforced.
 
 ## Permissions
 
-In **System Settings > Privacy & Security**, grant the process that executes
-`macos-agent`:
+In **System Settings > Privacy & Security**, grant the effective runtime
+authority:
 
-- **Accessibility** for pointer, keyboard, and AX actions.
-- **Automation** when macOS asks permission to control System Events or an app.
-- **Screen & System Audio Recording** (called **Screen Recording** on older
-  macOS releases) for screenshots and recordings.
+- **Accessibility** for AX and input actions.
+- **Automation** when macOS requests control of another app.
+- **Screen & System Audio Recording** for screenshots and UI observation.
 
-For an SSH target, grants may attach to the remote shell host rather than the
-interactive terminal application. Run the skill preflight through the same
-transport that automation will use; do not assume an interactive Terminal
-grant also covers SSH. macOS may require an interactive user to approve a TCC
-prompt, and some permission changes require the relevant process or login
-session to restart.
+`macos-agent` never changes TCC. Run readiness through the same runtime and
+transport that will perform the action:
+
+```bash
+macos-agent doctor --strict --format json
+macos-agent capabilities --strict --format json
+```
+
+Permission changes can require the app/runtime or graphical login session to
+restart. Do not repeatedly retry a denied mutation.
 
 ## SSH
 
-Configure authentication and host verification in the operator's normal
-`~/.ssh/config`. Keep hostnames, usernames, private keys, and machine paths out
-of public repositories. The skill accepts a runtime `--host <ssh-alias>` and
-uses batch mode; it never writes SSH credentials or connection strings into
-the managed runtime surfaces.
+Configure host verification and authentication in the operator's normal SSH
+configuration. Keep hostnames, usernames, keys, and machine paths out of source
+and evidence. The remote Mac must have an active, unlocked graphical login.
 
-The remote Mac must have an active, unlocked graphical login session. SSH can
-start commands but cannot create a usable WindowServer session on a logged-out
-or locked Mac.
-
-## Verify
+The controller and remote target require the same released `macos-agent` and
+embedded backend lock. Supply the trusted alias only at runtime:
 
 ```bash
-macos-agent --version # must be 1.21.13 or newer
-macos-agent --format json preflight --include-probes
-macos-agent --format json apps list
-macos-agent --format json windows list --on-screen-only
+macos-agent backend status --host "$MACOS_SSH_HOST" --format json
+macos-agent backend verify --host "$MACOS_SSH_HOST" --strict --format json
+macos-agent doctor --host "$MACOS_SSH_HOST" --strict --format json
+macos-agent capabilities --host "$MACOS_SSH_HOST" --strict --format json
 ```
 
-For remote verification, run the skill helper with `--host` and an `agent-out`
-directory. Permission gaps are written to `pending-user-actions.json`; resolve
-them when an interactive operator is available, while continuing tests that do
-not require the blocked capability.
+The adapter owns batch SSH, fixed remote commands, request framing, private
+staging, digest-checked artifact transfer, cleanup audit, and host redaction.
+Do not wrap these commands in a second transport layer.
 
-## Capability Baseline
+## Functional Verification
 
-The portable baseline follows common public Computer Use action families:
-`click`, `double_click`, `scroll`, `type`, `wait`, `keypress`, `drag`, `move`,
-and `screenshot`, including mouse buttons, click counts, and modifiers. The
-upstream action references used to define the baseline are:
+Allocate a private evidence root and prove one read-only observation before
+mutating the desktop:
 
-- <https://developers.openai.com/api/docs/guides/tools-computer-use#possible-computer-use-actions>
-- <https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool#available-actions>
+```bash
+out="$(agent-out project --topic macos-adapter-verify --repo "$PWD" --mkdir)"
+macos-agent exec \
+  --out-dir "$out" \
+  --intent "Inspect Calculator" \
+  --runtime app \
+  -- see --app Calculator --json
+macos-agent journal summarize --out-dir "$out" --format json
+macos-agent journal review --out-dir "$out" --format json
+```
 
-`input click --count 2|3` covers double/triple click; `--button` covers
-right/middle click; click/drag/scroll accept `--mods`; AX-selector screenshots
-provide a focused-region/zoom equivalent. The runtime intentionally exposes
-atomic drag instead of independent mouse-down/mouse-up across CLI invocations,
-because a timeout or transport disconnect between those calls can leave input
-held on the desktop.
+For SSH, add `--host "$MACOS_SSH_HOST"` to `exec`. A valid run contains
+`manifest.json`, `steps.jsonl`, `artifacts/index.json`, `summary.json`, and
+`redaction.json` without the alias, user/home paths, keys, or raw remote
+commands.
+
+## Rollback Readiness
+
+Rollback is limited to the exact previous release embedded in the adapter
+allowlist. Review without changing live state:
+
+```bash
+macos-agent backend rollback --dry-run --strict --format json
+```
+
+Apply rollback only as part of a reviewed runtime rollback, then run strict
+verify, strict doctor, and one read-only observation. Never replay a mutation
+automatically during rollback.
