@@ -742,6 +742,15 @@ def read_regular_file(path: Path, *, max_bytes: int) -> str:
         os.close(descriptor)
 
 
+def write_all(descriptor: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        written = os.write(descriptor, payload[offset:])
+        if written <= 0:
+            raise LeaseError("checkout instance sentinel write made no progress")
+        offset += written
+
+
 def read_instance(checkout: Checkout, *, create: bool) -> str:
     path = checkout.git_dir / INSTANCE_FILE
     raw = read_regular_file(path, max_bytes=128).strip()
@@ -753,22 +762,41 @@ def read_instance(checkout: Checkout, *, create: bool) -> str:
         return ""
 
     value = uuid.uuid4().hex
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    temporary = ""
     try:
-        descriptor = os.open(path, flags, 0o600)
-    except FileExistsError:
-        raw = read_regular_file(path, max_bytes=128).strip()
-        if re.fullmatch(r"[0-9a-f]{32}", raw) is None:
-            raise LeaseError("checkout instance sentinel is malformed")
-        return raw
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{INSTANCE_FILE}-", dir=checkout.git_dir
+        )
+        os.fchmod(descriptor, 0o600)
+        write_all(descriptor, f"{value}\n".encode("ascii"))
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        try:
+            os.link(temporary, path, follow_symlinks=False)
+        except FileExistsError:
+            raw = read_regular_file(path, max_bytes=128).strip()
+            if re.fullmatch(r"[0-9a-f]{32}", raw) is None:
+                raise LeaseError("checkout instance sentinel is malformed")
+            return raw
+        directory_fd = os.open(
+            checkout.git_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     except OSError as exc:
         raise LeaseError(f"checkout instance sentinel unavailable: {exc}") from exc
-    try:
-        os.write(descriptor, f"{value}\n".encode("ascii"))
-        os.fsync(descriptor)
     finally:
-        os.close(descriptor)
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
     return value
 
 

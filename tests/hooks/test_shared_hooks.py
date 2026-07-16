@@ -9511,6 +9511,147 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_checkout_lease_instance_publication_is_complete_and_cleans_temp(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_publication_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                git_dir = root / ".git"
+                git_dir.mkdir()
+                checkout = module.Checkout(
+                    root=root,
+                    git_dir=git_dir,
+                    common_dir=git_dir,
+                    primary=True,
+                )
+                real_write = module.os.write
+                real_link = module.os.link
+                published_payloads: list[str] = []
+                write_calls = 0
+
+                def short_write(descriptor: int, payload: bytes) -> int:
+                    nonlocal write_calls
+                    write_calls += 1
+                    return real_write(descriptor, payload[:3])
+
+                def inspect_then_link(
+                    source: str,
+                    destination: Path,
+                    *,
+                    follow_symlinks: bool,
+                ) -> None:
+                    published_payloads.append(
+                        Path(source).read_text(encoding="ascii")
+                    )
+                    real_link(
+                        source,
+                        destination,
+                        follow_symlinks=follow_symlinks,
+                    )
+
+                module.os.write = short_write
+                module.os.link = inspect_then_link
+                try:
+                    instance = module.read_instance(checkout, create=True)
+                finally:
+                    module.os.write = real_write
+                    module.os.link = real_link
+
+                self.assertGreater(write_calls, 1)
+                self.assertRegex(instance, r"^[0-9a-f]{32}$")
+                self.assertEqual(published_payloads, [f"{instance}\n"])
+                self.assertEqual(
+                    (git_dir / module.INSTANCE_FILE).read_text(encoding="ascii"),
+                    f"{instance}\n",
+                )
+                self.assertEqual(
+                    list(git_dir.glob(f".{module.INSTANCE_FILE}-*")), []
+                )
+
+                (git_dir / module.INSTANCE_FILE).unlink()
+                module.os.write = lambda _descriptor, _payload: 0
+                try:
+                    with self.assertRaisesRegex(
+                        module.LeaseError, "write made no progress"
+                    ):
+                        module.read_instance(checkout, create=True)
+                finally:
+                    module.os.write = real_write
+                self.assertFalse((git_dir / module.INSTANCE_FILE).exists())
+                self.assertEqual(
+                    list(git_dir.glob(f".{module.INSTANCE_FILE}-*")), []
+                )
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_instance_rejects_final_symlink_without_temp_leak(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_symlink_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                git_dir = root / ".git"
+                git_dir.mkdir()
+                external = root / "external"
+                external.write_text("unchanged\n", encoding="utf-8")
+                checkout = module.Checkout(
+                    root=root,
+                    git_dir=git_dir,
+                    common_dir=git_dir,
+                    primary=True,
+                )
+                real_link = module.os.link
+
+                def race_with_symlink(
+                    source: str,
+                    destination: Path,
+                    *,
+                    follow_symlinks: bool,
+                ) -> None:
+                    destination.symlink_to(external)
+                    real_link(
+                        source,
+                        destination,
+                        follow_symlinks=follow_symlinks,
+                    )
+
+                module.os.link = race_with_symlink
+                try:
+                    with self.assertRaisesRegex(
+                        module.LeaseError, "checkout lease file unavailable"
+                    ):
+                        module.read_instance(checkout, create=True)
+                finally:
+                    module.os.link = real_link
+
+                self.assertEqual(external.read_text(encoding="utf-8"), "unchanged\n")
+                self.assertEqual(
+                    list(git_dir.glob(f".{module.INSTANCE_FILE}-*")), []
+                )
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_checkout_lease_recreated_worktree_gets_a_new_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
