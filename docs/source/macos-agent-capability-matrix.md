@@ -4,7 +4,7 @@
 
 This is the canonical runtime-kit claim for the Peekaboo-backed
 `computer-use.macos-desktop` route. It describes nils-cli `macos-agent` adapter
-v2, introduced by the planned v1.22.6 cutover and locked to Peekaboo v3.9.3.
+v2, released in the v1.22.6 cutover and locked to Peekaboo v3.9.3.
 The adapter implementation was reviewed and merged in
 [sympoies/nils-cli#1234](https://github.com/sympoies/nils-cli/pull/1234); the
 runtime cutover is tracked in

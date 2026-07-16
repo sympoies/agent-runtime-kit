@@ -1,20 +1,29 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-16 (refreshed for `v1.22.6`)
+- Snapshot date: 2026-07-16 (refreshed for `v1.22.7`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.22.6`
+- Active `git describe --tags` output: `v1.22.7`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.22.6`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.22.7`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `71f42a3e`
-  (`chore(release): bump cli versions to 1.22.6`)
+- Head commit: `831d34ae`
+  (`chore(release): bump cli versions to 1.22.7`)
 - Release:
-  [`v1.22.6`](https://github.com/sympoies/nils-cli/releases/tag/v1.22.6),
+  [`v1.22.7`](https://github.com/sympoies/nils-cli/releases/tag/v1.22.7),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.22.7` advances the pin from `v1.22.6`:
+  - `macos-agent doctor` now binds permission and Bridge-readiness probes to
+    one stable app socket, so a stale default runtime cannot create a false
+    strict-doctor blocker. Runtime-kit consumes the existing strict doctor
+    contract; no flag or JSON envelope was added, retired, or renamed, so the
+    `macos-agent` floor remains `>= 1.22.6`
+    ([#1247](https://github.com/sympoies/nils-cli/pull/1247)).
+  - All other changes are lockstep release-version and generated third-party
+    metadata updates; no other `required_clis[]` floor moves.
 - `v1.22.6` advances the pin from `v1.22.3`, folding in
   `v1.22.4`–`v1.22.5`:
   - `macos-agent` replaces the custom native automation engine with a guarded
@@ -1266,7 +1275,7 @@ Notes on derivation:
 | `git-summary`               | `git-summary`                                                                                                       | git diff summariser.                                                                                                                                                                                                                                                   |
 | `github-app-cli`            | `github-app-cli`                                                                                                    | GitHub App installation-token minter (`token`, `installations`, `completion`). Signs the App JWT in-process (`jsonwebtoken`, RS256) and calls the GitHub REST API directly (`reqwest`); text mode prints only the raw `ghs_` token for `GH_TOKEN=$(github-app-cli token …)`, JSON mode emits non-secret metadata only and never the token. New crate as of `v1.9.6` ([#903](https://github.com/sympoies/nils-cli/pull/903)). Not consumed by this repo's runtime surfaces; used out-of-band by a local `forge-cli` bot-identity wrapper, so it never appears in `required_clis`. |
 | `image-processing`          | `image-processing`                                                                                                  | User-facing image-processing CLI.                                                                                                                                                                                                                                      |
-| `macos-agent`               | `macos-agent`                                                                                                       | macOS automation helper. As of `v1.21.13`, runtime-kit consumes app/window discovery, AX selectors/actions, screenshots, waits, scenarios, key/type/hotkey, pointer click/move/bounded drag, horizontal/vertical scroll, modifier-assisted mouse actions, secondary-display absolute coordinates, and held-input cleanup through the `computer-use.macos-desktop` skill ([#1106](https://github.com/sympoies/nils-cli/pull/1106)). As of `v1.21.32`, screenshot preflight recognizes the installed screen-record compatibility probe without changing flags or envelopes ([#1194](https://github.com/sympoies/nils-cli/pull/1194)). As of `v1.22.6`, the native engine is replaced by a guarded adapter around immutable Peekaboo `v3.9.3`; runtime-kit consumes locked backend lifecycle, strict doctor/capabilities, local/SSH exec and scenario transport, stdio MCP tool profiles, and journal/redaction/guarded-replay v2, so the floor moves to `>= 1.22.6` ([#1234](https://github.com/sympoies/nils-cli/pull/1234)). |
+| `macos-agent`               | `macos-agent`                                                                                                       | macOS automation helper. As of `v1.21.13`, runtime-kit consumes app/window discovery, AX selectors/actions, screenshots, waits, scenarios, key/type/hotkey, pointer click/move/bounded drag, horizontal/vertical scroll, modifier-assisted mouse actions, secondary-display absolute coordinates, and held-input cleanup through the `computer-use.macos-desktop` skill ([#1106](https://github.com/sympoies/nils-cli/pull/1106)). As of `v1.21.32`, screenshot preflight recognizes the installed screen-record compatibility probe without changing flags or envelopes ([#1194](https://github.com/sympoies/nils-cli/pull/1194)). As of `v1.22.6`, the native engine is replaced by a guarded adapter around immutable Peekaboo `v3.9.3`; runtime-kit consumes locked backend lifecycle, strict doctor/capabilities, local/SSH exec and scenario transport, stdio MCP tool profiles, and journal/redaction/guarded-replay v2, so the floor moves to `>= 1.22.6` ([#1234](https://github.com/sympoies/nils-cli/pull/1234)). As of `v1.22.7`, strict doctor probes permissions and Bridge readiness through one stable app socket, preventing stale default-runtime selection from reporting a false blocker; the existing command and envelopes are unchanged, so the floor remains `>= 1.22.6` ([#1247](https://github.com/sympoies/nils-cli/pull/1247)). |
 | `memo`                  | `memo`                                                                                                          | Memo storage CLI.                                                                                                                                                                                                                                                      |
 | `nils-build-info`           | (library only)                                                                                                      | Build metadata helper for the workspace `--version` output; consumed transitively, never appears in `required_clis`. New crate as of `v0.28.0` (#625).                                                                                                                 |
 | `nils-common`               | (library only)                                                                                                      | Shared workspace utilities; never appears in `required_clis`.                                                                                                                                                                                                          |

@@ -28,7 +28,7 @@ require_evidence_bin() {
 }
 
 matches_pinned_agent_docs_version() {
-  grep -Eq '^agent-docs 1\.22\.6([[:space:]]|$)' <<<"$1"
+  grep -Eq '^agent-docs 1\.22\.7([[:space:]]|$)' <<<"$1"
 }
 
 record_case() {
@@ -321,9 +321,9 @@ run_selective_intent_control_plane_probe() {
   local state_home="$EVIDENCE_ARTIFACTS_DIR/agent-docs-state"
   local test_first_dir="$EVIDENCE_ARTIFACTS_DIR/phase-aware-test-first"
   require_evidence_bin agent-docs || return 1
-  matches_pinned_agent_docs_version "agent-docs 1.22.6"
-  ! matches_pinned_agent_docs_version "agent-docs 1.22.60"
-  ! matches_pinned_agent_docs_version "agent-docs 11.22.6"
+  matches_pinned_agent_docs_version "agent-docs 1.22.7"
+  ! matches_pinned_agent_docs_version "agent-docs 1.22.70"
+  ! matches_pinned_agent_docs_version "agent-docs 11.22.7"
   matches_pinned_agent_docs_version "$(agent-docs --version)"
   agent-docs session --help | grep -q 'status'
   mkdir -p "$workspace/src" "$workspace/tests"
