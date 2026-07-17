@@ -38,6 +38,7 @@ from hook_common import (
     invocation_is_unresolved_nested,
     invocation_tokens,
     invocation_without_redirections,
+    is_git_recovery_argv,
     nested_shell_payload,
     opaque_invocation_has_unresolved_nested,
     output_redirect_targets,
@@ -966,6 +967,46 @@ def sole_managed_worktree_add(command: str, base: Path) -> bool:
     return found_add
 
 
+def sole_git_recovery_operation(command: str, base: Path) -> bool:
+    """True when the command's only mutation is one ``git <op> --abort|--quit``.
+
+    A recovery command restores the checkout to its clean pre-operation state
+    and authors no content, so it is the exact escape a stuck mid-operation
+    checkout needs. Like the ``sole_managed_worktree_add`` carve-out, the
+    admission gate must not refuse its own remediation: ``main()`` short-circuits
+    a matched recovery command to ALLOW before the session-identity and lease
+    gates, acquiring no lease.
+
+    Narrowness mirrors the worktree-add carve-out exactly — a single recovery op,
+    no co-resident repository mutation, no lexer-splitting or over-budget output
+    redirect, and no dynamic or unresolved nested shell — so it can never smuggle
+    another working-tree write past the gate. ``--continue`` / ``--skip`` advance
+    the operation and are not recovery ops (see ``is_git_recovery_argv``).
+    """
+    commands = parsed_shell_commands(command)
+    if shell_command_exceeds_redirect_budget(
+        command
+    ) or shell_command_has_parenthesized_redirect_word(command):
+        return False
+    found_recovery = False
+    for tokens in commands:
+        if invocation_command_position_is_dynamic(tokens):
+            return False
+        invocation = invocation_tokens(tokens)
+        if invocation_is_unresolved_nested(
+            invocation
+        ) or opaque_invocation_has_unresolved_nested(invocation):
+            return False
+        if is_git_recovery_argv(invocation):
+            if found_recovery or command_writes_repo(tokens, base):
+                return False
+            found_recovery = True
+            continue
+        if coresident_command_is_repo_mutation(tokens, base):
+            return False
+    return found_recovery
+
+
 def lease_ttl_seconds() -> int:
     raw = os.environ.get("AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS", "").strip()
     if not raw:
@@ -1344,7 +1385,9 @@ def checkout_admission_reason(checkout: Checkout) -> str:
     if operation:
         return (
             f"Checkout mutation is blocked because a Git operation ({operation}) is "
-            f"already in progress without this session's lease. {worktree_guidance()}"
+            "already in progress without this session's lease. To recover in place, "
+            "a sole `git <op> --abort` (or `--quit`) is always admitted and restores "
+            f"a clean state. Otherwise: {worktree_guidance()}"
         )
     if checkout_dirty(checkout):
         return (
@@ -1564,6 +1607,13 @@ def main() -> int:
         # short-circuits before the session-identity gate and acquires no lease:
         # add takes no lease on the current checkout.
         if sole_managed_worktree_add(command, payload_base(payload)):
+            return ALLOW
+        # A sole `git <op> --abort`/`--quit` restores the checkout's clean
+        # pre-operation state and authors no content; it is the escape a stuck
+        # mid-operation checkout needs, so the admission gate must not refuse it.
+        # Like the worktree-add carve-out this short-circuits before the
+        # session-identity and lease gates and acquires no lease.
+        if sole_git_recovery_operation(command, payload_base(payload)):
             return ALLOW
     if tool in EDIT_TOOLS and not edit_paths(payload):
         emit_block(

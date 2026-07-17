@@ -379,6 +379,43 @@ def git_toplevel(cwd: str | None = None) -> str | None:
     return top or None
 
 
+GIT_RECOVERY_SUBCOMMANDS = frozenset(
+    {"rebase", "merge", "cherry-pick", "revert", "am"}
+)
+GIT_RECOVERY_FLAGS = frozenset({"--abort", "--quit"})
+_GIT_OPTIONS_WITH_VALUES = frozenset(
+    {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+)
+
+
+def is_git_recovery_argv(argv: list[str]) -> bool:
+    """Whether ``argv`` is a single ``git <op> --abort|--quit`` recovery command.
+
+    Recovery commands (`--abort`, `--quit`) restore the pre-operation state and
+    author no new content, so both checkout guards admit them even without a
+    lease or active project-dev: otherwise a stuck mid-operation checkout cannot
+    be aborted to recover in place. ``--continue`` / ``--skip`` advance the
+    operation (they author content) and are intentionally excluded. Global
+    ``git`` options that take a value (`-C`, `-c`, `--git-dir`, …) are skipped so
+    `git -C repo rebase --abort` is still recognized.
+    """
+    if not argv or os.path.basename(argv[0]) != "git":
+        return False
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token in _GIT_OPTIONS_WITH_VALUES:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        break
+    if index >= len(argv) or argv[index] not in GIT_RECOVERY_SUBCOMMANDS:
+        return False
+    return any(argument in GIT_RECOVERY_FLAGS for argument in argv[index + 1 :])
+
+
 def _runtime_cache_dir() -> str:
     return os.path.join(os.path.expanduser("~"), ".cache", "agent-runtime-kit")
 

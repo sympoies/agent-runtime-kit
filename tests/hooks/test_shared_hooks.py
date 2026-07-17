@@ -7524,6 +7524,71 @@ exit 64
             self.assertIn("preflight --intent project-dev", str(decision))
             self.assertIn(str(repo), str(decision))
 
+    def test_pre_edit_intent_gate_allows_git_recovery_abort(self) -> None:
+        # A stuck mid-operation checkout must recover in place: a sole
+        # `git <op> --abort` is admitted even when project-dev is not verified,
+        # while an operation-advancing command (`--continue`) still blocks.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text(
+                '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                encoding="utf-8",
+            )
+            (repo / "DEV.md").write_text("# Dev\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+if [[ "$args" == *"session --help"* ]]; then
+  printf '%s\n' '  verify    verify active intents'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\n' '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            recovery = self._checkout_lease_payload(
+                "intent-gate-recovery",
+                repo,
+                tool_name="Bash",
+                command="git rebase --abort",
+            )
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", recovery, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            advancing = self._checkout_lease_payload(
+                "intent-gate-recovery",
+                repo,
+                tool_name="Bash",
+                command="git rebase --continue",
+            )
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", advancing, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+
     def test_pre_edit_intent_gate_rejects_repo_local_agent_docs_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -10394,6 +10459,94 @@ exit 65
                 )
         finally:
             sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_git_recovery_op_carveout(self) -> None:
+        # A sole `git <op> --abort`/`--quit` restores the pre-operation state
+        # and authors no content, so the carve-out must admit it AND stay as
+        # narrow as the worktree-add carve-out. `--continue`/`--skip` advance
+        # the operation and must NOT be carved out.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_recovery",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            base = Path(HOOK_DIR)
+            for op in ("rebase", "merge", "cherry-pick", "revert", "am"):
+                for flag in ("--abort", "--quit"):
+                    command = f"git {op} {flag}"
+                    self.assertTrue(
+                        module.high_confidence_shell_mutation(command), command
+                    )
+                    self.assertTrue(
+                        module.sole_git_recovery_operation(command, base), command
+                    )
+            self.assertTrue(
+                module.sole_git_recovery_operation(
+                    "bash -c 'git rebase --abort'", base
+                )
+            )
+            for command in (
+                "git rebase --continue",
+                "git rebase --skip",
+                "git merge --abort && rm -rf README.md",
+                "git rebase --abort > escape.txt",
+                "git rebase --abort; git rebase --abort",
+                "git commit -m x",
+                "git status",
+                'bash -c "$UNRESOLVED"',
+            ):
+                self.assertFalse(
+                    module.sole_git_recovery_operation(command, base), command
+                )
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_admits_git_recovery_op_mid_operation(self) -> None:
+        # Integration: a planted MERGE_HEAD blocks a fresh (unowned) mutation
+        # through the git-operation admission gate; the recovery carve-out must
+        # admit `git rebase --abort` without taking a lease so the checkout can
+        # recover in place, while a non-recovery edit stays blocked.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            git_dir = subprocess.run(
+                ["git", "rev-parse", "--absolute-git-dir"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            (Path(git_dir) / "MERGE_HEAD").write_text("fixture\n", encoding="utf-8")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "writer", repo, tool_name="Bash", command="git rebase --abort"
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("writer", repo / "README.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "Git operation")
 
     def test_checkout_lease_worktree_add_carveout_does_not_cover_co_mutation(
         self,

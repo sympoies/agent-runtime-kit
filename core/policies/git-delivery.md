@@ -97,6 +97,14 @@ contract remain authoritative there.
   initiated after acquisition. A live foreign lease, dirty checkout without a
   matching lease, or pre-existing merge/rebase/cherry-pick/revert/bisect state
   blocks mutation and routes the agent to a managed worktree.
+- A sole git recovery command (`git rebase|merge|cherry-pick|revert|am
+  --abort`, or `--quit`) is always admitted by both the checkout writer lease
+  and the pre-edit intent gate — even without owning the lease or an active
+  project-dev activation — because aborting restores the clean pre-operation
+  state and authors no content. This lets a checkout that is stuck mid-operation
+  recover in place instead of being discarded; `--continue`/`--skip` advance the
+  operation and stay gated. The carve-out is as narrow as `git-cli worktree add`:
+  one recovery command, no co-resident mutation, and no output redirect.
 - Lease state uses a privacy-safe session digest plus a checkout-instance
   sentinel stored under the checkout's Git admin directory. Removing and
   recreating a linked worktree therefore cannot inherit its predecessor's

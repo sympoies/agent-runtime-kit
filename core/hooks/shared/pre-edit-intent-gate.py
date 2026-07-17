@@ -29,6 +29,7 @@ from hook_common import (
     command_from,
     emit_block,
     git_toplevel,
+    is_git_recovery_argv,
     patch_text_candidates,
     read_payload,
     tool_input_dict,
@@ -427,6 +428,17 @@ def main() -> int:
     repos = target_repositories(payload, tool)
     if not repos:
         return ALLOW
+    # A sole `git <op> --abort`/`--quit` recovery command restores the clean
+    # pre-operation state and authors no content, so it must run even when
+    # project-dev activation is stale or missing — otherwise a stuck
+    # mid-operation checkout cannot be aborted to recover in place.
+    # `simple_shell_words` returns None on any shell control, so this stays as
+    # exact-match narrow as the activation bootstrap: no operators, pipes,
+    # redirections, or nested shells slip through.
+    if tool in COMMAND_TOOLS and is_git_recovery_argv(
+        simple_shell_words(command_from(payload)) or []
+    ):
+        return ALLOW
     if tool in EDIT_TOOLS and not edit_paths(payload):
         emit_block("Repository edit target extraction failed closed; retry with an explicit path.")
         return ALLOW
@@ -519,7 +531,8 @@ def main() -> int:
     reason = (
         "Activate and read project-dev before mutating the target repository, then retry. "
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
-        "executable and complete session context. "
+        "executable and complete session context. If a Git operation is stuck mid-run, a "
+        "sole `git <op> --abort` recovers in place without activation. "
     )
     if len(repos) == 1:
         activation, preflight = recovery_commands(
