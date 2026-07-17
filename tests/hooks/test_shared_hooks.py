@@ -7803,7 +7803,9 @@ exit 64
                     "project-dev",
                 ]
             )
-            payload = command_payload("git status --short")
+            # A read-only `git status` is now admitted without project-dev, so
+            # the recovery-message assertion uses a genuine mutation command.
+            payload = command_payload("printf x > out.txt")
             payload["session_id"] = "intent-recovery"
 
             code, decision, stderr = run_hook(
@@ -7911,20 +7913,19 @@ exit 64
                 f"--project-path {shlex.quote(str(root.resolve()))} "
                 "preflight --intent task-tools"
             )
-            untrusted = (
-                "git status --short",
+            # Still gated: shell writes, a bare (untrusted) agent-docs executable,
+            # a file-writing --output flag, and shell-control wrappers all fall
+            # through to the mutation gate and require project-dev.
+            blocked = (
                 "git diff --output=src/diff.txt",
                 bare_activation,
                 bare_preflight,
-                preflight,
-                wrong_project_preflight,
                 f"{preflight} --output src/preflight.json",
-                f"{preflight} --product claude",
                 f"alias agent-docs='printf x > src/lib.rs'; {bare_activation}",
                 f"agent-docs() {{ printf x > src/lib.rs; }}; {bare_activation}",
             )
-            for command in untrusted:
-                with self.subTest(command=command):
+            for command in blocked:
+                with self.subTest(blocked=command):
                     payload = command_payload(command)
                     payload["session_id"] = "shell-bootstrap"
                     code, decision, stderr = run_hook(
@@ -7932,6 +7933,27 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "project-dev")
+
+            # Admitted without project-dev: read-only inspection, and trusted
+            # read-only agent-docs commands for any declared intent (including a
+            # different project-path or a read-only --product flag). These remove
+            # the false coupling that forced project-dev before another intent
+            # could even be prepared or read.
+            allowed = (
+                "git status --short",
+                preflight,
+                wrong_project_preflight,
+                f"{preflight} --product claude",
+            )
+            for command in allowed:
+                with self.subTest(allowed=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "shell-bootstrap"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
             repo_bin = repo / "bin"
             repo_bin.mkdir()
@@ -7985,6 +8007,236 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+    def test_pre_edit_intent_gate_admits_read_only_inspection_without_project_dev(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "HOME": str(repo / "home"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            (repo / "home").mkdir()
+            read_only = (
+                "git status --short",
+                "git log --oneline -5",
+                "git diff --stat",
+                "git show HEAD",
+                "git rev-parse --abbrev-ref HEAD",
+                "git blame README.md",
+                "gh issue view 601",
+                "gh pr list",
+                "gh pr diff 12",
+                "gh repo view",
+                "cat README.md",
+                "ls -la",
+                "grep -rn TODO .",
+                "wc -l README.md",
+                "which git",
+            )
+            for command in read_only:
+                with self.subTest(read_only=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "read-only-lane"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            # Write- or exec-capable shapes are not read-only and stay gated.
+            # The git-grep pager, `file -C`, and path-prefixed executable cases
+            # are security-review regressions: each could execute code or write a
+            # file, so each must fall through to the mutation gate.
+            gated = (
+                "git diff --output=out.diff",
+                "git grep -O foo",
+                "git grep --open-files-in-pager=rm needle",
+                "git grep foo",
+                "gh api /repos/x",
+                "gh pr checkout 3",
+                "rg foo src",
+                "find . -delete",
+                "sort -o out in",
+                "cat a | tee b",
+                "env FOO=1 cat f",
+                "file -C -m mymagic",
+                "file README.md",
+                "./grep TODO",
+                "bin/ls",
+                "/usr/bin/cat README.md",
+            )
+            for command in gated:
+                with self.subTest(gated=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "read-only-lane"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
+
+    def test_pre_edit_intent_gate_prepares_any_declared_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            active_marker = root / "active"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session activate"* ]]; then
+  printf 'active\\n' > {shlex.quote(str(active_marker))}
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  if [[ -f {shlex.quote(str(active_marker))} ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["memory","task-tools","project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            state_home = repo / "state"
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            def activation_for(*intents: str) -> str:
+                argv = [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "activate",
+                    "--session-id",
+                    "any-intent",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home.resolve()),
+                ]
+                for intent in intents:
+                    argv += ["--intent", intent]
+                return shlex.join(argv)
+
+            for intents in (("memory",), ("task-tools",), ("memory", "task-tools")):
+                with self.subTest(intents=intents):
+                    if active_marker.exists():
+                        active_marker.unlink()
+                    payload = command_payload(activation_for(*intents))
+                    payload["session_id"] = "any-intent"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "consumed")
+                    assert decision is not None
+                    reason = str(decision.get("reason", ""))
+                    self.assertIn("Prepared", reason)
+                    for intent in intents:
+                        self.assertIn(intent, reason)
+                    self.assertTrue(active_marker.is_file())
+
+    def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            base = (
+                f"{shlex.quote(agent_docs)} "
+                f"--docs-home {shlex.quote(str(repo.resolve()))} "
+                f"--project-path {shlex.quote(str(repo.resolve()))} "
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            allowed = (
+                base + "preflight --intent memory",
+                base + "preflight --intent browser-test",
+                base + "status",
+                base + "explain --intent memory",
+                base + "list --format json",
+                base + "catalog",
+                base + "session status",
+                base + "session verify --require-intent memory",
+            )
+            for command in allowed:
+                with self.subTest(allowed=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "adocs-read"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            blocked = (
+                base + "preflight --intent memory --output /tmp/x",
+                "agent-docs preflight --intent memory",
+            )
+            for command in blocked:
+                with self.subTest(blocked=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "adocs-read"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
 
     def test_pre_edit_intent_gate_blocks_unquoted_glob_executable_substitution(
         self,

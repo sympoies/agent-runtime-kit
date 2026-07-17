@@ -6,6 +6,17 @@ checked against its working repository only: a pre-tool hook cannot observe
 shell-expanded filesystem destinations reliably, so cross-repository shell
 mutations must run with the target repository as CWD. Only an explicitly
 versioned pre-session ``agent-docs`` release receives compatibility behavior.
+
+Enforcement is scoped to the boundary that owns the risk. Repository mutation
+(direct edits and mutation-capable shell) requires prepared ``project-dev``.
+Two narrow lanes are admitted without that activation because they cannot mutate
+tracked content: an audited read-only inspection allowlist, and trusted
+``agent-docs`` preparation/read commands for any declared intent (so a session
+that only needs ``memory``/``task-tools``/``browser-test`` is not forced through
+unrelated ``project-dev`` policy first). Both lanes fail closed: anything that is
+not an exact recognized shape falls through to the mutation gate. The read-only
+allowlist is a workflow convenience, not a security sandbox; its residual limits
+are documented at ``read_only_general_invocation``.
 """
 
 from __future__ import annotations
@@ -42,6 +53,131 @@ SESSION_FLOOR = (1, 21, 17)
 # cannot execute a different argv than the literal tokens validated below.
 UNQUOTED_SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~")
 DOUBLE_QUOTED_SHELL_CONTROL = frozenset("`$")
+
+# --- Read-only inspection allowlist -------------------------------------------
+#
+# Commands here are admitted without project-dev because they cannot mutate
+# tracked repository content. Every candidate is first reduced to a single simple
+# command by ``simple_shell_words`` (which returns None on ANY shell control:
+# pipes, redirections, command/arithmetic substitution, globbing, chaining, or
+# quoting it cannot model). That removes the shell-driven write vectors, so the
+# remaining audit only has to reject argument-driven writes/exec for each tool.
+# The lists stay deliberately tight; an unlisted read-only command is a safe
+# false negative (it just falls through to the mutation gate), while an
+# over-broad entry would be an unsafe bypass.
+
+# Executables with no argument-driven file-write or command-exec capability.
+# Deliberately excluded (write- or exec-capable via arguments, not a shell
+# redirect): sort/uniq (`-o`/second operand), tee, dd, sed (`-i`), env (runs a
+# command), find (`-delete`/`-exec`), tree (`-o`), date/hostname (system set),
+# xargs (runs a command), rg (`--pre` runs a preprocessor), file (`-C` compiles
+# a magic-db file). Add only with a proven read-only argument contract.
+READ_ONLY_EXECUTABLES = frozenset(
+    {
+        "pwd",
+        "echo",
+        "cat",
+        "tac",
+        "head",
+        "tail",
+        "wc",
+        "nl",
+        "grep",
+        "egrep",
+        "fgrep",
+        "ls",
+        "stat",
+        "cmp",
+        "comm",
+        "basename",
+        "dirname",
+        "realpath",
+        "readlink",
+        "which",
+        "printenv",
+        "id",
+        "whoami",
+        "uname",
+        "true",
+        "false",
+    }
+)
+
+# git subcommands with no write mode at all. Excluded on purpose: branch/tag/
+# config/remote/stash/notes/worktree/reflog/symbolic-ref (each has a write form),
+# and anything under MUTATING_GIT_SUBCOMMANDS elsewhere.
+READ_ONLY_GIT_SUBCOMMANDS = frozenset(
+    {
+        "status",
+        "log",
+        "show",
+        "diff",
+        "diff-tree",
+        "diff-index",
+        "diff-files",
+        "rev-parse",
+        "rev-list",
+        "ls-files",
+        "ls-tree",
+        "cat-file",
+        "blame",
+        "describe",
+        "show-ref",
+        "for-each-ref",
+        "shortlog",
+        "merge-base",
+        "name-rev",
+        "whatchanged",
+        "count-objects",
+        "var",
+    }
+)
+# git global options consumed before the subcommand. Value options take the next
+# token; ``-c``/``--config-env``/``--exec-path`` are excluded (config/pager exec
+# vectors) so an unknown global option fails closed.
+GIT_GLOBAL_VALUE_OPTIONS = frozenset({"-C", "--git-dir", "--work-tree", "--namespace"})
+GIT_GLOBAL_FLAG_OPTIONS = frozenset(
+    {
+        "-P",
+        "--no-pager",
+        "--paginate",
+        "--bare",
+        "--no-replace-objects",
+        "--literal-pathspecs",
+        "--no-literal-pathspecs",
+        "--no-optional-locks",
+    }
+)
+# Subcommand flags that write a file (`--output`) or run a pager on matches
+# (`-O`/`--open-files-in-pager`, an exec vector for ``git grep``).
+GIT_WRITE_OR_EXEC_FLAGS = frozenset({"-o", "--output", "-O", "--open-files-in-pager"})
+
+# gh read-only command groups. `gh api` is excluded: it mutates with
+# `-X`/`--method`/`-f`/`--input`. Only view/list-shaped reads are admitted.
+GH_READ_ONLY_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "issue": frozenset({"view", "list", "status"}),
+    "pr": frozenset({"view", "list", "diff", "checks", "status"}),
+    "repo": frozenset({"view", "list"}),
+    "run": frozenset({"view", "list"}),
+    "workflow": frozenset({"view", "list"}),
+    "release": frozenset({"view", "list"}),
+    "label": frozenset({"list"}),
+    "gist": frozenset({"view", "list"}),
+    "cache": frozenset({"list"}),
+    "search": frozenset({"issues", "prs", "repos", "code", "commits"}),
+}
+GH_READ_ONLY_TOPLEVEL = frozenset({"status"})
+
+# Trusted agent-docs preparation/read surface. `session activate` is NOT here: it
+# writes activation state and travels the trusted bootstrap path instead.
+AGENT_DOCS_GLOBAL_VALUE_OPTIONS = frozenset(
+    {"--docs-home", "--project-path", "--worktree-fallback"}
+)
+AGENT_DOCS_READ_ONLY_SUBCOMMANDS = frozenset(
+    {"preflight", "status", "explain", "list", "catalog"}
+)
+AGENT_DOCS_READ_ONLY_SESSION_SUBCOMMANDS = frozenset({"status", "verify"})
+AGENT_DOCS_WRITE_FLAGS = frozenset({"-o", "--output"})
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -241,6 +377,147 @@ def simple_shell_words(command: str) -> list[str] | None:
     return words or None
 
 
+def _skip_value_options(
+    tokens: list[str], value_options: frozenset[str]
+) -> int:
+    """Index of the first token that is not a leading option.
+
+    Consumes value-taking options (``opt value`` and ``opt=value``) and bare
+    flag options. Returns ``len(tokens)`` when everything is optional. An
+    unrecognized value option is treated as a single token, which is safe here:
+    callers reject a non-allowlisted subcommand, so a mis-split only fails
+    closed.
+    """
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in value_options:
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in value_options):
+            index += 1
+            continue
+        if token.startswith("-") and token != "--":
+            index += 1
+            continue
+        break
+    return index
+
+
+def git_read_only_invocation(args: list[str]) -> bool:
+    """Whether ``git <args>`` is an audited read-only inspection command."""
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token in GIT_GLOBAL_VALUE_OPTIONS:
+            index += 2
+            continue
+        if any(
+            token.startswith(f"{option}=") for option in GIT_GLOBAL_VALUE_OPTIONS
+        ):
+            index += 1
+            continue
+        if token in GIT_GLOBAL_FLAG_OPTIONS:
+            index += 1
+            continue
+        if token.startswith("-"):
+            # Unknown global option (e.g. -c/--config-env/--exec-path): fail closed.
+            return False
+        break
+    if index >= len(args) or args[index] not in READ_ONLY_GIT_SUBCOMMANDS:
+        return False
+    for token in args[index + 1 :]:
+        if token == "--":
+            break  # remaining tokens are pathspecs, not options
+        if token in GIT_WRITE_OR_EXEC_FLAGS:
+            return False
+        # Reject the `--flag=value` spelling of every write/exec flag. This is
+        # not just `--output=<file>`: `--open-files-in-pager=<cmd>` runs an
+        # attacker-controlled command through a shell against matched files, so
+        # the `=value` form must fail closed exactly like the bare flag.
+        if any(token.startswith(f"{flag}=") for flag in GIT_WRITE_OR_EXEC_FLAGS):
+            return False
+        if token.startswith("-O"):  # -O / -O<pager> short forms
+            return False
+    return True
+
+
+def gh_read_only_invocation(args: list[str]) -> bool:
+    """Whether ``gh <args>`` is an audited read-only view/list command."""
+    if not args or args[0].startswith("-"):
+        return False
+    group = args[0]
+    if group in GH_READ_ONLY_TOPLEVEL:
+        return True
+    subcommands = GH_READ_ONLY_SUBCOMMANDS.get(group)
+    if subcommands is None:
+        return False
+    return len(args) >= 2 and args[1] in subcommands
+
+
+def read_only_general_invocation(words: list[str]) -> bool:
+    """Whether ``words`` is an audited read-only inspection command.
+
+    ``words`` must already be a single simple command (``simple_shell_words``).
+    Residual limits, documented deliberately: composite commands (pipes,
+    redirections, ``&&``), globbing, ``rg``/``find``/``sort``/``env`` and other
+    write-or-exec-capable tools are NOT admitted here and still require
+    project-dev. The executable must be a bare command name resolved via PATH:
+    any path separator (``./grep``, ``bin/ls``) is rejected so a repository-local
+    shadow cannot be executed through this lane. A bare name shares only the
+    PATH-resolution residual of the existing ``is_git_recovery_argv`` lane, and
+    the mutation gates below remain fail-closed.
+    """
+    if not words:
+        return False
+    # Bare command name only — a path separator means a repo-local executable
+    # could run as arbitrary code, so refuse and fall through to the gate.
+    if "/" in words[0]:
+        return False
+    name = words[0]
+    args = words[1:]
+    if name in READ_ONLY_EXECUTABLES:
+        return True
+    if name == "git":
+        return git_read_only_invocation(args)
+    if name == "gh":
+        return gh_read_only_invocation(args)
+    return False
+
+
+def agent_docs_read_only_invocation(words: list[str], executable: str) -> bool:
+    """Whether ``words`` is a trusted read-only ``agent-docs`` command.
+
+    Only the resolved trusted executable is admitted (a bare ``agent-docs`` or a
+    repo-local shadow is rejected), and only preparation/read subcommands that
+    print to stdout. ``session activate`` writes state and is handled by the
+    trusted bootstrap path instead.
+    """
+    if not words or not os.path.isabs(words[0]):
+        return False
+    if os.path.realpath(words[0]) != os.path.realpath(executable):
+        return False
+    rest = words[1:]
+    index = _skip_value_options(rest, AGENT_DOCS_GLOBAL_VALUE_OPTIONS)
+    if index < len(rest) and rest[index].startswith("-"):
+        # Unknown global option before the subcommand: fail closed.
+        return False
+    if index >= len(rest):
+        return False
+    subcommand = rest[index]
+    tail = rest[index + 1 :]
+    if subcommand == "session":
+        if not tail or tail[0] not in AGENT_DOCS_READ_ONLY_SESSION_SUBCOMMANDS:
+            return False
+        tail = tail[1:]
+    elif subcommand not in AGENT_DOCS_READ_ONLY_SUBCOMMANDS:
+        return False
+    for token in tail:
+        if token in AGENT_DOCS_WRITE_FLAGS or token.startswith("--output="):
+            return False
+    return True
+
+
 def resolved_executable(name: str) -> str | None:
     candidate = shutil.which(name)
     if not candidate or not os.path.isabs(candidate):
@@ -258,7 +535,7 @@ def path_within(path: str, root: str) -> bool:
         return False
 
 
-def recovery_activation_args(
+def activation_base_args(
     *, repo_root: str, executable: str, current_session: str, product: str
 ) -> list[str]:
     return agent_docs_args(repo_root, executable) + [
@@ -270,31 +547,77 @@ def recovery_activation_args(
         product,
         "--state-home",
         state_home(product),
-        "--intent",
-        "project-dev",
     ]
 
 
-def activation_bootstrap_args(
+def recovery_activation_args(
+    *,
+    repo_root: str,
+    executable: str,
+    current_session: str,
+    product: str,
+    intents: tuple[str, ...] = ("project-dev",),
+) -> list[str]:
+    args = activation_base_args(
+        repo_root=repo_root,
+        executable=executable,
+        current_session=current_session,
+        product=product,
+    )
+    for intent in intents:
+        args += ["--intent", intent]
+    return args
+
+
+def bootstrap_activation_intents(
     command: str,
     *,
     current_session: str,
     product: str,
     repo_root: str,
     agent_docs_executable: str,
-) -> list[str] | None:
+) -> tuple[list[str], list[str]] | None:
+    """Parse a trusted ``session activate`` command for any declared intent(s).
+
+    The command must equal the exact expected activation prefix (executable,
+    docs-home/project-path, session-id, product, state-home) followed only by one
+    or more ``--intent <value>`` pairs. Any extra flag, reordering, wrong
+    session/product/repo/state, bare executable, or shell control makes it not a
+    bootstrap, so it falls through to the mutation gate. Undeclared intent values
+    are rejected downstream by ``agent-docs`` itself when the argv is executed.
+    """
     words = simple_shell_words(command)
-    expected = recovery_activation_args(
+    if not words:
+        return None
+    base = activation_base_args(
         repo_root=repo_root,
         executable=agent_docs_executable,
         current_session=current_session,
         product=product,
     )
-    return expected if words == expected else None
+    if words[: len(base)] != base:
+        return None
+    tail = words[len(base) :]
+    intents: list[str] = []
+    index = 0
+    while index < len(tail):
+        if tail[index] == "--intent" and index + 1 < len(tail):
+            intents.append(tail[index + 1])
+            index += 2
+            continue
+        return None
+    if not intents:
+        return None
+    return words, intents
 
 
 def recovery_commands(
-    *, repo_root: str, executable: str, current_session: str, product: str
+    *,
+    repo_root: str,
+    executable: str,
+    current_session: str,
+    product: str,
+    intents: tuple[str, ...] = ("project-dev",),
 ) -> tuple[str, str]:
     base_args = agent_docs_args(repo_root, executable)
     activation = shlex.join(
@@ -303,9 +626,10 @@ def recovery_commands(
             executable=executable,
             current_session=current_session,
             product=product,
+            intents=intents,
         )
     )
-    preflight = shlex.join(base_args + ["preflight", "--intent", "project-dev"])
+    preflight = shlex.join(base_args + ["preflight", "--intent", intents[0]])
     return activation, preflight
 
 
@@ -361,25 +685,26 @@ def trusted_agent_docs_executable(executable: str, repos: list[str]) -> bool:
 
 
 def verify_intent(
-    base_args: list[str], *, current_session: str, product: str
+    base_args: list[str],
+    *,
+    current_session: str,
+    product: str,
+    required_intents: tuple[str, ...] = ("project-dev",),
 ) -> tuple[bool, str]:
-    completed, outcome = run_probe(
-        base_args
-        + [
-            "session",
-            "verify",
-            "--session-id",
-            current_session,
-            "--product",
-            product,
-            "--state-home",
-            state_home(product),
-            "--require-intent",
-            "project-dev",
-            "--format",
-            "json",
-        ]
-    )
+    probe_args = base_args + [
+        "session",
+        "verify",
+        "--session-id",
+        current_session,
+        "--product",
+        product,
+        "--state-home",
+        state_home(product),
+    ]
+    for intent in required_intents:
+        probe_args += ["--require-intent", intent]
+    probe_args += ["--format", "json"]
+    completed, outcome = run_probe(probe_args)
     if completed is None:
         return False, f"intent-verification-{outcome}"
     if completed.returncode == 0:
@@ -400,7 +725,7 @@ def verify_intent(
             or data.get("product") != product
             or not isinstance(active_intents, list)
             or any(not isinstance(intent, str) for intent in active_intents)
-            or "project-dev" not in active_intents
+            or not all(intent in active_intents for intent in required_intents)
             or data.get("verified") is not True
         ):
             return False, "intent-verification-not-verified"
@@ -428,6 +753,10 @@ def main() -> int:
     repos = target_repositories(payload, tool)
     if not repos:
         return ALLOW
+
+    command_words = (
+        simple_shell_words(command_from(payload)) if tool in COMMAND_TOOLS else None
+    )
     # A sole `git <op> --abort`/`--quit` recovery command restores the clean
     # pre-operation state and authors no content, so it must run even when
     # project-dev activation is stale or missing — otherwise a stuck
@@ -435,10 +764,16 @@ def main() -> int:
     # `simple_shell_words` returns None on any shell control, so this stays as
     # exact-match narrow as the activation bootstrap: no operators, pipes,
     # redirections, or nested shells slip through.
-    if tool in COMMAND_TOOLS and is_git_recovery_argv(
-        simple_shell_words(command_from(payload)) or []
-    ):
+    if command_words and is_git_recovery_argv(command_words):
         return ALLOW
+    # Read-only exploration is not a repository mutation. An audited single
+    # simple command from the inspection allowlist is admitted without
+    # project-dev so pure discussion, diagnosis, and reading do not force
+    # implementation policy. This fails closed: anything unrecognized falls
+    # through to the mutation gate below.
+    if command_words and read_only_general_invocation(command_words):
+        return ALLOW
+
     if tool in EDIT_TOOLS and not edit_paths(payload):
         emit_block("Repository edit target extraction failed closed; retry with an explicit path.")
         return ALLOW
@@ -455,6 +790,18 @@ def main() -> int:
             "repository mutation; restore the managed runtime CLI path before retrying."
         )
         return ALLOW
+
+    # Trusted agent-docs preparation and read commands are admitted for ANY
+    # declared intent, without first activating project-dev. This removes the
+    # false coupling where a memory/task-tools/browser-test session had to
+    # activate and read unrelated project-dev policy before it could prepare its
+    # own intent. `session activate` writes state and is handled by the trusted
+    # bootstrap below; the read subcommands here only print to stdout.
+    if command_words and agent_docs_read_only_invocation(
+        command_words, agent_docs_executable
+    ):
+        return ALLOW
+
     capability, detail = session_capability(
         agent_docs_args(repos[0], agent_docs_executable)
     )
@@ -476,44 +823,47 @@ def main() -> int:
         return ALLOW
 
     if tool in COMMAND_TOOLS and len(repos) == 1:
-        bootstrap_args = activation_bootstrap_args(
+        bootstrap = bootstrap_activation_intents(
             command_from(payload),
             current_session=current_session,
             product=product,
             repo_root=repos[0],
             agent_docs_executable=agent_docs_executable,
         )
-        if bootstrap_args is not None:
+        if bootstrap is not None:
+            bootstrap_args, intents = bootstrap
+            prepared = ", ".join(intents)
             completed, outcome = run_probe(bootstrap_args)
             if completed is None:
                 emit_block(
-                    "Trusted project-dev activation failed inside the hook "
-                    f"({outcome}); the recovery shell command was consumed and not executed."
+                    f"Trusted {prepared} activation failed inside the hook "
+                    f"({outcome}); the shell command was consumed and not executed. "
+                    "[reason: activation-run-failed]"
                 )
                 return ALLOW
             verified, code = verify_intent(
                 agent_docs_args(repos[0], agent_docs_executable),
                 current_session=current_session,
                 product=product,
+                required_intents=tuple(intents),
             )
             if completed.returncode != 0 or not verified:
                 emit_block(
-                    "Trusted project-dev activation did not verify inside the hook "
-                    f"(exit={completed.returncode}, verification={code}); the recovery "
-                    "shell command was consumed and not executed."
+                    f"Trusted {prepared} activation did not verify inside the hook "
+                    f"(exit={completed.returncode}, verification={code}); the shell "
+                    "command was consumed and not executed. "
+                    "[reason: activation-verify-failed]"
                 )
                 return ALLOW
-            _, preflight = recovery_commands(
-                repo_root=repos[0],
-                executable=agent_docs_executable,
-                current_session=current_session,
-                product=product,
+            preflight = shlex.join(
+                agent_docs_args(repos[0], agent_docs_executable)
+                + ["preflight", "--intent", intents[0]]
             )
             emit_block(
-                "Trusted project-dev activation completed inside the hook; the recovery "
-                "shell command was consumed and not executed. "
-                f"Run `{preflight}` to read the activated contract, then retry the "
-                "original command."
+                f"Prepared {prepared} inside the hook (verified); the activation command "
+                "was consumed, not re-dispatched. "
+                f"Run `{preflight}` to read the contract, then re-run your command. "
+                "[reason: prepared]"
             )
             return ALLOW
 
@@ -530,6 +880,8 @@ def main() -> int:
         return ALLOW
     reason = (
         "Activate and read project-dev before mutating the target repository, then retry. "
+        "Read-only inspection and trusted agent-docs preparation for any declared intent "
+        "are admitted without project-dev; only mutation-capable shell needs it. "
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
         "executable and complete session context. If a Git operation is stuck mid-run, a "
         "sole `git <op> --abort` recovers in place without activation. "
@@ -546,7 +898,7 @@ def main() -> int:
         reason += "Use the exact activation command from the latest agent-docs intent cue. "
     reason += (
         "Shell enforcement is CWD-scoped; run cross-repository shell mutations with each "
-        f"target repository as CWD. Verification code: {failures[0]}."
+        f"target repository as CWD. [reason: project-dev-required] Verification code: {failures[0]}."
     )
     emit_block(reason)
     return ALLOW
