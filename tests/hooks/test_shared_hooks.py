@@ -7520,8 +7520,12 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "project-dev")
-            self.assertIn("session activate", str(decision))
-            self.assertIn("preflight --intent project-dev", str(decision))
+            # P0-3: recovery recommends the single atomic `session prepare`
+            # primitive (activate + strict preflight in one), not the older
+            # two-command activate + separate preflight sequence.
+            self.assertIn("session prepare", str(decision))
+            self.assertIn("--intent project-dev", str(decision))
+            self.assertIn("[reason: project-dev-required]", str(decision))
             self.assertIn(str(repo), str(decision))
 
     def test_pre_edit_intent_gate_allows_git_recovery_abort(self) -> None:
@@ -7803,6 +7807,28 @@ exit 64
                     "project-dev",
                 ]
             )
+            # P0-3: the block recommends one atomic `session prepare` command
+            # (activate + strict preflight), not the old two-command activate +
+            # separate preflight sequence.
+            prepare_cmd = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    "intent-recovery",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home),
+                    "--intent",
+                    "project-dev",
+                ]
+            )
             # A read-only `git status` is now admitted without project-dev, so
             # the recovery-message assertion uses a genuine mutation command.
             payload = command_payload("printf x > out.txt")
@@ -7816,8 +7842,8 @@ exit 64
             self.assert_blocked(decision, "project-dev")
             assert decision is not None
             reason = str(decision.get("reason", ""))
-            self.assertIn(activation, reason)
-            self.assertIn(preflight, reason)
+            self.assertIn(prepare_cmd, reason)
+            self.assertIn("[reason: project-dev-required]", reason)
 
             direct_edit = write_payload("src/lib.rs", "fn main() {}\n")
             direct_edit["session_id"] = "intent-recovery"
@@ -7828,9 +7854,12 @@ exit 64
             self.assert_blocked(decision, "project-dev")
             assert decision is not None
             direct_reason = str(decision.get("reason", ""))
-            self.assertIn(activation, direct_reason)
-            self.assertIn(preflight, direct_reason)
+            self.assertIn(prepare_cmd, direct_reason)
+            self.assertIn("[reason: project-dev-required]", direct_reason)
 
+            # Backward compatibility: an explicit `session activate` bootstrap is
+            # still consumed and verified in place, so existing muscle-memory and
+            # older cues keep working while `session prepare` becomes primary.
             payload = command_payload(activation)
             payload["session_id"] = "intent-recovery"
             code, decision, stderr = run_hook(
@@ -8170,6 +8199,151 @@ exit 64
                     for intent in intents:
                         self.assertIn(intent, reason)
                     self.assertTrue(active_marker.is_file())
+
+    def test_pre_edit_intent_gate_consumes_session_prepare(self) -> None:
+        """P0-1/P0-3: `session prepare` is consumed atomically.
+
+        The trusted preparation primitive activates and strict-preflights in a
+        single call and returns a stable JSON result, so the hook must not fire a
+        second `session verify` probe. A failing prepare surfaces the CLI's
+        structured error code, not generic prose.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            state_home = repo / "state"
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+
+            def prepare_command(*intents: str) -> str:
+                argv = [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    "prep-session",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home.resolve()),
+                ]
+                for intent in intents:
+                    argv += ["--intent", intent]
+                return shlex.join(argv)
+
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            # A fake that succeeds for `session prepare` and would emit a distinct
+            # marker if the hook ever fell back to `session verify`.
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {shlex.quote(str(call_log))}
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session prepare"* ]]; then
+  intents='["project-dev"]'
+  if [[ "$*" == *"--intent task-tools"* ]]; then intents='["project-dev","task-tools"]'; fi
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"codex","active_intents":'"$intents"',"record_file":"r.json","verified":true,"prepared_intents":'"$intents"',"reason":"prepared"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  printf '%s\\n' 'FALLBACK-VERIFY-SHOULD-NOT-RUN'
+  exit 0
+fi
+exit 64
+""",
+            )
+
+            for intents in (("project-dev",), ("project-dev", "task-tools")):
+                with self.subTest(intents=intents):
+                    call_log.write_text("", encoding="utf-8")
+                    payload = command_payload(prepare_command(*intents))
+                    payload["session_id"] = "prep-session"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "consumed")
+                    assert decision is not None
+                    reason = str(decision.get("reason", ""))
+                    self.assertIn("Prepared", reason)
+                    self.assertIn("[reason: prepared]", reason)
+                    for intent in intents:
+                        self.assertIn(intent, reason)
+                    log_text = call_log.read_text(encoding="utf-8")
+                    self.assertIn("session prepare", log_text)
+                    # Atomic: the hook trusts the prepare envelope and never
+                    # fires a second verify probe.
+                    self.assertNotIn("session verify", log_text)
+                    self.assertNotIn("FALLBACK-VERIFY-SHOULD-NOT-RUN", reason)
+
+            # A failing prepare surfaces the CLI's structured error code.
+            fail_log = root / "fail.log"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {shlex.quote(str(fail_log))}
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session prepare"* ]]; then
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":false,"error":{{"code":"preflight-unsatisfied","message":"strict preflight failed"}}}}'
+  exit 65
+fi
+exit 64
+""",
+            )
+            payload = command_payload(prepare_command("project-dev"))
+            payload["session_id"] = "prep-session"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert decision is not None
+            reason = str(decision.get("reason", ""))
+            self.assertIn("[reason: preflight-unsatisfied]", reason)
+            # The submitted shell body is consumed, not re-dispatched.
+            self.assertIn("consumed", reason)
+
+            # Defense in depth: a well-formed ok/verified envelope on a NONZERO
+            # exit fails closed, matching verify_intent's returncode==0 success
+            # gate. The success message must not be emitted.
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session prepare"* ]]; then
+  printf '%s\\n' '{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{"product":"codex","active_intents":["project-dev"],"record_file":"r.json","verified":true,"prepared_intents":["project-dev"],"reason":"prepared"}}'
+  exit 3
+fi
+exit 64
+""",
+            )
+            payload = command_payload(prepare_command("project-dev"))
+            payload["session_id"] = "prep-session"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert decision is not None
+            reason = str(decision.get("reason", ""))
+            self.assertIn("[reason: prepare-not-verified]", reason)
+            self.assertNotIn("[reason: prepared]", reason)
 
     def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

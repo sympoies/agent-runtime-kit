@@ -536,11 +536,16 @@ def path_within(path: str, root: str) -> bool:
 
 
 def activation_base_args(
-    *, repo_root: str, executable: str, current_session: str, product: str
+    *,
+    repo_root: str,
+    executable: str,
+    current_session: str,
+    product: str,
+    subcommand: str = "activate",
 ) -> list[str]:
     return agent_docs_args(repo_root, executable) + [
         "session",
-        "activate",
+        subcommand,
         "--session-id",
         current_session,
         "--product",
@@ -550,23 +555,29 @@ def activation_base_args(
     ]
 
 
-def recovery_activation_args(
+def recovery_command(
     *,
     repo_root: str,
     executable: str,
     current_session: str,
     product: str,
     intents: tuple[str, ...] = ("project-dev",),
-) -> list[str]:
+) -> str:
+    """Single atomic ``session prepare`` recovery command for the mutation gate.
+
+    P0-3 structured recovery: one command that activates and strict-preflights,
+    instead of the older activate-then-separate-preflight pair.
+    """
     args = activation_base_args(
         repo_root=repo_root,
         executable=executable,
         current_session=current_session,
         product=product,
+        subcommand="prepare",
     )
     for intent in intents:
         args += ["--intent", intent]
-    return args
+    return shlex.join(args)
 
 
 def bootstrap_activation_intents(
@@ -576,61 +587,49 @@ def bootstrap_activation_intents(
     product: str,
     repo_root: str,
     agent_docs_executable: str,
-) -> tuple[list[str], list[str]] | None:
-    """Parse a trusted ``session activate`` command for any declared intent(s).
+) -> tuple[list[str], list[str], str] | None:
+    """Parse a trusted ``session prepare``/``activate`` command for its intents.
 
-    The command must equal the exact expected activation prefix (executable,
-    docs-home/project-path, session-id, product, state-home) followed only by one
-    or more ``--intent <value>`` pairs. Any extra flag, reordering, wrong
-    session/product/repo/state, bare executable, or shell control makes it not a
-    bootstrap, so it falls through to the mutation gate. Undeclared intent values
-    are rejected downstream by ``agent-docs`` itself when the argv is executed.
+    ``session prepare`` is the preferred atomic primitive (activate + strict
+    preflight + stable JSON result); ``session activate`` stays recognized for
+    backward compatibility. The command must equal the exact expected preparation
+    prefix (executable, docs-home/project-path, session-id, product, state-home)
+    for one of those subcommands, followed only by one or more ``--intent
+    <value>`` pairs. Any extra flag, reordering, wrong session/product/repo/state,
+    bare executable, or shell control makes it not a bootstrap, so it falls
+    through to the mutation gate. Undeclared intent values are rejected downstream
+    by ``agent-docs`` itself when the argv is executed.
+
+    Returns ``(words, intents, subcommand)`` on a match, else ``None``.
     """
     words = simple_shell_words(command)
     if not words:
         return None
-    base = activation_base_args(
-        repo_root=repo_root,
-        executable=agent_docs_executable,
-        current_session=current_session,
-        product=product,
-    )
-    if words[: len(base)] != base:
-        return None
-    tail = words[len(base) :]
-    intents: list[str] = []
-    index = 0
-    while index < len(tail):
-        if tail[index] == "--intent" and index + 1 < len(tail):
-            intents.append(tail[index + 1])
-            index += 2
-            continue
-        return None
-    if not intents:
-        return None
-    return words, intents
-
-
-def recovery_commands(
-    *,
-    repo_root: str,
-    executable: str,
-    current_session: str,
-    product: str,
-    intents: tuple[str, ...] = ("project-dev",),
-) -> tuple[str, str]:
-    base_args = agent_docs_args(repo_root, executable)
-    activation = shlex.join(
-        recovery_activation_args(
+    for subcommand in ("prepare", "activate"):
+        base = activation_base_args(
             repo_root=repo_root,
-            executable=executable,
+            executable=agent_docs_executable,
             current_session=current_session,
             product=product,
-            intents=intents,
+            subcommand=subcommand,
         )
-    )
-    preflight = shlex.join(base_args + ["preflight", "--intent", intents[0]])
-    return activation, preflight
+        if words[: len(base)] != base:
+            continue
+        tail = words[len(base) :]
+        intents: list[str] = []
+        index = 0
+        malformed = False
+        while index < len(tail):
+            if tail[index] == "--intent" and index + 1 < len(tail):
+                intents.append(tail[index + 1])
+                index += 2
+                continue
+            malformed = True
+            break
+        if malformed or not intents:
+            continue
+        return words, intents, subcommand
+    return None
 
 
 def target_repositories(payload: Mapping[str, Any], tool: str) -> list[str]:
@@ -741,6 +740,52 @@ def verify_intent(
     return False, "intent-not-active-or-stale"
 
 
+def consume_prepare_result(
+    completed: subprocess.CompletedProcess[str],
+    *,
+    product: str,
+    required_intents: tuple[str, ...],
+) -> tuple[bool, str]:
+    """Validate a trusted ``session prepare`` JSON envelope.
+
+    ``session prepare`` activates and strict-preflights atomically and reports a
+    stable ``cli.agent-docs.session.prepare.v1`` result, so a valid ``ok`` +
+    ``verified`` envelope on a zero exit means the intents are prepared without a
+    second ``session verify`` probe. Returns ``(ok, reason_code)``: on failure the
+    code is the CLI's own ``error.code`` when present (e.g. ``preflight-unsatisfied``,
+    ``undeclared-intent``) so structured recovery can name the real cause. The
+    success path additionally requires a zero exit code, matching the
+    ``returncode == 0`` gate on ``verify_intent``'s success path so an anomalous
+    ``ok`` envelope on a nonzero exit fails closed.
+    """
+    try:
+        body = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return False, "prepare-malformed"
+    if (
+        not isinstance(body, dict)
+        or body.get("schema_version") != "cli.agent-docs.session.prepare.v1"
+    ):
+        return False, "prepare-invalid-schema"
+    if body.get("ok") is not True:
+        error = body.get("error")
+        code = error.get("code") if isinstance(error, dict) else None
+        return False, code if isinstance(code, str) and code else "prepare-not-ok"
+    data = body.get("data")
+    active_intents = data.get("active_intents") if isinstance(data, dict) else None
+    if (
+        completed.returncode != 0
+        or not isinstance(data, dict)
+        or data.get("product") != product
+        or not isinstance(active_intents, list)
+        or any(not isinstance(intent, str) for intent in active_intents)
+        or not all(intent in active_intents for intent in required_intents)
+        or data.get("verified") is not True
+    ):
+        return False, "prepare-not-verified"
+    return True, "prepared"
+
+
 def main() -> int:
     payload = read_payload()
     tool = tool_name(payload)
@@ -831,16 +876,38 @@ def main() -> int:
             agent_docs_executable=agent_docs_executable,
         )
         if bootstrap is not None:
-            bootstrap_args, intents = bootstrap
+            bootstrap_args, intents, subcommand = bootstrap
             prepared = ", ".join(intents)
             completed, outcome = run_probe(bootstrap_args)
             if completed is None:
                 emit_block(
-                    f"Trusted {prepared} activation failed inside the hook "
+                    f"Trusted {prepared} preparation failed inside the hook "
                     f"({outcome}); the shell command was consumed and not executed. "
-                    "[reason: activation-run-failed]"
+                    "[reason: preparation-run-failed]"
                 )
                 return ALLOW
+            if subcommand == "prepare":
+                # Atomic primitive: the prepare envelope already reports
+                # activation + strict-preflight verification, so trust it without
+                # firing a second `session verify` probe. A failing envelope
+                # surfaces the CLI's own error code for structured recovery.
+                ok, code = consume_prepare_result(
+                    completed, product=product, required_intents=tuple(intents)
+                )
+                if not ok:
+                    emit_block(
+                        f"Trusted {prepared} preparation did not verify inside the "
+                        f"hook (exit={completed.returncode}); the shell command was "
+                        f"consumed and not executed. [reason: {code}]"
+                    )
+                    return ALLOW
+                emit_block(
+                    f"Prepared {prepared} inside the hook (verified); the preparation "
+                    "command was consumed, not re-dispatched. Re-run your command. "
+                    "[reason: prepared]"
+                )
+                return ALLOW
+            # Backward-compatible `session activate`: run, then verify separately.
             verified, code = verify_intent(
                 agent_docs_args(repos[0], agent_docs_executable),
                 current_session=current_session,
@@ -861,7 +928,7 @@ def main() -> int:
             )
             emit_block(
                 f"Prepared {prepared} inside the hook (verified); the activation command "
-                "was consumed, not re-dispatched. "
+                "was consumed, not re-dispatched. Prefer `session prepare` next time. "
                 f"Run `{preflight}` to read the contract, then re-run your command. "
                 "[reason: prepared]"
             )
@@ -879,23 +946,28 @@ def main() -> int:
     if not failures:
         return ALLOW
     reason = (
-        "Activate and read project-dev before mutating the target repository, then retry. "
+        "Prepare project-dev before mutating the target repository, then retry. "
         "Read-only inspection and trusted agent-docs preparation for any declared intent "
         "are admitted without project-dev; only mutation-capable shell needs it. "
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
         "executable and complete session context. If a Git operation is stuck mid-run, a "
-        "sole `git <op> --abort` recovers in place without activation. "
+        "sole `git <op> --abort` recovers in place without preparation. "
     )
     if len(repos) == 1:
-        activation, preflight = recovery_commands(
-            repo_root=repos[0],
-            executable=agent_docs_executable,
-            current_session=current_session,
-            product=product,
+        reason += (
+            "Run `"
+            + recovery_command(
+                repo_root=repos[0],
+                executable=agent_docs_executable,
+                current_session=current_session,
+                product=product,
+            )
+            + "`. "
         )
-        reason += f"Run `{activation}`, then `{preflight}`. "
     else:
-        reason += "Use the exact activation command from the latest agent-docs intent cue. "
+        reason += (
+            "Use the exact `session prepare` command from the latest agent-docs intent cue. "
+        )
     reason += (
         "Shell enforcement is CWD-scoped; run cross-repository shell mutations with each "
         f"target repository as CWD. [reason: project-dev-required] Verification code: {failures[0]}."
