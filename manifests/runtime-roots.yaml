@@ -28,8 +28,8 @@ products:
     state_home: "${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/claude}"
     plugin_root_env: "CLAUDE_PLUGIN_ROOT"
     hook_config_strategy: "settings-json"
-    min_version: "2.1.205"
-    recommended_version: "2.1.205"
+    min_version: "2.1.211"
+    recommended_version: "2.1.211"
     min_version_effective_from: "2026-07-10"
     version_probe: "claude --version"
 
