@@ -259,10 +259,12 @@ done
 # -----------------------------------------------------------------------------
 banner 8 "security hardening audit + validate surfaces manifest + executable acceptance"
 python3 scripts/ci/security-hardening-audit.py
-if bash scripts/ci/validate-surfaces-manifest.sh tests/surfaces/invalid-acceptance.yaml; then
-  echo "ci/all.sh: invalid surface acceptance fixture unexpectedly passed" >&2
-  exit 1
-fi
+bash tests/ci/expect-command-failure.sh
+bash scripts/ci/expect-command-failure.sh \
+  "ci/all.sh: invalid surface acceptance fixture rejected as expected" \
+  "ci/all.sh: invalid surface acceptance fixture unexpectedly passed" \
+  bash scripts/ci/validate-surfaces-manifest.sh \
+    tests/surfaces/invalid-acceptance.yaml
 ACCEPTANCE_OUT_DIR="${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}/out/ci-all/surface-acceptance"
 ACCEPTANCE_CODEX_HOME="${ACCEPTANCE_OUT_DIR}/codex-home"
 rm -rf "$ACCEPTANCE_CODEX_HOME"
