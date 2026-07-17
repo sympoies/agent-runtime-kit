@@ -13,6 +13,7 @@ stays in `targets/<product>/`.
 from __future__ import annotations
 
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ import sys
 import tempfile
 import stat
 from collections.abc import Iterable, Mapping
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 ALLOW = 0
@@ -59,6 +60,127 @@ def command_from(payload: Mapping[str, Any]) -> str:
         command = tool_input.get("command", "")
         return command if isinstance(command, str) else str(command)
     return ""
+
+
+# Workdir keys used across the union of Codex and Claude tool envelopes. A guard
+# that resolves the working repository from the hook process cwd alone misgates a
+# command whose effective workdir is elsewhere (issue #601 P0-4), so every guard
+# resolves the workdir through the shared ``effective_workdir`` below.
+WORKDIR_KEYS = frozenset(
+    {"cwd", "current_working_directory", "workdir", "working_directory"}
+)
+
+
+def iter_workdir_values(value: Any) -> list[str]:
+    """Every non-empty workdir-key string reachable in a nested mapping."""
+    values: list[str] = []
+    if not isinstance(value, Mapping):
+        return values
+    for key, nested in value.items():
+        if key in WORKDIR_KEYS and isinstance(nested, str) and nested:
+            values.append(nested)
+        elif isinstance(nested, Mapping):
+            values.extend(iter_workdir_values(nested))
+    return values
+
+
+# Bound the transcript read: the workdir lives in the newest event matching the
+# call, so a tail read suffices while capping memory and latency now that the
+# resolver runs inside the mutation/lease guards on every command.
+MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024
+
+
+@functools.lru_cache(maxsize=64)
+def _transcript_workdir_value(transcript_path: str, tool_use_id: str) -> str | None:
+    """Raw workdir string from the newest matching transcript event, or ``None``.
+
+    Cached per (path, call id) so repeated guard resolutions in one process read
+    the transcript once. Reads only the tail (``MAX_TRANSCRIPT_BYTES``) and fails
+    soft to ``None`` on ANY error (missing, unreadable, oversized/OOM, malformed)
+    so a hostile or corrupt transcript can never crash a fail-closed guard.
+    """
+    try:
+        path = Path(transcript_path).expanduser()
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            start = max(0, size - MAX_TRANSCRIPT_BYTES)
+            handle.seek(start)
+            data = handle.read(MAX_TRANSCRIPT_BYTES)
+        lines = data.decode("utf-8", errors="replace").splitlines()
+        # Drop a leading partial line when the tail started mid-file; the newest
+        # matching event we care about is at the end and stays intact.
+        if start > 0 and lines:
+            lines = lines[1:]
+    except Exception:
+        return None
+    for line in reversed(lines):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event_payload = event.get("payload") if isinstance(event, Mapping) else None
+        if not isinstance(event_payload, Mapping):
+            continue
+        if event_payload.get("call_id") != tool_use_id:
+            continue
+        arguments = event_payload.get("arguments")
+        if not isinstance(arguments, str):
+            return None
+        try:
+            parsed_arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            return None
+        for value in iter_workdir_values(parsed_arguments):
+            return value
+        return None
+    return None
+
+
+def workdir_from_transcript(payload: Mapping[str, Any]) -> Path | None:
+    """Workdir from the Codex transcript's exec_command arguments.
+
+    Codex submits a shell command's ``workdir`` in the transcript event whose
+    ``call_id`` matches this call's ``tool_use_id`` rather than inline in the
+    tool input. Delegates to a cached, bounded, fail-soft reader.
+    """
+    tool_use_id = payload.get("tool_use_id")
+    transcript_path = payload.get("transcript_path")
+    if not isinstance(tool_use_id, str) or not isinstance(transcript_path, str):
+        return None
+    value = _transcript_workdir_value(transcript_path, tool_use_id)
+    if value is None:
+        return None
+    workdir = Path(value).expanduser()
+    return workdir if workdir.is_absolute() else Path.cwd() / workdir
+
+
+def effective_workdir(payload: Mapping[str, Any]) -> Path:
+    """Resolve the working directory a tool call actually runs in.
+
+    Fans out across the union of Codex and Claude envelope shapes: explicit
+    workdir keys nested anywhere in the tool input, then the Codex transcript
+    arguments (referenced by ``call_id``/``tool_use_id``), then workdir keys
+    nested anywhere in the payload, then the top-level ``cwd``, and finally the
+    hook process cwd. The returned path is not canonicalized; callers that need a
+    resolved path apply ``resolve`` themselves. A relative workdir is anchored to
+    the hook process cwd.
+    """
+    tool_input = tool_input_dict(payload)
+    for value in iter_workdir_values(tool_input):
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else Path.cwd() / path
+    transcript_workdir = workdir_from_transcript(payload)
+    if transcript_workdir is not None:
+        return transcript_workdir
+    for value in iter_workdir_values(payload):
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else Path.cwd() / path
+    top_cwd = payload.get("cwd")
+    if isinstance(top_cwd, str) and top_cwd:
+        path = Path(top_cwd).expanduser()
+        return path if path.is_absolute() else Path.cwd() / path
+    return Path.cwd()
 
 
 def session_id_from_payload(payload: Mapping[str, Any]) -> str:

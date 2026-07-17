@@ -25,7 +25,7 @@ TEST_RUNTIME_STATE = tempfile.TemporaryDirectory(
 )
 sys.path.insert(0, str(HOOK_DIR))
 
-from hook_common import command_matches_validation  # noqa: E402
+from hook_common import command_matches_validation, effective_workdir  # noqa: E402
 
 
 def parse_stdout(stdout: str) -> dict[str, object] | None:
@@ -7475,6 +7475,149 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_effective_workdir_resolves_codex_and_claude_envelopes(self) -> None:
+        """P0-4: the shared resolver agrees with a tool call's real workdir.
+
+        It fans out across the union of Codex and Claude envelope shapes so every
+        guard resolves the same effective working directory instead of the hook
+        process cwd.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+
+            # 1. Every recognized workdir spelling in tool_input.
+            for key in (
+                "workdir",
+                "cwd",
+                "current_working_directory",
+                "working_directory",
+            ):
+                with self.subTest(key=key):
+                    payload = {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "x", key: str(target)},
+                    }
+                    self.assertEqual(effective_workdir(payload), target)
+
+            # 2. A workdir key nested anywhere in tool_input.
+            nested = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "x", "shell": {"working_directory": str(target)}},
+            }
+            self.assertEqual(effective_workdir(nested), target)
+
+            # 3. Codex transcript: workdir lives in the exec_command arguments,
+            #    referenced by call_id == tool_use_id.
+            transcript = root / "transcript.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "call_id": "call-1",
+                            "arguments": json.dumps(
+                                {"command": ["bash", "-lc", "x"], "workdir": str(target)}
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            transcript_payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "x"},
+                "tool_use_id": "call-1",
+                "transcript_path": str(transcript),
+            }
+            self.assertEqual(effective_workdir(transcript_payload), target)
+
+            # 4. The transcript workdir wins over the top-level session cwd.
+            transcript_payload["cwd"] = str(root)
+            self.assertEqual(effective_workdir(transcript_payload), target)
+
+            # 5. Top-level cwd fallback (Claude session envelope).
+            self.assertEqual(
+                effective_workdir(
+                    {"tool_name": "Bash", "tool_input": {"command": "x"}, "cwd": str(target)}
+                ),
+                target,
+            )
+
+            # 6. A relative workdir resolves against the hook process cwd.
+            self.assertEqual(
+                effective_workdir(
+                    {"tool_name": "Bash", "tool_input": {"command": "x", "workdir": "sub"}}
+                ),
+                Path.cwd() / "sub",
+            )
+
+            # 7. Nothing declared → the hook process cwd.
+            self.assertEqual(
+                effective_workdir({"tool_name": "Bash", "tool_input": {"command": "x"}}),
+                Path.cwd(),
+            )
+
+    def test_effective_workdir_transcript_read_is_bounded_and_fail_soft(self) -> None:
+        """P0-4 hardening: the transcript read never crashes a fail-closed guard.
+
+        A missing, malformed, or huge transcript resolves to the ordinary
+        fallback rather than raising, and the newest matching event still wins
+        after many preceding lines (reverse/tail scan).
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+
+            # Missing transcript -> fail soft to the top-level cwd fallback.
+            missing = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "x"},
+                "tool_use_id": "miss-1",
+                "transcript_path": str(root / "nope.jsonl"),
+                "cwd": str(target),
+            }
+            self.assertEqual(effective_workdir(missing), target)
+
+            # Malformed transcript -> fail soft to the cwd fallback (no crash).
+            bad = root / "bad.jsonl"
+            bad.write_text("not json\n{also not json\n", encoding="utf-8")
+            malformed = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "x"},
+                "tool_use_id": "bad-1",
+                "transcript_path": str(bad),
+                "cwd": str(target),
+            }
+            self.assertEqual(effective_workdir(malformed), target)
+
+            # The newest matching event wins after many preceding lines.
+            busy = root / "busy.jsonl"
+            lines = [
+                json.dumps({"payload": {"call_id": "other", "arguments": "{}"}})
+                for _ in range(200)
+            ]
+            lines.append(
+                json.dumps(
+                    {
+                        "payload": {
+                            "call_id": "busy-1",
+                            "arguments": json.dumps({"workdir": str(target)}),
+                        }
+                    }
+                )
+            )
+            busy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            busy_payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "x"},
+                "tool_use_id": "busy-1",
+                "transcript_path": str(busy),
+            }
+            self.assertEqual(effective_workdir(busy_payload), target)
+
     def test_pre_edit_intent_gate_requires_active_project_dev_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -7527,6 +7670,55 @@ exit 64
             self.assertIn("--intent project-dev", str(decision))
             self.assertIn("[reason: project-dev-required]", str(decision))
             self.assertIn(str(repo), str(decision))
+
+    def test_pre_edit_intent_gate_resolves_effective_workdir(self) -> None:
+        """P0-4: a shell command's working repository is its effective workdir.
+
+        A command submitted with a workdir spelling the old gate ignored
+        (`current_working_directory`) must be gated against that repository, not
+        the hook process cwd.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_cwd = root / "repo-cwd"
+            repo_target = root / "repo-target"
+            for repo in (repo_cwd, repo_target):
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo_target),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(root / "state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = command_payload(
+                "printf x > out.txt", current_working_directory=str(repo_target)
+            )
+            payload["session_id"] = "effective-workdir"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo_cwd, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            reason = str(decision)
+            # Gated against the effective workdir repository, not the process cwd.
+            self.assertIn(str(repo_target.resolve()), reason)
+            self.assertNotIn(str(repo_cwd.resolve()), reason)
 
     def test_pre_edit_intent_gate_allows_git_recovery_abort(self) -> None:
         # A stuck mid-operation checkout must recover in place: a sole

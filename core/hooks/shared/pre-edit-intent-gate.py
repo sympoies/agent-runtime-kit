@@ -38,6 +38,7 @@ from hook_common import (
     ALLOW,
     apply_patch_paths,
     command_from,
+    effective_workdir,
     emit_block,
     git_toplevel,
     is_git_recovery_argv,
@@ -292,14 +293,10 @@ def session_capability(base_args: list[str]) -> tuple[str, str]:
 
 
 def payload_base(payload: Mapping[str, Any]) -> Path:
-    tool_input = tool_input_dict(payload)
-    for value in (tool_input.get("workdir"), tool_input.get("cwd"), payload.get("cwd")):
-        if isinstance(value, str) and value:
-            path = Path(value).expanduser()
-            if not path.is_absolute():
-                path = Path.cwd() / path
-            return path.resolve(strict=False)
-    return Path.cwd().resolve(strict=False)
+    # Resolve the command's effective workdir (issue #601 P0-4) so shell
+    # enforcement gates the repository the command really runs in, not the hook
+    # process cwd. Direct-edit verification stays target-based via edit_paths.
+    return effective_workdir(payload).resolve(strict=False)
 
 
 def nested_edit_paths(value: Any) -> Iterable[str]:

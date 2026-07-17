@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shlex
@@ -19,6 +18,7 @@ sys.dont_write_bytecode = True
 from hook_common import (
     ALLOW,
     command_from,
+    effective_workdir,
     emit_block,
     invocation_is_opaque,
     invocation_tokens,
@@ -27,7 +27,6 @@ from hook_common import (
     normalize_command_separators,
     opaque_invocation_has_unresolved_nested,
     read_payload,
-    tool_input_dict,
 )
 
 BYPASS_ENV_NAMES = (
@@ -40,7 +39,6 @@ BYPASS_TRUE_VALUES = {"1", "true", "TRUE", "yes", "YES"}
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*")
 PYTHON_NAME_RE = re.compile(r"^python(?:3(?:\.\d+)?)?$")
 SEPARATOR_TOKENS = {";", "&&", "||", "|", "(", ")"}
-WORKDIR_KEYS = {"cwd", "current_working_directory", "workdir", "working_directory"}
 
 
 @dataclass(frozen=True)
@@ -185,72 +183,6 @@ def cd_target(simple_command: list[str], cwd: Path) -> Path | None:
     return target
 
 
-def iter_workdir_values(value: Any) -> list[str]:
-    values: list[str] = []
-    if not isinstance(value, Mapping):
-        return values
-    for key, nested in value.items():
-        if key in WORKDIR_KEYS and isinstance(nested, str) and nested:
-            values.append(nested)
-        elif isinstance(nested, Mapping):
-            values.extend(iter_workdir_values(nested))
-    return values
-
-
-def path_from_payload(payload: dict[str, object]) -> Path:
-    tool_input = tool_input_dict(payload)
-    for value in iter_workdir_values(tool_input):
-        path = Path(value).expanduser()
-        return path if path.is_absolute() else Path.cwd() / path
-    transcript_workdir = path_from_transcript(payload)
-    if transcript_workdir is not None:
-        return transcript_workdir
-    for value in iter_workdir_values(payload):
-        path = Path(value).expanduser()
-        return path if path.is_absolute() else Path.cwd() / path
-    top_cwd = payload.get("cwd")
-    if isinstance(top_cwd, str) and top_cwd:
-        path = Path(top_cwd).expanduser()
-        return path if path.is_absolute() else Path.cwd() / path
-    return Path.cwd()
-
-
-def path_from_transcript(payload: dict[str, object]) -> Path | None:
-    tool_use_id = payload.get("tool_use_id")
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(tool_use_id, str) or not isinstance(transcript_path, str):
-        return None
-
-    path = Path(transcript_path).expanduser()
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return None
-
-    for line in reversed(lines):
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        event_payload = event.get("payload") if isinstance(event, Mapping) else None
-        if not isinstance(event_payload, Mapping):
-            continue
-        if event_payload.get("call_id") != tool_use_id:
-            continue
-        arguments = event_payload.get("arguments")
-        if not isinstance(arguments, str):
-            return None
-        try:
-            parsed_arguments = json.loads(arguments)
-        except json.JSONDecodeError:
-            return None
-        for value in iter_workdir_values(parsed_arguments):
-            workdir = Path(value).expanduser()
-            return workdir if workdir.is_absolute() else Path.cwd() / workdir
-        return None
-    return None
-
-
 def direct_python_invocation(
     command: str,
     start_cwd: Path,
@@ -332,7 +264,7 @@ def main() -> int:
 
     invocation = direct_python_invocation(
         command,
-        path_from_payload(payload),
+        effective_workdir(payload),
         inherited_bypass_environment=process_bypass_environment(),
     )
     if not invocation:

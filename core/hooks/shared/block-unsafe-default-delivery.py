@@ -33,6 +33,7 @@ from hook_common import (
     OPAQUE_NESTED_SHELL_COMMAND,
     OPAQUE_WRAPPER_COMMAND,
     command_from,
+    effective_workdir,
     emit_block,
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
@@ -43,7 +44,6 @@ from hook_common import (
     semantic_commit_invocation_effects,
     semantic_commit_invocation_state,
     simple_commands_with_nested_shells,
-    tool_input_dict,
 )
 
 BLOCK_REASON = (
@@ -176,14 +176,10 @@ GIT_PROBE_OUTPUT_LIMIT_BYTES = 1024 * 1024
 
 
 def payload_base(payload: Mapping[str, Any]) -> Path:
-    tool_input = tool_input_dict(payload)
-    for value in (tool_input.get("workdir"), tool_input.get("cwd"), payload.get("cwd")):
-        if isinstance(value, str) and value:
-            path = Path(value).expanduser()
-            if not path.is_absolute():
-                path = Path.cwd() / path
-            return path.resolve(strict=False)
-    return Path.cwd().resolve(strict=False)
+    # Resolve the command's effective workdir (issue #601 P0-4) so default-branch
+    # delivery is judged against the repository the command really targets, not
+    # the hook process cwd.
+    return effective_workdir(payload).resolve(strict=False)
 
 
 class GitProbe:

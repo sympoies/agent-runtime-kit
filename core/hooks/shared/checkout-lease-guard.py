@@ -33,6 +33,7 @@ from hook_common import (
     OPAQUE_WRAPPER_COMMAND,
     apply_patch_paths,
     command_from,
+    effective_workdir,
     emit_block,
     invocation_command_position_is_dynamic,
     invocation_is_unresolved_nested,
@@ -146,14 +147,10 @@ def hook_event(payload: Mapping[str, Any]) -> str:
 
 
 def payload_base(payload: Mapping[str, Any]) -> Path:
-    tool_input = tool_input_dict(payload)
-    for value in (tool_input.get("workdir"), tool_input.get("cwd"), payload.get("cwd")):
-        if isinstance(value, str) and value:
-            path = Path(value).expanduser()
-            if not path.is_absolute():
-                path = Path.cwd() / path
-            return path.resolve(strict=False)
-    return Path.cwd().resolve(strict=False)
+    # Resolve the command's effective workdir (issue #601 P0-4) so the checkout
+    # lease binds to the repository the command really mutates, not the hook
+    # process cwd. Direct edits stay target-based via edit_paths / target_checkouts.
+    return effective_workdir(payload).resolve(strict=False)
 
 
 def nested_edit_paths(value: Any) -> Iterable[str]:

@@ -80,13 +80,17 @@ Selective intent activation is enforced only when the installed `agent-docs`
 exposes durable `session activate/status/verify`. `user-prompt-agent-docs.sh`
 expands required docs for active intents and lists inactive routes without
 injecting their runbooks. `pre-edit-intent-gate.py` then verifies
-`project-dev` for every canonical target repository before direct edits. Bash
-is gated against its working repository because a pre-tool payload cannot
-reliably expose shell-expanded destinations; cross-repository shell mutations
-must run with each target repository as CWD. When verification blocks a
-single-repository edit or shell mutation, the reason includes complete,
-copyable `session activate` and `preflight` commands with the trusted executable
-and session context. Only a successfully probed,
+`project-dev` for every canonical target repository before direct edits. Direct
+edits are gated against each explicit edit target; Bash is gated against its
+effective working repository, resolved through the shared `effective_workdir`
+helper (see below) rather than the hook process cwd. A pre-tool payload still
+cannot reliably expose shell-expanded destinations, so cross-repository shell
+mutations must run with each target repository as their effective workdir. When
+verification blocks a single-repository edit or shell mutation, the reason
+includes a complete, copyable `session prepare` command — the atomic
+activate-plus-strict-preflight primitive — with the trusted executable and
+session context; the older `session activate` bootstrap remains accepted for
+backward compatibility. Only a successfully probed,
 explicitly versioned pre-session `agent-docs` release retains compatibility
 behavior; a missing, timed-out, crashed, malformed, or on-floor binary without
 the session surface fails closed. Before any probe, the hooks require the
@@ -99,6 +103,23 @@ launch-time
 rejected. These hooks are mechanical guardrails, not a security sandbox: the
 product launch environment, managed runtime home, and an explicit trusted-root
 override remain host trust boundaries. Hermes has no runtime-kit hook runner.
+
+The shared `effective_workdir` helper in `hook_common.py` resolves the working
+directory a tool call actually runs in, so `pre-edit-intent-gate.py`,
+`checkout-lease-guard.py`, `block-unsafe-default-delivery.py`,
+`agent-scope-lock-guard.py`, and `block-direct-python.py` all agree on the
+target repository instead of each reading the hook process cwd (issue #601
+P0-4). It fans out across the union of Codex and Claude tool envelopes: explicit
+workdir keys (`workdir`, `cwd`, `current_working_directory`,
+`working_directory`) nested anywhere in the tool input; then the Codex
+`exec_command` transcript, whose `arguments` carry the `workdir` in the
+transcript event matching this call's `tool_use_id`/`call_id`; then workdir keys
+anywhere in the payload; then the top-level `cwd`; and finally the hook process
+cwd. Claude submits the session `cwd` and no per-command workdir, so a Claude
+command resolves to the session directory; a Codex command submitted with an
+out-of-repo `workdir` resolves to that directory, not the launch repository.
+Direct-edit verification stays target-based (each edit path's repository);
+shell verification is working-repository-based on this effective workdir.
 
 `checkout-lease-guard.py` coordinates one writer per physical Git checkout
 across Codex and Claude. Explicit edit tools always participate; Bash

@@ -13,7 +13,7 @@ from typing import Any
 # Codex may execute hooks through a source symlink; keep the checkout clean.
 sys.dont_write_bytecode = True
 
-from hook_common import ALLOW, emit_block, read_payload, tool_input_dict
+from hook_common import ALLOW, effective_workdir, emit_block, read_payload
 
 VALIDATE_COMMAND = ("validate", "--changes", "all", "--format", "json")
 TIMEOUT_SECONDS = 8
@@ -34,12 +34,10 @@ def hook_event(payload: dict[str, Any]) -> str:
 
 
 def cwd_from_payload(payload: dict[str, Any]) -> Path:
-    tool_input = tool_input_dict(payload)
-    for value in (tool_input.get("workdir"), tool_input.get("cwd"), payload.get("cwd")):
-        if isinstance(value, str) and value:
-            path = Path(value).expanduser()
-            return path if path.is_absolute() else (Path.cwd() / path).resolve()
-    return Path.cwd()
+    # Resolve the tool call's effective workdir (issue #601 P0-4) so scope-lock
+    # validation runs against the repository the command really targets, not the
+    # hook process cwd.
+    return effective_workdir(payload)
 
 
 def parse_json(text: str) -> dict[str, Any]:
