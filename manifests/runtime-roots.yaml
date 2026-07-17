@@ -17,8 +17,8 @@ products:
     state_home: "${CODEX_AGENT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/codex}"
     plugin_root: "$CODEX_HOME/plugins"
     hook_config_strategy: "managed-block"
-    min_version: "0.143.0"
-    recommended_version: "0.143.0"
+    min_version: "0.144.5"
+    recommended_version: "0.144.5"
     min_version_effective_from: "2026-07-10"
     version_probe: "codex --version"
 
