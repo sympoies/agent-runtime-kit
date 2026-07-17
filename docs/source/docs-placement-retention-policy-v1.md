@@ -12,8 +12,10 @@ so the harness surfaces it through the hook-injected preflight; you can also
 inspect or audit it directly:
 
 ```bash
-agent-docs preflight --intent project-dev --format json
-agent-docs audit --target all --strict
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  preflight --intent project-dev --strict --format json
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  audit --target project --strict
 ```
 
 ## Placement Rules

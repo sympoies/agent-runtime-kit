@@ -186,7 +186,8 @@ zsh -ic 'print -r -- "ZDOTDIR=$ZDOTDIR"; command -v zsh-kit; command -v agent-ru
 ```bash
 cd "$HOME/.config/agent-runtime-kit"
 
-agent-docs audit --target all --strict
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  audit --target project --strict
 
 codex_state_home="$CODEX_AGENT_STATE_HOME"
 claude_state_home="${CLAUDE_KIT_STATE_HOME:-$HOME/.local/state/agent-runtime-kit/claude}"

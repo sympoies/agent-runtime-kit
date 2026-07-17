@@ -57,6 +57,13 @@ core/                     manifests/         targets/
                    (writable artifacts under <state_home>/out/ and /backups/)
 ```
 
+Product output is manifest-selected rather than a recursive copy of `core/`.
+The default `product` render target emits declared skills and agents; run
+`agent-runtime render --target home-prompt --product <product>` for the separate
+home-prompt target. Canonical policy documents stay under `core/policies/` and
+`agent-docs` resolves them from the selected docs home; they are not duplicated
+under `build/<product>/core/policies/`.
+
 Live Codex skill discovery reads installed `codex-kit` plugin bundles as
 `<plugin>:<skill>` entries; live Claude discovery reads
 `$HOME/.claude/plugins/<p>/skills/`. Both are populated from this repo's
@@ -89,17 +96,21 @@ behavior, and shared capabilities belong upstream in nils-cli.
 ## Local setup
 
 Clone or enter your local checkout. docs-home is normally derived from the
-install symlink; to point `agent-docs` at this checkout explicitly, export
-`AGENT_DOCS_HOME` or pass `--docs-home`:
+installed prompt symlink. Bind manual source-checkout commands explicitly with
+`--docs-home` and `--project-path`: `AGENT_DOCS_HOME` is a lower-precedence CLI
+fallback, so exporting it alone does not override an installed prompt symlink.
+Repository-owned hooks promote the environment value to the explicit flag;
+setup selects its checkout root directly.
 
 ```bash
 cd /path/to/agent-runtime-kit
-export AGENT_DOCS_HOME="$PWD"
-agent-docs audit --target all --strict
-agent-docs preflight --intent project-dev --format json
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  audit --target project --strict
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  preflight --intent project-dev --strict --format json
 ```
 
-For persistent local shells, add a host-local path to `~/.zshenv`:
+For persistent hook integration, add a host-local path to `~/.zshenv`:
 
 ```zsh
 # Replace this with your local checkout path.
@@ -123,8 +134,10 @@ hook-injected, and validation is enforced at the finish line. To inspect or
 audit what this repo requires from the repository root:
 
 ```bash
-agent-docs preflight --intent project-dev --format json
-agent-docs audit --target all --strict
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  preflight --intent project-dev --strict --format json
+agent-docs --docs-home "$PWD" --project-path "$PWD" \
+  audit --target project --strict
 ```
 
 Documentation changes also follow

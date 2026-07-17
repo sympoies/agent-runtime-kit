@@ -1,10 +1,14 @@
-# This checkout can act as the home docs catalog when AGENT_DOCS_HOME points
-# here. Keep repo-only requirements at `scope = "project"`; they apply to this
+# This checkout can act as the home docs catalog when selected explicitly with
+# `--docs-home` or by repository-owned integration. Hooks pass the
+# `AGENT_DOCS_HOME` fallback as an explicit flag; setup selects its checkout root
+# directly. An installed prompt symlink can take precedence for an unflagged
+# manual CLI call.
+# Keep repo-only requirements at `scope = "project"`; they apply to this
 # repository and linked worktrees, but are skipped for unrelated projects.
 #
 # Use `scope = "home"` for docs that should be inherited by unrelated project
-# repositories when this checkout is the docs home. Home entries are resolved
-# from this checkout, so `path` must point at a tracked file here.
+# repositories when this checkout is the selected docs home. Home entries are
+# resolved from that root, so `path` must point at a tracked file here.
 #
 # Home-scope example:
 #
@@ -14,7 +18,7 @@
 # path = "docs/source/<shared-home-scope-doc>.md"
 # required = true
 # when = "always"
-# notes = "Cross-repo guidance inherited from AGENT_DOCS_HOME for any project"
+# notes = "Cross-repo guidance inherited from the selected home docs catalog"
 
 [[document]]
 context = "project-dev"

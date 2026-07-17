@@ -6817,6 +6817,64 @@ exit 65
                 f"--docs-home {expected_repo}", log_path.read_text(encoding="utf-8")
             )
 
+    def test_finish_line_uses_agent_docs_home_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            docs_home = repo / "docs-home"
+            docs_home.mkdir()
+            expected_docs_home = docs_home.resolve()
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            log_path = repo / "agent-docs.args"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
+if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
+  echo "missing AGENT_DOCS_HOME fallback" >&2
+  exit 64
+fi
+if [[ "$args" == *"preflight --help"* ]]; then
+  printf '%s\\n' '      --require-declared-intent'
+  exit 0
+fi
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{{"intents":["project-dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' '{{"intent":"project-dev","documents":[],"validation":{{"context":"project-dev","declared":true,"commands":["bash scripts/ci/all.sh"],"marker":".cache/agent-validation/project-dev.ok"}}}}'
+  exit 0
+fi
+exit 65
+""",
+            )
+            env = {
+                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
+            self.assertIn(
+                f"--docs-home {expected_docs_home}",
+                log_path.read_text(encoding="utf-8"),
+            )
+
     def test_finish_line_does_not_default_project_catalog_to_docs_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
@@ -7670,6 +7728,61 @@ exit 64
             self.assertIn("--intent project-dev", str(decision))
             self.assertIn("[reason: project-dev-required]", str(decision))
             self.assertIn(str(repo), str(decision))
+
+    def test_pre_edit_intent_gate_uses_agent_docs_home_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            docs_home = repo / "docs-home"
+            docs_home.mkdir()
+            expected_docs_home = docs_home.resolve()
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            log_path = repo / "agent-docs.args"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
+if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
+  echo "missing AGENT_DOCS_HOME fallback" >&2
+  exit 64
+fi
+if [[ "$args" == *"session --help"* ]]; then
+  printf '%s\\n' '  verify    verify active intents'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 65
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "intent-gate-docs-home-fallback"
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            self.assertIn(
+                f"--docs-home {expected_docs_home}",
+                log_path.read_text(encoding="utf-8"),
+            )
 
     def test_pre_edit_intent_gate_resolves_effective_workdir(self) -> None:
         """P0-4: a shell command's working repository is its effective workdir.
@@ -9707,6 +9820,69 @@ exit 65
             self.assertIsNotNone(decision)
             self.assertIn(
                 f"--docs-home {expected_repo}", log_path.read_text(encoding="utf-8")
+            )
+
+    def test_preflight_cue_uses_agent_docs_home_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text(
+                '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                encoding="utf-8",
+            )
+            (repo / "DEV.md").write_text("# Dev\n", encoding="utf-8")
+            docs_home = repo / "docs-home"
+            docs_home.mkdir()
+            expected_docs_home = docs_home.resolve()
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            log_path = repo / "agent-docs.args"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
+if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
+  echo "missing AGENT_DOCS_HOME fallback" >&2
+  exit 64
+fi
+if [[ "$args" == *"preflight --help"* ]]; then
+  printf '%s\\n' '      --require-declared-intent'
+  exit 0
+fi
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{{"intents":["project-dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"DEV.md","required":true}}],"validation":{{"declared":true,"commands":["bash scripts/ci/all.sh"]}}}}'
+  exit 0
+fi
+exit 65
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            code, decision, stderr = run_shell_hook(
+                "user-prompt-agent-docs.sh",
+                {"session_id": "cue-docs-home-fallback-test", "prompt": "hello"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            self.assertIn(
+                f"--docs-home {expected_docs_home}",
+                log_path.read_text(encoding="utf-8"),
             )
 
     def test_preflight_cue_does_not_default_project_catalog_to_docs_home(self) -> None:
@@ -12915,6 +13091,70 @@ exit 65
             self.assertIsNone(decision)
             log = log_path.read_text(encoding="utf-8")
             self.assertIn(f"--docs-home {expected_repo}", log)
+            self.assertIn(f"--project-path {expected_repo}", log)
+
+    def test_session_start_healthcheck_uses_agent_docs_home_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text(
+                '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                encoding="utf-8",
+            )
+            (repo / "DEV.md").write_text("# Dev\n", encoding="utf-8")
+            docs_home = repo / "docs-home"
+            docs_home.mkdir()
+            expected_docs_home = docs_home.resolve()
+            expected_repo = repo.resolve()
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            log_path = repo / "agent-docs.args"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
+if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
+  echo "missing AGENT_DOCS_HOME fallback" >&2
+  exit 64
+fi
+if [[ "$args" != *"--project-path {expected_repo}"* ]]; then
+  echo "missing project path" >&2
+  exit 64
+fi
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{{"intents":["project-dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' 'ok'
+  exit 0
+fi
+exit 65
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "HOME": str(home),
+                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_EVIDENCE_ARCHIVE_HOME": "",
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            code, decision, stderr = run_shell_hook(
+                "session-start-healthcheck.sh",
+                {"hook_event_name": "SessionStart"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNone(decision)
+            log = log_path.read_text(encoding="utf-8")
+            self.assertIn(f"--docs-home {expected_docs_home}", log)
             self.assertIn(f"--project-path {expected_repo}", log)
 
     def test_session_start_healthcheck_does_not_default_project_catalog_to_docs_home(
