@@ -100,8 +100,10 @@ degraded capabilities. A locked standalone-CLI notary waiver is visible as
 
 ## Execute And Prove Postconditions
 
-Peekaboo arguments follow `--` unchanged. Read-only observation may omit
-`--expected`:
+Peekaboo arguments follow `--` unchanged, and each verb's argument shape
+differs (for example `app launch <name>` takes a positional name while
+`app quit --app <name>` requires the flag), so read `-- <verb> --help` through
+the adapter before guessing. Read-only observation may omit `--expected`:
 
 ```bash
 macos-agent exec \
@@ -111,7 +113,11 @@ macos-agent exec \
   -- see --app Calculator --json
 ```
 
-Every mutation requires a fresh, externally observable postcondition:
+Every mutation requires a fresh, externally observable postcondition. A click
+resolves against the latest `see` snapshot, so observe first: `--on`/`--id`
+take the opaque element ID that `see`/`inspect_ui` reported (a human label is
+the positional `[query]`, never an `--on` value), while `type`/`hotkey` drive
+the focused app with no element ID:
 
 ```bash
 macos-agent exec \
@@ -119,7 +125,7 @@ macos-agent exec \
   --intent "Clear Calculator" \
   --expected "Calculator display is zero" \
   --runtime app \
-  -- click --app Calculator --on C --json
+  -- click --app Calculator --on "$clear_button_id" --json
 ```
 
 Prefer stable app/window/AX descriptions and fresh snapshot lineage. Use
