@@ -10,12 +10,13 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.21.34`, `plan-issue >=1.1.0`, and
+- `agent-runtime`, `forge-cli >=1.22.12`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
   available on `PATH`. The generic code-review outcome uses
   `review-specialists` in pre-merge mode; native review summaries and observed
-  convergence need `forge-cli` 1.21.34, the review-thread merge gate needs
-  1.0.16, the task-list merge gate needs 1.0.17, and
+  convergence need `forge-cli` 1.21.34, guarded pending-review recovery needs
+  1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
+  needs 1.0.17, and
   existing-PR adoption in `pr deliver` needs 1.1.0. Linked issue closeout
   relies on the unified terminal task-row contract in `plan-issue` 1.1.0.
 - Shared provider, branch, body, and label rules in
@@ -108,6 +109,10 @@ Failure modes:
 - Current-head native review summaries are unread or contain actionable
   feedback that has not been repaired, accepted with rationale, or moved to a
   follow-up.
+- A GitHub native review submission returns `github_pending_review_exists`,
+  but `data.pending_reviews[]` does not
+  identify exactly one abandoned current-viewer review for this PR. Stop rather
+  than deleting ambiguous review state or falling back to an outcome note.
 - `forge-cli pr merge` returns `review_changes_requested`,
   `review_convergence_activity_changed`, `review_convergence_head_changed`,
   `review_convergence_timeout`, `review_snapshot_incomplete`,
@@ -224,8 +229,24 @@ review-specialists scope \
   --format json
 # Read native review bodies after specialist posting and repair. Current-head
 # summaries are semantic evidence; stale-head summaries are informational.
+PRE_SUBMIT_PR="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER"
+)"
+EXPECTED_REVIEW_HEAD="$(
+  printf '%s\n' "$PRE_SUBMIT_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly EXPECTED_REVIEW_HEAD
 if [ "$PROVIDER" = github ]; then
-  forge-cli --provider "$PROVIDER" --format json pr reviews "$PR_NUMBER"
+  PRE_SUBMIT_REVIEWS="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+      --format json pr reviews "$PR_NUMBER"
+  )"
+  printf '%s\n' "$PRE_SUBMIT_REVIEWS"
+  printf '%s\n' "$PRE_SUBMIT_REVIEWS" |
+    jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+      '.ok == true and .data.head_sha == $head' >/dev/null
 fi
 # Reuse the complete selected lens set for the final provider outcome.
 SELECTED_REVIEW_LENSES=(testing maintainability)
@@ -240,21 +261,122 @@ done
 FINAL_SUBMIT_REVIEW=()
 case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
   1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
-    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
+    [ "$PROVIDER" = github ] &&
+      FINAL_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
     ;;
 esac
 # Observed convergence is GitHub-only in v1. Preserve GitLab delivery even when
 # the user's global forge-cli config enables it.
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
-forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
-  --decision "$REVIEW_DECISION" \
-  "${FINAL_SUBMIT_REVIEW[@]}" \
-  --comment-file "$DELIVERY_REVIEW_OUTCOME" \
+
+# Capture the outcome bytes once. Initial submission, guarded recovery, and
+# the single retry must all use this immutable value rather than rereading a
+# mutable file path. Preserve capture failures before freezing the value, and
+# use `--option=value` below so hyphen-leading Markdown remains one argv value.
+EXPECTED_REVIEW_BODY="$(cat "$DELIVERY_REVIEW_OUTCOME")" || exit $?
+readonly EXPECTED_REVIEW_BODY
+NATIVE_REVIEW_CMD=(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
+  pr review "$PR_NUMBER"
+  --decision "$REVIEW_DECISION"
+  "${FINAL_SUBMIT_REVIEW[@]}"
+  --comment="$EXPECTED_REVIEW_BODY"
   "${REVIEW_LENS_ARGS[@]}"
+)
+# Clear stale selector state, then preserve the failed command status and JSON.
+unset PENDING_REVIEW_ID
+set +e
+NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+NATIVE_REVIEW_STATUS=$?
+set -e
+
+if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
+  if [ "$PROVIDER" != github ] || ! printf '%s\n' "$NATIVE_REVIEW_JSON" |
+    jq -e '.ok == false and .error.code == "github_pending_review_exists"' \
+      >/dev/null; then
+    printf '%s\n' "$NATIVE_REVIEW_JSON" >&2
+    exit "$NATIVE_REVIEW_STATUS"
+  fi
+
+  # Fetch a fresh post-conflict pr reviews snapshot.
+  if [ "$PROVIDER" = github ]; then
+    POST_CONFLICT_REVIEWS="$(
+      forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+        --format json pr reviews "$PR_NUMBER"
+    )"
+    PENDING_REVIEW_ID="$(
+      printf '%s\n' "$POST_CONFLICT_REVIEWS" |
+        jq -er --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg body "$EXPECTED_REVIEW_BODY" '
+            select(.ok == true and .data.head_sha == $head)
+            | [.data.pending_reviews[]
+                | select(.state == "PENDING")
+                | select(.commit_sha == $head)
+                | select(.summary_truncated == false)
+                | select((.summary | rtrimstr("\n")) == ($body | rtrimstr("\n")))]
+            | select(length == 1)
+            | .[0].id
+          '
+    )"
+    if [ -n "${PENDING_REVIEW_ID:-}" ]; then
+      DELETE_REVIEW_JSON="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr pending-review delete "$PR_NUMBER" \
+          --review "$PENDING_REVIEW_ID" \
+          --expected-head "$EXPECTED_REVIEW_HEAD" \
+          --expected-commit "$EXPECTED_REVIEW_HEAD" \
+          --expected-body="$EXPECTED_REVIEW_BODY" \
+          --confirm-abandoned
+      )"
+      POST_DELETE_REVIEWS="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr reviews "$PR_NUMBER"
+      )"
+      printf '%s\n' "$POST_DELETE_REVIEWS" |
+        jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg id "$PENDING_REVIEW_ID" '
+            .ok == true
+            and .data.head_sha == $head
+            and (.data.pending_reviews | map(.id) | index($id) | not)
+          ' >/dev/null
+
+      set +e
+      NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+      NATIVE_REVIEW_RETRY_STATUS=$?
+      set -e
+      if [ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]; then
+        printf '%s\n' "$NATIVE_REVIEW_RETRY_JSON" >&2
+        exit "$NATIVE_REVIEW_RETRY_STATUS"
+      fi
+      NATIVE_REVIEW_JSON="$NATIVE_REVIEW_RETRY_JSON"
+    fi
+  fi
+fi
+
+printf '%s\n' "$NATIVE_REVIEW_JSON"
+# Keep merge on the same provider head that was inspected and reviewed.
 forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash \
+  --expected-head "$EXPECTED_REVIEW_HEAD" \
   "${REVIEW_CONVERGENCE_ARGS[@]}"
 ```
+
+If a GitHub `pr review --submit-review` call returns
+`github_pending_review_exists`, preserve the failed command status and JSON,
+then fetch a fresh post-conflict `pr reviews` result.
+The command binds the native review to the inspected head with
+`--expected-head`. From
+`data.pending_reviews[]`, recover only when exactly one current-viewer node is
+the abandoned attempt for this PR and the intended body, decision, and head
+are still current. Never choose a node from submitted reviews, delete multiple
+nodes, or use recovery for an unrelated rejection. The executable state machine
+uses only that exact node id.
+
+The delete primitive independently verifies exact PR membership, pending
+state, current-viewer authorship, and delete permission. After the refreshed
+snapshot confirms the pending node is gone, retry the unchanged failed review
+once; if the guard, refresh, retry, or a second rejection fails, stop and
+preserve the provider error.
 
 Map the final delivery review outcome to `approve` when delivery may merge and
 `request-changes` when the review blocks. Use `comments-only` only for
@@ -402,7 +524,10 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    generic review's pre-merge mode with `forge-cli pr review` before merge. Use
    the final `--decision` and repeat every selected `--lens`; add native GitHub
    approval only through the declared independent-identity capability, and keep
-   identity selection outside the public skill.
+   identity selection outside the public skill. If native submission
+   returns `github_pending_review_exists`, use the exact-node
+   `pending_reviews` recovery above and retry the unchanged outcome once; do
+   not delete ambiguous drafts or downgrade the outcome to a note.
 14. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are

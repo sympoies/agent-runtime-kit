@@ -143,6 +143,9 @@ assert_delivery_skills_own_terminal_worktree_cleanup() {
 # typed retry contract.
 assert_delivery_skills_use_native_review_convergence() {
   local rc=0 skill gitlab_reviews_output gitlab_reviews_status
+  local hyphen_comment_output hyphen_delete_output
+  local capture_failure_output capture_failure_status
+  local head_capture_failure_output head_capture_failure_status
 
   set +e
   gitlab_reviews_output="$(forge-cli --provider gitlab --repo fixture/project \
@@ -155,12 +158,67 @@ assert_delivery_skills_use_native_review_convergence() {
     rc=1
   fi
 
+  if ! hyphen_comment_output="$(
+    forge-cli pr review validate --provider local --format json \
+      --comment=--submit-review
+  )" || ! grep -q 'cli.forge-cli.pr.review.validate.v1' \
+    <<<"$hyphen_comment_output"; then
+    echo "runtime-smoke pr: forge-cli rejected a hyphen-leading inline review body" >&2
+    rc=1
+  fi
+  if ! hyphen_delete_output="$(
+    forge-cli --provider github --repo fixture/project --format json \
+      pr pending-review delete 1 \
+      --review PRR_fixture \
+      --expected-head 0000000000000000000000000000000000000000 \
+      --expected-commit 0000000000000000000000000000000000000000 \
+      --expected-body=--help \
+      --confirm-abandoned \
+      --dry-run
+  )" || ! grep -q 'cli.forge-cli.pr.pending-review.delete.v1' \
+    <<<"$hyphen_delete_output"; then
+    echo "runtime-smoke pr: forge-cli rejected a hyphen-leading expected review body" >&2
+    rc=1
+  fi
+
+  set +e
+  capture_failure_output="$(
+    bash -c 'set -e
+      EXPECTED_REVIEW_BODY="$(false)" || exit $?
+      readonly EXPECTED_REVIEW_BODY
+      printf "sentinel reached\n"' 2>&1
+  )"
+  capture_failure_status=$?
+  set -e
+  if [ "$capture_failure_status" -eq 0 ] || \
+    grep -q 'sentinel reached' <<<"$capture_failure_output"; then
+    echo "runtime-smoke pr: fallible review capture reached its sentinel" >&2
+    rc=1
+  fi
+
+  set +e
+  head_capture_failure_output="$(
+    bash -c 'set -e
+      EXPECTED_REVIEW_HEAD="$(
+        false
+      )" || exit $?
+      readonly EXPECTED_REVIEW_HEAD
+      printf "head sentinel reached\n"' 2>&1
+  )"
+  head_capture_failure_status=$?
+  set -e
+  if [ "$head_capture_failure_status" -eq 0 ] || \
+    grep -q 'head sentinel reached' <<<"$head_capture_failure_output"; then
+    echo "runtime-smoke pr: multiline provider-head capture reached its sentinel" >&2
+    rc=1
+  fi
+
   for skill in \
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
-    if ! grep -q 'forge-cli >=1.21.34' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not require forge-cli 1.21.34" >&2
+    if ! grep -q 'forge-cli >=1.22.12' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not require forge-cli 1.22.12" >&2
       rc=1
     fi
     if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
@@ -169,6 +227,20 @@ assert_delivery_skills_use_native_review_convergence() {
     fi
     if ! grep -q 'review_convergence_activity_changed' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill omits typed late-activity retry routing" >&2
+      rc=1
+    fi
+    if ! grep -q 'github_pending_review_exists' "$REPO_ROOT/$skill" || \
+      ! grep -q -- '--expected-head' "$REPO_ROOT/$skill" || \
+      ! grep -q '^EXPECTED_REVIEW_HEAD=' "$REPO_ROOT/$skill" || \
+      ! grep -q '^readonly EXPECTED_REVIEW_HEAD$' "$REPO_ROOT/$skill" || \
+      ! grep -q '^EXPECTED_REVIEW_BODY=' "$REPO_ROOT/$skill" || \
+      ! grep -q '^readonly EXPECTED_REVIEW_BODY$' "$REPO_ROOT/$skill" || \
+      ! grep -q -- '--comment="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill" || \
+      ! grep -q -- '--expected-body="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill" || \
+      ! grep -q '.commit_sha == \$head' "$REPO_ROOT/$skill" || \
+      ! grep -q 'pending_reviews' "$REPO_ROOT/$skill" || \
+      ! grep -q 'pr pending-review delete' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill omits guarded pending-review recovery" >&2
       rc=1
     fi
     if ! grep -q 'review_convergence_head_changed' "$REPO_ROOT/$skill" || \
@@ -195,38 +267,560 @@ assert_delivery_skills_use_native_review_convergence() {
     fi
   done
 
-  # `pr reviews` is GitHub-only in v1. Every executable occurrence must stay
-  # inside an explicit provider guard; prose references are backtick-quoted and
-  # intentionally ignored here.
+  # The recovery recipe is destructive, so validate its executable ordering
+  # and fail-closed semantics rather than merely checking marker tokens.
   if ! python3 - "$REPO_ROOT" \
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera <<'PY'
 from pathlib import Path
+import re
 import sys
 
 root = Path(sys.argv[1])
-for relative in sys.argv[2:]:
-    path = root / relative
-    guarded = False
-    commands = 0
-    for line_number, line in enumerate(path.read_text().splitlines(), start=1):
-        stripped = line.strip()
-        if stripped == 'if [ "$PROVIDER" = github ]; then':
-            guarded = True
-            continue
+
+RECOVERY_MARKER = "# Fetch a fresh post-conflict pr reviews snapshot."
+GITHUB_GUARD = 'if [ "$PROVIDER" = github ]; then'
+ID_GUARD = 'if [ -n "${PENDING_REVIEW_ID:-}" ]; then'
+
+
+def executable(line, token):
+    stripped = line.strip()
+    return token in line and "`" not in line and not stripped.startswith("#")
+
+
+def validate(relative, text):
+    lines = text.splitlines()
+    deletes = [
+        index for index, line in enumerate(lines)
+        if executable(line, "pr pending-review delete")
+    ]
+    if len(deletes) != 1:
+        raise ValueError(f"expected one executable pending-review delete, found {len(deletes)}")
+    delete_index = deletes[0]
+    merges = [
+        index for index, line in enumerate(lines)
+        if executable(line, "pr merge")
+    ]
+    if len(merges) != 1:
+        raise ValueError(f"expected one executable pr merge, found {len(merges)}")
+    merge_index = merges[0]
+
+    markers = [
+        index for index, line in enumerate(lines[:delete_index])
+        if line.strip() == RECOVERY_MARKER
+    ]
+    if len(markers) != 1:
+        raise ValueError("missing unique fresh post-conflict snapshot marker")
+    marker_index = markers[0]
+
+    pre_reads = [
+        index for index in range(marker_index + 1, delete_index)
+        if executable(lines[index], "pr reviews")
+    ]
+    post_reads = [
+        index for index in range(delete_index + 1, len(lines))
+        if executable(lines[index], "pr reviews")
+    ]
+    if len(pre_reads) != 1:
+        raise ValueError("recovery must read one fresh post-conflict snapshot before delete")
+    if not post_reads:
+        raise ValueError("recovery must read back pr reviews after delete")
+
+    stack = []
+    stacks = {}
+    for index in range(marker_index + 1, post_reads[0] + 1):
+        stripped = lines[index].strip()
+        if stripped.startswith("if ") and stripped.endswith("; then"):
+            stack.append(stripped)
+        stacks[index] = tuple(stack)
         if stripped == "fi":
-            guarded = False
+            if not stack:
+                raise ValueError("unbalanced recovery guard")
+            stack.pop()
+
+    for index, label in ((delete_index, "delete"), (post_reads[0], "read-back")):
+        if GITHUB_GUARD not in stacks.get(index, ()):
+            raise ValueError(f"{label} is outside the GitHub guard")
+        if ID_GUARD not in stacks.get(index, ()):
+            raise ValueError(f"{label} is outside the non-empty review-id guard")
+
+    id_guard_index = next(
+        (
+            index for index in range(pre_reads[0] + 1, delete_index)
+            if lines[index].strip() == ID_GUARD
+        ),
+        None,
+    )
+    if id_guard_index is None:
+        raise ValueError("review-id guard must follow the fresh snapshot selection")
+
+    delete_window = lines[delete_index:post_reads[0]]
+    required_delete_bindings = (
+        '--review "$PENDING_REVIEW_ID"',
+        '--expected-head "$EXPECTED_REVIEW_HEAD"',
+        '--expected-commit "$EXPECTED_REVIEW_HEAD"',
+        '--confirm-abandoned',
+    )
+    for binding in required_delete_bindings:
+        matches = [line for line in delete_window if executable(line, binding)]
+        if len(matches) != 1:
+            raise ValueError(
+                f"delete must have one executable {binding!r} binding"
+            )
+    merge_window = lines[merge_index:merge_index + 6]
+    merge_head_bindings = [
+        line for line in merge_window
+        if executable(line, '--expected-head "$EXPECTED_REVIEW_HEAD"')
+    ]
+    if len(merge_head_bindings) != 1:
+        raise ValueError("final merge must bind the reviewed provider head")
+
+    body_bindings = [
+        line for line in delete_window
+        if executable(line, '--expected-body="$EXPECTED_REVIEW_BODY"')
+    ]
+    if len(body_bindings) != 1:
+        raise ValueError("delete must bind one captured intended review body")
+
+    unsets = [
+        index for index, line in enumerate(lines[:marker_index])
+        if line.strip() == "unset PENDING_REVIEW_ID"
+    ]
+    if not unsets:
+        raise ValueError("stale PENDING_REVIEW_ID is not cleared before native submission")
+
+    required_contract = (
+        "github_pending_review_exists",
+        "preserve the failed command status and JSON",
+        "binds the native review to the inspected head",
+        "data.pending_reviews[]",
+        "exactly one",
+        "current-viewer",
+        "intended body, decision, and head",
+        "retry the unchanged",
+        "second rejection",
+    )
+    missing = [token for token in required_contract if token not in text]
+    if missing:
+        raise ValueError(f"missing fail-closed contract text: {', '.join(missing)}")
+    if not re.search(r"retry the unchanged.{0,80}\bonce\b", text, flags=re.IGNORECASE | re.DOTALL):
+        raise ValueError("recovery does not constrain the unchanged retry to once")
+
+    executable_transitions = (
+        "NATIVE_REVIEW_CMD=(",
+        'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
+        "NATIVE_REVIEW_STATUS=$?",
+        '[ "$NATIVE_REVIEW_STATUS" -ne 0 ]',
+        '.error.code == "github_pending_review_exists"',
+        'PENDING_REVIEW_ID="$(',
+        "select(.ok == true and .data.head_sha == $head)",
+        "| [.data.pending_reviews[]",
+        '.state == "PENDING"',
+        ".commit_sha == $head",
+        ".summary_truncated == false",
+        "length == 1",
+        'POST_DELETE_REVIEWS="$(',
+        "index($id) | not",
+        'NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
+        "NATIVE_REVIEW_RETRY_STATUS=$?",
+        '[ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]',
+    )
+    transition_indexes = []
+    for token in executable_transitions:
+        indexes = [
+            index for index, line in enumerate(lines)
+            if executable(line, token)
+        ]
+        if len(indexes) != 1:
+            raise ValueError(
+                f"expected one executable transition {token!r}, found {len(indexes)}"
+            )
+        transition_indexes.append(indexes[0])
+    if transition_indexes != sorted(transition_indexes):
+        raise ValueError("pending-review state-machine transitions are out of order")
+    if not (transition_indexes[3] < marker_index < pre_reads[0]):
+        raise ValueError("fresh snapshot does not follow the typed failure gate")
+    if not (pre_reads[0] < transition_indexes[5] < id_guard_index < delete_index):
+        raise ValueError("fresh snapshot is not parsed into one guarded exact id")
+    provider_head_captures = [
+        index for index in range(transition_indexes[0])
+        if lines[index].strip() == "EXPECTED_REVIEW_HEAD=\"$("
+    ]
+    if len(provider_head_captures) != 1:
+        raise ValueError("native review command must capture one provider head")
+    provider_pr_captures = [
+        index for index in range(provider_head_captures[0])
+        if lines[index].strip() == 'PRE_SUBMIT_PR="$('
+    ]
+    if len(provider_pr_captures) != 1:
+        raise ValueError("reviewed head must come from one provider PR snapshot")
+    provider_head_assignments = [
+        index for index in range(provider_head_captures[0], merge_index)
+        if re.match(r"^EXPECTED_REVIEW_HEAD=", lines[index].strip())
+    ]
+    if provider_head_assignments != provider_head_captures:
+        raise ValueError("reviewed provider head must have one assignment")
+    provider_head_readonly = [
+        index for index in range(provider_head_captures[0], merge_index)
+        if lines[index].strip() == "readonly EXPECTED_REVIEW_HEAD"
+    ]
+    if len(provider_head_readonly) != 1:
+        raise ValueError("reviewed provider head must become readonly once")
+    provider_head_failure_guards = [
+        index
+        for index in range(
+            provider_head_captures[0] + 1,
+            provider_head_readonly[0],
+        )
+        if lines[index].strip() == ')" || exit $?'
+    ]
+    if provider_head_failure_guards != [provider_head_readonly[0] - 1]:
+        raise ValueError(
+            "provider-head assignment close must propagate failure immediately"
+        )
+    unguarded_provider_head_closes = [
+        index
+        for index in range(
+            provider_head_captures[0] + 1,
+            provider_head_readonly[0],
+        )
+        if lines[index].strip() == ')"'
+    ]
+    if unguarded_provider_head_closes:
+        raise ValueError("provider-head assignment has an unguarded close")
+    review_body_assignments = [
+        index for index in range(provider_head_captures[0], merge_index)
+        if re.match(r"^EXPECTED_REVIEW_BODY=", lines[index].strip())
+    ]
+    if len(review_body_assignments) != 1:
+        raise ValueError("review body must have one captured assignment")
+    if not lines[review_body_assignments[0]].strip().endswith(')" || exit $?'):
+        raise ValueError("review-body capture must propagate command failure")
+    review_body_readonly = [
+        index for index in range(review_body_assignments[0] + 1, merge_index)
+        if lines[index].strip() == "readonly EXPECTED_REVIEW_BODY"
+    ]
+    if len(review_body_readonly) != 1:
+        raise ValueError("captured review body must become readonly once")
+    if not (
+        provider_head_failure_guards[0]
+        < provider_head_readonly[0]
+        < review_body_assignments[0]
+        < review_body_readonly[0]
+        < transition_indexes[0]
+    ):
+        raise ValueError("fallible captures must precede standalone readonly bindings")
+    provider_pr_reads = [
+        index for index in range(provider_pr_captures[0], provider_head_captures[0])
+        if executable(lines[index], "pr view")
+    ]
+    if len(provider_pr_reads) != 1:
+        raise ValueError("provider PR snapshot must read the reviewed head once")
+    provider_head_parsers = [
+        index for index in range(provider_head_captures[0], transition_indexes[0])
+        if executable(lines[index], "| .data.head_sha")
+    ]
+    if len(provider_head_parsers) != 1:
+        raise ValueError("provider PR snapshot head must be parsed once")
+    provider_review_head_checks = [
+        index for index in range(provider_head_captures[0], transition_indexes[0])
+        if executable(lines[index], ".data.head_sha == $head")
+    ]
+    if len(provider_review_head_checks) != 1:
+        raise ValueError("GitHub review snapshot must match the provider PR head")
+    review_body_bindings = [
+        index for index in range(provider_head_captures[0], transition_indexes[1])
+        if executable(lines[index], '--comment="$EXPECTED_REVIEW_BODY"')
+    ]
+    if len(review_body_bindings) != 1:
+        raise ValueError("native review command must bind one captured body value")
+    expected_head_bindings = [
+        index for index in range(provider_head_captures[0], transition_indexes[0])
+        if executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
+    ]
+    if len(expected_head_bindings) != 1:
+        raise ValueError(
+            "native review command must have one executable expected-head binding"
+        )
+    if not (expected_head_bindings[0] < transition_indexes[0]):
+        raise ValueError("expected-head binding must precede native command capture")
+    if not (delete_index < transition_indexes[12] <= post_reads[0]):
+        raise ValueError("post-delete read-back is not captured")
+    if not (post_reads[0] < transition_indexes[13] < transition_indexes[14]):
+        raise ValueError("absence proof does not precede the unchanged retry")
+
+
+def remove_first_executable(text, token, *, before_delete):
+    lines = text.splitlines()
+    marker_index = next(
+        index for index, line in enumerate(lines)
+        if line.strip() == RECOVERY_MARKER
+    )
+    delete_index = next(
+        index for index, line in enumerate(lines)
+        if executable(line, "pr pending-review delete")
+    )
+    indexes = (
+        range(marker_index + 1, delete_index)
+        if before_delete
+        else range(delete_index + 1, len(lines))
+    )
+    target = next(index for index in indexes if executable(lines[index], token))
+    lines[target] = lines[target].replace(token, f"removed-{token.replace(' ', '-')}")
+    return "\n".join(lines)
+
+
+def replace_delete_binding(text, token, replacement):
+    lines = text.splitlines()
+    delete_index = next(
+        index for index, line in enumerate(lines)
+        if executable(line, "pr pending-review delete")
+    )
+    post_read_index = next(
+        index for index in range(delete_index + 1, len(lines))
+        if executable(lines[index], "pr reviews")
+    )
+    indexes = [
+        index for index in range(delete_index, post_read_index)
+        if executable(lines[index], token)
+    ]
+    if len(indexes) != 1:
+        raise ValueError(f"expected one delete binding {token!r}")
+    lines[indexes[0]] = lines[indexes[0]].replace(token, replacement)
+    return "\n".join(lines)
+
+
+def replace_merge_binding(text, token, replacement):
+    lines = text.splitlines()
+    merge_index = next(
+        index for index, line in enumerate(lines)
+        if executable(line, "pr merge")
+    )
+    indexes = [
+        index for index in range(merge_index, min(merge_index + 6, len(lines)))
+        if executable(lines[index], token)
+    ]
+    if len(indexes) != 1:
+        raise ValueError(f"expected one merge binding {token!r}")
+    lines[indexes[0]] = lines[indexes[0]].replace(token, replacement)
+    return "\n".join(lines)
+
+
+def insert_before_executable(text, token, insertion):
+    lines = text.splitlines()
+    target = next(
+        index for index, line in enumerate(lines)
+        if executable(line, token)
+    )
+    lines.insert(target, insertion)
+    return "\n".join(lines)
+
+
+def remove_capture_failure_guard(text, variable):
+    lines = text.splitlines()
+    assignment_index = next(
+        index for index, line in enumerate(lines)
+        if line.strip().startswith(f'{variable}="$(')
+    )
+    readonly_index = next(
+        index for index in range(assignment_index + 1, len(lines))
+        if lines[index].strip() == f"readonly {variable}"
+    )
+    guards = [
+        index for index in range(assignment_index, readonly_index)
+        if "|| exit $?" in lines[index]
+    ]
+    if len(guards) != 1:
+        raise ValueError(f"expected one failure guard for {variable}")
+    lines[guards[0]] = lines[guards[0]].replace(" || exit $?", "")
+    return "\n".join(lines)
+
+
+def relocate_head_failure_guard(text):
+    lines = text.splitlines()
+    assignment_index = next(
+        index for index, line in enumerate(lines)
+        if line.strip() == 'EXPECTED_REVIEW_HEAD="$('
+    )
+    readonly_index = next(
+        index for index in range(assignment_index + 1, len(lines))
+        if lines[index].strip() == "readonly EXPECTED_REVIEW_HEAD"
+    )
+    guard_index = next(
+        index for index in range(assignment_index, readonly_index)
+        if "|| exit $?" in lines[index]
+    )
+    lines[guard_index] = lines[guard_index].replace(" || exit $?", "")
+    lines.insert(
+        readonly_index,
+        'UNRELATED_CAPTURE="$(false)" || exit $?',
+    )
+    return "\n".join(lines)
+
+
+for relative in sys.argv[2:]:
+    text = (root / relative).read_text()
+    try:
+        validate(relative, text)
+    except ValueError as error:
+        raise SystemExit(f"{relative}: {error}") from error
+
+    mutations = {
+        "github guard": text.replace(GITHUB_GUARD, "# removed github guard"),
+        "review-id guard": text.replace(ID_GUARD, "# removed review-id guard"),
+        "exact review id": text.replace(
+            '--review "$PENDING_REVIEW_ID"',
+            '--review "$OTHER_REVIEW_ID"',
+        ),
+        "delete expected head": replace_delete_binding(
+            text,
+            '--expected-head "$EXPECTED_REVIEW_HEAD"',
+            '--expected-head "$OTHER_REVIEW_HEAD"',
+        ),
+        "delete expected commit": text.replace(
+            '--expected-commit "$EXPECTED_REVIEW_HEAD"',
+            '--expected-commit "$OTHER_REVIEW_HEAD"',
+        ),
+        "delete expected body": text.replace(
+            '--expected-body="$EXPECTED_REVIEW_BODY"',
+            '--expected-body="$OTHER_REVIEW_BODY"',
+        ),
+        "delete abandonment confirmation": text.replace(
+            '--confirm-abandoned',
+            '--skip-abandonment-confirmation',
+        ),
+        "post-conflict read": remove_first_executable(
+            text, "pr reviews", before_delete=True
+        ),
+        "post-delete read-back": remove_first_executable(
+            text, "pr reviews", before_delete=False
+        ),
+        "exactly-one selection": text.replace("exactly one", "one"),
+        "current-viewer ownership": text.replace("current-viewer", "viewer"),
+        "body/decision/head freshness": text.replace(
+            "intended body, decision, and head",
+            "intended outcome",
+        ),
+        "retry-once": text.replace("retry the unchanged", "retry"),
+        "second-rejection stop": text.replace("second rejection", "repeat"),
+        "failed-command evidence": text.replace(
+            "preserve the failed command status and JSON",
+            "inspect the failure",
+        ),
+        "native command array": text.replace("NATIVE_REVIEW_CMD=(", "REMOVED_CMD=("),
+        "first result capture": text.replace(
+            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
+            'NATIVE_REVIEW_JSON=""',
+        ),
+        "first status capture": text.replace("NATIVE_REVIEW_STATUS=$?", "NATIVE_REVIEW_STATUS=0"),
+        "first failure branch": text.replace(
+            '[ "$NATIVE_REVIEW_STATUS" -ne 0 ]',
+            '[ "$NATIVE_REVIEW_STATUS" -eq 0 ]',
+        ),
+        "typed error gate": text.replace(
+            '.error.code == "github_pending_review_exists"',
+            ".error.code == \"other\"",
+        ),
+        "expected-head binding": text.replace(
+            '--expected-head "$EXPECTED_REVIEW_HEAD"',
+            '--expected-head "$OTHER_REVIEW_HEAD"',
+        ),
+        "provider PR snapshot": text.replace(
+            'PRE_SUBMIT_PR="$(',
+            'REMOVED_PRE_SUBMIT_PR="$(',
+        ),
+        "provider PR head read": text.replace(
+            "pr view",
+            "pr removed-view",
+        ),
+        "provider head parse": text.replace(
+            ".data.head_sha",
+            ".data.removed_head_sha",
+            1,
+        ),
+        "provider review-head comparison": text.replace(
+            ".data.head_sha == $head",
+            ".data.head_sha == $other",
+            1,
+        ),
+        "hyphen-safe review body binding": text.replace(
+            '--comment="$EXPECTED_REVIEW_BODY"',
+            '--comment "$EXPECTED_REVIEW_BODY"',
+        ),
+        "hyphen-safe delete body binding": text.replace(
+            '--expected-body="$EXPECTED_REVIEW_BODY"',
+            '--expected-body "$EXPECTED_REVIEW_BODY"',
+        ),
+        "final merge expected head": replace_merge_binding(
+            text,
+            '--expected-head "$EXPECTED_REVIEW_HEAD"',
+            '--expected-head "$OTHER_REVIEW_HEAD"',
+        ),
+        "reviewed head reassignment": insert_before_executable(
+            text,
+            "pr merge",
+            'EXPECTED_REVIEW_HEAD="$OTHER_REVIEW_HEAD"',
+        ),
+        "captured review body reassignment": insert_before_executable(
+            text,
+            "pr pending-review delete",
+            'EXPECTED_REVIEW_BODY="$OTHER_REVIEW_BODY"',
+        ),
+        "reviewed head readonly binding": text.replace(
+            "readonly EXPECTED_REVIEW_HEAD",
+            "REMOVED_READONLY EXPECTED_REVIEW_HEAD",
+        ),
+        "captured review body readonly binding": text.replace(
+            "readonly EXPECTED_REVIEW_BODY",
+            "REMOVED_READONLY EXPECTED_REVIEW_BODY",
+        ),
+        "provider head capture failure propagation": remove_capture_failure_guard(
+            text,
+            "EXPECTED_REVIEW_HEAD",
+        ),
+        "provider head relocated failure propagation": relocate_head_failure_guard(text),
+        "review body capture failure propagation": remove_capture_failure_guard(
+            text,
+            "EXPECTED_REVIEW_BODY",
+        ),
+        "pending selector": text.replace('PENDING_REVIEW_ID="$(', 'REMOVED_REVIEW_ID="$('),
+        "pending snapshot source": text.replace(
+            "| [.data.pending_reviews[]",
+            "| []",
+        ),
+        "pending commit-head selector": text.replace(
+            ".commit_sha == $head",
+            ".commit_sha == $other",
+        ),
+        "exactly-one executable selector": text.replace("length == 1", "length > 0"),
+        "post-delete capture": text.replace(
+            'POST_DELETE_REVIEWS="$(',
+            'POST_DELETE_RESULT="$(',
+        ),
+        "post-delete absence proof": text.replace("index($id) | not", "index($id)"),
+        "retry result capture": text.replace(
+            'NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
+            'NATIVE_REVIEW_RETRY_JSON=""',
+        ),
+        "retry status capture": text.replace(
+            "NATIVE_REVIEW_RETRY_STATUS=$?",
+            "NATIVE_REVIEW_RETRY_STATUS=0",
+        ),
+        "second-failure branch": text.replace(
+            '[ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]',
+            '[ "$NATIVE_REVIEW_RETRY_STATUS" -eq 0 ]',
+        ),
+    }
+    for mutation, candidate in mutations.items():
+        try:
+            validate(relative, candidate)
+        except ValueError:
             continue
-        if "pr reviews" in line and "`" not in line and not stripped.startswith("#"):
-            commands += 1
-            if not guarded:
-                raise SystemExit(f"{relative}:{line_number}: unguarded GitHub-only pr reviews command")
-    if commands == 0:
-        raise SystemExit(f"{relative}: no executable pr reviews command found")
+        raise SystemExit(f"{relative}: validator accepted missing {mutation}")
 PY
   then
-    echo "runtime-smoke pr: delivery skills expose an unguarded GitHub-only pr reviews command" >&2
+    echo "runtime-smoke pr: delivery skills weaken guarded pending-review recovery" >&2
     rc=1
   fi
 
@@ -450,7 +1044,7 @@ run_create_github_probe() {
   grep -q '"type::feature"' "$out"
   grep -q '"area::runtime"' "$out"
   grep -q '"size::s"' "$out"
-  grep -q '"gh"' "$out"
+  grep -Eq '"/?([^"/]+/)*gh"' "$out"
 }
 
 run_create_gitlab_probe() {
@@ -483,7 +1077,7 @@ run_create_gitlab_probe() {
   grep -q '"type::feature"' "$out"
   grep -q '"area::runtime"' "$out"
   grep -q '"size::s"' "$out"
-  grep -q '"glab"' "$out"
+  grep -Eq '"/?([^"/]+/)*glab"' "$out"
 }
 
 run_create_dispatch_lane_probe() {
@@ -654,6 +1248,7 @@ run_deliver_github_probe() {
       pr review 123 \
       --decision comments-only \
       --submit-review \
+      --expected-head "$(git rev-parse HEAD)" \
       --thread-file "$review_threads" \
       --comment-file "$review_body" \
       --lens testing

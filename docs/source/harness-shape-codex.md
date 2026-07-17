@@ -50,7 +50,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex
-  surface) ships inside nils-cli; pinned snapshot **v1.22.9**
+  surface) ships inside nils-cli; pinned snapshot **v1.22.12**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),
@@ -62,9 +62,9 @@ Scope rules:
 - Per-skill nils-cli floors come from `manifests/skills.yaml`
   `required_clis` and gate skill bodies, not Codex's core load path.
   Project-script dispatcher skills that depend on explicit project
-  environment execution pin `agent-run` at `>=0.20.0`; dispatch / PR
-  skills that depend on the v0.17.5 release boundary pin `forge-cli`,
-  `plan-issue`, or `plan-tooling` at `>=0.17.5` (`manifests/skills.yaml`).
+  environment execution pin `agent-run` at `>=0.20.0`. Dispatch / PR floors
+  evolve with their consumed delivery contracts and are intentionally not
+  duplicated here; `manifests/skills.yaml` is authoritative.
 - Live Codex Desktop acceptance is separate from the deterministic
   version floor: `codex debug prompt-input` must show required skills
   in a fresh session

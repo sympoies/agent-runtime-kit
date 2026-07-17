@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.21.34`, `review-specialists`.
+  `forge-cli >=1.22.12`, `review-specialists`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge mode and posts
@@ -88,6 +88,9 @@ Failure modes:
 - Stop on provider payload privacy failures such as `local_path_present`; rewrite
   useful evidence paths to `$HOME/...` and omit remote-useless local artifact
   paths before retrying.
+- Stop when `github_pending_review_exists` reports an existing pending draft
+  but `data.pending_reviews[]` does not identify exactly one abandoned
+  current-viewer review for this PR; never delete ambiguous review state.
 - Stop on `ledger-rows-pending`; repair the named task rows with
   `plan-tooling ledger-update` before retrying the gate.
 - Stop when `pr merge` fails closed on review convergence, native change
@@ -202,14 +205,13 @@ review-specialists scope --base "$BASE_REF" --testing --maintainability --format
 
 # Native review events (GitHub) per REVIEW_OUTCOME_POSTING_CONTRACT.md: one
 # COMMENT per semantic lens as each lens returns, then the combined
-# APPROVE/REQUEST_CHANGES outcome.
-SUBMIT_REVIEW=(); [ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+# APPROVE/REQUEST_CHANGES outcome. The local head is the reviewed specialist
+# diff; forge-cli rejects the write if the provider head has drifted.
+EXPECTED_REVIEW_HEAD="$(git rev-parse HEAD)"
+SUBMIT_REVIEW=()
+[ "$PROVIDER" = github ] &&
+  SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
 FINAL_SUBMIT_REVIEW=()
-case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
-  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
-    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
-    ;;
-esac
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
 
@@ -241,19 +243,123 @@ forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
 # actionable current-head summaries before the combined owner outcome; stale
 # summaries are informational. When summary_truncated is true, retrieve the
 # full review body through provider read tooling and stop if it is unavailable.
-if [ "$PROVIDER" = github ]; then
+PRE_SUBMIT_PR="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    --format json pr reviews "$PR_NUMBER"
+    --format json pr view "$PR_NUMBER"
+)"
+EXPECTED_REVIEW_HEAD="$(
+  printf '%s\n' "$PRE_SUBMIT_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly EXPECTED_REVIEW_HEAD
+if [ "$PROVIDER" = github ]; then
+  PRE_SUBMIT_REVIEWS="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+      --format json pr reviews "$PR_NUMBER"
+  )"
+  printf '%s\n' "$PRE_SUBMIT_REVIEWS"
+  printf '%s\n' "$PRE_SUBMIT_REVIEWS" |
+    jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+      '.ok == true and .data.head_sha == $head' >/dev/null
 fi
 
-forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
-  --repo "$OWNER_REPO" \
-  --decision "$REVIEW_DECISION" \
-  "${FINAL_SUBMIT_REVIEW[@]}" \
-  --comment-file "$DELIVERY_REVIEW_OUTCOME" \
-  "${REVIEW_LENS_ARGS[@]}" \
-  --issue "$ISSUE" --mirror-issue --format json
+# Bind a routed combined native outcome to the provider head just inspected.
+case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    [ "$PROVIDER" = github ] &&
+      FINAL_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
+    ;;
+esac
 
+# Capture the outcome bytes once. Initial submission, guarded recovery, and
+# the single retry must all use this immutable value rather than rereading a
+# mutable file path. Preserve capture failures before freezing the value, and
+# use `--option=value` below so hyphen-leading Markdown remains one argv value.
+EXPECTED_REVIEW_BODY="$(cat "$DELIVERY_REVIEW_OUTCOME")" || exit $?
+readonly EXPECTED_REVIEW_BODY
+NATIVE_REVIEW_CMD=(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
+  pr review "$PR_NUMBER"
+  --decision "$REVIEW_DECISION"
+  "${FINAL_SUBMIT_REVIEW[@]}"
+  --comment="$EXPECTED_REVIEW_BODY"
+  "${REVIEW_LENS_ARGS[@]}"
+  --issue "$ISSUE" --mirror-issue
+)
+# Clear stale selector state, then preserve the failed command status and JSON.
+unset PENDING_REVIEW_ID
+set +e
+NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+NATIVE_REVIEW_STATUS=$?
+set -e
+
+if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
+  if [ "$PROVIDER" != github ] || ! printf '%s\n' "$NATIVE_REVIEW_JSON" |
+    jq -e '.ok == false and .error.code == "github_pending_review_exists"' \
+      >/dev/null; then
+    printf '%s\n' "$NATIVE_REVIEW_JSON" >&2
+    exit "$NATIVE_REVIEW_STATUS"
+  fi
+
+  # Fetch a fresh post-conflict pr reviews snapshot.
+  if [ "$PROVIDER" = github ]; then
+    POST_CONFLICT_REVIEWS="$(
+      forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+        --format json pr reviews "$PR_NUMBER"
+    )"
+    PENDING_REVIEW_ID="$(
+      printf '%s\n' "$POST_CONFLICT_REVIEWS" |
+        jq -er --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg body "$EXPECTED_REVIEW_BODY" '
+            select(.ok == true and .data.head_sha == $head)
+            | [.data.pending_reviews[]
+                | select(.state == "PENDING")
+                | select(.commit_sha == $head)
+                | select(.summary_truncated == false)
+                | select((.summary | rtrimstr("\n")) == ($body | rtrimstr("\n")))]
+            | select(length == 1)
+            | .[0].id
+          '
+    )"
+    if [ -n "${PENDING_REVIEW_ID:-}" ]; then
+      DELETE_REVIEW_JSON="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr pending-review delete "$PR_NUMBER" \
+          --review "$PENDING_REVIEW_ID" \
+          --expected-head "$EXPECTED_REVIEW_HEAD" \
+          --expected-commit "$EXPECTED_REVIEW_HEAD" \
+          --expected-body="$EXPECTED_REVIEW_BODY" \
+          --confirm-abandoned
+      )"
+      POST_DELETE_REVIEWS="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr reviews "$PR_NUMBER"
+      )"
+      printf '%s\n' "$POST_DELETE_REVIEWS" |
+        jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg id "$PENDING_REVIEW_ID" '
+            .ok == true
+            and .data.head_sha == $head
+            and (.data.pending_reviews | map(.id) | index($id) | not)
+          ' >/dev/null
+
+      set +e
+      NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+      NATIVE_REVIEW_RETRY_STATUS=$?
+      set -e
+      if [ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]; then
+        printf '%s\n' "$NATIVE_REVIEW_RETRY_JSON" >&2
+        exit "$NATIVE_REVIEW_RETRY_STATUS"
+      fi
+      NATIVE_REVIEW_JSON="$NATIVE_REVIEW_RETRY_JSON"
+    fi
+  fi
+fi
+
+printf '%s\n' "$NATIVE_REVIEW_JSON"
+REVIEW_OUTCOME_COMMENT="$(
+  printf '%s\n' "$NATIVE_REVIEW_JSON" | jq -er '.data.pr_comment_url'
+)"
 # Record issue-side review evidence from the native outcome, then post the final
 # state + review checkpoint before merging.
 plan-issue --format json tracking run update \
@@ -276,9 +382,11 @@ plan-issue --format json tracking checkpoint \
 
 # Merge only after semantic disposition and the review checkpoint pass. The
 # CLI owns observed quiet timing, native change requests, thread/task gates,
-# and provider-head binding.
+# and provider-head binding. Reuse the inspected/reviewed provider head so a
+# later push cannot enter the merge.
 forge-cli --provider "$PROVIDER" pr ready "$PR_NUMBER"
 forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER" --method squash \
+  --expected-head "$EXPECTED_REVIEW_HEAD" \
   "${REVIEW_CONVERGENCE_ARGS[@]}"
 
 plan-issue --format json tracking close-ready \
@@ -340,7 +448,16 @@ combined delivery outcome posts last with the final decision and selected lenses
 On GitHub, read native summaries before the combined outcome; on GitLab, retain
 the outcome-note path and do not invoke the unsupported snapshot. A
 `summary_truncated` item requires the full review body before disposition; stop
-if it cannot be read. The generic review outcome owns the read-only lenses and
+if it cannot be read. If native submission returns
+`github_pending_review_exists`, preserve the failed command status and JSON and
+fetch a fresh post-conflict snapshot.
+The command binds the native review to the inspected head with
+`--expected-head`. Choose a recovery id only when
+`data.pending_reviews[]` identifies exactly one current-viewer abandoned node
+for this PR and the intended body, decision, and head remain current. Run `pr
+pending-review delete`, refresh `pr reviews`, and retry the unchanged outcome
+once; stop on an ambiguous node, a failed guard, or a second rejection. The generic review
+outcome owns the read-only lenses and
 mode selection; this
 skill owns the provider writes, semantic disposition,
 checkpoint, and merge, and reviewer subagents never post. On
@@ -378,7 +495,9 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    lenses; `--mirror-issue`), per
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`. Every tracking PR runs the full gate —
    there is no single-author self-review shortcut. Repair concrete findings in
-   this delivery branch and rerun affected lenses before continuing.
+   this delivery branch and rerun affected lenses before continuing. A pending
+   native draft uses only the exact-node recovery above; never delete an
+   ambiguous draft or replace the requested native outcome with a note.
 5. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked
    PR, review decision, lenses, and `--review-outcome-comment` (the provider
    outcome URL); add `--review-findings-file "$REVIEW_FINDINGS_JSON"` when findings

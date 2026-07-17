@@ -990,6 +990,7 @@ run_execute_from_tracking_issue_probe() {
 }
 
 run_deliver_tracking_issue_probe() {
+  local expected_head="0123456789abcdef0123456789abcdef01234567"
   local verify_out="$DISPATCH_ARTIFACTS_DIR/deliver-review-verify.json"
   local checks_out="$DISPATCH_ARTIFACTS_DIR/deliver-pr-checks.json"
   local session_md="$DISPATCH_ARTIFACTS_DIR/deliver-session.md"
@@ -1025,6 +1026,7 @@ run_deliver_tracking_issue_probe() {
     pr review 123 \
     --decision comments-only \
     --submit-review \
+    --expected-head "$expected_head" \
     --thread-file "$review_threads" \
     --comment-file "$review_body" \
     --lens testing \
@@ -1035,6 +1037,7 @@ run_deliver_tracking_issue_probe() {
     pr review 123 \
     --decision comments-only \
     --submit-review \
+    --expected-head "$expected_head" \
     --comment-file "$review_body" \
     --lens maintainability \
     --issue 1 \
@@ -1044,6 +1047,7 @@ run_deliver_tracking_issue_probe() {
     pr review 123 \
     --decision approve \
     --submit-review \
+    --expected-head "$expected_head" \
     --comment-file "$review_body" \
     --lens testing \
     --lens maintainability \
@@ -1100,6 +1104,7 @@ run_deliver_tracking_issue_probe() {
 }
 
 run_dispatch_pr_review_probe() {
+  local expected_head="0123456789abcdef0123456789abcdef01234567"
   local verify_out="$DISPATCH_ARTIFACTS_DIR/review-dispatch-lane-pr-verify.json"
   local review_body="$DISPATCH_ARTIFACTS_DIR/review-dispatch-lane-pr-review.md"
   local review_threads="$DISPATCH_ARTIFACTS_DIR/review-dispatch-lane-pr-threads.json"
@@ -1125,6 +1130,7 @@ run_dispatch_pr_review_probe() {
     pr review 123 \
     --decision comments-only \
     --submit-review \
+    --expected-head "$expected_head" \
     --thread-file "$review_threads" \
     --comment-file "$review_body" \
     --lens testing >"$specialist_provider_review_out" 2>&1
@@ -1133,6 +1139,7 @@ run_dispatch_pr_review_probe() {
     pr review 123 \
     --decision approve \
     --submit-review \
+    --expected-head "$expected_head" \
     --comment-file "$review_body" \
     --lens testing \
     --lens maintainability \

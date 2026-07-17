@@ -144,13 +144,16 @@ outcome note, which keeps ambient-identity workflows usable without asking a PR
 author to approve their own change:
 
 ```bash
+EXPECTED_REVIEW_HEAD="$(git rev-parse HEAD)"
 SUBMIT_REVIEW=()
 FINAL_SUBMIT_REVIEW=()
 THREAD_FILE_ARGS=()
-[ "$PROVIDER" = github ] && SUBMIT_REVIEW=(--submit-review)
+[ "$PROVIDER" = github ] &&
+  SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
 case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
   1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
-    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
+    [ "$PROVIDER" = github ] &&
+      FINAL_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
     ;;
 esac
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
@@ -203,6 +206,136 @@ duplicate the full review body.
 
 Keep identity selection out of the command. Single-lens and combined-owner posts
 are distinguished by semantic `--lens` cardinality and `--decision`.
+
+## Pending Draft Recovery
+
+`forge-cli >=1.22.12` separates provider-valid pending drafts into
+`data.pending_reviews[]`; they are not submitted-review activity and do not
+participate in convergence. Recovery is exceptional and must never run merely
+because a pending item is visible.
+
+Only after a GitHub `pr review --submit-review` call returns
+`github_pending_review_exists`, preserve the failed command status and JSON,
+then inspect a fresh post-conflict `pr reviews` snapshot.
+The command binds the native review to the provider head inspected through
+`pr view` with `--expected-head`; GitHub's review snapshot must report that
+same head before submission. It captures the review body once, then uses
+those immutable bytes for initial submission, exact-body deletion, and the
+single retry. Continue only when exactly
+one current-viewer pending node is the abandoned attempt for this PR and the
+intended body, decision, and head are still current. Clear stale selector state
+before the native submission, then delete only the freshly selected exact node.
+The delete primitive revalidates PR head, draft commit and body, current-viewer
+ownership, and abandonment confirmation immediately before mutation:
+
+```bash
+PRE_SUBMIT_PR="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER"
+)"
+EXPECTED_REVIEW_HEAD="$(
+  printf '%s\n' "$PRE_SUBMIT_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly EXPECTED_REVIEW_HEAD
+PRE_SUBMIT_REVIEWS="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr reviews "$PR_NUMBER"
+)"
+printf '%s\n' "$PRE_SUBMIT_REVIEWS" |
+  jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+    '.ok == true and .data.head_sha == $head' >/dev/null
+# Capture the intended body once so submission, guarded deletion, and retry
+# compare and send the same immutable bytes. Preserve capture failure before
+# freezing it; use `--option=value` so hyphen-leading Markdown remains data.
+EXPECTED_REVIEW_BODY="$(cat "$REVIEW_COMMENT_FILE")" || exit $?
+readonly EXPECTED_REVIEW_BODY
+NATIVE_REVIEW_CMD=(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
+  pr review "$PR_NUMBER"
+  --decision "$REVIEW_DECISION"
+  --submit-review
+  --expected-head "$EXPECTED_REVIEW_HEAD"
+  --comment="$EXPECTED_REVIEW_BODY"
+  "${REVIEW_LENS_ARGS[@]}"
+)
+unset PENDING_REVIEW_ID
+set +e
+NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+NATIVE_REVIEW_STATUS=$?
+set -e
+if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
+  if [ "$PROVIDER" != github ] || ! printf '%s\n' "$NATIVE_REVIEW_JSON" |
+    jq -e '.ok == false and .error.code == "github_pending_review_exists"' \
+      >/dev/null; then
+    printf '%s\n' "$NATIVE_REVIEW_JSON" >&2
+    exit "$NATIVE_REVIEW_STATUS"
+  fi
+
+  # Fetch a fresh post-conflict pr reviews snapshot.
+  if [ "$PROVIDER" = github ]; then
+    POST_CONFLICT_REVIEWS="$(
+      forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+        --format json pr reviews "$PR_NUMBER"
+    )"
+    PENDING_REVIEW_ID="$(
+      printf '%s\n' "$POST_CONFLICT_REVIEWS" |
+        jq -er --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg body "$EXPECTED_REVIEW_BODY" '
+            select(.ok == true and .data.head_sha == $head)
+            | [.data.pending_reviews[]
+                | select(.state == "PENDING")
+                | select(.commit_sha == $head)
+                | select(.summary_truncated == false)
+                | select((.summary | rtrimstr("\n")) == ($body | rtrimstr("\n")))]
+            | select(length == 1)
+            | .[0].id
+          '
+    )"
+    if [ -n "${PENDING_REVIEW_ID:-}" ]; then
+      DELETE_REVIEW_JSON="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr pending-review delete "$PR_NUMBER" \
+          --review "$PENDING_REVIEW_ID" \
+          --expected-head "$EXPECTED_REVIEW_HEAD" \
+          --expected-commit "$EXPECTED_REVIEW_HEAD" \
+          --expected-body="$EXPECTED_REVIEW_BODY" \
+          --confirm-abandoned
+      )"
+      POST_DELETE_REVIEWS="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr reviews "$PR_NUMBER"
+      )"
+      printf '%s\n' "$POST_DELETE_REVIEWS" |
+        jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg id "$PENDING_REVIEW_ID" '
+            .ok == true
+            and .data.head_sha == $head
+            and (.data.pending_reviews | map(.id) | index($id) | not)
+          ' >/dev/null
+
+      set +e
+      NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+      NATIVE_REVIEW_RETRY_STATUS=$?
+      set -e
+      [ "$NATIVE_REVIEW_RETRY_STATUS" -eq 0 ] || {
+        printf '%s\n' "$NATIVE_REVIEW_RETRY_JSON" >&2
+        exit "$NATIVE_REVIEW_RETRY_STATUS"
+      }
+      NATIVE_REVIEW_JSON="$NATIVE_REVIEW_RETRY_JSON"
+    fi
+  fi
+fi
+
+printf '%s\n' "$NATIVE_REVIEW_JSON"
+```
+
+The primitive verifies PR membership, pending state, current-viewer authorship,
+and delete permission before mutation. Retry the unchanged failed review once
+only after read-back confirms the node is absent. Stop on multiple candidates,
+an ownership/permission failure, head or outcome drift, refresh failure, or a
+second rejection. Never delete submitted reviews, sweep pending drafts, or
+downgrade a requested native review to an outcome note.
 
 ## Read-Back
 

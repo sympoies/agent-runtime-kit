@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `dispatch`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.21.34`.
+  `forge-cli >=1.22.12`.
 - The dispatch issue is either not opened yet, or the existing issue is
   the same shared plan being resumed by the orchestrator.
 - Dispatch `run-state.json` is either uninitialized or reconciled.
@@ -36,6 +36,8 @@ Inputs:
   `plan` because scoped labels collapse per `key::` scope.
 - Lane approval URLs, review evidence paths, linked PRs, and final
   integration evidence for close-ready.
+- Reviewer-owned lane outcome inputs: `LANE_REVIEW_DECISION`,
+  `LANE_REVIEW_OUTCOME`, and `LANE_REVIEW_LENS_ARGS`.
 - Captured terminal identity for each lane and the integration checkout:
   checkout root, branch, delivered head SHA, base ref, and
   primary-versus-managed-worktree kind.
@@ -73,6 +75,9 @@ Failure modes:
 - Stop on provider payload privacy failures such as `local_path_present`; rewrite
   useful evidence paths to `$HOME/...` and omit remote-useless local artifact
   paths before retrying.
+- Stop when `github_pending_review_exists` reports an existing pending draft
+  but `data.pending_reviews[]` does not identify exactly one abandoned
+  current-viewer review for the lane PR; never delete ambiguous review state.
 - Stop on `ledger-rows-pending`; repair only the named task rows before
   retrying close-ready.
 - Stop on typed review-convergence, native change-request, thread/task, or head
@@ -153,19 +158,132 @@ plan-tooling ledger-update \
 # informational. When summary_truncated is true, retrieve the full review body
 # through provider read tooling and stop if it is unavailable. Do not poll for
 # absent observed bots.
-if [ "$PROVIDER" = github ]; then
+PRE_SUBMIT_PR="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    --format json pr reviews "$LANE_PR_NUMBER"
+    --format json pr view "$LANE_PR_NUMBER"
+)"
+EXPECTED_REVIEW_HEAD="$(
+  printf '%s\n' "$PRE_SUBMIT_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly EXPECTED_REVIEW_HEAD
+if [ "$PROVIDER" = github ]; then
+  PRE_SUBMIT_REVIEWS="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+      --format json pr reviews "$LANE_PR_NUMBER"
+  )"
+  printf '%s\n' "$PRE_SUBMIT_REVIEWS"
+  printf '%s\n' "$PRE_SUBMIT_REVIEWS" |
+    jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+      '.ok == true and .data.head_sha == $head' >/dev/null
 fi
 
+LANE_SUBMIT_REVIEW=()
+[ "$PROVIDER" = github ] &&
+  LANE_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
+# Capture the outcome bytes once. Initial submission, guarded recovery, and
+# the single retry must all use this immutable value rather than rereading a
+# mutable file path. Preserve capture failures before freezing the value, and
+# use `--option=value` below so hyphen-leading Markdown remains one argv value.
+EXPECTED_REVIEW_BODY="$(cat "$LANE_REVIEW_OUTCOME")" || exit $?
+readonly EXPECTED_REVIEW_BODY
+NATIVE_REVIEW_CMD=(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
+  pr review "$LANE_PR_NUMBER"
+  --decision "$LANE_REVIEW_DECISION"
+  "${LANE_SUBMIT_REVIEW[@]}"
+  --comment="$EXPECTED_REVIEW_BODY"
+  "${LANE_REVIEW_LENS_ARGS[@]}"
+  --issue "$ISSUE" --mirror-issue
+)
+# The independent lane reviewer owns this command block. Clear stale selector
+# state, then preserve the failed command status and JSON.
+unset PENDING_REVIEW_ID
+set +e
+NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+NATIVE_REVIEW_STATUS=$?
+set -e
+
+if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
+  if [ "$PROVIDER" != github ] || ! printf '%s\n' "$NATIVE_REVIEW_JSON" |
+    jq -e '.ok == false and .error.code == "github_pending_review_exists"' \
+      >/dev/null; then
+    printf '%s\n' "$NATIVE_REVIEW_JSON" >&2
+    exit "$NATIVE_REVIEW_STATUS"
+  fi
+
+  # Fetch a fresh post-conflict pr reviews snapshot.
+  if [ "$PROVIDER" = github ]; then
+    POST_CONFLICT_REVIEWS="$(
+      forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+        --format json pr reviews "$LANE_PR_NUMBER"
+    )"
+    # Select exactly one pending body/head match; the delete primitive then
+    # proves current-viewer ownership. Keep the intended body, decision, and head.
+    PENDING_REVIEW_ID="$(
+      printf '%s\n' "$POST_CONFLICT_REVIEWS" |
+        jq -er --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg body "$EXPECTED_REVIEW_BODY" '
+            select(.ok == true and .data.head_sha == $head)
+            | [.data.pending_reviews[]
+                | select(.state == "PENDING")
+                | select(.commit_sha == $head)
+                | select(.summary_truncated == false)
+                | select((.summary | rtrimstr("\n")) == ($body | rtrimstr("\n")))]
+            | select(length == 1)
+            | .[0].id
+          '
+    )"
+    if [ -n "${PENDING_REVIEW_ID:-}" ]; then
+      DELETE_REVIEW_JSON="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr pending-review delete "$LANE_PR_NUMBER" \
+          --review "$PENDING_REVIEW_ID" \
+          --expected-head "$EXPECTED_REVIEW_HEAD" \
+          --expected-commit "$EXPECTED_REVIEW_HEAD" \
+          --expected-body="$EXPECTED_REVIEW_BODY" \
+          --confirm-abandoned
+      )"
+      POST_DELETE_REVIEWS="$(
+        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+          --format json pr reviews "$LANE_PR_NUMBER"
+      )"
+      printf '%s\n' "$POST_DELETE_REVIEWS" |
+        jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
+          --arg id "$PENDING_REVIEW_ID" '
+            .ok == true
+            and .data.head_sha == $head
+            and (.data.pending_reviews | map(.id) | index($id) | not)
+          ' >/dev/null
+
+      # Retry the unchanged command once; any nonzero result is a second rejection.
+      set +e
+      NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
+      NATIVE_REVIEW_RETRY_STATUS=$?
+      set -e
+      if [ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]; then
+        printf '%s\n' "$NATIVE_REVIEW_RETRY_JSON" >&2
+        exit "$NATIVE_REVIEW_RETRY_STATUS"
+      fi
+      NATIVE_REVIEW_JSON="$NATIVE_REVIEW_RETRY_JSON"
+    fi
+  fi
+fi
+
+printf '%s\n' "$NATIVE_REVIEW_JSON"
+APPROVAL="$(
+  printf '%s\n' "$NATIVE_REVIEW_JSON" | jq -er '.data.pr_comment_url'
+)"
 # The orchestrator merges only after approval. forge-cli owns observed quiet
 # timing, native change requests, thread/task gates, and provider-head binding.
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
 forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
   pr ready "$LANE_PR_NUMBER"
+# Keep merge on the same provider head that was inspected and reviewed.
 forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
   pr merge "$LANE_PR_NUMBER" --allow-non-default-base \
+  --expected-head "$EXPECTED_REVIEW_HEAD" \
   "${REVIEW_CONVERGENCE_ARGS[@]}"
 
 plan-issue --format json tracking close-ready \
@@ -218,7 +336,13 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    outcome with retained evidence and posts provider review activity. On
    GitHub, read `forge-cli pr reviews` and disposition actionable current-head
    summaries; on GitLab, retain the outcome-note path. Then finalize lane
-   approval and the review checkpoint. The lane executor never self-reviews.
+   approval and the review checkpoint. If native submission returns
+   `github_pending_review_exists`, use `data.pending_reviews[]` plus `pr
+   pending-review delete` only for one exact abandoned node, refresh the
+   snapshot, and retry the unchanged review once. Ambiguous or repeated failure
+   stops the lane; it never downgrades to an outcome note. The lane executor
+   never self-reviews. The command binds the native review to the inspected head
+   with `--expected-head`.
 6. **Orchestrator merge** — after approval and provider gates, the orchestrator
    merges the lane PR through `forge-cli pr merge
    --allow-non-default-base`. The CLI owns observed convergence, native state,

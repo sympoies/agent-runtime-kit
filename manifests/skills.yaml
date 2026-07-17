@@ -587,7 +587,7 @@ skills:
       hermes:
         render_to: plugins/pr/skills/deliver-pr/SKILL.md
     required_clis:
-      forge-cli: ">=1.21.34"
+      forge-cli: ">=1.22.12"
       agent-runtime: ">=0.19.0"
       plan-issue: ">=1.1.0"
       review-specialists: ">=0.17.1"
@@ -615,7 +615,7 @@ skills:
     required_clis:
       plan-tooling: ">=1.0.1"
       plan-issue: ">=1.0.13"
-      forge-cli: ">=1.21.34"
+      forge-cli: ">=1.22.12"
       review-evidence: ">=0.16.0"
       review-specialists: ">=0.17.1"
     state_out_mode: runtime
@@ -642,7 +642,7 @@ skills:
     required_clis:
       plan-tooling: ">=1.0.1"
       plan-issue: ">=1.0.13"
-      forge-cli: ">=1.21.34"
+      forge-cli: ">=1.22.12"
       review-evidence: ">=0.16.0"
       review-specialists: ">=0.17.1"
     state_out_mode: runtime

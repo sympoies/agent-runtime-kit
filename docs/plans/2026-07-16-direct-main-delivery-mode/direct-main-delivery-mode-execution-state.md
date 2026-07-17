@@ -5,9 +5,9 @@
 - Source document: docs/plans/2026-07-16-direct-main-delivery-mode/direct-main-delivery-mode-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/638>
 - Current sprint: Sprint 2
-- Status: in-progress
+- Status: complete
 - Branch: feat/direct-main-delivery-mode
-- Last updated: 2026-07-16
+- Last updated: 2026-07-17
 
 ## Task Ledger
 
@@ -19,9 +19,9 @@
 | 1.4 | Deliver and review nils-cli change | done | https://github.com/sympoies/nils-cli/pull/1251; merged `374365a2` after 16/16 threads resolved and all provider gates passed | Independent testing, maintainability, security, API, performance, red-team, and delivery reviews converged |
 | 2.1 | Capture meaningful red for runtime-kit hooks | done | test-first v2: lease misclassification and missing default-delivery hook reds captured | Acceptance tests added before hook production edits |
 | 2.2 | Align policy and hook implementation | done | six focused tests pass; full hook suite 224/224 | Policy matrix, hook implementation, wiring, and rendered prompts updated; ambiguous no-refspec pushes fail closed |
-| 2.3 | Release and pin coupled CLI surface | done | https://github.com/sympoies/nils-cli/releases/tag/v1.22.9; release request run 29499572511; broker run 29499586605 | `v1.22.9` released and deployed to sympoies/macOS; runtime pin and global forge-cli floor updated without activating runtime homes |
-| 2.4 | Full validation, PR review, merge, and closeout | in-progress | runtime-kit validation and PR delivery underway | Primary linked PR is runtime-kit PR |
-| 2.5 | Prove deploy readiness without activating runtime | pending | pending | Fresh user approval required after this point |
+| 2.3 | Release and pin coupled CLI surface | done | https://github.com/sympoies/nils-cli/releases/tag/v1.22.9; release request run 29499572511; broker run 29499586605; https://github.com/sympoies/nils-cli/releases/tag/v1.22.10; https://github.com/sympoies/nils-cli/releases/tag/v1.22.11; https://github.com/sympoies/nils-cli/releases/tag/v1.22.12; release request run 29576792817; broker run 29576803921 | v1.22.12 is the final consumer pin, adding trusted-head review submission, immutable-body pending-review recovery, and reviewed-head merge CAS without activating runtime homes |
+| 2.4 | Full validation, PR review, merge, and closeout | done | https://github.com/graysurf/agent-runtime-kit/pull/640; merged d7f12c78814dc80684768b1a7a07f6348e1d3873 | All checks passed, 19/19 threads resolved, six specialist lenses passed, and dobi-bot native approval was recorded before squash merge |
+| 2.5 | Prove deploy readiness without activating runtime | done | version baseline 24/24; version-alignment doctor 17/17; sync-runtime-surfaces --no-pull dry-run passed | Merged direct-main source plus the proposed v1.22.12 pin is deploy-ready; live runtime activation remains explicitly deferred |
 
 ## Validation Log
 
@@ -41,6 +41,13 @@
 - 2026-07-16: nils-cli PR #1251 merged as `374365a2` after 16/16 review threads resolved and all local/provider gates passed; final local validation covered 6,248 workspace tests plus 639 unit and 337 forge-cli integration tests.
 - 2026-07-16: The two-stage release workflow published `v1.22.9`; broker run 29499586605 verified the release, Homebrew tap, sympoies host, and macOS peer converged. The installed host now reports 1.22.9.
 - 2026-07-16: Runtime-kit pin metadata, Linux artifact digests, baseline mirrors, and the global `forge-cli` floor were advanced to `v1.22.9`; `agent-session` remains unconsumed and existing PR/L2/L3 skill floors remain at their narrower `>= 1.21.34` contract.
+- 2026-07-17: nils-cli `v1.22.10` published the guarded pending-review recovery needed after a native GitHub review became stuck; the exact-node delete restored dobi-bot approval for runtime-kit PR #640.
+- 2026-07-17: Runtime-kit PR #640 merged as `d7f12c78814dc80684768b1a7a07f6348e1d3873` after all provider checks, 19/19 review threads, six specialist lenses, and the independent native approval converged.
+- 2026-07-17: The consumer pin, Linux artifact digests, baseline mirrors, and the three merge-owning workflow floors advanced to `v1.22.10`; focused PR runtime smoke passed 6/6.
+- 2026-07-17: nils-cli PR #1266 and release `v1.22.11` bound native review submission to an expected provider head and returned a typed viewer-draft conflict for guarded recovery.
+- 2026-07-17: nils-cli PR #1269 and release `v1.22.12` added expected-head merge CAS plus exact-head, exact-commit, immutable-body pending-review deletion; release request run 29576792817 and broker run 29576803921 completed successfully.
+- 2026-07-17: Runtime-kit PR #645 proposes the final `v1.22.12` pin, Linux artifact digests, reviewed-head merge binding, immutable review-body retry, refreshed rendered surfaces, and corresponding runtime-smoke contract coverage. Delivery review is in progress; this entry does not claim the PR has merged.
+- 2026-07-17: Deploy-readiness checks passed with version baseline 24/24, version-alignment doctor 17/17, and a three-product `scripts/sync-runtime-surfaces.sh --no-pull` dry-run. No live runtime apply was executed.
 
 ## Session Notes
 
