@@ -76,9 +76,11 @@
 ## Work Tier Levels
 
 - Classify every substantive work request into the lowest applicable tier and
-  use that tier's method: L0 direct / PR-only, L1 follow-up issue, L2 plan
-  tracking issue, L3 dispatch plan. PR delivery is the shared floor under
-  every tier.
+  use that tier's method: L0 untracked delivery, L1 follow-up issue, L2 plan
+  tracking issue, L3 dispatch plan. PR delivery is the default. The sole
+  direct-main exception is L0, requires explicit maintainer authorization in
+  the current request, and must use the governed route in `git-delivery.md`;
+  never infer it from words such as "small" or "hotfix".
 - State the tier and recommended next step at the start of such work. L1+ or
   ambiguous classification: surface the level as a decision and wait.
   Unambiguous L0: say so and proceed. Re-triage if the work escalates
@@ -131,6 +133,11 @@
 - For agent-owned provider issues, PRs, and MRs, use the active workflow or
   `forge-cli` surface; direct `gh pr create` or `glab mr create` are blocked
   by hook.
+- Author commits only on a non-default managed-worktree branch. Hooks block raw
+  pushes to the remote default branch.
+- An explicitly authorized L0 direct-main delivery uses `forge-cli repo
+  push-default` with one signed commit, an exact expected base, a reason file,
+  and remote-SHA read-back.
 - Run the repo's pre-commit tests/checks per `DEVELOPMENT.md`. Never
   force-push `main`.
 - Commit body gate, managed worktree paths, branch naming, label selection,
@@ -150,6 +157,14 @@
 
 - Same-turn transient fixes need no retained record; mention them in the
   reply.
+- Before deferring a reproducible failure or validation waiver, route it by
+  owner: repository-owned product, test, or CI defects use L1
+  `issue-follow-up` in that repository; unresolved agent workflow, skill,
+  hook, CLI, or primitive gaps use `heuristic-inbox`. If both apply, the
+  project issue is primary and a heuristic case is warranted only for a
+  reusable cross-project gap. L1+ provider mutation still requires the user's
+  decision; closeout may detect and propose a route but must not silently open
+  an issue.
 - Important unresolved workflow gaps or suspected nils-cli / primitive bugs go
   through `heuristic-inbox` (version, minimal repro, upstream issue link when
   found, current workaround); archive promoted or `wontfix` inbox entries via

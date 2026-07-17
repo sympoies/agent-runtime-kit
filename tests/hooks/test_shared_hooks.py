@@ -857,6 +857,37 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "missing a body")
 
+    def test_body_gate_treats_option_like_message_filename_as_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "--dry-run").write_text(
+                "fix(agent): tighten hook parser\n", encoding="utf-8"
+            )
+            code, decision, stderr = run_hook(
+                "semantic-commit-body-gate.py",
+                command_payload(
+                    "semantic-commit commit --message-file --dry-run"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "missing a body")
+
+    def test_body_gate_allows_dry_run_message_file_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            recovery = Path(tmp) / "recovery.md"
+            command = (
+                "semantic-commit commit --dry-run "
+                "--subject 'fix(hooks): inspect message' "
+                f"--message-out {shlex.quote(str(recovery))}"
+            )
+            code, decision, stderr = run_hook(
+                "semantic-commit-body-gate.py",
+                command_payload(command),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
     def test_body_gate_trailer_does_not_count_as_body(self) -> None:
         # A --trailer is metadata, not an explanatory body bullet; a non-trivial
         # commit with only a trailer must still be blocked.
@@ -1037,6 +1068,38 @@ class SharedHookTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "Claude Co-Authored-By trailer")
+
+    def test_claude_gate_treats_option_like_message_filename_as_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "-h").write_text(
+                "feat: thing\n\n- why\n\n"
+                "Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n",
+                encoding="utf-8",
+            )
+            code, decision, stderr = run_hook(
+                "block-claude-coauthor-trailer.py",
+                command_payload("semantic-commit commit --message-file -h"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "Claude Co-Authored-By trailer")
+
+    def test_claude_gate_allows_validate_only_message_file_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            recovery = Path(tmp) / "recovery.md"
+            command = (
+                "semantic-commit commit --validate-only "
+                "--subject 'feat: inspect message' "
+                "--trailer 'Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>' "
+                f"--message-out {shlex.quote(str(recovery))}"
+            )
+            code, decision, stderr = run_hook(
+                "block-claude-coauthor-trailer.py",
+                command_payload(command),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
 
     def test_allows_non_claude_trailer_flag(self) -> None:
         command = (
@@ -9059,6 +9122,7 @@ exit 65
             "block-direct-pr-create.py",
             "block-direct-python.py",
             "block-project-memory-write.py",
+            "block-unsafe-default-delivery.py",
             "checkout-lease-guard.py",
             "finish-line-record.py",
             "forge-label-reminder.py",
@@ -9235,6 +9299,15 @@ exit 65
         (path / "README.md").write_text("# lease fixture\n", encoding="utf-8")
         subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
         subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=path, check=True)
+        remote = path.parent / f"{path.name}-origin.git"
+        subprocess.run(
+            ["git", "init", "-q", "--bare", "--initial-branch=main", str(remote)],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)], cwd=path, check=True
+        )
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=path, check=True)
         subprocess.run(
             [
                 "git",
@@ -9245,6 +9318,24 @@ exit 65
             cwd=path,
             check=True,
         )
+
+    def assert_process_stopped(self, pid: int) -> None:
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            status = subprocess.run(
+                ["ps", "-o", "stat=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if status.returncode != 0 or status.stdout.lstrip().startswith("Z"):
+                return
+            time.sleep(0.02)
+        try:
+            os.kill(pid, 9)
+        except ProcessLookupError:
+            return
+        self.fail(f"descendant process {pid} survived GitProbe cleanup")
 
     @staticmethod
     def _checkout_lease_payload(
@@ -9268,6 +9359,652 @@ exit 65
     @staticmethod
     def _checkout_lease_files(state: Path) -> list[Path]:
         return list((state / "checkout-leases").rglob("lease.json"))
+
+    def test_default_delivery_hook_blocks_default_branch_mutations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "semantic-commit commit --message 'fix: tiny repair'",
+                "semantic-commit fixup HEAD~1",
+                "semantic-commit squash HEAD~1",
+                "git push",
+                "git push origin main",
+                "git push origin HEAD:main",
+                "git push origin HEAD:refs/heads/main",
+                "git push origin @",
+                "git push origin +@",
+                "git push origin heads/main",
+                "git push origin HEAD:heads/main",
+                "git push --force origin HEAD:main",
+                "git push --force-with-lease origin HEAD:refs/heads/main",
+                "git push origin +HEAD:refs/heads/main",
+                "git push origin :",
+                "git push origin +:",
+                "git push origin --delete main",
+                "git push --all origin",
+                "git push origin 'refs/heads/*:refs/heads/*'",
+                "git push origin 'heads/*:heads/*'",
+                "git push -omerge_request.target=main origin HEAD:refs/heads/main",
+                "git push -odeploy=true origin HEAD:refs/heads/main",
+                "git -c alias.ship='push origin HEAD:main' ship",
+                "git -c alias.push=status push origin HEAD:main",
+                "semantic-commit commit --message-file -h",
+                "semantic-commit commit --message-file --dry-run",
+                "bash -c 'git push origin HEAD:main'",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_blocks_configured_and_shell_git_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "config", "alias.ship", "push origin HEAD:main"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "alias.first", "second"], cwd=repo, check=True
+            )
+            subprocess.run(
+                ["git", "config", "alias.second", "push origin HEAD:main"],
+                cwd=repo,
+                check=True,
+            )
+            included = Path(tmp) / "included-aliases.config"
+            included.write_text(
+                "[alias]\n\tfrominclude = push origin HEAD:main\n",
+                encoding="utf-8",
+            )
+            commands = (
+                ("git ship", None),
+                ("git first", None),
+                ("git -c alias.shell='!git push origin HEAD:main' shell", None),
+                (
+                    "git -c include.path="
+                    f"{shlex.quote(str(included))} frominclude",
+                    None,
+                ),
+                (
+                    "git --config-env=include.path=HOOK_INCLUDE frominclude",
+                    {"HOOK_INCLUDE": str(included)},
+                ),
+            )
+            for command, env in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_preserves_inline_remote_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            self._init_checkout_lease_repo(repo)
+            alternate = root / "alternate.git"
+            subprocess.run(
+                [
+                    "git",
+                    "init",
+                    "-q",
+                    "--bare",
+                    "--initial-branch=trunk",
+                    str(alternate),
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "push", "-q", str(alternate), "HEAD:trunk"],
+                cwd=repo,
+                check=True,
+            )
+            command = (
+                "git -c remote.origin.pushurl="
+                f"{shlex.quote(str(alternate))} push origin HEAD:trunk"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_fails_closed_on_command_local_git_config(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            alternate_home = Path(tmp) / "alternate-home"
+            alternate_home.mkdir()
+            (alternate_home / ".gitconfig").write_text(
+                "[alias]\n\tship = push origin HEAD:main\n", encoding="utf-8"
+            )
+            commands = (
+                (
+                    "HOOK_ALIAS='push origin HEAD:main' "
+                    "git --config-env=alias.ship=HOOK_ALIAS ship",
+                    {"HOOK_ALIAS": "status"},
+                ),
+                (
+                    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ship "
+                    "GIT_CONFIG_VALUE_0='push origin HEAD:main' git ship",
+                    None,
+                ),
+                (
+                    "env HOOK_ALIAS='push origin HEAD:main' "
+                    "git --config-env=alias.ship=HOOK_ALIAS ship",
+                    {"HOOK_ALIAS": "status"},
+                ),
+                (
+                    f"HOME={shlex.quote(str(alternate_home))} git ship",
+                    None,
+                ),
+            )
+            for command, env in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_fails_closed_on_repository_retargeting(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_a = root / "repo-a"
+            repo_b = root / "repo-b"
+            self._init_checkout_lease_repo(repo_a)
+            self._init_checkout_lease_repo(repo_b)
+            subprocess.run(
+                ["git", "branch", "-m", "trunk"], cwd=repo_b, check=True
+            )
+            subprocess.run(
+                ["git", "push", "-q", "origin", "HEAD:trunk"],
+                cwd=repo_b,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "symbolic-ref", "HEAD", "refs/heads/trunk"],
+                cwd=root / "repo-b-origin.git",
+                check=True,
+            )
+            git_dir = shlex.quote(str(repo_b / ".git"))
+            commands = (
+                f"git --git-dir={git_dir} push origin HEAD:trunk",
+                f"GIT_DIR={git_dir} git push origin HEAD:trunk",
+                f"env -C {shlex.quote(str(repo_b))} git push origin HEAD:trunk",
+                f"env --ch={shlex.quote(str(repo_b))} git push origin HEAD:trunk",
+                "env --sp='-C "
+                f"{shlex.quote(str(repo_b))} git push origin HEAD:trunk'",
+                "env - git push origin HEAD:refs/heads/feat/safe",
+                "env --pa=/usr/bin git push origin HEAD:refs/heads/feat/safe",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo_a,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_allows_contextual_diagnostics_and_dry_run(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            alternate_home = Path(tmp) / "alternate-home"
+            alternate_home.mkdir()
+            commands = (
+                "GIT_DIR=.git git status",
+                "git --git-dir=.git status",
+                "env -C . git status",
+                f"HOME={shlex.quote(str(alternate_home))} git status",
+                "GIT_DIR=.git git check-ignore README.md",
+                "HOME=/tmp git check-attr diff README.md",
+                "env -C . git merge-base HEAD HEAD",
+                "GIT_DIR=.git git version",
+                "GIT_DIR=.git git submodule status",
+                "HOME=/tmp git mergetool --tool-help",
+                "git --git-dir=.git push --dry-run origin HEAD:main",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_default_delivery_hook_fails_closed_after_shell_context_change(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_a = root / "repo-a"
+            repo_b = root / "repo-b"
+            self._init_checkout_lease_repo(repo_a)
+            self._init_checkout_lease_repo(repo_b)
+            subprocess.run(
+                ["git", "branch", "-m", "trunk"], cwd=repo_b, check=True
+            )
+            subprocess.run(
+                ["git", "push", "-q", "origin", "HEAD:trunk"],
+                cwd=repo_b,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "symbolic-ref", "HEAD", "refs/heads/trunk"],
+                cwd=root / "repo-b-origin.git",
+                check=True,
+            )
+            alternate_home = root / "alternate-home"
+            alternate_home.mkdir()
+            (alternate_home / ".gitconfig").write_text(
+                "[alias]\n\tship = push origin HEAD:main\n", encoding="utf-8"
+            )
+            context_script = root / "context.sh"
+            context_script.write_text(
+                f"export HOME={shlex.quote(str(alternate_home))}\n",
+                encoding="utf-8",
+            )
+            commands = (
+                f"cd {shlex.quote(str(repo_b))} && git push origin HEAD:trunk",
+                f"export HOME={shlex.quote(str(alternate_home))}; git ship",
+                f"HOME={shlex.quote(str(alternate_home))}; git ship",
+                "unset HOME; git push origin HEAD:refs/heads/feat/safe",
+                "builtin cd "
+                f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
+                f"HOME={shlex.quote(str(alternate_home))} export HOME; git ship",
+                "builtin export HOME="
+                f"{shlex.quote(str(alternate_home))}; git ship",
+                f". {shlex.quote(str(context_script))}; git ship",
+                f"source {shlex.quote(str(context_script))}; git ship",
+                "builtin builtin cd "
+                f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
+                "builtin builtin export HOME="
+                f"{shlex.quote(str(alternate_home))}; git ship",
+                "builtin builtin . "
+                f"{shlex.quote(str(context_script))}; git ship",
+                "context_builtin=cd; builtin \"$context_builtin\" "
+                f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
+                "builtin builtin builtin builtin builtin builtin builtin "
+                "builtin builtin cd "
+                f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo_a,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_fails_closed_when_remote_is_unreachable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "set-url",
+                    "--push",
+                    "origin",
+                    str(root / "missing.git"),
+                ],
+                cwd=repo,
+                check=True,
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "semantic-commit commit --message 'fix: tiny repair'"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_git_probe_caps_output_and_kills_descendants(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_git_probe_resource_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                fake_git = root / "fake-git"
+                child_pid = root / "child.pid"
+                fake_git.write_text(
+                    "#!/bin/sh\n"
+                    "sleep 30 &\n"
+                    "printf '%s' \"$!\" > \"$1\"\n"
+                    "yes x | head -c 131072\n"
+                    "wait\n",
+                    encoding="utf-8",
+                )
+                fake_git.chmod(0o755)
+                probe = module.GitProbe(
+                    timeout_seconds=2.0,
+                    output_limit_bytes=1024,
+                    executable=str(fake_git),
+                )
+                started = time.perf_counter()
+                completed = probe.run(root, str(child_pid))
+                elapsed = time.perf_counter() - started
+                self.assertIsNone(completed)
+                self.assertLess(elapsed, 1.5)
+                self.assert_process_stopped(int(child_pid.read_text(encoding="utf-8")))
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_default_delivery_git_probe_timeout_kills_descendants(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_git_probe_timeout_cleanup_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                fake_git = root / "fake-git"
+                child_pid = root / "child.pid"
+                fake_git.write_text(
+                    "#!/bin/sh\n"
+                    "sleep 30 &\n"
+                    "printf '%s' \"$!\" > \"$1\"\n"
+                    "wait\n",
+                    encoding="utf-8",
+                )
+                fake_git.chmod(0o755)
+                probe = module.GitProbe(
+                    timeout_seconds=0.25,
+                    output_limit_bytes=1024,
+                    executable=str(fake_git),
+                )
+                completed = probe.run(root, str(child_pid))
+                self.assertIsNone(completed)
+                self.assert_process_stopped(int(child_pid.read_text(encoding="utf-8")))
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_default_delivery_git_probe_uses_one_total_deadline(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_git_probe_deadline_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                fake_git = root / "fake-git"
+                fake_git.write_text(
+                    "#!/bin/sh\nsleep 0.65\nprintf ok\n", encoding="utf-8"
+                )
+                fake_git.chmod(0o755)
+                probe = module.GitProbe(
+                    timeout_seconds=1.0,
+                    output_limit_bytes=1024,
+                    executable=str(fake_git),
+                )
+                started = time.perf_counter()
+                first = probe.run(root, "status")
+                second = probe.run(root, "status")
+                elapsed = time.perf_counter() - started
+                self.assertIsNotNone(first)
+                self.assertIsNone(second)
+                self.assertLess(elapsed, 1.6)
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_default_delivery_hook_rejects_stale_cached_remote_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                [
+                    "git",
+                    "symbolic-ref",
+                    "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/feat/safe",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("git push origin HEAD:main"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_allows_feature_governed_and_read_only_routes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
+                cwd=repo,
+                check=True,
+            )
+            commands = (
+                "semantic-commit commit --message 'fix: tiny repair'",
+                "semantic-commit fixup HEAD~1",
+                "semantic-commit squash HEAD~1",
+                "semantic-commit commit --help",
+                "semantic-commit fixup --help",
+                "semantic-commit squash --dry-run HEAD~1",
+                "semantic-commit commit --dry-run --message 'fix: tiny repair'",
+                "git push -u origin feat/tiny-repair",
+                "git push origin HEAD:refs/heads/feat/tiny-repair",
+                "git push --tags origin",
+                "git push origin refs/tags/v1.0.0",
+                "git push origin 'refs/heads/release/*:refs/heads/release/*'",
+                "git push --dry-run origin HEAD:refs/heads/main",
+                "forge-cli repo push-default --expected-base "
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --reason-file reason.md",
+                "forge-cli repo push-default --help",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_default_delivery_hook_allows_validate_only_on_default_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "semantic-commit commit --validate-only "
+                "--message 'fix: inspect only'",
+                "semantic-commit commit --dry-run --subject 'fix: inspect only' "
+                f"--message-out {shlex.quote(str(repo / 'recovery.md'))}",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_default_delivery_hook_blocks_ambiguous_feature_pushes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
+                cwd=repo,
+                check=True,
+            )
+            for command in ("git push", "git push origin", "git push --prune origin"):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_honors_explicit_repository_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
+                cwd=repo,
+                check=True,
+            )
+            commands = (
+                (f"git -C {shlex.quote(str(repo))} push origin HEAD:main", True),
+                (
+                    "semantic-commit commit --repo "
+                    f"{shlex.quote(str(repo))} --message 'fix: tiny repair'",
+                    False,
+                ),
+            )
+            for command, blocked in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=root,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if blocked:
+                        self.assert_blocked(decision, "forge-cli repo push-default")
+                    else:
+                        self.assert_allowed(decision)
+
+    def test_checkout_lease_treats_semantic_commit_help_and_dry_run_as_read_only(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            for command in (
+                "semantic-commit commit --help",
+                "semantic-commit commit --dry-run --message 'fix: inspect only'",
+                "semantic-commit commit --validate-only --message 'fix: inspect only'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "read-only", repo, tool_name="Bash", command=command
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_checkout_lease_classifies_all_semantic_commit_writers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            (repo / "-h").write_text("fix: option-value help\n", encoding="utf-8")
+            (repo / "--dry-run").write_text(
+                "fix: option-value dry run\n", encoding="utf-8"
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            for command in (
+                "semantic-commit commit --message 'fix: inspect only'",
+                "semantic-commit commit --dry-run --message 'fix: inspect only' "
+                "--message-out recovery.md",
+                "semantic-commit commit --validate-only --message 'fix: inspect only' "
+                "--message-out recovery.md",
+                "semantic-commit commit --message-file -h",
+                "semantic-commit commit --message-file --dry-run",
+                "semantic-commit fixup HEAD~1",
+                "semantic-commit squash HEAD~1",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "writer", repo, tool_name="Bash", command=command
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "unowned changes")
+            self.assertEqual(self._checkout_lease_files(state), [])
 
     def test_checkout_lease_multi_edit_resolves_one_checkout_once(self) -> None:
         import importlib.util

@@ -43,6 +43,7 @@ from hook_common import (
     output_redirect_targets,
     patch_text_candidates,
     read_payload,
+    semantic_commit_invocation_state,
     session_marker_key,
     simple_commands,
     simple_commands_with_nested_shells,
@@ -547,6 +548,13 @@ def git_cli_invocation_mutates(arguments: list[str]) -> bool:
     }
 
 
+def semantic_commit_invocation_mutates(arguments: list[str]) -> bool:
+    if not arguments or arguments[0] not in {"commit", "fixup", "squash"}:
+        return False
+    read_only, _repo = semantic_commit_invocation_state(arguments)
+    return not read_only
+
+
 def is_managed_worktree_remove(invocation: list[str]) -> bool:
     return (
         len(invocation) >= 4
@@ -627,8 +635,8 @@ def executable_invocation_mutates(invocation: list[str]) -> bool:
         return True
     if executable == "git-cli" and git_cli_invocation_mutates(arguments):
         return True
-    if executable == "semantic-commit" and arguments[:1] == ["commit"]:
-        return True
+    if executable == "semantic-commit":
+        return semantic_commit_invocation_mutates(arguments)
     if executable in {"sed", "perl", "ruby"} and any(
         argument == "-i" or argument.startswith("-i") or "i" in argument[1:]
         for argument in arguments

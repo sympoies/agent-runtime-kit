@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Stop hook: emit a one-shot PR readiness reminder for non-trivial branch diffs.
+# Stop hook: emit a one-shot delivery-readiness reminder for non-trivial diffs.
 
 set -uo pipefail
 
@@ -51,7 +51,7 @@ stamp="$stamp_dir/pr-readiness-${product}-${repo_hash}-${head_sha}.stamp"
 [[ -f "$stamp" ]] && exit 0
 
 repo_name="$(basename "$repo_root")"
-msg="non-trivial changes in ${repo_name} since ${base_branch} - consider running project validation / PR readiness checks before pushing"
+msg="non-trivial changes in ${repo_name} since ${base_branch} - run project validation and delivery-readiness checks; PR is the default, while governed direct-main requires explicit current-task authorization and a remote-SHA receipt"
 
 MSG="$msg" "$python_bin" -c '
 import json

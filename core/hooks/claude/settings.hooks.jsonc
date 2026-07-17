@@ -25,7 +25,7 @@
         {
           "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/stop-pre-pr-reminder.sh\"",
-          "statusMessage": "agent-runtime-kit: Remind PR readiness"
+          "statusMessage": "agent-runtime-kit: Remind delivery readiness"
         },
         {
           "type": "command",
@@ -75,6 +75,11 @@
           "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-direct-git-commit.py\"",
           "statusMessage": "agent-runtime-kit: Block direct git commit"
+        },
+        {
+          "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-unsafe-default-delivery.py\"",
+          "statusMessage": "agent-runtime-kit: Protect default-branch delivery"
         },
         {
           "type": "command",

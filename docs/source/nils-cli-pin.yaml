@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.22.7"
+  pinned_tag: "v1.22.9"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "fdd6ca14e636ef577badbeee399d7449a95074ae117aa2c8be0b275a46efee61"
-    linux_arm64: "465ff659eb5379a67195669544803af363ac5697cfffecb573d04e8bddc24528"
+    linux_amd64: "d0865f2172bfa1e662a6c9ef108ba41e38ec04267af8f88f07a33f39d4fa3d49"
+    linux_arm64: "3536b206562d12dd6b766f79079303dcbbff51fc09ab8a8660ddc8632269f4ca"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -42,8 +42,8 @@ required_clis:
     min: "1.0.1"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
-  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence
-    min: "1.21.34"
+  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + governed repo push-default direct-main delivery
+    min: "1.22.9"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
     min: "1.21.19"
   - bin: plan-archive     # discover / migrate / refresh / query

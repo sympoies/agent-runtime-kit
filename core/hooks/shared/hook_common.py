@@ -146,15 +146,116 @@ def is_semantic_commit_commit(command: str) -> bool:
 
     Dry-run / validate-only / help / non-commit subcommands are excluded so
     message-content gates only fire on commands that actually write a commit.
+    Parse argv before classifying operational flags so option values such as
+    a message file named ``-h`` or ``--dry-run`` remain data.
     """
-    if not re.search(r"\bsemantic-commit\s+commit\b", command):
-        return False
-    if re.search(r"(--validate-only|--dry-run|-h\b|--help\b)", command):
-        return False
-    return not re.search(
-        r"\bsemantic-commit\s+(staged-context|config|help|--help)\b",
-        command,
-    )
+    for simple_command in simple_commands_with_nested_shells(command):
+        invocation = invocation_tokens(simple_command)
+        candidates = [
+            invocation,
+            *opaque_invocation_candidates(invocation, {"semantic-commit"}),
+        ]
+        for candidate in candidates:
+            if not candidate or PurePosixPath(candidate[0]).name != "semantic-commit":
+                continue
+            arguments = candidate[1:]
+            authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
+                arguments
+            )
+            if arguments and arguments[0] == "commit" and authors_commit:
+                return True
+    return False
+
+
+SEMANTIC_COMMIT_VALUE_OPTIONS = frozenset(
+    {
+        "--body-bullet",
+        "--expect-head",
+        "--format",
+        "--max-header-width",
+        "--message",
+        "--message-file",
+        "--message-out",
+        "--repo",
+        "--scope",
+        "--subject",
+        "--summary",
+        "--target",
+        "--trailer",
+        "--type",
+    }
+)
+
+
+def semantic_commit_invocation_effects(
+    arguments: list[str],
+) -> tuple[bool, bool, str]:
+    """Return ``(authors_commit, writes_files, repo)`` for an argv tail.
+
+    Operational flags are recognized only after consuming values for every
+    supported value-taking option. This prevents a filename such as ``-h`` or
+    ``--dry-run`` from masquerading as an inspection flag. A dry-run or
+    validate-only invocation that writes ``--message-out`` needs checkout
+    writer admission but does not author a commit. Help exits before work.
+    """
+
+    if not arguments or arguments[0] not in {"commit", "fixup", "squash"}:
+        return False, False, ""
+
+    help_requested = False
+    dry_run = False
+    validate_only = False
+    writes_message_out = False
+    repo = ""
+    index = 1
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            break
+        if token in {"-h", "--help"}:
+            help_requested = True
+            index += 1
+            continue
+        if token == "--dry-run":
+            dry_run = True
+            index += 1
+            continue
+        if token == "--validate-only":
+            validate_only = True
+            index += 1
+            continue
+
+        option = token.split("=", 1)[0] if token.startswith("--") else token
+        if option in SEMANTIC_COMMIT_VALUE_OPTIONS:
+            attached = token.startswith("--") and "=" in token
+            value = token.split("=", 1)[1] if attached else ""
+            if not attached and index + 1 < len(arguments):
+                value = arguments[index + 1]
+            if option == "--message-out":
+                writes_message_out = True
+            elif option == "--repo" and value:
+                repo = value
+            index += 1 if attached else 2
+            continue
+        if token in {"-m", "-F"}:
+            index += 2
+            continue
+        if (token.startswith("-m") or token.startswith("-F")) and len(token) > 2:
+            index += 1
+            continue
+        index += 1
+
+    if help_requested:
+        return False, False, repo
+    authors_commit = not dry_run and not validate_only
+    writes_files = authors_commit or writes_message_out
+    return authors_commit, writes_files, repo
+
+
+def semantic_commit_invocation_state(arguments: list[str]) -> tuple[bool, str]:
+    """Return checkout-admission ``(read_only, repo)`` for an argv tail."""
+    _authors_commit, writes_files, repo = semantic_commit_invocation_effects(arguments)
+    return not writes_files, repo
 
 
 def extract_message(command: str) -> str | None:

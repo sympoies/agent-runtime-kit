@@ -14,10 +14,48 @@ and never force-push `main`. Those gates are also enforced mechanically by hooks
 but hooks do not replace policy: this file is the intent and the procedural
 detail behind the one-line gates.
 
+## Delivery Mode Decision Matrix
+
+| Mode | Authorization | Authoring and delivery | Terminal evidence |
+| --- | --- | --- | --- |
+| PR (default) | Ordinary implementation request | Signed `semantic-commit` on a non-default managed-worktree branch, then the active `deliver-pr` path | PR/MR URL, delivered head, reviews/checks, and provider merge read-back |
+| Direct-main (L0 exception) | The maintainer explicitly requests direct commit and push to the default branch in the current task | Exactly one signed `semantic-commit` on a non-default managed-worktree branch, then `forge-cli repo push-default --expected-base <full-sha> --reason-file <path>` | Structured receipt whose post-push `observed_remote_sha` equals the delivered head |
+
+Never infer direct-main authorization from a change being small, obvious,
+urgent, or described as a hotfix. The authorization expires with the current
+task. If the change grows beyond one commit, its expected base moves, signing
+cannot be verified, the checkout is dirty, or the delivery mode is uncertain,
+use a PR.
+
+The direct-main primitive permits only a verified fast-forward update. It
+requires the selected remote to have exactly one actual push URL (including any
+configured `pushurl`), binds that destination to the provider repository, and
+fails closed if any effective `url.*.insteadOf` or `url.*.pushInsteadOf` rule
+could rewrite the expanded destination a second time, including an empty
+universal match. It requires the exact expected remote base, validates one
+locally verified signed commit plus a non-empty regular reason file of at most
+2,000 bytes, and pins the base read, push, and remote-SHA read-back to that URL.
+Provider and Git subprocesses are time- and output-bounded, and Git's inherited
+push expansion is disabled for the delivery. After proving ancestry, the CLI
+internally binds `--force-with-lease` to that exact old object ID as a
+compare-and-swap; callers cannot supply, relax, or retry that lease. The command
+exposes no force, delete, retry, or direct merge option. Raw
+`git push` to the resolved default branch and the mutating `semantic-commit`
+`commit`, `fixup`, and `squash` subcommands on the checked-out default branch
+are blocked by hook
+on supported Codex/Claude hosts, including Git's wildcard and matching-branch
+refspec forms. Explicit feature-branch refspecs and documented
+read-only help/dry-run forms remain available; ambiguous live pushes without a
+refspec fail closed. Hermes has no hook runner; policy and the governed CLI
+contract remain authoritative there.
+
 ## Commits
 
 - The `semantic-commit` body gate enforces 1-2 bullets on non-trivial commits;
   trivial commits may omit the body.
+- Author commits only on a non-default managed-worktree branch. This applies to
+  both PR and direct-main delivery; direct-main changes are not authored in the
+  primary checkout.
 - Each body bullet must start with a dash, one following space, and an uppercase
   ASCII letter, or a two-space continuation line. A lowercase word, a
   backticked identifier, or a leading double-dash flag is rejected as the opener;
@@ -52,8 +90,8 @@ detail behind the one-line gates.
 - A clean linked worktree can acquire a lease. The primary checkout has a
   narrow direct-edit exception: it must be clean, on the resolved default
   branch, outside an existing Git operation, and free of a live foreign lease.
-  This keeps small changes cheap without treating a one-time `git status` as a
-  concurrency lock.
+  This is editing-isolation policy only; it does not authorize a commit or
+  delivery mode and does not turn a small change into direct-main delivery.
 - Once acquired, the owning session refreshes its lease and may continue after
   its own edits dirty the checkout, including resolving a Git operation it
   initiated after acquisition. A live foreign lease, dirty checkout without a
@@ -73,11 +111,12 @@ detail behind the one-line gates.
 
 ### Terminal local cleanup
 
-- Capture the checkout root, branch, and delivered head SHA before merge.
-  Cleanup becomes eligible only after provider merge truth is read back and
-  matches that delivered head, and after linked issue closeout, archive duties,
-  requested deployment/activation, evidence migration, and other parent-owned
-  terminal work have completed.
+- Capture the checkout root, branch, delivery mode, and delivered head SHA.
+  Cleanup becomes eligible only after provider truth is read back and matches
+  that head: PR/MR merge truth for the default path, or the governed
+  `observed_remote_sha` receipt for direct-main. Linked issue closeout, archive
+  duties, requested deployment/activation, evidence migration, and other
+  parent-owned terminal work must also be complete.
 - Recheck local status immediately before cleanup. Dirty, locked, missing,
   provider-unverified, or otherwise ambiguous state is retained and reported;
   never force removal merely to make the local tree look tidy.
@@ -98,8 +137,8 @@ detail behind the one-line gates.
   primary-checkout lease and prunes lease state left by a successfully removed
   managed worktree.
 - `git-cli worktree remove` intentionally leaves the branch. Delete it only
-  after the provider-confirmed delivered head matches the local branch tip.
-  This explicit proof permits cleanup after a squash merge, where
+  after the provider-confirmed delivered head or direct-main remote-SHA receipt
+  matches the local branch tip. This explicit proof permits cleanup after a squash merge, where
   `git branch -d` cannot infer provider equivalence from ancestry alone.
 - A child PR workflow defers cleanup when its L2/L3 parent or another requested
   post-merge workflow still owns terminal duties, handing the captured checkout

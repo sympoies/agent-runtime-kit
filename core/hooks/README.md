@@ -104,7 +104,9 @@ override remain host trust boundaries. Hermes has no runtime-kit hook runner.
 across Codex and Claude. Explicit edit tools always participate; Bash
 participates only for conservative high-confidence mutations, including known
 nested shell / `agent-run exec` forms and managed worktree removal, so read-only
-recovery remains available. Managed worktree slugs resolve through the
+recovery remains available. In particular, `semantic-commit` help and dry-run
+forms do not acquire a writer lease unless the command includes the
+file-writing `--message-out` option. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
 mutation with exactly one removal target. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
@@ -122,6 +124,23 @@ releases clean matching owner leases across the current repository and prunes
 lease state for physically removed worktrees while retaining the stable
 per-checkout lock inode; dirty or mismatched ownership is retained and reported.
 Stop never removes a worktree, branch, commit, or dirty file.
+
+`block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
+It resolves the selected remote's default branch and blocks live raw `git push`
+forms that target it, including force, force-with-lease, deletion, wildcard,
+matching-branch (`:` / `+:`), and implicit current-default pushes. It also
+blocks mutating
+`semantic-commit commit`, `fixup`, and `squash` on the checked-out default
+branch. Ambiguous live
+pushes without an explicit refspec fail closed because Git configuration can
+retarget them. It leaves explicit feature-branch pushes,
+`git push --dry-run`, semantic-commit help/dry-run, and the governed `forge-cli
+repo push-default` invocation available. The hook is a guardrail rather than a
+shell sandbox; provider rules and the forge-cli expected-base, one-signed-commit,
+verified-fast-forward, exact-old-object compare-and-swap, and post-push
+read-back contract are authoritative. The internal exact lease does not make
+raw or caller-controlled `--force-with-lease` an allowed route. Hermes has no
+runtime-kit hook runner.
 
 Install surfaces:
 

@@ -157,6 +157,12 @@ entries:
 
       [[hooks.PreToolUse.hooks]]
       type = "command"
+      command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/block-unsafe-default-delivery.py\""
+      timeout = 10
+      statusMessage = "agent-runtime-kit: Protect default-branch delivery"
+
+      [[hooks.PreToolUse.hooks]]
+      type = "command"
       command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/block-direct-git-worktree.py\""
       timeout = 10
       statusMessage = "agent-runtime-kit: Block direct git worktree"
@@ -303,7 +309,7 @@ entries:
       type = "command"
       command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/stop-pre-pr-reminder.sh\""
       timeout = 10
-      statusMessage = "agent-runtime-kit: Remind PR readiness"
+      statusMessage = "agent-runtime-kit: Remind delivery readiness"
 
       [[hooks.Stop.hooks]]
       type = "command"

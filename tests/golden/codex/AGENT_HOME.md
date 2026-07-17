@@ -85,9 +85,11 @@
 ## Work Tier Levels
 
 - Classify every substantive work request into the lowest applicable tier and
-  use that tier's method: L0 direct / PR-only, L1 follow-up issue, L2 plan
-  tracking issue, L3 dispatch plan. PR delivery is the shared floor under
-  every tier.
+  use that tier's method: L0 untracked delivery, L1 follow-up issue, L2 plan
+  tracking issue, L3 dispatch plan. PR delivery is the default. The sole
+  direct-main exception is L0, requires explicit maintainer authorization in
+  the current request, and must use the governed route in `git-delivery.md`;
+  never infer it from words such as "small" or "hotfix".
 - State the tier and recommended next step at the start of such work. L1+ or
   ambiguous classification: surface the level as a decision and wait.
   Unambiguous L0: say so and proceed. Re-triage if the work escalates
@@ -140,6 +142,18 @@
 - For agent-owned provider issues, PRs, and MRs, use the active workflow or
   `forge-cli` surface; direct `gh pr create` or `glab mr create` are blocked
   by hook.
+- Author commits only on a non-default managed-worktree branch. Hooks block raw
+  pushes to the remote default branch.
+- An explicitly authorized L0 direct-main delivery uses `forge-cli repo
+  push-default` with one signed commit, an exact expected base, a reason file,
+  and remote-SHA read-back.
+- The command must uniquely bind the actual push destination to provider
+  metadata, reject any second-stage Git URL rewrite, and accept only a
+  non-empty regular reason file of at most 2,000 bytes; provider and Git
+  subprocesses remain bounded.
+- That governed command may use an internal exact-old-object lease solely as a
+  compare-and-swap after proving a fast-forward. It exposes no caller-controlled
+  force route; raw force and force-with-lease pushes remain forbidden.
 - Run the repo's pre-commit tests/checks per `DEVELOPMENT.md`. Never
   force-push `main`.
 - Commit body gate, managed worktree paths, branch naming, label selection,

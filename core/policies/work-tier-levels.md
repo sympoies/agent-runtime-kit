@@ -17,9 +17,10 @@ full ladder, judge, methods, and behavior contract.
 
 Work has two independent axes. Do not collapse them:
 
-- **Delivery axis — the PR.** Almost any code change lands as a PR squash-merged
-  into `main`. The PR is the durable record of *what changed and why*. This axis
-  is a near-constant floor, not a tier.
+- **Delivery axis — PR by default.** Almost any code change lands as a PR
+  squash-merged into `main`. The PR is the durable record of *what changed and
+  why*. The only exception is an explicitly authorized L0 direct-main delivery
+  using the governed one-commit receipt path in `git-delivery.md`.
 - **Tracking axis — the tier.** How much durable, cross-time tracking the
   problem or plan needs: none, a follow-up issue, or a plan tracking issue. This
   axis is what the tiers below measure.
@@ -32,7 +33,7 @@ is never a reason to escalate — *"state worth tracking"* is.
 
 | Tier | Name | Tracking artifact | Primary method |
 | --- | --- | --- | --- |
-| **L0** | Direct / PR-only | None (the PR is the record) | `semantic-commit` CLI → `deliver-pr` |
+| **L0** | Untracked delivery | None | `semantic-commit` → `deliver-pr` by default; governed direct-main only when explicitly authorized |
 | **L1** | Follow-up issue | One provider issue + comment timeline | `issue-follow-up` |
 | **L2** | Plan tracking issue | Plan bundle + issue + lifecycle | `deliver-plan-tracking-issue` |
 | **L3** | Dispatch plan | Shared dispatch issue + lanes | `deliver-dispatch-plan` |
@@ -47,12 +48,14 @@ one dispatch issue; the user decides whether the scale warrants running it.
 
 Two things ride alongside the ladder and must not be mistaken for tiers:
 
-- **PR = the delivery floor.** Whenever code changes, L0–L3 all deliver through
-  a PR. Because the merge is squash-into-`main`, the branch commits collapse to
-  one commit and the granular story (description, review, linked issue) survives
-  only on the PR page. So PR body quality *is* record quality: keep the body
-  grounded in the diff with at least `## Summary` + `## Test plan`, produced by
-  the active delivery skill / `agent-runtime pr-body render`.
+- **PR = the default delivery path.** L1–L3 always deliver through PRs; L0 does
+  too unless the maintainer explicitly requests direct commit and push to the
+  default branch in the current task. Never infer that exception from change
+  size, urgency, or words such as "small" or "hotfix". The direct route is one
+  signed commit from a non-default managed worktree through `forge-cli repo
+  push-default`; its remote-SHA receipt replaces the PR record. For PR delivery,
+  keep the body grounded in the diff with at least `## Summary` + `## Test plan`,
+  produced by the active delivery skill / `agent-runtime pr-body render`.
 - **Implementation-readiness doc = an optional spec, not a tier.** A
   `discussion-to-implementation-doc` artifact (default home
   `docs/discussions/<YYYY-MM-DD>-<slug>.md`; inside the
@@ -107,10 +110,13 @@ already provides enough tracking, keep the lower tier and use
 
 ## Methods By Tier
 
-### L0 — Direct / PR-only
+### L0 — Untracked delivery
 
 - Do the work, commit through the `semantic-commit` CLI, deliver through
-  `deliver-pr` (squash → `main`).
+  `deliver-pr` (squash → `main`) by default.
+- Only when the maintainer explicitly authorizes direct commit and push to the
+  default branch in the current task, use the direct-main mode in
+  `git-delivery.md`. Do not carry that authorization into another task.
 - PR body: `## Summary` + `## Test plan`, grounded in the diff.
 - If a spec doc backs the work, link it in the PR body and close the doc's loop
   per its retention intent (retire when cleanup-eligible, promote when durable).
@@ -146,7 +152,8 @@ already provides enough tracking, keep the lower tier and use
   subagents that need a shared dispatch spine. Lane execution, plan-branch PR
   creation, independent review, orchestrator merge, and strict closeout are
   internal phases of that parent outcome.
-- Same PR floor: each lane delivers its own PR; the dispatch issue is the spine.
+- Each lane delivers its own PR; the dispatch issue is the spine. Direct-main is
+  L0-only and is not a dispatch-lane shortcut.
 - Do not label an ad-hoc subagent run as formal L3. Existing issue sets may be
   executed with ad-hoc parallel/orchestrated execution at their existing tier,
   or promoted into L3 by opening one shared dispatch issue that references those
@@ -203,6 +210,7 @@ escalation boundary, never on routine L0 work.
   triage; this file is the full reference it points to.
 - `issue-follow-up`, `deliver-plan-tracking-issue`, `deliver-dispatch-plan`, and
   `discussion-to-implementation-doc` are the retained per-tier outcomes.
-- `deliver-pr` owns provider PR/MR delivery (the floor), including create,
-  repair, merge, and close modes.
+- `deliver-pr` owns default provider PR/MR delivery, including create, repair,
+  merge, and close modes. `git-delivery.md` owns the narrow L0 direct-main
+  exception.
 - `forge-label-taxonomy.md` owns label selection for L1/L2 issues.
