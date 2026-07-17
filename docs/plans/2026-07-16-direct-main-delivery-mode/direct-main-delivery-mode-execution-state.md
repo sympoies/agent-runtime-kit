@@ -5,9 +5,12 @@
 - Source document: docs/plans/2026-07-16-direct-main-delivery-mode/direct-main-delivery-mode-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/638>
 - Current sprint: Sprint 2
-- Status: complete
+- Status: complete; tracking issue closed
 - Branch: feat/direct-main-delivery-mode
 - Last updated: 2026-07-17
+- Current task: none; tracking issue closed
+- Next task: none; tracking issue closed
+- Branch/commit/PR: graysurf/agent-runtime-kit#645 merged (<https://github.com/graysurf/agent-runtime-kit/pull/645>)
 
 ## Task Ledger
 
@@ -46,7 +49,7 @@
 - 2026-07-17: The consumer pin, Linux artifact digests, baseline mirrors, and the three merge-owning workflow floors advanced to `v1.22.10`; focused PR runtime smoke passed 6/6.
 - 2026-07-17: nils-cli PR #1266 and release `v1.22.11` bound native review submission to an expected provider head and returned a typed viewer-draft conflict for guarded recovery.
 - 2026-07-17: nils-cli PR #1269 and release `v1.22.12` added expected-head merge CAS plus exact-head, exact-commit, immutable-body pending-review deletion; release request run 29576792817 and broker run 29576803921 completed successfully.
-- 2026-07-17: Runtime-kit PR #645 proposes the final `v1.22.12` pin, Linux artifact digests, reviewed-head merge binding, immutable review-body retry, refreshed rendered surfaces, and corresponding runtime-smoke contract coverage. Delivery review is in progress; this entry does not claim the PR has merged.
+- 2026-07-17: Runtime-kit PR #645 merged as `1914f25be20d597af43d69bf5658d37ea99bbbee` with the final `v1.22.12` pin, Linux artifact digests, reviewed-head merge binding, immutable review-body retry, refreshed rendered surfaces, and corresponding runtime-smoke contract coverage.
 - 2026-07-17: Deploy-readiness checks passed with version baseline 24/24, version-alignment doctor 17/17, and a three-product `scripts/sync-runtime-surfaces.sh --no-pull` dry-run. No live runtime apply was executed.
 
 ## Session Notes
@@ -54,3 +57,7 @@
 - 2026-07-16: Runtime-kit primary checkout is owned by another session lease, so this plan uses a managed worktree created from current `origin/main`.
 - 2026-07-16: The maintainer removed the unrelated unowned heuristic source from the primary checkout after its exact contents were preserved under `$HOME/.local/state/agent-runtime-kit/out/quarantine/20260716-gitlab-reviewer-bot-profile-mapping-gap/ENTRY.md`; the delivery work is no longer blocked.
 - 2026-07-16: No live runtime sync/apply command is authorized by this plan; only dry-run or isolated verification is allowed at Task 2.5.
+
+## Handoff
+
+- Tracking issue <https://github.com/graysurf/agent-runtime-kit/issues/638> is closed. After this sync lands, no plan closeout or product action remains.
