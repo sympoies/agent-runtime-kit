@@ -46,6 +46,7 @@ Use the released CLI directly:
 ```bash
 screen-record --preflight
 screen-record --list-windows
+RUN_DIR="$(agent-out project --topic screen-record --repo "$PWD" --mkdir)"
 screen-record --screenshot --active-window --path "$RUN_DIR/window.png"
 screen-record --display --duration 10 --path "$RUN_DIR/session.mov" --metadata-out "$RUN_DIR/session.json"
 ```

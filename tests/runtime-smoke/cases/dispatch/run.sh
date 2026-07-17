@@ -515,6 +515,8 @@ run_create_plan_tracking_issue_probe() {
   local open_fixture="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-open-fixture"
   local open_out="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-open.json"
   local audit_out="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-audit.json"
+  local run_init_out="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-run-init.json"
+  local run_state="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-run-state.json"
   require_dispatch_bin plan-tooling || return 1
   require_dispatch_bin plan-issue || return 1
   ensure_plan_fixture
@@ -536,8 +538,25 @@ run_create_plan_tracking_issue_probe() {
     --comments-json "$COMMENTS_JSON_PATH" \
     --format json \
     --state-dir "$DISPATCH_STATE_DIR" >"$audit_out" 2>&1
+  plan-issue --format json tracking run init \
+    --provider-repo graysurf/agent-runtime-kit \
+    --issue 999 \
+    --bundle "$DISPATCH_ARTIFACTS_DIR" \
+    --execution-state-file "$MINI_PLAN" \
+    --branch runtime-smoke \
+    --now 2026-07-17T00:00:00Z \
+    --out "$run_state" >"$run_init_out" 2>&1
 
   grep -q 'plan-issue.record.open.v2' "$open_out"
+  jq -e '.payload.result.issue | type == "object" and has("number") and has("url") and .number == null and .url == null' \
+    "$open_out" >/dev/null
+  if printf '{}\n' \
+    | jq -e '.payload.result.issue | type == "object" and has("number") and has("url") and .number == null and .url == null' \
+      >/dev/null 2>&1; then
+    return 1
+  fi
+  jq -e '.payload.result.run_state_path == $path' \
+    --arg path "$run_state" "$run_init_out" >/dev/null
   grep -q '"missing_required":\[\]' "$audit_out"
   grep -q '"profile":"tracking"' "$audit_out"
   run_plan_issue_provider_payload_privacy_gate_probe
@@ -1216,6 +1235,31 @@ run_dispatch_outcome_routing_probe() {
   grep -Fq 'PLAN_LABEL_ARGS=(--label workflow::plan --label workflow::tracking)' "$tracking"
   grep -Fq 'PLAN_LABEL_ARGS=(--label workflow::tracking --label plan)' "$tracking"
   grep -Fq '"${PLAN_LABEL_ARGS[@]}"' "$tracking"
+  grep -Fq 'if [ -z "${ISSUE:-}" ]; then' "$tracking"
+  grep -Fq 'TRACKER_JSON="$(plan-issue --repo "$OWNER_REPO" --format json record open' "$tracking"
+  grep -Fq 'forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json issue view "$ISSUE"' "$tracking"
+  grep -Fq '["payload"]["result"]["issue"]["number"]' "$tracking"
+  grep -Fq '["payload"]["result"]["issue"]["url"]' "$tracking"
+  grep -Fq 'RUN_INIT_JSON="$(plan-issue --format json tracking run init' "$tracking"
+  grep -Fq '["payload"]["result"]["run_state_path"]' "$tracking"
+  grep -Fq '["data"]["url"]' "$tracking"
+  awk '
+    /^if \[ -z "\$\{ISSUE:-\}" \]; then/ { branch_line = NR }
+    /TRACKER_JSON=.*record open/ && !open_line { open_line = NR }
+    /\["payload"\]\["result"\]\["issue"\]\["url"\]/ && !open_url_line { open_url_line = NR }
+    /RUN_INIT_JSON=.*tracking run init/ && !run_init_line { run_init_line = NR }
+    /\["payload"\]\["result"\]\["run_state_path"\]/ && !run_state_line { run_state_line = NR }
+    /^else$/ && branch_line && !else_line { else_line = NR }
+    /issue view "\$ISSUE"/ && !view_line { view_line = NR }
+    /\["data"\]\["url"\]/ && !existing_url_line { existing_url_line = NR }
+    /^plan-archive migrate/ { archive_line = NR }
+    END {
+      exit !(branch_line < open_line && open_line < open_url_line &&
+             open_url_line < run_init_line && run_init_line < run_state_line &&
+             run_state_line < else_line && else_line < view_line &&
+             view_line < existing_url_line && existing_url_line < archive_line)
+    }
+  ' "$tracking"
   grep -Fq 'references/outcome-routing.md' "$tracking"
   grep -Fq 'references/outcome-routing.md' "$dispatch"
   grep -Fq 'record audit' "$tracking"
@@ -1255,6 +1299,9 @@ run_dispatch_outcome_routing_probe() {
   rendered_contract_assert_all_omit dispatch deliver-dispatch-plan 'core/skills/dispatch/plan-issue-spec/outcome-routing.md'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'record audit'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'issue view "$ISSUE" --with-comments'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'if [ -z "${ISSUE:-}" ]; then'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue '["payload"]["result"]["issue"]["url"]'
+  rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue '["payload"]["result"]["run_state_path"]'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue '--expect-visible'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'git-cli worktree remove <path-or-slug> --format json'
   rendered_contract_assert_all_contain dispatch deliver-plan-tracking-issue 'provider-confirmed delivered head'

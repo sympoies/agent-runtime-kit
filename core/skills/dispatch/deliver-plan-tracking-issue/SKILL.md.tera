@@ -28,7 +28,8 @@ Prereqs:
 
 Inputs:
 
-- `OWNER_REPO`, optional `ISSUE`, optional `RUN_STATE`, `PLAN_BUNDLE`, `SLUG`,
+- `OWNER_REPO`, optional `ISSUE`, `RUN_STATE` (derived when opening a tracker;
+  required when resuming `ISSUE`), `PLAN_BUNDLE`, `SLUG`,
   `BRANCH`, `PR_NUMBER`, `PROVIDER`, `BASE_REF`, and post-close read-back paths
   `CLOSED_ISSUE_VIEW_JSON`, `CLOSED_ISSUE_JSON`, and `CLOSED_ISSUE_BODY`.
 - Optional `LINKED_PR` when a PR already exists and should be verified
@@ -120,7 +121,8 @@ provider sweeps pass. Close only after `tracking close-ready` returns
 ```bash
 plan-tooling validate --file "$PLAN_BUNDLE/$SLUG-plan.md" --format text --explain
 
-# Open/attach and tracking run init are used only when the tracker/run is absent.
+# Open and capture a tracker only when ISSUE is absent. An explicit ISSUE is
+# read back and resumed; it must never pass through record open.
 PROVIDER="$(forge-cli repo view --repo "$OWNER_REPO" --format json \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["provider"])')"
 case "$PROVIDER" in
@@ -129,18 +131,31 @@ case "$PROVIDER" in
   *) echo "unsupported tracker provider: $PROVIDER" >&2; exit 64 ;;
 esac
 
-plan-issue --repo "$OWNER_REPO" --format json record open \
-  --profile tracking --bundle "$PLAN_BUNDLE" --title "$TITLE" \
-  --label type::chore --label area::docs \
-  --label state::needs-triage \
-  "${PLAN_LABEL_ARGS[@]}"
+if [ -z "${ISSUE:-}" ]; then
+  TRACKER_JSON="$(plan-issue --repo "$OWNER_REPO" --format json record open \
+    --profile tracking --bundle "$PLAN_BUNDLE" --title "$TITLE" \
+    --label type::chore --label area::docs \
+    --label state::needs-triage \
+    "${PLAN_LABEL_ARGS[@]}")"
+  ISSUE="$(printf '%s\n' "$TRACKER_JSON" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["payload"]["result"]["issue"]["number"])')"
+  ISSUE_URL="$(printf '%s\n' "$TRACKER_JSON" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["payload"]["result"]["issue"]["url"])')"
 
-plan-issue --format json tracking run init \
-  --provider-repo "$OWNER_REPO" --issue "$ISSUE" \
-  --bundle "$PLAN_BUNDLE" \
-  --execution-state-file "$PLAN_BUNDLE/$SLUG-execution-state.md" \
-  --branch "$BRANCH" \
-  --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  RUN_INIT_JSON="$(plan-issue --format json tracking run init \
+    --provider-repo "$OWNER_REPO" --issue "$ISSUE" \
+    --bundle "$PLAN_BUNDLE" \
+    --execution-state-file "$PLAN_BUNDLE/$SLUG-execution-state.md" \
+    --branch "$BRANCH" \
+    --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+  RUN_STATE="$(printf '%s\n' "$RUN_INIT_JSON" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["payload"]["result"]["run_state_path"])')"
+else
+  : "${RUN_STATE:?RUN_STATE is required when ISSUE is supplied}"
+  TRACKER_JSON="$(forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json issue view "$ISSUE")"
+  ISSUE_URL="$(printf '%s\n' "$TRACKER_JSON" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["url"])')"
+fi
 
 plan-issue --format json tracking status \
   --provider-repo "$OWNER_REPO" \
@@ -298,6 +313,14 @@ plan-issue --repo "$OWNER_REPO" --format json record audit \
 plan-archive discover --source-repo "$PWD" --format json
 plan-archive migrate --plan "$PLAN_BUNDLE" --issue "$ISSUE_URL" --format json
 ```
+
+When the caller supplies an ordinary provider issue that has not yet received
+tracking lifecycle records, do not enter the resume branch yet. Read the issue
+and audit its comments first. After confirming that the source, plan, and state
+roles are absent, run `record attach --profile tracking` exactly once,
+initialize its run state, and then resume with the resulting `RUN_STATE`. Never
+attach to an issue that already carries those roles, because attachment posts a
+new lifecycle set rather than resuming the existing tracker.
 
 `forge-cli pr deliver --no-merge` creates or adopts the draft and completes its
 check wait without merging, leaving the window for review. Inspect native

@@ -66,6 +66,7 @@ run_screen_record_probe() {
 run_media_outcome_routing_probe() {
   local image_skill="$REPO_ROOT/core/skills/media/image-processing/SKILL.md.tera"
   local capture_skill="$REPO_ROOT/core/skills/media/screen-record/SKILL.md.tera"
+  local skills_manifest="$REPO_ROOT/manifests/skills.yaml"
 
   grep -Fq '## Outcome Routing' "$image_skill"
   grep -Fq 'artifact allocation is' "$image_skill"
@@ -73,11 +74,24 @@ run_media_outcome_routing_probe() {
   grep -Fq '## Outcome Routing' "$capture_skill"
   grep -Fq 'evidence' "$capture_skill"
   grep -Fq 'metadata and diagnostics are internal bookkeeping' "$capture_skill"
+  grep -Fq 'RUN_DIR="$(agent-out project --topic screen-record --repo "$PWD" --mkdir)"' "$capture_skill"
+  awk '
+    /RUN_DIR="\$\(agent-out project/ { allocation_line = NR }
+    /--path "\$RUN_DIR\/window.png"/ { use_line = NR }
+    END { exit !(allocation_line && allocation_line < use_line) }
+  ' "$capture_skill"
+  awk '
+    /^  - id: media\.screen-record$/ { in_skill = 1 }
+    in_skill && /^    required_clis:$/ { in_required = 1 }
+    in_skill && in_required && /^      agent-out:/ { agent_out = 1 }
+    in_skill && /^    state_out_mode:/ { exit !agent_out }
+  ' "$skills_manifest"
 
   rendered_contract_assert_skill media image-processing
   rendered_contract_assert_skill media screen-record
   rendered_contract_assert_all_contain media image-processing '## Outcome Routing'
   rendered_contract_assert_all_contain media screen-record '## Outcome Routing'
+  rendered_contract_assert_all_contain media screen-record 'RUN_DIR="$(agent-out project --topic screen-record --repo "$PWD" --mkdir)"'
 }
 
 failures=0

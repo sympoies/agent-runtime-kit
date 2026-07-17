@@ -403,6 +403,7 @@ skills:
       hermes:
         render_to: plugins/media/skills/screen-record/SKILL.md
     required_clis:
+      agent-out: ">=1.19.3"
       screen-record: ">=0.16.0"
     state_out_mode: runtime
 

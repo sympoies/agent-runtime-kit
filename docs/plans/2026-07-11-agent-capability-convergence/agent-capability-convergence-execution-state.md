@@ -10,7 +10,7 @@
 - Plan branch: `feat/agent-capability-convergence`
 - Integration PR: #582 merged as e99e024
 - Current lanes: complete
-- Next task: close parent #562
+- Next task: none
 - Upstream prerequisite: complete; nils-cli v1.21.17 and Tasks 2.1/2.2 landed
 - Task 3.1 gate: complete; PR #577 merged as 92da055
 - Task 3.2 gate: complete; PR #581 merged as bda76df
@@ -119,5 +119,5 @@
   both runtime roles, and kept outside the public capability catalog. The plan
   now advances to strict #568 closeout and parent #562 closure.
 - 2026-07-12: strict dispatch closeout passed with all linked PRs merged and all
-  seven lifecycle roles visible and lint-clean. Tracking issue #568 is closed;
-  only parent #562 closure remains.
+  seven lifecycle roles visible and lint-clean. Tracking issue #568 and parent
+  issue #562 are closed; no provider closeout action remains.
