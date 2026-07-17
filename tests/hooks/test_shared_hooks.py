@@ -9066,11 +9066,82 @@ exit 64
             self.assertIn("DEV.md", context)
             self.assertIn("browser-test", context)
             self.assertNotIn("BROWSER.md", context)
-            self.assertIn("activate", context)
+            # P0-1 alignment: the durable-session cue recommends the atomic
+            # `session prepare` primitive, not the older `session activate`.
+            self.assertIn("session prepare", context)
+            self.assertNotIn("session activate", context)
             self.assertIn("agent-docs --docs-home", context)
             self.assertIn(f"--docs-home {repo.resolve()}", context)
             self.assertIn(f"--project-path {repo.resolve()}", context)
             self.assertIn(f"--state-home {repo / 'state'}", context)
+            # P0-2 bullet 6: ordinary durable-session cues do not expand the full
+            # validation command list (the finish-line gate still enforces it).
+            self.assertNotIn("scripts/ci/all.sh", context)
+            self.assertNotIn("declared validation", context)
+
+    def test_preflight_cue_emits_only_newly_active_docs(self) -> None:
+        """P0-2 bullet 2: on a later activation, list only the newly-active
+        intent's required docs, not the already-announced ones."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            phase = repo / "phase"
+            phase.write_text("1", encoding="utf-8")
+            # The fake toggles active intents by a test-controlled phase file:
+            # phase 1 -> project-dev active; phase 2 -> project-dev + task-tools.
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+phase="$(cat {shlex.quote(str(phase))})"
+if [[ "$args" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$args" == *"preflight --help"* ]]; then echo '--require-declared-intent --product'; exit 0; fi
+if [[ "$args" == *"list --format json"* ]]; then echo '{{"intents":["project-dev","task-tools"]}}'; exit 0; fi
+active='["project-dev"]'
+if [[ "$phase" == "2" ]]; then active='["project-dev","task-tools"]'; fi
+if [[ "$args" == *"session status"* ]]; then echo '{{"schema_version":"cli.agent-docs.session.status.v1","ok":true,"data":{{"active_intents":'"$active"'}}}}'; exit 0; fi
+if [[ "$args" == *"session verify"* ]]; then echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"active_intents":'"$active"',"verified":true}}}}'; exit 0; fi
+if [[ "$args" == *"--intent project-dev"* ]]; then echo '{{"intent":"project-dev","documents":[{{"path":"DEV.md","required":true,"scope":"project"}}],"validation":{{"declared":false,"commands":[]}}}}'; exit 0; fi
+if [[ "$args" == *"--intent task-tools"* ]]; then echo '{{"intent":"task-tools","documents":[{{"path":"EXT.md","required":true,"scope":"project"}}],"validation":{{"declared":false,"commands":[]}}}}'; exit 0; fi
+exit 64
+""",
+            )
+            home = repo / "home"
+            home.mkdir()
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+
+            def cue_context() -> str:
+                _code, decision, _stderr = run_shell_hook(
+                    "user-prompt-agent-docs.sh",
+                    {"session_id": "delta-cue", "prompt": "hello"},
+                    cwd=repo,
+                    env=env,
+                )
+                if not decision:
+                    return ""
+                out = decision.get("hookSpecificOutput", {})
+                return str(out.get("additionalContext", "")) if isinstance(out, dict) else ""
+
+            first = cue_context()
+            self.assertIn("DEV.md", first)
+
+            phase.write_text("2", encoding="utf-8")
+            second = cue_context()
+            # The newly-active intent's docs surface; the already-announced
+            # project-dev docs are not re-listed.
+            self.assertIn("EXT.md", second)
+            self.assertIn("task-tools", second)
+            self.assertNotIn("DEV.md", second)
 
     def test_preflight_cue_invalidates_cache_on_same_name_reactivation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9093,7 +9164,7 @@ if [[ "$args" == *"preflight --help"* ]]; then echo '--require-declared-intent -
 if [[ "$args" == *"list --format json"* ]]; then echo '{{"intents":["project-dev"]}}'; exit 0; fi
 if [[ "$args" == *"session status"* ]]; then echo '{{"ok":true,"data":{{"active_intents":["project-dev"],"record_file":"agent-docs/sessions/record.json"}}}}'; exit 0; fi
 if [[ "$args" == *"session verify"* ]]; then echo '{{"ok":true,"data":{{"active_intents":["project-dev"],"verified":true,"record_file":"agent-docs/sessions/record.json"}}}}'; exit 0; fi
-if [[ "$args" == *"preflight"* ]]; then echo '{{"intent":"project-dev","documents":[{{"path":"DEV.md","required":true,"scope":"project"}}],"validation":{{"declared":false,"commands":[]}}}}'; exit 0; fi
+if [[ "$args" == *"preflight"* ]]; then echo '{{"intent":"project-dev","project_path":"{repo.resolve()}","documents":[{{"path":"DEV.md","required":true,"scope":"project"}}],"validation":{{"declared":false,"commands":[]}}}}'; exit 0; fi
 exit 64
 """,
             )
@@ -9114,7 +9185,13 @@ exit 64
 
             record.write_text('{"activated_at":"two"}\n', encoding="utf-8")
             third = run_shell_hook("user-prompt-agent-docs.sh", payload, cwd=repo, env=env)
-            self.assertIsNotNone(third[1])
+            # P0-2 bullet 4: the record change still invalidates the per-fingerprint
+            # stamp (the cache is re-evaluated), but a same-name reactivation with an
+            # unchanged active-intent/document set no longer reproduces the cue — the
+            # intent was already announced, so the delta is empty and nothing is
+            # emitted. A genuinely new activation still emits (see
+            # test_preflight_cue_emits_only_newly_active_docs).
+            self.assertIsNone(third[1])
 
     def test_preflight_cue_invalidates_no_active_cache_on_catalog_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9199,7 +9276,7 @@ exit 64
             self.assertIsNotNone(decision)
             context = str((decision or {}).get("hookSpecificOutput", {}).get("additionalContext", ""))
             self.assertIn("stale", context.lower())
-            self.assertIn("activate", context)
+            self.assertIn("prepare", context)
             self.assertNotIn("STALE.md", context)
 
     def test_preflight_cue_covers_every_declared_intent(self) -> None:
