@@ -56,6 +56,18 @@
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
 
+## Active Goal Waits
+
+- When an active goal cannot advance without a required user decision, use the
+  harness's blocking question tool when one is available so the turn remains
+  pending. Do not end with a plain-text question while that tool is available,
+  because a goal Stop hook can treat the turn end as premature and re-invoke
+  the agent.
+- A response from the blocking question tool is a later user message for a
+  consent workflow, but it authorizes execution only when the response
+  explicitly approves the exact displayed action and inputs. Presenting the
+  options or receiving an acknowledgement is not authorization.
+
 ## Intent Routing
 
 - Classify the natural-language request and activate only the relevant
@@ -138,6 +150,13 @@
 - An explicitly authorized L0 direct-main delivery uses `forge-cli repo
   push-default` with one signed commit, an exact expected base, a reason file,
   and remote-SHA read-back.
+- The command must uniquely bind the actual push destination to provider
+  metadata, reject any second-stage Git URL rewrite, and accept only a
+  non-empty regular reason file of at most 2,000 bytes; provider and Git
+  subprocesses remain bounded.
+- That governed command may use an internal exact-old-object lease solely as a
+  compare-and-swap after proving a fast-forward. It exposes no caller-controlled
+  force route; raw force and force-with-lease pushes remain forbidden.
 - Run the repo's pre-commit tests/checks per `DEVELOPMENT.md`. Never
   force-push `main`.
 - Commit body gate, managed worktree paths, branch naming, label selection,

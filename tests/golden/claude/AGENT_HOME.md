@@ -56,6 +56,18 @@
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
 
+## Active Goal Waits
+
+- When an active goal cannot advance without a required user decision, keep
+  the turn pending with `AskUserQuestion` when that tool is available. Do not
+  end the turn with a plain-text question while a blocking input tool is
+  available, because a goal Stop hook can treat that turn end as premature and
+  re-invoke the agent.
+- A selection returned by `AskUserQuestion` is a later user message for a
+  consent workflow, but it authorizes execution only when the response
+  explicitly approves the exact displayed action and inputs. Presenting the
+  options or receiving an acknowledgement is not authorization.
+
 ## Intent Routing
 
 - Classify the natural-language request and activate only the relevant

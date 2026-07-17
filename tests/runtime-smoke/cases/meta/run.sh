@@ -77,6 +77,27 @@ run_home_prompt_render_probe() {
   test -f "$hermes_home"
   grep -Fq "or directory \`AGENTS.md\` / \`CLAUDE.md\` can override or extend it." "$neutral_home"
   grep -q '## Code Review Delegation' "$codex_home"
+  grep -q '## Active Goal Waits' "$codex_home"
+  grep -Fq '`request_user_input`' "$codex_home"
+  grep -Fq 'blocked-audit contract' "$codex_home"
+  grep -q '## Active Goal Waits' "$claude_home"
+  grep -Fq '`AskUserQuestion`' "$claude_home"
+  grep -q '## Active Goal Waits' "$neutral_home"
+  grep -Fq 'blocking question tool' "$neutral_home"
+  grep -q '## Active Goal Waits' "$hermes_home"
+  grep -Fq 'blocking question tool' "$hermes_home"
+  if grep -Fq '`AskUserQuestion`' "$codex_home"; then
+    echo "runtime-smoke meta: Codex home prompt includes Claude question primitive" >&2
+    return 1
+  fi
+  if grep -Fq '`request_user_input`' "$claude_home"; then
+    echo "runtime-smoke meta: Claude home prompt includes Codex question primitive" >&2
+    return 1
+  fi
+  if grep -Fq 'blocked-audit contract' "$claude_home"; then
+    echo "runtime-smoke meta: Claude home prompt includes Codex goal-state fallback" >&2
+    return 1
+  fi
   if grep -q '## Code Review Delegation' "$neutral_home"; then
     echo "runtime-smoke meta: neutral home prompt includes Codex-only delegation section" >&2
     return 1

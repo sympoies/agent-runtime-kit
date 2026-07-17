@@ -52,6 +52,18 @@
   precision-critical technical terms, standards, APIs, commands, and proper
   nouns in English when clearer.
 
+## Active Goal Waits
+
+- When an active goal cannot advance without a required user decision, use the
+  harness's blocking question tool when one is available so the turn remains
+  pending. Do not end with a plain-text question while that tool is available,
+  because a goal Stop hook can treat the turn end as premature and re-invoke
+  the agent.
+- A response from the blocking question tool is a later user message for a
+  consent workflow, but it authorizes execution only when the response
+  explicitly approves the exact displayed action and inputs. Presenting the
+  options or receiving an acknowledgement is not authorization.
+
 ## Intent Routing
 
 - Classify the natural-language request, then open only the relevant declared
