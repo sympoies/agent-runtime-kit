@@ -19,7 +19,7 @@
 # Fallback only. The pin-aligned entrypoint `docker/build.sh` passes the version
 # from docs/source/nils-cli-pin.yaml; keep this default and the SHA256 args in
 # step with that pin for plain `docker build` users.
-ARG NILS_CLI_VERSION=v1.22.12
+ARG NILS_CLI_VERSION=v1.23.0
 ARG CLAUDE_CODE_VERSION=2.1.211
 ARG CODEX_VERSION=0.144.5
 ARG GH_VERSION=2.65.0
