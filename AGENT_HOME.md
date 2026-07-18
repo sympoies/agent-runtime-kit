@@ -1,298 +1,59 @@
 # AGENT_HOME.md
 
-## Purpose & Scope
+Home-scope agent policy, rendered per product to `build/<product>/AGENT_HOME.md`.
+Safe fallback for any workspace; a closer project or directory {% if product == "codex" %}`AGENTS.md`{% elif product == "claude" %}`CLAUDE.md`{% elif product == "hermes" %}`AGENTS.md` / `.hermes.md`{% else %}`AGENTS.md` / `CLAUDE.md`{% endif %} can override or extend it. This layer is invariants and routing only; detail lives in the runbooks it points to{% if product == "hermes" %}, in the runtime-kit source docs (Hermes copies only this rendered skill){% endif %}.
 
-- Shared home-scope defaults for the local agent runtime layer, git-managed in
-  `agent-runtime-kit` and rendered per product into
-  `build/<product>/AGENT_HOME.md` (wiring lives in the kit README /
-  `DEVELOPMENT.md` / `SUPPORT_MATRIX.md`).
-- This must be safe fallback policy for unrelated workspaces. A closer project
-{% if product == "codex" %}
-  or directory `AGENTS.md` can override or extend it.
-{% elif product == "claude" %}
-  or directory `CLAUDE.md` can override or extend it.
-{% elif product == "hermes" %}
-  or directory `AGENTS.md` / `.hermes.md` can override or extend it.
-{% else %}
-  or directory `AGENTS.md` / `CLAUDE.md` can override or extend it.
-{% endif %}
-{% if product == "hermes" -%}
-- Keep this file concise. Detailed workflows belong in the runtime-kit source
-  docs; Hermes copies only this rendered development-policy skill.
-{% else -%}
-- Keep this file concise. Detailed workflows belong in docs resolved by
-  `agent-docs`.
-{%- endif %}
+## Preflight & Validation
 
-## Required Preflight
-
-{% if product == "hermes" %}
-- Each repository declares its required docs and validation in
-  `AGENT_DOCS.toml`. Hermes has no agent-docs or hook system: open
-  `AGENT_DOCS.toml` directly to see a repo's declared docs, read them before
-  writing, and run the declared validation commands via the terminal tool.
-- Do not declare a code-editing task done before the declared validation has
-  run; state an explicit waiver when it cannot.
-{% else %}
-- Each repository declares its required docs and validation in
-  `AGENT_DOCS.toml`; the harness injects a start-of-session cue naming the
-  per-intent required docs and validation commands. Read those docs before
-  writing.
-- Before declaring a code-editing task done, run the validation the active
-  intent declares, or state an explicit waiver; the finish-line gate blocks a
-  stop when code was edited but declared validation did not run.
-- Inspect a repo's requirements on demand with `agent-docs preflight --intent
-  <intent>` or `agent-docs explain --intent <intent>`; when checking a source
-  docs-home checkout instead of the installed rendered home, pass
-  `--docs-home` with that checkout path.
-{% endif %}
+- `AGENT_DOCS.toml` declares each repo's required docs and validation. {% if product == "hermes" %}Hermes has no agent-docs or hook runner: open it directly, read the declared docs before writing, and run the declared validation via the terminal tool.{% else %}The harness cues the per-intent required docs; read them before writing. Inspect on demand with `agent-docs preflight --intent <intent>`; for a source checkout, pass `--docs-home` with that checkout path.{% endif %}
+- Run the active intent's declared validation before declaring a code edit done, or state an explicit waiver.{% if product != "hermes" %} The finish-line gate blocks a stop when code was edited but declared validation did not run.{% endif %}
 
 ## Work Mode
 
-- Natural-language collaboration is the default interface; prompt templates
-  and skills are steering aids, used when explicitly invoked or required by
-  active policy, tooling, or workflow routing.
-- Classify the request path first. Implementation, maintenance, validation, or
-  delivery: honor Required Preflight and any required tier decision, then
-  execute instead of prolonging planning. Business, requirement, feasibility,
-  or customer-facing discussions: evaluate first and do not jump to
-  implementation unless asked.
-- On every path, treat user-provided or customer-provided material as input to
-  assess, not as already-validated truth.
-- Ask only the minimum clarification needed when objective, done criteria,
-  scope, constraints, environment, or safety/reversibility are materially
-  unclear; when assumptions are acceptable, state them briefly and proceed.
-- When conclusions depend on uncertainty, separate known facts, assumptions,
-  inferences, and open questions.
-- Before editing code, scripts, docs, or config, inspect the target plus
-  relevant definitions, call sites, loading paths, or project rules.
-- For testable production behavior changes, follow the policy-owned durable
-  test-first lifecycle: declare the contract delta and affected-test decisions,
-  capture meaningful red before production edits or record a complete waiver,
-  then retain scoped validation and residual gaps in v2 CLI evidence.
-- Keep answers concise, high-signal, and easy to verify; keep
-  precision-critical technical terms, standards, APIs, commands, and proper
-  nouns in English when clearer.
+- Natural-language collaboration is the default interface; skills and templates are steering aids. Classify the request path first: implementation, maintenance, validation, or delivery honors Preflight and any tier decision, then executes; business, requirement, feasibility, or customer-facing evaluates first.
+- Treat provided material as input to assess, not validated truth; separate facts, assumptions, inference, and open questions; ask only materially-needed clarifications. Inspect the target plus its call sites, loading paths, and rules before editing.
+- For testable behavior changes follow the durable test-first lifecycle (contract delta, meaningful red before production edits or a complete waiver, then scoped validation evidence). Keep answers concise and verifiable; keep precision-critical terms, APIs, commands, and proper nouns in English.
 
-{% if product == "codex" -%}
 ## Active Goal Waits
 
-- When an active goal cannot advance without a required user decision, keep
-  the turn pending with `request_user_input` when that tool is available. Do
-  not end the turn with a plain-text question while a blocking input tool is
-  available, because a goal Stop hook can treat that turn end as premature and
-  re-invoke the agent.
-- If `request_user_input` is unavailable in the current mode, report that
-  limitation once and follow the injected active goal's blocked-audit contract
-  instead of repeating the same hold message indefinitely. Mark the goal
-  blocked only after that contract's threshold is satisfied; this pauses the
-  goal and never authorizes the pending action or weakens a consent gate.
-- A selection returned by `request_user_input` is a later user message for a
-  consent workflow, but it authorizes execution only when the response
-  explicitly approves the exact displayed action and inputs. Presenting the
-  options or receiving an acknowledgement is not authorization.
-{% elif product == "claude" -%}
-## Active Goal Waits
+- When an active goal needs a required user decision, keep the turn pending with {% if product == "codex" %}`request_user_input`{% elif product == "claude" %}`AskUserQuestion`{% else %}the harness's blocking question tool{% endif %} when available; never end with a plain-text question while that tool is available, or a goal Stop hook treats the turn end as premature and re-invokes you.{% if product == "codex" %} If `request_user_input` is unavailable, report that once and follow the injected goal's blocked-audit contract instead of repeating the hold.{% endif %}
+- A returned selection is a later user message; it authorizes execution only when it explicitly approves the exact displayed action and inputs. Presenting options or an acknowledgement is not authorization.
 
-- When an active goal cannot advance without a required user decision, keep
-  the turn pending with `AskUserQuestion` when that tool is available. Do not
-  end the turn with a plain-text question while a blocking input tool is
-  available, because a goal Stop hook can treat that turn end as premature and
-  re-invoke the agent.
-- A selection returned by `AskUserQuestion` is a later user message for a
-  consent workflow, but it authorizes execution only when the response
-  explicitly approves the exact displayed action and inputs. Presenting the
-  options or receiving an acknowledgement is not authorization.
-{% else -%}
-## Active Goal Waits
-
-- When an active goal cannot advance without a required user decision, use the
-  harness's blocking question tool when one is available so the turn remains
-  pending. Do not end with a plain-text question while that tool is available,
-  because a goal Stop hook can treat the turn end as premature and re-invoke
-  the agent.
-- A response from the blocking question tool is a later user message for a
-  consent workflow, but it authorizes execution only when the response
-  explicitly approves the exact displayed action and inputs. Presenting the
-  options or receiving an acknowledgement is not authorization.
-{% endif %}
 ## Intent Routing
 
-{% if product == "hermes" -%}
-- Classify the natural-language request, then open only the relevant declared
-  intent docs in `AGENT_DOCS.toml`: `project-dev` for implementation and
-  delivery, `browser-test` for browser acceptance, and `task-tools` for
-  external or unstable facts. Hermes has no runtime-kit agent-docs hooks, so
-  this manual selection must not be reported as hook-enforced activation.
-{% else -%}
-- Classify the natural-language request and activate only the relevant
-  `agent-docs` intents: `project-dev` for implementation and delivery,
-  `browser-test` for browser acceptance, and `task-tools` for external or
-  unstable facts. Read each activated intent's preflight documents before
-  writing; users do not need to name evidence or lifecycle primitives.
-- When the installed `agent-docs` supports durable session state, use
-  `agent-docs session activate/status/verify`; the pre-edit hook verifies
-  `project-dev` for every direct-edit target repository and for the working
-  repository of shell commands. Run cross-repository shell mutations with each
-  target repository as CWD because pre-tool hooks cannot observe expanded shell
-  destinations. Only an explicitly recognized older CLI uses
-  legacy direct preflight; missing or broken capability probes fail closed on
-  supported hooked hosts.
-{%- endif %}
+- Classify the request and {% if product == "hermes" %}open{% else %}activate{% endif %} only the relevant intents: `project-dev` (implementation and delivery), `browser-test` (browser acceptance), `task-tools` (external or unstable facts). Read each activated intent's docs before writing.{% if product == "hermes" %} This manual selection is not hook-enforced activation.{% else %} Use `agent-docs session activate/status/verify`; the pre-edit hook verifies `project-dev` per direct-edit target and per shell working repository — run cross-repository shell mutations with each target repository as CWD (hooks cannot observe expanded shell destinations).{% endif %}
+- Per-intent trigger / must / never / next action: `core/policies/intent-cards.md`.
 
-{% if product == "codex" %}
+{% if product == "codex" -%}
 ## Code Review Delegation
 
-- Codex-only: when the active host exposes `multi_agent_v1.spawn_agent` or an
-  equivalent dispatch tool, dispatch reviewer subagents for code-review
-  requests instead of reviewing inline; if dispatch is unavailable or blocked,
-  review inline and state that fallback. Full contract:
-  `core/policies/code-review-delegation-codex.md`.
+- Codex-only: when the host exposes `multi_agent_v1.spawn_agent` or an equivalent dispatch tool, dispatch reviewer subagents for code-review requests; if dispatch is unavailable, review inline and say so — `core/policies/code-review-delegation-codex.md`.
 
-{% endif %}
+{% endif -%}
 ## Work Tier Levels
 
-- Classify every substantive work request into the lowest applicable tier and
-  use that tier's method: L0 untracked delivery, L1 follow-up issue, L2 plan
-  tracking issue, L3 dispatch plan. PR delivery is the default. The sole
-  direct-main exception is L0, requires explicit maintainer authorization in
-  the current request, and must use the governed route in `git-delivery.md`;
-  never infer it from words such as "small" or "hotfix".
-- State the tier and recommended next step at the start of such work. L1+ or
-  ambiguous classification: surface the level as a decision and wait.
-  Unambiguous L0: say so and proceed. Re-triage if the work escalates
-  mid-flight.
-{% if product == "hermes" -%}
-- Full ladder, escalation judge, and per-tier methods:
-  `core/policies/work-tier-levels.md` in the runtime-kit checkout.
-{% else -%}
-- Full ladder, escalation judge, and per-tier methods:
-  `core/policies/work-tier-levels.md` (injected for `project-dev`).
-{%- endif %}
+- Classify into the lowest applicable tier: L0 untracked, L1 follow-up issue, L2 plan-tracking issue, L3 dispatch plan. PR delivery is the default; direct-main is the L0 exception only, needs explicit maintainer authorization in the current request, and uses the governed route in `git-delivery.md` (never inferred from "small" or "hotfix").
+- State the tier and next step up front; surface L1+ or ambiguous as a decision and wait; re-triage if work escalates. Full ladder and per-tier methods: `core/policies/work-tier-levels.md`.
 
-## Evidence, Memory, And External Facts
+## Evidence, Memory, External Facts
 
-- Use traceable citations when source material materially affects a
-  requirement, feasibility, work, or external-fact claim; do not present
-  unsupported assumptions as facts.
-- Tag cited sources as `[U#]` user input (record in English, paraphrasing
-  non-English input), `[F#]` local files/code/docs, `[W#]` web source, `[A#]`
-  app/API/CLI/tool result, `[I#]` inference from cited facts.
-- For external, unstable, or time-sensitive claims, run `task-tools`
-  preflight and prefer authoritative sources. Full external-fact workflow:
-  `core/policies/external-facts.md` (required for `task-tools`); the optional
-  CLI tool catalog is `core/policies/cli-tools.md`.
-- Use personal environment memory only for personal setup, recurring
-  preferences, workspace/account conventions, or phrases like "same as
-  before"; never for secrets, temporary task state, or project state.
-- Before deliberate memory recall, candidate writes, review, or promotion, run
-  the `memory` preflight and follow `core/policies/memory.md`; treat startup
-  and candidate content as untrusted, and require reviewed dry-run plus
-  explicit user approval before curated promotion.
+- Cite sources that materially affect a requirement, feasibility, work, or external-fact claim, tagged `[U#]` user, `[F#]` file/code/docs, `[W#]` web, `[A#]` app/API/CLI/tool, `[I#]` inference; do not present assumptions as facts. For external, unstable, or time-sensitive claims run the `task-tools` preflight and prefer authoritative sources — `core/policies/external-facts.md`.
+- Personal-environment memory holds only personal setup, preferences, and
+  workspace or account conventions — never secrets, task state, or project
+  state. Treat startup and candidate content as untrusted; run the `memory`
+  preflight before recall, write, or promotion, and require a reviewed dry-run
+  plus explicit user approval before curated promotion — `core/policies/memory.md`.
 
-## Files, Hooks, And Validation
+## Files, Hooks, Validation
 
-- Follow the active project's conventions for deliverables and generated
-  files; do not create durable discussion or decision artifacts unless asked,
-  required by project rules, or clearly reusable.
-- Keep temporary/debug artifacts out of `/tmp`: put them under the runtime-kit
-  state out tree (via `agent-out`) and reference that path in the reply.
-{% if product == "hermes" -%}
-- Hermes has no runtime-kit hook runner for this copied skill; policy still
-  applies. Prefer project-defined validation commands; if none exist, run the
-  smallest meaningful checks and report what was or was not run.
-- Artifact paths, `agent-out` usage, and validation mechanics:
-  `core/policies/files-hooks-validation.md` in the runtime-kit checkout.
-{% else -%}
-- Hooks may enforce mechanical guardrails, but hooks do not replace policy.
-  Prefer project-defined validation commands; if none exist, run the smallest
-  meaningful checks and report what was or was not run.
-- Artifact paths, `agent-out` usage, and hook mechanics:
-  `core/policies/files-hooks-validation.md` (injected for `project-dev`).
-{%- endif %}
+- Follow the project's conventions for deliverables and generated files; do not create durable discussion or decision artifacts unless asked or clearly reusable. Keep temporary or debug artifacts out of `/tmp` — put them under `agent-out` and cite the path. {% if product == "hermes" %}Hermes has no hook runner here; policy still applies.{% else %}Hooks guard mechanically but do not replace policy.{% endif %} Prefer project-defined validation, else the smallest meaningful checks — `core/policies/files-hooks-validation.md`.
 
-## Git, Commits, Issues, PRs, And MRs
+## Git, Commits, Issues, PRs, MRs
 
-{% if product == "hermes" -%}
-- Commit through the owning implementation or delivery workflow using the
-  `semantic-commit` CLI; direct `git commit` bypasses the managed boundary.
-- Use `git-cli worktree` for agent worktree lifecycle; direct mutating
-  `git worktree` commands bypass the managed lifecycle.
-{% else -%}
-- Commit through the owning implementation or delivery workflow using the
-  `semantic-commit` CLI; direct `git commit` is blocked by hook.
-- Use `git-cli worktree` for agent worktree lifecycle; direct mutating
-  `git worktree` commands are blocked by hook.
-{% endif -%}
-- Never enable `extensions.worktreeConfig` or set per-worktree
-  identity/signing config; never use `--no-gpg-sign` for tracked work. If
-  signing fails, stop and report the blocker.
-{% if product == "hermes" -%}
-- For agent-owned provider issues, PRs, and MRs, use the active workflow or
-  `forge-cli` surface; direct provider CLI mutations bypass delivery gates.
-{% else -%}
-- For agent-owned provider issues, PRs, and MRs, use the active workflow or
-  `forge-cli` surface; direct `gh pr create` or `glab mr create` are blocked
-  by hook.
-{% endif -%}
-{% if product == "hermes" -%}
-- Author commits only on a non-default managed-worktree branch. Policy forbids
-  raw pushes to the remote default branch; Hermes has no hook runner, so the
-  governed CLI remains the enforcement boundary.
-{% else -%}
-- Author commits only on a non-default managed-worktree branch. Hooks block raw
-  pushes to the remote default branch.
-{% endif -%}
-- An explicitly authorized L0 direct-main delivery uses `forge-cli repo
-  push-default` with one signed commit, an exact expected base, a reason file,
-  and remote-SHA read-back.
-- The command must uniquely bind the actual push destination to provider
-  metadata, reject any second-stage Git URL rewrite, and accept only a
-  non-empty regular reason file of at most 2,000 bytes; provider and Git
-  subprocesses remain bounded.
-- That governed command may use an internal exact-old-object lease solely as a
-  compare-and-swap after proving a fast-forward. It exposes no caller-controlled
-  force route; raw force and force-with-lease pushes remain forbidden.
-- Run the repo's pre-commit tests/checks per `DEVELOPMENT.md`. Never
-  force-push `main`.
-{% if product == "hermes" -%}
-- Commit body gate, managed worktree paths, branch naming, label selection,
-  and PR/MR body format: `core/policies/git-delivery.md` in the runtime-kit
-  checkout.
-{% else -%}
-- Commit body gate, managed worktree paths, branch naming, label selection,
-  and PR/MR body format: `core/policies/git-delivery.md` (injected for
-  `project-dev`).
-{%- endif %}
+- Commit via `semantic-commit`, manage worktrees via `git-cli worktree`, and open provider issues, PRs, and MRs via `forge-cli` or the active workflow. Direct `git commit`, `git worktree`, `gh pr create`, or `glab mr create` {% if product == "hermes" %}bypass the managed boundary (Hermes has no hook runner, so the governed CLI is the boundary){% else %}are blocked by hook{% endif %}.
+- Author commits only on a non-default managed-worktree branch; never force-push `main`, enable `extensions.worktreeConfig`, set per-worktree identity or signing config, or use `--no-gpg-sign` for tracked work (stop and report if signing fails). Commit-body gate, branch naming, label selection, PR/MR body format, and the authorized L0 direct-main route (`forge-cli repo push-default`): `core/policies/git-delivery.md`.
 
-## Plan Archive
+## Plan Archive & Session Closeout
 
-- The agent-plan-archive stores past plans, issues, PRs, and MRs for recurring
-  implementation context. Consult it only before opening a new plan, or when
-  diagnosing a suspected recurring or previously resolved problem — not as a
-  per-task or background step.
-- Discover with `plan-archive catalog` / `plan-archive search`, fetch with
-  `plan-archive query`; check each result's `fetched_at` before relying on it.
-
-## Session Closeout
-
-- Same-turn transient fixes need no retained record; mention them in the
-  reply.
-- Before deferring a reproducible failure or validation waiver, route it by
-  owner: repository-owned product, test, or CI defects use L1
-  `issue-follow-up` in that repository; unresolved agent workflow, skill,
-  hook, CLI, or primitive gaps use `heuristic-inbox`. If both apply, the
-  project issue is primary and a heuristic case is warranted only for a
-  reusable cross-project gap. L1+ provider mutation still requires the user's
-  decision; closeout may detect and propose a route but must not silently open
-  an issue.
-- Important unresolved workflow gaps or suspected nils-cli / primitive bugs go
-  through `heuristic-inbox` (version, minimal repro, upstream issue link when
-  found, current workaround); archive promoted or `wontfix` inbox entries via
-  `heuristic-inbox`, never by deleting them in place.
-- After the session goal is achieved, follow the session-closeout procedure in
-  `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`: review available
-  evidence, run `evidence migrate` when durable `skill-usage` retention is
-  warranted, and preserve warranted records on `main`.
-- Full routing policy for turning failures and repeated lessons into durable
-  knowledge: `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`.
+- Consult the agent-plan-archive (`plan-archive catalog` / `search` / `query`, checking each result's `fetched_at`) only before opening a new plan or diagnosing a recurring or previously-resolved problem. Same-turn transient fixes need no record; mention them in the reply.
+- Route a deferred reproducible failure or validation waiver by owner: repository product, test, or CI defects to an L1 `issue-follow-up` in that repository; agent workflow, hook, CLI, or primitive gaps to `heuristic-inbox` (L1+ provider mutation still needs the user's decision). After the session goal is achieved, follow the session-closeout procedure and run `evidence migrate` when durable `skill-usage` retention is warranted — `core/policies/heuristic-system/HEURISTIC_SYSTEM.md`.

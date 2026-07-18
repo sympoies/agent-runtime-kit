@@ -20,9 +20,11 @@ Each surface is classified:
   ok             actual <= target
   waived         actual >  target but an explicit ``override`` allows it. An
                  override records the allowed ceiling, WHY the surface is over
-                 target, and the tracking issue/slice that will bring it back
-                 under target. This is a visible, reasoned budget decision --
-                 never silent growth.
+                 target, and a tracking ref -- either debt a later slice removes
+                 (bringing the surface back under target) or a permanent
+                 documented budget decision when the target is an aspiration the
+                 surface's irreducible content cannot meet. Either way it is a
+                 visible, reasoned decision -- never silent growth.
   FAIL           actual >  target and no override covers it (there is no
                  override, or actual even exceeds ``override.allow``).
   stale-override actual <= target yet an override is still declared. The
@@ -67,11 +69,12 @@ KIB = 1024
 #                 ("behavioral", "<covered_by>")       -> enforced elsewhere
 #   target      byte target (the budget)
 #   override    None, or {"allow": int, "reason": str, "tracking": str}: an
-#               explicit ceiling above target with a reason and the tracking
-#               issue/slice that will remove it once the surface is back under
-#               target. Overrides are the visible, tracked debt each #601 P1
-#               slice pays down (remove the override -> the bare target is
-#               enforced).
+#               explicit ceiling above target with a reason and a tracking ref.
+#               An override is either tracked debt a later slice removes (remove
+#               it -> the bare target is enforced) OR a permanent documented
+#               budget decision when the target is an aspiration the surface's
+#               irreducible content cannot meet (the issue's "explicit documented
+#               budget decision" exception).
 BUDGETS = [
     {
         "id": "rendered-agent-home.codex",
@@ -79,11 +82,17 @@ BUDGETS = [
         "measure": ("file", "build/codex/AGENT_HOME.md"),
         "target": 4 * KIB,
         "override": {
-            "allow": 12000,
-            "reason": "Compact AGENT_HOME + on-demand intent cards land in "
-                      "#601 P1 slice 3c; until then the rendered home carries "
-                      "the full routing prose and exceeds the 4 KiB target.",
-            "tracking": "graysurf/agent-runtime-kit#601 (P1 slice 3c)",
+            "allow": 6656,
+            "reason": "Documented budget decision (#601 slice 3c): 4 KiB is the "
+                      "aspirational target; ~6.5 KiB is the irreducible always-on "
+                      "floor after the three-layer compaction (from 11,360 bytes). "
+                      "The remainder is safety and behavioral invariants "
+                      "(delivery gates, memory/consent boundaries, goal-wait, "
+                      "tier and intent routing); detailed procedure moved to "
+                      "core/policies/intent-cards.md and the runbooks this layer "
+                      "points to. Further reduction would compress "
+                      "safety-critical wording.",
+            "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
         },
     },
     {
@@ -92,10 +101,12 @@ BUDGETS = [
         "measure": ("file", "build/claude/AGENT_HOME.md"),
         "target": 4 * KIB,
         "override": {
-            "allow": 11200,
-            "reason": "Same AGENT_HOME source as codex; compacted in "
-                      "#601 P1 slice 3c.",
-            "tracking": "graysurf/agent-runtime-kit#601 (P1 slice 3c)",
+            "allow": 6400,
+            "reason": "Documented budget decision (#601 slice 3c): same "
+                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6 KiB "
+                      "irreducible always-on floor after compaction "
+                      "(from 10,612 bytes).",
+            "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
         },
     },
     {
@@ -104,10 +115,12 @@ BUDGETS = [
         "measure": ("file", "build/hermes/AGENT_HOME.md"),
         "target": 4 * KIB,
         "override": {
-            "allow": 10500,
-            "reason": "Same AGENT_HOME source as codex; compacted in "
-                      "#601 P1 slice 3c.",
-            "tracking": "graysurf/agent-runtime-kit#601 (P1 slice 3c)",
+            "allow": 6272,
+            "reason": "Documented budget decision (#601 slice 3c): same "
+                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6 KiB "
+                      "irreducible always-on floor after compaction "
+                      "(from 9,963 bytes).",
+            "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
         },
     },
     {

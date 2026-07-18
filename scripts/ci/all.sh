@@ -206,6 +206,7 @@ agent-runtime render --target support-matrix
 # -----------------------------------------------------------------------------
 banner 6 "git diff --exit-code tests/golden/ (after --update-golden refresh)"
 agent-runtime render --target home-prompt >/dev/null
+agent-runtime render --target home-prompt --update-golden >/dev/null
 agent-runtime render --target home-prompt --product codex >/dev/null
 agent-runtime render --target home-prompt --product claude >/dev/null
 agent-runtime render --target home-prompt --product hermes >/dev/null
