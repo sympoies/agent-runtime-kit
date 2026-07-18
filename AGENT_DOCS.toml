@@ -20,12 +20,24 @@
 # when = "always"
 # notes = "Cross-repo guidance inherited from the selected home docs catalog"
 
+# Workflow-phase scoping (issue #601 P1 slice 3d): an optional `phase` (a string
+# or array) narrows a project-dev document to one or more workflow phases so an
+# edit is not forced to carry the delivery/review runbooks. A document with no
+# `phase` applies to every phase (the safe superset). The pre-edit gate maps
+# direct edits and generic mutation-capable shell to `edit`, and the governed
+# delivery CLIs (semantic-commit/forge-cli/git-cli) to `delivery`; `review` docs
+# are reached through explicit `--phase review` preflight, not the gate. Needs a
+# phase-capable agent-docs (the pinned surface); on an older CLI the gate falls
+# back to full project-dev. Keep the home-scoped `edit`/no-phase set in lock-step
+# with the edit-phase-required-reading budget in
+# scripts/ci/context-budget-audit.py.
 [[document]]
 context = "project-dev"
 scope = "project"
 path = "DEVELOPMENT.md"
 required = true
 when = "path-exists:Cargo.toml || path-exists:package.json || path-exists:src/** || path-exists:scripts/ci/all.sh"
+phase = ["edit", "delivery"]
 notes = "Local validation and CI gate procedure; required only for code repos (auto-skipped in a docs-only checkout)"
 
 [[document]]
@@ -34,6 +46,7 @@ scope = "home"
 path = "core/policies/work-tier-levels.md"
 required = true
 when = "always"
+phase = "delivery"
 notes = "Work-tier levels (L0-L3) and proactive triage: classify each work request into the lowest applicable tier, recommend the next step, and surface a decision at the L1+ escalation boundary. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
@@ -42,6 +55,7 @@ scope = "home"
 path = "core/policies/git-delivery.md"
 required = true
 when = "always"
+phase = "delivery"
 notes = "Detailed Git/commit/delivery mechanics behind the AGENT_HOME.md hard gates: semantic-commit body gate, managed worktree paths, branch naming, label selection, and PR/MR body format. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
@@ -50,6 +64,7 @@ scope = "home"
 path = "core/policies/files-hooks-validation.md"
 required = true
 when = "always"
+phase = ["edit", "delivery"]
 notes = "Detailed output-artifact, hook source/sync, and validation-command mechanics behind the AGENT_HOME.md directives: agent-out run dirs, the runtime-kit state out tree, hook config location and sync, and agent-run exec. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
@@ -58,6 +73,7 @@ scope = "home"
 path = "core/policies/evidence-control-plane.md"
 required = true
 when = "always"
+phase = ["edit", "review", "delivery"]
 notes = "Parent-owned test-first, docs-impact, review, usage, web, model-check, and closeout evidence ordering; evidence primitives are not user-selected outcomes."
 
 [[document]]
@@ -66,6 +82,7 @@ scope = "project"
 path = "docs/source/docs-placement-retention-policy-v1.md"
 required = true
 when = "always"
+phase = "edit"
 notes = "Docs placement and retention policy for docs/** and repository-root Markdown changes"
 
 # Optional (required = false): available and auditable, but not force-injected
@@ -77,6 +94,7 @@ scope = "project"
 path = "docs/source/nils-cli-version-workflows.md"
 required = false
 when = "always"
+phase = "edit"
 notes = "Downgrade / coupled-dev / pin-bump workflows for running a non-pinned nils-cli surface (scripts/dev/with-nils-version.sh) without relaxing the version-alignment gate."
 
 [[document]]
@@ -85,6 +103,7 @@ scope = "home"
 path = "core/policies/review-thread-convergence.md"
 required = false
 when = "always"
+phase = "review"
 notes = "Provider-agnostic discipline for dispositioning provider review threads and converging post-merge bot-review fix loops: per-finding triage, the convergence/stopping rule, and concentrate-vs-converge. Home-scoped and optional — referenced by deliver-pr, code-review-specialists follow-up mode, and project-local review-cleanup outcomes when a thread sweep is active, not force-injected for every project-dev task."
 
 [[document]]
@@ -93,6 +112,7 @@ scope = "home"
 path = "core/policies/code-review-delegation-codex.md"
 required = true
 when = "always"
+phase = "review"
 product = "codex"
 notes = "Codex-only reviewer delegation requirement inherited by project-dev preflight; AGENT_HOME carries the concise always-on rendered Codex prompt policy, and Claude omits this doc."
 

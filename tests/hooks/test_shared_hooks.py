@@ -2595,6 +2595,57 @@ class SharedHookTests(unittest.TestCase):
         script.chmod(0o755)
 
     @staticmethod
+    def _phase_aware_fake_agent_docs(
+        *,
+        log_path: Path,
+        marker: Path,
+        product: str = "codex",
+        advertise_phase: bool = True,
+    ) -> str:
+        """Fake agent-docs that records argv and models the #601 3d phase surface.
+
+        ``session verify --help`` advertises ``--phase`` (the hook's feature
+        probe) only when ``advertise_phase`` is set, so a test can exercise both
+        a phase-capable CLI and a supported-but-pre-phase CLI. ``session verify``
+        reports the intent active once ``marker`` exists (modeling the primitive
+        rule that a full, no-phase preparation satisfies any phase-scoped
+        verify), and ``session prepare`` succeeds and creates the marker. Every
+        invocation appends ``$*`` to ``log_path`` so a test can assert which
+        ``--phase`` the hook threaded into each call.
+        """
+        log_q = shlex.quote(str(log_path))
+        marker_q = shlex.quote(str(marker))
+        if advertise_phase:
+            verify_help = (
+                "  printf '%s\\n' 'Verify a phase-scoped or full preparation for the required intents'\n"
+                "  printf '%s\\n' '      --phase <PHASE>'\n"
+            )
+        else:
+            verify_help = "  printf '%s\\n' 'Verify the active intents for a session'\n"
+        return f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {log_q}
+if [[ "$*" == *"session verify --help"* ]]; then
+{verify_help}  exit 0
+fi
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session prepare"* ]]; then
+  printf 'prepared\\n' > {marker_q}
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"record_file":"r.json","verified":true,"prepared_intents":["project-dev"],"reason":"prepared"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  if [[ -f {marker_q} ]]; then
+    printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+"""
+
+    @staticmethod
     def _mark_runtime_kit_source_checkout(repo: Path) -> None:
         (repo / "AGENT_HOME.md").write_text("# Home\n", encoding="utf-8")
         (repo / "manifests").mkdir(exist_ok=True)
@@ -8707,6 +8758,278 @@ exit 64
             reason = str(decision.get("reason", ""))
             self.assertIn("[reason: prepare-not-verified]", reason)
             self.assertNotIn("[reason: prepared]", reason)
+
+    def _phase_gate_env(self, repo: Path, bin_dir: Path) -> dict[str, str]:
+        return {
+            "AGENT_RUNTIME_DOCS_HOME": str(repo),
+            "AGENT_RUNTIME_PRODUCT": "codex",
+            "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        }
+
+    @staticmethod
+    def _verify_calls(call_log: Path) -> list[str]:
+        return [
+            line
+            for line in call_log.read_text(encoding="utf-8").splitlines()
+            if "session verify" in line and "--help" not in line
+        ]
+
+    def test_pre_edit_intent_gate_scopes_edit_phase_for_direct_edits(self) -> None:
+        """#601 3d: a direct edit is gated on the phase-scoped `edit` doc set.
+
+        When the trusted CLI advertises `--phase`, the block recovery and the
+        `session verify` probe the hook fires are both scoped to `--phase edit`,
+        so an edit no longer forces the full delivery/review runbook set.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            marker = root / "prepared"
+            self._write_fake_agent_docs(
+                bin_dir,
+                self._phase_aware_fake_agent_docs(log_path=call_log, marker=marker),
+            )
+            env = self._phase_gate_env(repo, bin_dir)
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "edit-phase"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            reason = str(decision)
+            self.assertIn("--intent project-dev", reason)
+            self.assertIn("--phase edit", reason)
+            verify_calls = self._verify_calls(call_log)
+            self.assertTrue(verify_calls)
+            self.assertTrue(all("--phase edit" in line for line in verify_calls))
+
+    def test_pre_edit_intent_gate_scopes_delivery_phase_for_delivery_tools(self) -> None:
+        """#601 3d: governed delivery CLIs verify the `delivery` phase.
+
+        `semantic-commit`/`forge-cli`/`git-cli` are delivery-phase mutations; any
+        other mutation-capable shell (a build, a generic file write) is content
+        work and stays on the `edit` phase.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            marker = root / "prepared"
+            self._write_fake_agent_docs(
+                bin_dir,
+                self._phase_aware_fake_agent_docs(log_path=call_log, marker=marker),
+            )
+            env = self._phase_gate_env(repo, bin_dir)
+            cases = [
+                ("semantic-commit --type chore --message x", "delivery"),
+                ("forge-cli pr create", "delivery"),
+                ("git-cli worktree add slug", "delivery"),
+                ("touch generated.txt", "edit"),
+            ]
+            for command, phase in cases:
+                with self.subTest(command=command):
+                    call_log.write_text("", encoding="utf-8")
+                    payload = command_payload(command)
+                    payload["session_id"] = "delivery-phase"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
+                    self.assertIn(f"--phase {phase}", str(decision))
+                    verify_calls = self._verify_calls(call_log)
+                    self.assertTrue(verify_calls)
+                    self.assertTrue(
+                        all(f"--phase {phase}" in line for line in verify_calls)
+                    )
+
+    def test_pre_edit_intent_gate_uninspectable_shell_uses_full_intent(self) -> None:
+        """#601 3d: a shell command the parser cannot reduce falls back to full.
+
+        A delivery CLI wrapped in shell control (a `$(...)` / heredoc commit
+        message) -- or any other uninspectable mutation -- must NOT be downgraded
+        to the lighter `edit` phase. Verification falls back to the full, no-phase
+        project-dev set (the safe superset), so the delivery/review runbooks are
+        still required when the command cannot be classified.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            marker = root / "prepared"
+            self._write_fake_agent_docs(
+                bin_dir,
+                self._phase_aware_fake_agent_docs(log_path=call_log, marker=marker),
+            )
+            env = self._phase_gate_env(repo, bin_dir)
+            for command in (
+                'semantic-commit commit --message "$(printf body)"',
+                "printf x > out.txt",
+            ):
+                with self.subTest(command=command):
+                    call_log.write_text("", encoding="utf-8")
+                    payload = command_payload(command)
+                    payload["session_id"] = "uninspectable"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
+                    self.assertNotIn("--phase", str(decision))
+                    verify_calls = self._verify_calls(call_log)
+                    self.assertTrue(verify_calls)
+                    self.assertTrue(all("--phase" not in line for line in verify_calls))
+
+    def test_pre_edit_intent_gate_full_prepare_satisfies_phase_verify(self) -> None:
+        """#601 3d: a full (no-phase) preparation satisfies a phase verify.
+
+        The safe fallback the design preserves: an agent that prepared the whole
+        `project-dev` intent is never blocked by phase-scoping, and the hook
+        still threads the mapped phase into the verify probe.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            marker = root / "prepared"
+            marker.write_text("prepared\n", encoding="utf-8")  # a full prep exists
+            self._write_fake_agent_docs(
+                bin_dir,
+                self._phase_aware_fake_agent_docs(log_path=call_log, marker=marker),
+            )
+            env = self._phase_gate_env(repo, bin_dir)
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "full-prep"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            verify_calls = self._verify_calls(call_log)
+            self.assertTrue(verify_calls)
+            self.assertTrue(all("--phase edit" in line for line in verify_calls))
+
+    def test_pre_edit_intent_gate_phase_unsupported_cli_uses_full_intent(self) -> None:
+        """#601 3d: a supported-but-pre-phase CLI is gated on the full intent.
+
+        The `--phase` flag is gated behind a feature probe; when the CLI does not
+        advertise it, the hook falls back to full `project-dev` verification and
+        emits no `--phase`, so phase-scoping is never a hard error on an older
+        (but session-capable) release.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            marker = root / "prepared"
+            self._write_fake_agent_docs(
+                bin_dir,
+                self._phase_aware_fake_agent_docs(
+                    log_path=call_log, marker=marker, advertise_phase=False
+                ),
+            )
+            env = self._phase_gate_env(repo, bin_dir)
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "pre-phase"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            reason = str(decision)
+            self.assertIn("--intent project-dev", reason)
+            self.assertNotIn("--phase", reason)
+            verify_calls = self._verify_calls(call_log)
+            self.assertTrue(verify_calls)
+            self.assertTrue(all("--phase" not in line for line in verify_calls))
+
+    def test_pre_edit_intent_gate_consumes_phase_scoped_prepare(self) -> None:
+        """#601 3d: a trusted phase-scoped `session prepare --phase edit` runs.
+
+        The bootstrap parser must accept a trailing `--phase` after the intent
+        pairs so the phase-scoped recovery command the gate itself emits is
+        recognized as a preparation and consumed, not re-dispatched.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            marker = root / "prepared"
+            self._write_fake_agent_docs(
+                bin_dir,
+                self._phase_aware_fake_agent_docs(log_path=call_log, marker=marker),
+            )
+            env = self._phase_gate_env(repo, bin_dir)
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            prepare = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    "phase-prep",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str((repo / "state").resolve()),
+                    "--intent",
+                    "project-dev",
+                    "--phase",
+                    "edit",
+                ]
+            )
+            payload = command_payload(prepare)
+            payload["session_id"] = "phase-prep"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "consumed")
+            self.assertIn("Prepared", str(decision))
+            prepare_calls = [
+                line
+                for line in call_log.read_text(encoding="utf-8").splitlines()
+                if "session prepare" in line
+            ]
+            self.assertTrue(prepare_calls)
+            self.assertTrue(all("--phase edit" in line for line in prepare_calls))
 
     def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -127,25 +127,22 @@ BUDGETS = [
         "id": "edit-phase-required-reading.project-dev",
         "description": (
             "Home-scope project-dev policy docs this kit forces a consumer to "
-            "read before an edit (the inheritable required set). The #601 edit "
-            "phase should exclude review/delivery/evidence runbooks."
+            "read before an edit (the inheritable required set). Phase-scoped by "
+            "#601 P1 slice 3d: the `edit` phase keeps the test-first and "
+            "edit-mechanics runbooks and excludes the delivery (git-delivery, "
+            "work-tier-levels) and review (code-review-delegation) runbooks. This "
+            "list MUST mirror the home-scoped (scope = \"home\") project-dev docs "
+            "tagged phase = \"edit\" (or left untagged) in AGENT_DOCS.toml."
         ),
         "measure": ("doc-set", [
-            "core/policies/work-tier-levels.md",
-            "core/policies/git-delivery.md",
             "core/policies/files-hooks-validation.md",
             "core/policies/evidence-control-plane.md",
-            "core/policies/code-review-delegation-codex.md",
         ]),
         "target": 20 * KIB,
-        "override": {
-            "allow": 44000,
-            "reason": "Phase-scoped project-dev doc resolution (edit vs "
-                      "review/delivery/evidence) lands in #601 P1 slice 3d and "
-                      "depends on an agent-docs phase primitive; until then a "
-                      "project-dev edit forces the full set.",
-            "tracking": "graysurf/agent-runtime-kit#601 (P1 slice 3d)",
-        },
+        # Override removed in #601 P1 slice 3d: with phase-scoped resolution the
+        # edit phase no longer inherits the delivery/review runbooks, so the
+        # measured set is back under the bare 20 KiB target (RED->GREEN).
+        "override": None,
     },
     {
         "id": "startup-memory.codex",
