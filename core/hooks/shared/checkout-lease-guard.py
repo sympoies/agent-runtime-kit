@@ -354,6 +354,8 @@ def target_checkouts(payload: Mapping[str, Any], tool: str) -> list[Checkout]:
     elif tool in COMMAND_TOOLS:
         command = command_from(payload)
         targets = managed_worktree_remove_targets(command, base)
+        if not targets:
+            targets = semantic_commit_repo_targets(command, base)
         if targets:
             for target in targets:
                 checkout = checkout_from(target)
@@ -905,6 +907,104 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
     return [resolve_worktree_remove_target(target_arguments[0], base)]
 
 
+def semantic_commit_invocation_repo_target(invocation: list[str]) -> str | None:
+    """Return the ``--repo`` value of a mutating ``semantic-commit`` invocation.
+
+    ``None`` means the invocation is not a semantic-commit working-tree mutation
+    or carries no explicit ``--repo``. A mutating semantic-commit with no
+    ``--repo`` targets the session's current checkout and is deliberately left to
+    the ``checkout_from(base)`` fallback in ``target_checkouts``.
+    """
+    invocation = invocation_without_redirections(invocation)
+    if not invocation or os.path.basename(invocation[0]) != "semantic-commit":
+        return None
+    arguments = invocation[1:]
+    if not semantic_commit_invocation_mutates(arguments):
+        return None
+    _read_only, repo = semantic_commit_invocation_state(arguments)
+    return repo or None
+
+
+def resolve_repo_target(raw: str, base: Path) -> Path:
+    try:
+        candidate = canonical_path(raw, base)
+    except (OSError, RuntimeError) as exc:
+        raise MutationScopeError(
+            f"repo-scoped commit target could not be resolved: {raw}"
+        ) from exc
+    if not candidate.exists():
+        raise MutationScopeError(
+            f"repo-scoped commit target does not exist: {raw}"
+        )
+    if checkout_from(candidate) is None:
+        # A repo-scoped commit target that is not inside any Git checkout fails
+        # closed rather than resolving to no checkout: an empty target set skips
+        # lease evaluation and admits the command with no lease. The guard must
+        # not delegate that safety to whether the external semantic-commit binary
+        # happens to refuse a non-repository path.
+        raise MutationScopeError(
+            f"repo-scoped commit target is not a Git checkout: {raw}"
+        )
+    return candidate
+
+
+def semantic_commit_repo_targets(command: str, base: Path) -> list[Path]:
+    """Resolve an explicit ``semantic-commit --repo <path>`` mutation target.
+
+    A repo-scoped commit must have its lease evaluated on the target
+    repository's checkout, not the session's cwd, so coupled cross-repo delivery
+    can commit into a second repository's managed worktree (issue #674). This
+    mirrors ``managed_worktree_remove_targets``' fail-closed scaffold: the target
+    is honored only when the command's mutation scope is statically resolvable
+    and the repo-scoped commit is the sole mutating command. Everything after
+    target selection — lease ownership, dirty state, in-progress operations, and
+    default-branch protection — stays with the existing admission machinery and
+    the separate default-delivery guard, so a primary checkout on its default
+    branch keeps its branch protection just as it does through the base path.
+    """
+    commands = parsed_shell_commands(command)
+    over_redirect_budget = shell_command_exceeds_redirect_budget(command)
+    target_arguments: list[str] = []
+    other_mutation = shell_command_has_parenthesized_redirect_word(command)
+    for tokens in commands:
+        if invocation_command_position_is_dynamic(tokens):
+            raise MutationScopeError(
+                "shell mutation target scope is unresolved and cannot be leased safely"
+            )
+        invocation = invocation_tokens(tokens)
+        if invocation_is_unresolved_nested(
+            invocation
+        ) or opaque_invocation_has_unresolved_nested(invocation):
+            raise MutationScopeError(
+                "shell mutation target scope is unresolved and cannot be leased safely"
+            )
+        repo = semantic_commit_invocation_repo_target(invocation)
+        if repo is None:
+            if not over_redirect_budget:
+                other_mutation = other_mutation or coresident_command_is_repo_mutation(
+                    tokens, base
+                )
+            continue
+        if over_redirect_budget:
+            raise MutationScopeError(
+                "shell redirect target count exceeds the safe inspection limit"
+            )
+        if command_writes_repo(tokens, base):
+            other_mutation = True
+        target_arguments.append(repo)
+    if len(target_arguments) > 1:
+        raise MutationScopeError(
+            "exactly one repo-scoped commit is allowed per shell command"
+        )
+    if target_arguments and other_mutation:
+        raise MutationScopeError(
+            "a repo-scoped commit must be the sole mutating command"
+        )
+    if not target_arguments:
+        return []
+    return [resolve_repo_target(target_arguments[0], base)]
+
+
 def high_confidence_shell_mutation(command: str, base: Path | None = None) -> bool:
     resolved_base = base if base is not None else Path.cwd()
     commands = parsed_shell_commands(command)
@@ -1337,8 +1437,9 @@ def lease_error_block_reason(error: LeaseError) -> str:
     if isinstance(error, MutationScopeError):
         return (
             "Checkout mutation scope could not be verified and fails closed: "
-            f"{error}. Use a concrete executable and, for managed worktree removal, "
-            "an explicit target, then retry."
+            f"{error}. Use a concrete executable with an explicit target, and keep a "
+            "target-aware managed worktree removal or repo-scoped commit as the "
+            "command's sole mutation, then retry."
         )
     if isinstance(error, LeaseStatePathError):
         return (

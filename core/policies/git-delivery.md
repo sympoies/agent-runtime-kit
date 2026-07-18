@@ -86,7 +86,12 @@ contract remain authoritative there.
   only for conservative high-confidence mutations, recursively recognizing
   known shell / `agent-run exec` wrappers. Read-only inspection stays available.
   Cross-repository shell mutations must still run with each target repository
-  as CWD except for explicitly target-aware managed worktree removal.
+  as CWD except for explicitly target-aware managed worktree removal and a
+  repo-scoped `semantic-commit … --repo <path>` commit, which the guard
+  evaluates on the resolved target checkout so coupled cross-repository delivery
+  can commit into a second repository's managed worktree without switching CWD.
+  Both carve-outs require the target-aware command to be its command's sole
+  mutation; raw `git -C <path>` / `--git-dir` mutations stay CWD-scoped.
 - A clean linked worktree can acquire a lease. The primary checkout has a
   narrow direct-edit exception: it must be clean, on the resolved default
   branch, outside an existing Git operation, and free of a live foreign lease.

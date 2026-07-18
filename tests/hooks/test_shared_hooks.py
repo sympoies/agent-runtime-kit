@@ -12777,6 +12777,290 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "could not be verified")
 
+    def test_checkout_lease_semantic_commit_repo_targets_the_target_checkout(
+        self,
+    ) -> None:
+        # `semantic-commit --repo <path>` must evaluate the checkout-writer
+        # lease on the *target* repository's checkout, not the session's current
+        # working directory. This is what unblocks coupled cross-repo delivery
+        # (issue #674): the session commits into a second repository's managed
+        # worktree while its own cwd sits in a different repository.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base_repo = root / "base"
+            target_repo = root / "target"
+            target_wt = root / "target-wt"
+            state = root / "state"
+            self._init_checkout_lease_repo(base_repo)
+            self._init_checkout_lease_repo(target_repo)
+            subprocess.run(
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "feature/coupled",
+                    str(target_wt),
+                ],
+                cwd=target_repo,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            commit = (
+                "semantic-commit commit --repo "
+                f"{shlex.quote(str(target_wt))} --message 'fix: coupled change'"
+            )
+
+            # A foreign session owns the target worktree's lease.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", target_wt / "README.md"),
+                cwd=target_wt,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # The delivery session runs the repo-scoped commit from the base
+            # repo, a clean primary checkout on its default branch. Base-eval
+            # would admit it; target-eval blocks on the foreign owner.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "delivery", base_repo, tool_name="Bash", command=commit
+                ),
+                cwd=base_repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+            # The harness command wrapper's redirects must not defeat target
+            # recognition: the same foreign target still blocks when wrapped.
+            wrapped = self._harness_wrapped(commit, str(root / "cwd-sentinel"))
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "delivery", base_repo, tool_name="Bash", command=wrapped
+                ),
+                cwd=base_repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "another agent session")
+
+    def test_checkout_lease_semantic_commit_repo_admits_target_owner(
+        self,
+    ) -> None:
+        # The mirror direction: when the session owns the target worktree's
+        # lease, the repo-scoped commit is admitted even though the session's
+        # own cwd checkout is owned by a different session (base-eval would
+        # block; target-eval admits).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base_repo = root / "base"
+            base_wt = root / "base-wt"
+            target_repo = root / "target"
+            target_wt = root / "target-wt"
+            state = root / "state"
+            self._init_checkout_lease_repo(base_repo)
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "feature/base", str(base_wt)],
+                cwd=base_repo,
+                check=True,
+            )
+            self._init_checkout_lease_repo(target_repo)
+            subprocess.run(
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "feature/coupled",
+                    str(target_wt),
+                ],
+                cwd=target_repo,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            # A foreign session owns the base worktree (the session cwd).
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("other", base_wt / "README.md"),
+                cwd=base_wt,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # The delivery session owns the target worktree (it edited there).
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("delivery", target_wt / "README.md"),
+                cwd=target_wt,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            commit = (
+                "semantic-commit commit --repo "
+                f"{shlex.quote(str(target_wt))} --message 'fix: coupled change'"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "delivery", base_wt, tool_name="Bash", command=commit
+                ),
+                cwd=base_wt,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_checkout_lease_semantic_commit_repo_fails_closed_on_coresident(
+        self,
+    ) -> None:
+        # A repo-scoped commit mixed with any other repository mutation fails
+        # closed: honoring only the --repo target would leave the co-resident
+        # mutation unleased.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base_repo = root / "base"
+            target_repo = root / "target"
+            target_wt = root / "target-wt"
+            state = root / "state"
+            self._init_checkout_lease_repo(base_repo)
+            self._init_checkout_lease_repo(target_repo)
+            subprocess.run(
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "feature/coupled",
+                    str(target_wt),
+                ],
+                cwd=target_repo,
+                check=True,
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            target = shlex.quote(str(target_wt))
+            for command in (
+                (
+                    f"semantic-commit commit --repo {target} --message 'fix: x' "
+                    "&& git commit --amend --no-edit"
+                ),
+                (
+                    f"semantic-commit commit --repo {target} --message 'fix: x' "
+                    f"&& semantic-commit commit --repo {target} --message 'fix: y'"
+                ),
+            ):
+                with self.subTest(command=command):
+                    payload = self._checkout_lease_payload(
+                        "delivery", base_repo, tool_name="Bash", command=command
+                    )
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", payload, cwd=base_repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be verified")
+
+    def test_checkout_lease_semantic_commit_repo_target_edge_cases(self) -> None:
+        # Guard the repo-scoped-commit target path across the parsing variants,
+        # read-only forms, and fail-closed branches that its duplicated scaffold
+        # inherits from the managed-worktree-removal template.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base_repo = root / "base"
+            target_repo = root / "target"
+            target_wt = root / "target-wt"
+            nonrepo = root / "nonrepo"
+            state = root / "state"
+            self._init_checkout_lease_repo(base_repo)
+            self._init_checkout_lease_repo(target_repo)
+            subprocess.run(
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "feature/coupled",
+                    str(target_wt),
+                ],
+                cwd=target_repo,
+                check=True,
+            )
+            nonrepo.mkdir()
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            tgt = shlex.quote(str(target_wt))
+            msg = shlex.quote("fix: coupled change")
+
+            # A foreign session owns the target worktree's lease.
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", target_wt / "README.md"),
+                cwd=target_wt,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            def run(command: str):
+                return run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload(
+                        "delivery", base_repo, tool_name="Bash", command=command
+                    ),
+                    cwd=base_repo,
+                    env=env,
+                )
+
+            # Read-only repo-scoped forms are not mutation targets: they fall back
+            # to the admissible base cwd and are allowed; the foreign target is
+            # ignored. --repo . collapses to the cwd checkout (same base path).
+            for allowed in (
+                f"semantic-commit commit --repo {tgt} --dry-run --message {msg}",
+                f"semantic-commit commit --repo {tgt} --validate-only --message {msg}",
+                f"semantic-commit commit --repo . --message {msg}",
+            ):
+                with self.subTest(allowed=allowed):
+                    code, decision, stderr = run(allowed)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            # The foreign target blocks across the attached --repo= form and the
+            # fixup / squash mutating subcommands, not only `commit` space-form.
+            for blocked in (
+                f"semantic-commit commit --repo={target_wt} --message {msg}",
+                f"semantic-commit fixup --repo {tgt} HEAD~1",
+                f"semantic-commit squash --repo {tgt} HEAD~1",
+            ):
+                with self.subTest(blocked=blocked):
+                    code, decision, stderr = run(blocked)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "another agent session")
+
+            # Fail-closed branches inherited from the removal scaffold plus the
+            # self-sufficient target checks: a non-existent target, an existing
+            # non-Git-checkout target, a dynamic command position, and a
+            # self-redirect that writes into the target checkout.
+            for closed in (
+                f"semantic-commit commit --repo {shlex.quote(str(root / 'missing'))} --message {msg}",
+                f"semantic-commit commit --repo {shlex.quote(str(nonrepo))} --message {msg}",
+                f'CMD=semantic-commit; "$CMD" commit --repo {tgt} --message {msg}',
+                f"semantic-commit commit --repo {tgt} --message {msg} > {shlex.quote(str(target_wt / 'out.txt'))}",
+            ):
+                with self.subTest(closed=closed):
+                    code, decision, stderr = run(closed)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be verified")
+
     @staticmethod
     def _harness_wrapped(command: str, cwd_sentinel: str) -> str:
         # Reproduce the Claude Bash tool's command wrapper: a shell-snapshot
