@@ -2285,8 +2285,11 @@ class SharedHookTests(unittest.TestCase):
             assert isinstance(output, dict)
             ctx = str(output.get("additionalContext", ""))
             self.assertIn("Bounded startup memory", ctx)
-            self.assertIn("agent-memory candidate add codex", ctx)
-            self.assertIn("explicit user approval before `candidate promote --apply`", ctx)
+            self.assertIn("agent-docs preflight --intent memory", ctx)
+            # The candidate/promotion procedure lives in memory.md now, not the
+            # startup header (#601 P1 slice 3b).
+            self.assertNotIn("candidate promote --apply", ctx)
+            self.assertNotIn("agent-memory candidate add codex", ctx)
             self.assertIn("Prefer managed worktrees", ctx)
             self.assertEqual(log_path.read_text(encoding="utf-8"), "recall startup\n")
 
@@ -2433,8 +2436,8 @@ class SharedHookTests(unittest.TestCase):
 
     def test_agent_memory_cue_caps_large_memory_index(self) -> None:
         cases = (
-            ("lower override", "1024", 2048, 1024, 2200),
-            ("hard ceiling", "12000", 4096, 3072, 4300),
+            ("respects lower override", "500", 2048, 500, 1300),
+            ("hard ceiling", "12000", 4096, 768, 1300),
         )
         for name, configured_limit, emitted_bytes, expected_limit, max_cue in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
@@ -2478,6 +2481,61 @@ class SharedHookTests(unittest.TestCase):
                 ctx = str(output.get("additionalContext", ""))
                 self.assertIn(f"content truncated to {expected_limit} bytes", ctx)
                 self.assertLess(len(ctx.encode("utf-8")), max_cue)
+
+    def test_agent_memory_cue_startup_context_within_budget(self) -> None:
+        # #601 P1 slice 3b: the injected Codex startup memory context is a
+        # micro-profile. Assert the visible budget -- header + profile stays
+        # within 1.25 KiB, the profile is capped at 768 bytes, and the
+        # candidate/promotion procedure lives in memory.md, not the header.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_memory = bin_dir / "agent-memory"
+            agent_memory.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [[ \"$*\" == \"recall startup\" ]]; then\n"
+                "  python3 - <<'PY'\n"
+                "print('x' * 8192)\n"
+                "PY\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 64\n",
+                encoding="utf-8",
+            )
+            agent_memory.chmod(0o755)
+            home = root / "home"
+            home.mkdir()
+
+            code, decision, stderr = run_shell_hook(
+                "user-prompt-agent-memory.sh",
+                {"session_id": "memory-budget-test", "prompt": "hello"},
+                cwd=root,
+                env={
+                    "AGENT_RUNTIME_PRODUCT": "codex",
+                    "HOME": str(home),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            output = decision.get("hookSpecificOutput")
+            self.assertIsInstance(output, dict)
+            assert isinstance(output, dict)
+            ctx = str(output.get("additionalContext", ""))
+            # The profile is capped at the 768-byte budget.
+            self.assertIn("content truncated to 768 bytes", ctx)
+            # Header + profile stays within the 1.25 KiB startup budget.
+            header_part = ctx.split("BEGIN_SHARED_AGENT_MEMORY")[0]
+            self.assertLessEqual(len(header_part.encode("utf-8")) + 768, 1280)
+            # The full framed context stays bounded too.
+            self.assertLessEqual(len(ctx.encode("utf-8")), 1300)
+            # The boundary and the memory-preflight pointer are present; the
+            # candidate/promotion procedure is not (it lives in memory.md).
+            self.assertIn("agent-docs preflight --intent memory", ctx)
+            self.assertNotIn("candidate promote --apply", ctx)
 
     def _require_agent_docs(self) -> None:
         if shutil.which("agent-docs") is None:

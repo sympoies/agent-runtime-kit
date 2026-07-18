@@ -137,10 +137,12 @@ BUDGETS = [
     {
         "id": "startup-memory.codex",
         "description": (
-            "Codex startup memory context (fixed governance header + recall "
+            "Codex startup memory context (micro-header + bounded recall "
             "profile) injected by core/hooks/shared/user-prompt-agent-memory.sh."
         ),
-        "measure": ("pending", "graysurf/agent-runtime-kit#601 (P1 slice 3b)"),
+        "measure": ("behavioral",
+                    "tests/hooks/test_shared_hooks.py "
+                    "(startup header + profile byte budget)"),
         "target": 1280,  # 1.25 KiB
         "override": None,
     },
