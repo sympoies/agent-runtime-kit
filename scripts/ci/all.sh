@@ -399,4 +399,19 @@ bash scripts/ci/product-leak-audit.sh
 banner 16 "memory runtime policy + retired-reference audit"
 bash tests/memory-runtime/run.sh
 
-printf '\nci/all.sh: positions 1-16 OK\n'
+# -----------------------------------------------------------------------------
+# Position 17 — context budget audit (#601 P1 visible context budgets)
+#
+# Measures the always-on and per-intent context surfaces (rendered AGENT_HOME,
+# representative project-dev edit-phase required reading, startup memory, and the
+# unchanged-prompt route cue) against the issue's byte budgets. Fails closed when
+# a surface exceeds its target without an explicit, tracked override, so context
+# growth is a reviewable decision rather than invisible drift. The rendered
+# build/<product>/AGENT_HOME.md artifacts measured here are produced by
+# positions 3-6 above; --self-test proves the classifier before the real gate.
+# -----------------------------------------------------------------------------
+banner 17 "context budget audit (#601 P1)"
+python3 scripts/ci/context-budget-audit.py --self-test
+python3 scripts/ci/context-budget-audit.py check
+
+printf '\nci/all.sh: positions 1-17 OK\n'
