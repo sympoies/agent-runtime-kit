@@ -11051,9 +11051,10 @@ exit 65
                     executable=str(fake_git),
                 )
                 started = time.perf_counter()
-                completed = probe.run(root, str(child_pid))
+                completed, status = probe.run_with_status(root, str(child_pid))
                 elapsed = time.perf_counter() - started
                 self.assertIsNone(completed)
+                self.assertEqual(status, "output-limit")
                 self.assertLess(elapsed, 1.5)
                 self.assert_process_stopped(int(child_pid.read_text(encoding="utf-8")))
         finally:
@@ -11088,8 +11089,9 @@ exit 65
                     output_limit_bytes=1024,
                     executable=str(fake_git),
                 )
-                completed = probe.run(root, str(child_pid))
+                completed, status = probe.run_with_status(root, str(child_pid))
                 self.assertIsNone(completed)
+                self.assertEqual(status, "timeout")
                 self.assert_process_stopped(int(child_pid.read_text(encoding="utf-8")))
         finally:
             sys.modules.pop(spec.name, None)
@@ -11149,6 +11151,135 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_uses_cached_head_only_for_timed_out_exact_branch_refspecs(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_cached_timeout_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+
+            class DefaultBranchProbe:
+                def __init__(
+                    self,
+                    *,
+                    live_status: str = "timeout",
+                    cached_ref: str = "origin/main\n",
+                ) -> None:
+                    self.live_status = live_status
+                    self.cached_ref = cached_ref
+
+                def run(
+                    self, _cwd: Path, *arguments: str
+                ) -> subprocess.CompletedProcess[str] | None:
+                    if "ls-remote" in arguments:
+                        return None
+                    if arguments[:4] == ("remote", "get-url", "--push", "--all"):
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 0, "ssh://example.test/repo.git\n", ""
+                        )
+                    if arguments[-1] == "refs/remotes/origin/HEAD":
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments],
+                            0 if self.cached_ref else 1,
+                            self.cached_ref,
+                            "",
+                        )
+                    if arguments[-1] == "HEAD":
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 0, "feat/tiny-repair\n", ""
+                        )
+                    if "config" in arguments and "--get" in arguments:
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 1, "", ""
+                        )
+                    raise AssertionError(f"unexpected git probe: {arguments!r}")
+
+                def run_with_status(
+                    self, cwd: Path, *arguments: str
+                ) -> tuple[subprocess.CompletedProcess[str] | None, str]:
+                    if "ls-remote" in arguments:
+                        if self.live_status == "nonzero":
+                            return (
+                                subprocess.CompletedProcess(
+                                    ["git", *arguments], 1, "", "unreachable"
+                                ),
+                                "",
+                            )
+                        return None, self.live_status
+                    return self.run(cwd, *arguments), ""
+
+            for arguments in (
+                ["origin", "feat/tiny-repair"],
+                ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+            ):
+                with self.subTest(allowed=arguments):
+                    self.assertIs(
+                        module.push_targets_default(
+                            DefaultBranchProbe(), arguments, Path("."), []
+                        ),
+                        False,
+                    )
+
+            self.assertEqual(
+                module.invocation_block_reason(
+                    DefaultBranchProbe(),
+                    ["git", "push", "-u", "origin", "feat/tiny-repair"],
+                    Path("."),
+                ),
+                "",
+            )
+            self.assertIs(
+                module.push_targets_default(
+                    DefaultBranchProbe(), ["origin", "HEAD:main"], Path("."), []
+                ),
+                True,
+            )
+            self.assertIsNone(
+                module.push_targets_default(
+                    DefaultBranchProbe(cached_ref=""),
+                    ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+                    Path("."),
+                    [],
+                )
+            )
+
+            for arguments in (
+                ["origin"],
+                ["--all", "origin"],
+                ["--mirror", "origin"],
+                ["--delete", "origin", "feat/tiny-repair"],
+                ["origin", ":feat/tiny-repair"],
+                ["origin", "HEAD"],
+                ["origin", "refs/heads/release/*:refs/heads/release/*"],
+            ):
+                with self.subTest(blocked=arguments):
+                    self.assertIsNone(
+                        module.push_targets_default(
+                            DefaultBranchProbe(), arguments, Path("."), []
+                        )
+                    )
+
+            for live_status in ("execution", "read", "output-limit", "nonzero"):
+                with self.subTest(live_status=live_status):
+                    self.assertIsNone(
+                        module.push_targets_default(
+                            DefaultBranchProbe(live_status=live_status),
+                            ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+                            Path("."),
+                            [],
+                        )
+                    )
+        finally:
+            sys.modules.pop(spec.name, None)
 
     def test_default_delivery_hook_allows_feature_governed_and_read_only_routes(
         self,

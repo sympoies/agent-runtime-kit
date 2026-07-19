@@ -154,7 +154,11 @@ blocks mutating
 `semantic-commit commit`, `fixup`, and `squash` on the checked-out default
 branch. Ambiguous live
 pushes without an explicit refspec fail closed because Git configuration can
-retarget them. It leaves explicit feature-branch pushes,
+retarget them. When the live default-branch probe exhausts its bounded deadline,
+the hook may use the cached remote HEAD only for exact explicit branch refspecs;
+implicit, all/mirror, delete, matching, wildcard, missing-cache, and non-timeout
+failure cases still fail closed, and a completed live probe must agree with the
+cache. It leaves explicit feature-branch pushes,
 `git push --dry-run`, semantic-commit help/dry-run, and the governed `forge-cli
 repo push-default` invocation available. The hook is a guardrail rather than a
 shell sandbox; provider rules and the forge-cli expected-base, one-signed-commit,

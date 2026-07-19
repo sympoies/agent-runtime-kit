@@ -173,6 +173,7 @@ PUSH_OPTIONS_WITH_VALUE_PREFIXES = (
 )
 GIT_PROBE_TIMEOUT_SECONDS = 4.0
 GIT_PROBE_OUTPUT_LIMIT_BYTES = 1024 * 1024
+GIT_PROBE_STATUS_TIMEOUT = "timeout"
 
 
 def payload_base(payload: Mapping[str, Any]) -> Path:
@@ -211,10 +212,13 @@ class GitProbe:
         except (OSError, subprocess.TimeoutExpired):
             pass
 
-    def run(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
+    def run_with_status(
+        self, cwd: Path, *args: str
+    ) -> tuple[subprocess.CompletedProcess[str] | None, str]:
+        """Run Git and distinguish a deadline timeout from other failures."""
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            return None
+            return None, GIT_PROBE_STATUS_TIMEOUT
         command = [self.executable, *args]
         environment = dict(os.environ)
         environment["GIT_OPTIONAL_LOCKS"] = "0"
@@ -228,7 +232,7 @@ class GitProbe:
                 start_new_session=True,
             )
         except (OSError, ValueError):
-            return None
+            return None, "execution"
         assert process.stdout is not None and process.stderr is not None
 
         selected = selectors.DefaultSelector()
@@ -236,22 +240,22 @@ class GitProbe:
         selected.register(process.stdout, selectors.EVENT_READ, "stdout")
         selected.register(process.stderr, selectors.EVENT_READ, "stderr")
         total = 0
-        failed = False
+        failure = ""
         try:
             while selected.get_map():
                 remaining = self.deadline - time.monotonic()
                 if remaining <= 0:
-                    failed = True
+                    failure = GIT_PROBE_STATUS_TIMEOUT
                     break
                 events = selected.select(remaining)
                 if not events:
-                    failed = True
+                    failure = GIT_PROBE_STATUS_TIMEOUT
                     break
                 for key, _mask in events:
                     try:
                         chunk = os.read(key.fd, 65536)
                     except OSError:
-                        failed = True
+                        failure = "read"
                         break
                     if not chunk:
                         selected.unregister(key.fileobj)
@@ -259,34 +263,41 @@ class GitProbe:
                         continue
                     total += len(chunk)
                     if total > self.output_limit_bytes:
-                        failed = True
+                        failure = "output-limit"
                         break
                     buffers[key.data].extend(chunk)
-                if failed:
+                if failure:
                     break
-            if failed:
+            if failure:
                 self._kill_group(process)
-                return None
+                return None, failure
             remaining = self.deadline - time.monotonic()
             if remaining <= 0:
                 self._kill_group(process)
-                return None
+                return None, GIT_PROBE_STATUS_TIMEOUT
             try:
                 returncode = process.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 self._kill_group(process)
-                return None
-            return subprocess.CompletedProcess(
-                command,
-                returncode,
-                buffers["stdout"].decode("utf-8", errors="replace"),
-                buffers["stderr"].decode("utf-8", errors="replace"),
+                return None, GIT_PROBE_STATUS_TIMEOUT
+            return (
+                subprocess.CompletedProcess(
+                    command,
+                    returncode,
+                    buffers["stdout"].decode("utf-8", errors="replace"),
+                    buffers["stderr"].decode("utf-8", errors="replace"),
+                ),
+                "",
             )
         finally:
             selected.close()
             for stream in (process.stdout, process.stderr):
                 if not stream.closed:
                     stream.close()
+
+    def run(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
+        completed, _status = self.run_with_status(cwd, *args)
+        return completed
 
     def builtin_commands(self, cwd: Path) -> frozenset[str]:
         """Return installed builtins plus retained non-delivery helper commands."""
@@ -588,28 +599,55 @@ def current_branch(
     return result.stdout.strip() if result and result.returncode == 0 else ""
 
 
-def default_branch(
+def cached_default_branch(
+    probe: GitProbe,
+    cwd: Path,
+    remote: str,
+    config_arguments: list[str],
+) -> str:
+    cached = probe.run(
+        cwd,
+        *config_arguments,
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        f"refs/remotes/{remote}/HEAD",
+    )
+    if not cached or cached.returncode != 0 or not cached.stdout.strip():
+        return ""
+    remote_ref = cached.stdout.strip()
+    prefix = f"{remote}/"
+    return remote_ref[len(prefix) :] if remote_ref.startswith(prefix) else ""
+
+
+def resolve_default_branch(
     probe: GitProbe,
     cwd: Path,
     remote: str = "origin",
     config_arguments: list[str] | None = None,
-) -> str:
+) -> tuple[str, bool]:
+    """Return the default branch and whether it came from timeout fallback."""
     if not remote or "/" in remote or ":" in remote:
-        return ""
+        return "", False
     git_config = config_arguments or []
     push_urls = probe.run(
         cwd, *git_config, "remote", "get-url", "--push", "--all", remote
     )
     if not push_urls or push_urls.returncode != 0:
-        return ""
+        return "", False
     urls = [line for line in push_urls.stdout.splitlines() if line]
     if len(urls) != 1:
-        return ""
-    authoritative = probe.run(
+        return "", False
+    cached_before_live = cached_default_branch(probe, cwd, remote, git_config)
+    authoritative, status = probe.run_with_status(
         cwd, *git_config, "ls-remote", "--symref", urls[0], "HEAD"
     )
-    if not authoritative or authoritative.returncode != 0:
-        return ""
+    if not authoritative:
+        if status == GIT_PROBE_STATUS_TIMEOUT and cached_before_live:
+            return cached_before_live, True
+        return "", False
+    if authoritative.returncode != 0:
+        return "", False
     expected = ""
     for line in authoritative.stdout.splitlines():
         if not line.startswith("ref: refs/heads/"):
@@ -619,21 +657,24 @@ def default_branch(
             expected = reference[len("ref: refs/heads/") :]
             break
     if not expected:
-        return ""
-    cached = probe.run(
-        cwd,
-        *git_config,
-        "symbolic-ref",
-        "--quiet",
-        "--short",
-        f"refs/remotes/{remote}/HEAD",
+        return "", False
+    cached_after_live = cached_default_branch(probe, cwd, remote, git_config)
+    cached = cached_after_live or cached_before_live
+    if cached and cached != expected:
+        return "", False
+    return expected, False
+
+
+def default_branch(
+    probe: GitProbe,
+    cwd: Path,
+    remote: str = "origin",
+    config_arguments: list[str] | None = None,
+) -> str:
+    expected, cached_timeout = resolve_default_branch(
+        probe, cwd, remote, config_arguments
     )
-    if cached and cached.returncode == 0 and cached.stdout.strip():
-        remote_ref = cached.stdout.strip()
-        prefix = f"{remote}/"
-        if not remote_ref.startswith(prefix) or remote_ref[len(prefix) :] != expected:
-            return ""
-    return expected
+    return "" if cached_timeout else expected
 
 
 def semantic_commit_repo(arguments: list[str], base: Path) -> Path:
@@ -691,6 +732,27 @@ def refspec_targets_default(refspec: str, default: str, current: str) -> bool:
     if "*" in target:
         return fnmatch.fnmatch(default, target)
     return target == default
+
+
+def explicit_branch_refspec_target(refspec: str) -> str:
+    """Return one exact destination branch that needs no current-branch lookup."""
+    value = refspec.lstrip("+")
+    if not value or "*" in value or value == ":":
+        return ""
+    if ":" in value:
+        source, destination = value.split(":", 1)
+        if not source or not destination:
+            return ""
+    else:
+        destination = value
+    if destination in {"HEAD", "@"}:
+        return ""
+    for prefix in ("refs/heads/", "heads/"):
+        if destination.startswith(prefix):
+            return destination[len(prefix) :]
+    if destination.startswith("refs/") or destination.startswith("tags/"):
+        return ""
+    return destination
 
 
 def push_shape(arguments: list[str]) -> tuple[bool, bool, bool, bool, str, list[str]]:
@@ -774,9 +836,18 @@ def push_targets_default(
         return False
     if tags_only and not refspecs:
         return False
-    default = default_branch(probe, cwd, remote, config_arguments)
+    default, cached_timeout = resolve_default_branch(
+        probe, cwd, remote, config_arguments
+    )
     if not default:
         return None
+    if cached_timeout:
+        if all_or_mirror or delete or tags_only or not refspecs:
+            return None
+        targets = [explicit_branch_refspec_target(refspec) for refspec in refspecs]
+        if any(not target for target in targets):
+            return None
+        return any(target == default for target in targets)
     if all_or_mirror:
         return True
     current = current_branch(probe, cwd, config_arguments)

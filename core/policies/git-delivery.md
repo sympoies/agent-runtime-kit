@@ -44,10 +44,12 @@ exposes no force, delete, retry, or direct merge option. Raw
 `commit`, `fixup`, and `squash` subcommands on the checked-out default branch
 are blocked by hook
 on supported Codex/Claude hosts, including Git's wildcard and matching-branch
-refspec forms. Explicit feature-branch refspecs and documented
-read-only help/dry-run forms remain available; ambiguous live pushes without a
-refspec fail closed. Hermes has no hook runner; policy and the governed CLI
-contract remain authoritative there.
+refspec forms. Explicit feature-branch refspecs and documented read-only
+help/dry-run forms remain available. If the bounded live default-branch probe
+times out, only exact explicit branch refspecs may use the cached remote HEAD;
+implicit, all/mirror, delete, matching, wildcard, missing-cache, non-timeout
+failure, and live/cache disagreement cases fail closed. Hermes has no hook
+runner; policy and the governed CLI contract remain authoritative there.
 
 ## Commits
 
