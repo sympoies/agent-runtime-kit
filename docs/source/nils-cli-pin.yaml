@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.24.1"
+  pinned_tag: "v1.24.3"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "faf1c157806e4f8856adeb790b308733dc3321136a5d1d329a081698f19f88b0"
-    linux_arm64: "623dfb9c308b8984a18558d69080262c41e2b2d8648cecb1df777624f7eb5740"
+    linux_amd64: "a5e24f9fa4002b3decabe2ed010b406eaf086183cda826be7b9843eb793d55a5"
+    linux_arm64: "e7a6037e695f847e3a900e5fd51493538f4caf2fce9855ba06a2379c8835332c"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the

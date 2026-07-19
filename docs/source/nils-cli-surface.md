@@ -1,20 +1,32 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-19 (refreshed for `v1.24.1`)
+- Snapshot date: 2026-07-19 (refreshed for `v1.24.3`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.24.1`
+- Active `git describe --tags` output: `v1.24.3`
 - Machine-readable pin for the CI gate: `docs/source/nils-cli-pin.yaml`
-  (`pinned_tag: v1.24.1`), consumed by `scripts/ci/all.sh` Position 2 via
+  (`pinned_tag: v1.24.3`), consumed by `scripts/ci/all.sh` Position 2 via
   `agent-runtime doctor --class version-alignment`. Keep that `pinned_tag`
   and the `Active git describe --tags output:` line above in lock-step.
-- Head commit: `d2382ba1`
-  (`chore(release): bump cli versions to 1.24.1`)
+- Head commit: `5f427e6a`
+  (`chore(release): bump cli versions to 1.24.3`)
 - Release:
-  [`v1.24.1`](https://github.com/sympoies/nils-cli/releases/tag/v1.24.1),
+  [`v1.24.3`](https://github.com/sympoies/nils-cli/releases/tag/v1.24.3),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.24.3` advances the pin from `v1.24.1`, folding in `v1.24.2`:
+  - `agent-session` adds `codex_usage_account` launch-profile routing for
+    Codex-account auto-resume in Claude profiles
+    ([#1295](https://github.com/sympoies/nils-cli/pull/1295)).
+  - `agent-session` exposes the last user prompt through
+    `SessionView.last_prompt` and advertises
+    `data.capabilities.last_prompt=true`
+    ([#1297](https://github.com/sympoies/nils-cli/pull/1297)), then converges
+    Codex lifecycle hooks across supported config representations
+    ([#1298](https://github.com/sympoies/nils-cli/pull/1298)).
+  - Runtime-kit does not consume `agent-session`; no `required_clis[]` or hook
+    minimum floor moves for these additive releases.
 - `v1.24.1` advances the pin from `v1.24.0`:
   - `forge-cli` converges the deliver-pr review loop
     ([#1292](https://github.com/sympoies/nils-cli/pull/1292)): `pr review`

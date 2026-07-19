@@ -11211,7 +11211,7 @@ exit 65
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertRegex(version.stdout, r"\b1\.24\.1\b")
+        self.assertEqual(version.stdout.split()[:2], ["git-cli", "1.24.3"])
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
