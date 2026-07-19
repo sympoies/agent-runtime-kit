@@ -2,7 +2,11 @@
 # scripts/ci/all.sh — agent-runtime-kit CI gate stack.
 #
 # Linear, ordered gate stack — do not parallelize. Each position prints a
-# banner, runs its check, and exits non-zero on the first failure.
+# banner, runs its check, reports its elapsed wall-clock, and exits non-zero on
+# the first failure. Positions are NOT run concurrently: several positions
+# invoke `agent-runtime render` against the shared render cache and position 8's
+# convergence acceptance asserts a clean working tree, so overlapping positions
+# race the cache and that clean-tree check (measured flaky). See issue #689.
 #
 # Compatibility: must run on macOS (system bash 3.2) and Linux runners.
 # Avoid associative arrays, mapfile, and `${var,,}` lowercasing.
@@ -26,10 +30,33 @@ if git_local_env="$(git rev-parse --local-env-vars 2>/dev/null)"; then
   done <<<"$git_local_env"
 fi
 
+# Per-position wall-clock timing. `banner` closes out the previous position's
+# timer before opening the next; `banner_final` closes the last one. Timings go
+# to stderr so they never contaminate a position's captured stdout.
+CI_ALL_LAST_TS=""
+CI_ALL_LAST_POS=""
+
 banner() {
   local position="$1"
   local title="$2"
+  local now
+  now="$(date +%s)"
+  if [ -n "$CI_ALL_LAST_TS" ]; then
+    printf '==[ ci/all.sh position %s took %ss ]==\n' \
+      "$CI_ALL_LAST_POS" "$((now - CI_ALL_LAST_TS))" >&2
+  fi
+  CI_ALL_LAST_TS="$now"
+  CI_ALL_LAST_POS="$position"
   printf '\n==[ ci/all.sh position %s ]== %s\n' "$position" "$title"
+}
+
+banner_final() {
+  local now
+  now="$(date +%s)"
+  if [ -n "$CI_ALL_LAST_TS" ]; then
+    printf '==[ ci/all.sh position %s took %ss ]==\n' \
+      "$CI_ALL_LAST_POS" "$((now - CI_ALL_LAST_TS))" >&2
+  fi
 }
 
 require_bin() {
@@ -415,4 +442,5 @@ banner 17 "context budget audit (#601 P1)"
 python3 scripts/ci/context-budget-audit.py --self-test
 python3 scripts/ci/context-budget-audit.py check
 
+banner_final
 printf '\nci/all.sh: positions 1-17 OK\n'
