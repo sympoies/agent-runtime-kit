@@ -490,21 +490,42 @@ else
     "dirty source rejection boundary failed"
   failures=1
 fi
-for product in $products; do
-  lifecycle_status=0
+# Run one product's portable lifecycle + routing-contract in isolation. Each
+# product gets its own copies of the portable and baseline snapshots so the
+# three never share a mutable `build/<product>/` tree, the global REPO_ROOT, or
+# the results file — the render/install/prune-stale steps write build/<product>/
+# under their source root, and only isolated copies keep concurrent products
+# from stepping on each other. results_add is redirected to a per-product file
+# and merged back in the original serial order after the join, so a passing
+# parallel run produces a byte-identical RESULTS_FILE to the old serial loop.
+# Intended to be launched in a background subshell: the REPO_ROOT and
+# RESULTS_FILE reassignments below stay contained to that subshell.
+run_one_product() {
+  local product="$1"
+  local my_portable="$TMP_ROOT/portable-$product"
+  local my_baseline="$TMP_ROOT/baseline-$product"
+  local lifecycle_status=0
+  local product_status=0
+
+  cp -a "$PORTABLE_SOURCE_ROOT" "$my_portable"
+  cp -a "$BASELINE_SOURCE_ROOT" "$my_baseline"
+
+  RESULTS_FILE="$TMP_ROOT/results-$product"
+  : >"$RESULTS_FILE"
+
   if [ "$product" = hermes ]; then
     runtime_convergence_hermes \
-      "$PORTABLE_SOURCE_ROOT" "$BASELINE_SOURCE_ROOT" "$TMP_ROOT" \
+      "$my_portable" "$my_baseline" "$TMP_ROOT" \
       "$CONVERGENCE_ARTIFACTS_DIR/$product" || lifecycle_status=$?
   else
     runtime_convergence_product \
-      "$PORTABLE_SOURCE_ROOT" "$BASELINE_SOURCE_ROOT" "$TMP_ROOT" "$product" \
+      "$my_portable" "$my_baseline" "$TMP_ROOT" "$product" \
       "$CONVERGENCE_ARTIFACTS_DIR/$product" || lifecycle_status=$?
   fi
   if [ "$lifecycle_status" -eq 0 ] &&
     python3 - \
       "$CONVERGENCE_ARTIFACTS_DIR/$product/$product.portable-summary.json" \
-      "$PORTABLE_SOURCE_ROOT/tests/sandbox/$product/expected-skills.txt" <<'PY'
+      "$my_portable/tests/sandbox/$product/expected-skills.txt" <<'PY'
 import json
 import pathlib
 import sys
@@ -523,11 +544,10 @@ PY
   else
     results_add "convergence.$product.lifecycle" "$product" fail 0 \
       "portable lifecycle acceptance failed"
-    failures=1
+    product_status=1
   fi
 
-  original_repo_root="$REPO_ROOT"
-  REPO_ROOT="$PORTABLE_SOURCE_ROOT"
+  REPO_ROOT="$my_portable"
   if validate_routing_contract "$product"; then
     results_add "convergence.$product.routing-contract" "$product" pass \
       "$ROUTING_CONTRACT_COUNT" \
@@ -535,9 +555,25 @@ PY
   else
     results_add "convergence.$product.routing-contract" "$product" fail 0 \
       "prompt/route contract validation failed"
-    failures=1
+    product_status=1
   fi
-  REPO_ROOT="$original_repo_root"
+  return "$product_status"
+}
+
+# Fan out the three products concurrently; the one-time portable/baseline
+# snapshot prep and boundary checks above stay serial. Convergence wall-clock
+# drops from the sum of the three lifecycles to the slowest single one. bash 3.2
+# has no `wait -n`, so we track pids in a space-separated list and wait on each.
+product_pids=""
+for product in $products; do
+  ( run_one_product "$product" ) &
+  product_pids="$product_pids $product:$!"
+done
+for entry in $product_pids; do
+  wait "${entry##*:}" || failures=1
+done
+for product in $products; do
+  cat "$TMP_ROOT/results-$product" >>"$RESULTS_FILE"
 done
 
 exit "$failures"
