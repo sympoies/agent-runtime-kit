@@ -5,9 +5,12 @@
 - Source document: docs/plans/2026-07-17-dirty-checkout-adoption/dirty-checkout-adoption-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/646>
 - Current sprint: Sprint 2
-- Status: ready-for-close
+- Status: complete
 - Branch: feat/dirty-checkout-guard-final
 - Last updated: 2026-07-19
+- Current task: complete
+- Next task: none
+- Branch/commit/PR: graysurf/agent-runtime-kit#681 merged (<https://github.com/graysurf/agent-runtime-kit/pull/681>)
 
 ## Task Ledger
 
@@ -46,3 +49,7 @@
 - 2026-07-19: Runtime meaningful-red coverage preceded production edits; focused tests now pass for private challenge issuance, exact adopt/revoke routing, strict lease-v2 admission and refresh, malformed/expired/foreign rejection, and the session-bound ref-only exception without lease creation.
 - 2026-07-19: Maintainer constrained specialist review to one round. Major findings were repaired; remaining design or noncritical findings were routed to follow-up issues so no provider pending-review state blocks another session.
 - 2026-07-19: Corrected the plan sequencing so terminal L2 merge/closeout/archive duties follow a terminal task ledger instead of being self-referential prerequisites inside the final task row.
+
+## Handoff
+
+- Tracking issue <https://github.com/graysurf/agent-runtime-kit/issues/646> is closed; terminal execution state is synchronized. No closeout or merge action remains.
