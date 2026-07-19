@@ -35,7 +35,7 @@ Scope rules:
   `min_version_effective_from`: **2026-06-30**; probe:
   `hermes --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Hermes surface)
-  ships inside nils-cli; pinned snapshot **v1.24.0**
+  ships inside nils-cli; pinned snapshot **v1.24.1**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Hermes support was introduced in nils-cli v1.20.0 (`render --product hermes`,
   `render --target support-matrix` with a hermes column, `install` / `doctor`
@@ -108,6 +108,9 @@ the acceptance lane, and the current ship state.
 
 - The runtime-kit does not render Hermes hook scripts. Hermes manages its own
   approval / hook configuration natively under `~/.hermes`, outside this kit.
+  Consequently Hermes does not receive checkout writer leases, dirty-checkout
+  adoption challenges, lease-v2 provenance enforcement, revocation, or the
+  narrow ref-only exception from `checkout-lease-guard.py`.
 - Support today: **not-applicable**.
 
 ### 9. Hook registration (`settings.json` block)

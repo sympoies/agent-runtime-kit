@@ -123,6 +123,41 @@ runner; policy and the governed CLI contract remain authoritative there.
   session and prunes stale lease records for physically removed worktrees while
   retaining stable per-checkout lock inodes; otherwise it reports and retains
   ownership. Stop never deletes a worktree, branch, commit, or dirty file.
+- Dirty-checkout takeover is available only when the launch environment sets
+  `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` to `1`. A private
+  `UserPromptSubmit` advisory binds a one-time five-minute challenge to the
+  current session, user turn, checkout instance, and exact `git-cli worktree
+  dirty-snapshot`. Remain read-only for Q&A. Before implementation, present the
+  warned choice and obtain explicit authorization for that exact state; otherwise
+  use `git-cli worktree add`. Never infer authorization from the task or invoke
+  `adopt-dirty` merely because the challenge exists.
+- After authorization, use only the displayed sole `git-cli worktree
+  adopt-dirty --challenge <bearer>
+  --reason-file <outside-checkout-file>` transition. The PreToolUse gate requires
+  the resolved managed executable and binds challenge consumption to the issuing
+  agent session. The released CLI rechecks the snapshot and competing lease
+  under the lock, consumes the challenge once, and writes matching
+  receipt/lease-v2 provenance. Same-session refresh preserves that embedded
+  provenance. Revoke only through `git-cli worktree revoke-dirty` with the
+  matching receipt and owning session; adoption and revocation never stash,
+  reset, clean, stage, commit, or otherwise change checkout content.
+- Keep the bearer and local adoption evidence
+  private. Provider-visible adoption records may state that governed adoption
+  occurred and cite validation outcomes, but must not contain the challenge, raw
+  prompt, reason text, filenames, paths, diffs, or file contents.
+  Missing/expired/malformed challenges, snapshot drift, foreign ownership,
+  unsupported dirty state, or CLI failure returns to the ordinary fail-closed
+  worktree guidance.
+- A dirty checkout may admit one narrow ref-only operation through the resolved
+  `git` executable without acquiring a lease: selected branch delete/move/copy
+  forms, tag deletion, or lightweight/forced tag creation with explicit
+  `--no-sign`. The command must be the sole mutation with no redirect, dynamic
+  argument, command-local executable/Git retargeting, or executable
+  `reference-transaction` hook. Live foreign ownership, stale/unowned lease
+  state, Git operations, and an off-default primary checkout still block. Any
+  file/index write—also with untracked-only dirt—or compound ref-plus-file command
+  remains blocked. Codex and Claude enforce this hook contract; Hermes does not
+  ship the runtime-kit hook runner.
 
 ### Terminal local cleanup
 

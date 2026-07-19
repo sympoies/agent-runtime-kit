@@ -50,7 +50,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex
-  surface) ships inside nils-cli; pinned snapshot **v1.24.0**
+  surface) ships inside nils-cli; pinned snapshot **v1.24.1**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),
@@ -233,6 +233,13 @@ a uniform shape:
   `$CODEX_HOME/hooks`).
 - Acceptance lane: shared hook contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
+- `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
+  and `Stop`. The prompt path is silent unless dirty-checkout adoption is opted
+  in and released `git-cli >=1.24.1` can issue an exact five-minute snapshot
+  challenge; file/index mutation remains fail-closed regardless of the opt-in.
+  Adopted lease-v2 provenance survives same-session refresh, receipt-bound
+  revocation changes no content, and the only lease-free dirty exception is a
+  sole recognized ref-only branch/tag operation.
 - Support today: **shipped (shared scripts symlinked)**.
 
 ### 9. Hook registration (`settings.json` `hooks` block)
@@ -333,7 +340,10 @@ a uniform shape:
   byte-for-byte.
   The managed UserPromptSubmit block registers `user-prompt-agent-memory.sh`
   for Codex only, injecting bounded `agent-memory recall startup` context into
-  sessions that lack Claude's native memory loader. Candidate writes route to
+  sessions that lack Claude's native memory loader. The same block registers
+  the shared checkout lease guard so opt-in dirty-checkout challenge issuance
+  uses the same producer/consumer contract as Claude; its timeout exceeds the
+  bounded 35-second released snapshot probe. Candidate writes route to
   the Codex producer root; curated promotion remains a separately reviewed,
   explicitly approved action.
 - Acceptance lane: drift audit checks managed-block presence; hook tests
@@ -363,7 +373,7 @@ a uniform shape:
 | 5 | `plugins/<p>/skills/<s>/` discovery | yes | bundled `skills/<skill>/SKILL.md` discovered as `<plugin>:<skill>` once installed | 0.141.0 | v0.20.0 |
 | 6 | `commands/<n>.md` | not-applicable | — | n/a | n/a |
 | 7 | `agents/<n>.toml` | yes | rendered + directory symlink into `$CODEX_HOME/agents` | 0.139.0 | v1.3.0 |
-| 8 | `hooks/<n>.*` scripts | yes | shared scripts symlinked to `$CODEX_HOME/hooks` | 0.130.0 | v0.17.5 |
+| 8 | `hooks/<n>.*` scripts | yes | shared scripts symlinked to `$CODEX_HOME/hooks` | 0.130.0 | v1.24.1 |
 | 9 | `settings.json` hooks block | not-applicable | — | n/a | n/a |
 | 10 | `output-styles/<n>.md` | not-applicable | — | n/a | n/a |
 | 11 | `statusLine` / `settings.json` | not-applicable | — | n/a | n/a |

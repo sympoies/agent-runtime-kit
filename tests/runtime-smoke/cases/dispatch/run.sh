@@ -67,6 +67,14 @@ init_pushed_branch_fixture() {
   git -C "$workspace" branch --set-upstream-to "origin/$branch" "$branch" >/dev/null
 }
 
+init_matching_repo_fixture() {
+  local workspace="$1"
+
+  git -C "$workspace" init -q
+  git -C "$workspace" remote add origin \
+    "git@github.com:graysurf/agent-runtime-kit.git"
+}
+
 write_mini_plan() {
   cat >"$MINI_PLAN" <<'PLAN'
 # Plan: Runtime Smoke Mini Plan
@@ -517,6 +525,8 @@ run_create_plan_tracking_issue_probe() {
   local audit_out="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-audit.json"
   local run_init_out="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-run-init.json"
   local run_state="$DISPATCH_ARTIFACTS_DIR/create-plan-tracking-run-state.json"
+  local source_bundle="$REPO_ROOT/scripts/test-plan-tracking/fixtures/happy-path/bundle"
+  local source_state="$source_bundle/fixture-happy-path-flow-execution-state.md"
   require_dispatch_bin plan-tooling || return 1
   require_dispatch_bin plan-issue || return 1
   ensure_plan_fixture
@@ -541,8 +551,8 @@ run_create_plan_tracking_issue_probe() {
   plan-issue --format json tracking run init \
     --provider-repo graysurf/agent-runtime-kit \
     --issue 999 \
-    --bundle "$DISPATCH_ARTIFACTS_DIR" \
-    --execution-state-file "$MINI_PLAN" \
+    --bundle "$source_bundle" \
+    --execution-state-file "$source_state" \
     --branch runtime-smoke \
     --now 2026-07-17T00:00:00Z \
     --out "$run_state" >"$run_init_out" 2>&1
@@ -762,13 +772,17 @@ run_tracking_closeout_gate_ledger_pending_probe() {
   require_dispatch_bin plan-issue || return 1
   rm -rf "$fixture"
   mkdir -p "$fixture"
+  init_matching_repo_fixture "$fixture"
   printf '## Current Dashboard\n\n- Status: ready-for-close\n' >"$body_md"
   write_visible_tracking_comments_json "$source_comments"
   cp "$source_comments" "$comments_json"
   cat >"$ledger_md" <<'MD'
 # Execution State: Demo
 
+## Execution State
+
 - Status: ready-for-close
+- Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/1>
 
 ## Task Ledger
 
@@ -832,6 +846,7 @@ run_tracking_closeout_gate_ledger_clean_probe() {
   require_dispatch_bin plan-issue || return 1
   rm -rf "$fixture"
   mkdir -p "$fixture"
+  init_matching_repo_fixture "$fixture"
   printf '## Current Dashboard\n\n- Status: ready-for-close\n' >"$body_md"
   write_visible_tracking_comments_json "$source_comments"
   cp "$source_comments" "$comments_json"

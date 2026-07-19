@@ -14,6 +14,9 @@ import hashlib
 import json
 import os
 import re
+import secrets
+import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -39,6 +42,7 @@ from hook_common import (
     invocation_is_unresolved_nested,
     invocation_tokens,
     invocation_without_redirections,
+    is_assignment,
     is_git_recovery_argv,
     nested_shell_payload,
     opaque_invocation_has_unresolved_nested,
@@ -54,16 +58,25 @@ from hook_common import (
 
 EDIT_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"})
 COMMAND_TOOLS = frozenset({"Bash"})
-LEASE_SCHEMA = "agent-runtime.checkout-lease.v1"
+LEASE_V1_SCHEMA = "agent-runtime.checkout-lease.v1"
+LEASE_V2_SCHEMA = "agent-runtime.checkout-lease.v2"
+SNAPSHOT_SCHEMA = "agent-runtime.dirty-checkout-snapshot.v1"
+CHALLENGE_SCHEMA = "agent-runtime.dirty-checkout-challenge.v1"
+ADOPTION_SCHEMA = "agent-runtime.dirty-checkout-adoption.v1"
+RECEIPT_SCHEMA = "agent-runtime.dirty-checkout-receipt.v1"
 INSTANCE_FILE = ".agent-runtime-checkout-instance"
 DEFAULT_TTL_SECONDS = 8 * 60 * 60
 MAX_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_LEASE_BYTES = 16 * 1024
 GIT_TIMEOUT_SECONDS = 5
+DIRTY_SNAPSHOT_TIMEOUT_SECONDS = 35
+CHALLENGE_TTL_SECONDS = 5 * 60
+MAX_CHALLENGE_FILES = 128
 LOCK_WAIT_SECONDS = 2.0
 LOCK_POLL_SECONDS = 0.05
 MAX_RENEWAL_WINDOW_SECONDS = 15 * 60
 MAX_REDIRECT_TARGETS = 32
+MAX_U64 = (1 << 64) - 1
 SHELL_REDIRECT_EXPANSION_CHARS = frozenset("$`*?[{(")
 
 MUTATING_EXECUTABLES = frozenset(
@@ -108,6 +121,65 @@ MUTATING_GIT_SUBCOMMANDS = frozenset(
     }
 )
 SHELL_OPERATORS = frozenset({";", "&", "&&", "|", "||"})
+DYNAMIC_ARGUMENT_CHARS = frozenset("$`*?[{(")
+LEASE_V2_KEYS = frozenset(
+    {
+        "schema",
+        "session_key",
+        "checkout_instance",
+        "checkout_root",
+        "checkout_git_dir",
+        "checkout_root_bytes",
+        "checkout_git_dir_bytes",
+        "acquired_at",
+        "refreshed_at",
+        "expires_at",
+        "adoption",
+    }
+)
+ADOPTION_KEYS = frozenset(
+    {
+        "schema",
+        "receipt_schema",
+        "receipt_id",
+        "snapshot_id",
+        "authorization_turn_digest",
+        "reason_digest",
+        "adopted_at",
+        "challenge_issued_at",
+        "challenge_digest",
+    }
+)
+CHALLENGE_KEYS = frozenset(
+    {
+        "schema",
+        "token_digest",
+        "session_key",
+        "repository_key",
+        "checkout_key",
+        "checkout_instance",
+        "snapshot_id",
+        "head_oid",
+        "branch_ref_digest",
+        "authorization_turn_digest",
+        "issued_at",
+        "expires_at",
+    }
+)
+SNAPSHOT_KEYS = frozenset(
+    {
+        "schema",
+        "repository_key",
+        "checkout_key",
+        "checkout_instance",
+        "snapshot_id",
+        "head_oid",
+        "branch_ref_digest",
+        "tracked_entries",
+        "untracked_entries",
+        "hashed_bytes",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -198,6 +270,7 @@ def run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
             cwd=cwd,
             capture_output=True,
             text=True,
+            errors="surrogateescape",
             check=False,
             timeout=GIT_TIMEOUT_SECONDS,
             env=environment,
@@ -390,6 +463,8 @@ def git_action(arguments: list[str]) -> tuple[str, list[str]]:
 
 def git_invocation_mutates(arguments: list[str]) -> bool:
     subcommand, action = git_action(arguments)
+    if any(character in subcommand for character in DYNAMIC_ARGUMENT_CHARS):
+        return True
     if subcommand in MUTATING_GIT_SUBCOMMANDS:
         return True
     if subcommand == "branch":
@@ -539,11 +614,13 @@ def git_invocation_mutates(arguments: list[str]) -> bool:
 def git_cli_invocation_mutates(arguments: list[str]) -> bool:
     return len(arguments) >= 2 and arguments[0] == "worktree" and arguments[1] in {
         "add",
+        "adopt-dirty",
         "lock",
         "move",
         "prune",
         "remove",
         "repair",
+        "revoke-dirty",
         "unlock",
     }
 
@@ -948,6 +1025,32 @@ def resolve_repo_target(raw: str, base: Path) -> Path:
     return candidate
 
 
+def invocation_changes_shell_cwd(invocation: list[str]) -> bool:
+    invocation = invocation_without_redirections(invocation)
+    return bool(invocation) and os.path.basename(invocation[0]) in {
+        "cd",
+        "popd",
+        "pushd",
+    }
+
+
+def invocation_has_cwd_changing_wrapper(tokens: list[str], invocation: list[str]) -> bool:
+    """Whether a wrapper retargets a relative operand before the executable."""
+    raw = invocation_without_redirections(tokens)
+    if not raw or not invocation:
+        return False
+    target = invocation[0]
+    try:
+        target_index = raw.index(target)
+    except ValueError:
+        return True
+    prefix = raw[:target_index]
+    return any(
+        argument in {"-C", "--chdir"} or argument.startswith("--chdir=")
+        for argument in prefix
+    )
+
+
 def semantic_commit_repo_targets(command: str, base: Path) -> list[Path]:
     """Resolve an explicit ``semantic-commit --repo <path>`` mutation target.
 
@@ -966,6 +1069,7 @@ def semantic_commit_repo_targets(command: str, base: Path) -> list[Path]:
     over_redirect_budget = shell_command_exceeds_redirect_budget(command)
     target_arguments: list[str] = []
     other_mutation = shell_command_has_parenthesized_redirect_word(command)
+    cwd_may_have_changed = False
     for tokens in commands:
         if invocation_command_position_is_dynamic(tokens):
             raise MutationScopeError(
@@ -978,13 +1082,28 @@ def semantic_commit_repo_targets(command: str, base: Path) -> list[Path]:
             raise MutationScopeError(
                 "shell mutation target scope is unresolved and cannot be leased safely"
             )
+        changes_cwd = invocation_changes_shell_cwd(invocation)
         repo = semantic_commit_invocation_repo_target(invocation)
         if repo is None:
             if not over_redirect_budget:
                 other_mutation = other_mutation or coresident_command_is_repo_mutation(
                     tokens, base
                 )
+            cwd_may_have_changed = cwd_may_have_changed or changes_cwd
             continue
+        try:
+            repo_path = Path(repo).expanduser()
+        except (OSError, RuntimeError) as exc:
+            raise MutationScopeError(
+                f"repo-scoped commit target could not be resolved: {repo}"
+            ) from exc
+        if not repo_path.is_absolute() and (
+            cwd_may_have_changed
+            or invocation_has_cwd_changing_wrapper(tokens, invocation)
+        ):
+            raise MutationScopeError(
+                "a relative repo-scoped commit target follows an ambiguous working-directory change"
+            )
         if over_redirect_budget:
             raise MutationScopeError(
                 "shell redirect target count exceeds the safe inspection limit"
@@ -992,6 +1111,7 @@ def semantic_commit_repo_targets(command: str, base: Path) -> list[Path]:
         if command_writes_repo(tokens, base):
             other_mutation = True
         target_arguments.append(repo)
+        cwd_may_have_changed = cwd_may_have_changed or changes_cwd
     if len(target_arguments) > 1:
         raise MutationScopeError(
             "exactly one repo-scoped commit is allowed per shell command"
@@ -1104,6 +1224,233 @@ def sole_git_recovery_operation(command: str, base: Path) -> bool:
     return found_recovery
 
 
+def resolved_executable_matches(raw: str, name: str, *, managed_cli: bool = False) -> bool:
+    """Require the shell spelling to resolve to the hook's trusted executable."""
+    candidate = shutil.which(name)
+    if not candidate or not os.path.isabs(candidate):
+        return False
+    if raw == name:
+        invoked = candidate
+    elif os.path.isabs(raw):
+        invoked = raw
+    else:
+        return False
+    try:
+        resolved_candidate = os.path.realpath(candidate)
+        resolved_invoked = os.path.realpath(invoked)
+    except OSError:
+        return False
+    if (
+        resolved_candidate != resolved_invoked
+        or not os.path.isfile(resolved_invoked)
+        or not os.access(resolved_invoked, os.X_OK)
+    ):
+        return False
+    if not managed_cli:
+        return True
+
+    configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
+    if configured:
+        roots = {
+            os.path.realpath(item)
+            for item in configured.split(os.pathsep)
+            if item
+        }
+        if os.path.realpath(os.path.dirname(candidate)) in roots:
+            return True
+    for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
+        if os.path.dirname(os.path.abspath(candidate)) != os.path.join(prefix, "bin"):
+            continue
+        if os.path.dirname(resolved_invoked) == os.path.join(prefix, "bin"):
+            return True
+        cellar = os.path.join(prefix, "Cellar", "nils-cli")
+        try:
+            return os.path.commonpath((resolved_invoked, cellar)) == cellar
+        except ValueError:
+            return False
+    return os.path.dirname(resolved_invoked) == "/usr/bin"
+
+
+def invocation_environment_is_stable(tokens: list[str], executable: str) -> bool:
+    """Reject command-local executable/config retargeting for narrow carve-outs."""
+    raw = invocation_without_redirections(tokens)
+    index = 0
+    while index < len(raw) and is_assignment(raw[index]):
+        name = raw[index].split("=", 1)[0]
+        if name in {"HOME", "PATH", "XDG_CONFIG_HOME"} or name.startswith("GIT_"):
+            return False
+        index += 1
+    return index < len(raw) and os.path.basename(raw[index]) == executable
+
+
+def governed_dirty_transition_details(
+    invocation: list[str],
+) -> tuple[str, dict[str, str]] | None:
+    invocation = invocation_without_redirections(invocation)
+    if (
+        len(invocation) < 4
+        or not resolved_executable_matches(invocation[0], "git-cli", managed_cli=True)
+        or invocation[1] != "worktree"
+    ):
+        return None
+    action = invocation[2]
+    arguments = invocation[3:]
+    required = (
+        {"--challenge", "--reason-file"}
+        if action == "adopt-dirty"
+        else {"--receipt"}
+        if action == "revoke-dirty"
+        else set()
+    )
+    if not required:
+        return None
+
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        name, separator, attached = argument.partition("=")
+        if name in required | {"--format"}:
+            if name in values:
+                return None
+            if separator:
+                value = attached
+                index += 1
+            else:
+                if index + 1 >= len(arguments):
+                    return None
+                value = arguments[index + 1]
+                index += 2
+            if not value:
+                return None
+            if name == "--format" and value not in {"text", "json"}:
+                return None
+            values[name] = value
+            continue
+        return None
+    if not required <= values.keys():
+        return None
+    identifier = values["--challenge"] if action == "adopt-dirty" else values["--receipt"]
+    if not lower_hex(identifier, 64):
+        return None
+    return action, values
+
+
+def governed_dirty_transition_invocation(invocation: list[str]) -> bool:
+    return governed_dirty_transition_details(invocation) is not None
+
+
+def sole_governed_dirty_transition(
+    command: str, base: Path
+) -> tuple[str, dict[str, str]] | None:
+    """Recognize one exact adopt/revoke command for bound admission."""
+    commands = parsed_shell_commands(command)
+    if shell_command_exceeds_redirect_budget(
+        command
+    ) or shell_command_has_parenthesized_redirect_word(command):
+        return None
+    transition: tuple[str, dict[str, str]] | None = None
+    for tokens in commands:
+        if invocation_command_position_is_dynamic(tokens):
+            return None
+        invocation = invocation_without_redirections(invocation_tokens(tokens))
+        if invocation_is_unresolved_nested(
+            invocation
+        ) or opaque_invocation_has_unresolved_nested(invocation):
+            return None
+        details = governed_dirty_transition_details(invocation)
+        if details is not None:
+            if (
+                transition is not None
+                or not invocation_environment_is_stable(tokens, "git-cli")
+                or command_writes_repo(tokens, base)
+            ):
+                return None
+            transition = details
+            continue
+        if coresident_command_is_repo_mutation(tokens, base):
+            return None
+    return transition
+
+
+def argument_is_dynamic(argument: str) -> bool:
+    return any(character in argument for character in DYNAMIC_ARGUMENT_CHARS)
+
+
+def checkout_safe_ref_invocation(invocation: list[str]) -> bool:
+    invocation = invocation_without_redirections(invocation)
+    if (
+        len(invocation) < 3
+        or not resolved_executable_matches(invocation[0], "git")
+    ):
+        return False
+    subcommand = invocation[1]
+    arguments = invocation[2:]
+    if subcommand not in {"branch", "tag"} or any(
+        argument_is_dynamic(argument) for argument in arguments
+    ):
+        return False
+
+    if subcommand == "branch":
+        mode = arguments[0] if arguments else ""
+        if mode in {"-d", "-D", "--delete"}:
+            targets = [argument for argument in arguments[1:] if argument != "--"]
+            return bool(targets) and all(not target.startswith("-") for target in targets)
+        if mode in {"-m", "-M", "--move", "-c", "-C", "--copy"}:
+            targets = [argument for argument in arguments[1:] if argument != "--"]
+            return 1 <= len(targets) <= 2 and all(
+                not target.startswith("-") for target in targets
+            )
+        return False
+
+    if arguments and arguments[0] in {"-d", "--delete"}:
+        targets = [argument for argument in arguments[1:] if argument != "--"]
+        return bool(targets) and all(not target.startswith("-") for target in targets)
+
+    positional: list[str] = []
+    no_sign = False
+    for argument in arguments:
+        if argument in {"-f", "--force", "--"}:
+            continue
+        if argument == "--no-sign":
+            no_sign = True
+            continue
+        if argument.startswith("-"):
+            return False
+        positional.append(argument)
+    return no_sign and 1 <= len(positional) <= 2
+
+
+def sole_checkout_safe_ref_operation(command: str, base: Path) -> bool:
+    """Recognize one ref-only mutation without admitting checkout writes."""
+    commands = parsed_shell_commands(command)
+    if shell_command_exceeds_redirect_budget(
+        command
+    ) or shell_command_has_parenthesized_redirect_word(command):
+        return False
+    found_ref_operation = False
+    for tokens in commands:
+        if invocation_command_position_is_dynamic(tokens):
+            return False
+        invocation = invocation_without_redirections(invocation_tokens(tokens))
+        if invocation_is_unresolved_nested(
+            invocation
+        ) or opaque_invocation_has_unresolved_nested(invocation):
+            return False
+        if checkout_safe_ref_invocation(invocation):
+            if (
+                found_ref_operation
+                or not invocation_environment_is_stable(tokens, "git")
+                or command_writes_repo(tokens, base)
+            ):
+                return False
+            found_ref_operation = True
+            continue
+        if coresident_command_is_repo_mutation(tokens, base):
+            return False
+    return found_ref_operation
+
+
 def lease_ttl_seconds() -> int:
     raw = os.environ.get("AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS", "").strip()
     if not raw:
@@ -1130,6 +1477,14 @@ def state_root() -> Path:
     return root.resolve(strict=False)
 
 
+def path_is_within(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(directory.resolve(strict=False))
+    except ValueError:
+        return False
+    return True
+
+
 def private_directory(path: Path) -> None:
     try:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -1150,15 +1505,18 @@ def private_directory(path: Path) -> None:
 
 
 def repository_state_dir(checkout: Checkout, *, create: bool = True) -> Path:
-    repo_key = hashlib.sha256(str(checkout.common_dir).encode("utf-8")).hexdigest()
-    path = state_root() / repo_key
+    root = state_root()
+    if create:
+        private_directory(root)
+    repo_key = hashlib.sha256(os.fsencode(checkout.common_dir)).hexdigest()
+    path = root / repo_key
     if create:
         private_directory(path)
     return path
 
 
 def checkout_state_dir(checkout: Checkout, *, create: bool = True) -> Path:
-    checkout_key = hashlib.sha256(str(checkout.root).encode("utf-8")).hexdigest()
+    checkout_key = hashlib.sha256(os.fsencode(checkout.root)).hexdigest()
     path = repository_state_dir(checkout, create=create) / checkout_key
     if create:
         private_directory(path)
@@ -1279,38 +1637,188 @@ def read_instance(checkout: Checkout, *, create: bool) -> str:
     return value
 
 
-def load_lease(path: Path) -> dict[str, Any] | None:
+def lower_hex(value: Any, length: int) -> bool:
+    return isinstance(value, str) and re.fullmatch(
+        rf"[0-9a-f]{{{length}}}", value
+    ) is not None
+
+
+def unsigned_integer(value: Any) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_U64
+    )
+
+
+def strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise LeaseStatePathError("checkout lease state has duplicate fields")
+        result[key] = value
+    return result
+
+
+def validate_v2_path(raw: Any, text: Any, label: str) -> bytes:
+    if (
+        not isinstance(raw, str)
+        or not raw
+        or len(raw) % 2
+        or re.fullmatch(r"[0-9a-f]+", raw) is None
+    ):
+        raise LeaseStatePathError(f"checkout lease {label} bytes are malformed")
+    value = bytes.fromhex(raw)
+    rendered = value.decode("utf-8", errors="replace")
+    if (
+        not value
+        or b"\0" in value
+        or not value.startswith(os.fsencode(os.sep))
+        or not isinstance(text, str)
+        or text != rendered
+        or not Path(text).is_absolute()
+    ):
+        raise LeaseStatePathError(f"checkout lease {label} identity is malformed")
+    return value
+
+
+def validate_lease_checkout(lease: Mapping[str, Any], checkout: Checkout) -> None:
+    schema = lease["schema"]
+    if schema == LEASE_V2_SCHEMA:
+        expected_root = os.fsencode(checkout.root)
+        expected_git_dir = os.fsencode(checkout.git_dir)
+        if (
+            bytes.fromhex(lease["checkout_root_bytes"]) != expected_root
+            or bytes.fromhex(lease["checkout_git_dir_bytes"]) != expected_git_dir
+            or lease["checkout_root"]
+            != expected_root.decode("utf-8", errors="replace")
+            or lease["checkout_git_dir"]
+            != expected_git_dir.decode("utf-8", errors="replace")
+        ):
+            raise LeaseStatePathError(
+                "checkout lease native path identity does not match the current checkout"
+            )
+        return
+
+    for key, expected in (
+        ("checkout_root", checkout.root),
+        ("checkout_git_dir", checkout.git_dir),
+    ):
+        value = lease.get(key)
+        if value is not None and Path(value).resolve(strict=False) != expected:
+            raise LeaseStatePathError(
+                f"checkout lease {key} does not match the current checkout"
+            )
+
+
+def load_lease(path: Path, checkout: Checkout | None = None) -> dict[str, Any] | None:
     try:
         raw = read_regular_file(path, max_bytes=MAX_LEASE_BYTES)
     except LeaseError as exc:
         raise LeaseStatePathError(str(exc)) from exc
     if not raw:
+        if path.exists() or path.is_symlink():
+            raise LeaseStatePathError("checkout lease state is malformed")
         return None
     try:
-        lease = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        lease = json.loads(raw, object_pairs_hook=strict_json_object)
+    except (json.JSONDecodeError, LeaseStatePathError) as exc:
         raise LeaseStatePathError("checkout lease state is malformed") from exc
-    if not isinstance(lease, dict) or lease.get("schema") != LEASE_SCHEMA:
+    if not isinstance(lease, dict):
+        raise LeaseStatePathError("checkout lease state is malformed")
+
+    schema = lease.get("schema")
+    if schema not in {LEASE_V1_SCHEMA, LEASE_V2_SCHEMA}:
         raise LeaseStatePathError(
             "checkout lease state has an unsupported schema"
         )
-    if re.fullmatch(r"[0-9a-f]{64}", str(lease.get("session_key", ""))) is None:
+    if not lower_hex(lease.get("session_key"), 64):
         raise LeaseStatePathError(
             "checkout lease session identity is malformed"
         )
-    if re.fullmatch(r"[0-9a-f]{32}", str(lease.get("checkout_instance", ""))) is None:
+    if not lower_hex(lease.get("checkout_instance"), 32):
         raise LeaseStatePathError(
             "checkout lease instance identity is malformed"
         )
-    if not isinstance(lease.get("expires_at"), int | float):
-        raise LeaseStatePathError("checkout lease expiry is malformed")
-    for key in ("checkout_root", "checkout_git_dir"):
-        value = lease.get(key)
-        if value is not None and (
-            not isinstance(value, str) or not value or not Path(value).is_absolute()
+
+    if schema == LEASE_V1_SCHEMA:
+        if not isinstance(lease.get("expires_at"), int | float):
+            raise LeaseStatePathError("checkout lease expiry is malformed")
+        for key in ("checkout_root", "checkout_git_dir"):
+            value = lease.get(key)
+            if value is not None and (
+                not isinstance(value, str) or not value or not Path(value).is_absolute()
+            ):
+                raise LeaseStatePathError(f"checkout lease {key} is malformed")
+    else:
+        if frozenset(lease) != LEASE_V2_KEYS:
+            raise LeaseStatePathError("checkout lease v2 fields are malformed")
+        timestamps = (
+            lease.get("acquired_at"),
+            lease.get("refreshed_at"),
+            lease.get("expires_at"),
+        )
+        if not all(unsigned_integer(value) for value in timestamps):
+            raise LeaseStatePathError("checkout lease v2 timestamps are malformed")
+        acquired_at, refreshed_at, expires_at = timestamps
+        if not acquired_at <= refreshed_at <= expires_at:
+            raise LeaseStatePathError("checkout lease v2 timestamps are unordered")
+        validate_v2_path(
+            lease.get("checkout_root_bytes"), lease.get("checkout_root"), "root"
+        )
+        validate_v2_path(
+            lease.get("checkout_git_dir_bytes"),
+            lease.get("checkout_git_dir"),
+            "Git directory",
+        )
+        adoption = lease.get("adoption")
+        if not isinstance(adoption, dict) or frozenset(adoption) != ADOPTION_KEYS:
+            raise LeaseStatePathError("checkout lease adoption fields are malformed")
+        if (
+            adoption.get("schema") != ADOPTION_SCHEMA
+            or adoption.get("receipt_schema") != RECEIPT_SCHEMA
+            or not all(
+                lower_hex(adoption.get(key), 64)
+                for key in (
+                    "receipt_id",
+                    "snapshot_id",
+                    "authorization_turn_digest",
+                    "reason_digest",
+                    "challenge_digest",
+                )
+            )
+            or not unsigned_integer(adoption.get("adopted_at"))
+            or not unsigned_integer(adoption.get("challenge_issued_at"))
+            or not adoption["challenge_issued_at"]
+            <= adoption["adopted_at"]
+            <= refreshed_at
         ):
-            raise LeaseStatePathError(f"checkout lease {key} is malformed")
+            raise LeaseStatePathError("checkout lease adoption state is malformed")
+
+    if checkout is not None:
+        validate_lease_checkout(lease, checkout)
     return lease
+
+
+def lease_checkout_paths(
+    lease: Mapping[str, Any],
+) -> tuple[Path, Path] | None:
+    if lease.get("schema") == LEASE_V2_SCHEMA:
+        try:
+            return (
+                Path(os.fsdecode(bytes.fromhex(lease["checkout_root_bytes"]))),
+                Path(os.fsdecode(bytes.fromhex(lease["checkout_git_dir_bytes"]))),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LeaseStatePathError(
+                "checkout lease native paths are malformed"
+            ) from exc
+
+    root_value = lease.get("checkout_root")
+    git_dir_value = lease.get("checkout_git_dir")
+    if not isinstance(root_value, str) or not isinstance(git_dir_value, str):
+        return None
+    return Path(root_value), Path(git_dir_value)
 
 
 def write_lease(path: Path, lease: Mapping[str, Any]) -> None:
@@ -1408,11 +1916,17 @@ def new_lease(
     previous: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     now = int(time.time())
+    if previous and previous.get("schema") == LEASE_V2_SCHEMA:
+        refreshed = dict(previous)
+        refreshed["refreshed_at"] = now
+        refreshed["expires_at"] = now + lease_ttl_seconds()
+        return refreshed
+
     acquired_at = previous.get("acquired_at") if previous else now
     if not isinstance(acquired_at, int | float):
         acquired_at = now
     return {
-        "schema": LEASE_SCHEMA,
+        "schema": LEASE_V1_SCHEMA,
         "session_key": session_key,
         "checkout_instance": instance,
         "checkout_root": str(checkout.root),
@@ -1504,15 +2018,195 @@ def checkout_admission_reason(checkout: Checkout) -> str:
     return ""
 
 
+def reference_transaction_hook_enabled(checkout: Checkout) -> bool:
+    result = run_git(
+        checkout.root,
+        "rev-parse",
+        "--git-path",
+        "hooks/reference-transaction",
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise LeaseError("Git reference-hook probe failed")
+    path = absolute_git_path(result.stdout.strip(), checkout.root)
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise LeaseError(f"Git reference-hook probe failed: {exc}") from exc
+    try:
+        return path.is_file() and os.access(path, os.X_OK)
+    except OSError as exc:
+        raise LeaseError(f"Git reference-hook probe failed: {exc}") from exc
+
+
+def checkout_safe_ref_admission(
+    checkout: Checkout, session_key: str
+) -> tuple[bool, str]:
+    """Handle a dirty ref-only operation without minting checkout ownership."""
+    if not checkout_dirty(checkout):
+        return False, ""
+
+    directory = checkout_state_dir(checkout, create=False)
+    lease: dict[str, Any] | None = None
+    if directory.exists() or directory.is_symlink():
+        if directory.is_symlink() or not directory.is_dir():
+            raise LeaseStatePathError(
+                "checkout lease state directory is not a trusted directory"
+            )
+        with acquire_lock(directory):
+            lease = load_lease(directory / "lease.json", checkout)
+    if lease is not None:
+        instance = read_instance(checkout, create=False)
+        now = time.time()
+        if (
+            instance
+            and lease["checkout_instance"] == instance
+            and lease["session_key"] == session_key
+        ):
+            return False, ""
+        reason = live_foreign_lease_reason(
+            lease, instance=instance, session_key=session_key, now=now
+        )
+        if reason:
+            return True, reason
+        return True, (
+            "Checkout mutation is blocked because the checkout has unowned changes. "
+            f"Preserve those changes and inspect their owner; do not discard them. {worktree_guidance()}"
+        )
+
+    operation = git_operation(checkout)
+    if operation:
+        return True, (
+            f"Checkout mutation is blocked because a Git operation ({operation}) is "
+            f"already in progress without this session's lease. {worktree_guidance()}"
+        )
+    if reference_transaction_hook_enabled(checkout):
+        return True, (
+            "The dirty-checkout ref-only exception is blocked because an executable "
+            "reference-transaction hook could write checkout content. Disable or remove "
+            "the hook before retrying the ref-only operation."
+        )
+    if checkout.primary:
+        branch = current_branch(checkout)
+        expected = default_branch(checkout)
+        if not branch or not expected or branch != expected:
+            return True, (
+                "The dirty-checkout ref-only exception applies only on the resolved "
+                f"default branch; current={branch or 'detached'}, "
+                f"default={expected or 'unknown'}. {worktree_guidance()}"
+            )
+    return True, ""
+
+
+def governed_dirty_transition_admission(
+    checkout: Checkout,
+    session_key: str,
+    transition: tuple[str, dict[str, str]],
+) -> str:
+    """Bind adoption and revocation to their issuing/owning hook session."""
+    action, values = transition
+    directory = checkout_state_dir(checkout, create=False)
+    if directory.is_symlink() or not directory.is_dir():
+        return (
+            "Dirty-checkout transition is blocked because its private state does not "
+            "match this checkout. Request a fresh challenge and retry."
+        )
+
+    if action == "adopt-dirty":
+        token = values["--challenge"]
+        token_digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+        challenge_path = directory / "challenges" / f"{token_digest}.json"
+        with acquire_lock(directory):
+            raw = read_regular_file(challenge_path, max_bytes=MAX_LEASE_BYTES)
+        if not raw:
+            return (
+                "Dirty-checkout adoption is blocked because the challenge is unavailable. "
+                "Request a fresh challenge from the issuing agent session."
+            )
+        try:
+            challenge = json.loads(raw, object_pairs_hook=strict_json_object)
+        except (json.JSONDecodeError, LeaseStatePathError) as exc:
+            raise LeaseStatePathError(
+                "dirty-checkout challenge state is malformed"
+            ) from exc
+        instance = read_instance(checkout, create=False)
+        now = int(time.time())
+        if (
+            not isinstance(challenge, dict)
+            or frozenset(challenge) != CHALLENGE_KEYS
+            or challenge.get("schema") != CHALLENGE_SCHEMA
+            or challenge.get("token_digest") != token_digest
+            or not lower_hex(challenge.get("session_key"), 64)
+            or not lower_hex(challenge.get("repository_key"), 64)
+            or not lower_hex(challenge.get("checkout_key"), 64)
+            or not lower_hex(challenge.get("checkout_instance"), 32)
+            or not lower_hex(challenge.get("snapshot_id"), 64)
+            or not lower_hex(challenge.get("branch_ref_digest"), 64)
+            or not lower_hex(challenge.get("authorization_turn_digest"), 64)
+            or not unsigned_integer(challenge.get("issued_at"))
+            or not unsigned_integer(challenge.get("expires_at"))
+            or challenge["issued_at"] > challenge["expires_at"]
+            or challenge["expires_at"] < now
+            or challenge["repository_key"]
+            != hashlib.sha256(os.fsencode(checkout.common_dir)).hexdigest()
+            or challenge["checkout_key"]
+            != hashlib.sha256(os.fsencode(checkout.root)).hexdigest()
+            or not instance
+            or challenge["checkout_instance"] != instance
+        ):
+            return (
+                "Dirty-checkout adoption is blocked because the challenge no longer "
+                "matches this checkout. Request a fresh challenge and retry."
+            )
+        if challenge["session_key"] != session_key:
+            return (
+                "Dirty-checkout adoption requires the issuing agent session; a foreign "
+                "session cannot consume this challenge."
+            )
+        return ""
+
+    with acquire_lock(directory):
+        lease = load_lease(directory / "lease.json", checkout)
+    adoption = lease.get("adoption") if isinstance(lease, dict) else None
+    if (
+        not isinstance(lease, dict)
+        or lease.get("schema") != LEASE_V2_SCHEMA
+        or not isinstance(adoption, dict)
+        or adoption.get("receipt_id") != values["--receipt"]
+    ):
+        return (
+            "Dirty-checkout revocation is blocked because the receipt does not match "
+            "this checkout's adopted lease."
+        )
+    if lease["session_key"] != session_key:
+        return (
+            "Dirty-checkout revocation requires the owning agent session; a foreign "
+            "session cannot revoke this lease."
+        )
+    return ""
+
+
+def same_session_lease_is_admissible(
+    lease: Mapping[str, Any], now: float
+) -> bool:
+    return lease["schema"] != LEASE_V2_SCHEMA or float(lease["expires_at"]) > now
+
+
 def acquire_or_refresh(checkout: Checkout, session_key: str) -> str:
     instance = read_instance(checkout, create=True)
     directory = checkout_state_dir(checkout)
     lease_path = directory / "lease.json"
     with acquire_lock(directory):
-        lease = load_lease(lease_path)
+        lease = load_lease(lease_path, checkout)
         now = time.time()
         same_instance = bool(lease and lease["checkout_instance"] == instance)
-        if same_instance and lease and lease["session_key"] == session_key:
+        if (
+            same_instance
+            and lease
+            and lease["session_key"] == session_key
+            and same_session_lease_is_admissible(lease, now)
+        ):
             if renewal_due(lease, now):
                 write_lease(
                     lease_path,
@@ -1532,12 +2226,13 @@ def acquire_or_refresh(checkout: Checkout, session_key: str) -> str:
         raise LeaseError("checkout instance changed during lease admission")
 
     with acquire_lock(directory):
-        lease = load_lease(lease_path)
+        lease = load_lease(lease_path, checkout)
         now = time.time()
         if (
             lease
             and lease["checkout_instance"] == instance
             and lease["session_key"] == session_key
+            and same_session_lease_is_admissible(lease, now)
         ):
             if renewal_due(lease, now):
                 write_lease(
@@ -1577,17 +2272,274 @@ def prune_removed_checkout_leases(checkout: Checkout) -> int:
                 lease = load_lease(lease_path)
                 if lease is None:
                     continue
-                root_value = lease.get("checkout_root")
-                git_dir_value = lease.get("checkout_git_dir")
-                if not isinstance(root_value, str) or not isinstance(git_dir_value, str):
+                checkout_paths = lease_checkout_paths(lease)
+                if checkout_paths is None:
                     continue
-                if Path(root_value).exists() or Path(git_dir_value).exists():
+                root_path, git_dir_path = checkout_paths
+                if root_path.exists() or git_dir_path.exists():
                     continue
                 lease_path.unlink(missing_ok=True)
                 removed += 1
         except (LeaseError, OSError):
             continue
     return removed
+
+
+def dirty_adoption_enabled() -> bool:
+    return os.environ.get("AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION") == "1"
+
+
+def dirty_snapshot(checkout: Checkout) -> dict[str, Any] | None:
+    try:
+        completed = subprocess.run(
+            ["git-cli", "worktree", "dirty-snapshot", "--format=json"],
+            cwd=checkout.root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DIRTY_SNAPSHOT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        envelope = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    if (
+        not isinstance(envelope, dict)
+        or frozenset(envelope) != {"schema_version", "ok", "data"}
+        or envelope.get("schema_version")
+        != "cli.git-cli.worktree.dirty-snapshot.v1"
+        or envelope.get("ok") is not True
+        or not isinstance(envelope.get("data"), dict)
+    ):
+        return None
+    snapshot = envelope["data"]
+    if frozenset(snapshot) != SNAPSHOT_KEYS:
+        return None
+    head_oid = snapshot.get("head_oid")
+    head_valid = isinstance(head_oid, str) and (
+        re.fullmatch(r"[0-9a-f]{40,64}", head_oid) is not None
+        or re.fullmatch(r"unborn:[0-9a-f]{64}", head_oid) is not None
+    )
+    if (
+        snapshot.get("schema") != SNAPSHOT_SCHEMA
+        or not all(
+            lower_hex(snapshot.get(key), length)
+            for key, length in (
+                ("repository_key", 64),
+                ("checkout_key", 64),
+                ("checkout_instance", 32),
+                ("snapshot_id", 64),
+                ("branch_ref_digest", 64),
+            )
+        )
+        or not head_valid
+        or not all(
+            unsigned_integer(snapshot.get(key))
+            for key in ("tracked_entries", "untracked_entries", "hashed_bytes")
+        )
+        or snapshot["repository_key"]
+        != hashlib.sha256(os.fsencode(checkout.common_dir)).hexdigest()
+        or snapshot["checkout_key"]
+        != hashlib.sha256(os.fsencode(checkout.root)).hexdigest()
+    ):
+        return None
+    return snapshot
+
+
+def remove_same_session_challenges(
+    directory: Path, reason_directory: Path, session_key: str
+) -> None:
+    entries = list(directory.iterdir())
+    if len(entries) > MAX_CHALLENGE_FILES:
+        raise LeaseStatePathError("dirty-checkout challenge directory is over budget")
+    for path in entries:
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or re.fullmatch(r"[0-9a-f]{64}\.json", path.name) is None
+        ):
+            raise LeaseStatePathError(
+                "dirty-checkout challenge directory contains untrusted state"
+            )
+        raw = read_regular_file(path, max_bytes=MAX_LEASE_BYTES)
+        try:
+            record = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise LeaseStatePathError(
+                "dirty-checkout challenge state is malformed"
+            ) from exc
+        if isinstance(record, dict) and record.get("session_key") == session_key:
+            path.unlink()
+            (reason_directory / f"{path.stem}.txt").unlink(missing_ok=True)
+
+
+def write_private_reason_placeholder(directory: Path, token_digest: str) -> Path:
+    path = directory / f"{token_digest}.txt"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    directory_fd = -1
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+        directory_fd = os.open(
+            directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        os.fsync(directory_fd)
+    except OSError as exc:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise LeaseStatePathError(
+            f"dirty-checkout reason path creation failed: {exc}"
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if directory_fd >= 0:
+            os.close(directory_fd)
+    return path
+
+
+def write_private_challenge(
+    directory: Path, challenge: Mapping[str, Any], token_digest: str
+) -> None:
+    path = directory / f"{token_digest}.json"
+    payload = (
+        json.dumps(dict(challenge), sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        write_all(descriptor, payload)
+        os.fsync(descriptor)
+    except OSError as exc:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise LeaseStatePathError(
+            f"dirty-checkout challenge write failed: {exc}"
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def issue_dirty_checkout_challenge(payload: Mapping[str, Any]) -> int:
+    if not dirty_adoption_enabled():
+        return ALLOW
+    session_key = session_marker_key(payload)
+    prompt = payload.get("prompt")
+    if not session_key or not isinstance(prompt, str) or not prompt:
+        return ALLOW
+    try:
+        checkout = checkout_from(payload_base(payload))
+        if checkout is None:
+            return ALLOW
+        managed_state_root = state_root()
+        if path_is_within(managed_state_root, checkout.root):
+            return ALLOW
+        if not checkout_dirty(checkout) or git_operation(checkout):
+            return ALLOW
+
+        directory = checkout_state_dir(checkout, create=False)
+        if directory.exists() or directory.is_symlink():
+            if directory.is_symlink() or not directory.is_dir():
+                return ALLOW
+            with acquire_lock(directory):
+                lease = load_lease(directory / "lease.json", checkout)
+            instance = read_instance(checkout, create=False)
+            if (
+                lease is not None
+                and instance
+                and lease["checkout_instance"] == instance
+                and float(lease["expires_at"]) > time.time()
+            ):
+                return ALLOW
+
+        snapshot = dirty_snapshot(checkout)
+        if snapshot is None:
+            return ALLOW
+        if read_instance(checkout, create=False) != snapshot["checkout_instance"]:
+            return ALLOW
+
+        directory = checkout_state_dir(checkout)
+        challenge_directory = directory / "challenges"
+        reason_directory = directory / "reasons"
+        private_directory(challenge_directory)
+        private_directory(reason_directory)
+        token = secrets.token_hex(32)
+        token_digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+        issued_at = int(time.time())
+        challenge = {
+            "schema": CHALLENGE_SCHEMA,
+            "token_digest": token_digest,
+            "session_key": session_key,
+            "repository_key": snapshot["repository_key"],
+            "checkout_key": snapshot["checkout_key"],
+            "checkout_instance": snapshot["checkout_instance"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "head_oid": snapshot["head_oid"],
+            "branch_ref_digest": snapshot["branch_ref_digest"],
+            "authorization_turn_digest": hashlib.sha256(
+                prompt.encode("utf-8")
+            ).hexdigest(),
+            "issued_at": issued_at,
+            "expires_at": issued_at + CHALLENGE_TTL_SECONDS,
+        }
+        with acquire_lock(directory):
+            remove_same_session_challenges(
+                challenge_directory, reason_directory, session_key
+            )
+            reason_file = write_private_reason_placeholder(
+                reason_directory, token_digest
+            )
+            try:
+                write_private_challenge(
+                    challenge_directory, challenge, token_digest
+                )
+            except (LeaseError, OSError):
+                reason_file.unlink(missing_ok=True)
+                raise
+
+        context = (
+            "This checkout has unowned changes. Remain read-only for Q&A. Before "
+            "implementation, ask the user to choose explicit takeover of the exact "
+            "warned state or a managed worktree via `git-cli worktree add <slug>`. "
+            "After explicit authorization, write a concise reason outside the checkout "
+            f"and run `git-cli worktree adopt-dirty --challenge {token} "
+            f"--reason-file {shlex.quote(str(reason_file))}`. Keep the challenge out of provider evidence."
+        )
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": context,
+                    }
+                }
+            )
+            + "\n"
+        )
+    except (LeaseError, OSError, ValueError):
+        # Challenge issuance is advisory only. The mutation gate below remains
+        # fail-closed even when the released snapshot primitive is unavailable.
+        return ALLOW
+    return ALLOW
 
 
 def emit_system_message(message: str) -> None:
@@ -1621,16 +2573,18 @@ def release_clean_session_leases(
                 if float(lease["expires_at"]) > time.time():
                     foreign += 1
                 continue
-            root_value = lease.get("checkout_root")
-            git_dir_value = lease.get("checkout_git_dir")
-            if not isinstance(root_value, str) or not isinstance(git_dir_value, str):
+            checkout_paths = lease_checkout_paths(lease)
+            if checkout_paths is None:
                 retained += 1
                 continue
-            checkout = checkout_from(Path(root_value))
+            root_path, git_dir_path = checkout_paths
+            checkout = checkout_from(root_path)
+            if checkout is not None:
+                validate_lease_checkout(lease, checkout)
             if (
                 checkout is None
-                or checkout.root != Path(root_value).resolve(strict=False)
-                or checkout.git_dir != Path(git_dir_value).resolve(strict=False)
+                or checkout.root != root_path.resolve(strict=False)
+                or checkout.git_dir != git_dir_path.resolve(strict=False)
                 or checkout.common_dir != repository_checkout.common_dir
                 or read_instance(checkout, create=False)
                 != lease["checkout_instance"]
@@ -1641,7 +2595,7 @@ def release_clean_session_leases(
                 retained += 1
                 continue
             with acquire_lock(directory):
-                current = load_lease(lease_path)
+                current = load_lease(lease_path, checkout)
                 if (
                     current
                     and current["checkout_instance"] == lease["checkout_instance"]
@@ -1688,16 +2642,24 @@ def stop_audit(payload: Mapping[str, Any]) -> int:
 
 def main() -> int:
     payload = read_payload()
-    if hook_event(payload) == "Stop":
+    event = hook_event(payload)
+    if event == "Stop":
         return stop_audit(payload)
+    if event == "UserPromptSubmit":
+        return issue_dirty_checkout_challenge(payload)
 
     tool = tool_name(payload)
     if tool not in EDIT_TOOLS | COMMAND_TOOLS:
         return ALLOW
+    governed_transition: tuple[str, dict[str, str]] | None = None
+    checkout_safe_ref = False
     if tool in COMMAND_TOOLS:
         command = command_from(payload)
-        if not high_confidence_shell_mutation(command, payload_base(payload)):
+        base = payload_base(payload)
+        if not high_confidence_shell_mutation(command, base):
             return ALLOW
+        governed_transition = sole_governed_dirty_transition(command, base)
+        checkout_safe_ref = sole_checkout_safe_ref_operation(command, base)
         # `git-cli worktree add` creates a new checkout and is the sanctioned
         # escape the guard recommends; never let the admission gate block its own
         # remediation. Restricted to a sole add with no co-resident repository
@@ -1736,6 +2698,28 @@ def main() -> int:
                 "blocked before claiming either checkout. Split the edit by checkout."
             )
             return ALLOW
+        if governed_transition:
+            if len(checkouts) != 1:
+                emit_block(
+                    "Dirty-checkout transition target could not be bound to one checkout."
+                )
+                return ALLOW
+            reason = governed_dirty_transition_admission(
+                checkouts[0], session_key, governed_transition
+            )
+            if reason:
+                emit_block(reason)
+            return ALLOW
+        if checkout_safe_ref and checkouts:
+            handled_all = True
+            for checkout in checkouts:
+                handled, reason = checkout_safe_ref_admission(checkout, session_key)
+                handled_all = handled_all and handled
+                if reason:
+                    emit_block(reason)
+                    return ALLOW
+            if handled_all:
+                return ALLOW
         for checkout in checkouts:
             reason = acquire_or_refresh(checkout, session_key)
             if reason:

@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.24.0"
+  pinned_tag: "v1.24.1"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "d2a17a885716ca6984be23e3acf1b4b63c1f090a5211c883b63192694d0526ad"
-    linux_arm64: "3809f11aef516d3cbdff541bb77c941c18e8f9e06756685026424595e7979676"
+    linux_amd64: "faf1c157806e4f8856adeb790b308733dc3321136a5d1d329a081698f19f88b0"
+    linux_arm64: "623dfb9c308b8984a18558d69080262c41e2b2d8648cecb1df777624f7eb5740"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -54,8 +54,8 @@ required_clis:
     min: "1.21.21"
   - bin: evidence         # durable usage evidence archive surface: migrate (--host + blocked-record handling), mixed skill-usage v1/v2 owner provenance, unclassified-host block, working_repo_roots identity rescue, cwd/origin + slug identity hardening, purge retention, home-relativized skill paths, and prune-source --archived-only
     min: "1.21.17"
-  - bin: git-cli          # managed worktree add/list/remove/prune surface
-    min: "0.31.5"
+  - bin: git-cli          # managed worktree add/list/remove/prune surface + governed dirty-checkout snapshot/adopt/revoke transactions
+    min: "1.24.1"
   - bin: heuristic-inbox  # deliver + --label: records-branch PR writeback + default slug auto-suffixing + operation-record lifecycle + normalized skill/workflow/intent usage owners for closeout promotion
     min: "1.21.17"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos

@@ -146,6 +146,44 @@ lease state for physically removed worktrees while retaining the stable
 per-checkout lock inode; dirty or mismatched ownership is retained and reported.
 Stop never removes a worktree, branch, commit, or dirty file.
 
+Dirty-checkout adoption is an opt-in advisory layered over that unconditional
+mutation gate. With `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` set to `1`, a dirty
+`UserPromptSubmit` may use released `git-cli worktree dirty-snapshot` to issue a
+mode-0600, one-time, five-minute bearer challenge bound to the exact repository,
+checkout instance, session digest, authorization-turn digest, HEAD/branch state,
+and content snapshot. The private context keeps Q&A read-only and asks the agent
+to obtain explicit takeover authorization or use `git-cli worktree add`; it does
+not parse natural-language authorization or adopt automatically. Snapshot failure,
+unsupported state, malformed output, an active Git operation, or existing lease
+makes the advisory silent while later file/index mutation continues to fail
+closed.
+
+After exact authorization, the PreToolUse gate admits the transition only through
+the resolved managed `git-cli` executable and only when the private challenge or
+adopted receipt belongs to the current agent session. Released `git-cli worktree
+adopt-dirty` then rechecks and consumes the challenge under the lease lock, and
+publishes one privacy-safe receipt and an adopted lease-v2 record in the same
+transaction. The strict embedded lease-v2 adoption block is the guard's
+authoritative provenance input; it preserves receipt ID/schema, snapshot ID,
+authorization-turn and reason digests, adoption time, and challenge issue time
+across same-session refresh. `git-cli worktree revoke-dirty` removes only
+matching receipt-bound ownership and never changes checkout content. Challenge
+records, adoption-provenance fields, and provider-visible evidence exclude raw
+prompts, bearer values, reason text, filenames, paths, diffs, and file contents,
+and require this one-time value to remain private.
+
+A separate dirty-checkout exception admits only one recognized ref-only operation
+through the resolved `git` executable: selected branch delete/move/copy forms, or
+tag deletion and lightweight/forced tag creation with explicit `--no-sign`. It
+mints no lease, requires a valid session and safe checkout state, and remains
+blocked by live foreign ownership, stale/unowned lease state, Git operations,
+an executable `reference-transaction` hook, or an off-default primary checkout.
+Redirects, dynamic arguments, command-local Git/executable retargeting, compound
+mutations, and every co-resident working-tree/index write are rejected. File and
+index protection remains unconditional for staged, unstaged, and untracked-only
+dirt. Codex and Claude register the shared guard on `UserPromptSubmit`; Hermes
+has no runtime-kit hook runner and does not support this enforcement.
+
 `block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
 It resolves the selected remote's default branch and blocks live raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,

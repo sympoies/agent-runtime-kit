@@ -12,6 +12,11 @@
         },
         {
           "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/checkout-lease-guard.py\"",
+          "statusMessage": "agent-runtime-kit: Offer governed dirty checkout adoption"
+        },
+        {
+          "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/skill-usage-reminder.py\"",
           "statusMessage": "agent-runtime-kit: Remind skill-usage recording"
         }

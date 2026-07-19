@@ -283,6 +283,12 @@ entries:
 
       [[hooks.UserPromptSubmit.hooks]]
       type = "command"
+      command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/checkout-lease-guard.py\""
+      timeout = 45
+      statusMessage = "agent-runtime-kit: Offer governed dirty checkout adoption"
+
+      [[hooks.UserPromptSubmit.hooks]]
+      type = "command"
       command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/user-prompt-agent-memory.sh\""
       timeout = 10
       statusMessage = "agent-runtime-kit: Load shared agent memory"

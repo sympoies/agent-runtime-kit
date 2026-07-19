@@ -16,10 +16,14 @@ import tomllib
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK_DIR = REPO_ROOT / "core" / "hooks" / "shared"
+DIRTY_ADOPTION_FIXTURE_DIR = (
+    REPO_ROOT / "tests" / "hooks" / "fixtures" / "dirty-checkout-adoption"
+)
 TEST_RUNTIME_STATE = tempfile.TemporaryDirectory(
     prefix="agent-runtime-kit-hook-state-"
 )
@@ -10562,7 +10566,7 @@ exit 65
         )
         self.assertNotIn("pre-edit-intent-gate.py", hermes_sources)
 
-    def test_checkout_lease_guard_is_wired_for_mutation_and_stop(self) -> None:
+    def test_checkout_lease_guard_is_wired_for_prompt_mutation_and_stop(self) -> None:
         codex_hooks = tomllib.loads(
             (
                 REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml"
@@ -10571,6 +10575,16 @@ exit 65
         claude_hooks = load_claude_hook_fragment()["hooks"]
 
         for product, hooks in (("codex", codex_hooks), ("claude", claude_hooks)):
+            prompt_hooks = [
+                hook
+                for group in hooks["UserPromptSubmit"]
+                for hook in group["hooks"]
+                if "checkout-lease-guard.py" in hook["command"]
+            ]
+            self.assertEqual(len(prompt_hooks), 1, product)
+            if product == "codex":
+                self.assertGreater(prompt_hooks[0]["timeout"], 35)
+
             pre_tool_groups = hooks["PreToolUse"]
             mutation_matchers = {
                 group["matcher"]
@@ -10676,6 +10690,991 @@ exit 65
     @staticmethod
     def _checkout_lease_files(state: Path) -> list[Path]:
         return list((state / "checkout-leases").rglob("lease.json"))
+
+    @staticmethod
+    def _write_adopted_checkout_lease_v2(
+        lease_file: Path,
+        *,
+        expires_offset: int = 60,
+        session_key: str | None = None,
+    ) -> dict[str, Any]:
+        v1 = json.loads(lease_file.read_text(encoding="utf-8"))
+        lease = json.loads(
+            (
+                DIRTY_ADOPTION_FIXTURE_DIR / "checkout-lease-v2.json"
+            ).read_text(encoding="utf-8")
+        )
+        now = int(time.time())
+        expires_at = now + expires_offset
+        refreshed_at = min(now, expires_at)
+        adopted_at = refreshed_at
+        root_bytes = os.fsencode(v1["checkout_root"])
+        git_dir_bytes = os.fsencode(v1["checkout_git_dir"])
+        lease.update(
+            {
+                "session_key": session_key or v1["session_key"],
+                "checkout_instance": v1["checkout_instance"],
+                "checkout_root": root_bytes.decode("utf-8", errors="replace"),
+                "checkout_git_dir": git_dir_bytes.decode(
+                    "utf-8", errors="replace"
+                ),
+                "checkout_root_bytes": root_bytes.hex(),
+                "checkout_git_dir_bytes": git_dir_bytes.hex(),
+                "acquired_at": min(int(v1["acquired_at"]), adopted_at),
+                "refreshed_at": refreshed_at,
+                "expires_at": expires_at,
+            }
+        )
+        lease["adoption"].update(
+            {
+                "adopted_at": adopted_at,
+                "challenge_issued_at": adopted_at,
+            }
+        )
+        lease_file.write_text(
+            json.dumps(lease, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        return lease
+
+    @staticmethod
+    def _dirty_adoption_command_argv(advisory: dict[str, object]) -> list[str]:
+        hook_output = advisory.get("hookSpecificOutput")
+        if not isinstance(hook_output, dict):
+            raise AssertionError("dirty adoption advisory omitted hook output")
+        context = hook_output.get("additionalContext")
+        if not isinstance(context, str):
+            raise AssertionError("dirty adoption advisory omitted context")
+        match = re.search(
+            r"`(git-cli worktree adopt-dirty --challenge [^`]*)`", context
+        )
+        if match is None:
+            raise AssertionError("dirty adoption advisory omitted adopt command")
+        return shlex.split(match.group(1))
+
+    @staticmethod
+    def _invalid_utf8_checkout_path(root: Path, name: bytes = b"repo-\xff") -> Path:
+        return Path(os.fsdecode(os.fsencode(root) + os.fsencode(os.sep) + name))
+
+    @staticmethod
+    def _released_v2_fixture_for_paths(
+        checkout_root: Path,
+        checkout_git_dir: Path,
+        *,
+        session_key: str = "2" * 64,
+        checkout_instance: str = "c" * 32,
+    ) -> dict[str, Any]:
+        lease = json.loads(
+            (
+                DIRTY_ADOPTION_FIXTURE_DIR / "checkout-lease-v2.json"
+            ).read_text(encoding="utf-8")
+        )
+        now = int(time.time())
+        root_bytes = os.fsencode(checkout_root)
+        git_dir_bytes = os.fsencode(checkout_git_dir)
+        lease.update(
+            {
+                "session_key": session_key,
+                "checkout_instance": checkout_instance,
+                "checkout_root": root_bytes.decode("utf-8", errors="replace"),
+                "checkout_git_dir": git_dir_bytes.decode(
+                    "utf-8", errors="replace"
+                ),
+                "checkout_root_bytes": root_bytes.hex(),
+                "checkout_git_dir_bytes": git_dir_bytes.hex(),
+                "acquired_at": now,
+                "refreshed_at": now,
+                "expires_at": now + 60,
+            }
+        )
+        lease["adoption"].update(
+            {"adopted_at": now, "challenge_issued_at": now}
+        )
+        return lease
+
+    def test_checkout_lease_parser_accepts_released_v2_fixture(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_fixture_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            fixture = DIRTY_ADOPTION_FIXTURE_DIR / "checkout-lease-v2.json"
+            lease = module.load_lease(fixture)
+            self.assertIsNotNone(lease)
+            assert lease is not None
+            self.assertEqual(lease["schema"], module.LEASE_V2_SCHEMA)
+            self.assertEqual(frozenset(lease), module.LEASE_V2_KEYS)
+            self.assertEqual(
+                frozenset(lease["adoption"]), module.ADOPTION_KEYS
+            )
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_dirty_checkout_adoption_flag_off_is_silent_and_preserves_guard(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "flag-off-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "inspect this checkout",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(advisory)
+            self.assertFalse(state.exists())
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "flag-off-session", repo / "README.md"
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "unowned changes")
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_dirty_checkout_adoption_flag_on_emits_one_private_challenge(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            private_name = "customer-alpine-secret.txt"
+            private_content = "PRIVATE-CONTENT-summit-7421"
+            private_prompt = "PRIVATE-PROMPT-river-9853"
+            (repo / private_name).write_text(private_content, encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "advisory-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": private_prompt,
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            self.assertNotIn("decision", advisory)
+            hook_output = advisory.get("hookSpecificOutput")
+            self.assertIsInstance(hook_output, dict)
+            assert isinstance(hook_output, dict)
+            self.assertEqual(
+                hook_output.get("hookEventName"), "UserPromptSubmit"
+            )
+            context = str(hook_output.get("additionalContext", ""))
+            self.assertIn("read-only", context.lower())
+            self.assertRegex(
+                context,
+                r"git-cli worktree adopt-dirty --challenge \S+ --reason-file \S+",
+            )
+            self.assertNotIn("<token>", context)
+            self.assertIn("git-cli worktree add", context)
+
+            rendered_advisory = json.dumps(advisory, sort_keys=True)
+            for private_value in (
+                private_prompt,
+                private_name,
+                private_content,
+                str(repo),
+            ):
+                self.assertNotIn(private_value, rendered_advisory)
+
+            challenge_files = [
+                path
+                for path in state.rglob("*.json")
+                if path.is_file()
+            ]
+            self.assertEqual(len(challenge_files), 1)
+            challenge_file = challenge_files[0]
+            self.assertEqual(challenge_file.stat().st_mode & 0o777, 0o600)
+            challenge_state = challenge_file.read_text(encoding="utf-8")
+            challenge = json.loads(challenge_state)
+            self.assertEqual(
+                challenge["authorization_turn_digest"],
+                hashlib.sha256(private_prompt.encode("utf-8")).hexdigest(),
+            )
+            reason_file = Path(self._dirty_adoption_command_argv(advisory)[6])
+            self.assertTrue(reason_file.is_file())
+            self.assertEqual(reason_file.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(reason_file.read_text(encoding="utf-8"), "")
+            for private_value in (
+                private_prompt,
+                private_name,
+                private_content,
+                str(repo),
+            ):
+                self.assertNotIn(private_value, challenge_state)
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_dirty_checkout_adoption_quotes_private_reason_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state home"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "quoted-reason-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "authorize nothing yet",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            argv = self._dirty_adoption_command_argv(advisory)
+            self.assertEqual(len(argv), 7)
+            self.assertEqual(
+                argv[:4], ["git-cli", "worktree", "adopt-dirty", "--challenge"]
+            )
+            self.assertEqual(argv[5], "--reason-file")
+            reason_file = Path(argv[6])
+            self.assertTrue(reason_file.is_file())
+            self.assertEqual(reason_file.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(reason_file.parent.stat().st_mode & 0o777, 0o700)
+            self.assertFalse(
+                reason_file.resolve(strict=False).is_relative_to(repo.resolve())
+            )
+
+    def test_dirty_checkout_adoption_reason_path_is_challenge_specific(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            reason_paths: list[Path] = []
+
+            for prompt in ("first authorization turn", "second authorization turn"):
+                code, advisory, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    {
+                        "session_id": "unique-reason-session",
+                        "hook_event_name": "UserPromptSubmit",
+                        "prompt": prompt,
+                    },
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNotNone(advisory)
+                assert advisory is not None
+                argv = self._dirty_adoption_command_argv(advisory)
+                self.assertEqual(len(argv), 7)
+                reason_paths.append(Path(argv[6]))
+
+            self.assertNotEqual(reason_paths[0], reason_paths[1])
+            self.assertFalse(reason_paths[0].exists())
+            self.assertTrue(reason_paths[1].is_file())
+
+    def test_dirty_checkout_adoption_is_silent_when_state_is_inside_checkout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            state = repo / ".runtime-state"
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "inside-state-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "inspect only",
+                },
+                cwd=repo,
+                env={
+                    "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                    "AGENT_RUNTIME_STATE_HOME": str(state),
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(advisory)
+            self.assertFalse(state.exists())
+
+    def test_dirty_checkout_adoption_is_silent_for_matching_live_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "existing-owner", repo / "README.md"
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lease_files = self._checkout_lease_files(state)
+            self.assertEqual(len(lease_files), 1)
+            before = lease_files[0].read_bytes()
+            (repo / "owned.txt").write_text("owned\n", encoding="utf-8")
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "existing-owner",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "continue owned changes",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(advisory)
+            self.assertEqual(lease_files[0].read_bytes(), before)
+            self.assertEqual(list(state.rglob("challenges/*.json")), [])
+
+    def test_dirty_checkout_adoption_ignores_live_lease_from_stale_instance(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            owner = self._checkout_lease_payload(
+                "obsolete-owner", repo / "README.md"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            stale_lease = json.loads(
+                self._checkout_lease_files(state)[0].read_text(encoding="utf-8")
+            )
+            replacement_instance = "f" * 32
+            self.assertNotEqual(
+                stale_lease["checkout_instance"], replacement_instance
+            )
+            (repo / ".git" / ".agent-runtime-checkout-instance").write_text(
+                replacement_instance + "\n", encoding="ascii"
+            )
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "new-checkout-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "inspect recreated checkout",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            argv = self._dirty_adoption_command_argv(advisory)
+            self.assertEqual(len(argv), 7)
+
+    def test_dirty_checkout_transition_requires_issuing_session_and_trusted_cli(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            fake_bin = root / "shadow" / "git-cli"
+            fake_bin.parent.mkdir()
+            fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_bin.chmod(0o755)
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "issuing-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "authorize this exact state",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            argv = self._dirty_adoption_command_argv(advisory)
+            command = shlex.join(argv)
+
+            for session_id, candidate, fragment in (
+                ("issuing-session", command, None),
+                ("foreign-session", command, "issuing agent session"),
+                (
+                    "issuing-session",
+                    shlex.join([str(fake_bin), *argv[1:]]),
+                    "unowned changes",
+                ),
+            ):
+                with self.subTest(session_id=session_id, command=candidate):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            session_id,
+                            repo,
+                            tool_name="Bash",
+                            command=candidate,
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if fragment is None:
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, fragment)
+
+            redirected = f"{command} 2>/dev/null"
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "issuing-session",
+                    repo,
+                    tool_name="Bash",
+                    command=redirected,
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_released_git_cli_dirty_adoption_lifecycle(self) -> None:
+        git_cli = shutil.which("git-cli")
+        self.assertIsNotNone(git_cli, "released git-cli is required")
+        assert git_cli is not None
+        version = subprocess.run(
+            [git_cli, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(version.returncode, 0, version.stderr)
+        self.assertRegex(version.stdout, r"\b1\.24\.1\b")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            dirty_file = repo / "unowned.txt"
+            dirty_file.write_text("exact warned state\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+                "AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS": "60",
+            }
+
+            code, advisory, stderr = run_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "released-lifecycle-owner",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "take over this exact dirty state",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            adopt_argv = self._dirty_adoption_command_argv(advisory)
+            token = adopt_argv[4]
+            reason_file = Path(adopt_argv[6])
+            reason = "Continue the user-authorized dirty checkout work.\n"
+            reason_file.write_text(reason, encoding="utf-8")
+
+            adopt_command = shlex.join([*adopt_argv, "--format=json"])
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "released-lifecycle-owner",
+                    repo,
+                    tool_name="Bash",
+                    command=adopt_command,
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            cli_env = dict(os.environ)
+            cli_env.update(env)
+            adopted_result = subprocess.run(
+                [*adopt_argv, "--format=json"],
+                cwd=repo,
+                env=cli_env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                adopted_result.returncode,
+                0,
+                adopted_result.stdout + adopted_result.stderr,
+            )
+            self.assertEqual(adopted_result.stderr, "")
+            adopted_envelope = json.loads(adopted_result.stdout)
+            self.assertEqual(
+                frozenset(adopted_envelope), {"schema_version", "ok", "data"}
+            )
+            self.assertEqual(
+                adopted_envelope["schema_version"],
+                "cli.git-cli.worktree.adopt-dirty.v1",
+            )
+            self.assertIs(adopted_envelope["ok"], True)
+            self.assertEqual(
+                frozenset(adopted_envelope["data"]),
+                {"receipt_id", "snapshot_id"},
+            )
+            receipt_id = adopted_envelope["data"]["receipt_id"]
+            self.assertRegex(receipt_id, r"^[0-9a-f]{64}$")
+            for private_value in (token, reason, str(reason_file), str(repo)):
+                self.assertNotIn(
+                    private_value,
+                    adopted_result.stdout + adopted_result.stderr,
+                )
+
+            lease_file = self._checkout_lease_files(state)[0]
+            adopted_lease = json.loads(lease_file.read_text(encoding="utf-8"))
+            self.assertEqual(
+                adopted_lease["schema"], "agent-runtime.checkout-lease.v2"
+            )
+            adoption_provenance = adopted_lease["adoption"]
+            acquired_at = adopted_lease["acquired_at"]
+            adopted_lease["expires_at"] = int(time.time()) + 10
+            lease_file.write_text(
+                json.dumps(adopted_lease, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            owner = self._checkout_lease_payload(
+                "released-lifecycle-owner", repo / "README.md"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            refreshed = json.loads(lease_file.read_text(encoding="utf-8"))
+            self.assertEqual(refreshed["adoption"], adoption_provenance)
+            self.assertEqual(refreshed["acquired_at"], acquired_at)
+            self.assertEqual(
+                refreshed["checkout_root_bytes"],
+                adopted_lease["checkout_root_bytes"],
+            )
+            self.assertEqual(
+                refreshed["checkout_git_dir_bytes"],
+                adopted_lease["checkout_git_dir_bytes"],
+            )
+            self.assertGreater(
+                refreshed["expires_at"], adopted_lease["expires_at"]
+            )
+
+            revoke_command = (
+                "git-cli worktree revoke-dirty "
+                f"--receipt {receipt_id} --format=json"
+            )
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "foreign-lifecycle-session",
+                    repo,
+                    tool_name="Bash",
+                    command=revoke_command,
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "owning agent session")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "released-lifecycle-owner",
+                    repo,
+                    tool_name="Bash",
+                    command=revoke_command,
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            revoke_env = dict(cli_env)
+            revoke_env["AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION"] = ""
+            revoked_result = subprocess.run(
+                [
+                    git_cli,
+                    "worktree",
+                    "revoke-dirty",
+                    "--receipt",
+                    receipt_id,
+                    "--format=json",
+                ],
+                cwd=repo,
+                env=revoke_env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                revoked_result.returncode, 0, revoked_result.stderr
+            )
+            self.assertEqual(revoked_result.stderr, "")
+            revoked_envelope = json.loads(revoked_result.stdout)
+            self.assertEqual(
+                frozenset(revoked_envelope), {"schema_version", "ok", "data"}
+            )
+            self.assertEqual(
+                revoked_envelope["schema_version"],
+                "cli.git-cli.worktree.revoke-dirty.v1",
+            )
+            self.assertIs(revoked_envelope["ok"], True)
+            self.assertEqual(
+                revoked_envelope["data"],
+                {"receipt_id": receipt_id, "revoked": True},
+            )
+            self.assertEqual(self._checkout_lease_files(state), [])
+            self.assertEqual(
+                dirty_file.read_text(encoding="utf-8"), "exact warned state\n"
+            )
+
+            blocked_env = dict(env)
+            blocked_env["AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION"] = ""
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=blocked_env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "unowned changes")
+
+    def test_released_git_cli_rejects_unusable_dirty_challenges(self) -> None:
+        git_cli = shutil.which("git-cli")
+        self.assertIsNotNone(git_cli, "released git-cli is required")
+        assert git_cli is not None
+
+        for case in (
+            "stale-instance",
+            "snapshot-changed",
+            "expired",
+            "malformed",
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                state = root / "state"
+                self._init_checkout_lease_repo(repo)
+                (repo / "unowned.txt").write_text("warned\n", encoding="utf-8")
+                env = {
+                    "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                    "AGENT_RUNTIME_STATE_HOME": str(state),
+                }
+                code, advisory, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    {
+                        "session_id": f"negative-{case}",
+                        "hook_event_name": "UserPromptSubmit",
+                        "prompt": f"inspect {case}",
+                    },
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNotNone(advisory)
+                assert advisory is not None
+                adopt_argv = self._dirty_adoption_command_argv(advisory)
+                token = adopt_argv[4]
+                reason_file = Path(adopt_argv[6])
+                reason = f"Attempt rejected {case}.\n"
+                reason_file.write_text(reason, encoding="utf-8")
+                challenge_file = next(state.rglob("challenges/*.json"))
+
+                if case == "stale-instance":
+                    (
+                        repo / ".git" / ".agent-runtime-checkout-instance"
+                    ).write_text("f" * 32 + "\n", encoding="ascii")
+                elif case == "snapshot-changed":
+                    (repo / "changed-after-warning.txt").write_text(
+                        "changed\n", encoding="utf-8"
+                    )
+                elif case == "expired":
+                    challenge = json.loads(
+                        challenge_file.read_text(encoding="utf-8")
+                    )
+                    challenge["issued_at"] = int(time.time()) - 600
+                    challenge["expires_at"] = int(time.time()) - 1
+                    challenge_file.write_text(
+                        json.dumps(challenge, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    challenge_file.write_text("{malformed\n", encoding="utf-8")
+
+                cli_env = dict(os.environ)
+                cli_env.update(env)
+                rejected = subprocess.run(
+                    [*adopt_argv, "--format=json"],
+                    cwd=repo,
+                    env=cli_env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                error_envelope = json.loads(rejected.stdout)
+                self.assertIs(error_envelope["ok"], False)
+                self.assertTrue(challenge_file.exists())
+                self.assertEqual(self._checkout_lease_files(state), [])
+                for private_value in (token, reason, str(reason_file), str(repo)):
+                    self.assertNotIn(
+                        private_value, rejected.stdout + rejected.stderr
+                    )
+
+    def test_checkout_lease_classifies_only_governed_dirty_transition_shapes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            reason_file = root / "adoption-reason.txt"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            reason_file.write_text("Adopt the exact warned state.\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            valid_adopt = (
+                "git-cli worktree adopt-dirty --challenge challenge-opaque-7 "
+                f"--reason-file {shlex.quote(str(reason_file))}"
+            )
+            valid_revoke = (
+                "git-cli worktree revoke-dirty --receipt receipt-opaque-7"
+            )
+
+            for command in ("git-cli worktree dirty-snapshot",):
+                with self.subTest(admitted=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "transition-session",
+                            repo,
+                            tool_name="Bash",
+                            command=command,
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command in (
+                valid_adopt,
+                valid_revoke,
+                "git-cli worktree adopt-dirty --challenge challenge-opaque-7",
+                "git-cli worktree adopt-dirty "
+                f"--reason-file {shlex.quote(str(reason_file))}",
+                "git-cli worktree revoke-dirty",
+                "git-cli worktree revoke-dirty --receipt receipt-opaque-7 "
+                f"--reason-file {shlex.quote(str(reason_file))}",
+                f"{valid_adopt} && touch README.md",
+                f"{valid_revoke} && touch README.md",
+            ):
+                with self.subTest(rejected=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "transition-session",
+                            repo,
+                            tool_name="Bash",
+                            command=command,
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "unowned changes")
+
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_checkout_lease_v2_adoption_allows_current_session_and_preserves_refresh(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+                "AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS": "60",
+            }
+            owner = self._checkout_lease_payload(
+                "adoption-owner", repo / "README.md"
+            )
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lease_file = self._checkout_lease_files(state)[0]
+            adopted = self._write_adopted_checkout_lease_v2(
+                lease_file, expires_offset=10
+            )
+            adoption_provenance = adopted["adoption"]
+            acquired_at = adopted["acquired_at"]
+            (repo / "untracked-adopted.txt").write_text(
+                "preserved by adoption\n", encoding="utf-8"
+            )
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", owner, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            refreshed = json.loads(lease_file.read_text(encoding="utf-8"))
+            self.assertEqual(refreshed["schema"], "agent-runtime.checkout-lease.v2")
+            self.assertEqual(refreshed["adoption"], adoption_provenance)
+            self.assertEqual(refreshed["acquired_at"], acquired_at)
+            self.assertEqual(
+                refreshed["checkout_root_bytes"], adopted["checkout_root_bytes"]
+            )
+            self.assertEqual(
+                refreshed["checkout_git_dir_bytes"],
+                adopted["checkout_git_dir_bytes"],
+            )
+            self.assertGreater(refreshed["expires_at"], adopted["expires_at"])
+
+    def test_checkout_lease_v2_rejects_expired_foreign_and_malformed_adoptions(
+        self,
+    ) -> None:
+        cases = (
+            ("expired", -1, None, "unowned changes"),
+            ("foreign", 60, "f" * 64, "another agent session"),
+            ("malformed-path", 60, None, "state path"),
+            ("unknown-field", 60, None, "state path"),
+            ("unknown-adoption-field", 60, None, "state path"),
+            ("boolean-timestamp", 60, None, "state path"),
+            ("oversized-timestamp", 60, None, "state path"),
+            ("unordered-adoption", 60, None, "state path"),
+            ("uppercase-digest", 60, None, "state path"),
+        )
+        for case, expires_offset, session_key, fragment in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                state = root / "state"
+                self._init_checkout_lease_repo(repo)
+                env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+                owner = self._checkout_lease_payload(
+                    "adoption-owner", repo / "README.md"
+                )
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py", owner, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                lease_file = self._checkout_lease_files(state)[0]
+                adopted = self._write_adopted_checkout_lease_v2(
+                    lease_file,
+                    expires_offset=expires_offset,
+                    session_key=session_key,
+                )
+                if case == "malformed-path":
+                    adopted["checkout_root_bytes"] = "00"
+                elif case == "unknown-field":
+                    adopted["unexpected"] = "not permitted"
+                elif case == "unknown-adoption-field":
+                    adopted["adoption"]["unexpected"] = "not permitted"
+                elif case == "boolean-timestamp":
+                    adopted["refreshed_at"] = True
+                elif case == "oversized-timestamp":
+                    adopted["expires_at"] = 2**64
+                elif case == "unordered-adoption":
+                    adopted["adoption"]["challenge_issued_at"] = (
+                        adopted["adoption"]["adopted_at"] + 1
+                    )
+                elif case == "uppercase-digest":
+                    adopted["adoption"]["reason_digest"] = "A" * 64
+                lease_file.write_text(
+                    json.dumps(adopted, sort_keys=True) + "\n", encoding="utf-8"
+                )
+                (repo / "untracked-adopted.txt").write_text(
+                    "untracked only\n", encoding="utf-8"
+                )
+
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py", owner, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
 
     def test_default_delivery_hook_blocks_default_branch_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -12701,6 +13700,160 @@ exit 65
             self.assertIn("released", str(audit.get("systemMessage", "")))
             self.assertFalse(lease_files[0].exists())
 
+    def test_checkout_lease_admits_real_native_non_utf8_checkout_path(self) -> None:
+        if sys.platform == "win32":
+            self.skipTest("native non-UTF-8 path bytes require a POSIX filesystem")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = self._invalid_utf8_checkout_path(root)
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "native-path-owner", repo / "README.md"
+                ),
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            lease_files = self._checkout_lease_files(state)
+            self.assertEqual(len(lease_files), 1)
+            lease = json.loads(lease_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(
+                os.fsencode(lease["checkout_root"]), os.fsencode(repo)
+            )
+
+    def test_checkout_lease_stop_uses_v2_native_paths_to_release(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_native_release_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                state = root / "state"
+                common_dir = root / "common"
+                common_dir.mkdir()
+                native_root = self._invalid_utf8_checkout_path(root)
+                native_git_dir = native_root / ".git"
+                native_git_dir.mkdir(parents=True)
+                repository_checkout = module.Checkout(
+                    root=root / "repository",
+                    git_dir=common_dir,
+                    common_dir=common_dir,
+                    primary=True,
+                )
+                session_key = "2" * 64
+                instance = "c" * 32
+                lease = self._released_v2_fixture_for_paths(
+                    native_root,
+                    native_git_dir,
+                    session_key=session_key,
+                    checkout_instance=instance,
+                )
+                native_checkout = module.Checkout(
+                    root=native_root,
+                    git_dir=native_git_dir,
+                    common_dir=common_dir,
+                    primary=False,
+                )
+
+                with mock.patch.dict(
+                    os.environ,
+                    {"AGENT_RUNTIME_CHECKOUT_LEASE_STATE_HOME": str(state)},
+                ):
+                    repository_dir = module.repository_state_dir(
+                        repository_checkout
+                    )
+                    lease_directory = repository_dir / hashlib.sha256(
+                        os.fsencode(native_root)
+                    ).hexdigest()
+                    module.private_directory(lease_directory)
+                    lease_file = lease_directory / "lease.json"
+                    module.write_lease(lease_file, lease)
+
+                    module.checkout_from = lambda path: (
+                        native_checkout
+                        if os.fsencode(path) == os.fsencode(native_root)
+                        else None
+                    )
+                    module.read_instance = lambda *_args, **_kwargs: instance
+                    module.git_operation = lambda _checkout: ""
+                    module.checkout_dirty = lambda _checkout: False
+
+                    self.assertEqual(
+                        module.release_clean_session_leases(
+                            repository_checkout, session_key
+                        ),
+                        (1, 0, 0),
+                    )
+                    self.assertFalse(lease_file.exists())
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_stop_uses_v2_native_paths_before_pruning(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_native_prune_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                state = root / "state"
+                common_dir = root / "common"
+                common_dir.mkdir()
+                native_root = self._invalid_utf8_checkout_path(root)
+                native_git_dir = native_root / ".git"
+                native_git_dir.mkdir(parents=True)
+                repository_checkout = module.Checkout(
+                    root=root / "repository",
+                    git_dir=common_dir,
+                    common_dir=common_dir,
+                    primary=True,
+                )
+                lease = self._released_v2_fixture_for_paths(
+                    native_root, native_git_dir
+                )
+
+                with mock.patch.dict(
+                    os.environ,
+                    {"AGENT_RUNTIME_CHECKOUT_LEASE_STATE_HOME": str(state)},
+                ):
+                    repository_dir = module.repository_state_dir(
+                        repository_checkout
+                    )
+                    lease_directory = repository_dir / hashlib.sha256(
+                        os.fsencode(native_root)
+                    ).hexdigest()
+                    module.private_directory(lease_directory)
+                    lease_file = lease_directory / "lease.json"
+                    module.write_lease(lease_file, lease)
+
+                    self.assertEqual(
+                        module.prune_removed_checkout_leases(repository_checkout),
+                        0,
+                    )
+                    self.assertTrue(lease_file.exists())
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_checkout_lease_stop_retains_dirty_owner_and_prunes_removed_worktree(
         self,
     ) -> None:
@@ -13051,6 +14204,54 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+    def test_checkout_lease_semantic_commit_rejects_relative_repo_after_cwd_change(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base_repo = root / "base"
+            static_target = base_repo / "target"
+            effective_target = root / "target"
+            state = root / "state"
+            self._init_checkout_lease_repo(base_repo)
+            self._init_checkout_lease_repo(static_target)
+            self._init_checkout_lease_repo(effective_target)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            for session_id, target in (
+                ("delivery", static_target),
+                ("foreign", effective_target),
+            ):
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload(
+                        session_id, target / "README.md"
+                    ),
+                    cwd=target,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+            for command in (
+                "cd .. && semantic-commit commit --repo target --message 'fix: x'",
+                "env -C .. semantic-commit commit --repo target --message 'fix: x'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "delivery",
+                            base_repo,
+                            tool_name="Bash",
+                            command=command,
+                        ),
+                        cwd=base_repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be verified")
 
     def test_checkout_lease_semantic_commit_repo_fails_closed_on_coresident(
         self,
@@ -14505,6 +15706,188 @@ exit 66
             )
             self.assertEqual(code, 0, err)
             self.assertIn("evidence-archive", context_of(out))
+
+    def test_checkout_lease_allows_only_ref_safe_mutations_on_untracked_dirty_checkout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            fake_git = root / "shadow" / "git"
+            fake_git.parent.mkdir()
+            fake_git.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_git.chmod(0o755)
+            (repo / "browser-test-junk.log").write_text(
+                "untracked output\n", encoding="utf-8"
+            )
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            for command in (
+                "git branch -d merged-topic",
+                "git branch -D merged-topic",
+                "git branch -m old-topic new-topic",
+                "git branch -M old-topic new-topic",
+                "git branch -c old-topic copied-topic",
+                "git branch -C old-topic copied-topic",
+                "git tag --no-sign v1.2.3",
+                "git tag -d v1.2.3",
+                "bash -c 'git branch -D merged-topic'",
+            ):
+                with self.subTest(admitted=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "ref-maintenance-session",
+                            repo,
+                            tool_name="Bash",
+                            command=command,
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command in (
+                "git branch topic",
+                "git branch --edit-description topic",
+                "git branch --set-upstream-to=origin/main topic",
+                "git update-ref refs/heads/topic HEAD",
+                'git "$OP" branch -D merged-topic',
+                'git branch "$MODE" merged-topic',
+                "git -C .. branch -D merged-topic",
+                "git tag -a v1.2.3 -m release",
+                "git tag v1.2.3",
+                f"{shlex.quote(str(fake_git))} branch -D merged-topic",
+                "PATH=/untrusted git branch -D merged-topic",
+                "git reset --soft HEAD^",
+                "git branch -D merged-topic && git tag v1.2.3",
+                "git branch -D merged-topic && touch README.md",
+                "git branch -D merged-topic > README.md",
+                "git tag v1.2.3 && git add README.md",
+                "rm browser-test-junk.log",
+            ):
+                with self.subTest(rejected=command):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "ref-maintenance-session",
+                            repo,
+                            tool_name="Bash",
+                            command=command,
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "unowned changes")
+
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_checkout_lease_ref_safe_exception_rejects_reference_transaction_hook(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            (repo / "untracked.log").write_text("unowned\n", encoding="utf-8")
+            hook = repo / ".git" / "hooks" / "reference-transaction"
+            hook.write_text(
+                "#!/bin/sh\nprintf side-effect > checkout-hook-output.txt\n",
+                encoding="utf-8",
+            )
+            hook.chmod(0o755)
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "ref-session",
+                    repo,
+                    tool_name="Bash",
+                    command="git branch -D merged-topic",
+                ),
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "reference-transaction hook")
+            self.assertFalse((repo / "checkout-hook-output.txt").exists())
+
+    def test_checkout_lease_ref_safe_dirty_exception_remains_session_bound(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            (repo / "untracked.log").write_text("unowned\n", encoding="utf-8")
+            payload = self._checkout_lease_payload(
+                "ref-session",
+                repo,
+                tool_name="Bash",
+                command="git branch -D merged-topic",
+            )
+            payload.pop("session_id")
+
+            code, decision, stderr = run_hook(
+                "checkout-lease-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "verifiable agent session")
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+        for expired, fragment in (
+            (False, "another agent session"),
+            (True, "unowned changes"),
+        ):
+            with self.subTest(expired=expired), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                state = root / "state"
+                self._init_checkout_lease_repo(repo)
+                env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload("owner", repo / "README.md"),
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                lease_file = self._checkout_lease_files(state)[0]
+                original_lease = json.loads(
+                    lease_file.read_text(encoding="utf-8")
+                )
+                if expired:
+                    original_lease["expires_at"] = 0
+                    lease_file.write_text(
+                        json.dumps(original_lease) + "\n", encoding="utf-8"
+                    )
+                (repo / "untracked.log").write_text(
+                    "unowned\n", encoding="utf-8"
+                )
+
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload(
+                        "other",
+                        repo,
+                        tool_name="Bash",
+                        command="git branch -D merged-topic",
+                    ),
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, fragment)
+                retained = json.loads(lease_file.read_text(encoding="utf-8"))
+                self.assertEqual(retained["session_key"], original_lease["session_key"])
 
 
 if __name__ == "__main__":

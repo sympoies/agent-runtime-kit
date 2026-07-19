@@ -33,7 +33,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude
-  surface) ships inside nils-cli; pinned snapshot **v1.24.0**
+  surface) ships inside nils-cli; pinned snapshot **v1.24.1**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,
@@ -199,6 +199,13 @@ a uniform shape:
   `targets/claude/hooks/`; no files shipped under that path yet.
 - Acceptance lane: hooks adapter contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
+- `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
+  and `Stop`. The prompt path is silent unless dirty-checkout adoption is opted
+  in and released `git-cli >=1.24.1` can issue an exact five-minute snapshot
+  challenge; file/index mutation remains fail-closed regardless of the opt-in.
+  Adopted lease-v2 provenance survives same-session refresh, receipt-bound
+  revocation changes no content, and the only lease-free dirty exception is a
+  sole recognized ref-only branch/tag operation.
 - Support today: **shipped (shared scripts symlinked)**; the
   Claude-specific adapter slot is **planned-not-shipped** (manifest +
   link-map describe it; no `targets/claude/hooks/` files exist today).
@@ -218,7 +225,8 @@ a uniform shape:
   commands and preserving custom user hooks / unrelated settings.
 - Acceptance lane: runtime-smoke `meta.sync-runtime-surfaces` fixture
   validates custom hook preservation, retired managed hook removal,
-  source hook insertion, and idempotency.
+  source hook insertion, and idempotency. Hook parity tests require the shared
+  lease guard in `UserPromptSubmit` as well as mutation and Stop phases.
 - Support today: **shipped** for the `hooks` block managed by
   runtime-kit; other `settings.json` surfaces such as `statusLine`
   remain not shipped.
@@ -290,7 +298,7 @@ a uniform shape:
 | 5 | `plugins/<p>/skills/<s>/` | yes | rendered + recursive symlink | 2.1.145 | v0.20.0 |
 | 6 | `commands/<n>.md` | yes | linked directory | 2.1.145 | v0.17.5 |
 | 7 | `agents/<n>.md` | yes | rendered + directory symlink into `~/.claude/agents` | 2.1.145 | v1.3.0 |
-| 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v0.17.5 |
+| 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.1 |
 | 9 | `settings.json` hooks block | yes | fragment merge into live settings | 2.1.145 | v0.17.5 |
 | 10 | `output-styles/<n>.md` | no | — | n/a | n/a |
 | 11 | `statusLine` | no | — | n/a | n/a |
