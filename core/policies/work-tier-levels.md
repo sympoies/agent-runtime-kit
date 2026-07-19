@@ -56,6 +56,16 @@ Two things ride alongside the ladder and must not be mistaken for tiers:
   push-default`; its remote-SHA receipt replaces the PR record. For PR delivery,
   keep the body grounded in the diff with at least `## Summary` + `## Test plan`,
   produced by the active delivery skill / `agent-runtime pr-body render`.
+- **Reviewable size — split what review cannot converge.** A change is sized for
+  review as well as for tracking. When one PR's review surface is too large to
+  converge — enough findings or threads accumulate that reviewers churn and the
+  PR is "reviewed forever, never merged" — that is the signal to split it into
+  independently-reviewable units (stacked or sequential PRs, or L3 lanes under a
+  shared dispatch issue), not to push one giant PR through. This is a
+  delivery-axis decision and does not by itself change the tier: a large L0/L1
+  change stays L0/L1 but ships as several reviewable PRs. See
+  `core/policies/review-thread-convergence.md` for dispositioning the threads
+  that do accumulate.
 - **Implementation-readiness doc = an optional spec, not a tier.** A
   `discussion-to-implementation-doc` artifact (default home
   `docs/discussions/<YYYY-MM-DD>-<slug>.md`; inside the

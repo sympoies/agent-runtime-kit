@@ -465,7 +465,12 @@ checkpoint, and merge, and reviewer subagents never post. On
 disposition the new evidence, refresh the final outcome/checkpoint, and retry.
 For `unresolved_review_threads` or `unchecked_task_items`, call the matching
 `pr review-threads list` or `pr tasks` read surface, disposition the returned
-items, and retry. Do not duplicate quiet-period polling in skill prose.
+items, and retry. Outdated unresolved threads are auto-dispositioned `stale` by
+`pr merge` (`data.stale_thread_dispositions`) and do not block, so only
+non-outdated threads need disposition; the `--allow-unresolved-threads` bypass
+now requires a paired `--allow-unresolved-threads-reason` (recorded as
+`data.unresolved_threads_override_reason`). Do not duplicate quiet-period polling
+in skill prose.
 
 Plan-tracking PRs are `--kind feature` records, so when the test-first gate is
 enabled (`[test_first].require = true` in a repo `.forge-cli.toml` or the

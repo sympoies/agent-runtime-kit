@@ -346,7 +346,11 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
 6. **Orchestrator merge** — after approval and provider gates, the orchestrator
    merges the lane PR through `forge-cli pr merge
    --allow-non-default-base`. The CLI owns observed convergence, native state,
-   threads/tasks, and head binding. On
+   threads/tasks, and head binding — outdated unresolved threads are
+   auto-dispositioned `stale` (`data.stale_thread_dispositions`) so only
+   non-outdated threads block, and any `--allow-unresolved-threads` bypass on a
+   lane requires a paired `--allow-unresolved-threads-reason`
+   (`data.unresolved_threads_override_reason`). On
    `review_convergence_activity_changed`, re-read summaries and refresh lane
    approval/checkpoint before retrying; other typed failures route to their
    matching read/disposition path. Observed convergence is GitHub-only in v1,

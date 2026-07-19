@@ -431,13 +431,20 @@ outcome, and retry. For `review_changes_requested` or
 state is cleared or complete. For `unresolved_review_threads`, use
 `forge-cli pr review-threads list`, then repair, reply and resolve as accepted,
 or create a follow-up and resolve with its link per
-`core/policies/review-thread-convergence.md`. For `unchecked_task_items`, use
+`core/policies/review-thread-convergence.md`. Outdated unresolved threads are
+auto-dispositioned `stale` by `pr merge` (recorded in
+`data.stale_thread_dispositions`) and do not block, so this list/disposition
+path applies only to the remaining non-outdated threads. For
+`unchecked_task_items`, use
 `forge-cli pr tasks`, then finish/check the item or rewrite it as deferred with
 a follow-up ref. `review_convergence_head_changed` requires rebinding delivery
 evidence to the new head, then re-run validation and affected review lenses,
 read current-head summaries again, and post a new owner outcome before retrying.
 Timeout failures require a stable provider state before retry. Bypass flags
-remain exceptional and their rationale belongs in the delivery review outcome.
+remain exceptional and their rationale belongs in the delivery review outcome;
+`--allow-unresolved-threads` additionally requires a paired
+`--allow-unresolved-threads-reason "<why>"`, captured mechanically as
+`data.unresolved_threads_override_reason`.
 
 For linked tracking or dispatch issues, run a pre-merge lifecycle audit before
 the merge. This is not closeout yet, because `record close` verifies the merged

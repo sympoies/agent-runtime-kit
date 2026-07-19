@@ -54,6 +54,27 @@ the local-path / escaped-control privacy guards, and rejects invalid input with
 pending GitHub review is created, `forge-cli` attempts to delete that pending
 review before returning the backend error.
 
+## Cross-Run Thread Idempotency
+
+Re-posting the same finding threads against an unchanged head is safe. On
+GitHub, `pr review --submit-review` is idempotent across runs: before creating
+threads it reads the PR's existing review threads and, on the current head,
+skips creating any thread whose `(path, body)` already matches a **live**
+(non-resolved, non-outdated) thread. When every thread in the request is such a
+duplicate, the whole review event is skipped; the number of suppressed threads
+is reported as `data.threads_skipped_idempotent`. It never deletes, edits, or
+sweeps prior reviews or threads — a re-run on an unchanged head is a no-op.
+
+A match against a thread that is already resolved or outdated does **not**
+suppress the post: the finding re-posts fresh, because a resolved or outdated
+match carries no live conversation to duplicate.
+
+This is a cross-run property; it does not weaken the within-run ordering below.
+The first run still posts each finding the moment its lens returns. Idempotency
+only stops a *later* re-run — a retry after a transient failure, or a follow-up
+pass on the same head — from duplicating threads that already exist. It relieves
+the workflow of hand-guarding against duplicate posts on retry.
+
 ## Posting order is non-negotiable
 
 A review finding is both work-progress and evidence: it is the cause a fix

@@ -38,7 +38,7 @@ Route by classification:
 | Classification | Disposition |
 | --- | --- |
 | Genuine defect | `fix` — make the repair and link the fix PR. Major/high-risk (security, data loss, contract break, destructive migration, cross-repo architecture) → stop and ask the user first. |
-| No longer applies to the merged code | resolve as `stale`. |
+| No longer applies to the merged code | resolve as `stale`. `forge-cli pr merge` also auto-dispositions **outdated** unresolved threads as `stale` (recorded in `data.stale_thread_dispositions`), so those no longer block the merge gate. |
 | Real but out of scope for this pass | `follow_up` — open/link a tracking issue. |
 | Preference/style on principled, correct, business-logic-irrelevant code | `accepted` with recorded rationale. Do **not** open a fix PR. |
 | Inherently-ambiguous edge case (e.g. a placeholder indistinguishable from real data) | pick the conservative/safe branch **once, uniformly**, document the tradeoff; do not chase per-case heuristics. |
@@ -86,16 +86,25 @@ Use released forge-cli surfaces, not raw `gh`/`glab`, where available:
 - Discover threads: `forge-cli pr review-threads list <pr>` (provider-aware,
   read). Each `data.threads[]` entry carries the normalized `resolved` /
   `outdated` booleans (not GitHub's raw `isResolved` / `isOutdated`); filter on
-  `resolved == false` (or use the `data.unresolved` count).
+  `resolved == false` for the unresolved set (or use the `data.unresolved`
+  count). The merge gate blocks only on threads that are both `resolved == false`
+  **and** `outdated == false`; outdated unresolved threads are auto-dispositioned
+  `stale` (see the merge-gate bullet below).
 - Resolve / reply (GitHub, released in forge-cli ≥ 1.9.1): reply-and-resolve in
   one call with `forge-cli pr review-threads resolve <pr> --thread <PRRT_…>
   [--note <reply>]`, resolve without a reply by omitting `--note`, or reply
   without resolving via `forge-cli pr review-threads reply <pr> --thread
   <PRRT_…> --body <text>`. All three return `provider_unsupported` on
   GitLab / Local; converge those threads through the provider surface.
-- Merge gate: `forge-cli pr merge` fails closed on `unresolved_review_threads`;
-  bypass only with `--allow-unresolved-threads` after each thread is
-  dispositioned.
+- Merge gate: `forge-cli pr merge` fails closed on `unresolved_review_threads`,
+  counting only threads that are both unresolved **and** not outdated. Outdated
+  unresolved threads are auto-dispositioned `stale` and recorded in
+  `data.stale_thread_dispositions` rather than blocking the merge — the anchored
+  diff hunk no longer exists, so there is nothing left to converge. Bypass the
+  remaining (non-outdated) block only with `--allow-unresolved-threads`, which
+  now **requires** a paired `--allow-unresolved-threads-reason "<why>"`; the
+  recorded rationale is surfaced as `data.unresolved_threads_override_reason`.
+  Bypass only after each such thread is dispositioned.
 
 ## Consumers
 

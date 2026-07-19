@@ -86,6 +86,10 @@ command block containing a `forge-cli`, `gh`, or `glab` invocation:
      flags, and provider argv. This includes `data.plan`,
      `data.plan_steps[].plan`, and applicable auxiliary fields such as
      `guard_plan`, `issue_plan`, `thread_plan`, `submit_plan`, or `target_plan`.
+     For the review-loop convergence fields, also inspect
+     `data.threads_skipped_idempotent` (on `pr review`) and
+     `data.stale_thread_dispositions` / `data.unresolved_threads_override_reason`
+     (on `pr merge`).
    - Raw `gh` / `glab` read commands may run only against a safe target; verify
      their exact flags and output shape. Never execute raw provider mutations
      for review evidence. Prefer the matching `forge-cli` dry-run, or a
@@ -110,6 +114,16 @@ command block containing a `forge-cli`, `gh`, or `glab` invocation:
   comment with the same semantic lens before continuing to the next gate step.
   Resolve the original GitHub review threads after the fix is verified; follow-up
   pass comments normally omit `--thread-file`.
+- At the merge gate, `forge-cli pr merge` counts only unresolved threads that are
+  also not outdated: outdated unresolved threads are auto-dispositioned `stale`
+  (recorded in `data.stale_thread_dispositions`) and no longer block. Disposition
+  the remaining non-outdated threads per
+  `core/policies/review-thread-convergence.md`; bypass the block only with
+  `--allow-unresolved-threads`, which now requires a paired
+  `--allow-unresolved-threads-reason` (recorded as
+  `data.unresolved_threads_override_reason`). Re-posting the same follow-up
+  threads on an unchanged head is idempotent (`data.threads_skipped_idempotent`)
+  and never sweeps prior reviews.
 - Repeat review and repair until no concrete unresolved findings remain, or
   stop with an exact blocker and unblock action.
 - Do not treat user-authorized review fixes as a successful stopping point; they

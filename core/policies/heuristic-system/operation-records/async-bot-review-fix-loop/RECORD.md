@@ -6,11 +6,17 @@
 - Status: active
 - Cluster: async-bot-review-fix-loop
 - Kind: cross-case compression rule over resolved cases
-- Enforced-by: partial — `forge-cli pr merge` fails closed on
-  `unresolved_review_threads` (the deliver/close-time gate is mechanical), but
-  the convergence/triage judgment is a discipline a future agent must still
-  apply by hand via `core/policies/review-thread-convergence.md`, so this stays
-  active.
+- Enforced-by: partial, and now mechanically wider — `forge-cli pr merge` fails
+  closed on `unresolved_review_threads`, and two further levers narrow the
+  by-hand surface: cross-run idempotent native review posting (a re-run on an
+  unchanged head re-creates no duplicate threads and never sweeps prior reviews,
+  reported as `data.threads_skipped_idempotent`) removes the fix-PR
+  duplicate-thread growth; and outdated-thread auto-disposition (the merge gate
+  records outdated unresolved threads as `stale` in
+  `data.stale_thread_dispositions` and stops counting them, so only live
+  non-outdated threads block). What still needs a future agent's hand is the
+  per-finding fix / accepted / follow_up triage of the remaining non-outdated
+  threads via `core/policies/review-thread-convergence.md`, so this stays active.
 - System area: PR/MR delivery + review-thread cleanup across repos with async
   bot reviewers
 - Durable fix paths:
@@ -21,6 +27,11 @@
   - `sympoies/nils-cli` `forge-cli pr review-threads list/resolve/reply`
     (PR #883, #885; released `v1.9.1`) — the mechanics; `pr merge` keeps the
     `unresolved_review_threads` fail-closed gate.
+  - `sympoies/nils-cli` `forge-cli pr review` / `pr merge` convergence levers
+    (PR #1292) — cross-run idempotent native review posting, outdated→stale
+    disposition at the `unresolved_review_threads` merge gate, and the
+    required-reason `--allow-unresolved-threads` bypass; runtime-kit wiring under
+    tracker `graysurf/agent-runtime-kit#673` (release + pin bump gated).
   - `sympoies/symphony-board` `review-candidates` CLI (PR #230) +
     `project-review-cleanup` reduced to a board-discovery adapter (PR #231).
 
