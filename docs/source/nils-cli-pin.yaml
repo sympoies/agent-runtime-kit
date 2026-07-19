@@ -20,14 +20,14 @@ schema_version: 1
 
 nils_cli:
   # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.24.3"
+  pinned_tag: "v1.24.5"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with pinned_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "a5e24f9fa4002b3decabe2ed010b406eaf086183cda826be7b9843eb793d55a5"
-    linux_arm64: "e7a6037e695f847e3a900e5fd51493538f4caf2fce9855ba06a2379c8835332c"
+    linux_amd64: "dd635e3d7932f5789eee9182ac0d2d540bc5a04e6b6e03b7d72b2c631423158c"
+    linux_arm64: "97c35448cdd3f4a2f55821043b965e61c2a065631e61fc16cc6b6ea8718f0e48"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the exact `pinned_tag` above is the
@@ -50,6 +50,8 @@ required_clis:
     min: "0.25.5"
   - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2` + durable product/session-scoped intent activation and path classification
     min: "1.21.17"
+  - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, and body-free fixed notifications
+    min: "1.24.5"
   - bin: agent-memory     # bounded startup/on-demand recall, producer-isolated candidates, dry-run-first promotion, and strict budget/forbidden-term audits
     min: "1.21.21"
   - bin: evidence         # durable usage evidence archive surface: migrate (--host + blocked-record handling), mixed skill-usage v1/v2 owner provenance, unclassified-host block, working_repo_roots identity rescue, cwd/origin + slug identity hardening, purge retention, home-relativized skill paths, and prune-source --archived-only

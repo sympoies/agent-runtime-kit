@@ -1,0 +1,3 @@
+Two managed agent sessions may mutate the same repository. Inspect and claim
+structured work context, evaluate overlap, and admit only the covered mutation
+without reading either session's logs, transcript, or mailbox body.

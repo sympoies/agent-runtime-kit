@@ -861,12 +861,18 @@ preflight_lines = [
 ]
 
 assert len(link_lines) == 2, link_lines
-assert len(preflight_lines) == 4, preflight_lines
+assert len(preflight_lines) == 5, preflight_lines
 preflight_intents = {
     line.rsplit("--intent ", 1)[1].split()[0]
     for _, line in preflight_lines
 }
-assert preflight_intents == {"browser-test", "memory", "project-dev", "task-tools"}, preflight_lines
+assert preflight_intents == {
+    "browser-test",
+    "memory",
+    "project-dev",
+    "session-coordination",
+    "task-tools",
+}, preflight_lines
 assert len(sync_lines) == 2, sync_lines
 sync_products = []
 for _, sync_line in sync_lines:
@@ -2441,7 +2447,7 @@ assert len(bash_groups) == 1, bash_groups
 commands = [hook.get("command") for hook in bash_groups[0]["hooks"]]
 assert "echo custom" in commands, commands
 assert not any("retired-managed-hook.py" in command for command in commands), commands
-assert any("block-direct-git-worktree.py" in command for command in commands), commands
+assert any("claude-pretool-sequence.py" in command for command in commands), commands
 assert len(commands) == len(set(commands)), commands
 assert "UserPromptSubmit" in settings["hooks"], settings["hooks"]
 PY

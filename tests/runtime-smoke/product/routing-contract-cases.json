@@ -20,6 +20,11 @@
       "id": "desktop-operation",
       "prompt": "desktop-operation.txt",
       "expected_route": "computer-use.macos-desktop"
+    },
+    {
+      "id": "session-coordination",
+      "prompt": "session-coordination.txt",
+      "expected_route": "intent:session-coordination"
     }
   ]
 }

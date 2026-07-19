@@ -86,6 +86,12 @@ command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/finis
 timeout = 20
 statusMessage = "agent-runtime-kit: Prepare agent-docs validation outcome recording"
 
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/session-coordination-guard.py\""
+timeout = 60
+statusMessage = "agent-runtime-kit: Admit managed session mutation"
+
 [[hooks.PreToolUse]]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
 
@@ -137,8 +143,32 @@ command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/finis
 timeout = 20
 statusMessage = "agent-runtime-kit: Record agent-docs code edits"
 
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/session-coordination-guard.py\""
+timeout = 60
+statusMessage = "agent-runtime-kit: Admit managed session mutation"
+
 [[hooks.UserPromptSubmit]]
 matcher = ""
+
+[[hooks.PostToolUse]]
+matcher = "Bash|Write|Edit|NotebookEdit|apply_patch"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/session-coordination-guard.py\""
+timeout = 60
+statusMessage = "agent-runtime-kit: Complete managed session mutation"
+
+[[hooks.PostToolUseFailure]]
+matcher = "Bash|Write|Edit|NotebookEdit|apply_patch"
+
+[[hooks.PostToolUseFailure.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/session-coordination-guard.py\""
+timeout = 60
+statusMessage = "agent-runtime-kit: Complete failed managed session mutation"
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
@@ -193,6 +223,12 @@ type = "command"
 command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/checkout-lease-guard.py\""
 timeout = 10
 statusMessage = "agent-runtime-kit: Audit checkout writer lease"
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "AGENT_RUNTIME_PRODUCT=codex \"${CODEX_HOME:-$HOME/.codex}/hooks/session-coordination-guard.py\""
+timeout = 60
+statusMessage = "agent-runtime-kit: Audit managed operation completion"
 
 [[hooks.Stop.hooks]]
 type = "command"

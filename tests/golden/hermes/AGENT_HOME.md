@@ -21,7 +21,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `.h
 
 ## Intent Routing
 
-- Classify the request and open only the relevant intents: `project-dev` (implementation and delivery), `browser-test` (browser acceptance), `task-tools` (external or unstable facts). Read each activated intent's docs before writing. This manual selection is not hook-enforced activation.
+- Classify the request and open only the relevant intents: `project-dev` (implementation and delivery), `session-coordination` (managed mutations), `browser-test` (browser acceptance), `task-tools` (external or unstable facts). Read each activated intent's docs before writing. This manual selection is not hook-enforced activation.
 - Per-intent trigger / must / never / next action: `core/policies/intent-cards.md`.
 
 ## Work Tier Levels

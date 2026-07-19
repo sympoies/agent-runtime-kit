@@ -146,6 +146,37 @@ lease state for physically removed worktrees while retaining the stable
 per-checkout lock inode; dirty or mismatched ownership is retained and reported.
 Stop never removes a worktree, branch, commit, or dirty file.
 
+`session-coordination-guard.py` is a separate semantic admission layer for
+managed Codex and Claude launches. When the launch provides
+`AGENT_SESSION_ID`, `AGENT_SESSION_CAPABILITY_FILE`, and
+`AGENT_SESSION_STATE_DIR` on the released v1.24.5 surface, recognized direct
+edits, repository shell mutations, and exact provider mutations require an
+authenticated active work context and atomic operation lease. Direct edits
+carry every repository-relative target; simple shell effects require repository
+scope; compound or otherwise opaque shell effects, explicit cross-repository
+destinations, commands outside a
+governed repository, wrapped provider clients, and unresolved provider targets
+fail closed. Provider `--repo`/`-R` overrides bind the effective provider
+reference rather than the hook checkout. Nested `sh`/`bash`/`zsh` command
+strings are unwrapped before destination checks, and Git forms that may invoke
+configured fsmonitor, pager, external-diff, or filter programs do not bypass
+admission. A definite peer conflict and
+uncovered or uncertain own scope block, while potential/unknown/no-known-
+conflict classifications remain bounded advisories. PostTool success/failure
+is durably recorded before runtime probes and completes the exact token-bound
+lease. Admission intent, replay key, token, targets, and completion proof remain
+in a mode-0600 hashed session namespace across timeouts for exact duplicate/Stop
+replay rather than being guessed or released. Same-call Pre/Post/Stop activity
+is serialized by a stable local lock. Claude runs its mutation prerequisites
+through `claude-pretool-sequence.py` so its parallel hook scheduler cannot admit
+a tool denied by another prerequisite. The guard applies one 50-second global
+subprocess budget; Codex gives it a 60-second host timeout, and Claude's
+per-child/outer timeouts cover the sequential worst case. Unmanaged launches and older/missing coordination surfaces
+remain usable with accurate no-enforcement guidance. Hook output never includes
+raw session/capability/incarnation/checkout values, peer summaries, mailbox
+bodies, or private registry paths. The physical checkout lease above remains
+independent and Hermes still has no runtime-kit hook runner.
+
 Dirty-checkout adoption is an opt-in advisory layered over that unconditional
 mutation gate. With `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` set to `1`, a dirty
 `UserPromptSubmit` may use released `git-cli worktree dirty-snapshot` to issue a

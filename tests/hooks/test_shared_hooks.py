@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -53,6 +54,27 @@ def load_claude_hook_fragment() -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise AssertionError("Claude hook fragment did not parse as a JSON object")
     return parsed
+
+
+def load_claude_pretool_sequences() -> dict[str, tuple[str, ...]]:
+    spec = importlib.util.spec_from_file_location(
+        "claude_pretool_sequence_under_test",
+        HOOK_DIR / "claude-pretool-sequence.py",
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("Claude sequential pre-tool gate could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return dict(module.SEQUENCES)
+
+
+def claude_group_delegates(group: dict[str, Any]) -> set[str]:
+    sequences = load_claude_pretool_sequences()
+    return {
+        script
+        for tool in group["matcher"].split("|")
+        for script in sequences.get(tool, ())
+    }
 
 
 def prepare_trusted_test_agent_docs(
@@ -1138,7 +1160,7 @@ class SharedHookTests(unittest.TestCase):
         codex_block = (
             REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml"
         ).read_text(encoding="utf-8")
-        self.assertIn(f"hooks/{script}", claude_fragment)
+        self.assertIn(script, load_claude_pretool_sequences()["Bash"])
         self.assertNotIn(f"hooks/{script}", codex_block)
 
     def test_blocks_bare_python_in_uv_project_and_allows_shared_bypass(self) -> None:
@@ -8245,6 +8267,8 @@ exit 64
                     str(state_home),
                     "--intent",
                     "project-dev",
+                    "--format",
+                    "json",
                 ]
             )
             # A read-only `git status` is now admitted without project-dev, so
@@ -8656,6 +8680,7 @@ exit 64
                 ]
                 for intent in intents:
                     argv += ["--intent", intent]
+                argv += ["--format", "json"]
                 return shlex.join(argv)
 
             env = {
@@ -9017,6 +9042,8 @@ exit 64
                     "project-dev",
                     "--phase",
                     "edit",
+                    "--format",
+                    "json",
                 ]
             )
             payload = command_payload(prepare)
@@ -9034,6 +9061,886 @@ exit 64
             ]
             self.assertTrue(prepare_calls)
             self.assertTrue(all("--phase edit" in line for line in prepare_calls))
+            self.assertTrue(all("--format json" in line for line in prepare_calls))
+
+    def test_session_coordination_guard_requires_claim_for_managed_mutation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://example.invalid/example/repo.git"],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\n' '{"schema_version":"cli.agent-session.work-context-show.v1","ok":false,"error":{"code":"claim-not-found","message":"private /home/canary capability secret"}}'
+  exit 1
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "capability"
+            capability.write_text("private-capability\n", encoding="utf-8")
+            capability.chmod(0o600)
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_SESSION_ID": "managed-private-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "product-private-session"
+            payload["tool_use_id"] = "tool-private-id"
+            payload["hook_event_name"] = "PreToolUse"
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "active work-context claim")
+            reason = str(decision)
+            for private in (
+                str(repo),
+                str(capability),
+                "managed-private-session",
+                "product-private-session",
+                "private-capability",
+                "/home/canary",
+            ):
+                self.assertNotIn(private, reason)
+
+    def test_session_coordination_guard_admits_advises_and_completes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            (repo / "src").mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://example.invalid/example/repo.git"],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {shlex.quote(str(call_log))}
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\\n' '{{"schema_version":"cli.agent-session.work-context-show.v1","ok":true,"data":{{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context check"* ]]; then
+  printf '%s\\n' '{{"schema_version":"cli.agent-session.work-context-check.v1","ok":true,"data":{{"schema_version":"agent-session.conflict-evaluation.v1","classification":"potential_conflict","complete":true,"reasons":[],"peers":[]}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context admit"* ]]; then
+  previous=''
+  for argument in "$@"; do
+    if [[ "$previous" == '--targets-file' ]]; then
+      printf 'TARGETS=%s\\n' "$(<"$argument")" >> {shlex.quote(str(call_log))}
+      break
+    fi
+    previous="$argument"
+  done
+  printf '%s\\n' '{{"schema_version":"cli.agent-session.work-context-admit.v1","ok":true,"data":{{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","claim_id":"claim-1","claim_revision":3,"revision":1,"state":"active"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context complete"* ]]; then
+  state='completed'
+  outcome='pass'
+  if [[ "$*" == *"--outcome fail"* ]]; then state='failed'; outcome='fail'; fi
+  printf '{{"schema_version":"cli.agent-session.work-context-complete.v1","ok":true,"data":{{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","revision":2,"state":"%s","outcome":"%s"}}}}\\n' "$state" "$outcome"
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "capability"
+            capability.write_text("private-capability\n", encoding="utf-8")
+            capability.chmod(0o600)
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            pre = write_payload("src/lib.rs", "fn main() {}\n")
+            pre.update(
+                {
+                    "session_id": "product-session",
+                    "tool_use_id": "coord-tool-1",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", pre, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("potential conflict", str(decision).lower())
+
+            post = dict(pre)
+            post["hook_event_name"] = "PostToolUse"
+            post["tool_response"] = {"exit_code": 0}
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", post, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            calls = call_log.read_text(encoding="utf-8")
+            self.assertIn("work-context admit", calls)
+            self.assertIn("work-context complete", calls)
+            self.assertIn("--outcome pass", calls)
+            self.assertIn('"kind": "path-exact"', calls)
+            self.assertIn('"value": "src/lib.rs"', calls)
+
+            failed_pre = write_payload("src/failed.rs", "fn failed() {}\n")
+            failed_pre.update(
+                {
+                    "session_id": "product-session",
+                    "tool_use_id": "coord-tool-2",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", failed_pre, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            failed_post = dict(failed_pre)
+            failed_post["hook_event_name"] = "PostToolUseFailure"
+            failed_post["tool_response"] = {"error": "synthetic failure"}
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", failed_post, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertIn("--outcome fail", call_log.read_text(encoding="utf-8"))
+            namespace = (
+                root
+                / "runtime-state"
+                / "session-coordination"
+                / hashlib.sha256(b"managed-session").hexdigest()
+            )
+            self.assertEqual(list(namespace.glob("*.json")), [])
+            self.assertEqual(list(namespace.glob("*.token")), [])
+            self.assertEqual(list(namespace.glob("*.outcome")), [])
+
+    def test_session_coordination_guard_blocks_conflict_uncovered_and_stale_state(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            (repo / "src").mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://example.invalid/example/repo.git"],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* && "${COORD_SCENARIO:-}" == 'stale' ]]; then
+  printf '%s\n' '{"ok":false,"error":{"code":"session-incarnation-mismatch","message":"private-session /home/private/cap"}}'
+  exit 1
+fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context check"* ]]; then
+  classification='clear'
+  [[ "${COORD_SCENARIO:-}" == 'conflict' ]] && classification='conflict'
+  printf '{"ok":true,"data":{"schema_version":"agent-session.conflict-evaluation.v1","classification":"%s","complete":true,"reasons":[],"peers":[]}}\n' "$classification"
+  exit 0
+fi
+if [[ "$*" == *"work-context admit"* && "${COORD_SCENARIO:-}" == 'uncovered' ]]; then
+  printf '%s\n' '{"ok":false,"error":{"code":"uncovered-mutation-scope","message":"private target path"}}'
+  exit 1
+fi
+if [[ "$*" == *"work-context admit"* && "${COORD_SCENARIO:-}" == 'invalid-lease' ]]; then
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","revision":1,"state":"unknown"}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context admit"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","revision":1,"state":"active"}}'
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "private-capability"
+            capability.write_text("secret\n", encoding="utf-8")
+            capability.chmod(0o600)
+            base_env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "private-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            for scenario, fragment in (
+                ("conflict", "definite peer conflict"),
+                ("uncovered", "uncovered-mutation-scope"),
+                ("stale", "active work-context claim"),
+                ("invalid-lease", "invalid-operation-lease"),
+            ):
+                with self.subTest(scenario=scenario):
+                    env = dict(base_env, COORD_SCENARIO=scenario)
+                    payload = write_payload("src/lib.rs", "fn main() {}\n")
+                    payload.update(
+                        {
+                            "session_id": "private-product-session",
+                            "tool_use_id": f"tool-{scenario}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_hook(
+                        "session-coordination-guard.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+                    rendered = str(decision)
+                    for private in (
+                        str(repo),
+                        str(capability),
+                        "private-session",
+                        "private-product-session",
+                        "/home/private",
+                    ):
+                        self.assertNotIn(private, rendered)
+
+            namespace = (
+                root
+                / "runtime-state"
+                / "session-coordination"
+                / hashlib.sha256(b"private-session").hexdigest()
+            )
+            self.assertEqual(
+                len(
+                    [
+                        path
+                        for path in namespace.glob("*.json")
+                        if not path.name.endswith(".targets.json")
+                    ]
+                ),
+                1,
+            )
+
+            provider_payload = command_payload("forge-cli issue comment --body synthetic")
+            provider_payload.update(
+                {
+                    "session_id": "private-product-session",
+                    "tool_use_id": "tool-provider",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py",
+                provider_payload,
+                cwd=repo,
+                env=dict(base_env, COORD_SCENARIO="clear"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "provider-issue-unresolved")
+
+            outside = root / "outside.txt"
+            symlink = repo / "src" / "escape"
+            symlink.symlink_to(root)
+            escape_payload = write_payload(str(symlink / outside.name), "escape\n")
+            escape_payload.update(
+                {
+                    "session_id": "private-product-session",
+                    "tool_use_id": "tool-escape",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py",
+                escape_payload,
+                cwd=repo,
+                env=dict(base_env, COORD_SCENARIO="clear"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "target-boundary-unavailable")
+
+    def test_session_coordination_guard_older_surface_is_advisory_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                "#!/usr/bin/env bash\necho 'agent-session 1.24.4'\n",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "capability"
+            capability.write_text("secret\n", encoding="utf-8")
+            capability.chmod(0o600)
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload.update(
+                {
+                    "session_id": "product-session",
+                    "tool_use_id": "older-tool",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("no enforcement claim", str(decision))
+
+    def test_session_coordination_guard_retries_completion_and_audits_dropped_post(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            (repo / "src").mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://example.invalid/example/repo.git"],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            fail_once = root / "fail-once"
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context check"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.conflict-evaluation.v1","classification":"clear","complete":true,"reasons":[],"peers":[]}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context admit"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","revision":1,"state":"active"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context complete"* ]]; then
+  if [[ ! -f {shlex.quote(str(fail_once))} ]]; then
+    : > {shlex.quote(str(fail_once))}
+    printf '%s\\n' '{{"ok":false,"error":{{"code":"coordination-store-unavailable"}}}}'
+    exit 1
+  fi
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","revision":2,"state":"completed","outcome":"pass"}}}}'
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "capability"
+            capability.write_text("secret\n", encoding="utf-8")
+            capability.chmod(0o600)
+            runtime_state = root / "runtime-state"
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(runtime_state),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            pre = write_payload("src/lib.rs", "fn main() {}\n")
+            pre.update(
+                {
+                    "session_id": "product-session",
+                    "tool_use_id": "retry-tool",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", pre, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            duplicate = dict(pre)
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", duplicate, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "operation-pending")
+
+            dropped_stop = {
+                "hook_event_name": "Stop",
+                "session_id": "product-session",
+            }
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", dropped_stop, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            self.assertIn("does not release or guess", str(decision))
+
+            post = dict(pre)
+            post["hook_event_name"] = "PostToolUse"
+            post["tool_response"] = {"exit_code": 0}
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", post, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            self.assertIn("completion is pending", str(decision))
+
+            namespace = runtime_state / "session-coordination" / hashlib.sha256(
+                b"managed-session"
+            ).hexdigest()
+            record_path = next(
+                path
+                for path in namespace.glob("*.json")
+                if not path.name.endswith(".targets.json")
+            )
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["outcome"], "pass")
+            self.assertEqual(
+                Path(record["outcome_file"]).read_text(encoding="utf-8"), "pass\n"
+            )
+            record["outcome"] = None
+            record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py", dropped_stop, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(list(namespace.glob("*.json")), [])
+            self.assertEqual(list(namespace.glob("*.token")), [])
+            self.assertEqual(list(namespace.glob("*.outcome")), [])
+
+    def test_session_coordination_guard_unmanaged_and_read_only_degrade_safely(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            for payload in (
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                command_payload("git status --short"),
+            ):
+                payload["hook_event_name"] = "PreToolUse"
+                payload["session_id"] = "unmanaged-product-session"
+                code, decision, stderr = run_hook(
+                    "session-coordination-guard.py",
+                    payload,
+                    cwd=repo,
+                    env={
+                        "AGENT_RUNTIME_PRODUCT": "codex",
+                        "AGENT_SESSION_ID": "",
+                        "AGENT_SESSION_CAPABILITY_FILE": "",
+                        "AGENT_SESSION_STATE_DIR": "",
+                    },
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+    def test_session_coordination_target_extraction_fails_closed_across_boundaries(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_guard_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo-a"
+            other = root / "repo-b"
+            for path, remote in (
+                (repo, "https://example.invalid/example/repo-a.git"),
+                (other, "https://example.invalid/example/repo-b.git"),
+            ):
+                path.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+                subprocess.run(
+                    ["git", "remote", "add", "origin", remote], cwd=path, check=True
+                )
+
+            cases = (
+                (root, "touch outside.txt", "outside-governed-repository"),
+                (repo, f"git -C {other} add README.md", "cross-repository-shell-target"),
+                (repo, f"cp README.md {other / 'copy.md'}", "cross-repository-shell-target"),
+                (repo, f"semantic-commit --repo {other} --message x", "cross-repository-shell-target"),
+                (repo, "env GH_REPO=other/repo gh pr edit 12 --title x", "provider-target-unresolved"),
+                (
+                    repo,
+                    "env -S 'GH_REPO=other/repo gh pr edit 12 --title x'",
+                    "provider-target-unresolved",
+                ),
+                (
+                    repo,
+                    "sh -c 'gh -R other/repo pr edit 12 --title x'",
+                    "provider-target-unresolved",
+                ),
+                (
+                    repo,
+                    f"cd {other} && touch escaped.txt",
+                    "shell-target-unresolved",
+                ),
+                (
+                    repo,
+                    f"printf x > {other / 'redirected.txt'}",
+                    "shell-target-unresolved",
+                ),
+                (
+                    repo,
+                    f"bash -c 'printf x > {other / 'nested-redirected.txt'}'",
+                    "shell-target-unresolved",
+                ),
+                (
+                    repo,
+                    f"bash -c 'cp README.md {other / 'nested-copy.md'}'",
+                    "cross-repository-shell-target",
+                ),
+                (
+                    repo,
+                    f"bash -O extglob -c 'cp README.md {other / 'nested-option-copy.md'}'",
+                    "cross-repository-shell-target",
+                ),
+                (
+                    repo,
+                    f"command bash -c 'cp README.md {other / 'nested-command-copy.md'}'",
+                    "cross-repository-shell-target",
+                ),
+                (
+                    repo,
+                    f"env bash -c 'cp README.md {other / 'nested-env-copy.md'}'",
+                    "cross-repository-shell-target",
+                ),
+            )
+            prior = Path.cwd()
+            try:
+                for cwd, command, reason in cases:
+                    with self.subTest(command=command):
+                        os.chdir(cwd)
+                        operation, result = guard.operation_targets(
+                            command_payload(command), "Bash"
+                        )
+                        self.assertIsNone(operation)
+                        self.assertEqual(result, reason)
+            finally:
+                os.chdir(prior)
+
+            os.chdir(repo)
+            try:
+                operation, result = guard.operation_targets(
+                    command_payload(
+                        "forge-cli --provider github --repo other/repo "
+                        "pr edit 12 --title x"
+                    ),
+                    "Bash",
+                )
+            finally:
+                os.chdir(prior)
+            self.assertEqual(operation, "provider-pr")
+            self.assertEqual(
+                result["provider_refs"],
+                [{"kind": "pr", "repository": "other/repo", "number": 12}],
+            )
+            operation, result = guard.operation_targets(
+                command_payload("gh -Rother/repo issue edit 9 --title x"), "Bash"
+            )
+            self.assertEqual(operation, "provider-issue")
+            self.assertEqual(result["provider_refs"][0]["repository"], "other/repo")
+            operation, result = guard.operation_targets(
+                command_payload(
+                    "gh pr edit https://github.com/third/project/pull/21 --title x"
+                ),
+                "Bash",
+            )
+            self.assertEqual(operation, "provider-pr")
+            self.assertEqual(
+                result["provider_refs"],
+                [{"kind": "pr", "repository": "third/project", "number": 21}],
+            )
+            operation, reason = guard.operation_targets(
+                command_payload("gh pr edit --milestone 2026 --title x"), "Bash"
+            )
+            self.assertIsNone(operation)
+            self.assertEqual(reason, "provider-pr-unresolved")
+
+    def test_claude_admission_is_sequential_and_codex_timeout_is_bounded(self) -> None:
+        hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
+        for group in hooks:
+            commands = [hook["command"] for hook in group["hooks"]]
+            self.assertEqual(len(commands), 1, group["matcher"])
+            self.assertIn("claude-pretool-sequence.py", commands[0])
+
+        codex = tomllib.loads(
+            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
+                encoding="utf-8"
+            )
+        )["hooks"]["PreToolUse"]
+        admissions = [
+            hook
+            for group in codex
+            for hook in group["hooks"]
+            if "session-coordination-guard.py" in hook["command"]
+        ]
+        self.assertTrue(admissions)
+        self.assertTrue(all(hook["timeout"] >= 60 for hook in admissions))
+
+        claude_settings = load_claude_hook_fragment()["hooks"]["PreToolUse"]
+        sequence_spec = importlib.util.spec_from_file_location(
+            "claude_pretool_sequence_under_test",
+            HOOK_DIR / "claude-pretool-sequence.py",
+        )
+        assert sequence_spec is not None and sequence_spec.loader is not None
+        sequence = importlib.util.module_from_spec(sequence_spec)
+        sequence_spec.loader.exec_module(sequence)
+        self.assertGreaterEqual(
+            sequence.HOOK_TIMEOUTS.get("checkout-lease-guard.py", 0), 25
+        )
+        required_timeout = max(
+            sum(
+                sequence.HOOK_TIMEOUTS.get(name, sequence.DEFAULT_HOOK_TIMEOUT)
+                for name in names
+            )
+            for names in sequence.SEQUENCES.values()
+        )
+        self.assertTrue(
+            all(group["hooks"][0]["timeout"] >= required_timeout + 5 for group in claude_settings)
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code, decision, stderr = run_hook(
+                "claude-pretool-sequence.py",
+                command_payload("git commit -m bypass"),
+                cwd=Path(tmp),
+                env={"AGENT_RUNTIME_PRODUCT": "claude"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "checkout lease")
+
+    def test_session_coordination_replays_uncertain_admit_and_records_post_offline(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_durability_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            namespace = Path(tmp)
+            operation_key = hashlib.sha256(b"offline-post").hexdigest()
+            record_path = namespace / f"{operation_key}.json"
+            token = namespace / f"{operation_key}.attempt.token"
+            targets = namespace / f"{operation_key}.attempt.targets.json"
+            outcome = namespace / f"{operation_key}.attempt.outcome"
+            token.write_text("execution-token\n", encoding="utf-8")
+            targets.write_text(
+                '{"schema_version":"agent-session.operation-targets.v1"}\n',
+                encoding="utf-8",
+            )
+            for path in (token, targets):
+                path.chmod(0o600)
+            record = {
+                "schema_version": "agent-runtime-kit.session-coordination-operation.v1",
+                "phase": "admitting",
+                "session": "managed-session",
+                "capability_file": str(namespace / "capability"),
+                "state_dir": str(namespace / "state"),
+                "claim_id": "claim-1",
+                "claim_revision": 3,
+                "operation": "edit",
+                "token_file": str(token),
+                "targets_file": str(targets),
+                "outcome_file": str(outcome),
+                "outcome": None,
+                "admit_idempotency": "stable-admit-key",
+                "complete_idempotency": "stable-complete-key",
+            }
+            record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            record_path.chmod(0o600)
+            lost = subprocess.CompletedProcess([], 1, stdout="", stderr="lost")
+            admitted = subprocess.CompletedProcess(
+                [],
+                0,
+                stdout=json.dumps(
+                    {
+                        "ok": True,
+                        "data": {
+                            "schema_version": "agent-session.operation-lease.v1",
+                            "lease_id": "lease-1",
+                            "revision": 1,
+                            "state": "active",
+                        },
+                    }
+                ),
+                stderr="",
+            )
+            with mock.patch.object(guard, "run_cli", side_effect=[lost, admitted]) as run:
+                status, reason = guard.resume_admission("agent-session", record_path, record)
+                self.assertEqual((status, reason), ("uncertain", "coordination-unavailable"))
+                self.assertTrue(record_path.exists())
+                self.assertTrue(token.exists())
+                self.assertTrue(targets.exists())
+                status, reason = guard.resume_admission("agent-session", record_path, record)
+                self.assertEqual((status, reason), ("active", "admitted"))
+                for call in run.call_args_list:
+                    self.assertIn("stable-admit-key", call.args[0])
+
+            active = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(active["phase"], "active")
+            payload = {
+                "tool_use_id": "offline-post",
+                "hook_event_name": "PostToolUse",
+                "tool_response": {"exit_code": 0},
+            }
+            with mock.patch.object(guard, "private_namespace", return_value=namespace):
+                code = guard._post_tool_locked(
+                    payload,
+                    executable=None,
+                    managed_session="managed-session",
+                    product="codex",
+                    event="PostToolUse",
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(outcome.read_text(encoding="utf-8"), "pass\n")
+
+            stale_path = namespace / "stale.json"
+            stale_token = namespace / "stale.token"
+            stale_targets = namespace / "stale.targets.json"
+            stale_outcome = namespace / "stale.outcome"
+            stale_token.write_text("execution-token\n", encoding="utf-8")
+            stale_targets.write_text(
+                '{"schema_version":"agent-session.operation-targets.v1"}\n',
+                encoding="utf-8",
+            )
+            stale = dict(record)
+            stale.update(
+                {
+                    "token_file": str(stale_token),
+                    "targets_file": str(stale_targets),
+                    "outcome_file": str(stale_outcome),
+                }
+            )
+            stale_path.write_text(json.dumps(stale) + "\n", encoding="utf-8")
+            conflict = subprocess.CompletedProcess(
+                [],
+                1,
+                stdout=json.dumps(
+                    {"ok": False, "error": {"code": "claim-revision-conflict"}}
+                ),
+                stderr="",
+            )
+            with mock.patch.object(guard, "run_cli", return_value=conflict):
+                status, reason = guard.resume_admission(
+                    "agent-session", stale_path, stale
+                )
+            self.assertEqual((status, reason), ("rejected", "claim-revision-conflict"))
+            self.assertFalse(stale_path.exists())
+            self.assertFalse(stale_token.exists())
+            self.assertFalse(stale_targets.exists())
+
+    def test_session_coordination_read_only_bypass_rejects_write_flags_and_shadows(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_readonly_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        agent_session = shutil.which("agent-session") or "/usr/bin/false"
+        self.assertFalse(guard.command_bypasses_admission("git status --short", agent_session))
+        self.assertFalse(
+            guard.command_bypasses_admission("git blame README.md", agent_session)
+        )
+        self.assertFalse(
+            guard.command_bypasses_admission(
+                "git --paginate rev-parse --show-toplevel", agent_session
+            )
+        )
+        self.assertFalse(
+            guard.command_bypasses_admission(
+                "git diff --output=/tmp/session-coordination-write", agent_session
+            )
+        )
+        self.assertFalse(
+            guard.command_bypasses_admission("git diff --ext-diff", agent_session)
+        )
+        self.assertFalse(
+            guard.command_bypasses_admission(
+                "git cat-file --filters HEAD:README.md", agent_session
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            shadow = Path(tmp) / "git"
+            shadow.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shadow.chmod(0o755)
+            self.assertFalse(
+                guard.command_bypasses_admission(f"{shadow} status", agent_session)
+            )
 
     def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -10452,6 +11359,7 @@ exit 65
             "portable-paths-scan.py",
             "pre-edit-intent-gate.py",
             "semantic-commit-body-gate.py",
+            "session-coordination-guard.py",
             "session-start-healthcheck.sh",
             "skill-usage-reminder.py",
             "stop-finish-line-gate.py",
@@ -10461,7 +11369,8 @@ exit 65
         codex_only_scripts = {
             "user-prompt-agent-memory.sh",
         }
-        for script in shared_registered_scripts | codex_only_scripts:
+        claude_only_scripts = {"claude-pretool-sequence.py"}
+        for script in shared_registered_scripts | codex_only_scripts | claude_only_scripts:
             self.assertTrue((HOOK_DIR / script).is_file(), script)
             self.assertTrue(os.access(HOOK_DIR / script, os.X_OK), script)
 
@@ -10471,12 +11380,23 @@ exit 65
         claude_fragment = (REPO_ROOT / "core" / "hooks" / "claude" / "settings.hooks.jsonc").read_text(
             encoding="utf-8"
         )
+        claude_delegates = {
+            script
+            for sequence in load_claude_pretool_sequences().values()
+            for script in sequence
+        }
         for script in shared_registered_scripts:
             self.assertIn(f"hooks/{script}", codex_block)
-            self.assertIn(f"hooks/{script}", claude_fragment)
+            self.assertTrue(
+                f"hooks/{script}" in claude_fragment or script in claude_delegates,
+                script,
+            )
         for script in codex_only_scripts:
             self.assertIn(f"hooks/{script}", codex_block)
             self.assertNotIn(f"hooks/{script}", claude_fragment)
+        for script in claude_only_scripts:
+            self.assertNotIn(f"hooks/{script}", codex_block)
+            self.assertIn(f"hooks/{script}", claude_fragment)
 
     def test_bash_scanner_hooks_registered_for_codex_and_claude(self) -> None:
         expected_scripts = {
@@ -10495,13 +11415,13 @@ exit 65
 
         claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
         claude_bash = next(group for group in claude_hooks if group["matcher"] == "Bash")
-        claude_commands = "\n".join(hook["command"] for hook in claude_bash["hooks"])
+        claude_commands = "\n".join(claude_group_delegates(claude_bash))
 
         for script in expected_scripts:
             with self.subTest(product="codex", script=script):
                 self.assertIn(f"hooks/{script}", codex_commands)
             with self.subTest(product="claude", script=script):
-                self.assertIn(f"hooks/{script}", claude_commands)
+                self.assertIn(script, claude_commands)
 
     def test_finish_line_outcome_hooks_registered_for_supported_products(self) -> None:
         codex_hooks = tomllib.loads(
@@ -10515,21 +11435,84 @@ exit 65
         self.assertTrue(
             any("finish-line-record.py" in hook["command"] for hook in codex_pre["hooks"])
         )
-        self.assertNotIn("PostToolUse", codex_hooks)
-        self.assertNotIn("PostToolUseFailure", codex_hooks)
+        for event in ("PostToolUse", "PostToolUseFailure"):
+            self.assertTrue(
+                all(
+                    "session-coordination-guard.py" in hook["command"]
+                    for group in codex_hooks[event]
+                    for hook in group["hooks"]
+                )
+            )
 
         claude_hooks = load_claude_hook_fragment()["hooks"]
         claude_pre = next(
             group for group in claude_hooks["PreToolUse"] if group["matcher"] == "Bash"
         )
         self.assertTrue(
-            any(
-                "finish-line-record.py" in hook["command"]
-                for hook in claude_pre["hooks"]
-            )
+            "finish-line-record.py" in claude_group_delegates(claude_pre)
         )
-        self.assertNotIn("PostToolUse", claude_hooks)
-        self.assertNotIn("PostToolUseFailure", claude_hooks)
+        for event in ("PostToolUse", "PostToolUseFailure"):
+            self.assertTrue(
+                all(
+                    "session-coordination-guard.py" in hook["command"]
+                    for group in claude_hooks[event]
+                    for hook in group["hooks"]
+                )
+            )
+
+    def test_session_coordination_guard_registration_matches_supported_products(
+        self,
+    ) -> None:
+        codex_hooks = tomllib.loads(
+            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
+                encoding="utf-8"
+            )
+        )["hooks"]
+        claude_hooks = load_claude_hook_fragment()["hooks"]
+        for product, hooks, expected in (
+            (
+                "codex",
+                codex_hooks,
+                {"Bash", "Write", "Edit", "NotebookEdit", "apply_patch"},
+            ),
+            (
+                "claude",
+                claude_hooks,
+                {"Bash", "Write", "Edit", "NotebookEdit", "MultiEdit"},
+            ),
+        ):
+            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+                registered = {
+                    tool
+                    for group in hooks[event]
+                    if any(
+                        "session-coordination-guard.py" in hook["command"]
+                        for hook in group["hooks"]
+                    )
+                    or (
+                        product == "claude"
+                        and event == "PreToolUse"
+                        and "session-coordination-guard.py"
+                        in claude_group_delegates(group)
+                    )
+                    for tool in group["matcher"].split("|")
+                }
+                self.assertEqual(registered, expected, f"{product}:{event}")
+            for group in hooks["PreToolUse"]:
+                commands = [hook["command"] for hook in group["hooks"]]
+                if any("session-coordination-guard.py" in item for item in commands):
+                    self.assertIn("session-coordination-guard.py", commands[-1])
+                if product == "claude":
+                    delegates = list(claude_group_delegates(group))
+                    self.assertIn("session-coordination-guard.py", delegates)
+                    self.assertEqual(
+                        load_claude_pretool_sequences()[group["matcher"].split("|")[0]][-1],
+                        "session-coordination-guard.py",
+                    )
+            stop_commands = "\n".join(
+                hook["command"] for group in hooks["Stop"] for hook in group["hooks"]
+            )
+            self.assertIn("session-coordination-guard.py", stop_commands, product)
 
     def test_pre_edit_intent_gate_registration_matches_supported_products(self) -> None:
         codex_groups = tomllib.loads(
@@ -10555,6 +11538,10 @@ exit 65
                 tool
                 for group in groups
                 if any("pre-edit-intent-gate.py" in hook["command"] for hook in group["hooks"])
+                or (
+                    product == "claude"
+                    and "pre-edit-intent-gate.py" in claude_group_delegates(group)
+                )
                 for tool in group["matcher"].split("|")
             }
             self.assertEqual(gated, expected, product)
@@ -10592,6 +11579,10 @@ exit 65
                 if any(
                     "checkout-lease-guard.py" in hook["command"]
                     for hook in group["hooks"]
+                )
+                or (
+                    product == "claude"
+                    and "checkout-lease-guard.py" in claude_group_delegates(group)
                 )
             }
             self.assertIn("Bash", mutation_matchers, product)
@@ -11211,7 +12202,7 @@ exit 65
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertEqual(version.stdout.split()[:2], ["git-cli", "1.24.3"])
+        self.assertEqual(version.stdout.split()[:2], ["git-cli", "1.24.5"])
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -14951,10 +15942,7 @@ exit 65
             group
             for group in claude_hooks
             if group["matcher"] != "Bash"
-            and any(
-                "memory-write-principle-reminder.py" in hook["command"]
-                for hook in group["hooks"]
-            )
+            and "memory-write-principle-reminder.py" in claude_group_delegates(group)
         ]
         self.assertGreaterEqual(len(reminder_groups), 1)
         matcher_tools = {
@@ -14977,7 +15965,7 @@ exit 65
         self.assertTrue(multiedit_groups)
 
         multiedit_commands = "\n".join(
-            hook["command"] for group in multiedit_groups for hook in group["hooks"]
+            script for group in multiedit_groups for script in claude_group_delegates(group)
         )
         self.assertNotIn("mcp-secret-scan.py", multiedit_commands)
         self.assertNotIn("portable-paths-scan.py", multiedit_commands)

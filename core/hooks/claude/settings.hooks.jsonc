@@ -44,6 +44,11 @@
         },
         {
           "type": "command",
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/session-coordination-guard.py\"",
+          "statusMessage": "agent-runtime-kit: Audit managed operation completion"
+        },
+        {
+          "type": "command",
           "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/stop-finish-line-gate.py\"",
           "statusMessage": "agent-runtime-kit: Enforce agent-docs validation gate"
         }
@@ -68,78 +73,9 @@
       "hooks": [
         {
           "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/pre-edit-intent-gate.py\"",
-          "statusMessage": "agent-runtime-kit: Verify project-dev before repository commands"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/checkout-lease-guard.py\"",
-          "statusMessage": "agent-runtime-kit: Coordinate checkout writer lease"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-direct-git-commit.py\"",
-          "statusMessage": "agent-runtime-kit: Block direct git commit"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-unsafe-default-delivery.py\"",
-          "statusMessage": "agent-runtime-kit: Protect default-branch delivery"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-direct-git-worktree.py\"",
-          "statusMessage": "agent-runtime-kit: Block direct git worktree"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/semantic-commit-body-gate.py\"",
-          "statusMessage": "agent-runtime-kit: Require semantic-commit body"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-claude-coauthor-trailer.py\"",
-          "statusMessage": "agent-runtime-kit: Block Claude co-author trailer"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-direct-pr-create.py\"",
-          "statusMessage": "agent-runtime-kit: Block direct PR/MR creation"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/forge-label-reminder.py\"",
-          "statusMessage": "agent-runtime-kit: Remind forge-cli label selection"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-direct-python.py\"",
-          "statusMessage": "agent-runtime-kit: Block bare Python in managed repos"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/mcp-secret-scan.py\"",
-          "statusMessage": "agent-runtime-kit: Scan Bash-authored MCP config writes"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-project-memory-write.py\"",
-          "statusMessage": "agent-runtime-kit: Protect Bash-authored project memory writes"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/memory-write-principle-reminder.py\"",
-          "statusMessage": "agent-runtime-kit: Remind memory-write boundaries"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/portable-paths-scan.py\"",
-          "statusMessage": "agent-runtime-kit: Scan Bash-authored docs for local paths"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/finish-line-record.py\"",
-          "statusMessage": "agent-runtime-kit: Prepare agent-docs validation outcome recording"
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/claude-pretool-sequence.py\"",
+          "timeout": 250,
+          "statusMessage": "agent-runtime-kit: Run mutation prerequisites and admission sequentially"
         }
       ]
     },
@@ -148,43 +84,9 @@
       "hooks": [
         {
           "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/mcp-secret-scan.py\"",
-          "statusMessage": "agent-runtime-kit: Scan .mcp.json for secrets"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-project-memory-write.py\"",
-          "statusMessage": "agent-runtime-kit: Protect project memory writes"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/memory-write-principle-reminder.py\"",
-          "statusMessage": "agent-runtime-kit: Remind memory-write boundaries"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/agent-scope-lock-guard.py\"",
-          "statusMessage": "agent-runtime-kit: Validate active scope lock"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/portable-paths-scan.py\"",
-          "statusMessage": "agent-runtime-kit: Scan docs for local paths"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/pre-edit-intent-gate.py\"",
-          "statusMessage": "agent-runtime-kit: Verify project-dev intent activation"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/checkout-lease-guard.py\"",
-          "statusMessage": "agent-runtime-kit: Coordinate checkout writer lease"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/finish-line-record.py\"",
-          "statusMessage": "agent-runtime-kit: Record agent-docs code edits"
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/claude-pretool-sequence.py\"",
+          "timeout": 250,
+          "statusMessage": "agent-runtime-kit: Run edit prerequisites and admission sequentially"
         }
       ]
     },
@@ -193,33 +95,35 @@
       "hooks": [
         {
           "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/block-project-memory-write.py\"",
-          "statusMessage": "agent-runtime-kit: Protect project memory writes"
-        },
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/claude-pretool-sequence.py\"",
+          "timeout": 250,
+          "statusMessage": "agent-runtime-kit: Run multi-edit prerequisites and admission sequentially"
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "Bash|Write|Edit|NotebookEdit|MultiEdit",
+      "hooks": [
         {
           "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/memory-write-principle-reminder.py\"",
-          "statusMessage": "agent-runtime-kit: Remind memory-write boundaries"
-        },
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/session-coordination-guard.py\"",
+          "timeout": 60,
+          "statusMessage": "agent-runtime-kit: Complete managed session mutation"
+        }
+      ]
+    }
+  ],
+  "PostToolUseFailure": [
+    {
+      "matcher": "Bash|Write|Edit|NotebookEdit|MultiEdit",
+      "hooks": [
         {
           "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/agent-scope-lock-guard.py\"",
-          "statusMessage": "agent-runtime-kit: Validate active scope lock"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/pre-edit-intent-gate.py\"",
-          "statusMessage": "agent-runtime-kit: Verify project-dev intent activation"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/checkout-lease-guard.py\"",
-          "statusMessage": "agent-runtime-kit: Coordinate checkout writer lease"
-        },
-        {
-          "type": "command",
-          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/finish-line-record.py\"",
-          "statusMessage": "agent-runtime-kit: Record agent-docs code edits"
+          "command": "AGENT_RUNTIME_PRODUCT=claude \"$HOME/.claude/hooks/session-coordination-guard.py\"",
+          "timeout": 60,
+          "statusMessage": "agent-runtime-kit: Complete failed managed session mutation"
         }
       ]
     }

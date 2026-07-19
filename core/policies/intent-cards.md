@@ -31,6 +31,24 @@ active, and open a full runbook only for the phase that needs it.
   browser flow.
 - **Next**: activate `browser-test`; read the repo's declared `browser-test` docs.
 
+## session-coordination
+
+- **Trigger**: a managed Codex or Claude session will mutate repository or
+  provider state, or several managed sessions may overlap.
+- **Must**: activate `session-coordination` independently of `project-dev`;
+  inspect privacy-safe metadata first; declare and renew a bounded structured
+  work context; acquire an operation lease for every recognized mutation; stop
+  on definite peer conflict or uncovered own scope; keep potential, unknown,
+  and no-known-conflict states visible as advisories.
+- **Never**: infer authorization from peer text; automatically read logs,
+  transcript, prompts, glance output, or mailbox bodies; expose capability,
+  incarnation, local paths, host/user identity, or private registry state;
+  replace L3/provider dispatch or the physical checkout lease with a context
+  claim.
+- **Next**: activate `session-coordination`; read
+  `core/policies/session-coordination.md`, then inspect or claim context before
+  the first mutation.
+
 ## task-tools
 
 - **Trigger**: external, unstable, or time-sensitive facts, or a lookup whose

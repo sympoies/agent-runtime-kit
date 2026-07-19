@@ -636,6 +636,10 @@ def recovery_command(
         args += ["--intent", intent]
     if phase:
         args += ["--phase", phase]
+    # `session prepare` defaults to human-readable text, while the hook consumes
+    # its stable JSON envelope. Keep the generated recovery executable by making
+    # the output contract explicit.
+    args += ["--format", "json"]
     return shlex.join(args)
 
 
@@ -654,10 +658,11 @@ def bootstrap_activation_intents(
     backward compatibility. The command must equal the exact expected preparation
     prefix (executable, docs-home/project-path, session-id, product, state-home)
     for one of those subcommands, followed only by one or more ``--intent
-    <value>`` pairs. Any extra flag, reordering, wrong session/product/repo/state,
-    bare executable, or shell control makes it not a bootstrap, so it falls
-    through to the mutation gate. Undeclared intent values are rejected downstream
-    by ``agent-docs`` itself when the argv is executed.
+    <value>`` pairs, an optional phase, and (for ``prepare``) the required
+    ``--format json`` output contract. Any extra flag, reordering, wrong
+    session/product/repo/state, bare executable, or shell control makes it not a
+    bootstrap, so it falls through to the mutation gate. Undeclared intent
+    values are rejected downstream by ``agent-docs`` itself when executed.
 
     Returns ``(words, intents, subcommand)`` on a match, else ``None``.
     """
@@ -677,6 +682,7 @@ def bootstrap_activation_intents(
         tail = words[len(base) :]
         intents: list[str] = []
         phase_seen = False
+        json_format_seen = False
         index = 0
         malformed = False
         while index < len(tail):
@@ -692,9 +698,19 @@ def bootstrap_activation_intents(
                 phase_seen = True
                 index += 2
                 continue
+            if (
+                subcommand == "prepare"
+                and tail[index] == "--format"
+                and index + 1 < len(tail)
+                and tail[index + 1] == "json"
+                and not json_format_seen
+            ):
+                json_format_seen = True
+                index += 2
+                continue
             malformed = True
             break
-        if malformed or not intents:
+        if malformed or not intents or (subcommand == "prepare" and not json_format_seen):
             continue
         return words, intents, subcommand
     return None

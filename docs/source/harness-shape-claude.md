@@ -33,7 +33,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude
-  surface) ships inside nils-cli; pinned snapshot **v1.24.3**
+  surface) ships inside nils-cli; pinned snapshot **v1.24.5**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,
@@ -199,6 +199,13 @@ a uniform shape:
   `targets/claude/hooks/`; no files shipped under that path yet.
 - Acceptance lane: hooks adapter contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
+- Claude runs all mutation-blocking `PreToolUse` prerequisites and final session
+  admission inside the single `claude-pretool-sequence.py` command. This is a
+  correctness boundary because Claude schedules sibling matching hooks in
+  parallel; a separate admission hook could otherwise lease a denied tool. The
+  child-specific and 250-second outer timeouts cover the full declared
+  sequential budget, including the checkout lease guard's explicit 25-second
+  allowance and the admission guard's 50-second global subprocess deadline.
 - `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
   and `Stop`. The prompt path is silent unless dirty-checkout adoption is opted
   in and released `git-cli >=1.24.1` can issue an exact five-minute snapshot
@@ -298,7 +305,7 @@ a uniform shape:
 | 5 | `plugins/<p>/skills/<s>/` | yes | rendered + recursive symlink | 2.1.145 | v0.20.0 |
 | 6 | `commands/<n>.md` | yes | linked directory | 2.1.145 | v0.17.5 |
 | 7 | `agents/<n>.md` | yes | rendered + directory symlink into `~/.claude/agents` | 2.1.145 | v1.3.0 |
-| 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.1 |
+| 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.5 |
 | 9 | `settings.json` hooks block | yes | fragment merge into live settings | 2.1.145 | v0.17.5 |
 | 10 | `output-styles/<n>.md` | no | — | n/a | n/a |
 | 11 | `statusLine` | no | — | n/a | n/a |

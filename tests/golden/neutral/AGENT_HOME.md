@@ -21,7 +21,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `CL
 
 ## Intent Routing
 
-- Classify the request and activate only the relevant intents: `project-dev` (implementation and delivery), `browser-test` (browser acceptance), `task-tools` (external or unstable facts). Read each activated intent's docs before writing. Use `agent-docs session activate/status/verify`; the pre-edit hook verifies `project-dev` per direct-edit target and per shell working repository — run cross-repository shell mutations with each target repository as CWD (hooks cannot observe expanded shell destinations).
+- Classify the request and activate only the relevant intents: `project-dev` (implementation and delivery), `session-coordination` (managed mutations), `browser-test` (browser acceptance), `task-tools` (external or unstable facts). Read each activated intent's docs before writing. Use `agent-docs session activate/status/verify`; the pre-edit hook verifies `project-dev` for direct edits and shell repositories; managed launches admit claim-covered mutations via `agent-session` work-context leases. Run cross-repository shell mutations with each target repository as CWD (hooks cannot observe expanded shell destinations).
 - Per-intent trigger / must / never / next action: `core/policies/intent-cards.md`.
 
 ## Work Tier Levels

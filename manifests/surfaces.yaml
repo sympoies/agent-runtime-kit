@@ -433,7 +433,7 @@ surfaces:
         source_artifacts:
           - core/hooks/shared/
         min_product: "0.130.0"
-        min_nils_cli: "v1.24.1"
+        min_nils_cli: "v1.24.5"
         acceptance:
           - kind: ci
             note: "gate 10 (`tests/hooks/run.sh`)"
@@ -450,7 +450,7 @@ surfaces:
         source_artifacts:
           - core/hooks/shared/
         min_product: "2.1.145"
-        min_nils_cli: "v1.24.1"
+        min_nils_cli: "v1.24.5"
         acceptance:
           - kind: ci
             note: "gate 10 (`tests/hooks/run.sh`)"

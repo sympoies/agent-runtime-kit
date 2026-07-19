@@ -161,6 +161,22 @@ when = "always"
 notes = "Bounded startup and on-demand recall, producer candidate ownership, explicit promotion approval, product capability ceilings, and retired-reference audit routing."
 
 [[document]]
+context = "session-coordination"
+scope = "home"
+path = "core/policies/session-coordination.md"
+required = true
+when = "always"
+notes = "Metadata-first managed-session work context, claim/admission lifecycle, privacy boundaries, advisory/conflict behavior, and recovery."
+
+[[document]]
+context = "session-coordination"
+scope = "home"
+path = "core/policies/evidence-control-plane.md"
+required = true
+when = "always"
+notes = "Coordination behavior changes retain parent-owned test-first, review, and closeout evidence."
+
+[[document]]
 context = "task-tools"
 scope = "home"
 path = "core/policies/cli-tools.md"
@@ -177,6 +193,12 @@ context = "project-dev"
 commands = ["bash scripts/ci/all.sh", "bash tests/hooks/run.sh"]
 marker = ".cache/agent-validation/project-dev.ok"
 description = "Run the kit CI gate stack and hook tests before declaring a project-dev task done."
+
+[[validation]]
+context = "session-coordination"
+commands = ["bash tests/hooks/run.sh"]
+marker = ".cache/agent-validation/session-coordination.ok"
+description = "Run the shared hook contract before declaring session-coordination behavior done."
 
 # Project-owned classification consumed by nils-cli's phase-aware test-first
 # checks. Consuming repositories declare their own paths; unmatched files stay

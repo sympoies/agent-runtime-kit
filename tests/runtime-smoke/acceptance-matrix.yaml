@@ -105,6 +105,19 @@ cases:
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
+  - id: meta.sync-runtime-surfaces.shared-cli.session-coordination
+    product: shared-cli
+    domain: meta
+    skill_id: meta.sync-runtime-surfaces
+    mode: deterministic
+    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
+    setup: render isolated Codex Claude and Hermes surfaces with released nils-cli v1.24.5
+    invocation: verify source-bound session-coordination intent plus Codex and Claude pre post failure and stop hook registration while Hermes remains policy-only
+    expected_exit_code: 0
+    expected_artifacts: converged home prompts hook registration and privacy-safe deterministic guard evidence
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
   - id: meta.sync-runtime-surfaces.shared-cli.worktree-guard
     product: shared-cli
     domain: meta
