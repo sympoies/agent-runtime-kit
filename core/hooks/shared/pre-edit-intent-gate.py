@@ -36,7 +36,10 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    SHELL_EFFECT_READ_ONLY,
     apply_patch_paths,
+    audited_text_read_invocation,
+    classify_shell_effect,
     command_from,
     effective_workdir,
     emit_block,
@@ -83,43 +86,6 @@ DOUBLE_QUOTED_SHELL_CONTROL = frozenset("`$")
 # false negative (it just falls through to the mutation gate), while an
 # over-broad entry would be an unsafe bypass.
 
-# Executables with no argument-driven file-write or command-exec capability.
-# Deliberately excluded (write- or exec-capable via arguments, not a shell
-# redirect): sort/uniq (`-o`/second operand), tee, dd, sed (`-i`), env (runs a
-# command), find (`-delete`/`-exec`), tree (`-o`), date/hostname (system set),
-# xargs (runs a command), rg (`--pre` runs a preprocessor), file (`-C` compiles
-# a magic-db file). Add only with a proven read-only argument contract.
-READ_ONLY_EXECUTABLES = frozenset(
-    {
-        "pwd",
-        "echo",
-        "cat",
-        "tac",
-        "head",
-        "tail",
-        "wc",
-        "nl",
-        "grep",
-        "egrep",
-        "fgrep",
-        "ls",
-        "stat",
-        "cmp",
-        "comm",
-        "basename",
-        "dirname",
-        "realpath",
-        "readlink",
-        "which",
-        "printenv",
-        "id",
-        "whoami",
-        "uname",
-        "true",
-        "false",
-    }
-)
-
 # git subcommands with no write mode at all. Excluded on purpose: branch/tag/
 # config/remote/stash/notes/worktree/reflog/symbolic-ref (each has a write form),
 # and anything under MUTATING_GIT_SUBCOMMANDS elsewhere.
@@ -149,6 +115,17 @@ READ_ONLY_GIT_SUBCOMMANDS = frozenset(
         "var",
     }
 )
+GIT_DIFF_DRIVER_SUBCOMMANDS = frozenset(
+    {
+        "log",
+        "show",
+        "diff",
+        "diff-tree",
+        "diff-index",
+        "diff-files",
+        "whatchanged",
+    }
+)
 # git global options consumed before the subcommand. Value options take the next
 # token; ``-c``/``--config-env``/``--exec-path`` are excluded (config/pager exec
 # vectors) so an unknown global option fails closed.
@@ -167,7 +144,16 @@ GIT_GLOBAL_FLAG_OPTIONS = frozenset(
 )
 # Subcommand flags that write a file (`--output`) or run a pager on matches
 # (`-O`/`--open-files-in-pager`, an exec vector for ``git grep``).
-GIT_WRITE_OR_EXEC_FLAGS = frozenset({"-o", "--output", "-O", "--open-files-in-pager"})
+GIT_WRITE_OR_EXEC_FLAGS = frozenset(
+    {
+        "-o",
+        "--output",
+        "-O",
+        "--open-files-in-pager",
+        "--ext-diff",
+        "--textconv",
+    }
+)
 
 # gh read-only command groups. `gh api` is excluded: it mutates with
 # `-X`/`--method`/`-f`/`--input`. Only view/list-shaped reads are admitted.
@@ -479,7 +465,14 @@ def git_read_only_invocation(args: list[str]) -> bool:
         break
     if index >= len(args) or args[index] not in READ_ONLY_GIT_SUBCOMMANDS:
         return False
-    for token in args[index + 1 :]:
+    subcommand = args[index]
+    subcommand_args = args[index + 1 :]
+    if subcommand in GIT_DIFF_DRIVER_SUBCOMMANDS and not {
+        "--no-ext-diff",
+        "--no-textconv",
+    }.issubset(subcommand_args):
+        return False
+    for token in subcommand_args:
         if token == "--":
             break  # remaining tokens are pathspecs, not options
         if token in GIT_WRITE_OR_EXEC_FLAGS:
@@ -512,14 +505,15 @@ def read_only_general_invocation(words: list[str]) -> bool:
     """Whether ``words`` is an audited read-only inspection command.
 
     ``words`` must already be a single simple command (``simple_shell_words``).
-    Residual limits, documented deliberately: composite commands (pipes,
-    redirections, ``&&``), globbing, ``rg``/``find``/``sort``/``env`` and other
-    write-or-exec-capable tools are NOT admitted here and still require
-    project-dev. The executable must be a bare command name resolved via PATH:
-    any path separator (``./grep``, ``bin/ls``) is rejected so a repository-local
-    shadow cannot be executed through this lane. A bare name shares only the
-    PATH-resolution residual of the existing ``is_git_recovery_argv`` lane, and
-    the mutation gates below remain fail-closed.
+    Residual limits, documented deliberately: this function classifies one argv
+    stage; the shared effect classifier admits pipe-only composites only when
+    every stage passes. Redirections, ``&&``, globbing, unaudited ``rg``/general
+    ``sed``/``find``/``sort``/``env`` and other write-or-exec-capable shapes are
+    NOT admitted and still require project-dev. The executable must be a bare
+    command name resolved via PATH: any path separator (``./grep``, ``bin/ls``)
+    is rejected. The caller also resolves a bare name and rejects candidates
+    located inside any target repository, so repository-local executable
+    shadows cannot enter this lane.
     """
     if not words:
         return False
@@ -529,13 +523,46 @@ def read_only_general_invocation(words: list[str]) -> bool:
         return False
     name = words[0]
     args = words[1:]
-    if name in READ_ONLY_EXECUTABLES:
+    if audited_text_read_invocation(words):
         return True
     if name == "git":
         return git_read_only_invocation(args)
     if name == "gh":
         return gh_read_only_invocation(args)
     return False
+
+
+def repository_safe_read_only_invocation(
+    words: list[str], repositories: list[str]
+) -> bool:
+    """Apply the read-only argv audit and reject repository-local shadows."""
+    if not read_only_general_invocation(words):
+        return False
+    candidate = shutil.which(words[0])
+    if not candidate or not os.path.isabs(candidate):
+        return False
+    lexical = os.path.abspath(candidate)
+    resolved = os.path.realpath(candidate)
+    return not any(
+        path_within(lexical, repository) or path_within(resolved, repository)
+        for repository in repositories
+    )
+
+
+def agent_docs_near_miss_invocation(words: list[str]) -> bool:
+    """Whether argv resembles a non-writing agent-docs read/preparation call."""
+    if not words or os.path.basename(words[0]) != "agent-docs":
+        return False
+    if any(
+        token in AGENT_DOCS_WRITE_FLAGS or token.startswith("--output=")
+        for token in words[1:]
+    ):
+        return False
+    if "preflight" in words:
+        return True
+    return "session" in words and any(
+        token in {"prepare", "activate", "verify"} for token in words
+    )
 
 
 def agent_docs_read_only_invocation(words: list[str], executable: str) -> bool:
@@ -890,9 +917,8 @@ def main() -> int:
     if not repos:
         return ALLOW
 
-    command_words = (
-        simple_shell_words(command_from(payload)) if tool in COMMAND_TOOLS else None
-    )
+    command = command_from(payload) if tool in COMMAND_TOOLS else ""
+    command_words = simple_shell_words(command) if tool in COMMAND_TOOLS else None
     # A sole `git <op> --abort`/`--quit` recovery command restores the clean
     # pre-operation state and authors no content, so it must run even when
     # project-dev activation is stale or missing — otherwise a stuck
@@ -907,7 +933,17 @@ def main() -> int:
     # project-dev so pure discussion, diagnosis, and reading do not force
     # implementation policy. This fails closed: anything unrecognized falls
     # through to the mutation gate below.
-    if command_words and read_only_general_invocation(command_words):
+    read_effect = (
+        classify_shell_effect(
+            command,
+            read_only_invocation=lambda words: repository_safe_read_only_invocation(
+                words, repos
+            ),
+        )
+        if tool in COMMAND_TOOLS
+        else None
+    )
+    if read_effect is not None and read_effect.kind == SHELL_EFFECT_READ_ONLY:
         return ALLOW
 
     if tool in EDIT_TOOLS and not edit_paths(payload):
@@ -921,9 +957,37 @@ def main() -> int:
         )
         return ALLOW
     if not trusted_agent_docs_executable(agent_docs_executable, repos):
+        if command_words and agent_docs_near_miss_invocation(command_words):
+            emit_block(
+                "This command resembles an agent-docs read or intent preparation, but "
+                "the resolved executable is not a trusted managed agent-docs binary. "
+                "Preparing task-tools, memory, browser-test, or another declared intent "
+                "does not require project-dev. Use the exact absolute-path command from "
+                "the latest intent cue. [reason: agent-docs-command-untrusted]"
+            )
+            return ALLOW
         emit_block(
             "A trusted agent-docs executable is unavailable for this governed "
             "repository mutation; restore the managed runtime CLI path before retrying."
+        )
+        return ALLOW
+
+    if (
+        command_words
+        and agent_docs_near_miss_invocation(command_words)
+        and (
+            not os.path.isabs(command_words[0])
+            or os.path.realpath(command_words[0])
+            != os.path.realpath(agent_docs_executable)
+        )
+    ):
+        emit_block(
+            "This command resembles an agent-docs read or intent preparation, but "
+            "it did not use the resolved trusted agent-docs executable and exact "
+            "session context. Preparing task-tools, memory, browser-test, or another "
+            "declared intent does not require project-dev. Use the exact absolute-path "
+            "command from the latest intent cue. "
+            "[reason: agent-docs-command-untrusted]"
         )
         return ALLOW
 
@@ -1024,6 +1088,15 @@ def main() -> int:
                 "[reason: prepared]"
             )
             return ALLOW
+        if command_words and agent_docs_near_miss_invocation(command_words):
+            emit_block(
+                "This trusted agent-docs preparation did not match the exact "
+                "repository, session, product, state-home, phase, and JSON output "
+                "shape required by the bootstrap. Use the exact command from the "
+                "latest intent cue; another declared intent does not require "
+                "project-dev first. [reason: agent-docs-bootstrap-shape-mismatch]"
+            )
+            return ALLOW
 
     # Phase-scope the verification to the observed mutation (issue #601 P1 slice
     # 3d) when the trusted CLI advertises `--phase`; otherwise -- or for a shell
@@ -1050,9 +1123,11 @@ def main() -> int:
     if not failures:
         return ALLOW
     reason = (
-        "Prepare project-dev before mutating the target repository, then retry. "
-        "Read-only inspection and trusted agent-docs preparation for any declared intent "
-        "are admitted without project-dev; only mutation-capable shell needs it. "
+        "This command was not admitted by the audited read-only classifier; no "
+        "repository mutation was observed, but this shell shape could not be proven "
+        "read-only. Prepare project-dev before retrying. Read-only inspection "
+        "and trusted agent-docs preparation for any declared intent are admitted "
+        "without project-dev. "
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
         "executable and complete session context. If a Git operation is stuck mid-run, a "
         "sole `git <op> --abort` recovers in place without preparation. "

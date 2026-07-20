@@ -32,14 +32,21 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    SHELL_EFFECT_MUTATION,
+    SHELL_EFFECT_READ_ONLY,
+    SHELL_EFFECT_UNKNOWN,
     apply_patch_paths,
+    audited_text_read_invocation,
+    classify_shell_effect,
     command_from,
     effective_workdir,
     emit_block,
     invocation_is_opaque,
     invocation_tokens,
+    output_redirect_targets,
     patch_text_candidates,
     read_payload,
+    simple_commands_with_nested_shells,
     tool_input_dict,
 )
 
@@ -52,34 +59,6 @@ HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
 MAX_PENDING_RECORDS = 32
 SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~\n\r")
-READ_ONLY_EXECUTABLES = frozenset(
-    {
-        "pwd",
-        "cat",
-        "head",
-        "tail",
-        "wc",
-        "nl",
-        "grep",
-        "egrep",
-        "fgrep",
-        "rg",
-        "ls",
-        "stat",
-        "cmp",
-        "basename",
-        "dirname",
-        "realpath",
-        "readlink",
-        "which",
-        "printenv",
-        "id",
-        "whoami",
-        "uname",
-        "true",
-        "false",
-    }
-)
 READ_ONLY_GIT = frozenset(
     {
         "rev-parse",
@@ -93,6 +72,87 @@ READ_ONLY_GIT = frozenset(
     }
 )
 READ_ONLY_PROVIDER = frozenset({"view", "list", "status", "checks", "diff"})
+MUTATING_EXECUTABLES = frozenset(
+    {
+        "chmod",
+        "chown",
+        "cp",
+        "install",
+        "ln",
+        "mkdir",
+        "mkfifo",
+        "mknod",
+        "mv",
+        "patch",
+        "rm",
+        "rmdir",
+        "tee",
+        "touch",
+        "truncate",
+    }
+)
+MUTATING_GIT = frozenset(
+    {
+        "add",
+        "am",
+        "apply",
+        "checkout",
+        "cherry-pick",
+        "clean",
+        "commit",
+        "merge",
+        "mv",
+        "pack-refs",
+        "pull",
+        "prune",
+        "rebase",
+        "replace",
+        "reset",
+        "restore",
+        "revert",
+        "rm",
+        "submodule",
+        "switch",
+        "update-index",
+        "update-ref",
+    }
+)
+PROVIDER_MUTATION_ACTIONS = frozenset(
+    {
+        "add",
+        "archive",
+        "cancel",
+        "checkout",
+        "close",
+        "comment",
+        "create",
+        "delete",
+        "deliver",
+        "disable",
+        "edit",
+        "enable",
+        "ensure",
+        "fork",
+        "lock",
+        "merge",
+        "pin",
+        "push-default",
+        "ready",
+        "rename",
+        "reopen",
+        "rerun",
+        "review",
+        "run",
+        "sync",
+        "transfer",
+        "unarchive",
+        "unlock",
+        "unpin",
+        "update",
+        "upload",
+        "delete-asset",
+    }
+)
 GIT_GLOBAL_VALUE_OPTIONS = frozenset(
     {"-C", "--git-dir", "--work-tree", "--namespace"}
 )
@@ -396,7 +456,7 @@ def git_read_only(args: list[str]) -> bool:
     return True
 
 
-def provider_group_action(words: list[str]) -> tuple[int, str, str] | None:
+def provider_generic_action(words: list[str]) -> tuple[int, str, str] | None:
     index = 1
     while index < len(words):
         token = words[index]
@@ -415,15 +475,21 @@ def provider_group_action(words: list[str]) -> tuple[int, str, str] | None:
         if token.startswith("-"):
             return None
         break
-    if index + 1 >= len(words) or words[index] not in {"issue", "pr"}:
+    if index + 1 >= len(words):
         return None
     return index, words[index], words[index + 1]
 
 
-def command_bypasses_admission(command: str, agent_session_executable: str) -> bool:
-    words = simple_words(command)
-    if not words:
-        return False
+def provider_group_action(words: list[str]) -> tuple[int, str, str] | None:
+    parsed = provider_generic_action(words)
+    if parsed is None or parsed[1] not in {"issue", "pr"}:
+        return None
+    return parsed
+
+
+def invocation_bypasses_admission(
+    words: list[str], agent_session_executable: str
+) -> bool:
     if "/" in words[0] and not os.path.isabs(words[0]):
         return False
     name = os.path.basename(words[0])
@@ -442,12 +508,8 @@ def command_bypasses_admission(command: str, agent_session_executable: str) -> b
                 and any(item in words for item in ("prepare", "activate", "verify"))
             )
         )
-    if name in READ_ONLY_EXECUTABLES:
-        return trusted_command(words[0], name) and not any(
-            item in {"-o", "--output", "--pre"}
-            or item.startswith(("--output=", "--pre="))
-            for item in words[1:]
-        )
+    if audited_text_read_invocation(words):
+        return trusted_command(words[0], name)
     if name == "git":
         return trusted_command(words[0], name) and git_read_only(words[1:])
     if name in {"gh", "forge-cli"}:
@@ -458,6 +520,290 @@ def command_bypasses_admission(command: str, agent_session_executable: str) -> b
             item in {"-h", "--help", "--dry-run"} for item in words[1:]
         )
     return False
+
+
+def git_mutates(args: list[str]) -> bool:
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token in GIT_GLOBAL_VALUE_OPTIONS:
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in GIT_GLOBAL_VALUE_OPTIONS):
+            index += 1
+            continue
+        if token in GIT_GLOBAL_FLAG_OPTIONS:
+            index += 1
+            continue
+        if token.startswith("-"):
+            return False
+        break
+    if index >= len(args):
+        return False
+    subcommand = args[index]
+    action = args[index + 1 :]
+    if subcommand in {"push", "fetch"}:
+        return "--dry-run" not in action and "-n" not in action
+    if subcommand in MUTATING_GIT:
+        return True
+    if subcommand == "branch":
+        if not action:
+            return False
+        mutation_flags = {
+            "-d",
+            "-D",
+            "-m",
+            "-M",
+            "-c",
+            "-C",
+            "--delete",
+            "--move",
+            "--copy",
+            "--edit-description",
+            "--set-upstream-to",
+            "--unset-upstream",
+        }
+        if any(
+            token in mutation_flags
+            or token.startswith(tuple(f"{flag}=" for flag in mutation_flags))
+            for token in action
+        ):
+            return True
+        read_value_flags = {
+            "--contains",
+            "--no-contains",
+            "--merged",
+            "--no-merged",
+            "--points-at",
+            "--format",
+            "--sort",
+        }
+        if any(token in {"-l", "--list"} for token in action):
+            return False
+        index = 0
+        while index < len(action):
+            token = action[index]
+            if token in read_value_flags:
+                index += 2
+                continue
+            if token.startswith(tuple(f"{flag}=" for flag in read_value_flags)):
+                index += 1
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            return True
+        return False
+    if subcommand == "tag":
+        if not action:
+            return False
+        if any(
+            token
+            in {
+                "-a",
+                "-d",
+                "-f",
+                "-F",
+                "-m",
+                "-s",
+                "-u",
+                "--annotate",
+                "--delete",
+                "--force",
+                "--file",
+                "--message",
+                "--sign",
+                "--local-user",
+            }
+            for token in action
+        ):
+            return True
+        if any(token in {"-l", "--list", "-v", "--verify"} for token in action):
+            return False
+        read_value_flags = {
+            "--contains",
+            "--no-contains",
+            "--merged",
+            "--no-merged",
+            "--points-at",
+            "--format",
+            "--sort",
+        }
+        index = 0
+        while index < len(action):
+            token = action[index]
+            if token in read_value_flags:
+                index += 2
+                continue
+            if token.startswith(tuple(f"{flag}=" for flag in read_value_flags)):
+                index += 1
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            return True
+        return False
+    if subcommand == "config":
+        if any(
+            token
+            in {
+                "--add",
+                "--replace-all",
+                "--unset",
+                "--unset-all",
+                "--remove-section",
+                "--rename-section",
+            }
+            for token in action
+        ):
+            return True
+        positional = [token for token in action if not token.startswith("-")]
+        return len(positional) >= 2
+    if subcommand == "remote":
+        return bool(action) and action[0] not in {"-v", "show", "get-url"}
+    if subcommand == "notes":
+        return not action or action[0] not in {"list", "show"}
+    if subcommand == "stash":
+        return not action or action[0] not in {"list", "show"}
+    if subcommand == "worktree":
+        return bool(action) and action[0] != "list"
+    if subcommand == "reflog":
+        return bool(action) and action[0] in {"delete", "expire"}
+    if subcommand == "symbolic-ref":
+        return "--delete" in action or len(
+            [token for token in action if not token.startswith("-")]
+        ) >= 2
+    return False
+
+
+def provider_api_mutates(words: list[str], group_index: int) -> bool:
+    method = ""
+    has_input = False
+    tail = words[group_index + 1 :]
+    index = 0
+    while index < len(tail):
+        token = tail[index]
+        if token in {"-X", "--method"} and index + 1 < len(tail):
+            method = tail[index + 1].upper()
+            index += 2
+            continue
+        if token.startswith(("-X", "--method=")):
+            method = token.split("=", 1)[1].upper() if "=" in token else token[2:].upper()
+        if token in {"-f", "-F", "--field", "--raw-field", "--input"} or token.startswith(
+            ("-f", "-F", "--field=", "--raw-field=", "--input=")
+        ):
+            has_input = True
+        index += 1
+    if method:
+        return method not in {"GET", "HEAD"}
+    return has_input
+
+
+def provider_mutates(words: list[str]) -> bool:
+    parsed = provider_generic_action(words)
+    if parsed is None:
+        return False
+    group_index, group, action = parsed
+    if group == "api" and os.path.basename(words[0]) == "gh":
+        return provider_api_mutates(words, group_index)
+    return action in PROVIDER_MUTATION_ACTIONS
+
+
+def redirect_targets_repository(tokens: list[str], repository_root: Path | None) -> bool:
+    for raw_target, _inspectable in output_redirect_targets(tokens):
+        if raw_target == os.devnull or any(
+            character in raw_target for character in "$`*?[{("
+        ):
+            continue
+        target = Path(raw_target).expanduser()
+        if not target.is_absolute():
+            return True
+        if repository_root is None:
+            continue
+        try:
+            if os.path.commonpath((target.resolve(strict=False), repository_root)) == str(
+                repository_root
+            ):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
+
+
+def invocation_is_recognized_mutation(
+    tokens: list[str], repository_root: Path | None
+) -> bool:
+    if redirect_targets_repository(tokens, repository_root):
+        return True
+    invocation = invocation_tokens(tokens)
+    if not invocation or invocation_is_opaque(invocation):
+        return False
+    name = os.path.basename(invocation[0])
+    arguments = invocation[1:]
+    if name in MUTATING_EXECUTABLES:
+        return True
+    if name == "git":
+        return git_mutates(arguments)
+    if name in {"gh", "forge-cli"}:
+        return provider_mutates(invocation)
+    if name == "semantic-commit":
+        return bool(arguments) and arguments[0] in {"commit", "fixup", "squash"}
+    return name == "git-cli" and len(arguments) >= 2 and (
+        arguments[0], arguments[1]
+    ) in {
+        ("worktree", "add"),
+        ("worktree", "remove"),
+        ("worktree", "adopt-dirty"),
+        ("worktree", "revoke-dirty"),
+    }
+
+
+def has_static_absolute_redirect(command: str) -> bool:
+    """Whether a command has an inspectable absolute output redirect."""
+    for tokens in simple_commands_with_nested_shells(command):
+        for raw_target, _inspectable in output_redirect_targets(tokens):
+            if raw_target == os.devnull or any(
+                character in raw_target for character in "$`*?[{("
+            ):
+                continue
+            if Path(raw_target).expanduser().is_absolute():
+                return True
+    return False
+
+
+def command_effect(
+    command: str, agent_session_executable: str, base: Path
+):
+    def classify(repository_root: Path | None):
+        return classify_shell_effect(
+            command,
+            read_only_invocation=lambda words: invocation_bypasses_admission(
+                words, agent_session_executable
+            ),
+            mutation_invocation=lambda tokens: invocation_is_recognized_mutation(
+                tokens, repository_root
+            ),
+        )
+
+    effect = classify(None)
+    if effect.kind != SHELL_EFFECT_UNKNOWN or not has_static_absolute_redirect(command):
+        return effect
+    # Only an absolute redirect needs the repository root to decide whether the
+    # write targets this checkout. Ordinary reads and unknown commands avoid a
+    # Git subprocess on the default advisory hot path.
+    root_raw = bounded_git_toplevel(str(base))
+    repository_root = Path(root_raw).resolve() if root_raw else None
+    return classify(repository_root)
+
+
+def command_bypasses_admission(command: str, agent_session_executable: str) -> bool:
+    effect = classify_shell_effect(
+        command,
+        read_only_invocation=lambda words: invocation_bypasses_admission(
+            words, agent_session_executable
+        ),
+    )
+    return effect.kind == SHELL_EFFECT_READ_ONLY
 
 
 def nested_paths(value: Any) -> Iterable[str]:
@@ -894,10 +1240,15 @@ def advisory_pre_tool(
     product: str,
 ) -> int:
     tool = tool_name(payload)
-    if tool in COMMAND_TOOLS and command_bypasses_admission(
-        command_from(payload), executable
-    ):
-        return ALLOW
+    if tool in COMMAND_TOOLS:
+        effect = command_effect(
+            command_from(payload), executable, effective_workdir(payload).resolve()
+        )
+        # Advisory mode reports overlap only for a recognized mutation. Unknown
+        # shell effects remain subject to the fail-closed enforce path, but do
+        # not create mutation-shaped warning noise in the default mode.
+        if effect.kind != SHELL_EFFECT_MUTATION:
+            return ALLOW
     args = common_cli_args(executable, state_dir) + ["work-context", "advise"]
     temporary: Path | None = None
     operation, targets_or_reason = operation_targets(payload, tool)

@@ -41,8 +41,11 @@ usable without managed-session metadata.
 - `advisory` is the default, including when the mode variable is absent or
   invalid. Recognized mutations may emit privacy-safe `info`, `warning`, or
   degraded-availability guidance, but the hook always allows the tool call.
-  Missing context, incomplete peer state, unavailable CLI/broker state, or a
-  definite overlap never becomes a mutation blocker.
+  Audited read-only commands and pipe-only pipelines stay silent. Unclassified
+  shell effects also stay silent in advisory mode because uncertainty is not
+  evidence of a mutation; they remain fail-closed in `enforce` mode. Missing
+  context, incomplete peer state, unavailable CLI/broker state, or a definite
+  overlap never becomes a mutation blocker.
 - `off` is silent and performs no semantic advice, claim admission, operation
   proof, dirty-checkout challenge, or physical checkout lease acquisition.
 - Unmanaged launches with no `AGENT_SESSION_*` metadata bypass coordination
@@ -61,6 +64,10 @@ usable without managed-session metadata.
   claim and an atomic `work-context admit` lease whose targets are a proven
   subset of the claim. The physical checkout lease is enabled only in this
   mode.
+- The shared shell effect classifier does not weaken strict admission:
+  redirection, command substitution, unsafe pipeline stages, executable
+  shadows, and all other unclassified shell shapes do not receive a read-only
+  bypass in `enforce` mode.
 - The low-level `claim|show|check|renew|release|admit|complete|reconcile`
   commands remain compatibility and strict-mode primitives. Prefer `set` and
   `clear` for normal declarations; strict automation may still own the raw

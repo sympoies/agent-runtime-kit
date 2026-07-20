@@ -24,9 +24,9 @@ import subprocess
 import sys
 import tempfile
 import stat
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NamedTuple
 
 ALLOW = 0
 # Contract stems may begin with `.terminal-`; only these exact filenames are
@@ -972,6 +972,219 @@ SHELL_CONTROL_PREFIX_TOKENS = frozenset(
 )
 SHELL_CONTROL_TERMINATOR_TOKENS = frozenset({"fi", "done", "}"})
 CLOBBER_REDIRECT_MARKER = "__AGENT_CLOBBER_REDIRECT__"
+
+SHELL_EFFECT_READ_ONLY = "read-only"
+SHELL_EFFECT_MUTATION = "mutation"
+SHELL_EFFECT_UNKNOWN = "unknown"
+
+# Commands with no argument-driven write or command-execution mode. Trust in the
+# resolved executable remains a caller-owned decision because the pre-edit and
+# coordination hooks have different host boundaries.
+AUDITED_READ_ONLY_EXECUTABLES = frozenset(
+    {
+        "pwd",
+        "echo",
+        "cat",
+        "tac",
+        "head",
+        "tail",
+        "wc",
+        "nl",
+        "grep",
+        "egrep",
+        "fgrep",
+        "ls",
+        "stat",
+        "cmp",
+        "comm",
+        "basename",
+        "dirname",
+        "realpath",
+        "readlink",
+        "which",
+        "printenv",
+        "id",
+        "whoami",
+        "uname",
+        "true",
+        "false",
+    }
+)
+
+PIPELINE_UNQUOTED_CONTROL = frozenset(";&<>`$(){}#*?[]^~\n\r")
+PIPELINE_DOUBLE_QUOTED_CONTROL = frozenset("`$")
+SED_PRINT_SCRIPT_RE = re.compile(r"^(?:[0-9]+|\$)(?:,(?:[0-9]+|\$))?p$")
+
+
+class ShellEffect(NamedTuple):
+    kind: str
+    reason: str
+
+
+def pipe_only_commands(command: str) -> list[list[str]] | None:
+    """Parse one simple command or a pipeline containing only audited `|` edges.
+
+    Any other active shell control, expansion, empty stage, or malformed quoting
+    fails closed. Quoted pipes remain ordinary argv content. The returned argv
+    stages are syntactic only; callers still own executable trust and per-command
+    argument audits.
+    """
+    if not command.strip():
+        return None
+    segments: list[str] = []
+    current: list[str] = []
+    quote = ""
+    escaped = False
+    index = 0
+    while index < len(command):
+        character = command[index]
+        if quote == "'":
+            current.append(character)
+            if character == "'":
+                quote = ""
+            index += 1
+            continue
+        if escaped:
+            current.append(character)
+            escaped = False
+            index += 1
+            continue
+        if character == "\\":
+            current.append(character)
+            escaped = True
+            index += 1
+            continue
+        if quote == '"':
+            if character in PIPELINE_DOUBLE_QUOTED_CONTROL:
+                return None
+            current.append(character)
+            if character == '"':
+                quote = ""
+            index += 1
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            current.append(character)
+            index += 1
+            continue
+        if character == "|":
+            if index + 1 < len(command) and command[index + 1] == "|":
+                return None
+            segment = "".join(current).strip()
+            if not segment:
+                return None
+            segments.append(segment)
+            current = []
+            index += 1
+            continue
+        if character in PIPELINE_UNQUOTED_CONTROL:
+            return None
+        current.append(character)
+        index += 1
+    if quote or escaped:
+        return None
+    segment = "".join(current).strip()
+    if not segment:
+        return None
+    segments.append(segment)
+    commands: list[list[str]] = []
+    for segment in segments:
+        try:
+            words = shlex.split(segment, posix=True)
+        except ValueError:
+            return None
+        if not words:
+            return None
+        commands.append(words)
+    return commands
+
+
+def ripgrep_read_only_invocation(arguments: list[str]) -> bool:
+    """Admit ripgrep only when every command-execution mode is disabled."""
+    no_config = False
+    for argument in arguments:
+        if argument == "--":
+            break
+        if argument == "--no-config":
+            no_config = True
+        if argument in {"--pre", "--hostname-bin", "--search-zip"}:
+            return False
+        if argument.startswith(("--pre=", "--hostname-bin=")):
+            return False
+        if (
+            argument.startswith("-")
+            and not argument.startswith("--")
+            and "z" in argument[1:]
+        ):
+            return False
+    return no_config
+
+
+def sed_print_only_invocation(arguments: list[str]) -> bool:
+    """Admit only `sed -n '<literal line range>p' [files...]` reads.
+
+    General sed scripts can write files or execute commands even without `-i`.
+    This narrow grammar covers line-range inspection without interpreting sed's
+    command language.
+    """
+    index = 0
+    quiet = False
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"-n", "--quiet", "--silent"}:
+            quiet = True
+            index += 1
+            continue
+        if argument == "--":
+            index += 1
+        break
+    if not quiet or index >= len(arguments):
+        return False
+    script = arguments[index]
+    index += 1
+    if not SED_PRINT_SCRIPT_RE.fullmatch(script):
+        return False
+    return not any(argument.startswith("-") for argument in arguments[index:])
+
+
+def audited_text_read_invocation(words: list[str]) -> bool:
+    """Whether argv has an audited text-inspection shape, excluding trust."""
+    if not words:
+        return False
+    executable = os.path.basename(words[0])
+    arguments = words[1:]
+    if executable in AUDITED_READ_ONLY_EXECUTABLES:
+        return True
+    if executable == "rg":
+        return ripgrep_read_only_invocation(arguments)
+    if executable == "sed":
+        return sed_print_only_invocation(arguments)
+    return False
+
+
+def classify_shell_effect(
+    command: str,
+    *,
+    read_only_invocation: Callable[[list[str]], bool],
+    mutation_invocation: Callable[[list[str]], bool] | None = None,
+) -> ShellEffect:
+    """Classify a shell command without conflating unknown with mutation.
+
+    Read-only admission is deliberately narrower than the best-effort mutation
+    scan: every pipe stage must be an audited read. A caller-supplied mutation
+    classifier may recognize explicit writes across the broader shared shell
+    grammar. Everything else remains unknown so advisory and enforcing callers
+    can apply different policies without weakening a fail-closed gate.
+    """
+    pipeline = pipe_only_commands(command)
+    if pipeline is not None and all(read_only_invocation(words) for words in pipeline):
+        return ShellEffect(SHELL_EFFECT_READ_ONLY, "audited-read-only")
+    if mutation_invocation is not None and any(
+        mutation_invocation(tokens)
+        for tokens in simple_commands_with_nested_shells(command)
+    ):
+        return ShellEffect(SHELL_EFFECT_MUTATION, "recognized-mutation")
+    return ShellEffect(SHELL_EFFECT_UNKNOWN, "unclassified-shell-effect")
 
 
 def _shield_clobber_redirects(command: str) -> str:

@@ -155,9 +155,16 @@ managed Codex and Claude launches. `advisory` is the default when the mode is
 missing or invalid. Broker-ready sessions automatically participate through
 presence; recognized mutations call privacy-safe `work-context advise` and may
 emit fixed informational, overlap, or degraded-availability guidance, but never
-block the tool call. `work-context set|clear` can add optional bounded task
-context without requiring session IDs, capability arguments, revision numbers,
-or a pre-written JSON file. `work-context acknowledge` suppresses only the
+block the tool call. Audited read-only argv shapes and pipe-only pipelines whose
+every stage is audited stay silent. Unknown shell effects also stay silent in
+advisory mode instead of being presented as observed mutations; strict
+`enforce` admission remains fail-closed for them. The shared tri-state shell
+effect result is `read-only`, `mutation`, or `unknown`; redirection, command
+substitution, unsafe stages, executable shadows, and shell control other than a
+plain pipe never receive the read-only result. `work-context set|clear` can add
+optional bounded task context without requiring session IDs, capability
+arguments, revision numbers, or a pre-written JSON file. `work-context
+acknowledge` suppresses only the
 most recently observed overlap for a bounded incarnation-specific window;
 changed peers, reasons, repositories, or availability warn again, while target
 churn covered by the same overlap stays quiet and explicit advice retains the

@@ -52,6 +52,17 @@ project-defined validation. This file is the procedural detail behind them.
 ## Hooks
 
 - Hooks may enforce mechanical guardrails, but hooks do not replace policy.
+- Shell inspection uses a shared tri-state effect contract: `read-only`,
+  `mutation`, or `unknown`. Read-only admission is exact and narrow: a pipeline
+  may contain pipe separators only, and every stage must match an audited
+  read-only argv shape. Redirection, command substitution, another shell
+  operator, an unsafe stage, or an untrusted executable leaves the effect
+  `unknown`; it does not prove that a mutation occurred.
+- The pre-edit intent gate remains fail-closed for `unknown`. Its
+  `project-dev-required` recovery means the shell shape was not proven
+  read-only, not that the hook observed a write. Exact trusted `agent-docs`
+  preparation for another declared intent is admitted without first preparing
+  `project-dev`; a near miss receives targeted trusted-command recovery.
 - Hook source and managed config live under the active hook source checkout plus
   the managed block in the tool's runtime config (Codex `config.toml`, Claude
   `settings.json`).

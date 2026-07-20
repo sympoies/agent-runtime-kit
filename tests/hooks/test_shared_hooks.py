@@ -8404,13 +8404,10 @@ exit 64
                 f"--project-path {shlex.quote(str(root.resolve()))} "
                 "preflight --intent task-tools"
             )
-            # Still gated: shell writes, a bare (untrusted) agent-docs executable,
-            # a file-writing --output flag, and shell-control wrappers all fall
-            # through to the mutation gate and require project-dev.
+            # Still gated as repository mutations: shell writes, a file-writing
+            # --output flag, and shell-control wrappers all require project-dev.
             blocked = (
                 "git diff --output=src/diff.txt",
-                bare_activation,
-                bare_preflight,
                 f"{preflight} --output src/preflight.json",
                 f"alias agent-docs='printf x > src/lib.rs'; {bare_activation}",
                 f"agent-docs() {{ printf x > src/lib.rs; }}; {bare_activation}",
@@ -8424,6 +8421,22 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "project-dev")
+
+            # A bare agent-docs spelling is a near miss, not evidence that the
+            # requested non-project-dev intent itself requires project-dev.
+            for command in (bare_activation, bare_preflight):
+                with self.subTest(agent_docs_near_miss=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "shell-bootstrap"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "trusted agent-docs")
+                    self.assertIn(
+                        "[reason: agent-docs-command-untrusted]", str(decision)
+                    )
+                    self.assertNotIn("before mutating", str(decision).lower())
 
             # Admitted without project-dev: read-only inspection, and trusted
             # read-only agent-docs commands for any declared intent (including a
@@ -8479,8 +8492,9 @@ exit 64
                 },
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "project-dev")
-            self.assertIn("session --help", repo_bin_log.read_text(encoding="utf-8"))
+            self.assert_blocked(decision, "resolved trusted agent-docs")
+            self.assertIn("[reason: agent-docs-command-untrusted]", str(decision))
+            self.assertFalse(repo_bin_log.exists())
 
             payload = command_payload(activation)
             payload["session_id"] = "shell-bootstrap"
@@ -8503,10 +8517,12 @@ exit 64
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-            bin_dir = repo / "bin"
+            bin_dir = root / "runtime-bin"
             bin_dir.mkdir()
             self._write_fake_agent_docs(
                 bin_dir,
@@ -8520,6 +8536,9 @@ fi
 exit 64
 """,
             )
+            trusted_rg = bin_dir / "rg"
+            trusted_rg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            trusted_rg.chmod(0o755)
             env = {
                 "AGENT_RUNTIME_PRODUCT": "codex",
                 "HOME": str(repo / "home"),
@@ -8528,9 +8547,9 @@ exit 64
             (repo / "home").mkdir()
             read_only = (
                 "git status --short",
-                "git log --oneline -5",
-                "git diff --stat",
-                "git show HEAD",
+                "git log --no-ext-diff --no-textconv --oneline -5",
+                "git diff --no-ext-diff --no-textconv --stat",
+                "git show --no-ext-diff --no-textconv HEAD",
                 "git rev-parse --abbrev-ref HEAD",
                 "git blame README.md",
                 "gh issue view 601",
@@ -8542,6 +8561,10 @@ exit 64
                 "grep -rn TODO .",
                 "wc -l README.md",
                 "which git",
+                "rg --no-config TODO .",
+                "rg --no-config TODO . | head -n 20",
+                "rg --no-config TODO . | wc -l | head -n 1",
+                "nl -ba README.md | sed -n '1,20p'",
             )
             for command in read_only:
                 with self.subTest(read_only=command):
@@ -8552,6 +8575,30 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+            shadow_marker = repo / "shadow-rg-ran"
+            shadow_bin = repo / "bin"
+            shadow_bin.mkdir()
+            shadow_rg = shadow_bin / "rg"
+            shadow_rg.write_text(
+                "#!/bin/sh\ntouch "
+                + shlex.quote(str(shadow_marker))
+                + "\nexit 0\n",
+                encoding="utf-8",
+            )
+            shadow_rg.chmod(0o755)
+            shadow_env = {
+                **env,
+                "PATH": f"{shadow_bin}{os.pathsep}{env['PATH']}",
+            }
+            payload = command_payload("rg --no-config TODO .")
+            payload["session_id"] = "read-only-lane"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=shadow_env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            self.assertFalse(shadow_marker.exists())
 
             # Write- or exec-capable shapes are not read-only and stay gated.
             # The git-grep pager, `file -C`, and path-prefixed executable cases
@@ -8565,9 +8612,26 @@ exit 64
                 "gh api /repos/x",
                 "gh pr checkout 3",
                 "rg foo src",
+                "rg --no-config --pre cat foo src",
+                "rg --no-config --hostname-bin ./evil TODO .",
+                "rg --no-config --hostname-bin=./evil TODO .",
+                "rg --no-config --search-zip TODO archive.gz",
+                "rg --no-config -z TODO archive.gz",
+                "rg --no-config -Hz TODO archive.gz",
+                "rg TODO . -- --no-config",
+                "rg --no-config TODO . || head -n 1 README.md",
+                "git log --oneline -5",
+                "git diff --stat",
+                "git show HEAD",
+                "git diff --ext-diff",
+                "git show --textconv HEAD",
                 "find . -delete",
                 "sort -o out in",
                 "cat a | tee b",
+                "cat README.md > copy.md",
+                "cat $(pwd)/README.md",
+                "echo 'read\\' ; touch owned ; echo 'tail\\'",
+                "nl -ba README.md | sed -n '1,20e touch owned'",
                 "env FOO=1 cat f",
                 "file -C -m mymagic",
                 "file README.md",
@@ -8720,7 +8784,11 @@ printf '%s\\n' "$*" >> {shlex.quote(str(call_log))}
 if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
 if [[ "$*" == *"session prepare"* ]]; then
   intents='["project-dev"]'
-  if [[ "$*" == *"--intent task-tools"* ]]; then intents='["project-dev","task-tools"]'; fi
+  if [[ "$*" == *"--intent project-dev"* && "$*" == *"--intent task-tools"* ]]; then
+    intents='["project-dev","task-tools"]'
+  elif [[ "$*" == *"--intent task-tools"* ]]; then
+    intents='["task-tools"]'
+  fi
   printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"codex","active_intents":'"$intents"',"record_file":"r.json","verified":true,"prepared_intents":'"$intents"',"reason":"prepared"}}}}'
   exit 0
 fi
@@ -8732,7 +8800,11 @@ exit 64
 """,
             )
 
-            for intents in (("project-dev",), ("project-dev", "task-tools")):
+            for intents in (
+                ("project-dev",),
+                ("task-tools",),
+                ("project-dev", "task-tools"),
+            ):
                 with self.subTest(intents=intents):
                     call_log.write_text("", encoding="utf-8")
                     payload = command_payload(prepare_command(*intents))
@@ -9201,6 +9273,73 @@ exit 64
                     "hook_event_name": "PreToolUse",
                 }
             )
+
+            # Read-only pipelines and unknown shell effects are not recognized
+            # mutations, so advisory mode stays silent and does not query peer
+            # overlap. Enforce mode retains its separate fail-closed path.
+            call_log.write_text("", encoding="utf-8")
+            for command in (
+                "rg --no-config TODO . | head -n 5",
+                "nl -ba README.md | sed -n '1,5p'",
+                "python3 -c 'print(1)'",
+                "git push --dry-run origin HEAD:topic",
+                "git branch --list",
+                "git branch --list topic",
+                "git tag --list",
+                "gh release view v1",
+            ):
+                with self.subTest(advisory_non_mutation=command):
+                    inspection = command_payload(command)
+                    inspection.update(
+                        {
+                            "session_id": "product-private-session",
+                            "tool_use_id": "advisory-non-mutation",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_hook(
+                        "session-coordination-guard.py",
+                        inspection,
+                        cwd=repo,
+                        env=base_env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+                    self.assertEqual(call_log.read_text(encoding="utf-8"), "")
+
+            # Positively recognized shell and provider mutations still consult
+            # advisory overlap. These commands are inspected by the hook only;
+            # the test never executes the payload command itself.
+            for command in (
+                "echo changed > src/out.txt",
+                "cat README.md | tee src/out.txt",
+                "forge-cli issue close 1",
+                "git push origin HEAD:topic",
+                "git branch topic",
+                "git branch --set-upstream-to=origin/main",
+                "git tag v1",
+                "gh release create v1",
+                "gh release upload v1 artifact.tgz",
+                "gh api -X POST /repos/example/repo/dispatches",
+            ):
+                with self.subTest(advisory_mutation=command):
+                    mutation = command_payload(command)
+                    mutation.update(
+                        {
+                            "session_id": "product-private-session",
+                            "tool_use_id": "advisory-mutation",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_hook(
+                        "session-coordination-guard.py",
+                        mutation,
+                        cwd=repo,
+                        env=dict(base_env, COORD_SCENARIO="warning"),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    self.assertIn("possible overlap", str(decision).lower())
 
             for scenario, warning in (
                 ("warning", "possible overlap"),
@@ -10399,6 +10538,46 @@ exit 64
         guard = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(guard)
         agent_session = shutil.which("agent-session") or "/usr/bin/false"
+        with tempfile.TemporaryDirectory() as tmp:
+            trusted_bin = Path(tmp)
+            trusted_rg = trusted_bin / "rg"
+            trusted_rg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            trusted_rg.chmod(0o755)
+            trusted_env = {
+                "PATH": f"{trusted_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(trusted_bin),
+            }
+            with mock.patch.dict(os.environ, trusted_env):
+                self.assertTrue(
+                    guard.command_bypasses_admission(
+                        "rg --no-config TODO . | head -n 5", agent_session
+                    )
+                )
+                self.assertTrue(
+                    guard.command_bypasses_admission(
+                        "nl -ba README.md | sed -n '1,5p'", agent_session
+                    )
+                )
+                for command in (
+                    "rg TODO .",
+                    "rg --no-config --pre cat TODO .",
+                    "rg --no-config --hostname-bin ./evil TODO .",
+                    "rg --no-config --hostname-bin=./evil TODO .",
+                    "rg --no-config --search-zip TODO archive.gz",
+                    "rg --no-config -z TODO archive.gz",
+                    "rg --no-config -Hz TODO archive.gz",
+                    "rg TODO . -- --no-config",
+                    "rg --no-config TODO . || head -n 1 README.md",
+                    "cat README.md > copy.md",
+                    "cat README.md | tee copy.md",
+                    "cat $(pwd)/README.md",
+                    "echo 'read\\' ; touch owned ; echo 'tail\\'",
+                    "nl -ba README.md | sed -n '1,5e touch owned'",
+                ):
+                    with self.subTest(unsafe_pipeline=command):
+                        self.assertFalse(
+                            guard.command_bypasses_admission(command, agent_session)
+                        )
         self.assertFalse(guard.command_bypasses_admission("git status --short", agent_session))
         self.assertFalse(
             guard.command_bypasses_admission("git blame README.md", agent_session)
@@ -10428,6 +10607,28 @@ exit 64
             self.assertFalse(
                 guard.command_bypasses_admission(f"{shadow} status", agent_session)
             )
+
+    def test_session_coordination_effect_avoids_git_probe_for_non_mutations(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_effect_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        agent_session = shutil.which("agent-session") or "/usr/bin/false"
+        with mock.patch.object(guard, "bounded_git_toplevel") as git_root:
+            read_only = guard.command_effect(
+                "cat README.md | head -n 5", agent_session, Path.cwd()
+            )
+            unknown = guard.command_effect(
+                "python3 -c 'print(1)'", agent_session, Path.cwd()
+            )
+        self.assertEqual(read_only.kind, "read-only")
+        self.assertEqual(unknown.kind, "unknown")
+        git_root.assert_not_called()
 
     def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
