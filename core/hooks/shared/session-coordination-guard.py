@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Admit managed-session mutations through agent-session work-context leases.
+"""Advise managed sessions about overlap, with opt-in strict enforcement.
 
 The hook is intentionally bounded and privacy-minimizing. Managed launches that
-publish the exact session/capability/state environment receive fail-closed claim
-and operation admission. Unmanaged launches and pre-v1.24.5 installations stay
-usable with accurate advisory behavior. Public hook output contains only fixed
-reason codes and recovery shapes; raw paths, session identities, capabilities,
-peer summaries, and CLI error messages never leave this process.
+publish the exact session/capability/state environment receive non-blocking
+advice by default. Only ``AGENT_SESSION_COORDINATION_MODE=enforce`` enables the
+legacy fail-closed claim and operation admission path. ``off`` and unmanaged
+launches stay silent. Public hook output contains only fixed reason codes and
+recovery shapes; raw paths, session identities, capabilities, peer summaries,
+and CLI error messages never leave this process.
 """
 
 from __future__ import annotations
@@ -134,6 +135,7 @@ CLAIM_ERROR_CODES = frozenset(
 ADVISORY_CLASSIFICATIONS = frozenset(
     {"potential_conflict", "unknown", "no_known_conflict"}
 )
+COORDINATION_MODES = frozenset({"advisory", "enforce", "off"})
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -236,7 +238,12 @@ def resolved_agent_session() -> str | None:
     return resolved_trusted_cli("agent-session")
 
 
-def coordination_capability(executable: str) -> bool:
+def coordination_mode() -> str:
+    raw = os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower()
+    return raw if raw in COORDINATION_MODES else "advisory"
+
+
+def coordination_capability(executable: str, mode: str = "enforce") -> bool:
     version = run_cli([executable, "--version"])
     if version is None or version.returncode != 0:
         return False
@@ -246,10 +253,12 @@ def coordination_capability(executable: str) -> bool:
     help_result = run_cli([executable, "work-context", "--help"])
     if help_result is None or help_result.returncode != 0:
         return False
-    return all(
-        command in help_result.stdout
-        for command in ("show", "check", "admit", "complete", "reconcile")
+    required = (
+        ("show", "check", "admit", "complete", "reconcile")
+        if mode == "enforce"
+        else ("advise",)
     )
+    return all(command in help_result.stdout for command in required)
 
 
 def simple_words(command: str) -> list[str] | None:
@@ -492,7 +501,10 @@ def repository_id(root: Path) -> str | None:
 
 
 def canonical_target_path(
-    raw: str, base: Path
+    raw: str,
+    base: Path,
+    known_root: Path | None = None,
+    known_repository: str | None = None,
 ) -> tuple[dict[str, str], dict[str, str]] | None:
     lexical = Path(raw).expanduser()
     if not lexical.is_absolute():
@@ -508,16 +520,35 @@ def canonical_target_path(
         if not current.exists():
             break
     path = lexical.resolve(strict=False)
+    root: Path | None = None
+    repository: str | None = None
+    if known_root is not None and known_repository is not None:
+        try:
+            path.relative_to(known_root)
+        except ValueError:
+            pass
+        else:
+            probe = path if path.is_dir() else path.parent
+            nested_checkout = False
+            while probe != known_root and probe != probe.parent:
+                if (probe / ".git").exists():
+                    nested_checkout = True
+                    break
+                probe = probe.parent
+            if not nested_checkout:
+                root = known_root
+                repository = known_repository
     probe = path if path.is_dir() else path.parent
-    while not probe.exists() and probe != probe.parent:
-        probe = probe.parent
-    root_raw = bounded_git_toplevel(str(probe))
-    if not root_raw:
-        return None
-    root = Path(root_raw).resolve()
-    repository = repository_id(root)
-    if repository is None:
-        return None
+    if root is None or repository is None:
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        root_raw = bounded_git_toplevel(str(probe))
+        if not root_raw:
+            return None
+        root = Path(root_raw).resolve()
+        repository = repository_id(root)
+        if repository is None:
+            return None
     try:
         relative = path.relative_to(root)
     except ValueError:
@@ -641,8 +672,22 @@ def operation_targets(
         paths = edit_paths(payload)
         if not paths:
             return None, "target-extraction-failed"
+        known_root: Path | None = None
+        known_repository: str | None = None
+        root_raw = bounded_git_toplevel(str(base))
+        if root_raw:
+            candidate_root = Path(root_raw).resolve()
+            candidate_repository = repository_id(candidate_root)
+            if candidate_repository is not None:
+                known_root = candidate_root
+                known_repository = candidate_repository
         for raw in paths:
-            resolved = canonical_target_path(raw, base)
+            resolved = canonical_target_path(
+                raw,
+                base,
+                known_root=known_root,
+                known_repository=known_repository,
+            )
             if resolved is None:
                 return None, "target-boundary-unavailable"
             target, checkout = resolved
@@ -738,16 +783,31 @@ def ensure_private_dir(path: Path) -> bool:
 
 
 def write_private(path: Path, data: str) -> bool:
+    descriptor: int | None = None
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
         descriptor = os.open(path, flags, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = None
             handle.write(data)
         return True
     except OSError:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        best_effort_unlink(path)
         return False
+
+
+def best_effort_unlink(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def replace_private(path: Path, body: Mapping[str, Any]) -> bool:
@@ -815,6 +875,80 @@ def claim_recovery_reason(code: str) -> str:
         "Do not inspect logs, transcripts, prompt text, or mailbox bodies automatically. "
         f"[reason: {code}]"
     )
+
+
+def emit_advisory_unavailable(reason: str) -> None:
+    emit_system(
+        "Session coordination is unavailable, but work remains allowed because "
+        "coordination is advisory. Retry `agent-session work-context advise --format "
+        f"json` when useful. [reason: {reason}]"
+    )
+
+
+def advisory_pre_tool(
+    payload: Mapping[str, Any],
+    *,
+    executable: str,
+    managed_session: str,
+    state_dir: str,
+    product: str,
+) -> int:
+    tool = tool_name(payload)
+    if tool in COMMAND_TOOLS and command_bypasses_admission(
+        command_from(payload), executable
+    ):
+        return ALLOW
+    args = common_cli_args(executable, state_dir) + ["work-context", "advise"]
+    temporary: Path | None = None
+    operation, targets_or_reason = operation_targets(payload, tool)
+    if operation is not None and isinstance(targets_or_reason, dict):
+        namespace = private_namespace(product, managed_session)
+        if ensure_private_dir(namespace):
+            temporary = namespace / f"advisory-{uuid.uuid4().hex}.targets.json"
+            if write_private(
+                temporary, json.dumps(targets_or_reason, sort_keys=True) + "\n"
+            ):
+                args.extend(["--targets-file", str(temporary)])
+    args.extend(["--format", "json"])
+    try:
+        completed = run_cli(args)
+    finally:
+        if temporary is not None:
+            best_effort_unlink(temporary)
+    body = json_body(completed)
+    advisory = result_data(body)
+    if completed is None or completed.returncode != 0 or not advisory:
+        emit_advisory_unavailable("coordination-unavailable")
+        return ALLOW
+    if (
+        advisory.get("schema_version")
+        != "agent-session.work-context-advisory.v1"
+        or advisory.get("managed") is not True
+        or not isinstance(advisory.get("available"), bool)
+    ):
+        emit_advisory_unavailable("advisory-invalid")
+        return ALLOW
+    if advisory.get("suppressed") is True or advisory.get("severity") == "none":
+        return ALLOW
+    severity = advisory.get("severity")
+    if severity == "warning":
+        emit_system(
+            "Session coordination advisory: possible overlap with another managed "
+            "session. Work remains allowed; coordinate or run `agent-session "
+            "work-context acknowledge --for 30m` if the overlap is intentional. "
+            "[reason: possible-overlap]"
+        )
+    elif severity == "info":
+        emit_system(
+            "Session coordination advisory: another managed session is active in this "
+            "repository, but no direct overlap is known. Work remains allowed. "
+            "[reason: shared-repository]"
+        )
+    elif severity == "degraded":
+        emit_advisory_unavailable("incomplete-peer-state")
+    else:
+        emit_advisory_unavailable("advisory-invalid")
+    return ALLOW
 
 
 def acquire_operation_lock(path: Path) -> int | None:
@@ -1454,23 +1588,31 @@ def main() -> int:
     product = os.environ.get("AGENT_RUNTIME_PRODUCT", "").strip()
     if product not in SUPPORTED_PRODUCTS:
         return ALLOW
+    mode = coordination_mode()
+    if mode == "off":
+        return ALLOW
     managed_session = os.environ.get("AGENT_SESSION_ID", "").strip()
     capability_file = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
     state_dir = os.environ.get("AGENT_SESSION_STATE_DIR", "").strip()
     if not managed_session and not capability_file:
         return ALLOW
     if not managed_session or not capability_file or not state_dir:
-        emit_system(
-            "Session coordination is unavailable because this launch lacks complete managed "
-            "session metadata; no enforcement claim is made."
-        )
+        if mode == "advisory":
+            emit_advisory_unavailable("managed-metadata-incomplete")
+        else:
+            emit_system(
+                "Session coordination is unavailable because this launch lacks complete managed "
+                "session metadata; no enforcement claim is made."
+            )
         return ALLOW
     tool = tool_name(payload)
     if tool not in EDIT_TOOLS | COMMAND_TOOLS and event != "Stop":
         return ALLOW
+    if mode == "advisory" and event in {"PostToolUse", "PostToolUseFailure", "Stop"}:
+        return ALLOW
     if event in {"PostToolUse", "PostToolUseFailure"}:
         executable = resolved_agent_session()
-        if executable is not None and not coordination_capability(executable):
+        if executable is not None and not coordination_capability(executable, mode):
             executable = None
         return post_tool(
             payload,
@@ -1489,23 +1631,39 @@ def main() -> int:
         or not capability_path.is_file()
         or capability_mode != 0o600
     ):
-        emit_system(
-            "Session coordination is unavailable because the managed capability file is "
-            "not a private regular file; no enforcement claim is made."
-        )
+        if mode == "advisory":
+            emit_advisory_unavailable("capability-file-invalid")
+        else:
+            emit_system(
+                "Session coordination is unavailable because the managed capability file is "
+                "not a private regular file; no enforcement claim is made."
+            )
         if event == "Stop":
             return stop_audit(None, managed_session, product)
         return ALLOW
     executable = resolved_agent_session()
-    if executable is None or not coordination_capability(executable):
-        emit_system(
-            "Session coordination is unavailable on this agent-session surface; no "
-            "enforcement claim is made. Upgrade to the repository-pinned runtime before "
-            "relying on coordination."
-        )
+    if executable is None or (
+        mode == "enforce" and not coordination_capability(executable, mode)
+    ):
+        if mode == "advisory":
+            emit_advisory_unavailable("coordination-surface-unavailable")
+        else:
+            emit_system(
+                "Session coordination is unavailable on this agent-session surface; no "
+                "enforcement claim is made. Upgrade to the repository-pinned runtime before "
+                "relying on coordination."
+            )
         if event == "Stop":
             return stop_audit(None, managed_session, product)
         return ALLOW
+    if mode == "advisory":
+        return advisory_pre_tool(
+            payload,
+            executable=executable,
+            managed_session=managed_session,
+            state_dir=state_dir,
+            product=product,
+        )
     if event == "Stop":
         return stop_audit(executable, managed_session, product)
     return pre_tool(

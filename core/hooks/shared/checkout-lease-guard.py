@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Coordinate one agent writer lease per physical Git checkout.
+"""Coordinate one agent writer lease per physical Git checkout in enforce mode.
 
-The guard deliberately recognizes only explicit edit tools and high-confidence
-shell mutations. Read-only inspection stays available. Stop performs an audit
-only: it never removes a worktree, branch, or lease.
+The lease is an opt-in strict coordination layer selected with
+``AGENT_SESSION_COORDINATION_MODE=enforce``. Advisory, off, invalid, and absent
+mode values never acquire or block on a lease. In enforce mode the guard
+recognizes only explicit edit tools and high-confidence shell mutations.
+Read-only inspection stays available. Stop performs an audit only: it never
+removes a worktree, branch, or lease.
 """
 
 from __future__ import annotations
@@ -2641,6 +2644,8 @@ def stop_audit(payload: Mapping[str, Any]) -> int:
 
 
 def main() -> int:
+    if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
+        return ALLOW
     payload = read_payload()
     event = hook_event(payload)
     if event == "Stop":

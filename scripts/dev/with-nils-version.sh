@@ -243,6 +243,19 @@ resolve_release() {
 
 # --- src:/local build --------------------------------------------------------
 
+harden_source_bin_dir() {
+  # Source builds inherit the caller's umask. Remove group/world write bits so
+  # self-authenticating workers such as `git-cli worktree dirty-snapshot` can
+  # trust the executable bytes placed on PATH.
+  local bindir binary
+  bindir="$1"
+  for binary in git-cli $SURFACE_BINS; do
+    [ -e "$bindir/$binary" ] || continue
+    chmod go-w "$bindir/$binary" ||
+      die "could not harden source-built binary: $bindir/$binary"
+  done
+}
+
 resolve_src() {
   # $1 = ref. Builds the whole workspace in a dedicated detached worktree.
   local ref sanitized wt_root wt
@@ -261,6 +274,7 @@ resolve_src() {
   # Word-split NILS_BUILD_ARGS so multiple cargo args pass through (bash 3.2: no arrays).
   # shellcheck disable=SC2086
   (cd "$wt" && cargo build ${NILS_BUILD_ARGS:-} >&2) || die "cargo build failed at $ref"
+  harden_source_bin_dir "$wt/target/debug"
   printf '%s\n' "$wt/target/debug"
 }
 
@@ -274,6 +288,7 @@ resolve_local() {
     # shellcheck disable=SC2086
     (cd "$NILS_CLI_REPO" && cargo build ${NILS_BUILD_ARGS:-} >&2) || die "cargo build failed in $NILS_CLI_REPO"
   fi
+  harden_source_bin_dir "$bindir"
   printf '%s\n' "$bindir"
 }
 

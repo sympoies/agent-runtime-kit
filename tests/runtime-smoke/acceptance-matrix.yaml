@@ -111,8 +111,8 @@ cases:
     skill_id: meta.sync-runtime-surfaces
     mode: deterministic
     fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: render isolated Codex Claude and Hermes surfaces with released nils-cli v1.24.5
-    invocation: verify source-bound session-coordination intent plus Codex and Claude pre post failure and stop hook registration while Hermes remains policy-only
+    setup: render isolated Codex Claude and Hermes surfaces with the source-bound nils-cli contract
+    invocation: verify advisory-by-default session-coordination intent plus Codex and Claude pre post failure and stop hook registration while Hermes remains policy-only
     expected_exit_code: 0
     expected_artifacts: converged home prompts hook registration and privacy-safe deterministic guard evidence
     cleanup: temp-output-only

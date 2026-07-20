@@ -122,7 +122,11 @@ Direct-edit verification stays target-based (each edit path's repository);
 shell verification is working-repository-based on this effective workdir.
 
 `checkout-lease-guard.py` coordinates one writer per physical Git checkout
-across Codex and Claude. Explicit edit tools always participate; Bash
+across Codex and Claude only when the managed launch explicitly selects
+`AGENT_SESSION_COORDINATION_MODE=enforce`. Missing, invalid, `advisory`, and
+`off` modes bypass the lease without acquiring or blocking, so ordinary
+iTerm-launched agents remain valid non-participants. In enforce mode, explicit
+edit tools participate; Bash
 participates only for conservative high-confidence mutations, including known
 nested shell / `agent-run exec` forms and managed worktree removal, so read-only
 recovery remains available. In particular, `semantic-commit` help and dry-run
@@ -146,8 +150,20 @@ lease state for physically removed worktrees while retaining the stable
 per-checkout lock inode; dirty or mismatched ownership is retained and reported.
 Stop never removes a worktree, branch, commit, or dirty file.
 
-`session-coordination-guard.py` is a separate semantic admission layer for
-managed Codex and Claude launches. When the launch provides
+`session-coordination-guard.py` is a separate semantic awareness layer for
+managed Codex and Claude launches. `advisory` is the default when the mode is
+missing or invalid. Broker-ready sessions automatically participate through
+presence; recognized mutations call privacy-safe `work-context advise` and may
+emit fixed informational, overlap, or degraded-availability guidance, but never
+block the tool call. `work-context set|clear` can add optional bounded task
+context without requiring session IDs, capability arguments, revision numbers,
+or a pre-written JSON file. `work-context acknowledge` suppresses only the
+most recently observed overlap for a bounded incarnation-specific window;
+changed peers, reasons, repositories, or availability warn again, while target
+churn covered by the same overlap stays quiet and explicit advice retains the
+reasons. `off` and unmanaged launches are silent.
+
+When a managed launch explicitly selects `enforce` and provides
 `AGENT_SESSION_ID`, `AGENT_SESSION_CAPABILITY_FILE`, and
 `AGENT_SESSION_STATE_DIR` on the released v1.24.5 surface, recognized direct
 edits, repository shell mutations, and exact provider mutations require an
@@ -171,14 +187,18 @@ is serialized by a stable local lock. Claude runs its mutation prerequisites
 through `claude-pretool-sequence.py` so its parallel hook scheduler cannot admit
 a tool denied by another prerequisite. The guard applies one 50-second global
 subprocess budget; Codex gives it a 60-second host timeout, and Claude's
-per-child/outer timeouts cover the sequential worst case. Unmanaged launches and older/missing coordination surfaces
-remain usable with accurate no-enforcement guidance. Hook output never includes
+per-child/outer timeouts cover the sequential worst case. In advisory mode,
+older/missing coordination surfaces remain usable with bounded degraded
+guidance; in enforce mode they retain accurate no-enforcement guidance. Hook
+output never includes
 raw session/capability/incarnation/checkout values, peer summaries, mailbox
-bodies, or private registry paths. The physical checkout lease above remains
-independent and Hermes still has no runtime-kit hook runner.
+bodies, or private registry paths. The physical checkout lease above shares the
+same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
+runner.
 
-Dirty-checkout adoption is an opt-in advisory layered over that unconditional
-mutation gate. With `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` set to `1`, a dirty
+Dirty-checkout adoption is an opt-in advisory layered over the enforce-mode
+checkout gate. With `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` set to `1` and
+coordination mode set to `enforce`, a dirty
 `UserPromptSubmit` may use released `git-cli worktree dirty-snapshot` to issue a
 mode-0600, one-time, five-minute bearer challenge bound to the exact repository,
 checkout instance, session digest, authorization-turn digest, HEAD/branch state,

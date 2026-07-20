@@ -235,9 +235,11 @@ a uniform shape:
 - Acceptance lane: shared hook contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
 - `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
-  and `Stop`. The prompt path is silent unless dirty-checkout adoption is opted
+  and `Stop`, but performs lease work only for explicit coordination mode
+  `enforce`. Default/advisory/off and unmanaged launches never acquire or block
+  on a physical checkout lease. In enforce mode the prompt path is silent unless dirty-checkout adoption is opted
   in and released `git-cli >=1.24.1` can issue an exact five-minute snapshot
-  challenge; file/index mutation remains fail-closed regardless of the opt-in.
+  challenge; file/index mutation remains fail-closed regardless of the adoption opt-in.
   Adopted lease-v2 provenance survives same-session refresh, receipt-bound
   revocation changes no content, and the only lease-free dirty exception is a
   sole recognized ref-only branch/tag operation.

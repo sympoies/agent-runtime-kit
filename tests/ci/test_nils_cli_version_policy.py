@@ -555,6 +555,51 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     self.assertNotEqual(rejected_tag.returncode, 0)
                     self.assertIn("release tag must be stable", rejected_tag.stderr)
 
+    def test_source_helper_hardens_self_trusting_binaries(self) -> None:
+        helper = ROOT / "scripts/dev/with-nils-version.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "nils-cli"
+            (repo / ".git").mkdir(parents=True)
+            worktree = Path(f"{repo}-worktrees") / "wnv-fixture-ref"
+            worktree.mkdir(parents=True)
+            (worktree / ".git").write_text("gitdir: fixture\n", encoding="utf-8")
+            bin_dir = worktree / "target" / "debug"
+            bin_dir.mkdir(parents=True)
+            for binary in ("agent-runtime", "git-cli"):
+                path = bin_dir / binary
+                path.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "if [ \"${1:-}\" = --version ]; then echo fixture; fi\n",
+                    encoding="utf-8",
+                )
+                path.chmod(0o775)
+
+            fake_bin = root / "fake-bin"
+            fake_bin.mkdir()
+            cargo = fake_bin / "cargo"
+            cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            cargo.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "NILS_CLI_REPO": str(repo),
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                }
+            )
+
+            subprocess.run(
+                [str(helper), "src:fixture-ref", "--", "true"],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            for binary in ("agent-runtime", "git-cli"):
+                with self.subTest(binary=binary):
+                    self.assertEqual((bin_dir / binary).stat().st_mode & 0o022, 0)
+
     def test_packaging_is_bound_to_validated_tag_and_release_digests(self) -> None:
         publish = read(".github/workflows/publish-image.yml")
         build = read("docker/build.sh")

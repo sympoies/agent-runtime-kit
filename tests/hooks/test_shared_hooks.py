@@ -145,6 +145,26 @@ def run_hook(
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
+def run_enforced_hook(
+    script_name: str,
+    payload: dict[str, Any],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    dont_write_bytecode: bool = True,
+) -> tuple[int, dict[str, object] | None, str]:
+    """Run a legacy strict-coordination fixture with explicit enforce mode."""
+    enforced_env = dict(env or {})
+    enforced_env.setdefault("AGENT_SESSION_COORDINATION_MODE", "enforce")
+    return run_hook(
+        script_name,
+        payload,
+        cwd=cwd,
+        env=enforced_env,
+        dont_write_bytecode=dont_write_bytecode,
+    )
+
+
 def run_shell_hook(
     script_name: str,
     payload: dict[str, Any],
@@ -9108,7 +9128,7 @@ exit 64
             payload["session_id"] = "product-private-session"
             payload["tool_use_id"] = "tool-private-id"
             payload["hook_event_name"] = "PreToolUse"
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9123,6 +9143,470 @@ exit 64
                 "/home/canary",
             ):
                 self.assertNotIn(private, reason)
+
+    def test_session_coordination_default_is_advisory_and_never_blocks_mutation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            (repo / "src").mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://example.invalid/example/repo.git"],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {shlex.quote(str(call_log))}
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.25.2'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'status set clear advise acknowledge show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context advise"* ]]; then
+  case "${{COORD_SCENARIO:-warning}}" in
+    warning) printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context-advisory.v1","managed":true,"mode":"advisory","available":true,"severity":"warning","suppressed":false,"reasons":[{{"code":"same-worktree","peer_session_id":"peer-private","repository":"example/repo"}}],"peers":[]}}}}' ;;
+    mixed) printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context-advisory.v1","managed":true,"mode":"advisory","available":false,"severity":"warning","suppressed":false,"reasons":[{{"code":"same-worktree","peer_session_id":"peer-private","repository":"example/repo"}}],"peers":[]}}}}' ;;
+    suppressed) printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context-advisory.v1","managed":true,"mode":"advisory","available":true,"severity":"warning","suppressed":true,"reasons":[{{"code":"same-worktree","peer_session_id":"peer-private","repository":"example/repo"}}],"peers":[]}}}}' ;;
+    unavailable) printf '%s\\n' '{{"ok":false,"error":{{"code":"coordination-store-unavailable","message":"private /home/canary capability"}}}}'; exit 1 ;;
+  esac
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "capability"
+            capability.write_text("private-capability\n", encoding="utf-8")
+            capability.chmod(0o600)
+            base_env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_SESSION_COORDINATION_MODE": "",
+                "AGENT_SESSION_ID": "managed-private-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload.update(
+                {
+                    "session_id": "product-private-session",
+                    "tool_use_id": "advisory-tool",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+
+            for scenario, warning in (
+                ("warning", "possible overlap"),
+                ("mixed", "possible overlap"),
+                ("unavailable", "coordination is unavailable"),
+            ):
+                with self.subTest(scenario=scenario):
+                    code, decision, stderr = run_hook(
+                        "session-coordination-guard.py",
+                        payload,
+                        cwd=repo,
+                        env=dict(base_env, COORD_SCENARIO=scenario),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    assert decision is not None
+                    self.assertNotEqual(decision.get("decision"), "block")
+                    self.assertIn(warning, str(decision).lower())
+                    for private in (
+                        str(repo),
+                        str(capability),
+                        "managed-private-session",
+                        "product-private-session",
+                        "peer-private",
+                        "private-capability",
+                        "/home/canary",
+                    ):
+                        self.assertNotIn(private, str(decision))
+
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=dict(
+                    base_env,
+                    AGENT_SESSION_COORDINATION_MODE="unexpected-value",
+                    COORD_SCENARIO="warning",
+                ),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("possible overlap", str(decision).lower())
+
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=dict(base_env, COORD_SCENARIO="suppressed"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            calls_before_off = call_log.read_text(encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=dict(base_env, AGENT_SESSION_COORDINATION_MODE="off"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(call_log.read_text(encoding="utf-8"), calls_before_off)
+
+    def test_session_coordination_advisory_private_file_failures_are_best_effort(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_advisory_cleanup_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "advisory-targets.json"
+            with mock.patch.object(guard.os, "fdopen", side_effect=OSError("write failed")):
+                self.assertFalse(guard.write_private(target, "private checkout path\n"))
+            self.assertFalse(target.exists())
+            residue = Path(tmp) / "residue"
+            residue.write_text("private checkout path\n", encoding="utf-8")
+            with mock.patch.object(guard.Path, "unlink", side_effect=OSError("busy")):
+                guard.best_effort_unlink(residue)
+
+    def test_session_coordination_advisory_multi_edit_resolves_checkout_once(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_advisory_subprocesses_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / "src").mkdir(parents=True)
+            payload = {
+                "cwd": str(repo),
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "edits": [
+                        {"file_path": "src/one.py", "content": "one\n"},
+                        {"file_path": "src/two.py", "content": "two\n"},
+                        {"file_path": "README.md", "content": "readme\n"},
+                    ]
+                },
+            }
+
+            def completed(args: list[str]) -> subprocess.CompletedProcess[str]:
+                stdout = (
+                    f"{repo}\n"
+                    if "rev-parse" in args
+                    else "https://example.invalid/example/repo.git\n"
+                )
+                return subprocess.CompletedProcess(args, 0, stdout=stdout, stderr="")
+
+            with mock.patch.object(guard, "run_cli", side_effect=completed) as run:
+                operation, targets = guard.operation_targets(payload, "MultiEdit")
+            self.assertEqual(operation, "edit")
+            self.assertIsInstance(targets, dict)
+            assert isinstance(targets, dict)
+            self.assertEqual(len(targets["targets"]), 3)
+            self.assertEqual(run.call_count, 2)
+
+    @unittest.skipUnless(
+        os.environ.get("AGENT_SESSION_COUPLED_ACCEPTANCE") == "1",
+        "requires a source-linked agent-session binary",
+    )
+    def test_session_coordination_source_linked_cross_product_acceptance(self) -> None:
+        agent_session = shutil.which("agent-session")
+        self.assertIsNotNone(agent_session)
+        assert agent_session is not None
+        version = subprocess.run(
+            [agent_session, "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        parsed_version = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", version)
+        self.assertIsNotNone(parsed_version)
+        assert parsed_version is not None
+        self.assertGreaterEqual(
+            tuple(int(part) for part in parsed_version.groups()), (1, 25, 2)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(
+                ["git", "init", "--quiet", "--initial-branch", "main"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repository.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            state = root / "state"
+            sessions = state / "sessions"
+            coordination = state / "coordination"
+            sessions.mkdir(parents=True, mode=0o700)
+            coordination.mkdir(mode=0o700)
+            now = int(time.time())
+            brokers: dict[str, object] = {}
+            capabilities: dict[str, Path] = {}
+            for session_id in ("alpha", "beta"):
+                incarnation = f"incarnation-{session_id}"
+                capability_value = f"private-capability-material-{session_id}-000001"
+                session_dir = sessions / session_id
+                capability_dir = session_dir / "coordination"
+                capability_dir.mkdir(parents=True, mode=0o700)
+                record = {
+                    "schema_version": "agent-session.session.v1",
+                    "id": session_id,
+                    "agent": "codex",
+                    "mode": "interactive",
+                    "coordination_mode": "advisory",
+                    "title": "coupled acceptance",
+                    "title_revision": 0,
+                    "cwd": str(repo),
+                    "tmux_session": f"hs-codex-{session_id}",
+                    "prompt_file": None,
+                    "log_file": None,
+                    "created_at": "2030-01-01T00:00:00Z",
+                    "updated_at": "2030-01-01T00:00:00Z",
+                    "runtime": {
+                        "kind": "tmux",
+                        "tmux_session": f"hs-codex-{session_id}",
+                        "generation": 1,
+                        "started_at": "2030-01-01T00:00:00Z",
+                        "launch_id": incarnation,
+                    },
+                }
+                record_path = session_dir / "session.json"
+                record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+                record_path.chmod(0o600)
+                capability_path = capability_dir / (
+                    "capability-" + hashlib.sha256(incarnation.encode()).hexdigest()
+                )
+                capability_path.write_text(capability_value, encoding="utf-8")
+                capability_path.chmod(0o600)
+                heartbeat = capability_dir / "heartbeat"
+                heartbeat.write_text(f"{incarnation}:{now}\n", encoding="utf-8")
+                heartbeat.chmod(0o600)
+                capabilities[session_id] = capability_path
+                brokers[session_id] = {
+                    "session_id": session_id,
+                    "incarnation": incarnation,
+                    "capability_digest": hashlib.sha256(
+                        capability_value.encode()
+                    ).hexdigest(),
+                    "generation": 1,
+                    "state": "ready",
+                    "heartbeat_at": "2030-01-01T00:00:00Z",
+                    "heartbeat_epoch": now,
+                }
+            registry_path = coordination / "registry.json"
+            registry_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "agent-session.coordination-registry.v1",
+                        "fingerprint_epoch": 1,
+                        "fingerprint_key": "fixture-private-fingerprint-key-material-0000000001",
+                        "brokers": brokers,
+                        "claims": [],
+                        "operations": [],
+                        "messages": [],
+                        "receipts": {},
+                        "notifications": {},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            registry_path.chmod(0o600)
+            binary_dir = str(Path(agent_session).resolve().parent)
+            managed_env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": binary_dir,
+                "AGENT_SESSION_ID": "alpha",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capabilities["alpha"]),
+                "AGENT_SESSION_STATE_DIR": str(state),
+                "AGENT_SESSION_COORDINATION_MODE": "",
+                "PATH": binary_dir + os.pathsep + os.environ.get("PATH", ""),
+            }
+            payload = write_payload(str(repo / "src/lib.rs"), "fn main() {}\n")
+            payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-alpha",
+                    "tool_use_id": "coupled-first-mutation",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            command_env = dict(os.environ)
+            command_env.update(managed_env)
+            probe = subprocess.run(
+                [
+                    agent_session,
+                    "--state-dir",
+                    str(state),
+                    "work-context",
+                    "advise",
+                    "--format",
+                    "json",
+                ],
+                cwd=repo,
+                env=command_env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                probe.returncode,
+                0,
+                f"source-linked advise failed: stdout={probe.stdout} stderr={probe.stderr}",
+            )
+            code, advisory, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=managed_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            self.assertNotEqual((advisory or {}).get("decision"), "block")
+            self.assertIn("possible overlap", str(advisory).lower())
+
+            acknowledged = subprocess.run(
+                [
+                    agent_session,
+                    "--state-dir",
+                    str(state),
+                    "work-context",
+                    "acknowledge",
+                    "--for",
+                    "30m",
+                    "--format",
+                    "json",
+                ],
+                cwd=repo,
+                env=command_env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(acknowledged.returncode, 0, acknowledged.stderr)
+            code, suppressed, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=managed_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(suppressed)
+
+            provider = command_payload("forge-cli issue edit 1318 --title advisory")
+            provider.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-alpha",
+                    "tool_use_id": "coupled-provider-mutation",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, provider_advisory, stderr = run_hook(
+                "session-coordination-guard.py",
+                provider,
+                cwd=repo,
+                env=managed_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(provider_advisory)
+
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["brokers"]["beta"]["state"] = "starting"
+            registry_path.write_text(json.dumps(registry) + "\n", encoding="utf-8")
+            registry_path.chmod(0o600)
+            degraded_payload = dict(payload)
+            degraded_payload["tool_use_id"] = "coupled-broker-degraded"
+            code, degraded, stderr = run_hook(
+                "session-coordination-guard.py",
+                degraded_payload,
+                cwd=repo,
+                env=managed_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertNotEqual((degraded or {}).get("decision"), "block")
+            self.assertIn("coordination is unavailable", str(degraded).lower())
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["brokers"]["beta"]["state"] = "ready"
+            registry["brokers"]["beta"]["heartbeat_epoch"] = int(time.time())
+            registry["advisory_acknowledgements"] = {}
+            registry_path.write_text(json.dumps(registry) + "\n", encoding="utf-8")
+            registry_path.chmod(0o600)
+
+            code, enforced, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=dict(managed_env, AGENT_SESSION_COORDINATION_MODE="enforce"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(enforced, "active work-context claim")
+            code, off, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env=dict(managed_env, AGENT_SESSION_COORDINATION_MODE="off"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(off)
+            code, unmanaged, stderr = run_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env={
+                    "AGENT_RUNTIME_PRODUCT": "codex",
+                    "AGENT_SESSION_ID": "",
+                    "AGENT_SESSION_CAPABILITY_FILE": "",
+                    "AGENT_SESSION_STATE_DIR": "",
+                    "AGENT_SESSION_COORDINATION_MODE": "",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(unmanaged)
+
+            claude_payload = dict(payload)
+            claude_payload["tool_use_id"] = "coupled-claude-mutation"
+            code, claude, stderr = run_hook(
+                "claude-pretool-sequence.py",
+                claude_payload,
+                cwd=repo,
+                env=dict(managed_env, AGENT_RUNTIME_PRODUCT="claude"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertNotEqual((claude or {}).get("decision"), "block")
+            self.assertIn("possible overlap", str(claude).lower())
 
     def test_session_coordination_guard_admits_advises_and_completes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9197,7 +9681,7 @@ exit 64
                     "hook_event_name": "PreToolUse",
                 }
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", pre, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9209,7 +9693,7 @@ exit 64
             post = dict(pre)
             post["hook_event_name"] = "PostToolUse"
             post["tool_response"] = {"exit_code": 0}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", post, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9229,7 +9713,7 @@ exit 64
                     "hook_event_name": "PreToolUse",
                 }
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", failed_pre, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9237,7 +9721,7 @@ exit 64
             failed_post = dict(failed_pre)
             failed_post["hook_event_name"] = "PostToolUseFailure"
             failed_post["tool_response"] = {"error": "synthetic failure"}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", failed_post, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9333,7 +9817,7 @@ exit 64
                             "hook_event_name": "PreToolUse",
                         }
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "session-coordination-guard.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -9373,7 +9857,7 @@ exit 64
                     "hook_event_name": "PreToolUse",
                 }
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py",
                 provider_payload,
                 cwd=repo,
@@ -9393,7 +9877,7 @@ exit 64
                     "hook_event_name": "PreToolUse",
                 }
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py",
                 escape_payload,
                 cwd=repo,
@@ -9435,7 +9919,7 @@ exit 64
                 "AGENT_SESSION_STATE_DIR": str(root / "state"),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9513,14 +9997,14 @@ exit 64
                     "hook_event_name": "PreToolUse",
                 }
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", pre, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
             duplicate = dict(pre)
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", duplicate, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9530,7 +10014,7 @@ exit 64
                 "hook_event_name": "Stop",
                 "session_id": "product-session",
             }
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", dropped_stop, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9540,7 +10024,7 @@ exit 64
             post = dict(pre)
             post["hook_event_name"] = "PostToolUse"
             post["tool_response"] = {"exit_code": 0}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", post, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9563,7 +10047,7 @@ exit 64
             record["outcome"] = None
             record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "session-coordination-guard.py", dropped_stop, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -9773,7 +10257,10 @@ exit 64
                 "claude-pretool-sequence.py",
                 command_payload("git commit -m bypass"),
                 cwd=Path(tmp),
-                env={"AGENT_RUNTIME_PRODUCT": "claude"},
+                env={
+                    "AGENT_RUNTIME_PRODUCT": "claude",
+                    "AGENT_SESSION_COORDINATION_MODE": "enforce",
+                },
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "checkout lease")
@@ -11806,6 +12293,44 @@ exit 65
         finally:
             sys.modules.pop(spec.name, None)
 
+    def test_checkout_lease_default_advisory_and_off_do_not_acquire_or_block(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            self._init_checkout_lease_repo(repo)
+            state = root / "state"
+            target = repo / "README.md"
+            base_env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("owner", target),
+                cwd=repo,
+                env=dict(base_env, AGENT_SESSION_COORDINATION_MODE="enforce"),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            leases = self._checkout_lease_files(state)
+            self.assertEqual(len(leases), 1)
+            owner = leases[0].read_text(encoding="utf-8")
+
+            for mode in ("", "advisory", "off"):
+                with self.subTest(mode=mode or "default"):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            f"contender-{mode or 'default'}", target
+                        ),
+                        cwd=repo,
+                        env=dict(base_env, AGENT_SESSION_COORDINATION_MODE=mode),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+                    self.assertEqual(self._checkout_lease_files(state), leases)
+                    self.assertEqual(leases[0].read_text(encoding="utf-8"), owner)
+
     def test_dirty_checkout_adoption_flag_off_is_silent_and_preserves_guard(
         self,
     ) -> None:
@@ -11820,7 +12345,7 @@ exit 65
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "flag-off-session",
@@ -11834,7 +12359,7 @@ exit 65
             self.assert_allowed(advisory)
             self.assertFalse(state.exists())
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "flag-off-session", repo / "README.md"
@@ -11863,7 +12388,7 @@ exit 65
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "advisory-session",
@@ -11940,7 +12465,7 @@ exit 65
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "quoted-reason-session",
@@ -11981,7 +12506,7 @@ exit 65
             reason_paths: list[Path] = []
 
             for prompt in ("first authorization turn", "second authorization turn"):
-                code, advisory, stderr = run_hook(
+                code, advisory, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     {
                         "session_id": "unique-reason-session",
@@ -12011,7 +12536,7 @@ exit 65
             state = repo / ".runtime-state"
             (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "inside-state-session",
@@ -12038,7 +12563,7 @@ exit 65
                 "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "existing-owner", repo / "README.md"
@@ -12053,7 +12578,7 @@ exit 65
             before = lease_files[0].read_bytes()
             (repo / "owned.txt").write_text("owned\n", encoding="utf-8")
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "existing-owner",
@@ -12083,7 +12608,7 @@ exit 65
             owner = self._checkout_lease_payload(
                 "obsolete-owner", repo / "README.md"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -12100,7 +12625,7 @@ exit 65
             )
             (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "new-checkout-session",
@@ -12133,7 +12658,7 @@ exit 65
                 "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "issuing-session",
@@ -12159,7 +12684,7 @@ exit 65
                 ),
             ):
                 with self.subTest(session_id=session_id, command=candidate):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             session_id,
@@ -12177,7 +12702,7 @@ exit 65
                         self.assert_blocked(decision, fragment)
 
             redirected = f"{command} 2>/dev/null"
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "issuing-session",
@@ -12229,7 +12754,7 @@ exit 65
                 "AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS": "60",
             }
 
-            code, advisory, stderr = run_hook(
+            code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
                     "session_id": "released-lifecycle-owner",
@@ -12249,7 +12774,7 @@ exit 65
             reason_file.write_text(reason, encoding="utf-8")
 
             adopt_command = shlex.join([*adopt_argv, "--format=json"])
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "released-lifecycle-owner",
@@ -12316,7 +12841,7 @@ exit 65
             owner = self._checkout_lease_payload(
                 "released-lifecycle-owner", repo / "README.md"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -12340,7 +12865,7 @@ exit 65
                 "git-cli worktree revoke-dirty "
                 f"--receipt {receipt_id} --format=json"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "foreign-lifecycle-session",
@@ -12354,7 +12879,7 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "owning agent session")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "released-lifecycle-owner",
@@ -12409,7 +12934,7 @@ exit 65
 
             blocked_env = dict(env)
             blocked_env["AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION"] = ""
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=blocked_env
             )
             self.assertEqual(code, 0, stderr)
@@ -12436,7 +12961,7 @@ exit 65
                     "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                     "AGENT_RUNTIME_STATE_HOME": str(state),
                 }
-                code, advisory, stderr = run_hook(
+                code, advisory, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     {
                         "session_id": f"negative-{case}",
@@ -12522,7 +13047,7 @@ exit 65
 
             for command in ("git-cli worktree dirty-snapshot",):
                 with self.subTest(admitted=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "transition-session",
@@ -12549,7 +13074,7 @@ exit 65
                 f"{valid_revoke} && touch README.md",
             ):
                 with self.subTest(rejected=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "transition-session",
@@ -12581,7 +13106,7 @@ exit 65
                 "adoption-owner", repo / "README.md"
             )
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -12596,7 +13121,7 @@ exit 65
                 "preserved by adoption\n", encoding="utf-8"
             )
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -12639,7 +13164,7 @@ exit 65
                 owner = self._checkout_lease_payload(
                     "adoption-owner", repo / "README.md"
                 )
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py", owner, cwd=repo, env=env
                 )
                 self.assertEqual(code, 0, stderr)
@@ -12673,7 +13198,7 @@ exit 65
                     "untracked only\n", encoding="utf-8"
                 )
 
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py", owner, cwd=repo, env=env
                 )
                 self.assertEqual(code, 0, stderr)
@@ -13408,7 +13933,7 @@ exit 65
                 "semantic-commit commit --validate-only --message 'fix: inspect only'",
             ):
                 with self.subTest(command=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "read-only", repo, tool_name="Bash", command=command
@@ -13444,7 +13969,7 @@ exit 65
                 "semantic-commit squash HEAD~1",
             ):
                 with self.subTest(command=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "writer", repo, tool_name="Bash", command=command
@@ -13625,14 +14150,14 @@ exit 65
             owner_payload = self._checkout_lease_payload(
                 "owner-session", repo / "README.md"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner_payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
             (repo / "owned.txt").write_text("owner change\n", encoding="utf-8")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner_payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -13641,7 +14166,7 @@ exit 65
             foreign_payload = self._checkout_lease_payload(
                 "foreign-session", repo / "README.md"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", foreign_payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -13658,7 +14183,7 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
             owner = self._checkout_lease_payload("owner", repo / "README.md")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -13668,7 +14193,7 @@ exit 65
             initial_mtime = lease_file.stat().st_mtime_ns
             time.sleep(0.02)
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -13686,7 +14211,7 @@ exit 65
             self._init_checkout_lease_repo(repo)
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
             payload = self._checkout_lease_payload("owner", repo / "README.md")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -13696,7 +14221,7 @@ exit 65
             with lock_file.open("a+", encoding="utf-8") as handle:
                 fcntl.flock(handle, fcntl.LOCK_EX)
                 started = time.monotonic()
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py", payload, cwd=repo, env=env
                 )
                 elapsed = time.monotonic() - started
@@ -13717,7 +14242,7 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
             (dirty_repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", dirty_repo / "README.md"),
                 cwd=dirty_repo,
@@ -13731,7 +14256,7 @@ exit 65
                 cwd=branch_repo,
                 check=True,
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", branch_repo / "README.md"),
                 cwd=branch_repo,
@@ -13759,7 +14284,7 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
             # A direct edit is still gated to the resolved default branch.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -13769,7 +14294,7 @@ exit 65
             self.assert_blocked(decision, "default branch")
 
             # The recommended escape is allowed from the very same checkout.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "writer",
@@ -13785,7 +14310,7 @@ exit 65
 
             # A resolved shell wrapper around the sole add is unwrapped and still
             # allowed, so the sanctioned escape survives a `bash -c '…'` form.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "writer",
@@ -13912,7 +14437,7 @@ exit 65
             ).stdout.strip()
             (Path(git_dir) / "MERGE_HEAD").write_text("fixture\n", encoding="utf-8")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "writer", repo, tool_name="Bash", command="git rebase --abort"
@@ -13924,7 +14449,7 @@ exit 65
             self.assert_allowed(decision)
             self.assertEqual(self._checkout_lease_files(state), [])
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -13963,7 +14488,7 @@ exit 65
                 ),
                 ('bash -c "$UNRESOLVED"', "unresolved"),
             ):
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload(
                         "writer", repo, tool_name="Bash", command=command
@@ -13989,7 +14514,7 @@ exit 65
                 ["git", "config", "init.defaultBranch", "main"], cwd=repo, check=True
             )
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -14006,7 +14531,7 @@ exit 65
             self._init_checkout_lease_repo(repo)
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("first", repo / "README.md"),
                 cwd=repo,
@@ -14020,7 +14545,7 @@ exit 65
             lease["expires_at"] = 0
             lease_file.write_text(json.dumps(lease) + "\n", encoding="utf-8")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("second", repo / "README.md"),
                 cwd=repo,
@@ -14037,7 +14562,7 @@ exit 65
             self._init_checkout_lease_repo(repo)
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("first", repo / "README.md"),
                 cwd=repo,
@@ -14051,7 +14576,7 @@ exit 65
             lease_file.write_text(json.dumps(lease) + "\n", encoding="utf-8")
             (repo / "dirty.txt").write_text("unowned\n", encoding="utf-8")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("second", repo / "README.md"),
                 cwd=repo,
@@ -14084,7 +14609,7 @@ exit 65
                     ]
                 },
             }
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", payload, cwd=first, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14100,7 +14625,7 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
             def attempt(session: str) -> tuple[int, dict[str, object] | None, str]:
-                return run_hook(
+                return run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload(session, repo / "README.md"),
                     cwd=repo,
@@ -14125,7 +14650,7 @@ exit 65
                 json.dumps(lease, sort_keys=True) + "\n", encoding="utf-8"
             )
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("second", repo / "README.md"),
                 cwd=repo,
@@ -14327,7 +14852,7 @@ exit 65
             )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("first", linked / "README.md"),
                 cwd=linked,
@@ -14344,7 +14869,7 @@ exit 65
                 cwd=primary,
                 check=True,
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("second", linked / "README.md"),
                 cwd=linked,
@@ -14371,7 +14896,7 @@ exit 65
                 text=True,
             ).stdout.strip()
             (Path(git_dir) / "MERGE_HEAD").write_text("fixture\n", encoding="utf-8")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -14382,7 +14907,7 @@ exit 65
             (Path(git_dir) / "MERGE_HEAD").unlink()
 
             missing_session = self._checkout_lease_payload("", repo / "README.md")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", missing_session, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14405,7 +14930,7 @@ exit 65
             ).stdout.strip()
             (Path(git_dir) / "index.lock").write_text("fixture\n", encoding="utf-8")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -14424,7 +14949,7 @@ exit 65
             self._init_checkout_lease_repo(repo)
             state_file.write_text("not a directory\n", encoding="utf-8")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -14446,7 +14971,7 @@ exit 65
                 tool_name="Bash",
                 command='CMD=echo; "$CMD" hi',
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 dynamic,
                 cwd=repo,
@@ -14462,7 +14987,7 @@ exit 65
 
             state_file = root / "state-is-a-file"
             state_file.write_text("not a directory\n", encoding="utf-8")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("writer", repo / "README.md"),
                 cwd=repo,
@@ -14489,7 +15014,7 @@ exit 65
                     tool_name="Bash",
                     command=command,
                 )
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     payload,
                     cwd=repo,
@@ -14511,7 +15036,7 @@ exit 65
                 self._init_checkout_lease_repo(repo)
                 env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload("owner", repo / "README.md"),
                     cwd=repo,
@@ -14527,7 +15052,7 @@ exit 65
                 else:
                     lease_file.write_text("{malformed\n", encoding="utf-8")
 
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload("reader", repo / "README.md"),
                     cwd=repo,
@@ -14577,7 +15102,7 @@ exit 65
                     read_only = self._checkout_lease_payload(
                         "", repo, tool_name="Bash", command=command
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py", read_only, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -14614,7 +15139,7 @@ exit 65
                     mutation = self._checkout_lease_payload(
                         "", repo, tool_name="Bash", command=command
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py", mutation, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -14623,7 +15148,7 @@ exit 65
             mutation = self._checkout_lease_payload(
                 "", repo, tool_name="Bash", command="touch generated.txt"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", mutation, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14635,7 +15160,7 @@ exit 65
             mutation = self._checkout_lease_payload(
                 "", repo, tool_name="Bash", command=nested_mutation
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", mutation, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14648,7 +15173,7 @@ exit 65
             mutation = self._checkout_lease_payload(
                 "", repo, tool_name="Bash", command=nested_env_mutation
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", mutation, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14660,7 +15185,7 @@ exit 65
                 tool_name="Bash",
                 command="CMD=touch env -S '${CMD} variable-expanded.txt'",
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", variable_env_mutation, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14675,7 +15200,7 @@ exit 65
                     opaque_mutation = self._checkout_lease_payload(
                         "", repo, tool_name="Bash", command=command
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         opaque_mutation,
                         cwd=repo,
@@ -14685,7 +15210,7 @@ exit 65
                     self.assert_blocked(decision, "session identity")
 
             owner = self._checkout_lease_payload("owner", repo / "README.md")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14694,7 +15219,7 @@ exit 65
             self.assertEqual(len(lease_files), 1)
 
             stop_payload = {"session_id": "owner", "hook_event_name": "Stop"}
-            code, audit, stderr = run_hook(
+            code, audit, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", stop_payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14712,7 +15237,7 @@ exit 65
             state = root / "state"
             self._init_checkout_lease_repo(repo)
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "native-path-owner", repo / "README.md"
@@ -14874,13 +15399,13 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
             owner = self._checkout_lease_payload("owner", primary / "README.md")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", owner, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
             (primary / "dirty.txt").write_text("owned\n", encoding="utf-8")
-            code, audit, stderr = run_hook(
+            code, audit, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {"session_id": "owner", "hook_event_name": "Stop"},
                 cwd=primary,
@@ -14893,7 +15418,7 @@ exit 65
             (primary / "dirty.txt").unlink()
 
             linked_owner = self._checkout_lease_payload("linked-owner", linked / "README.md")
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", linked_owner, cwd=linked, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14911,7 +15436,7 @@ exit 65
             subprocess.run(
                 ["git", "worktree", "remove", str(linked)], cwd=primary, check=True
             )
-            code, _audit, stderr = run_hook(
+            code, _audit, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {"session_id": "other", "hook_event_name": "Stop"},
                 cwd=primary,
@@ -14935,7 +15460,7 @@ exit 65
                 check=True,
             )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", linked / "README.md"),
                 cwd=linked,
@@ -14950,7 +15475,7 @@ exit 65
                 tool_name="Bash",
                 command=f"git-cli worktree remove {shlex.quote(str(linked))} --format json",
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", remove, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -14983,7 +15508,7 @@ exit 65
                         tool_name="Bash",
                         command=command,
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py", wrapped, cwd=primary, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -15016,7 +15541,7 @@ exit 65
                         tool_name="Bash",
                         command=command,
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py", controlled, cwd=primary, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -15058,7 +15583,7 @@ exit 65
                         tool_name="Bash",
                         command=command,
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py", wrapped, cwd=primary, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -15100,7 +15625,7 @@ exit 65
             )
 
             # A foreign session owns the target worktree's lease.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", target_wt / "README.md"),
                 cwd=target_wt,
@@ -15112,7 +15637,7 @@ exit 65
             # The delivery session runs the repo-scoped commit from the base
             # repo, a clean primary checkout on its default branch. Base-eval
             # would admit it; target-eval blocks on the foreign owner.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "delivery", base_repo, tool_name="Bash", command=commit
@@ -15126,7 +15651,7 @@ exit 65
             # The harness command wrapper's redirects must not defeat target
             # recognition: the same foreign target still blocks when wrapped.
             wrapped = self._harness_wrapped(commit, str(root / "cwd-sentinel"))
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "delivery", base_repo, tool_name="Bash", command=wrapped
@@ -15174,7 +15699,7 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
             # A foreign session owns the base worktree (the session cwd).
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("other", base_wt / "README.md"),
                 cwd=base_wt,
@@ -15184,7 +15709,7 @@ exit 65
             self.assert_allowed(decision)
 
             # The delivery session owns the target worktree (it edited there).
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("delivery", target_wt / "README.md"),
                 cwd=target_wt,
@@ -15197,7 +15722,7 @@ exit 65
                 "semantic-commit commit --repo "
                 f"{shlex.quote(str(target_wt))} --message 'fix: coupled change'"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "delivery", base_wt, tool_name="Bash", command=commit
@@ -15226,7 +15751,7 @@ exit 65
                 ("delivery", static_target),
                 ("foreign", effective_target),
             ):
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload(
                         session_id, target / "README.md"
@@ -15242,7 +15767,7 @@ exit 65
                 "env -C .. semantic-commit commit --repo target --message 'fix: x'",
             ):
                 with self.subTest(command=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "delivery",
@@ -15299,7 +15824,7 @@ exit 65
                     payload = self._checkout_lease_payload(
                         "delivery", base_repo, tool_name="Bash", command=command
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py", payload, cwd=base_repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
@@ -15337,7 +15862,7 @@ exit 65
             msg = shlex.quote("fix: coupled change")
 
             # A foreign session owns the target worktree's lease.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", target_wt / "README.md"),
                 cwd=target_wt,
@@ -15347,7 +15872,7 @@ exit 65
             self.assert_allowed(decision)
 
             def run(command: str):
-                return run_hook(
+                return run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload(
                         "delivery", base_repo, tool_name="Bash", command=command
@@ -15422,7 +15947,7 @@ exit 65
             self._init_checkout_lease_repo(repo)
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("owner", repo / "README.md"),
                 cwd=repo,
@@ -15432,7 +15957,7 @@ exit 65
             self.assert_allowed(decision)
 
             wrapped_read = self._harness_wrapped("git status --short", sentinel)
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "reader", repo, tool_name="Bash", command=wrapped_read
@@ -15448,7 +15973,7 @@ exit 65
             wrapped_write = self._harness_wrapped(
                 f"printf x > {in_repo}", sentinel
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "reader", repo, tool_name="Bash", command=wrapped_write
@@ -15470,7 +15995,7 @@ exit 65
             ):
                 with self.subTest(redirect_target=redirect_target):
                     alias_write = f"printf x > {redirect_target}"
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "reader", repo, tool_name="Bash", command=alias_write
@@ -15497,7 +16022,7 @@ exit 65
             original = target.read_text(encoding="utf-8")
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("owner", target),
                 cwd=repo,
@@ -15508,7 +16033,7 @@ exit 65
 
             nested = f"printf x > {outside / 'alias.@(md)'}"
             command = f"bash -O extglob -c {shlex.quote(nested)}"
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "reader", repo, tool_name="Bash", command=command
@@ -15544,7 +16069,7 @@ exit 65
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
             # A foreign session owns the linked checkout's lease.
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", linked / "README.md"),
                 cwd=linked,
@@ -15557,7 +16082,7 @@ exit 65
             wrapped = self._harness_wrapped(
                 f"git-cli worktree remove {target}", sentinel
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "delivery", primary, tool_name="Bash", command=wrapped
@@ -15584,7 +16109,7 @@ exit 65
                     with_write = self._harness_wrapped(
                         f"git-cli worktree remove {target} && {co_resident}", sentinel
                     )
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "delivery", primary, tool_name="Bash", command=with_write
@@ -15618,7 +16143,7 @@ exit 65
             wrapped_add = self._harness_wrapped(
                 "git-cli worktree add feature-lane", sentinel
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "writer", repo, tool_name="Bash", command=wrapped_add
@@ -15664,7 +16189,7 @@ exit 65
             )
             (primary / "linked").mkdir()
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", linked / "README.md"),
                 cwd=linked,
@@ -15679,7 +16204,7 @@ exit 65
                 tool_name="Bash",
                 command="git-cli worktree remove linked --format json",
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", remove, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -15698,7 +16223,7 @@ exit 65
             self._init_checkout_lease_repo(nested)
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", nested / "README.md"),
                 cwd=nested,
@@ -15719,14 +16244,14 @@ exit 65
                     ]
                 },
             }
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", multi, cwd=outer, env=env
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "spans multiple checkouts")
             self.assertEqual(len(self._checkout_lease_files(state)), 1)
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "outer-writer", nested / "README.md"
@@ -15748,7 +16273,7 @@ exit 65
                 "broken/\n", encoding="utf-8"
             )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", outer / "README.md"),
                 cwd=outer,
@@ -15761,7 +16286,7 @@ exit 65
             (broken / ".git").write_text(
                 "gitdir: /definitely/missing/gitdir\n", encoding="utf-8"
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "other", broken / "generated.txt"
@@ -15795,7 +16320,7 @@ exit 65
                 check=True,
             )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", primary / "README.md"),
                 cwd=primary,
@@ -15813,7 +16338,7 @@ exit 65
                     "touch collision.txt"
                 ),
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", remove, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -15840,7 +16365,7 @@ exit 65
                     check=True,
                 )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", victim / "README.md"),
                 cwd=victim,
@@ -15855,7 +16380,7 @@ exit 65
                 tool_name="Bash",
                 command="git-cli worktree remove --format json victim",
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", remove, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -15882,7 +16407,7 @@ exit 65
                     check=True,
                 )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload("foreign", foreign / "README.md"),
                 cwd=foreign,
@@ -15900,7 +16425,7 @@ exit 65
                     "git-cli worktree remove z-foreign --format json"
                 ),
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", remove, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -15928,14 +16453,14 @@ exit 65
                 tool_name="Bash",
                 command=f"git-cli worktree remove {shlex.quote(str(linked))}",
             )
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", remove, cwd=primary, env=env
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
             self.assertEqual(len(self._checkout_lease_files(state)), 1)
 
-            code, audit, stderr = run_hook(
+            code, audit, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {"session_id": "delivery", "hook_event_name": "Stop"},
                 cwd=primary,
@@ -16736,7 +17261,7 @@ exit 66
                 "bash -c 'git branch -D merged-topic'",
             ):
                 with self.subTest(admitted=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "ref-maintenance-session",
@@ -16770,7 +17295,7 @@ exit 66
                 "rm browser-test-junk.log",
             ):
                 with self.subTest(rejected=command):
-                    code, decision, stderr = run_hook(
+                    code, decision, stderr = run_enforced_hook(
                         "checkout-lease-guard.py",
                         self._checkout_lease_payload(
                             "ref-maintenance-session",
@@ -16802,7 +17327,7 @@ exit 66
             )
             hook.chmod(0o755)
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
                     "ref-session",
@@ -16835,7 +17360,7 @@ exit 66
             )
             payload.pop("session_id")
 
-            code, decision, stderr = run_hook(
+            code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
@@ -16852,7 +17377,7 @@ exit 66
                 state = root / "state"
                 self._init_checkout_lease_repo(repo)
                 env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload("owner", repo / "README.md"),
                     cwd=repo,
@@ -16873,7 +17398,7 @@ exit 66
                     "unowned\n", encoding="utf-8"
                 )
 
-                code, decision, stderr = run_hook(
+                code, decision, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     self._checkout_lease_payload(
                         "other",

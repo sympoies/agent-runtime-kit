@@ -1,3 +1,5 @@
-Two managed agent sessions may mutate the same repository. Inspect and claim
-structured work context, evaluate overlap, and admit only the covered mutation
-without reading either session's logs, transcript, or mailbox body.
+Two managed agent sessions may mutate the same repository. Inspect automatic
+presence and privacy-safe overlap advice; optionally declare a bounded work
+context without reading either session's logs, transcript, or mailbox body.
+Treat the default as non-blocking awareness. Use raw claim/admission only when
+the launch explicitly selected coordination mode `enforce`.
