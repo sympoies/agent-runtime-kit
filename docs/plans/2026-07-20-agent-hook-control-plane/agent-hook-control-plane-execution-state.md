@@ -8,22 +8,19 @@
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/686>
 - Shared dispatch issue: <https://github.com/graysurf/agent-runtime-kit/issues/686>
 - Coordination dependency: <https://github.com/graysurf/agent-runtime-kit/issues/676>
-- Status: ready for strict closeout; exact merged runtime-kit main is deployed
-  and accepted with released nils-cli v1.25.6
+- Status: complete
 - Current sprint: Sprint 4 deploys, accepts, and closes the merged control plane
-- Current task: Task 4.4 prepares the terminal record and operator report
-- Next task: merge this bounded closeout record, pass strict close-ready and
-  audit, archive the plan, and close #686
-- Closeout branch: `chore/issue-686-closeout`
-- Active lanes: implementation, integration, release, deployment, and live
-  acceptance are terminal; only the strict record-close/archive sequence remains
+- Current task: complete
+- Next task: none
+- Closeout record: PR #711 merged as `f0ed7fbf`
+- Active lanes: implementation, integration, release, deployment, live
+  acceptance, review, and provider closeout are terminal; only governed archive
+  retention remains
 - Release prerequisite: complete; v1.25.6 is published and installed
 - Deployment prerequisite: complete from provider-verified merged main
 - Blocker: none
-- Last updated: 2026-07-21
-- Branch/commit/PR: runtime-kit PR #708 merged to `main` as `d98ac0b`; bounded
-  nils-cli repair PR #1336 merged as `488de456`; v1.25.6 is released and
-  installed
+- Last updated: 2026-07-20
+- Branch/commit/PR: sympoies/nils-cli#1314 merged (<https://github.com/sympoies/nils-cli/pull/1314>); sympoies/nils-cli#1330 merged (<https://github.com/sympoies/nils-cli/pull/1330>); graysurf/agent-runtime-kit#707 merged (<https://github.com/graysurf/agent-runtime-kit/pull/707>); graysurf/agent-runtime-kit#708 merged (<https://github.com/graysurf/agent-runtime-kit/pull/708>); sympoies/nils-cli#1336 merged (<https://github.com/sympoies/nils-cli/pull/1336>); graysurf/agent-runtime-kit#711 merged (<https://github.com/graysurf/agent-runtime-kit/pull/711>)
 
 ## Validation Plan
 
@@ -66,7 +63,7 @@
 | 4.1 | done | Reconcile #676 dependency state before activation | orchestrator | Provider read-back: #676 is closed; released nils v1.25.6 and merged runtime main d98ac0b | Live evidence did not contradict completion, so #676 remained closed |
 | 4.2 | done | Preview, apply, and verify installed runtime surfaces | deployment-acceptance | PR #1336 merged as `488de456`; v1.25.6 release/install read-back; merged-main sync preview/apply; doctor Codex 7/7 and Claude 8/8, zero legacy residue | Exact merged main d98ac0b deployed through the repository sync owner; unrelated Codex ingress and notifier composition preserved |
 | 4.3 | done | Run deterministic and live disposable-session acceptance | deployment-acceptance | Installed agent-hook 25/25; live Codex and Claude probes; mode, recovery, remove/restore, unavailable-binary matrix; p95 21.455 ms; privacy pass | Synthetic sessions and fixture state deleted |
-| 4.4 | done | Prepare the strict closeout record and final operator report | orchestrator | Bounded closeout record and terminal operator report prepared; final strict lifecycle owns close-ready, audit, archive, and issue-close links | Provider controller performs the close/archive sequence after this record merges |
+| 4.4 | done | Prepare the strict closeout record and final operator report | orchestrator | PR #711 merged as `f0ed7fbf`; close-ready passed with no blockers; #686 closeout comment `5027001347`; post-close audit passed | Provider closeout is terminal; this sync records the controller-produced final state before governed archive retention |
 
 ## Validation Log
 
@@ -223,10 +220,6 @@
 
 ## Handoff
 
-1. Merge the bounded closeout record after the same reviewer verifies the two
-   affected fingerprints and the required checks/thread gate pass.
-2. Run strict close-ready, record close, provider read-back/audit, then the
-   governed plan-archive dry-run and apply sequence.
-3. Report the exact deployed inventory, governed controls, acceptance evidence,
-   archive result, and every retained dirty, locked, or unverifiable worktree;
-   do not repeat merged implementation or deployment work.
+- Tracking issue <https://github.com/graysurf/agent-runtime-kit/issues/686> is
+  closed; terminal execution state is synchronized. No closeout or merge action
+  remains.
