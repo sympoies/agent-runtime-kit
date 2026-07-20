@@ -6,13 +6,13 @@
 - Source document: `docs/plans/2026-07-19-nils-cli-version-policy/nils-cli-version-policy-plan.md`
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/688>
 - Current sprint: Sprint 4 acceptance and closeout
-- Status: ready for closeout transaction; all plan tasks are terminal, and the
-  provider record is not yet closed
-- Current gate: terminal-ledger exact-head review and merge, run-state/provider
-  reconciliation, strict pre-close readiness, provider close/read-back, strict
-  post-close audit, then archive migration dry-run
-- Current task: none; all plan tasks are terminal
-- Next task: execute the ordered closeout workflow finalizers below
+- Status: complete; all plan tasks are terminal, issue #688 is closed, and the
+  strict post-close provider audit passed
+- Current gate: merge this factual post-close synchronization, rerun archive
+  discovery/migration dry-run from clean main, then safely clean only eligible
+  session-owned worktrees
+- Current task: complete
+- Next task: none
 - Planned implementation branches: `feat/issue-688-version-policy` in nils-cli
   and `feat/issue-688-nils-cli-policy` in runtime-kit
 - Plan-authoring branch: `feat/issue-688-nils-cli-policy` in runtime-kit
@@ -25,15 +25,11 @@
 - Blockers: none
 - Last updated: 2026-07-20
 - Branch/commit/PR: nils-cli PR
-  <https://github.com/sympoies/nils-cli/pull/1307> reviewed at final head
-  `dff0624cd61a7eee0b4d0c2f6d4c373feda4e43d` and squash-merged to provider
-  main as `7d9f7dfa9bf42948dd0beab564df241f3cb3614b`; release
-  <https://github.com/sympoies/nils-cli/releases/tag/v1.25.0> published and
-  fixed-fleet broker run 29703330495 succeeded; runtime-kit PR
-  <https://github.com/graysurf/agent-runtime-kit/pull/692> exact head
-  `73b8274a941c` squash-merged as `092bf46f1998`; terminal-ledger PR
-  <https://github.com/graysurf/agent-runtime-kit/pull/697> is carried by branch
-  `docs/issue-688-version-policy-closeout`
+  <https://github.com/sympoies/nils-cli/pull/1307> merged as `7d9f7dfa9bf4`;
+  runtime-kit PR <https://github.com/graysurf/agent-runtime-kit/pull/692>
+  merged as `092bf46f1998`; terminal-ledger PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/697> merged as
+  `290cad5a0508`
 
 ## Validation Plan
 
@@ -230,25 +226,36 @@
   main `092bf46f1998`; Codex, Claude, and Hermes skill-surface and
   installed-runtime doctor read-backs reported no warnings or blocks on either
   host.
+- 2026-07-20: Terminal-ledger PR #697 exact head `104fc543f651` passed local
+  positions 1-17, hooks 306/306, provider CI and CodeQL, three exact-head
+  specialist reviews, and native approval before squash-merging as
+  `290cad5a0508`. Strict close-ready returned `ready=true` with no blockers for
+  nils-cli #1307 and runtime-kit #692/#697. The governed close removed
+  `state::blocked`, added `state::closed`, and closed issue #688; closeout
+  comment <https://github.com/graysurf/agent-runtime-kit/issues/688#issuecomment-5018285906>
+  records all three merge SHAs. After the closed run state was synchronized,
+  strict provider audit recognized all seven lifecycle roles with no visible
+  failures. Archive discovery correctly held the source folder dirty for this
+  pending factual sync; migration dry-run resolved the target without writing,
+  and no archive apply was authorized or performed.
 
 ## Closeout Workflow Finalizers
 
-1. Merge this terminal execution-state transition only after exact-head review
-   and provider checks pass.
-2. Reconcile terminal-ledger PR #697 and its merged SHA into run state; post the
-   live terminal checkpoint and dashboard repair, then require strict
-   `tracking close-ready --expect-visible` to report ready with no blockers.
-3. Preflight reversible provider prerequisites, then run `record close` with
-   `--remove-label state::blocked --add-label state::closed`. Read issue #688
-   back as closed and require `record audit --profile tracking
-   --expect-visible` to pass against the closed provider body and comments.
-4. Only after the strict post-close audit passes, run archive migration dry-run;
-   apply only with the distinct authorization
-   required by the archive workflow, and record the retained, archived,
-   skipped, or blocked outcome.
-5. Synchronize any new post-close factual state through a scoped follow-up when
-   needed, then audit and remove only clean, provider-merged, session-owned
-   worktrees. Preserve unrelated or lease-blocked worktrees unchanged.
+- Complete: merged terminal-ledger PR #697 after exact-head review and provider
+  checks, reconciled its merge SHA, posted the live terminal checkpoint and
+  dashboard repair, and obtained a strict blocker-free `tracking close-ready
+  --expect-visible` result.
+- Complete: preflighted the reversible provider prerequisites, removed
+  `state::blocked`, added `state::closed`, closed issue #688, and passed strict
+  `record audit --profile tracking --expect-visible` against the closed provider
+  body and comments.
+- Remaining: complete exact-head specialist review and provider checks for this
+  factual synchronization, merge it, then rerun archive discovery and migration
+  dry-run from clean main. Apply only with the distinct authorization required
+  by the archive workflow, and record the retained, archived, skipped, or
+  blocked outcome.
+- Remaining: audit and remove only clean, provider-merged, session-owned
+  worktrees. Preserve unrelated or lease-blocked worktrees unchanged.
 
 ## Decision Log
 
@@ -282,13 +289,14 @@
 
 ## Handoff
 
-1. No implementation or activation task remains; all ledger rows are terminal,
-   but the controller-required closeout workflow finalizers have not yet run.
-2. Execute the finalizers in their declared order: terminal-ledger merge,
-   run-state/provider reconciliation and strict close-ready, provider
-   close/read-back, strict post-close audit, archive migration dry-run, factual
-   follow-up sync when needed, then safe owned-worktree cleanup.
-3. Preserve the exact released nils-cli v1.25.0 provenance, runtime-kit PR #692
-   evidence, canary run, and two-host postconditions in any later audit.
-4. Keep provider-visible records privacy-minimized and preserve unrelated or
-   lease-blocked worktrees unchanged.
+1. Tracking issue #688 is closed with `state::closed`; strict post-close audit
+   passed, and no product implementation, activation, provider-close, or
+   terminal-ledger review action remains.
+2. The controller must finish exact-head specialist review and provider checks
+   for this factual synchronization, merge it, rerun archive discovery and
+   migration dry-run from clean main, and report the retained outcome. Archive
+   apply still requires its own explicit authorization and was not granted in
+   this run.
+3. Remove only clean session-owned worktrees whose provider merge and exact
+   head are proven. Preserve unrelated, dirty, locked, or lease-blocked
+   worktrees unchanged.
