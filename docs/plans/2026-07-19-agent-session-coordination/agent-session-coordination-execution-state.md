@@ -6,15 +6,11 @@
 - Source document: `docs/plans/2026-07-19-agent-session-coordination/agent-session-coordination-plan.md`
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/676>
 - Current sprint: Sprint 5 evidence audit and closeout
-- Status: ready for closeout transaction; all plan tasks are terminal, and the
-  provider record is not yet closed
-- Current gate: terminal-ledger exact-head review and merge, run-state/provider
-  reconciliation, strict non-mutating close probes, provider close/read-back,
-  then archive migration dry-run
+- Status: complete; tracking issue closed and terminal provider audit passed
+- Current gate: none; archive apply and installed-surface/live-session
+  activation remain separate confirmation or approval-gated workflows
 - Current task: none; all plan tasks are terminal
-- Next task: execute the ordered closeout workflow finalizers below;
-  installed-surface activation and live disposable-session acceptance remain
-  separately approval-gated
+- Next task: none
 - Planned implementation branches: `feat/agent-session-coordination-signed-final` in
   nils-cli, `feat/agent-session-coordination-policy` in runtime-kit, and
   `feat/agent-session-coordination-skill` in local-scripts
@@ -33,10 +29,12 @@
   `b8cedc78`; superseded PR #1302 is closed; v1.24.5 release commit
   `dd1b6980` has approved source `b8cedc78` as its sole parent; runtime-kit PR
   <https://github.com/graysurf/agent-runtime-kit/pull/693> exact signed head
-  `09f3372e` merged as `84bf920d`; local-scripts PR
+  `09f3372e` merged as `84bf920d`; terminal-ledger PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/694> exact signed head
+  `86d7e942` merged as `f6392825`; local-scripts PR
   <https://github.com/serenvia/local-scripts/pull/43> exact signed head
-  `73a2f91c` merged as `af656e68`; this terminal-ledger branch is
-  `docs/agent-session-coordination-closeout`
+  `73a2f91c` merged as `af656e68`; closeout comment
+  <https://github.com/graysurf/agent-runtime-kit/issues/676#issuecomment-5017915947>
 
 ## Validation Plan
 
@@ -61,7 +59,7 @@
 
 | ID | Status | Task | Evidence | Notes |
 | --- | --- | --- | --- | --- |
-| 1.1 | done | Commit the plan bundle and initialize the L2 tracker | Issue #676; plan PR #677 merged as `75c7402`; strict tracking status visible and reconciled | Tracker remains open; Task 1.2 selected |
+| 1.1 | done | Commit the plan bundle and initialize the L2 tracker | Issue #676; plan PR #677 merged as `75c7402`; strict tracking status visible and reconciled | Tracker remained open for implementation; Task 1.2 was selected next |
 | 1.2 | done | Freeze the nils-cli coordination specification and meaningful red | Frozen v1 spec and test-first evidence captured meaningful red before production edits | Spec and meaningful red complete |
 | 2.1 | done | Implement structured work context and atomic claims | Structured context, atomic claims, scope/conflict truth table, authenticated broker, operation admission, HMAC fingerprinting, and race coverage implemented | Exactly one definite concurrent claimant wins |
 | 2.2 | done | Add privacy-safe CLI and server projections | Privacy-safe additive CLI/HTTP/list/glance projections, capability/incarnation fencing, and route tests implemented | Existing clients remain compatible |
@@ -75,24 +73,20 @@
 | 4.2 | done | Review, merge, and optionally synchronize private skills | Exact-head skill-policy and test-contract reviews approved with no P0/P1/P2; canonical-main dry-runs previewed 13 Codex, 13 Claude, and 14 Hermes links with zero prune and no writes | Overlay apply was not authorized; Hermes external-skills registration and all installed-surface changes remain separately gated |
 | 5.1 | done | Run deterministic multi-session acceptance | Nils-cli coordination integration and release gates passed; runtime-kit exact released-pin full CI, deterministic smoke, and 306-hook suite passed; local-scripts focused and full suites passed | Acceptance used isolated synthetic fixtures and did not mutate live sessions or installed homes |
 | 5.2 | done | Run approval-gated live disposable-session acceptance | Not run: the maintainer requested direct issue closeout without granting the separate installed-surface/live-session activation approval, accepting this live-only residual as a later activation gate | No installed homes, live sessions, transcripts, or mailbox bodies were mutated or inspected |
-| 5.3 | done | Audit evidence, close the tracker, and archive the plan | All delivery PRs are merged; exact-head evidence, deterministic acceptance, residual ownership, and the provider-safe terminal record are reconciled in this terminal execution-state transition | The active closeout-convergence rule requires this terminal transition to merge before irreversible provider close; provider/read-back/archive finalizers then run in the order below, and any new factual state is synchronized afterward |
+| 5.3 | done | Audit evidence, close the tracker, and archive the plan | Terminal ledger PR #694 merged as `f6392825`; strict close-ready returned `ready=true` with no blockers; provider close/read-back and final visible audit passed; archive discovery classified the plan eligible and migration dry-run planned all three bundle files | Issue #676 is closed with `state::closed`; archive apply was not run because it remains explicitly confirmation-gated |
 
-## Closeout Workflow Finalizers
+## Closeout Results
 
-1. Merge this terminal execution-state transition only after exact-head review
-   and provider checks pass.
-2. Reconcile run state to merged reality; post the live terminal checkpoint and
-   dashboard repair, then require both strict `tracking close-ready
-   --expect-visible` and provider `record audit --expect-visible` to pass.
-3. Preflight requested labels and other reversible provider prerequisites, run
-   provider `record close`, then read issue #676 back and verify its closed state
-   plus the expected terminal record.
-4. Run archive migration dry-run; apply only when its clean confirmation
-   contract explicitly authorizes it, and record the retained, archived,
-   skipped, or blocked outcome.
-5. Synchronize any new post-close factual state through a scoped follow-up, then
-   audit and remove only the session-owned worktree when target/head proof
-   remains safe.
+1. Terminal execution-state PR #694 passed exact-head review and provider checks
+   and merged as `f6392825` before irreversible provider mutation.
+2. Reconciled run state reached `RECORD_READY_FOR_CLOSE`; strict close-ready and
+   the pre-close provider visible audit both passed.
+3. Label preflight passed; `record close` closed issue #676, replaced
+   `state::ready` with `state::closed`, and posted the closeout record. Closed
+   issue read-back passed after the controller-owned terminal state refresh.
+4. `plan-archive discover` classified this bundle eligible. Migration dry-run
+   planned the discussion source, plan, execution state, and metadata without
+   writing the archive. Apply remains confirmation-gated and was not run.
 
 ## Validation Log
 
@@ -260,6 +254,24 @@
   sessions. Task 5.2 therefore closes as an explicit live-only residual: no
   installed homes, live sessions, transcripts, or mailbox bodies were mutated
   or inspected, and a later activation attempt needs fresh approval.
+- 2026-07-20: Terminal ledger PR #694 exact signed head `86d7e942` passed
+  plan validation, diff-check, docs-impact verification, provider CI, native
+  testing and maintainability reviews, and combined native approval. It merged
+  as `f6392825` before the provider closeout transaction.
+- 2026-07-20: The terminal checkpoint reached `RECORD_READY_FOR_CLOSE`.
+  `tracking close-ready --expect-visible` returned `ready=true` with no
+  blockers, and the pre-close visible audit passed. Label preflight confirmed
+  `state::closed` was available and `state::ready` was current. `record close`
+  then closed issue #676, confirmed both linked runtime-kit PRs merged with
+  passing checks, and posted closeout comment `5017915947`.
+- 2026-07-20: Closed issue read-back confirmed `state=closed`,
+  `state::closed`, no `state::ready`, and all seven lifecycle roles. A terminal
+  state refresh repaired `Next task: none`; the final
+  `record audit --expect-visible` passed with no visible findings.
+- 2026-07-20: `plan-archive discover` classified the bundle eligible. The
+  default migration dry-run planned all three bundle files and metadata at
+  source commit `f6392825`; no archive write occurred because `--apply` remains
+  explicitly confirmation-gated.
 
 ## Decision Log
 
@@ -280,7 +292,7 @@
 ## Session Notes
 
 - Worktree:
-  `agent-runtime-kit-228a9c3a/agent-session-coordination-closeout` under the
+  `agent-runtime-kit-228a9c3a/agent-session-coordination-final-sync` under the
   managed runtime-kit worktree root. The machine-local absolute prefix is
   intentionally omitted from provider-visible records.
 - Nils-cli mechanism changes are released in v1.24.5; runtime-kit policy and pin
@@ -295,12 +307,9 @@
 
 ## Handoff
 
-1. No implementation task remains; all ledger rows are terminal, but the
-   controller-required closeout workflow finalizers have not yet run.
-2. Execute the finalizers in their declared order: terminal-ledger merge,
-   run-state/provider reconciliation and both non-mutating probes, provider
-   close/read-back, archive migration dry-run, factual follow-up sync when
-   needed, then safe owned-worktree cleanup.
+1. Tracking issue #676 is closed; implementation, deterministic acceptance,
+   provider close/read-back, terminal audit, and archive dry-run are complete.
+2. Archive apply was not run and still requires its own explicit confirmation.
 3. Preserve the exact released nils-cli v1.24.5 provenance and merged PR
    evidence in any later audit.
 4. Do not synchronize installed runtime/private-skill surfaces or start live
