@@ -43,10 +43,14 @@ from hook_common import (
     command_from,
     effective_workdir,
     emit_block,
+    env_target_tokens,
     git_toplevel,
+    invocation_is_opaque,
+    invocation_tokens,
     is_git_recovery_argv,
     patch_text_candidates,
     read_payload,
+    simple_commands_with_nested_shells,
     tool_input_dict,
 )
 
@@ -181,6 +185,10 @@ AGENT_DOCS_READ_ONLY_SUBCOMMANDS = frozenset(
 )
 AGENT_DOCS_READ_ONLY_SESSION_SUBCOMMANDS = frozenset({"status", "verify"})
 AGENT_DOCS_WRITE_FLAGS = frozenset({"-o", "--output"})
+TRUSTED_HELP_EXECUTABLES = frozenset({"agent-docs", "forge-cli"})
+HELP_FLAGS = frozenset({"-h", "--help"})
+VERSION_FLAGS = frozenset({"-V", "--version"})
+DYNAMIC_WORKDIR_CHARACTERS = frozenset("$`*?[{(")
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -501,6 +509,184 @@ def gh_read_only_invocation(args: list[str]) -> bool:
     return len(args) >= 2 and args[1] in subcommands
 
 
+def cli_help_or_version_arguments(arguments: list[str]) -> bool:
+    """Whether argv can only select a CLI help/version early exit.
+
+    Version is top-level only. Help may follow a positional subcommand path,
+    but it must be the final argument; any option before it or argument after it
+    stays outside the read-only lane. This admits shapes such as
+    ``forge-cli issue create --help`` without treating a merely-present help
+    flag as proof that an otherwise operational invocation cannot run.
+    """
+    if len(arguments) == 1 and arguments[0] in HELP_FLAGS | VERSION_FLAGS:
+        return True
+    return bool(arguments) and arguments[-1] in HELP_FLAGS and all(
+        argument and not argument.startswith("-") and "/" not in argument
+        for argument in arguments[:-1]
+    )
+
+
+def _agent_run_exec_workdir(words: list[str]) -> tuple[bool, str | None]:
+    """Return ``(has_cwd, static_target)`` for an agent-run exec argv.
+
+    ``static_target`` is ``None`` when a cwd option exists but is duplicated,
+    dynamic, malformed, or otherwise unprovable. The caller must fail closed in
+    that case rather than verifying the hook-visible repository.
+    """
+    if (
+        len(words) < 3
+        or os.path.basename(words[0]) != "agent-run"
+        or words[1] != "exec"
+    ):
+        return False, None
+    # Inspect only the wrapper-option prefix. A child command may legitimately
+    # own an option named ``--cwd``; arguments after the explicit ``--`` or the
+    # first child-command positional cannot change agent-run's own workdir.
+    wrapper_end = 2
+    while wrapper_end < len(words):
+        token = words[wrapper_end]
+        if token == "--":
+            break
+        if token in {"--cwd", "--direnv"}:
+            wrapper_end += 2
+            continue
+        if token.startswith(("--cwd=", "--direnv=")):
+            wrapper_end += 1
+            continue
+        if token in HELP_FLAGS or token.startswith("-"):
+            wrapper_end += 1
+            continue
+        break
+    has_cwd = any(
+        token == "--cwd" or token.startswith("--cwd=")
+        for token in words[2:wrapper_end]
+    )
+    if not has_cwd:
+        return False, None
+    target = ""
+    index = 2
+    while index < len(words):
+        token = words[index]
+        if token == "--":
+            break
+        if token == "--cwd":
+            if target or index + 1 >= len(words):
+                return True, None
+            target = words[index + 1]
+            index += 2
+            continue
+        if token.startswith("--cwd="):
+            if target:
+                return True, None
+            target = token.split("=", 1)[1]
+            if not target:
+                return True, None
+            index += 1
+            continue
+        if token == "--direnv":
+            if index + 1 >= len(words):
+                return True, None
+            index += 2
+            continue
+        if token.startswith("--direnv="):
+            index += 1
+            continue
+        if token in HELP_FLAGS or token.startswith("-"):
+            return True, None
+        break
+    if not target or any(
+        character in target for character in DYNAMIC_WORKDIR_CHARACTERS
+    ):
+        return True, None
+    return True, target
+
+
+def _agent_run_is_invocation_at(words: list[str], index: int) -> bool:
+    """Whether a token is the command reached through supported wrappers."""
+    synthetic = words[:index] + [words[index], "--help"]
+    invocation = invocation_tokens(synthetic)
+    return bool(invocation) and os.path.basename(invocation[0]) == "agent-run"
+
+
+def _agent_run_workdirs_in_words(words: list[str]) -> list[str | None]:
+    targets: list[str | None] = []
+    for index, token in enumerate(words):
+        if (
+            os.path.basename(token) != "agent-run"
+            or words[index + 1 : index + 2] != ["exec"]
+            or not _agent_run_is_invocation_at(words, index)
+        ):
+            continue
+        has_cwd, target = _agent_run_exec_workdir(words[index:])
+        if has_cwd:
+            targets.append(target)
+    return targets
+
+
+def _command_changes_workdir(command: str) -> bool:
+    """Whether observable wrapper/shell context changes relative-path base."""
+    for words in simple_commands_with_nested_shells(command):
+        invocation = invocation_tokens(words)
+        if invocation and os.path.basename(invocation[0]) in {
+            "cd",
+            "pushd",
+            "popd",
+        }:
+            return True
+        if not any(os.path.basename(token) == "env" for token in words):
+            continue
+        for token in words:
+            if token in {"-C", "--chdir"} or token.startswith(
+                ("-C", "--chdir=")
+            ):
+                return True
+    return False
+
+
+def agent_run_exec_workdirs(command: str) -> list[str | None]:
+    """Find statically targeted and unprovable agent-run cwd wrappers.
+
+    Shared shell traversal exposes nested ``bash -c`` payloads. A synthetic
+    help invocation reuses the shared wrapper parser to distinguish an actual
+    ``env``/``time``/``command``/``exec`` target from text merely passed to
+    ``echo``. Opaque split-string forms that mention both the wrapper and cwd
+    are conservatively returned as unprovable.
+    """
+    targets: list[str | None] = []
+    relative_base_changed = _command_changes_workdir(command)
+
+    def record(detected: list[str | None]) -> None:
+        for target in detected:
+            if (
+                target is not None
+                and relative_base_changed
+                and not Path(target).expanduser().is_absolute()
+            ):
+                targets.append(None)
+            else:
+                targets.append(target)
+
+    for words in simple_commands_with_nested_shells(command):
+        detected = _agent_run_workdirs_in_words(words)
+        record(detected)
+        # ``env -S '<split string>'`` is parsed by the shared env grammar into
+        # a real argv. Inspect that expansion so a string-carried agent-run cwd
+        # cannot disappear when the wrapper is reduced to its final command.
+        if words and os.path.basename(words[0]) == "env":
+            expanded = env_target_tokens(words, 1)
+            if expanded and expanded != words:
+                record(_agent_run_workdirs_in_words(expanded))
+        invocation = invocation_tokens(words)
+        if (
+            not detected
+            and invocation_is_opaque(invocation)
+            and "agent-run" in " ".join(words)
+            and "--cwd" in " ".join(words)
+        ):
+            targets.append(None)
+    return targets
+
+
 def read_only_general_invocation(words: list[str]) -> bool:
     """Whether ``words`` is an audited read-only inspection command.
 
@@ -525,6 +711,8 @@ def read_only_general_invocation(words: list[str]) -> bool:
     args = words[1:]
     if audited_text_read_invocation(words):
         return True
+    if name in TRUSTED_HELP_EXECUTABLES:
+        return cli_help_or_version_arguments(args)
     if name == "git":
         return git_read_only_invocation(args)
     if name == "gh":
@@ -543,10 +731,22 @@ def repository_safe_read_only_invocation(
         return False
     lexical = os.path.abspath(candidate)
     resolved = os.path.realpath(candidate)
-    return not any(
+    if any(
         path_within(lexical, repository) or path_within(resolved, repository)
         for repository in repositories
-    )
+    ):
+        return False
+    if words[0] in TRUSTED_HELP_EXECUTABLES:
+        agent_docs = resolved_executable("agent-docs")
+        if not agent_docs or not trusted_agent_docs_executable(
+            agent_docs, repositories
+        ):
+            return False
+        # nils-cli ships these governed CLIs as one release surface. Requiring
+        # the same resolved bin directory prevents an earlier unrelated PATH
+        # entry from inheriting the trusted help-only bypass.
+        return os.path.dirname(resolved) == os.path.dirname(agent_docs)
+    return True
 
 
 def agent_docs_near_miss_invocation(words: list[str]) -> bool:
@@ -578,7 +778,11 @@ def agent_docs_read_only_invocation(words: list[str], executable: str) -> bool:
     if os.path.realpath(words[0]) != os.path.realpath(executable):
         return False
     rest = words[1:]
+    if cli_help_or_version_arguments(rest):
+        return True
     index = _skip_value_options(rest, AGENT_DOCS_GLOBAL_VALUE_OPTIONS)
+    if cli_help_or_version_arguments(rest[index:]):
+        return True
     if index < len(rest) and rest[index].startswith("-"):
         # Unknown global option before the subcommand: fail closed.
         return False
@@ -919,6 +1123,36 @@ def main() -> int:
 
     command = command_from(payload) if tool in COMMAND_TOOLS else ""
     command_words = simple_shell_words(command) if tool in COMMAND_TOOLS else None
+    if tool in COMMAND_TOOLS and len(repos) == 1:
+        for nested_workdir in agent_run_exec_workdirs(command):
+            if nested_workdir is None:
+                emit_block(
+                    "This agent-run exec --cwd target cannot be resolved statically. "
+                    "The hook cannot safely apply the hook-visible repository's "
+                    "activation to an opaque or dynamic nested process. Start or run "
+                    "the original command from a session rooted at the target; do not "
+                    "wrap it from the current repository. No activation was changed. "
+                    "[reason: cross-repository-workdir-unsupported]"
+                )
+                return ALLOW
+            target_path = canonical_path(nested_workdir, payload_base(payload))
+            target_repo = containing_repo(target_path)
+            if (
+                target_repo
+                and os.path.isfile(os.path.join(target_repo, "AGENT_DOCS.toml"))
+                and os.path.realpath(target_repo) != os.path.realpath(repos[0])
+            ):
+                emit_block(
+                    "This agent-run exec --cwd target is a different repository or "
+                    "worktree from the hook-visible session repository. The hook cannot "
+                    "safely apply one repository's activation to that nested process. "
+                    f"Start or run the original command from a session rooted at "
+                    f"`{os.path.realpath(target_repo)}`; do not wrap it from the current "
+                    "repository, and prepare project-dev there before mutation. No "
+                    "activation was changed. "
+                    "[reason: cross-repository-workdir-unsupported]"
+                )
+                return ALLOW
     # A sole `git <op> --abort`/`--quit` recovery command restores the clean
     # pre-operation state and authors no content, so it must run even when
     # project-dev activation is stale or missing — otherwise a stuck
@@ -1058,8 +1292,9 @@ def main() -> int:
                     return ALLOW
                 emit_block(
                     f"Prepared {prepared} inside the hook (verified); the preparation "
-                    "command was consumed, not re-dispatched. Re-run your command. "
-                    "[reason: prepared]"
+                    "command was consumed and completed successfully. Do not run this "
+                    "preparation command again. Retry the original command that produced "
+                    "the preparation cue. [reason: prepared] [action: retry-original]"
                 )
                 return ALLOW
             # Backward-compatible `session activate`: run, then verify separately.

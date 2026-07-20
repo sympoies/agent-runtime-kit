@@ -86,10 +86,22 @@ effective working repository, resolved through the shared `effective_workdir`
 helper (see below) rather than the hook process cwd. A pre-tool payload still
 cannot reliably expose shell-expanded destinations, so cross-repository shell
 mutations must run with each target repository as their effective workdir. When
+an `agent-run exec --cwd` wrapper names a different repository or worktree from
+the hook-visible session repository, the pre-edit gate rejects it once with
+`cross-repository-workdir-unsupported`; the nested process cannot inherit the
+session repository's activation. Dynamic, duplicated, opaque, or relative cwd
+shapes under a cwd-changing wrapper use the same terminal reason because their
+target cannot be proven. Start a session rooted at the target instead of using
+the wrapper as a cross-repository hop.
+Exact help/version argv for the
+managed `agent-docs` and `forge-cli` release surface remains read-only, while
+extra options, trailing arguments, and executable shadows fail closed. When
 verification blocks a single-repository edit or shell mutation, the reason
 includes a complete, copyable `session prepare` command — the atomic
 activate-plus-strict-preflight primitive — with the trusted executable and
-session context; the older `session activate` bootstrap remains accepted for
+session context. A successful in-hook prepare keeps `[reason: prepared]` and
+adds `[action: retry-original]`: do not run the prepare command again; retry the
+original blocked command. The older `session activate` bootstrap remains accepted for
 backward compatibility. Only a successfully probed,
 explicitly versioned pre-session `agent-docs` release retains compatibility
 behavior; a missing, timed-out, crashed, malformed, or on-floor binary without

@@ -94,6 +94,9 @@ runner; policy and the governed CLI contract remain authoritative there.
   can commit into a second repository's managed worktree without switching CWD.
   Both carve-outs require the target-aware command to be its command's sole
   mutation; raw `git -C <path>` / `--git-dir` mutations stay CWD-scoped.
+  A nested `agent-run exec --cwd <other-repo>` is not another target-aware
+  exception: the pre-edit gate rejects that cross-repository wrapper and directs
+  the agent to a session rooted at the target checkout.
 - A clean linked worktree can acquire a lease. The primary checkout has a
   narrow direct-edit exception: it must be clean, on the resolved default
   branch, outside an existing Git operation, and free of a live foreign lease.

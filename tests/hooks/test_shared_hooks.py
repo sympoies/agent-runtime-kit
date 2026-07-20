@@ -8371,7 +8371,11 @@ fi
 exit 64
 """,
             )
+            fake_forge_cli = bin_dir / "forge-cli"
+            fake_forge_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_forge_cli.chmod(0o755)
             state_home = repo / "state"
+            agent_docs = str((bin_dir / "agent-docs").resolve())
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "AGENT_RUNTIME_PRODUCT": "codex",
@@ -8448,6 +8452,13 @@ exit 64
                 preflight,
                 wrong_project_preflight,
                 f"{preflight} --product claude",
+                f"{agent_docs} --help",
+                f"{agent_docs} session prepare --help",
+                "agent-docs --help",
+                "agent-docs session prepare --help",
+                "forge-cli --help",
+                "forge-cli issue create --help",
+                "forge-cli --version",
             )
             for command in allowed:
                 with self.subTest(allowed=command):
@@ -8496,6 +8507,71 @@ exit 64
             self.assertIn("[reason: agent-docs-command-untrusted]", str(decision))
             self.assertFalse(repo_bin_log.exists())
 
+            shadow_forge_marker = root / "shadow-forge-ran"
+            shadow_forge = repo_bin / "forge-cli"
+            shadow_forge.write_text(
+                "#!/bin/sh\ntouch "
+                + shlex.quote(str(shadow_forge_marker))
+                + "\nexit 0\n",
+                encoding="utf-8",
+            )
+            shadow_forge.chmod(0o755)
+            payload = command_payload("forge-cli --help")
+            payload["session_id"] = "shell-bootstrap"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={
+                    **env,
+                    "PATH": f"{repo_bin}{os.pathsep}{env['PATH']}",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            self.assertFalse(shadow_forge_marker.exists())
+
+            foreign_bin = root / "foreign-bin"
+            foreign_bin.mkdir()
+            foreign_forge_marker = root / "foreign-forge-ran"
+            foreign_forge = foreign_bin / "forge-cli"
+            foreign_forge.write_text(
+                "#!/bin/sh\ntouch "
+                + shlex.quote(str(foreign_forge_marker))
+                + "\nexit 0\n",
+                encoding="utf-8",
+            )
+            foreign_forge.chmod(0o755)
+            payload = command_payload("forge-cli --help")
+            payload["session_id"] = "shell-bootstrap"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={
+                    **env,
+                    "PATH": f"{foreign_bin}{os.pathsep}{env['PATH']}",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            self.assertFalse(foreign_forge_marker.exists())
+
+            for command in (
+                "forge-cli issue create",
+                "forge-cli --config malicious --help",
+                "forge-cli issue create --help --body payload",
+                "agent-docs session prepare --help --format json",
+            ):
+                with self.subTest(non_help_cli_shape=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "shell-bootstrap"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
+
             payload = command_payload(activation)
             payload["session_id"] = "shell-bootstrap"
             code, decision, stderr = run_hook(
@@ -8509,6 +8585,148 @@ exit 64
             payload["session_id"] = "shell-bootstrap"
             code, decision, stderr = run_hook(
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_pre_edit_intent_gate_rejects_cross_repository_agent_run_workdir_once(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session_repo = root / "session-repo"
+            target_repo = root / "target-repo"
+            for repo in (session_repo, target_repo):
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text(
+                    "# fixture\n", encoding="utf-8"
+                )
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{"product":"codex","active_intents":["project-dev"],"verified":true}}'
+  exit 0
+fi
+exit 64
+""",
+            )
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "HOME": str(root / "home"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            (root / "home").mkdir()
+
+            cross_repo_commands = (
+                "agent-run exec --cwd "
+                + shlex.quote(str(target_repo))
+                + " -- cargo check",
+                "agent-run exec --cwd="
+                + shlex.quote(str(target_repo))
+                + " -- cargo check",
+                "agent-run exec --direnv off --cwd ../target-repo cargo check",
+                "env agent-run exec --cwd ../target-repo -- cargo check",
+                "time agent-run exec --cwd ../target-repo -- cargo check",
+                "command -- agent-run exec --cwd ../target-repo -- cargo check",
+                "bash -c "
+                + shlex.quote(
+                    "agent-run exec --cwd ../target-repo -- cargo check"
+                ),
+                "env -S "
+                + shlex.quote(
+                    "agent-run exec --cwd ../target-repo -- cargo check"
+                ),
+            )
+            for command in cross_repo_commands:
+                with self.subTest(command=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "cross-repo-workdir"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=session_repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "different repository or worktree"
+                    )
+                    self.assertIn(
+                        "[reason: cross-repository-workdir-unsupported]",
+                        str(decision),
+                    )
+                    self.assertIn(str(target_repo.resolve()), str(decision))
+                    self.assertNotIn("session prepare", str(decision))
+
+            for command in (
+                'agent-run exec --cwd "$TARGET_REPO" -- cargo check',
+                "env --chdir=.. agent-run exec --cwd target-repo -- cargo check",
+                "bash -c "
+                + shlex.quote(
+                    "cd .. && agent-run exec --cwd target-repo -- cargo check"
+                ),
+            ):
+                with self.subTest(opaque_command=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "cross-repo-workdir"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=session_repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "cannot be resolved statically"
+                    )
+                    self.assertIn(
+                        "[reason: cross-repository-workdir-unsupported]",
+                        str(decision),
+                    )
+
+            same_repo = command_payload(
+                "agent-run exec --cwd "
+                + shlex.quote(str(session_repo))
+                + " -- cargo check"
+            )
+            same_repo["session_id"] = "cross-repo-workdir"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", same_repo, cwd=session_repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            for command in (
+                "agent-run exec -- some-tool --cwd ../target-repo",
+                "agent-run exec some-tool --cwd=../target-repo",
+            ):
+                with self.subTest(child_cwd_argument=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "cross-repo-workdir"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=session_repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            mentioned_as_data = command_payload(
+                "echo agent-run exec --cwd ../target-repo"
+            )
+            mentioned_as_data["session_id"] = "cross-repo-workdir"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                mentioned_as_data,
+                cwd=session_repo,
+                env=env,
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
@@ -8818,6 +9036,11 @@ exit 64
                     reason = str(decision.get("reason", ""))
                     self.assertIn("Prepared", reason)
                     self.assertIn("[reason: prepared]", reason)
+                    self.assertIn("[action: retry-original]", reason)
+                    self.assertIn("Retry the original command", reason)
+                    self.assertIn(
+                        "Do not run this preparation command again", reason
+                    )
                     for intent in intents:
                         self.assertIn(intent, reason)
                     log_text = call_log.read_text(encoding="utf-8")
