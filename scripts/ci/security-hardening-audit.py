@@ -36,6 +36,31 @@ def check_workflow_action_pins(errors: list[str]) -> None:
                 )
 
 
+def check_downloaded_surface_checkout_credentials(errors: list[str]) -> None:
+    for relative in (
+        ".github/workflows/ci.yml",
+        ".github/workflows/nils-cli-latest-canary.yml",
+    ):
+        text = read(relative)
+        checkout_count = 0
+        for match in re.finditer(r"(?ms)^      - (?P<body>.*?)(?=^      - |\Z)", text):
+            step = match.group(0)
+            if "uses: actions/checkout@" not in step:
+                continue
+            checkout_count += 1
+            if not re.search(
+                r"^\s+persist-credentials:\s*false\s*(?:#.*)?$",
+                step,
+                re.MULTILINE,
+            ):
+                fail(
+                    errors,
+                    f"{relative}: actions/checkout before downloaded nils-cli execution must set persist-credentials: false",
+                )
+        if checkout_count == 0:
+            fail(errors, f"{relative}: expected at least one actions/checkout step")
+
+
 def check_dependabot(errors: list[str]) -> None:
     path = ROOT / ".github" / "dependabot.yml"
     if not path.is_file():
@@ -52,8 +77,21 @@ def pin_value(text: str, key: str) -> str | None:
     return match.group(1) if match else None
 
 
-def pinned_tag_value(text: str) -> str | None:
-    match = re.search(r'^\s*pinned_tag:\s*"([^"]+)"\s*$', text, re.MULTILINE)
+def mapped_pin_value(text: str, mapping: str, key: str) -> str | None:
+    block = re.search(
+        rf"^\s{{2}}{re.escape(mapping)}:\s*$\n(?P<body>(?:^\s{{4}}.*(?:\n|$))+)",
+        text,
+        re.MULTILINE,
+    )
+    return pin_value(block.group("body"), key) if block else None
+
+
+def version_tag_value(text: str, key: str) -> str | None:
+    match = re.search(
+        rf'^\s*{re.escape(key)}:\s*"(v\d+\.\d+\.\d+)"\s*$',
+        text,
+        re.MULTILINE,
+    )
     return match.group(1) if match else None
 
 
@@ -94,9 +132,21 @@ def workflow_step(text: str, name: str) -> str | None:
 
 def check_nils_pin_manifest(errors: list[str]) -> None:
     text = read("docs/source/nils-cli-pin.yaml")
+    minimum_digest_text = read("docs/source/nils-cli-minimum-digest.yaml")
+    if not re.search(r"^schema_version:\s*2\s*$", text, re.MULTILINE):
+        fail(errors, "docs/source/nils-cli-pin.yaml must use schema_version 2")
+    for key in ("minimum_supported_tag", "validated_tag"):
+        if not version_tag_value(text, key):
+            fail(errors, f"docs/source/nils-cli-pin.yaml missing nils_cli.{key}")
     for key in ("linux_amd64", "linux_arm64"):
-        if not pin_value(text, key):
+        if not mapped_pin_value(text, "release_sha256", key):
             fail(errors, f"docs/source/nils-cli-pin.yaml missing nils_cli.release_sha256.{key}")
+        if not pin_value(minimum_digest_text, key):
+            fail(errors, f"docs/source/nils-cli-minimum-digest.yaml missing release_sha256.{key}")
+    minimum = version_tag_value(text, "minimum_supported_tag")
+    retained = version_tag_value(minimum_digest_text, "minimum_supported_tag")
+    if minimum != retained:
+        fail(errors, "nils-cli minimum digest tag does not match minimum_supported_tag")
 
 
 def check_dockerfile(errors: list[str]) -> None:
@@ -121,16 +171,16 @@ def check_dockerfile(errors: list[str]) -> None:
             fail(errors, f"docker/Dockerfile missing 64-hex ARG {arg}")
 
     pin_text = read("docs/source/nils-cli-pin.yaml")
-    expected_nils_cli_version = pinned_tag_value(pin_text)
+    expected_nils_cli_version = version_tag_value(pin_text, "validated_tag")
     docker_nils_cli_version = arg_text_value(dockerfile, "NILS_CLI_VERSION")
     if expected_nils_cli_version and docker_nils_cli_version != expected_nils_cli_version:
         fail(
             errors,
-            "docker/Dockerfile NILS_CLI_VERSION default does not match docs/source/nils-cli-pin.yaml",
+            "docker/Dockerfile NILS_CLI_VERSION default does not match nils_cli.validated_tag",
         )
     manifest_pairs = {
-        "NILS_CLI_SHA256_AMD64": pin_value(pin_text, "linux_amd64"),
-        "NILS_CLI_SHA256_ARM64": pin_value(pin_text, "linux_arm64"),
+        "NILS_CLI_SHA256_AMD64": mapped_pin_value(pin_text, "release_sha256", "linux_amd64"),
+        "NILS_CLI_SHA256_ARM64": mapped_pin_value(pin_text, "release_sha256", "linux_arm64"),
     }
     for arg, manifest_value in manifest_pairs.items():
         docker_value = arg_value(dockerfile, arg)
@@ -217,6 +267,8 @@ def check_npm_cli_lockfile(errors: list[str]) -> None:
 
 def check_docker_build_entrypoint(errors: list[str]) -> None:
     script = read("docker/build.sh")
+    if "validated_tag" not in script or "pinned_tag" in script:
+        fail(errors, "docker/build.sh must source nils_cli.validated_tag, never pinned_tag")
     for key in ("NILS_CLI_VERSION", "NILS_CLI_SHA256_AMD64", "NILS_CLI_SHA256_ARM64"):
         if f'--build-arg "{key}=' not in script:
             fail(errors, f"docker/build.sh does not pass {key} from docs/source/nils-cli-pin.yaml")
@@ -224,6 +276,8 @@ def check_docker_build_entrypoint(errors: list[str]) -> None:
 
 def check_publish_workflow(errors: list[str]) -> None:
     workflow = read(".github/workflows/publish-image.yml")
+    if "validated_tag" not in workflow or "pinned_tag" in workflow:
+        fail(errors, ".github/workflows/publish-image.yml must source nils_cli.validated_tag")
     for fragment in (
         "id-token: write",
         "attestations: write",
@@ -259,6 +313,7 @@ def check_publish_workflow(errors: list[str]) -> None:
 def main() -> int:
     errors: list[str] = []
     check_workflow_action_pins(errors)
+    check_downloaded_surface_checkout_credentials(errors)
     check_dependabot(errors)
     check_nils_pin_manifest(errors)
     check_dockerfile(errors)

@@ -9,12 +9,12 @@ update rules:
     ``recommended_version`` / ``min_version_effective_from``). It is mirrored,
     by hand, in the ``README.md`` "Version baseline" table and the
     "Version Floors" statement of ``docs/source/harness-shape-<product>.md``.
-  * nils-cli surface pin — source of truth is
-    ``docs/source/nils-cli-pin.yaml`` (``pinned_tag``). It is mirrored in the
-    README table row, the ``docs/source/nils-cli-surface.md`` snapshot, and the
-    "pinned snapshot" line of each ``harness-shape`` doc. (The pin itself is
-    owned by the ``meta:nils-cli-bump`` skill; this audit only checks that the
-    prose mirrors agree with the pin.)
+  * nils-cli version policy — source of truth is
+    ``docs/source/nils-cli-pin.yaml`` (``minimum_supported_tag`` and
+    ``validated_tag``). Both roles are mirrored in the README table, the
+    ``docs/source/nils-cli-surface.md`` snapshot, and each ``harness-shape``
+    doc. (Policy movement is owned by the ``meta:nils-cli-bump`` skill; this
+    audit only checks that the prose mirrors agree with the manifest.)
 
 Hand-edited mirrors drift. ``check`` is a deterministic, network-free gate that
 fails closed on any mismatch so CI catches the drift. ``report`` additionally
@@ -107,15 +107,25 @@ def runtime_roots_floor():
     return out
 
 
-def pinned_tag() -> str:
-    return _search(r'pinned_tag:\s*"([^"]+)"', _read(NILS_PIN), "nils-cli-pin.pinned_tag")
+def version_policy():
+    text = _read(NILS_PIN)
+    return {
+        "minimum": _search(
+            r'minimum_supported_tag:\s*"([^"]+)"',
+            text,
+            "nils-cli-pin.minimum_supported_tag",
+        ),
+        "validated": _search(
+            r'validated_tag:\s*"([^"]+)"', text, "nils-cli-pin.validated_tag"
+        ),
+    }
 
 
 # --- mirror extractors -------------------------------------------------------
 
 
 def readme_rows():
-    """Return {'codex':(floor,effective), 'claude':(floor,effective), 'nils':tag}."""
+    """Return product floors plus the two nils-cli version roles."""
     text = _read(README)
     rows = {}
     for product, label in README_PRODUCT_LABEL.items():
@@ -130,16 +140,21 @@ def readme_rows():
             "README %s effective" % product,
         )
         rows[product] = (floor, effective)
-    rows["nils"] = _search(
-        r"\|\s*`nils-cli`\s*surface\s*\(`[^`]+`\)\s*\|\s*`([^`]+)`\s*\|",
+    rows["nils_minimum"] = _search(
+        r"\|\s*`nils-cli`\s*surface\s*\(`[^`]+`\)\s*\|\s*minimum\s*`([^`]+)`;\s*validated\s*`[^`]+`\s*\|",
         text,
-        "README nils-cli surface tag",
+        "README nils-cli minimum tag",
+    )
+    rows["nils_validated"] = _search(
+        r"\|\s*`nils-cli`\s*surface\s*\(`[^`]+`\)\s*\|\s*minimum\s*`[^`]+`;\s*validated\s*`([^`]+)`\s*\|",
+        text,
+        "README nils-cli validated tag",
     )
     return rows
 
 
 def harness_values(product: str):
-    """Return {'floor', 'effective', 'pin'} mirrored in a harness-shape doc."""
+    """Return product floors and nils-cli policy roles from a harness doc."""
     text = _read(HARNESS[product])
     floor = _search(
         r"product `min_version` / `recommended_version`:\s*\*\*([^*]+)\*\*",
@@ -151,12 +166,17 @@ def harness_values(product: str):
         text,
         "harness-shape %s effective" % product,
     )
-    pin = _search(
-        r"pinned snapshot\s*\*\*([^*]+)\*\*",
+    minimum = _search(
+        r"minimum supported\s*\*\*([^*]+)\*\*",
         text,
-        "harness-shape %s pinned snapshot" % product,
+        "harness-shape %s nils minimum" % product,
     )
-    return {"floor": floor, "effective": effective, "pin": pin}
+    validated = _search(
+        r"validated snapshot\s*\*\*([^*]+)\*\*",
+        text,
+        "harness-shape %s nils validated" % product,
+    )
+    return {"floor": floor, "effective": effective, "minimum": minimum, "validated": validated}
 
 
 def harness_required_cli_examples(product: str):
@@ -192,16 +212,12 @@ def surface_describe() -> str:
     )
 
 
-def surface_pinned_tag() -> str:
-    """The ``pinned_tag: <tag>`` prose cue in the surface snapshot doc.
-
-    Operators copy this line into the pin manifest, so it must not drift from
-    the active-describe line or the real pin.
-    """
+def surface_policy_tag(role: str) -> str:
+    """Return one copyable role cue from the surface snapshot doc."""
     return _search(
-        r"pinned_tag:\s*(v?\d+\.\d+\.\d+)",
+        r"%s:\s*(v?\d+\.\d+\.\d+)" % re.escape(role),
         _read(NILS_SURFACE),
-        "nils-cli-surface pinned_tag prose",
+        "nils-cli-surface %s prose" % role,
     )
 
 
@@ -228,7 +244,7 @@ class Result:
 def run_check() -> Result:
     res = Result()
     roots = runtime_roots_floor()
-    pin = pinned_tag()
+    policy = version_policy()
     readme = readme_rows()
     manifest_cli_pairs = manifest_required_cli_pairs()
 
@@ -251,17 +267,30 @@ def run_check() -> Result:
             "runtime-roots-recommended",
         )
 
-    # nils-cli pin: nils-cli-pin.yaml is the source of truth.
-    res.expect("nils-pin.readme", pin, readme["nils"], "readme")
-    res.expect("nils-pin.surface-describe", pin, surface_describe(), "nils-cli-surface")
-    res.expect("nils-pin.surface-prose", pin, surface_pinned_tag(), "nils-cli-surface-prose")
-    for product in ("codex", "claude", "hermes"):
+    # nils-cli policy: nils-cli-pin.yaml is the source of truth.
+    res.expect("nils-minimum.readme", policy["minimum"], readme["nils_minimum"], "readme")
+    res.expect("nils-validated.readme", policy["validated"], readme["nils_validated"], "readme")
+    res.expect(
+        "nils-validated.surface-describe",
+        policy["validated"],
+        surface_describe(),
+        "nils-cli-surface",
+    )
+    for role, key in (("minimum_supported_tag", "minimum"), ("validated_tag", "validated")):
         res.expect(
-            "nils-pin.harness-%s" % product,
-            pin,
-            harness_values(product)["pin"],
-            "harness-shape",
+            "nils-%s.surface-prose" % key,
+            policy[key],
+            surface_policy_tag(role),
+            "nils-cli-surface-prose",
         )
+    for product in ("codex", "claude", "hermes"):
+        for key in ("minimum", "validated"):
+            res.expect(
+                "nils-%s.harness-%s" % (key, product),
+                policy[key],
+                harness_values(product)[key],
+                "harness-shape",
+            )
         for cli, floor in harness_required_cli_examples(product):
             res.add(
                 (cli, floor) in manifest_cli_pairs,
@@ -292,7 +321,7 @@ def _semver_tuple(value):
 
 def run_report() -> int:
     roots = runtime_roots_floor()
-    pin = pinned_tag()
+    policy = version_policy()
 
     print("version baseline — availability report (advisory)\n")
     header = "  %-10s %-12s %-12s %-12s %s" % (
@@ -326,7 +355,8 @@ def run_report() -> int:
         m = re.search(r"v?\d+\.\d+\.\d+", nils_installed)
         nils_installed = m.group(0) if m else nils_installed
     print("  %-10s %-12s %-12s %-12s %s" % (
-        "nils-cli", pin, nils_installed or "?", "(meta:nils-cli-bump)",
+        "nils-cli", "%s/%s" % (policy["minimum"], policy["validated"]),
+        nils_installed or "?", "(meta:nils-cli-bump)",
         "owned by nils-cli-bump",
     ))
 
@@ -350,7 +380,7 @@ def _emit(res: Result):
     if failed:
         print(
             "\nDrift detected. The source of truth is manifests/runtime-roots.yaml "
-            "(product floor) and docs/source/nils-cli-pin.yaml (pin); update the "
+            "(product floor) and docs/source/nils-cli-pin.yaml (version policy); update the "
             "mirrors to match, or use the project-version-baseline skill."
         )
 

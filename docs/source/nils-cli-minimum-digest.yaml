@@ -1,0 +1,12 @@
+# Retained archive identity for the exact minimum CI lane.
+#
+# This is separate from nils-cli-pin.yaml because released agent-runtime
+# schema-v2 parsing intentionally denies unknown policy fields. The matrix and
+# security audits require this tag to equal nils_cli.minimum_supported_tag.
+# Ordinary validated uptake must not rewrite this file; move it only with an
+# explicit compatibility-floor retirement.
+schema_version: 1
+minimum_supported_tag: "v1.25.0"
+release_sha256:
+  linux_amd64: "787c7978caa996f262d4b104b44cc94cec84fdc9e2d8e1c0afdbc66120d64223"
+  linux_arm64: "731a35493a8bee065cd71d085e4adefeaa9bb5e1d2cb216eaee756fca3cf9227"

@@ -337,13 +337,11 @@ scripts/dev/with-nils-version.sh src:my-fix      -- bash tests/hooks/run.sh
 scripts/dev/with-nils-version.sh release:v1.0.0  -- agent-runtime audit-drift
 ```
 
-Mind the version-alignment gate: `scripts/ci/all.sh` Position 2 blocks on any
-host deviation from the pin and aborts the stack, so you **cannot** run the full
-gate against an off-pin binary — run the content gates individually instead, and
-never commit golden churn produced off-pin. The pin moves only through the
-`meta:nils-cli-bump` skill after the release ships, and `cargo install --path`
-is never the default loop: the Homebrew binary is the released consumer
-contract.
+Mind the version-policy gate: Position 1 blocks below the compatibility minimum,
+admits exact minimum through validated, and warns while continuing when the host
+is newer than validated. This lets coupled development run the full behavior
+stack without calling an unreleased/ahead surface validated. Policy movement is
+owned by `meta:nils-cli-bump`; `cargo install --path` is never the default loop.
 
 `docs/source/nils-cli-version-workflows.md` owns the full clone / worktree /
 downgrade / coupled-dev / bump procedures and the exact content-gate command
@@ -378,13 +376,12 @@ bash scripts/ci/all.sh
 
 That currently performs:
 
-1. `plan-tooling validate --format text --explain` plus
+1. nils-cli minimum/validated policy: `agent-runtime doctor --class
+   version-alignment --pin docs/source/nils-cli-pin.yaml` — blocks below
+   `minimum_supported_tag` or any `required_clis[]` floor, admits through
+   `validated_tag`, and warns above validated before continuing downstream
+2. `plan-tooling validate --format text --explain` plus
    `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
-2. nils-cli surface pin alignment: `agent-runtime doctor --class
-   version-alignment --pin docs/source/nils-cli-pin.yaml` — blocks on any
-   deviation of the host `agent-runtime` from the manifest `pinned_tag`
-   (ahead or behind) and on any `required_clis[]` floor miss; fail closed
-   with the doctor's remediation banner
 3. `agent-runtime render --target home-prompt` for neutral / Codex / Claude,
    then `agent-runtime render --product codex`
 4. `agent-runtime render --product claude`
@@ -403,24 +400,20 @@ That currently performs:
     `README.md` "Version baseline" table, each `docs/source/harness-shape-*.md`
     "Version Floors" statement, and `docs/source/nils-cli-surface.md` must
     agree with their sources of truth (`manifests/runtime-roots.yaml` for the
-    product floor, `docs/source/nils-cli-pin.yaml` for the surface pin). Run
+    product floor, `docs/source/nils-cli-pin.yaml` for both nils-cli roles). Run
     `… report` for an advisory installed-vs-latest probe.
 15. `bash scripts/ci/product-leak-audit.sh --self-test` plus
     `bash scripts/ci/product-leak-audit.sh` — broad-sentinel leakage audit over
     rendered/loaded product artifacts, with documented allowlist reasons in
     `scripts/ci/product-leak-allow.yaml`.
 
-Position 2 closes the silent-drift class identified by the inbox case
-`plan-issue-v2-marker-collapse-drift`: before this gate, a host that drifted
-from the documented nils-cli surface could leave downstream positions running
-against a binary the fixtures, skill bodies, and goldens were not written for.
-As of nils-cli v0.28.0 the gate delegates to the `version-alignment` doctor
-class (sympoies/nils-cli#636), which reads `docs/source/nils-cli-pin.yaml` and
-blocks on any deviation from `pinned_tag` — ahead OR behind. This is stricter
-than the prior floor gate, which tolerated a newer host: a silent
-`brew upgrade` past the pin now fails closed, so bumping the host is a
-conscious pin bump via the `meta:nils-cli-bump` skill. The doctor emits the
-remediation banner naming both versions and every offending check.
+Position 1 retains the silent-drift protection while separating admission from
+reproducibility. As of nils-cli v1.25.0 the schema-v2 doctor owns stable-version
+comparison: below minimum blocks, above validated warns and must still traverse
+the behavior stack, and exact minimum/validated provider lanes retain formal
+reproducibility. Blocking CI verifies role-owned archive digests before running
+downloaded surfaces. Docker and published images always use validated plus its
+checked-in release digests.
 
 The surface manifest validation at position 8 also executes the promoted
 acceptance entries, which currently cover one `kind=ci` command and one

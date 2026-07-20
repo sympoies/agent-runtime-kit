@@ -1,9 +1,9 @@
 ---
 name: nils-cli-bump
 description: >
-  Propose one PR that bumps the pinned nils-cli surface and refreshes every
-  consumer when a new nils-cli release ships; owns the surface-refresh
-  judgement over the mechanical version-alignment diff.
+  Propose one PR that advances the validated nils-cli release and refreshes
+  every consumer; move the compatibility minimum only for an explicit
+  retirement, while preserving exact packaging and CI evidence.
 ---
 
 # nils-cli Bump
@@ -12,141 +12,122 @@ description: >
 
 Prereqs:
 
-- Run from the `agent-runtime-kit` repository root.
-- `agent-runtime` is installed from the released nils-cli package and on
-  `PATH`. The bump targets the tag the host is actually on, so the host must
-  already be upgraded to the target release (`brew upgrade
-  sympoies/tap/nils-cli`) before the pin can be moved — the
-  `version-alignment` gate is exact, ahead **or** behind.
-- `gh` is authenticated for `sympoies/nils-cli` (read) so the compare API and
-  release metadata are reachable.
-- The current pin (`docs/source/nils-cli-pin.yaml`) and the human-readable
-  snapshot (`docs/source/nils-cli-surface.md`) exist and agree on `pinned_tag`.
+- Run from the `agent-runtime-kit` repository root in a managed worktree.
+- The target is a published stable `sympoies/nils-cli` release with accessible
+  source comparison, assets, and SHA256 metadata.
+- `docs/source/nils-cli-pin.yaml` is schema v2 and its
+  `minimum_supported_tag`, `validated_tag`, validated release digests,
+  retained `docs/source/nils-cli-minimum-digest.yaml` lane digests, and policy
+  mirrors currently agree.
+- A host newer than validated is allowed. Its warning is admission evidence,
+  not permission to call the host validated or package it implicitly.
 
 Inputs:
 
-- Target tag. Default: the latest published nils-cli release
-  (`gh release view --repo sympoies/nils-cli`). Override with an explicit tag
-  for a stepped bump.
-- The current `pinned_tag` and `required_clis[]` floors from the pin manifest.
+- Target stable tag. Default: the greatest strict `vMAJOR.MINOR.PATCH` tag from
+  non-draft, non-prerelease GitHub releases; an explicit tag supports stepped
+  adoption.
+- Current `minimum_supported_tag`, `validated_tag`, and `required_clis[]`.
+- Optional explicit compatibility-retirement decision. Without it, minimum is
+  immutable during an ordinary bump.
 
 Outputs:
 
-- One bump PR (or a dry-run summary) that updates, in lock-step:
-  - `docs/source/nils-cli-pin.yaml` — `pinned_tag` and any `required_clis[]`
-    floor that a newly-consumed surface raised.
-  - `docs/source/nils-cli-surface.md` — header pointers (snapshot date, tag,
-    head commit, release link, and the `pinned_tag:` prose cue), new / changed
-    crate rows, and the consumed-surface notes for any binary whose surface
-    moved.
-  - The `pinned_tag` prose mirrors the Position 14 baseline audit enforces: the
-    `pinned snapshot **<tag>**` line in `docs/source/harness-shape-codex.md`
-    and `harness-shape-claude.md`, and the `nils-cli` surface row in the
-    `README.md` "Version baseline" table.
-  - Any SKILL body, runtime-smoke fixture, or golden snapshot that referenced
-    a surface the target release retired or renamed, plus the re-rendered
-    goldens.
-  - The `min_nils_cli` row in `manifests/surfaces.yaml` (and the rendered
-    `SUPPORT_MATRIX.md`) only when a consumed product surface's floor moved.
+- One governed PR (or dry-run summary) that updates in lock-step:
+  - `validated_tag` plus the target release's validated Linux SHA256 values.
+  - `docs/source/nils-cli-surface.md`, README, and every supported product's
+    harness mirror for the validated role.
+  - Dockerfile, `docker/build.sh`, and publish-image inputs, always from
+    validated state.
+  - Any affected skill bodies, runtime-smoke fixtures, and rendered goldens.
+  - Only the `required_clis[]` floors whose consumed contract actually rose.
+- `minimum_supported_tag`, its retained lane digests, and its mirrors change
+  only when the work explicitly retires compatibility and includes
+  below-minimum evidence.
 
 Failure modes:
 
-- The host `agent-runtime --version` is not the target tag, so the post-bump
-  `version-alignment` gate cannot pass. Stop and upgrade the host first.
-- The compare API is unreachable or the tag is unpublished.
-- A retired or renamed surface is still referenced by a consumer and no
-  migration is proposed — never bump the pin while leaving a consumer pointed
-  at a surface the target release removed.
-- The release is a partial / non-lock-step bump: the `pinned_tag` exact match
-  still holds against the host, but `required_clis[]` floors must be checked
-  per binary rather than assumed uniform.
+- Target release, comparison, digest, or source-head evidence is unavailable.
+- Target behavior fails downstream validation.
+- Packaging digest/defaults differ from `validated_tag`.
+- A blocking minimum/validated CI lane lacks its manifest-owned archive digest.
+- A retired surface remains referenced without a migration.
+- An ordinary bump attempts to move minimum automatically.
+- A partial/non-lock-step release is treated as uniform without checking each
+  consumed binary and `required_clis[]` floor.
 
 ## Entrypoint
 
-Read current drift and the latest published tag:
+Read policy and ambient admission:
 
 ```bash
 agent-runtime doctor --class version-alignment \
   --pin docs/source/nils-cli-pin.yaml --format text
-gh release view --repo sympoies/nils-cli --json tagName,publishedAt
+gh api --paginate 'repos/sympoies/nils-cli/releases?per_page=100'
 ```
 
-Diff the consumed surface between the current pin and the target tag:
+Resolve current validated and compare it with the target:
 
 ```bash
-current="$(gh api repos/sympoies/nils-cli/git/refs/tags --jq '.[].ref' >/dev/null 2>&1; \
-  grep -E '^\s*pinned_tag:' docs/source/nils-cli-pin.yaml | sed -E 's/.*"(v[0-9.]+)".*/\1/')"
-target="<target-tag>"
+current="$(awk -F'"' '/validated_tag:/ {print $2; exit}' \
+  docs/source/nils-cli-pin.yaml)"
+target="<target-stable-tag>"
 gh api "repos/sympoies/nils-cli/compare/${current}...${target}" \
   --jq '.files[].filename' | sort -u
 ```
 
-After moving the pin, confirm the gate is green against the upgraded host:
+Run the target without mutating Homebrew:
 
 ```bash
-agent-runtime doctor --class version-alignment \
-  --pin docs/source/nils-cli-pin.yaml --format text   # expect block=0, exit 0
-bash scripts/ci/all.sh                                 # Position 2 now aligned
+NILS_RELEASE_SHA256="<target-platform-archive-sha256>" \
+  scripts/dev/with-nils-version.sh "release:${target}" -- bash scripts/ci/all.sh
 ```
 
 ## Workflow
 
-1. Resolve the target tag (latest published release, or an explicit stepped
-   tag) and read the current `pinned_tag`. If they already match and the gate
-   is green, there is nothing to bump — stop.
-2. Confirm the host is on the target tag. If `agent-runtime --version` is
-   behind, `brew upgrade sympoies/tap/nils-cli` first; the exact gate blocks
-   until host and pin agree.
-3. Run the GitHub compare API between current and target. Reduce the changed
-   files to: which crates changed, which produced binaries those map to (cross
-   the **Crate → binary** table in the snapshot), and which downstream-consumed
-   flags / JSON envelopes the release notes or diff touched.
-4. For each touched binary surface, grep the consumers — `core/skills/**/*.tera`,
-   `tests/runtime-smoke/**`, `tests/golden/**`, and the snapshot notes — for the
-   retired or renamed flag / envelope. Classify each hit as no-op (surface
-   unchanged for that path) or needs-rewrite (surface retired / renamed).
-5. Update `docs/source/nils-cli-pin.yaml`: set `pinned_tag` to the target, and
-   raise only the `required_clis[]` floors that a newly-required surface moved.
-   Do not float every floor to the target — floors record the minimum consumed
-   surface, not the current pin.
-6. Refresh `docs/source/nils-cli-surface.md`: bump the header pointers
-   (including the `pinned_tag:` prose cue and `Active git describe` line), add
-   or edit crate rows for added / changed crates, and append the `As of <tag>`
-   note to any binary whose consumed surface moved. Then update the remaining
-   `pinned_tag` prose mirrors the Position 14 baseline audit enforces: the
-   `pinned snapshot **<tag>**` line in `docs/source/harness-shape-codex.md` and
-   `harness-shape-claude.md`, and the `nils-cli` surface row in the `README.md`
-   "Version baseline" table.
-7. Apply every needs-rewrite migration in the consumer it touches, then
-   re-render goldens (`agent-runtime render --product codex|claude|hermes
-   --update-golden`) and run `scripts/ci/skill-governance-audit.sh`.
-8. Run `scripts/ci/all.sh`. Position 2 must now report aligned, and Position 14
-   (`version-baseline-audit.py check`) must be green — it fails closed if any
-   `pinned_tag` prose mirror still lags. Downstream render / drift /
-   runtime-smoke positions catch any consumer the rewrite missed.
-9. Deliver one bump PR through the active PR workflow
-   (`pr:deliver-pr` / `forge-cli pr`), not raw
-   `gh pr create`. Title it as a `chore` (pin + snapshot only) or `feat`
-   (consumer surface rewrites included) per the actual diff.
+1. Resolve target, current minimum, and current validated. If target already
+   equals validated, digests/mirrors agree, and gates pass, stop.
+2. Verify the stable release URL, source head, asset names, and tarball SHA256
+   values. Never infer digests from an ambient installation.
+3. Compare current validated to target. Map touched crates to produced binaries
+   through the surface snapshot, then inspect release notes and changed APIs,
+   flags, and JSON envelopes consumed by this repository.
+4. Search `core/skills/**/*.tera`, `tests/runtime-smoke/**`, `tests/golden/**`,
+   workflows, Docker, and docs for each touched surface. Classify every hit as
+   unchanged or requiring migration.
+5. Run focused and full downstream behavior under the target release through
+   `scripts/dev/with-nils-version.sh`. An above-validated warning must continue
+   to downstream gates.
+6. Set `validated_tag` to target and replace validated release digests. Raise
+   only genuinely required `required_clis[]` floors. Leave minimum and its
+   retained lane digests unchanged unless an explicit retirement is part of
+   this PR.
+7. If minimum moves, state the incompatibility, replace the retained minimum
+   lane digests, add below-minimum coverage, and prove the new exact minimum.
+   Never derive minimum from validated merely because the versions happen to
+   be equal.
+8. Refresh surface/README/harness mirrors, Docker/publish inputs, affected
+   consumers, and every supported product's renders/goldens.
+9. Prove exact minimum and exact validated CI roles. Equal tags may share one
+   physical job only when output preserves both role labels. Confirm the
+   scheduled/manual newest-stable canary remains advisory, rejects stale or
+   semver-suffixed selections, and stays policy-free.
+10. Run `bash scripts/ci/all.sh` and `bash tests/hooks/run.sh`, then deliver one
+    PR through `pr:deliver-pr` / `forge-cli`, never raw `gh pr create`.
 
 ## Boundary
 
-This skill owns when to bump, the surface-refresh judgement (new floors, which
-consumers to rewrite, the snapshot edits), and the single-PR delivery handoff.
-The mechanical version-number gate is owned by `agent-runtime doctor --class
-version-alignment` — do not reimplement the comparison in skill prose. The
-inter-tag surface diff is owned by the GitHub compare API. This skill answers
-"what does this release change for our consumers, and is the pin safe to move?"
-It does not judge the correctness of arbitrary upstream code changes, does not
-publish nils-cli releases, and does not move the pin while a consumer still
-points at a retired surface. If a future bump needs structured envelope
-diffing or reference-graph output, extract that into released `nils-cli` first
-and call it from here.
+This skill owns validated-release adoption, compatibility-retirement
+judgement, consumer refresh, and the single-PR handoff. It does not publish
+nils-cli, auto-move minimum, or infer packaging from the ambient host. Released
+`agent-runtime doctor` owns host-policy ordering and diagnostics. The CI matrix
+owns only the pre-download remote-canary bootstrap exception: canonical u64
+stable-tag filtering and candidate ordering, covered by focused regressions;
+the GitHub compare/release APIs own upstream facts.
 
 ## Related Skills
 
-- The policy-owned semantic commit phase preserves the staged-change boundary.
-- `pr:deliver-pr` — open and drive the single bump PR; this skill never
-  calls raw `gh pr create`.
-- `meta:sync-runtime-surfaces` — after the host upgrade, refresh the live Codex
-  and Claude skill surfaces so a local session sees the rewritten bodies.
+- `project-version-baseline` verifies both role mirrors without mutating them.
+- `pr:deliver-pr` delivers the governed bump PR.
+- `meta:sync-runtime-surfaces` applies merged rendered surfaces only when live
+  activation is separately authorized.

@@ -333,7 +333,7 @@ skills:
       hermes:
         render_to: plugins/meta/skills/nils-cli-bump/SKILL.md
     required_clis:
-      agent-runtime: ">=0.28.0"
+      agent-runtime: ">=1.25.0"
       forge-cli: ">=1.11.2"
     state_out_mode: runtime
 

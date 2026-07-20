@@ -1,36 +1,37 @@
-# nils-cli surface pin — machine-readable gate input.
+# nils-cli version policy — machine-readable gate and packaging input.
 #
-# Consumed by `scripts/ci/all.sh` Position 2 through
+# Consumed by `scripts/ci/all.sh` Position 1 through
 #   agent-runtime doctor --class version-alignment --pin docs/source/nils-cli-pin.yaml
 # (released in nils-cli v0.28.0, sympoies/nils-cli#636).
 #
-# Contract: the doctor class blocks on ANY deviation of the host
-# `agent-runtime` from `pinned_tag` — ahead OR behind — because a silent
-# `brew upgrade sympoies/tap/nils-cli` past the pin is exactly the drift
-# this guards (the v0.17.6 -> v0.17.7 incident in the
-# `plan-issue-v2-marker-collapse-drift` inbox case). This is stricter than
-# the prior shell gate, which tolerated a newer host; bumping the host now
-# requires a conscious pin bump (see the `meta:nils-cli-bump` skill).
+# Contract: `minimum_supported_tag` is the compatibility admission floor.
+# A host below it blocks. `validated_tag` is the exact reproducibility and
+# packaging target. A newer host is admitted with an explicit warning and must
+# still complete the downstream behavioral gates. Ordinary release uptake
+# moves validated only; minimum moves only when compatibility is intentionally
+# retired (see the `meta:nils-cli-bump` skill).
 #
 # The human-readable surface snapshot — crate -> binary table, consumed
 # surfaces, refresh procedure — stays in docs/source/nils-cli-surface.md.
-# Keep `pinned_tag` here and the `Active git describe --tags output:` line
-# there in lock-step.
-schema_version: 1
+# Keep both role cues there in lock-step with this manifest.
+schema_version: 2
 
 nils_cli:
-  # Tag `agent-runtime --version` must report, exactly (major.minor.patch).
-  pinned_tag: "v1.24.5"
+  # Oldest released surface allowed to run this repository's behavior gates.
+  # The initial schema-v2 floor equals the first release that can parse it.
+  minimum_supported_tag: "v1.25.0"
+  # Exact surface used by blocking validated CI and all packaged artifacts.
+  validated_tag: "v1.25.0"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
-  # publish workflow. Keep these in lock-step with pinned_tag so the Docker
+  # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "dd635e3d7932f5789eee9182ac0d2d540bc5a04e6b6e03b7d72b2c631423158c"
-    linux_arm64: "97c35448cdd3f4a2f55821043b965e61c2a065631e61fc16cc6b6ea8718f0e48"
+    linux_amd64: "787c7978caa996f262d4b104b44cc94cec84fdc9e2d8e1c0afdbc66120d64223"
+    linux_arm64: "731a35493a8bee065cd71d085e4adefeaa9bb5e1d2cb216eaee756fca3cf9227"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
-# ships every crate in lock-step, so the exact `pinned_tag` above is the
+# ships every crate in lock-step, so the two version roles above are the
 # primary gate; these floors are a belt-and-suspenders guard against a
 # partial release (e.g. the v0.25.7 partial bump) and document the minimum
 # consumed surface each binary must satisfy. Values track the
@@ -62,8 +63,8 @@ required_clis:
     min: "1.21.17"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos
     min: "1.0.9"
-  - bin: agent-runtime    # home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning
-    min: "1.22.6"
+  - bin: agent-runtime    # schema-v2 version policy + home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning
+    min: "1.25.0"
   - bin: macos-agent      # Peekaboo-backed macOS Computer Use adapter: locked backend lifecycle, local/SSH exec and scenarios, MCP profiles, journal/redaction/replay, doctor, and rollback
     min: "1.22.6"
   - bin: docs-impact      # durable scan disposition record/show/verify workflow

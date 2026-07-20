@@ -8,10 +8,6 @@ allow:
     path: build/codex/plugins/meta/skills/sync-runtime-surfaces/SKILL.md
     reason: This skill operates on both runtime homes and reports both plugin registries.
   - product: codex
-    path: build/codex/plugins/meta/skills/nils-cli-bump/SKILL.md
-    sentinel: Claude
-    reason: The bump skill references refreshing both product surfaces after a host upgrade.
-  - product: codex
     path: build/codex/plugins/meta/skills/create-project-skill/SKILL.md
     sentinel: Claude
     reason: Project-local skill scaffolding documents the Claude bridge and rejected Claude-only modes.
@@ -34,10 +30,6 @@ allow:
   - product: claude
     path: build/claude/plugins/meta/skills/sync-runtime-surfaces/SKILL.md
     reason: This skill operates on both runtime homes and reports both plugin registries.
-  - product: claude
-    path: build/claude/plugins/meta/skills/nils-cli-bump/SKILL.md
-    sentinel: Codex
-    reason: The bump skill references refreshing both product surfaces after a host upgrade.
   - product: claude
     path: build/claude/plugins/meta/skills/create-project-skill/SKILL.md
     sentinel: Codex
@@ -63,6 +55,3 @@ allow:
   - product: hermes
     path: build/hermes/plugins/meta/skills/remove-project-skill/SKILL.md
     reason: Project-local removal describes the Codex/Claude bridge surfaces it may inspect.
-  - product: hermes
-    path: build/hermes/plugins/meta/skills/nils-cli-bump/SKILL.md
-    reason: The bump skill references refreshing every product surface after a host upgrade.

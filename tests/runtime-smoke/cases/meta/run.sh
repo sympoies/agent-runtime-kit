@@ -3070,33 +3070,96 @@ run_evidence_prune_source_probe() {
 }
 
 run_nils_cli_bump_probe() {
-  local drift="$META_ARTIFACTS_DIR/nils-cli-bump.drift.json"
-  local aligned="$META_ARTIFACTS_DIR/nils-cli-bump.aligned.json"
+  local below="$META_ARTIFACTS_DIR/nils-cli-bump.below-minimum.json"
+  local exact="$META_ARTIFACTS_DIR/nils-cli-bump.exact-roles.json"
+  local ahead="$META_ARTIFACTS_DIR/nils-cli-bump.ahead-warning.json"
+  local incompatible="$META_ARTIFACTS_DIR/nils-cli-bump.incompatible-newer-surface.txt"
+  local malformed="$META_ARTIFACTS_DIR/nils-cli-bump.malformed-range.txt"
   local pin_dir="$META_ARTIFACTS_DIR/nils-cli-bump"
   local host_tag status
   require_meta_bin agent-runtime || return 1
   mkdir -p "$pin_dir"
 
-  # Drift path: an impossible pinned_tag must block (exit 2). Host-version
-  # independent, so the probe stays deterministic across host bumps.
-  printf 'schema_version: 1\nnils_cli:\n  pinned_tag: "v0.0.0"\n' >"$pin_dir/drift.yaml"
+  write_policy() {
+    local path="$1"
+    local minimum="$2"
+    local validated="$3"
+    printf 'schema_version: 2\nnils_cli:\n  minimum_supported_tag: "%s"\n  validated_tag: "%s"\n  release_sha256:\n    linux_amd64: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n    linux_arm64: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"\n' \
+      "$minimum" "$validated" >"$path"
+  }
+
+  run_downstream_nils_contract_probe() {
+    local fixture="$1"
+    if ! grep -qx 'surface-contract: supported' "$fixture"; then
+      echo "downstream gate rejected incompatible newer surface" >&2
+      return 42
+    fi
+    echo "downstream sentinel reached"
+  }
+
+  host_tag="$(agent-runtime --version | awk 'NR==1 {print $2}')"
+  case "$host_tag" in v*) : ;; *) host_tag="v$host_tag" ;; esac
+
+  # Below-minimum remains a hard block (exit 2).
+  write_policy "$pin_dir/below.yaml" "v999.0.0" "v999.0.0"
   set +e
   agent-runtime doctor --class version-alignment \
-    --pin "$pin_dir/drift.yaml" --format json >"$drift" 2>&1
+    --pin "$pin_dir/below.yaml" --format json >"$below" 2>&1
   status=$?
   set -e
   [ "$status" -eq 2 ]
-  grep -q '"schema_version": "agent-runtime-cli.doctor.v1"' "$drift"
-  grep -q '"check": "version-alignment.host"' "$drift"
-  grep -q 'drifted from pinned v0.0.0' "$drift"
+  grep -q '"check": "version-alignment.minimum"' "$below"
+  grep -q '"severity": "block"' "$below"
 
-  # Aligned path: pinning to the host's own tag must pass (block=0, exit 0).
-  host_tag="$(agent-runtime --version | awk 'NR==1 {print $2}')"
-  case "$host_tag" in v*) : ;; *) host_tag="v$host_tag" ;; esac
-  printf 'schema_version: 1\nnils_cli:\n  pinned_tag: "%s"\n' "$host_tag" >"$pin_dir/aligned.yaml"
+  # Exact minimum/validated roles pass. Equal roles are valid policy input.
+  write_policy "$pin_dir/exact.yaml" "$host_tag" "$host_tag"
   agent-runtime doctor --class version-alignment \
-    --pin "$pin_dir/aligned.yaml" --format json >"$aligned" 2>&1
-  grep -q '"block": 0' "$aligned"
+    --pin "$pin_dir/exact.yaml" --format json >"$exact" 2>&1
+  grep -q '"block": 0' "$exact"
+  grep -q '"warn": 0' "$exact"
+
+  # A host above validated is admitted with a warning and executes a real
+  # downstream contract probe rather than appending a synthetic sentinel.
+  write_policy "$pin_dir/ahead.yaml" "v0.1.0" "v0.1.0"
+  printf 'surface-contract: supported\n' >"$pin_dir/ahead-surface.txt"
+  {
+    agent-runtime doctor --class version-alignment \
+      --pin "$pin_dir/ahead.yaml" --format json
+    run_downstream_nils_contract_probe "$pin_dir/ahead-surface.txt"
+  } >"$ahead" 2>&1
+  grep -q '"check": "version-alignment.validated"' "$ahead"
+  grep -q '"severity": "warn"' "$ahead"
+  grep -q '"block": 0' "$ahead"
+  grep -q 'downstream sentinel reached' "$ahead"
+
+  # Admission never implies blind success: an intentionally incompatible
+  # newer-surface fixture must propagate the downstream gate's non-zero exit.
+  printf 'surface-contract: removed\n' >"$pin_dir/incompatible-newer-surface.txt"
+  set +e
+  {
+    agent-runtime doctor --class version-alignment \
+      --pin "$pin_dir/ahead.yaml" --format json
+    run_downstream_nils_contract_probe "$pin_dir/incompatible-newer-surface.txt"
+  } >"$incompatible" 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 42 ]
+  grep -q '"severity": "warn"' "$incompatible"
+  grep -q 'downstream gate rejected incompatible newer surface' "$incompatible"
+  if grep -q 'downstream sentinel reached' "$incompatible"; then
+    echo "runtime-smoke meta: incompatible newer surface reached success sentinel" >&2
+    return 1
+  fi
+
+  # An inverted role relationship fails closed before behavior gates run.
+  write_policy "$pin_dir/malformed.yaml" "$host_tag" "v0.1.0"
+  if agent-runtime doctor --class version-alignment \
+    --pin "$pin_dir/malformed.yaml" --format json >"$malformed" 2>&1; then
+    echo "runtime-smoke meta: inverted nils-cli policy unexpectedly passed" >&2
+    return 1
+  fi
+  grep -q 'minimum_supported_tag' "$malformed"
+  grep -q 'validated_tag' "$malformed"
 }
 
 run_worktree_triage_probe() {
@@ -3268,7 +3331,7 @@ record_case "meta.outcome-routing.plan-archive-discover" "plan-archive discover 
 record_case "meta.outcome-routing.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
 record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
 record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
-record_case "meta.nils-cli-bump" "version-alignment doctor probe blocked v0.0.0 drift and passed host-aligned pin" run_nils_cli_bump_probe
+record_case "meta.nils-cli-bump" "schema-v2 doctor blocked below minimum, admitted ahead into a real downstream gate, rejected an incompatible newer surface, and rejected an inverted range" run_nils_cli_bump_probe
 record_case "meta.repo-docs-boundary" "repo docs placement contract rendered consistently for all products" run_repo_docs_boundary_probe
 record_case "meta.worktree-triage" "worktree triage scan classified safe-merged, safe-superseded, and rescue-candidate worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe

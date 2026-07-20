@@ -23,7 +23,7 @@ added at the repo root.
 | --- | --- |
 | `Dockerfile` | Two-stage build: fetch `nils-cli` Linux binaries, then assemble the Node-based runtime. |
 | `Dockerfile.dockerignore` | BuildKit per-Dockerfile context filter (keeps Docker out of the repo root). |
-| `build.sh` | Pin-aligned build entrypoint: reads `nils-cli` version from `docs/source/nils-cli-pin.yaml`. |
+| `build.sh` | Validated build entrypoint: reads `validated_tag` and release digests from `docs/source/nils-cli-pin.yaml`. |
 | `compose.yaml` | Convenience wrapper for interactive use. |
 | `entrypoint.sh` | Prints a capability banner, optionally applies a runtime Zsh repo, and execs the requested command. |
 | `env.example` | Template for `docker/.env` (auth passthrough; gitignored). |
@@ -33,8 +33,8 @@ added at the repo root.
 ## Build
 
 From the repository root. The recommended entrypoint is `docker/build.sh`,
-which pins the `nils-cli` version from `docs/source/nils-cli-pin.yaml` so the
-image always matches the repo's authoritative pin gate:
+which takes the exact validated nils-cli release and digests from
+`docs/source/nils-cli-pin.yaml` so packaging never follows an ambient host:
 
 ```bash
 docker/build.sh                      # -> agent-runtime-kit:dev
@@ -44,7 +44,7 @@ docker/build.sh -- --no-cache        # pass extra flags to `docker build`
 ```
 
 Plain `docker build` / `compose build` also work, but fall back to the
-`NILS_CLI_VERSION` default baked into the `Dockerfile` (not the pin file):
+`NILS_CLI_VERSION` default baked into the `Dockerfile` (not the policy file):
 
 ```bash
 docker build -f docker/Dockerfile -t agent-runtime-kit:dev .

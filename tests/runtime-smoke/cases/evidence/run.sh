@@ -27,8 +27,11 @@ require_evidence_bin() {
   fi
 }
 
-matches_pinned_agent_docs_version() {
-  grep -Eq '^agent-docs 1\.24\.5([[:space:]]|$)' <<<"$1"
+matches_agent_docs_version() {
+  local expected="$1"
+  local name version
+  read -r name version _ <<<"$2"
+  [[ "$name" == "agent-docs" && "$version" == "$expected" ]]
 }
 
 record_case() {
@@ -320,11 +323,14 @@ run_selective_intent_control_plane_probe() {
   local workspace="$TMP_ROOT/workspaces/selective-intent-repo"
   local state_home="$EVIDENCE_ARTIFACTS_DIR/agent-docs-state"
   local test_first_dir="$EVIDENCE_ARTIFACTS_DIR/phase-aware-test-first"
+  local runtime_version
   require_evidence_bin agent-docs || return 1
-  matches_pinned_agent_docs_version "agent-docs 1.24.5"
-  ! matches_pinned_agent_docs_version "agent-docs 1.24.50"
-  ! matches_pinned_agent_docs_version "agent-docs 11.24.5"
-  matches_pinned_agent_docs_version "$(agent-docs --version)"
+  require_evidence_bin agent-runtime || return 1
+  runtime_version="$(agent-runtime --version | awk 'NR == 1 {print $2}')"
+  matches_agent_docs_version "$runtime_version" "agent-docs $runtime_version"
+  ! matches_agent_docs_version "$runtime_version" "agent-docs ${runtime_version}0"
+  ! matches_agent_docs_version "$runtime_version" "agent-docs 1${runtime_version}"
+  matches_agent_docs_version "$runtime_version" "$(agent-docs --version)"
   agent-docs session --help | grep -q 'status'
   mkdir -p "$workspace/src" "$workspace/tests"
   printf '# Dev\n' >"$workspace/DEV.md"

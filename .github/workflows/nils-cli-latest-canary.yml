@@ -1,0 +1,89 @@
+name: nils-cli latest stable canary
+
+# Advisory compatibility signal only. This workflow never mutates the policy
+# manifest and is intentionally absent from pull_request events/required gates.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nils-cli-latest-stable-canary
+  cancel-in-progress: true
+
+jobs:
+  latest-stable:
+    name: latest stable compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve latest stable nils-cli release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(
+            gh api --paginate 'repos/sympoies/nils-cli/releases?per_page=100' \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' |
+              python3 scripts/ci/nils-cli-policy-matrix.py --select-newest-stable
+          )"
+          test -n "$tag"
+          python3 scripts/ci/nils-cli-policy-matrix.py \
+            --assert-candidate-at-least-validated "$tag" >/dev/null
+          asset_name="nils-cli-${tag}-x86_64-unknown-linux-gnu.tar.gz"
+          sha256="$(
+            gh release view "$tag" --repo sympoies/nils-cli --json assets |
+              jq -er --arg name "$asset_name" '
+                [.assets[] | select(.name == $name) | .digest]
+                | select(length == 1)
+                | .[0]
+                | select(startswith("sha256:"))
+                | sub("^sha256:"; "")
+              '
+          )"
+          test "${#sha256}" -eq 64
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "resolved newest stable nils-cli: $tag" | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Cache nils-cli release archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.local/state/agent-runtime-kit/out/nils-versions/${{ steps.latest.outputs.tag }}/*.tar.gz
+            ~/.local/state/agent-runtime-kit/out/nils-versions/${{ steps.latest.outputs.tag }}/*.tgz
+            ~/.local/state/agent-runtime-kit/out/nils-versions/${{ steps.latest.outputs.tag }}/*.zip
+          key: nils-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.latest.outputs.tag }}-${{ steps.latest.outputs.sha256 }}
+
+      - name: Run full downstream behavior gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NILS_RELEASE_SHA256: ${{ steps.latest.outputs.sha256 }}
+          # Hosted runners keep the known #689 shared-hook race serialized.
+          HOOKS_TEST_JOBS: "1"
+        run: |
+          set -euo pipefail
+          echo "canary version: ${{ steps.latest.outputs.tag }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          scripts/dev/with-nils-version.sh "release:${{ steps.latest.outputs.tag }}" -- bash scripts/ci/all.sh
+
+      - name: Publish canary result and remediation
+        if: ${{ always() }}
+        run: |
+          {
+            echo
+            echo "## Canary outcome"
+            echo "- Resolved version: ${{ steps.latest.outputs.tag || 'unresolved' }}"
+            echo "- Result: ${{ job.status }}"
+            echo "- Remediation: inspect the failed step, reproduce with scripts/dev/with-nils-version.sh, then use meta:nils-cli-bump only after compatibility is restored."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -13,10 +13,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  nils-cli-policy:
+    name: resolve nils-cli minimum/validated lanes
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.policy.outputs.matrix }}
+      minimum_supported_tag: ${{ steps.policy.outputs.minimum_supported_tag }}
+      validated_tag: ${{ steps.policy.outputs.validated_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Resolve and de-duplicate version roles
+        id: policy
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/nils-cli-policy-matrix.py --github-output >> "$GITHUB_OUTPUT"
+
   gate-stack:
-    name: scripts/ci/all.sh
+    needs: nils-cli-policy
+    name: scripts/ci/all.sh (${{ matrix.lane }} ${{ matrix.tag }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.nils-cli-policy.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -25,40 +49,23 @@ jobs:
           # Retirement digest acceptance replays the immutable pre-retirement
           # golden-tree revision instead of retaining retired skill content.
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Resolve nils-cli pin
-        id: pin
-        run: |
-          set -euo pipefail
-          PIN="$(sed -n -E 's/^[[:space:]]*pinned_tag:[[:space:]]*"?([^"#]+)"?.*/\1/p' \
-            docs/source/nils-cli-pin.yaml | head -1 | tr -d '[:space:]')"
-          test -n "$PIN"
-          echo "tag=$PIN" >> "$GITHUB_OUTPUT"
-          echo "nils-cli pin: $PIN"
-
-      # Cache the extracted, pinned nils-cli release surface so each run reuses
-      # the prior `gh release download` instead of re-fetching the tarball. The
-      # key is the pin tag, so a pin bump misses and re-populates automatically.
-      # Path mirrors with-nils-version.sh's cache: $STATE_OUT/nils-versions/<tag>.
-      - name: Cache nils-cli release surface
+      # Cache only the release archive. The helper verifies these bytes and
+      # creates a fresh extracted surface once for the combined lane command.
+      - name: Cache nils-cli release archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.local/state/agent-runtime-kit/out/nils-versions/${{ steps.pin.outputs.tag }}
-          key: nils-cli-${{ runner.os }}-${{ steps.pin.outputs.tag }}
+          path: |
+            ~/.local/state/agent-runtime-kit/out/nils-versions/${{ matrix.tag }}/*.tar.gz
+            ~/.local/state/agent-runtime-kit/out/nils-versions/${{ matrix.tag }}/*.tgz
+            ~/.local/state/agent-runtime-kit/out/nils-versions/${{ matrix.tag }}/*.zip
+          key: nils-cli-${{ runner.os }}-${{ runner.arch }}-${{ matrix.tag }}-${{ matrix.sha256 }}
 
-      - name: Print toolchain versions
+      - name: Print toolchain versions and run scripts/ci/all.sh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          echo "bash: $(bash --version | head -1)"
-          echo "git: $(git --version)"
-          scripts/dev/with-nils-version.sh "release:${{ steps.pin.outputs.tag }}" -- agent-runtime --version
-          scripts/dev/with-nils-version.sh "release:${{ steps.pin.outputs.tag }}" -- plan-tooling --version
-
-      - name: Run scripts/ci/all.sh
-        env:
-          GH_TOKEN: ${{ github.token }}
+          NILS_RELEASE_SHA256: ${{ matrix.sha256 }}
           # Run the shared-hook suite serially on CI. Its process-sharding
           # (default: min(nproc,16)) is a real local speedup, but on the
           # 2-4 core hosted runner the oversubscribed hook subprocesses expose
@@ -66,4 +73,14 @@ jobs:
           # (advisory intermittently empty). Serial here keeps CI reliable;
           # local runs keep the fast default. See issue #689.
           HOOKS_TEST_JOBS: "1"
-        run: scripts/dev/with-nils-version.sh "release:${{ steps.pin.outputs.tag }}" -- bash scripts/ci/all.sh
+        run: |
+          set -euo pipefail
+          echo "bash: $(bash --version | head -1)"
+          echo "git: $(git --version)"
+          echo "nils-cli lane: ${{ matrix.lane }} (roles: ${{ matrix.roles }})"
+          scripts/dev/with-nils-version.sh "release:${{ matrix.tag }}" -- bash -c '
+            set -euo pipefail
+            agent-runtime --version
+            plan-tooling --version
+            bash scripts/ci/all.sh
+          '

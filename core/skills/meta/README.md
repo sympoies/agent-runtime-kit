@@ -23,7 +23,7 @@ human routing index for choosing the right meta skill without scanning every
 | Skill | Purpose |
 | --- | --- |
 | [sync-runtime-surfaces](./sync-runtime-surfaces/) | Refreshes active runtime-kit managed surfaces into local Codex and Claude runtime homes. |
-| [nils-cli-bump](./nils-cli-bump/) | Proposes the coordinated runtime-kit update when a new pinned nils-cli release ships. |
+| [nils-cli-bump](./nils-cli-bump/) | Advances the validated nils-cli release and refreshes consumers while preserving an explicit compatibility floor. |
 | [worktree-triage](./worktree-triage/) | Scans local git worktrees and classifies merged, rescue, and review-needed branches. |
 
 ## Repo Operation Dispatchers

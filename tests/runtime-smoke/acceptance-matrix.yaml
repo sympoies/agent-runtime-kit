@@ -241,10 +241,10 @@ cases:
     skill_id: meta.nils-cli-bump
     mode: deterministic
     fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: write fixture pin manifests with a deliberately drifted pinned_tag and a host-aligned pinned_tag
-    invocation: agent-runtime doctor --class version-alignment probe against the drift and aligned pin fixtures
+    setup: write schema-v2 fixture policies for below-minimum, equal exact roles, ahead-warning admission, and an inverted relationship
+    invocation: agent-runtime doctor --class version-alignment across below-minimum, exact-role, ahead-warning, and malformed policies
     expected_exit_code: 0
-    expected_artifacts: version-alignment envelope blocking on the drift fixture (exit 2) and passing on the host-aligned fixture (exit 0)
+    expected_artifacts: typed minimum block, exact-role pass, admitted ahead warning with downstream sentinel, and invalid-range failure
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none

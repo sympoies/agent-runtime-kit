@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # scripts/dev/with-nils-version.sh — run a command with a chosen nils-cli
-# surface on PATH, without touching the Homebrew install or the pinned surface.
+# surface on PATH, without touching the Homebrew install or version policy.
 #
 # Use it to reproduce a regression against an older release (downgrade), or to
-# develop coupled changes against an unreleased build before it ships. The pin
-# in docs/source/nils-cli-pin.yaml and the meta:nils-cli-bump skill remain the
-# only way to actually move the surface. Full workflows:
+# develop coupled changes against an unreleased build before it ships. The
+# minimum/validated roles in docs/source/nils-cli-pin.yaml move only through
+# meta:nils-cli-bump. Full workflows:
 #   docs/source/nils-cli-version-workflows.md
 #
 # Compatibility: macOS system bash 3.2 and Linux bash 4+.
@@ -51,6 +51,8 @@ Environment:
   NILS_REPO_SLUG              GitHub owner/repo for release: (default: sympoies/nils-cli)
   NILS_RELEASE_ASSET_PATTERN  gh release download --pattern glob, when the
                               platform auto-pick does not match asset names
+  NILS_RELEASE_SHA256         expected SHA256 for the selected release archive;
+                              verified before every extraction/execution
   NILS_BUILD_ARGS             extra cargo build args for src:/local
 
 Cache: $CACHE_ROOT/<tag>/  (release: extractions; remove to force a fresh download)
@@ -82,6 +84,10 @@ choose_release_asset() {
   esac
   while IFS= read -r line; do
     [ -n "$line" ] || continue
+    case "$line" in
+      *.tar.gz | *.tgz | *.zip) ;;
+      *) continue ;;
+    esac
     if printf '%s\n' "$line" | grep -Eqi "$os_re" &&
       printf '%s\n' "$line" | grep -Eqi "$arch_re"; then
       printf '%s\n' "$line"
@@ -91,56 +97,145 @@ choose_release_asset() {
   return 1
 }
 
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    die "sha256sum or shasum is required to verify release assets"
+  fi
+}
+
+verify_release_archive() {
+  local archive="$1"
+  local expected="$2"
+  local actual
+  [ "${#expected}" -eq 64 ] ||
+    die "NILS_RELEASE_SHA256 must be exactly 64 lowercase hexadecimal characters"
+  case "$expected" in
+    *[!0-9a-f]*) die "NILS_RELEASE_SHA256 must be exactly 64 lowercase hexadecimal characters" ;;
+  esac
+  actual="$(sha256_file "$archive")"
+  [ "$actual" = "$expected" ] ||
+    die "release archive SHA256 mismatch for $(basename "$archive"): expected $expected, got $actual"
+  note "verified release archive SHA256: $actual"
+}
+
+u64_component() {
+  local value="$1"
+  local max="18446744073709551615"
+  [ "${#value}" -lt 20 ] && return 0
+  [ "${#value}" -gt 20 ] && return 1
+  [[ "$value" > "$max" ]] && return 1
+  return 0
+}
+
+stable_release_tag() {
+  local tag="$1"
+  local numeric major minor patch
+  printf '%s\n' "$tag" |
+    grep -Eq '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || return 1
+  numeric="${tag#v}"
+  IFS=. read -r major minor patch <<EOF
+$numeric
+EOF
+  u64_component "$major" && u64_component "$minor" && u64_component "$patch"
+}
+
 resolve_release() {
   # $1 = tag. Echoes the resolved bin dir on stdout. Errors go to stderr.
-  local tag dest existing assets chosen archive
+  local tag dest existing assets chosen archive archives archive_entries archive_count expected
   tag="$1"
+  stable_release_tag "$tag" ||
+    die "release tag must be stable vMAJOR.MINOR.PATCH (or MAJOR.MINOR.PATCH): $tag"
   dest="$CACHE_ROOT/$tag"
+  expected="${NILS_RELEASE_SHA256:-}"
 
   existing="$(find "$dest" -type f -name agent-runtime 2>/dev/null | head -1 || true)"
-  if [ -n "$existing" ]; then
+  if [ -n "$existing" ] && [ -z "$expected" ]; then
     dirname "$existing"
     return 0
   fi
 
-  command -v gh >/dev/null 2>&1 || die "gh CLI required for release:<tag> downloads"
-  mkdir -p "$dest"
+  archives="$(find "$dest" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' \) -print 2>/dev/null || true)"
+  archive_entries="$(find "$dest" -maxdepth 1 \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' \) -print 2>/dev/null || true)"
+  if [ -n "$expected" ] && [ -n "$archive_entries" ]; then
+    archive_count="$(printf '%s\n' "$archive_entries" | sed '/^$/d' | wc -l | tr -d ' ')"
+    [ "$archive_count" = 1 ] ||
+      die "expected exactly one regular cached/downloaded release archive for SHA256 verification, found $archive_count entries"
+    archive="$archive_entries"
+    [ -f "$archive" ] && [ ! -L "$archive" ] ||
+      die "release archive for SHA256 verification must be a regular non-symlink file: $(basename "$archive")"
+  fi
+  if [ -z "$archives" ]; then
+    command -v gh >/dev/null 2>&1 || die "gh CLI required for release:<tag> downloads"
+    mkdir -p "$dest"
 
-  if [ -n "${NILS_RELEASE_ASSET_PATTERN:-}" ]; then
-    chosen=""
-    note "downloading $NILS_REPO_SLUG@$tag assets matching '$NILS_RELEASE_ASSET_PATTERN'"
-    gh release download "$tag" --repo "$NILS_REPO_SLUG" \
-      --pattern "$NILS_RELEASE_ASSET_PATTERN" --dir "$dest" --clobber ||
-      die "gh release download failed for $tag (pattern: $NILS_RELEASE_ASSET_PATTERN)"
-  else
-    assets="$(gh release view "$tag" --repo "$NILS_REPO_SLUG" \
-      --json assets --jq '.assets[].name' 2>/dev/null || true)"
-    [ -n "$assets" ] || die "no assets found for $NILS_REPO_SLUG@$tag (does the release exist?)"
-    chosen="$(printf '%s\n' "$assets" | choose_release_asset || true)"
-    if [ -z "$chosen" ]; then
-      note "could not auto-pick a $(uname -s)/$(uname -m) asset for $tag. Available assets:"
-      printf '%s\n' "$assets" | while IFS= read -r asset_name; do
-        [ -n "$asset_name" ] && printf '  %s\n' "$asset_name" >&2
-      done
-      die "set NILS_RELEASE_ASSET_PATTERN to one of the above and retry"
+    if [ -n "${NILS_RELEASE_ASSET_PATTERN:-}" ]; then
+      chosen=""
+      note "downloading $NILS_REPO_SLUG@$tag assets matching '$NILS_RELEASE_ASSET_PATTERN'"
+      gh release download "$tag" --repo "$NILS_REPO_SLUG" \
+        --pattern "$NILS_RELEASE_ASSET_PATTERN" --dir "$dest" --clobber ||
+        die "gh release download failed for $tag (pattern: $NILS_RELEASE_ASSET_PATTERN)"
+    else
+      assets="$(gh release view "$tag" --repo "$NILS_REPO_SLUG" \
+        --json assets --jq '.assets[].name' 2>/dev/null || true)"
+      [ -n "$assets" ] || die "no assets found for $NILS_REPO_SLUG@$tag (does the release exist?)"
+      chosen="$(printf '%s\n' "$assets" | choose_release_asset || true)"
+      if [ -z "$chosen" ]; then
+        note "could not auto-pick a $(uname -s)/$(uname -m) asset for $tag. Available assets:"
+        printf '%s\n' "$assets" | while IFS= read -r asset_name; do
+          [ -n "$asset_name" ] && printf '  %s\n' "$asset_name" >&2
+        done
+        die "set NILS_RELEASE_ASSET_PATTERN to one of the above and retry"
+      fi
+      note "downloading asset: $chosen"
+      gh release download "$tag" --repo "$NILS_REPO_SLUG" \
+        --pattern "$chosen" --dir "$dest" --clobber ||
+        die "gh release download failed for $tag (asset: $chosen)"
     fi
-    note "downloading asset: $chosen"
-    gh release download "$tag" --repo "$NILS_REPO_SLUG" \
-      --pattern "$chosen" --dir "$dest" --clobber ||
-      die "gh release download failed for $tag (asset: $chosen)"
+    archives="$(find "$dest" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' \) -print 2>/dev/null || true)"
   fi
 
-  # Extract any archive; raw binaries are left in place.
+  if [ -n "$expected" ]; then
+    archive_entries="$(find "$dest" -maxdepth 1 \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' \) -print 2>/dev/null || true)"
+    archive_count="$(printf '%s\n' "$archive_entries" | sed '/^$/d' | wc -l | tr -d ' ')"
+    [ "$archive_count" = 1 ] ||
+      die "expected exactly one regular cached/downloaded release archive for SHA256 verification, found $archive_count entries"
+    archive="$archive_entries"
+    [ -f "$archive" ] && [ ! -L "$archive" ] ||
+      die "release archive for SHA256 verification must be a regular non-symlink file: $(basename "$archive")"
+    verify_release_archive "$archive" "$expected"
+    # Never trust a previously extracted cache after only verifying its source
+    # archive. Re-extract the verified bytes on every pinned invocation.
+    rm -rf "$dest/extract"
+  fi
+
+  # Pinned calls extract only the single verified regular archive. Unpinned
+  # local-development calls retain the permissive multi-archive behavior.
   mkdir -p "$dest/extract"
-  for archive in "$dest"/*.tar.gz "$dest"/*.tgz "$dest"/*.zip; do
-    [ -e "$archive" ] || continue
+  if [ -n "$expected" ]; then
     case "$archive" in
       *.zip) unzip -oq "$archive" -d "$dest/extract" ;;
       *) tar -xzf "$archive" -C "$dest/extract" ;;
     esac
-  done
+  else
+    for archive in "$dest"/*.tar.gz "$dest"/*.tgz "$dest"/*.zip; do
+      [ -e "$archive" ] || continue
+      case "$archive" in
+        *.zip) unzip -oq "$archive" -d "$dest/extract" ;;
+        *) tar -xzf "$archive" -C "$dest/extract" ;;
+      esac
+    done
+  fi
 
-  existing="$(find "$dest" -type f -name agent-runtime 2>/dev/null | head -1 || true)"
+  if [ -n "$expected" ]; then
+    existing="$(find "$dest/extract" -type f -name agent-runtime 2>/dev/null | head -1 || true)"
+  else
+    existing="$(find "$dest" -type f -name agent-runtime 2>/dev/null | head -1 || true)"
+  fi
   [ -n "$existing" ] || die "downloaded $tag but found no agent-runtime binary under $dest"
   chmod +x "$(dirname "$existing")"/* 2>/dev/null || true
   dirname "$existing"
@@ -208,8 +303,12 @@ main() {
       ;;
   esac
 
-  local spec bindir missing b
+  local spec bindir missing b release_surface
   spec="$1"
+  release_surface=false
+  case "$spec" in
+    release:* | v[0-9]*.[0-9]*.[0-9]* | [0-9]*.[0-9]*.[0-9]*) release_surface=true ;;
+  esac
   shift
   if [ "${1:-}" = "--" ]; then
     shift
@@ -217,6 +316,11 @@ main() {
 
   bindir="$(resolve_bindir "$spec")"
   [ -n "$bindir" ] || die "could not resolve a bin dir for spec: $spec"
+  if [ "$release_surface" = true ]; then
+    # Authentication is needed only by the resolver. Do not expose ambient
+    # provider credentials to downloaded nils-cli binaries or their children.
+    unset GH_TOKEN GITHUB_TOKEN
+  fi
   [ -x "$bindir/agent-runtime" ] || die "agent-runtime not found or not executable in: $bindir"
 
   missing=""

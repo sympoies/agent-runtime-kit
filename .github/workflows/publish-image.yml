@@ -33,26 +33,26 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Resolve nils-cli pin
+      - name: Resolve validated nils-cli release
         id: pin
-        # Single-source the nils-cli version from the repo pin gate, mirroring
+        # Single-source the nils-cli version from the validated policy role, mirroring
         # docker/build.sh. The CalVer release tag versions the kit snapshot; the
         # bundled nils-cli is independent and always follows the pin file.
         run: |
           set -euo pipefail
-          PIN="$(sed -n -E 's/^[[:space:]]*pinned_tag:[[:space:]]*"?([^"#]+)"?.*/\1/p' \
+          PIN="$(sed -n -E 's/^[[:space:]]*validated_tag:[[:space:]]*"?([^"#]+)"?.*/\1/p' \
             docs/source/nils-cli-pin.yaml | head -1 | tr -d '[:space:]')"
           SHA_AMD64="$(sed -n -E 's/^[[:space:]]*linux_amd64:[[:space:]]*"?([0-9a-f]{64})"?.*/\1/p' \
             docs/source/nils-cli-pin.yaml | head -1 | tr -d '[:space:]')"
           SHA_ARM64="$(sed -n -E 's/^[[:space:]]*linux_arm64:[[:space:]]*"?([0-9a-f]{64})"?.*/\1/p' \
             docs/source/nils-cli-pin.yaml | head -1 | tr -d '[:space:]')"
-          test -n "$PIN" || { echo "could not read nils_cli.pinned_tag" >&2; exit 1; }
+          test -n "$PIN" || { echo "could not read nils_cli.validated_tag" >&2; exit 1; }
           test -n "$SHA_AMD64" || { echo "could not read nils_cli.release_sha256.linux_amd64" >&2; exit 1; }
           test -n "$SHA_ARM64" || { echo "could not read nils_cli.release_sha256.linux_arm64" >&2; exit 1; }
           echo "nils_cli=$PIN" >> "$GITHUB_OUTPUT"
           echo "nils_cli_sha256_amd64=$SHA_AMD64" >> "$GITHUB_OUTPUT"
           echo "nils_cli_sha256_arm64=$SHA_ARM64" >> "$GITHUB_OUTPUT"
-          echo "nils-cli pin: $PIN"
+          echo "validated nils-cli release: $PIN"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4

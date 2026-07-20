@@ -12193,8 +12193,11 @@ exit 65
 
     def test_released_git_cli_dirty_adoption_lifecycle(self) -> None:
         git_cli = shutil.which("git-cli")
+        agent_runtime = shutil.which("agent-runtime")
         self.assertIsNotNone(git_cli, "released git-cli is required")
+        self.assertIsNotNone(agent_runtime, "released agent-runtime is required")
         assert git_cli is not None
+        assert agent_runtime is not None
         version = subprocess.run(
             [git_cli, "--version"],
             capture_output=True,
@@ -12202,7 +12205,16 @@ exit 65
             check=False,
         )
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertEqual(version.stdout.split()[:2], ["git-cli", "1.24.5"])
+        runtime_version = subprocess.run(
+            [agent_runtime, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(runtime_version.returncode, 0, runtime_version.stderr)
+        self.assertEqual(version.stdout.split()[:1], ["git-cli"])
+        self.assertEqual(runtime_version.stdout.split()[:1], ["agent-runtime"])
+        self.assertEqual(version.stdout.split()[1], runtime_version.stdout.split()[1])
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

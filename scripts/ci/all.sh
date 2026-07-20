@@ -67,7 +67,6 @@ require_bin() {
   fi
 }
 
-require_bin plan-tooling
 require_bin agent-runtime
 require_bin python3
 
@@ -152,9 +151,54 @@ PY
 }
 
 # -----------------------------------------------------------------------------
-# Position 1 — plan bundle and skill lifecycle governance validation
+# Position 1 — nils-cli minimum/validated policy (version-alignment doctor)
+#
+# Delegates to `agent-runtime doctor --class version-alignment`, released in
+# nils-cli v0.28.0 (sympoies/nils-cli#636), instead of the prior hand-rolled
+# shell + python floor compare. The class reads the machine-readable pin
+# manifest `docs/source/nils-cli-pin.yaml`: `minimum_supported_tag` controls
+# admission, `validated_tag` controls reproducibility, and `required_clis[]`
+# retains per-binary floors. A host below minimum blocks. A host above validated
+# warns but continues into every downstream behavior gate; this avoids making a
+# routine host upgrade fail solely because the exact validated snapshot lags.
+#
+# The doctor emits a remediation-quality banner naming both versions and every
+# offending check, and exits non-zero (2) on block, so this gate is a thin
+# exit-code wrapper — no markdown parse or python version compare needed. The
+# human-readable surface snapshot stays in `docs/source/nils-cli-surface.md`;
+# the YAML manifest is the gate's pin source. Keep the two in lock-step.
 # -----------------------------------------------------------------------------
-banner 1 "plan-tooling validate + skill-governance audit"
+banner 1 "nils-cli minimum/validated policy vs agent-runtime"
+PIN_MANIFEST="docs/source/nils-cli-pin.yaml"
+if [ ! -f "$PIN_MANIFEST" ]; then
+  echo "ci/all.sh: nils-cli version policy not found: $PIN_MANIFEST" >&2
+  exit 1
+fi
+if ! agent-runtime doctor --class version-alignment --pin "$PIN_MANIFEST" --format text; then
+  echo >&2
+  echo "ci/all.sh: nils-cli version policy failed (see doctor block above)" >&2
+  echo >&2
+  echo "  Remediation:" >&2
+  echo "  - Host below minimum: brew upgrade sympoies/tap/nils-cli" >&2
+  echo "  - Consumed behavior changed: update policy through meta:nils-cli-bump" >&2
+  echo "    and refresh consumers; ordinary uptake moves validated only, while an" >&2
+  echo "    intentional compatibility retirement may move minimum." >&2
+  echo "    The skill updates $PIN_MANIFEST, docs/source/nils-cli-surface.md," >&2
+  echo "    any affected SKILL bodies," >&2
+  echo "    runtime-smoke fixtures, and goldens that referenced the retired surface." >&2
+  exit 1
+fi
+python3 tests/ci/test_nils_cli_version_policy.py
+echo "ci/all.sh: nils-cli policy admitted host; downstream sentinel reached"
+
+# -----------------------------------------------------------------------------
+# Position 2 — plan bundle and skill lifecycle governance validation
+#
+# This is intentionally after version admission: no nils-cli surface other
+# than the schema-v2 doctor may execute before a below-minimum host is blocked.
+# -----------------------------------------------------------------------------
+require_bin plan-tooling
+banner 2 "plan-tooling validate + skill-governance audit"
 plan-tooling validate --format text --explain
 bash scripts/ci/skill-governance-audit.sh
 bash scripts/ci/skill-governance-audit.sh --fixture count-refresh
@@ -164,46 +208,6 @@ bash scripts/ci/skill-governance-audit.sh --fixture exposure-contract
 bash scripts/ci/skill-governance-audit.sh --fixture create
 bash scripts/ci/skill-governance-audit.sh --fixture remove
 bash tests/skill-exposure-contract/run.sh
-
-# -----------------------------------------------------------------------------
-# Position 2 — nils-cli surface pin alignment (version-alignment doctor class)
-#
-# Delegates to `agent-runtime doctor --class version-alignment`, released in
-# nils-cli v0.28.0 (sympoies/nils-cli#636), instead of the prior hand-rolled
-# shell + python floor compare. The class reads the machine-readable pin
-# manifest `docs/source/nils-cli-pin.yaml` (`pinned_tag` plus optional
-# `required_clis[]` floors) and blocks on ANY deviation of the host
-# `agent-runtime` from `pinned_tag` — ahead OR behind. This is a deliberate
-# strictening from the old floor gate, which tolerated a newer host: a silent
-# `brew upgrade` past the pin is exactly the drift identified by the
-# heuristic-inbox case `plan-issue-v2-marker-collapse-drift`, where fixtures,
-# skill bodies, and goldens were written for the pinned surface. Bumping the
-# host now requires a conscious pin bump via the `meta:nils-cli-bump` skill.
-#
-# The doctor emits a remediation-quality banner naming both versions and every
-# offending check, and exits non-zero (2) on block, so this gate is a thin
-# exit-code wrapper — no markdown parse or python version compare needed. The
-# human-readable surface snapshot stays in `docs/source/nils-cli-surface.md`;
-# the YAML manifest is the gate's pin source. Keep the two in lock-step.
-# -----------------------------------------------------------------------------
-banner 2 "nils-cli surface pin vs agent-runtime (version-alignment)"
-PIN_MANIFEST="docs/source/nils-cli-pin.yaml"
-if [ ! -f "$PIN_MANIFEST" ]; then
-  echo "ci/all.sh: nils-cli pin manifest not found: $PIN_MANIFEST" >&2
-  exit 1
-fi
-if ! agent-runtime doctor --class version-alignment --pin "$PIN_MANIFEST" --format text; then
-  echo >&2
-  echo "ci/all.sh: nils-cli surface pin alignment failed (see doctor block above)" >&2
-  echo >&2
-  echo "  Remediation:" >&2
-  echo "  - Host below the pin: brew upgrade sympoies/tap/nils-cli" >&2
-  echo "  - Host ahead of the pin, or a consumed surface changed: bump the pin" >&2
-  echo "    and refresh consumers via the meta:nils-cli-bump skill, which updates" >&2
-  echo "    $PIN_MANIFEST, docs/source/nils-cli-surface.md, and any SKILL bodies," >&2
-  echo "    runtime-smoke fixtures, and goldens that referenced the retired surface." >&2
-  exit 1
-fi
 
 # -----------------------------------------------------------------------------
 # Position 3 — render home prompts and codex
