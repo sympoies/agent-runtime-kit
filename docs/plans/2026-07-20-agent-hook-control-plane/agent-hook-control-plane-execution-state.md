@@ -8,22 +8,22 @@
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/686>
 - Shared dispatch issue: <https://github.com/graysurf/agent-runtime-kit/issues/686>
 - Coordination dependency: <https://github.com/graysurf/agent-runtime-kit/issues/676>
-- Status: in progress; every implementation lane is merged into the plan branch
-  and the orchestrator is delivering the runtime-kit integration PR
-- Current sprint: Sprint 3 integrates the approved lanes
-- Current task: Task 3.3 delivers the runtime-kit integration PR
-- Next task: one focused integration review, merge, then deployed-main acceptance
-- Plan branch: `feat/agent-hook-control-plane`
-- Active lanes: all implementation lanes are terminal; only orchestrator-owned
-  integration, deployment, acceptance, and closeout remain
-- Release prerequisite: satisfied by installed v1.25.5
-- Deployment prerequisite: Task 3.3
-- Blockers: none; exact v1.25.5 is installed and published
-- Last updated: 2026-07-20
-- Branch/commit/PR: plan branch `feat/agent-hook-control-plane` at `8ce8c70c`;
-  runtime-kit PR #707 merged as `8ce8c70c`; nils-cli PR #1330 merged as
-  `4a719a8f`; release PR #1332/tag v1.25.5 resolved to `7a04b0c9`; private PR
-  #44 merged as `640f39d7`
+- Status: ready for strict closeout; exact merged runtime-kit main is deployed
+  and accepted with released nils-cli v1.25.6
+- Current sprint: Sprint 4 deploys, accepts, and closes the merged control plane
+- Current task: Task 4.4 prepares the terminal record and operator report
+- Next task: merge this bounded closeout record, pass strict close-ready and
+  audit, archive the plan, and close #686
+- Closeout branch: `chore/issue-686-closeout`
+- Active lanes: implementation, integration, release, deployment, and live
+  acceptance are terminal; only the strict record-close/archive sequence remains
+- Release prerequisite: complete; v1.25.6 is published and installed
+- Deployment prerequisite: complete from provider-verified merged main
+- Blocker: none
+- Last updated: 2026-07-21
+- Branch/commit/PR: runtime-kit PR #708 merged to `main` as `d98ac0b`; bounded
+  nils-cli repair PR #1336 merged as `488de456`; v1.25.6 is released and
+  installed
 
 ## Validation Plan
 
@@ -62,11 +62,11 @@
 | 2.4 | done | Validate and deliver the runtime-kit lane PR | runtime-policy-cutover | Focused suites green; full required gate active; PR #707 merged as 8ce8c70c; focused finding and affected-only recheck passed; remote run 29757402589 green; zero unresolved threads | One focused review only; lane merged to feat/agent-hook-control-plane |
 | 3.1 | done | Update private-agent-session coordination and recovery behavior | private-session-operations | PR #44 head `80c38fac`; focused skill/portfolio/full checks passed | `off` skips coordination lifecycle only; removal consumes action-specific preview digest |
 | 3.2 | done | Independently review, merge, and synchronize the private skill lane | orchestrator | Single focused review repaired two findings; PR #44 merged as `640f39d7`; zero unresolved threads | Repository synchronization remains part of post-main deployment, not another review cycle |
-| 3.3 | in-progress | Deliver the runtime-kit integration PR | orchestrator | pending; Plan branch 8ce8c70c contains all approved lane merges | Prepare one integration PR to main with one focused review |
-| 4.1 | pending | Reconcile #676 dependency state before activation | orchestrator | pending; Provider read-back: #676 is closed with complete tracking closeout | Reconcile the already-closed dependency during live activation; do not reopen absent contradictory evidence |
-| 4.2 | pending | Preview, apply, and verify installed runtime surfaces | deployment-acceptance | pending | Deploy merged main only |
-| 4.3 | pending | Run deterministic and live disposable-session acceptance | deployment-acceptance | pending | Synthetic content and cleanup |
-| 4.4 | pending | Close #676 and #686 and archive the completed plan | orchestrator | pending | Strict closeout and final operator report |
+| 3.3 | done | Deliver the runtime-kit integration PR | orchestrator | Plan branch 8ce8c70c; PR #708 head 6c30ce0f; focused review PASS; delivery APPROVED; CI 5/5; merged main d98ac0b | Provider merge read-back complete; deployment used merged main only |
+| 4.1 | done | Reconcile #676 dependency state before activation | orchestrator | Provider read-back: #676 is closed; released nils v1.25.6 and merged runtime main d98ac0b | Live evidence did not contradict completion, so #676 remained closed |
+| 4.2 | done | Preview, apply, and verify installed runtime surfaces | deployment-acceptance | PR #1336 merged as `488de456`; v1.25.6 release/install read-back; merged-main sync preview/apply; doctor Codex 7/7 and Claude 8/8, zero legacy residue | Exact merged main d98ac0b deployed through the repository sync owner; unrelated Codex ingress and notifier composition preserved |
+| 4.3 | done | Run deterministic and live disposable-session acceptance | deployment-acceptance | Installed agent-hook 25/25; live Codex and Claude probes; mode, recovery, remove/restore, unavailable-binary matrix; p95 21.455 ms; privacy pass | Synthetic sessions and fixture state deleted |
+| 4.4 | done | Prepare the strict closeout record and final operator report | orchestrator | Bounded closeout record and terminal operator report prepared; final strict lifecycle owns close-ready, audit, archive, and issue-close links | Provider controller performs the close/archive sequence after this record merges |
 
 ## Validation Log
 
@@ -165,6 +165,28 @@
 - 2026-07-20: Provider truth shows coordination dependency #676 already closed.
   Task 4.1 will reconcile that terminal dependency during activation without
   reopening it unless live acceptance contradicts its closeout evidence.
+- 2026-07-21: The governed v1.25.6 release published successfully and installed
+  locally. The fixed-fleet broker then reported only a peer SSH timeout; local
+  agent-hook, agent-session, and forge-cli all read back v1.25.6.
+- 2026-07-21: Repository-owned sync preview/apply deployed runtime-kit main
+  d98ac0b. Doctor converged at Codex 7/7 plus one unrelated PermissionRequest
+  hook and Claude 8/8 plus zero unrelated hooks; both report zero legacy residue.
+- 2026-07-21: Installed acceptance passed 25/25. Both products returned
+  advisory=warn, enforce=block, and off=allow for coordination while locked
+  safety still blocked in off; policy block, off, and shadow created no
+  coordination operation.
+- 2026-07-21: One-shot recovery used 300 seconds and rejected replay; the
+  session-bound repair window used 900 seconds, rejected the wrong session, and
+  was revocable. Both products passed digest-bound remove/restore and missing
+  binary fail-closed byte/mode preservation.
+- 2026-07-21: Fresh Codex and Claude provider probes completed synthetic
+  read-only work. Codex Stop reconciled normally; Claude one-shot exercised the
+  missing-Stop deletion path. Both disposable records and all synthetic fixture
+  state were deleted. Privacy sentinels retained zero hits; latency p95 was
+  21.455 ms against a 25 ms budget.
+- 2026-07-21: Private repository sync preserved dirty runtime-kit and
+  agent-memory user work, synchronized all safe local repositories, and reported
+  the offline peer without weakening the verified local deployment.
 
 ## Decision Log
 
@@ -201,9 +223,10 @@
 
 ## Handoff
 
-1. Deliver the plan branch to `main` through one integration PR and exactly one
-   focused integration review; do not reopen completed lane reviews.
-2. Reconcile already-closed #676, deploy only merged `main`, and run the full
-   installed plus disposable-session acceptance matrix.
-3. Finalize every ledger row, close/audit #686, archive the plan, and report the
-   exact remaining hook inventory and governed disable/recovery paths.
+1. Merge the bounded closeout record after the same reviewer verifies the two
+   affected fingerprints and the required checks/thread gate pass.
+2. Run strict close-ready, record close, provider read-back/audit, then the
+   governed plan-archive dry-run and apply sequence.
+3. Report the exact deployed inventory, governed controls, acceptance evidence,
+   archive result, and every retained dirty, locked, or unverifiable worktree;
+   do not repeat merged implementation or deployment work.
