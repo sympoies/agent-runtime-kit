@@ -5,22 +5,25 @@
 
 - Source document: `docs/plans/2026-07-19-agent-session-coordination/agent-session-coordination-plan.md`
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/676>
-- Current sprint: Sprint 3 integrate the runtime-kit intent and admission policy
-- Status: in progress; nils-cli v1.24.5 released and deployed from the approved
-  source, runtime-kit intent and managed admission implemented and validated
-- Current gate: Task 3.3 exact-head review, provider checks, and merge
-- Current task: Task 3.3 apply the exact pin, review, merge, and preserve the
-  separate activation gate
-- Next task: commit the runtime-kit delivery head, complete specialist review,
-  deliver and merge the PR, then begin Task 4.1 in local-scripts
+- Current sprint: Sprint 5 evidence audit and closeout
+- Status: ready for closeout transaction; all plan tasks are terminal, and the
+  provider record is not yet closed
+- Current gate: terminal-ledger exact-head review and merge, run-state/provider
+  reconciliation, strict non-mutating close probes, provider close/read-back,
+  then archive migration dry-run
+- Current task: none; all plan tasks are terminal
+- Next task: execute the ordered closeout workflow finalizers below;
+  installed-surface activation and live disposable-session acceptance remain
+  separately approval-gated
 - Planned implementation branches: `feat/agent-session-coordination-signed-final` in
   nils-cli, `feat/agent-session-coordination-policy` in runtime-kit, and
   `feat/agent-session-coordination-skill` in local-scripts
 - Plan-authoring branch: `docs/agent-session-coordination-plan`
 - Release prerequisite: satisfied; v1.24.5 was released from approved source
   `b8cedc78` and deployed successfully
-- Installed-surface activation: not authorized by plan approval; requires a fresh
-  runtime sync/private-skill sync decision after the corresponding merges
+- Installed-surface activation: not authorized; dry-run previews passed without
+  writes, and runtime/private-skill sync plus live disposable-session acceptance
+  remain a separate fresh-approval gate
 - Blockers: none
 - Last updated: 2026-07-20
 - Branch/commit/PR: plan PR #677 merged as `75c7402`; nils-cli signed
@@ -28,8 +31,12 @@
   signed head `a49d8412`, merged PR
   <https://github.com/sympoies/nils-cli/pull/1308>, and verified merge
   `b8cedc78`; superseded PR #1302 is closed; v1.24.5 release commit
-  `dd1b6980` has approved source `b8cedc78` as its sole parent; tracking issue
-  #676 remains open
+  `dd1b6980` has approved source `b8cedc78` as its sole parent; runtime-kit PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/693> exact signed head
+  `09f3372e` merged as `84bf920d`; local-scripts PR
+  <https://github.com/serenvia/local-scripts/pull/43> exact signed head
+  `73a2f91c` merged as `af656e68`; this terminal-ledger branch is
+  `docs/agent-session-coordination-closeout`
 
 ## Validation Plan
 
@@ -63,12 +70,29 @@
 | 2.5 | done | Review, merge, release, and verify nils-cli | Signed replacement PR #1308 exact head `a49d8412` merged as verified `b8cedc78`; v1.24.5 released by successful broker run 29700703602 as signed commit `dd1b6980` whose sole parent is the approved source; four platform archives and four checksum sidecars published; the fixed fleet reports agent-session and all required CLIs at 1.24.5; follow-ups nils-cli #1305 and #1309 own the non-blocking residuals | Exact-version consent and source-SHA binding satisfied |
 | 3.1 | done | Add the session-coordination intent, policy, and meaningful red | Source-bound `session-coordination` intent and privacy-first policy added; test-first evidence records missing JSON recovery and absent admission guard as meaningful red | Runtime-kit consumes the released mechanism |
 | 3.2 | done | Implement managed-session admission and render all products | Managed Codex/Claude Pre/Post/Failure/Stop admission guard implemented with claim coverage, exact target binding, serialized durable admit/outcome replay, fail-closed retry, fixed privacy-safe output, and deterministic routing/render coverage; hooks passed 306/306 | Only definite conflict hard-blocks in v1 |
-| 3.3 | in-progress | Apply the exact pin, review, merge, and authorize activation | Exact released pin v1.24.5 and Linux archive checksums applied; host version baseline passed 24/24; first exact-head review P1s for Claude parallel hooks, admission races/replay, early Post capture, target binding, read-only trust, and host timeout were repaired; second review/provider delivery pending | Installed-surface sync remains separately gated |
-| 4.1 | pending | Extend private-agent-session with coordination and recovery | pending | Preserve mobile handoff behavior |
-| 4.2 | pending | Review, merge, and optionally synchronize private skills | pending | Overlay apply requires fresh approval |
-| 5.1 | pending | Run deterministic multi-session acceptance | pending | Isolated and synthetic; no live mutation |
-| 5.2 | pending | Run approval-gated live disposable-session acceptance | pending | Explicit approval or named residual required |
-| 5.3 | pending | Audit evidence, close the tracker, and archive the plan | pending | Close only when all required work is terminal |
+| 3.3 | done | Apply the exact pin, review, merge, and authorize activation | Runtime-kit PR #693 exact signed head `09f3372e` merged as `84bf920d`; released v1.24.5 full CI positions 1-17, deterministic runtime smoke, shared hooks 306/306, provider checks, and exact-head concurrency/security/contract review passed; the final MES timeout-budget observation was repaired and its thread resolved | Installed-surface sync remains separately gated |
+| 4.1 | done | Extend private-agent-session with coordination and recovery | Local-scripts PR #43 exact signed head `73a2f91c` merged as `af656e68`; focused portfolio tests and full `./_tools/check.zsh` passed | Operator preflight, target ownership, hook-owned admit/complete, revision/incarnation recovery, and exact mutable cwd preserve mobile handoff behavior |
+| 4.2 | done | Review, merge, and optionally synchronize private skills | Exact-head skill-policy and test-contract reviews approved with no P0/P1/P2; canonical-main dry-runs previewed 13 Codex, 13 Claude, and 14 Hermes links with zero prune and no writes | Overlay apply was not authorized; Hermes external-skills registration and all installed-surface changes remain separately gated |
+| 5.1 | done | Run deterministic multi-session acceptance | Nils-cli coordination integration and release gates passed; runtime-kit exact released-pin full CI, deterministic smoke, and 306-hook suite passed; local-scripts focused and full suites passed | Acceptance used isolated synthetic fixtures and did not mutate live sessions or installed homes |
+| 5.2 | done | Run approval-gated live disposable-session acceptance | Not run: the maintainer requested direct issue closeout without granting the separate installed-surface/live-session activation approval, accepting this live-only residual as a later activation gate | No installed homes, live sessions, transcripts, or mailbox bodies were mutated or inspected |
+| 5.3 | done | Audit evidence, close the tracker, and archive the plan | All delivery PRs are merged; exact-head evidence, deterministic acceptance, residual ownership, and the provider-safe terminal record are reconciled in this terminal execution-state transition | The active closeout-convergence rule requires this terminal transition to merge before irreversible provider close; provider/read-back/archive finalizers then run in the order below, and any new factual state is synchronized afterward |
+
+## Closeout Workflow Finalizers
+
+1. Merge this terminal execution-state transition only after exact-head review
+   and provider checks pass.
+2. Reconcile run state to merged reality; post the live terminal checkpoint and
+   dashboard repair, then require both strict `tracking close-ready
+   --expect-visible` and provider `record audit --expect-visible` to pass.
+3. Preflight requested labels and other reversible provider prerequisites, run
+   provider `record close`, then read issue #676 back and verify its closed state
+   plus the expected terminal record.
+4. Run archive migration dry-run; apply only when its clean confirmation
+   contract explicitly authorizes it, and record the retained, archived,
+   skipped, or blocked outcome.
+5. Synchronize any new post-close factual state through a scoped follow-up, then
+   audit and remove only the session-owned worktree when target/head proof
+   remains safe.
 
 ## Validation Log
 
@@ -208,6 +232,34 @@
   status/blame and forced-pagination bypasses, and keeps safe simple nested
   commands target-bound. Focused regressions pass; exact-tree validation and
   security closure remain required.
+- 2026-07-20: Runtime-kit signed head `09f3372e` closed the remaining nested
+  shell, Git external-exec, and sequential timeout-budget findings. The exact
+  released-v1.24.5 full CI command passed positions 1-17, deterministic runtime
+  smoke,
+  shared hooks 306/306, version-baseline checks, and all rendered product
+  surfaces. Exact-head concurrency, security, and contract reviews approved;
+  the final MES checkout-lease timeout observation was repaired and resolved.
+  Provider CI and CodeQL passed, and PR #693 merged as `84bf920d`.
+- 2026-07-20: Local-scripts PR #43 exact signed head `73a2f91c` passed focused
+  private-agent-session portfolio tests, the complete `./_tools/check.zsh`
+  suite, and exact-head skill-policy/test-contract reviews with no remaining
+  P0/P1/P2 findings. It merged as `af656e68`. The shipped skill binds operator
+  preflight to the target owner, leaves admit/complete hook-owned, recovers by
+  revision and incarnation, and carries the exact mutable cwd for interactive
+  and one-shot sessions.
+- 2026-07-20: Private overlay synchronization was previewed from canonical
+  local-scripts `main` in dry-run mode only. Codex and Claude each projected 13
+  links, Hermes projected 14, and all three reported zero prune. No installed
+  surface was written. Hermes also reported that its external-skills root is not
+  registered; that and any overlay apply remain part of the separate activation
+  gate.
+- 2026-07-20: Deterministic acceptance is terminal across the released nils-cli
+  mechanism, runtime-kit exact-pin runtime/hook suites, and local-scripts
+  focused/full suites. The maintainer requested direct issue closeout without
+  separately approving installed-surface synchronization or live disposable
+  sessions. Task 5.2 therefore closes as an explicit live-only residual: no
+  installed homes, live sessions, transcripts, or mailbox bodies were mutated
+  or inspected, and a later activation attempt needs fresh approval.
 
 ## Decision Log
 
@@ -228,28 +280,30 @@
 ## Session Notes
 
 - Worktree:
-  `agent-runtime-kit-228a9c3a/agent-session-coordination-plan` under the managed
-  runtime-kit worktree root. The machine-local absolute prefix is intentionally
-  omitted from provider-visible records.
-- This ledger change is carried on the planned runtime-kit policy branch; no
-  runtime-kit production edit begins before the released nils-cli dependency is
-  available.
-- Nils-cli mechanism changes are delivered through replacement PR #1308 and
-  release v1.24.5. Runtime-kit production surfaces, the local-scripts skill,
-  installed agent homes, and live sessions remain unchanged pending their
-  separate tasks and consent gates.
+  `agent-runtime-kit-228a9c3a/agent-session-coordination-closeout` under the
+  managed runtime-kit worktree root. The machine-local absolute prefix is
+  intentionally omitted from provider-visible records.
+- Nils-cli mechanism changes are released in v1.24.5; runtime-kit policy and pin
+  changes are merged through PR #693; the private-agent-session source change is
+  merged through local-scripts PR #43.
+- Installed agent homes and live sessions remain unchanged. Their activation
+  and live disposable-session acceptance are outside this closed delivery and
+  require fresh approval.
 - Use repository-relative paths and privacy-safe evidence summaries in issue/PR
   updates. Keep session IDs, incarnations, mailbox bodies, host/user names, and
   local state paths private.
 
 ## Handoff
 
-1. Read the discussion source, plan, and this ledger completely.
-2. Run `plan-issue tracking status --expect-visible --format json` and reconcile
-   the selected task against this ledger before doing implementation work.
-3. Continue Task 3.1 in this runtime-kit implementation worktree; preserve the
-   separate installed-surface and live-session activation gates.
-4. Consume exact released nils-cli v1.24.5 in the Sprint 3 PR; do not use a
-   locally rebuilt or floating CLI for final validation.
-5. Keep provider-visible records privacy-minimized and close the tracker only
-   after Tasks 3.1 through 5.3 are terminal.
+1. No implementation task remains; all ledger rows are terminal, but the
+   controller-required closeout workflow finalizers have not yet run.
+2. Execute the finalizers in their declared order: terminal-ledger merge,
+   run-state/provider reconciliation and both non-mutating probes, provider
+   close/read-back, archive migration dry-run, factual follow-up sync when
+   needed, then safe owned-worktree cleanup.
+3. Preserve the exact released nils-cli v1.24.5 provenance and merged PR
+   evidence in any later audit.
+4. Do not synchronize installed runtime/private-skill surfaces or start live
+   disposable sessions without a fresh explicit activation approval.
+5. Keep provider-visible records privacy-minimized; local evidence paths,
+   session identifiers, mailbox bodies, and transcripts remain private.
