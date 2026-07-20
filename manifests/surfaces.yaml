@@ -498,12 +498,14 @@ surfaces:
           - "docs/source/harness-shape-codex.md#9-hook-registration-settingsjson-hooks-block"
       claude:
         state: shipped
-        mechanism: "`sync-runtime-surfaces.sh --apply --product claude` merges `core/hooks/claude/settings.hooks.jsonc` into `~/.claude/settings.json`, replacing only runtime-kit managed hook commands"
+        mechanism: "`sync-runtime-surfaces.sh --apply --product claude` clears retired managed commands, then applies one exact `agent-hook setup` dispatcher per event/matcher group while preserving unrelated settings"
         source_artifacts:
+          - core/policies/agent-hook/runtime-kit-v1.toml
+          - manifests/hook-rules.yaml
           - core/hooks/claude/settings.hooks.jsonc
           - scripts/sync-runtime-surfaces.sh
         min_product: "2.1.145"
-        min_nils_cli: "v0.17.5"
+        min_nils_cli: "v1.25.5"
         acceptance:
           - kind: ci
             note: "gate 8 (runtime-smoke)"
@@ -852,18 +854,21 @@ surfaces:
           - "targets/hermes/link-map.yaml"
   - id: codex-hook-registration
     ordinal: 16
-    name: "Codex hook registration (`config.toml` managed block)"
+    name: "Codex hook registration (`config.toml` setup-owned ingress)"
     products:
       codex:
         state: shipped
-        mechanism: "`managed-block` sync into `$CODEX_HOME/config.toml`, surface `hooks`, hash-comment markers"
+        mechanism: "`sync-runtime-surfaces.sh` clears the retired managed block, then applies one exact `agent-hook setup` dispatcher per event/matcher group and composes `notify`"
         source_artifacts:
+          - core/policies/agent-hook/runtime-kit-v1.toml
+          - manifests/hook-rules.yaml
           - targets/codex/hooks/config.block.toml
+          - scripts/sync-runtime-surfaces.sh
         min_product: "0.130.0"
-        min_nils_cli: "v0.17.5"
+        min_nils_cli: "v1.25.5"
         acceptance:
           - kind: ci
-            note: "gate 5 (drift, managed-block presence + marker pair), gate 10 (`tests/hooks/run.sh`)"
+            note: "agent-hook migration suite, gate 8 (runtime-smoke), gate 10 (`tests/hooks/run.sh`)"
             descriptive_only: true
           - kind: live
             note: "—"

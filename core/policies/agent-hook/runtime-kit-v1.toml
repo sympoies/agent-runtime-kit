@@ -1,0 +1,1017 @@
+schema_version = "agent-hook.policy.v1"
+bundle_id = "runtime-kit"
+version = "2026.07.20.1"
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 100
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.checkout-lease-guard"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-direct-git-commit"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 120
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-commit" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-unsafe-default-delivery"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-unsafe-default-delivery" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-direct-git-worktree"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 140
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-worktree" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.semantic-commit-body-gate"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 150
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "semantic-commit-body-gate" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-direct-python"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 160
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-python" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.mcp-secret-scan"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 170
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-project-memory-write"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 180
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.memory-write-principle-reminder"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 190
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.portable-paths-scan"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 200
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-direct-pr-create"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 210
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-pr-create" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.forge-label-reminder"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 220
+mode = "enforce"
+failure_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "forge-label-reminder" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.bash.finish-line-record"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 230
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.block-project-memory-write"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 100
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.memory-write-principle-reminder"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 110
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.mcp-secret-scan"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 120
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.portable-paths-scan"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.agent-scope-lock-guard"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 140
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.pre-edit-intent-gate"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 150
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.checkout-lease-guard"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 160
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.finish-line-record"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 170
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs"
+products = ["codex"]
+events = ["UserPromptSubmit"]
+priority = 100
+mode = "enforce"
+failure_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-docs" }
+
+[[rules]]
+id = "runtime.codex.user-prompt-submit.all.checkout-lease-guard"
+products = ["codex"]
+events = ["UserPromptSubmit"]
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.codex.user-prompt-submit.all.user-prompt-agent-memory"
+products = ["codex"]
+events = ["UserPromptSubmit"]
+priority = 120
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-memory" }
+
+[[rules]]
+id = "runtime.codex.user-prompt-submit.all.skill-usage-reminder"
+products = ["codex"]
+events = ["UserPromptSubmit"]
+priority = 130
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "skill-usage-reminder" }
+
+[[rules]]
+id = "runtime.codex.session-start.startup-resume-clear.session-start-healthcheck"
+products = ["codex"]
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 100
+mode = "enforce"
+failure_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "session-start-healthcheck" }
+
+[[rules]]
+id = "runtime.codex.stop.all.stop-pre-pr-reminder"
+products = ["codex"]
+events = ["Stop"]
+priority = 100
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "stop-pre-pr-reminder" }
+
+[[rules]]
+id = "runtime.codex.stop.all.agent-scope-lock-guard"
+products = ["codex"]
+events = ["Stop"]
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
+
+[[rules]]
+id = "runtime.codex.stop.all.checkout-lease-guard"
+products = ["codex"]
+events = ["Stop"]
+priority = 120
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.codex.stop.all.stop-finish-line-gate"
+products = ["codex"]
+events = ["Stop"]
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "stop-finish-line-gate" }
+
+[[rules]]
+id = "runtime.claude.user-prompt-submit.all.user-prompt-agent-docs"
+products = ["claude"]
+events = ["UserPromptSubmit"]
+priority = 100
+mode = "enforce"
+failure_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-docs" }
+
+[[rules]]
+id = "runtime.claude.user-prompt-submit.all.checkout-lease-guard"
+products = ["claude"]
+events = ["UserPromptSubmit"]
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.claude.user-prompt-submit.all.skill-usage-reminder"
+products = ["claude"]
+events = ["UserPromptSubmit"]
+priority = 120
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "skill-usage-reminder" }
+
+[[rules]]
+id = "runtime.claude.stop.all.stop-pre-pr-reminder"
+products = ["claude"]
+events = ["Stop"]
+priority = 100
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "stop-pre-pr-reminder" }
+
+[[rules]]
+id = "runtime.claude.stop.all.agent-scope-lock-guard"
+products = ["claude"]
+events = ["Stop"]
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
+
+[[rules]]
+id = "runtime.claude.stop.all.checkout-lease-guard"
+products = ["claude"]
+events = ["Stop"]
+priority = 120
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.claude.stop.all.stop-finish-line-gate"
+products = ["claude"]
+events = ["Stop"]
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "stop-finish-line-gate" }
+
+[[rules]]
+id = "runtime.claude.session-start.startup-resume-clear.session-start-healthcheck"
+products = ["claude"]
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 100
+mode = "enforce"
+failure_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "session-start-healthcheck" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.pre-edit-intent-gate"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 100
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.checkout-lease-guard"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-direct-git-commit"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 120
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-commit" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-unsafe-default-delivery"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-unsafe-default-delivery" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-direct-git-worktree"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 140
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-worktree" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.semantic-commit-body-gate"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 150
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "semantic-commit-body-gate" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-claude-coauthor-trailer"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 160
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-claude-coauthor-trailer" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-direct-pr-create"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 170
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-pr-create" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.forge-label-reminder"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 180
+mode = "enforce"
+failure_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "forge-label-reminder" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-direct-python"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 190
+mode = "enforce"
+failure_posture = "closed"
+override_class = "downgrade-only"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-python" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.mcp-secret-scan"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 200
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-project-memory-write"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 210
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.memory-write-principle-reminder"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 220
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.portable-paths-scan"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 230
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.bash.finish-line-record"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 240
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.mcp-secret-scan"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 100
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.block-project-memory-write"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 110
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.memory-write-principle-reminder"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 120
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.agent-scope-lock-guard"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.portable-paths-scan"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 140
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.pre-edit-intent-gate"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 150
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.checkout-lease-guard"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 160
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.finish-line-record"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 170
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.block-project-memory-write"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 100
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.memory-write-principle-reminder"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 110
+mode = "enforce"
+failure_posture = "open"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.agent-scope-lock-guard"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 120
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.pre-edit-intent-gate"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 130
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.checkout-lease-guard"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 140
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.finish-line-record"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 150
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "coord.activity.prompt-stop"
+products = ["codex", "claude"]
+events = ["UserPromptSubmit", "Stop"]
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.activity.session-start"
+products = ["codex", "claude"]
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.bash.activity"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.bash.semantic-conflict"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+[[rules]]
+id = "coord.codex.pre-tool-use.bash.owner-liveness"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 30
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.activity"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.semantic-conflict"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.owner-liveness"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 30
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.bash.activity"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.bash.semantic-conflict"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.bash.owner-liveness"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 30
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.write-edit-notebook-edit.activity"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.write-edit-notebook-edit.semantic-conflict"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.write-edit-notebook-edit.owner-liveness"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 30
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.multi-edit.activity"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.multi-edit.semantic-conflict"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.multi-edit.owner-liveness"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 30
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+
+[[rules]]
+id = "coord.semantic-conflict.user-prompt-submit"
+products = ["codex", "claude"]
+events = ["UserPromptSubmit"]
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.bash.transaction"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.transaction"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.codex.post-tool.transaction"
+products = ["codex"]
+events = ["PostToolUse", "PostToolUseFailure"]
+matcher = "Bash|Write|Edit|NotebookEdit|apply_patch"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.bash.transaction"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.write-edit-notebook-edit.transaction"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.claude.pre-tool-use.multi-edit.transaction"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.claude.post-tool.transaction"
+products = ["claude"]
+events = ["PostToolUse", "PostToolUseFailure"]
+matcher = "Bash|Write|Edit|NotebookEdit|MultiEdit"
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
+
+[[rules]]
+id = "coord.stop.transaction"
+products = ["codex", "claude"]
+events = ["Stop"]
+priority = 900
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }

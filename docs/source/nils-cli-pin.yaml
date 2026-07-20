@@ -18,17 +18,17 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # The initial schema-v2 floor equals the first release that can parse it.
-  minimum_supported_tag: "v1.25.0"
+  # v1.25.5 is the first release that includes the required agent-hook ingress.
+  minimum_supported_tag: "v1.25.5"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.25.0"
+  validated_tag: "v1.25.5"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "787c7978caa996f262d4b104b44cc94cec84fdc9e2d8e1c0afdbc66120d64223"
-    linux_arm64: "731a35493a8bee065cd71d085e4adefeaa9bb5e1d2cb216eaee756fca3cf9227"
+    linux_amd64: "5db8e4cbd0c6c3c229ada635da69685e58c99cc8fd72507a9a18dadfed1f6100"
+    linux_arm64: "29151b667d30f83caa558365cb3043eb98d40832f252a2248be23c65181b2be2"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -37,6 +37,8 @@ nils_cli:
 # consumed surface each binary must satisfy. Values track the
 # surface-introduction versions recorded in docs/source/nils-cli-surface.md.
 required_clis:
+  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + typed post-allow agent-session coordination transaction
+    min: "1.25.5"
   - bin: plan-issue       # tracking controller + execution-state sync/writeback + review evidence context gate + provider payload privacy gate + lifecycle mutation lock + unified terminal closeout rows
     min: "1.1.0"
   - bin: plan-tooling     # ledger-update / ledger-sync + exec-state-sync repair

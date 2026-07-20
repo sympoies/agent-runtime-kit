@@ -1,8 +1,8 @@
 # Runtime Hooks
 
 `core/hooks/shared/` is the canonical source for hook logic shared by Codex and
-Claude. Product-specific activation stays in `targets/<product>/hooks/` and in
-the product link map.
+Claude. `core/policies/agent-hook/runtime-kit-v1.toml` owns selection and
+ordering; `agent-hook setup` owns the provider-native ingress.
 
 The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
@@ -202,11 +202,11 @@ is durably recorded before runtime probes and completes the exact token-bound
 lease. Admission intent, replay key, token, targets, and completion proof remain
 in a mode-0600 hashed session namespace across timeouts for exact duplicate/Stop
 replay rather than being guessed or released. Same-call Pre/Post/Stop activity
-is serialized by a stable local lock. Claude runs its mutation prerequisites
-through `claude-pretool-sequence.py` so its parallel hook scheduler cannot admit
-a tool denied by another prerequisite. The guard applies one 50-second global
-subprocess budget; Codex gives it a 60-second host timeout, and Claude's
-per-child/outer timeouts cover the sequential worst case. In advisory mode,
+is serialized by a stable local lock. `agent-hook` evaluates every ordinary
+rule first and invokes the locked `agent-session.coordination.v1` capability
+only after an aggregate allow, so neither provider can admit a tool denied by
+another prerequisite. The guard applies one 50-second global subprocess budget
+inside the setup-owned dispatcher timeout. In advisory mode,
 older/missing coordination surfaces remain usable with bounded degraded
 guidance; in enforce mode they retain accurate no-enforcement guidance. Hook
 output never includes
@@ -278,8 +278,9 @@ runtime-kit hook runner.
 Install surfaces:
 
 - Codex: `targets/codex/link-map.yaml` installs shared scripts under
-  `$CODEX_HOME/hooks/` and syncs the managed hook block into
-  `$CODEX_HOME/config.toml`.
+  `$CODEX_HOME/hooks/`; its legacy managed hook block is intentionally empty.
 - Claude: `targets/claude/link-map.yaml` installs shared scripts under
-  `$HOME/.claude/hooks/`; `core/hooks/claude/settings.hooks.jsonc` is the
-  source fragment for the settings `hooks` block.
+  `$HOME/.claude/hooks/`; its legacy settings fragment is intentionally
+  empty.
+- `scripts/sync-runtime-surfaces.sh` installs the shared digest-pinned policy
+  and delegates exact Codex/Claude provider ingress to `agent-hook setup`.

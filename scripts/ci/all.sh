@@ -407,9 +407,10 @@ banner 12 "project-local overlay smoke"
 bash tests/projects/project-local-smoke/run.sh
 
 # -----------------------------------------------------------------------------
-# Position 13 — shared hook contract smoke
+# Position 13 — agent-hook policy and shared hook contract smoke
 # -----------------------------------------------------------------------------
-banner 13 "shared hook contract smoke"
+banner 13 "agent-hook policy + shared hook contract smoke"
+bash tests/agent-hook/run.sh
 bash tests/hooks/run.sh
 
 # -----------------------------------------------------------------------------

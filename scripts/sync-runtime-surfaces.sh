@@ -34,6 +34,10 @@ CODEX_PLUGIN_PREFLIGHT_DONE=0
 CODEX_PREFLIGHT_MARKETPLACE=""
 CODEX_PREFLIGHT_INSTALLED_REFS=""
 CODEX_PREFLIGHT_MARKETPLACES_JSON=""
+AGENT_HOOK_CONFIG=""
+AGENT_HOOK_POLICY=""
+AGENT_HOOK_STATE_DIR=""
+AGENT_HOOK_REMOVE=0
 
 # -----------------------------------------------------------------------------
 # Help
@@ -41,7 +45,7 @@ CODEX_PREFLIGHT_MARKETPLACES_JSON=""
 
 print_help() {
   cat <<EOF
-Usage: $PROG_NAME [--apply] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
+Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
 
 Refresh graysurf/agent-runtime-kit managed runtime surfaces into local Codex
 and Claude runtime homes. This is the daily runtime surface refresh entrypoint
@@ -55,6 +59,11 @@ commands without mutating runtime homes. Pass --apply to run the commands.
 Options:
   --apply
       Execute the refresh. Without this flag, commands are printed only.
+  --agent-hook-remove
+      Remove the agent-hook provider ingress for the selected product instead
+      of refreshing runtime surfaces. When a runtime-kit migration snapshot is
+      present and provider state has not drifted, restore the exact legacy
+      provider bytes captured before cutover.
   --product codex|claude|hermes|both
       Limit the refresh to one product. Default: both.
   --source-root PATH
@@ -135,6 +144,10 @@ parse_args() {
         ;;
       --dry-run)
         APPLY=0
+        shift
+        ;;
+      --agent-hook-remove)
+        AGENT_HOOK_REMOVE=1
         shift
         ;;
       --product)
@@ -683,6 +696,609 @@ install_product() {
     --live-home "$live_home" \
     --state-home "$state_home" \
     "$mode_flag"
+}
+
+resolve_agent_hook_paths() {
+  AGENT_HOOK_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/agent-hook/config.toml"
+  AGENT_HOOK_POLICY="${XDG_DATA_HOME:-$HOME/.local/share}/agent-hook/policies/runtime-kit-v1.toml"
+  AGENT_HOOK_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/agent-hook"
+}
+
+sync_agent_hook_policy() {
+  local source_policy="$SOURCE_ROOT/core/policies/agent-hook/runtime-kit-v1.toml"
+
+  if [ ! -f "$source_policy" ]; then
+    err "missing runtime-kit agent-hook policy: $source_policy"
+    exit 2
+  fi
+
+  log "syncing agent-hook policy config=$AGENT_HOOK_CONFIG policy=$AGENT_HOOK_POLICY"
+  print_cmd python3 - "$source_policy" "$AGENT_HOOK_POLICY" "$AGENT_HOOK_CONFIG" "$AGENT_HOOK_STATE_DIR" "$APPLY"
+  python3 - "$source_policy" "$AGENT_HOOK_POLICY" "$AGENT_HOOK_CONFIG" "$AGENT_HOOK_STATE_DIR" "$APPLY" <<'PY'
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+import tempfile
+import tomllib
+
+source_path, policy_path, config_path, state_dir, apply_flag = sys.argv[1:6]
+apply = apply_flag == "1"
+owner = os.getuid()
+
+
+def trusted_regular(path, *, required):
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        if required:
+            raise SystemExit(f"required agent-hook file is unavailable: {path}")
+        return None
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(f"agent-hook refuses non-regular file: {path}")
+    if metadata.st_uid != owner:
+        raise SystemExit(f"agent-hook refuses file owned by another user: {path}")
+    if metadata.st_nlink != 1:
+        raise SystemExit(f"agent-hook refuses multiply-linked file: {path}")
+    if metadata.st_mode & 0o022:
+        raise SystemExit(f"agent-hook refuses group/world-writable file: {path}")
+    return metadata
+
+
+def read_trusted(path, *, required, maximum):
+    metadata = trusted_regular(path, required=required)
+    if metadata is None:
+        return None
+    if metadata.st_size > maximum:
+        raise SystemExit(f"agent-hook file exceeds {maximum} bytes: {path}")
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def validate_existing_config(data):
+    try:
+        text = data.decode("utf-8")
+        parsed = tomllib.loads(text)
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise SystemExit(f"strict agent-hook config rejected: {error}")
+    if set(parsed) - {"schema_version", "policy", "providers", "overrides"}:
+        raise SystemExit("strict agent-hook config contains unknown root keys")
+    if parsed.get("schema_version") != "agent-hook.config.v1":
+        raise SystemExit("unsupported agent-hook config schema_version")
+    policy = parsed.get("policy")
+    if not isinstance(policy, dict) or set(policy) != {"path", "digest"}:
+        raise SystemExit("strict agent-hook config requires exact [policy] keys")
+    providers = parsed.get("providers", {})
+    if not isinstance(providers, dict) or set(providers) - {"codex", "claude", "hermes"}:
+        raise SystemExit("strict agent-hook config contains unsupported providers")
+    for provider in providers.values():
+        if (
+            not isinstance(provider, dict)
+            or set(provider) != {"mode"}
+            or provider.get("mode") not in {"enforce", "shadow", "disabled"}
+        ):
+            raise SystemExit("strict agent-hook provider config is invalid")
+    overrides = parsed.get("overrides", {})
+    if not isinstance(overrides, dict):
+        raise SystemExit("strict agent-hook overrides must be a table")
+    for override in overrides.values():
+        if (
+            not isinstance(override, dict)
+            or set(override) != {"mode"}
+            or override.get("mode") not in {"enforce", "shadow", "disabled"}
+        ):
+            raise SystemExit("strict agent-hook rule override is invalid")
+    return text
+
+
+def replace_policy_table(text, block):
+    starts = list(re.finditer(r"(?m)^\[policy\][ \t]*$", text))
+    if len(starts) != 1:
+        raise SystemExit("strict agent-hook config requires exactly one [policy] table")
+    start = starts[0].start()
+    next_table = re.search(r"(?m)^\[[^\n]+\][ \t]*$", text[starts[0].end():])
+    end = len(text) if next_table is None else starts[0].end() + next_table.start()
+    prefix = text[:start].rstrip()
+    suffix = text[end:].lstrip("\r\n")
+    parts = [prefix, block]
+    if suffix:
+        parts.append(suffix.rstrip())
+    return "\n\n".join(part for part in parts if part) + "\n"
+
+
+def atomic_write(path, data, mode):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    trusted_regular(path, required=False)
+    descriptor, temporary = tempfile.mkstemp(prefix=".agent-hook.", dir=directory)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+source = read_trusted(source_path, required=True, maximum=1024 * 1024)
+digest = "sha256:" + hashlib.sha256(source).hexdigest()
+policy_block = (
+    "[policy]\n"
+    f"path = {json.dumps(os.path.abspath(policy_path))}\n"
+    f"digest = {json.dumps(digest)}"
+)
+existing = read_trusted(config_path, required=False, maximum=64 * 1024)
+if existing is None:
+    config = (
+        'schema_version = "agent-hook.config.v1"\n\n'
+        + policy_block
+        + "\n"
+    )
+else:
+    config = replace_policy_table(validate_existing_config(existing), policy_block)
+config_bytes = config.encode("utf-8")
+
+policy_changed = read_trusted(policy_path, required=False, maximum=1024 * 1024) != source
+config_changed = existing != config_bytes
+if not apply:
+    print(
+        "agent-hook policy dry-run: "
+        f"policy_changed={str(policy_changed).lower()} "
+        f"config_changed={str(config_changed).lower()}"
+    )
+    raise SystemExit(0)
+
+os.makedirs(state_dir, mode=0o700, exist_ok=True)
+os.chmod(state_dir, 0o700)
+if policy_changed:
+    atomic_write(policy_path, source, 0o600)
+if config_changed:
+    atomic_write(config_path, config_bytes, 0o600)
+print(
+    "agent-hook policy synced: "
+    f"policy_changed={str(policy_changed).lower()} "
+    f"config_changed={str(config_changed).lower()}"
+)
+PY
+
+  if [ "$APPLY" = "1" ]; then
+    run_cmd agent-hook validate \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --format json
+  fi
+}
+
+agent_hook_setup_json_value() {
+  local field="$1"
+  python3 -c '
+import json
+import sys
+
+field = sys.argv[1]
+document = json.load(sys.stdin)
+if document.get("schema_version") != "cli.agent-hook.setup.v1" or document.get("ok") is not True:
+    raise SystemExit("agent-hook setup returned an invalid success envelope")
+data = document.get("data")
+if not isinstance(data, dict) or data.get("schema_version") != "agent-hook.setup-result.v1":
+    raise SystemExit("agent-hook setup returned an invalid result payload")
+value = data.get(field)
+if not isinstance(value, (str, bool)):
+    raise SystemExit(f"agent-hook setup result is missing {field}")
+print(str(value).lower() if isinstance(value, bool) else value)
+' "$field"
+}
+
+sync_agent_hook_setup() {
+  local product="$1"
+  local action="${2:-}"
+  local preview_json
+  local apply_json
+  local plan_digest
+  local configured
+  local expected_configured="true"
+  local apply_action="--apply"
+  local apply_status
+
+  if [ -n "$action" ] && [ "$action" != "--remove" ]; then
+    err "unsupported agent-hook setup action: $action"
+    return 2
+  fi
+  if [ "$action" = "--remove" ]; then
+    expected_configured="false"
+    apply_action="--remove"
+  fi
+
+  log "syncing agent-hook setup product=$product action=${action:---add}"
+  if [ "$product" = "hermes" ]; then
+    run_cmd agent-hook setup \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --product "$product" \
+      ${action:+"$action"} \
+      --dry-run \
+      --format json
+    return 0
+  fi
+
+  if [ "$APPLY" = "0" ]; then
+    run_cmd agent-hook setup \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --product "$product" \
+      ${action:+"$action"} \
+      --dry-run \
+      --format json
+    print_cmd agent-hook setup \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --product "$product" \
+      "$apply_action" \
+      --expected-plan-digest '<preview.data.plan_digest>' \
+      --format json
+    return 0
+  fi
+
+  print_cmd agent-hook setup \
+    --config "$AGENT_HOOK_CONFIG" \
+    --state-dir "$AGENT_HOOK_STATE_DIR" \
+    --product "$product" \
+    ${action:+"$action"} \
+    --dry-run \
+    --format json
+  if preview_json="$(agent-hook setup \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --product "$product" \
+      ${action:+"$action"} \
+      --dry-run \
+      --format json)"; then
+    :
+  else
+    apply_status=$?
+    [ -n "$preview_json" ] && printf '%s\n' "$preview_json" >&2
+    return "$apply_status"
+  fi
+  if plan_digest="$(printf '%s\n' "$preview_json" | agent_hook_setup_json_value plan_digest)"; then
+    :
+  else
+    return $?
+  fi
+
+  print_cmd agent-hook setup \
+    --config "$AGENT_HOOK_CONFIG" \
+    --state-dir "$AGENT_HOOK_STATE_DIR" \
+    --product "$product" \
+    "$apply_action" \
+    --expected-plan-digest "$plan_digest" \
+    --format json
+  if apply_json="$(agent-hook setup \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --product "$product" \
+      "$apply_action" \
+      --expected-plan-digest "$plan_digest" \
+      --format json)"; then
+    :
+  else
+    apply_status=$?
+    [ -n "$apply_json" ] && printf '%s\n' "$apply_json" >&2
+    return "$apply_status"
+  fi
+  if configured="$(printf '%s\n' "$apply_json" | agent_hook_setup_json_value configured)"; then
+    :
+  else
+    return $?
+  fi
+  if [ "$configured" != "$expected_configured" ]; then
+    printf '%s\n' "$apply_json" >&2
+    err "agent-hook setup did not converge product=$product action=${action:---add}"
+    return 1
+  fi
+  printf '%s\n' "$apply_json"
+}
+
+agent_hook_provider_path() {
+  case "$1" in
+    codex) printf '%s\n' "${CODEX_HOME:-$HOME/.codex}/config.toml" ;;
+    claude) printf '%s\n' "$HOME/.claude/settings.json" ;;
+    hermes) return 1 ;;
+    *)
+      err "unknown product: $1"
+      return 2
+      ;;
+  esac
+}
+
+agent_hook_cutover_state() {
+  local product="$1"
+  local action="$2"
+  local provider_path
+  local migration_root="$AGENT_HOOK_STATE_DIR/runtime-kit-migration-v1"
+
+  if ! provider_path="$(agent_hook_provider_path "$product")"; then
+    return 0
+  fi
+
+  print_cmd python3 - "$migration_root" "$product" "$provider_path" "$action"
+  python3 - "$migration_root" "$product" "$provider_path" "$action" <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+import tempfile
+
+migration_root, product, provider_path, action = sys.argv[1:5]
+owner = os.getuid()
+product_root = os.path.join(migration_root, product)
+pending_path = os.path.join(product_root, "pending.json")
+committed_path = os.path.join(product_root, "committed.json")
+original_path = os.path.join(product_root, "original.bin")
+
+
+def trusted_directory(path, *, required=False):
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        if required:
+            raise SystemExit(f"required runtime-kit rollback directory is unavailable: {path}")
+        return None
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise SystemExit(f"runtime-kit rollback refuses non-directory path: {path}")
+    if metadata.st_uid != owner or metadata.st_mode & 0o022:
+        raise SystemExit(f"runtime-kit rollback refuses unsafe directory metadata: {path}")
+    return metadata
+
+
+def ensure_private_directory(path):
+    if trusted_directory(path) is None:
+        os.makedirs(path, mode=0o700)
+    os.chmod(path, 0o700)
+
+
+def trusted_regular(path, *, required=False, maximum=1024 * 1024):
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        if required:
+            raise SystemExit(f"required runtime-kit rollback file is unavailable: {path}")
+        return None
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(f"runtime-kit rollback refuses non-regular file: {path}")
+    if metadata.st_uid != owner or metadata.st_nlink != 1 or metadata.st_mode & 0o022:
+        raise SystemExit(f"runtime-kit rollback refuses unsafe file metadata: {path}")
+    if metadata.st_size > maximum:
+        raise SystemExit(f"runtime-kit rollback file exceeds {maximum} bytes: {path}")
+    return metadata
+
+
+def read_file(path, *, required=False):
+    metadata = trusted_regular(path, required=required)
+    if metadata is None:
+        return None, None
+    with open(path, "rb") as handle:
+        return handle.read(), metadata
+
+
+def atomic_write(path, data, mode=0o600):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".runtime-kit-rollback.", dir=directory)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def load_metadata(path):
+    raw, _ = read_file(path, required=True)
+    try:
+        data = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"invalid runtime-kit rollback metadata: {error}")
+    required = {"schema_version", "product", "provider_path", "original"}
+    if not isinstance(data, dict) or not required.issubset(data):
+        raise SystemExit("invalid runtime-kit rollback metadata shape")
+    if data["schema_version"] != "agent-runtime-kit.hook-rollback.v1":
+        raise SystemExit("unsupported runtime-kit rollback metadata schema")
+    if data["product"] != product or data["provider_path"] != provider_path:
+        raise SystemExit("runtime-kit rollback metadata does not match provider")
+    return data
+
+
+def fingerprint(path):
+    raw, metadata = read_file(path)
+    if raw is None:
+        return {"exists": False, "sha256": None}
+    return {
+        "exists": True,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "mode": stat.S_IMODE(metadata.st_mode),
+    }
+
+
+def restore_original(metadata):
+    original = metadata["original"]
+    if original.get("exists") is True:
+        raw, _ = read_file(original_path, required=True)
+        if hashlib.sha256(raw).hexdigest() != original.get("sha256"):
+            raise SystemExit("runtime-kit rollback payload digest mismatch")
+        os.makedirs(os.path.dirname(provider_path), mode=0o700, exist_ok=True)
+        atomic_write(provider_path, raw, int(original["mode"]))
+    elif original.get("exists") is False:
+        trusted_regular(provider_path)
+        try:
+            os.unlink(provider_path)
+        except FileNotFoundError:
+            pass
+    else:
+        raise SystemExit("invalid runtime-kit rollback original state")
+
+
+def cleanup():
+    for path in (pending_path, committed_path, original_path):
+        if os.path.lexists(path):
+            trusted_regular(path, required=True)
+            os.unlink(path)
+    try:
+        os.rmdir(product_root)
+    except FileNotFoundError:
+        pass
+    try:
+        os.rmdir(migration_root)
+    except OSError:
+        pass
+
+
+state_dir = os.path.dirname(migration_root)
+if os.path.lexists(state_dir):
+    trusted_directory(state_dir, required=True)
+if os.path.lexists(migration_root):
+    trusted_directory(migration_root, required=True)
+if os.path.lexists(product_root):
+    trusted_directory(product_root, required=True)
+
+if action == "begin":
+    if os.path.exists(committed_path):
+        load_metadata(committed_path)
+        print(f"agent-hook rollback retained product={product}")
+        raise SystemExit(0)
+    if os.path.exists(pending_path):
+        raise SystemExit(
+            f"incomplete agent-hook cutover requires recovery before retry: {pending_path}"
+        )
+    original, _ = read_file(provider_path)
+    original_state = fingerprint(provider_path)
+    record = {
+        "schema_version": "agent-runtime-kit.hook-rollback.v1",
+        "product": product,
+        "provider_path": provider_path,
+        "original": original_state,
+    }
+    ensure_private_directory(state_dir)
+    ensure_private_directory(migration_root)
+    ensure_private_directory(product_root)
+    if original is not None:
+        atomic_write(original_path, original)
+    atomic_write(pending_path, (json.dumps(record, sort_keys=True) + "\n").encode())
+    print(f"agent-hook rollback captured product={product}")
+elif action == "discard":
+    if os.path.exists(pending_path):
+        load_metadata(pending_path)
+        cleanup()
+    print(f"agent-hook rollback discarded product={product}")
+elif action == "rollback":
+    if os.path.exists(pending_path):
+        metadata = load_metadata(pending_path)
+        restore_original(metadata)
+        cleanup()
+    print(f"agent-hook rollback restored pending product={product}")
+elif action == "complete":
+    if os.path.exists(committed_path):
+        load_metadata(committed_path)
+        print(f"agent-hook rollback already committed product={product}")
+        raise SystemExit(0)
+    metadata = load_metadata(pending_path)
+    metadata["post_cutover"] = fingerprint(provider_path)
+    atomic_write(committed_path, (json.dumps(metadata, sort_keys=True) + "\n").encode())
+    os.unlink(pending_path)
+    print(f"agent-hook rollback committed product={product}")
+elif action == "preflight-remove":
+    if not os.path.exists(committed_path):
+        print(f"agent-hook rollback absent product={product}")
+        raise SystemExit(0)
+    metadata = load_metadata(committed_path)
+    if metadata.get("post_cutover") != fingerprint(provider_path):
+        raise SystemExit(
+            "agent-hook remove refuses provider drift after cutover; preserve newer ownership and review manually"
+        )
+    print(f"agent-hook rollback remove preflight ok product={product}")
+elif action == "restore-committed":
+    if os.path.exists(committed_path):
+        metadata = load_metadata(committed_path)
+        restore_original(metadata)
+        cleanup()
+    print(f"agent-hook rollback restored committed product={product}")
+else:
+    raise SystemExit(f"unsupported runtime-kit rollback action: {action}")
+PY
+}
+
+prepare_agent_hook_cutover() {
+  local product="$1"
+  local status
+
+  if [ "$APPLY" = "0" ] || [ "$product" = "hermes" ]; then
+    sync_agent_hook_setup "$product"
+    return $?
+  fi
+
+  if agent_hook_cutover_state "$product" begin; then
+    :
+  else
+    return $?
+  fi
+  if sync_agent_hook_setup "$product"; then
+    return 0
+  else
+    status=$?
+  fi
+  agent_hook_cutover_state "$product" discard
+  return "$status"
+}
+
+complete_agent_hook_cutover() {
+  local product="$1"
+  if [ "$APPLY" = "1" ] && [ "$product" != "hermes" ]; then
+    agent_hook_cutover_state "$product" complete
+  fi
+}
+
+rollback_agent_hook_cutover() {
+  local product="$1"
+  if [ "$APPLY" = "1" ] && [ "$product" != "hermes" ]; then
+    agent_hook_cutover_state "$product" rollback
+  fi
+}
+
+remove_agent_hook_cutover() {
+  local product="$1"
+  local status
+
+  if [ "$APPLY" = "0" ] || [ "$product" = "hermes" ]; then
+    sync_agent_hook_setup "$product" --remove
+    return $?
+  fi
+
+  agent_hook_cutover_state "$product" preflight-remove
+  if sync_agent_hook_setup "$product" --remove; then
+    agent_hook_cutover_state "$product" restore-committed
+    return 0
+  else
+    status=$?
+  fi
+  return "$status"
 }
 
 sync_claude_settings_hooks() {
@@ -3256,6 +3872,57 @@ doctor_product() {
   log "installed-runtime doctor product=$product verified (checks=${installed_checks:-unknown} block=$installed_block exit=${installed_exit_code:-$installed_code})"
 }
 
+doctor_agent_hook_product() {
+  local product="$1"
+  local expected="converged"
+  local doctor_json
+  local status
+
+  if [ "$product" = "hermes" ]; then
+    expected="unsupported"
+  fi
+  if [ "$APPLY" = "0" ]; then
+    run_cmd agent-hook doctor \
+      --config "$AGENT_HOOK_CONFIG" \
+      --state-dir "$AGENT_HOOK_STATE_DIR" \
+      --product "$product" \
+      --format json
+    return 0
+  fi
+
+  print_cmd agent-hook doctor \
+    --config "$AGENT_HOOK_CONFIG" \
+    --state-dir "$AGENT_HOOK_STATE_DIR" \
+    --product "$product" \
+    --format json
+  doctor_json="$(agent-hook doctor \
+    --config "$AGENT_HOOK_CONFIG" \
+    --state-dir "$AGENT_HOOK_STATE_DIR" \
+    --product "$product" \
+    --format json)"
+  status="$(printf '%s\n' "$doctor_json" | python3 -c '
+import json
+import sys
+
+document = json.load(sys.stdin)
+if document.get("schema_version") != "cli.agent-hook.doctor.v1" or document.get("ok") is not True:
+    raise SystemExit("agent-hook doctor returned an invalid success envelope")
+data = document.get("data")
+if not isinstance(data, list) or len(data) != 1:
+    raise SystemExit("agent-hook doctor returned an invalid result payload")
+status = data[0].get("status")
+if not isinstance(status, str):
+    raise SystemExit("agent-hook doctor result is missing status")
+print(status)
+')"
+  if [ "$status" != "$expected" ]; then
+    printf '%s\n' "$doctor_json" >&2
+    err "agent-hook doctor did not report $expected product=$product status=$status"
+    return 1
+  fi
+  log "agent-hook doctor product=$product status=$status"
+}
+
 verify_codex_prompt_input() {
   if ! selected_includes_codex; then
     CODEX_PROMPT_STATUS="skipped"
@@ -3290,6 +3957,7 @@ run_verification() {
 
   for product in $(selected_products); do
     doctor_product "$product"
+    doctor_agent_hook_product "$product"
   done
 
   verify_codex_prompt_input
@@ -3335,30 +4003,60 @@ print_summary() {
 
 main() {
   local product
+  local status
 
   parse_args "$@"
   require_commands git python3
   resolve_source_root
   resolve_owned_source_roots
+  resolve_agent_hook_paths
   validate_live_sync_source_root
 
   if [ "$APPLY" = "1" ]; then
-    require_commands agent-runtime
+    require_commands agent-runtime agent-hook
   fi
 
   log "$PROG_NAME starting (source_root=$SOURCE_ROOT product=$PRODUCT apply=$APPLY no_pull=$NO_PULL no_prune=$NO_PRUNE no_verify=$NO_VERIFY)"
 
   pull_source
   check_source_counts
+  sync_agent_hook_policy
+  if [ "$AGENT_HOOK_REMOVE" = "1" ]; then
+    for product in $(selected_products); do
+      remove_agent_hook_cutover "$product"
+    done
+    log "summary: removed agent-hook ingress for $(product_label); mode=$([ "$APPLY" = "1" ] && printf apply || printf dry-run)"
+    return 0
+  fi
   preflight_selected_product_activation
   render_home_prompt_base
   for product in $(selected_products); do
     render_home_prompt_product "$product"
     ensure_home_prompt "$product"
     render_product "$product"
-    install_product "$product"
-    prune_product "$product"
-    sync_product_activation "$product"
+    prepare_agent_hook_cutover "$product"
+    if install_product "$product"; then
+      :
+    else
+      status=$?
+      rollback_agent_hook_cutover "$product"
+      return "$status"
+    fi
+    if prune_product "$product"; then
+      :
+    else
+      status=$?
+      rollback_agent_hook_cutover "$product"
+      return "$status"
+    fi
+    if sync_product_activation "$product"; then
+      :
+    else
+      status=$?
+      rollback_agent_hook_cutover "$product"
+      return "$status"
+    fi
+    complete_agent_hook_cutover "$product"
   done
   run_verification
   print_summary

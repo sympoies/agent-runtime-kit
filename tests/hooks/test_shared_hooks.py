@@ -56,24 +56,40 @@ def load_claude_hook_fragment() -> dict[str, Any]:
     return parsed
 
 
-def load_claude_pretool_sequences() -> dict[str, tuple[str, ...]]:
-    spec = importlib.util.spec_from_file_location(
-        "claude_pretool_sequence_under_test",
-        HOOK_DIR / "claude-pretool-sequence.py",
+def load_hook_inventory() -> list[dict[str, Any]]:
+    document = json.loads(
+        (REPO_ROOT / "manifests" / "hook-rules.yaml").read_text(encoding="utf-8")
     )
-    if spec is None or spec.loader is None:
-        raise AssertionError("Claude sequential pre-tool gate could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return dict(module.SEQUENCES)
+    return document["rules"]
 
 
-def claude_group_delegates(group: dict[str, Any]) -> set[str]:
-    sequences = load_claude_pretool_sequences()
+def inventory_rules(
+    *,
+    product: str | None = None,
+    event: str | None = None,
+    handler: str | None = None,
+    capability: str | None = None,
+) -> list[dict[str, Any]]:
+    selected = []
+    for rule in load_hook_inventory():
+        if product is not None and product not in rule["products"]:
+            continue
+        if event is not None and event not in rule["events"]:
+            continue
+        if handler is not None and rule["legacy_handler"] != handler:
+            continue
+        if capability is not None and rule["capability"]["id"] != capability:
+            continue
+        selected.append(rule)
+    return selected
+
+
+def inventory_tools(rules: list[dict[str, Any]]) -> set[str]:
     return {
-        script
-        for tool in group["matcher"].split("|")
-        for script in sequences.get(tool, ())
+        tool
+        for rule in rules
+        for tool in (rule["matcher"] or "").split("|")
+        if tool
     }
 
 
@@ -1174,14 +1190,17 @@ class SharedHookTests(unittest.TestCase):
     def test_claude_coauthor_gate_is_claude_only(self) -> None:
         script = "block-claude-coauthor-trailer.py"
         self.assertTrue((HOOK_DIR / script).is_file(), script)
-        claude_fragment = (
-            REPO_ROOT / "core" / "hooks" / "claude" / "settings.hooks.jsonc"
-        ).read_text(encoding="utf-8")
-        codex_block = (
-            REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml"
-        ).read_text(encoding="utf-8")
-        self.assertIn(script, load_claude_pretool_sequences()["Bash"])
-        self.assertNotIn(f"hooks/{script}", codex_block)
+        claude_rules = inventory_rules(
+            product="claude",
+            event="PreToolUse",
+            handler="block-claude-coauthor-trailer",
+        )
+        codex_rules = inventory_rules(
+            product="codex",
+            handler="block-claude-coauthor-trailer",
+        )
+        self.assertEqual(inventory_tools(claude_rules), {"Bash"})
+        self.assertEqual(codex_rules, [])
 
     def test_blocks_bare_python_in_uv_project_and_allows_shared_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9961,7 +9980,7 @@ exit 64
             claude_payload = dict(payload)
             claude_payload["tool_use_id"] = "coupled-claude-mutation"
             code, claude, stderr = run_hook(
-                "claude-pretool-sequence.py",
+                "session-coordination-guard.py",
                 claude_payload,
                 cwd=repo,
                 env=dict(managed_env, AGENT_RUNTIME_PRODUCT="claude"),
@@ -10571,61 +10590,41 @@ exit 64
             self.assertIsNone(operation)
             self.assertEqual(reason, "provider-pr-unresolved")
 
-    def test_claude_admission_is_sequential_and_codex_timeout_is_bounded(self) -> None:
-        hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
-        for group in hooks:
-            commands = [hook["command"] for hook in group["hooks"]]
-            self.assertEqual(len(commands), 1, group["matcher"])
-            self.assertIn("claude-pretool-sequence.py", commands[0])
-
-        codex = tomllib.loads(
-            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
-                encoding="utf-8"
+    def test_coordination_capability_is_locked_after_ordinary_rules(self) -> None:
+        for product in ("codex", "claude"):
+            transactions = inventory_rules(
+                product=product,
+                event="PreToolUse",
+                capability="agent-session.coordination.v1",
             )
-        )["hooks"]["PreToolUse"]
-        admissions = [
-            hook
-            for group in codex
-            for hook in group["hooks"]
-            if "session-coordination-guard.py" in hook["command"]
-        ]
-        self.assertTrue(admissions)
-        self.assertTrue(all(hook["timeout"] >= 60 for hook in admissions))
-
-        claude_settings = load_claude_hook_fragment()["hooks"]["PreToolUse"]
-        sequence_spec = importlib.util.spec_from_file_location(
-            "claude_pretool_sequence_under_test",
-            HOOK_DIR / "claude-pretool-sequence.py",
-        )
-        assert sequence_spec is not None and sequence_spec.loader is not None
-        sequence = importlib.util.module_from_spec(sequence_spec)
-        sequence_spec.loader.exec_module(sequence)
-        self.assertGreaterEqual(
-            sequence.HOOK_TIMEOUTS.get("checkout-lease-guard.py", 0), 25
-        )
-        required_timeout = max(
-            sum(
-                sequence.HOOK_TIMEOUTS.get(name, sequence.DEFAULT_HOOK_TIMEOUT)
-                for name in names
+            self.assertTrue(transactions, product)
+            self.assertTrue(
+                all(rule["override_class"] == "locked" for rule in transactions)
             )
-            for names in sequence.SEQUENCES.values()
-        )
-        self.assertTrue(
-            all(group["hooks"][0]["timeout"] >= required_timeout + 5 for group in claude_settings)
-        )
-
-        with tempfile.TemporaryDirectory() as tmp:
-            code, decision, stderr = run_hook(
-                "claude-pretool-sequence.py",
-                command_payload("git commit -m bypass"),
-                cwd=Path(tmp),
-                env={
-                    "AGENT_RUNTIME_PRODUCT": "claude",
-                    "AGENT_SESSION_COORDINATION_MODE": "enforce",
-                },
+            self.assertTrue(
+                all(rule["failure_posture"] == "closed" for rule in transactions)
             )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "checkout lease")
+            for transaction in transactions:
+                transaction_tools = inventory_tools([transaction])
+                ordinary = [
+                    rule
+                    for rule in inventory_rules(product=product, event="PreToolUse")
+                    if rule["capability"]["id"] != "agent-session.coordination.v1"
+                    and inventory_tools([rule]) & transaction_tools
+                ]
+                self.assertTrue(ordinary, transaction["id"])
+                self.assertGreater(
+                    transaction["priority"],
+                    max(rule["priority"] for rule in ordinary),
+                )
+
+        self.assertEqual(load_claude_hook_fragment()["hooks"], {})
+        self.assertNotIn(
+            "command =",
+            (
+                REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml"
+            ).read_text(encoding="utf-8"),
+        )
 
     def test_session_coordination_replays_uncertain_admit_and_records_post_offline(
         self,
@@ -12280,8 +12279,7 @@ exit 65
         codex_only_scripts = {
             "user-prompt-agent-memory.sh",
         }
-        claude_only_scripts = {"claude-pretool-sequence.py"}
-        for script in shared_registered_scripts | codex_only_scripts | claude_only_scripts:
+        for script in shared_registered_scripts | codex_only_scripts:
             self.assertTrue((HOOK_DIR / script).is_file(), script)
             self.assertTrue(os.access(HOOK_DIR / script, os.X_OK), script)
 
@@ -12291,170 +12289,105 @@ exit 65
         claude_fragment = (REPO_ROOT / "core" / "hooks" / "claude" / "settings.hooks.jsonc").read_text(
             encoding="utf-8"
         )
-        claude_delegates = {
-            script
-            for sequence in load_claude_pretool_sequences().values()
-            for script in sequence
-        }
         for script in shared_registered_scripts:
-            self.assertIn(f"hooks/{script}", codex_block)
+            handler = script.rsplit(".", 1)[0]
+            rules = (
+                inventory_rules(capability="agent-session.coordination.v1")
+                if handler == "session-coordination-guard"
+                else inventory_rules(handler=handler)
+            )
             self.assertTrue(
-                f"hooks/{script}" in claude_fragment or script in claude_delegates,
-                script,
+                rules,
+                f"missing policy inventory for {script}",
             )
         for script in codex_only_scripts:
-            self.assertIn(f"hooks/{script}", codex_block)
-            self.assertNotIn(f"hooks/{script}", claude_fragment)
-        for script in claude_only_scripts:
-            self.assertNotIn(f"hooks/{script}", codex_block)
-            self.assertIn(f"hooks/{script}", claude_fragment)
+            handler = script.rsplit(".", 1)[0]
+            rules = inventory_rules(handler=handler)
+            self.assertTrue(rules, script)
+            self.assertTrue(all(rule["products"] == ["codex"] for rule in rules))
+        self.assertNotIn("/hooks/", codex_block)
+        self.assertNotIn("/hooks/", claude_fragment)
 
     def test_bash_scanner_hooks_registered_for_codex_and_claude(self) -> None:
-        expected_scripts = {
-            "mcp-secret-scan.py",
-            "block-project-memory-write.py",
-            "portable-paths-scan.py",
+        expected_handlers = {
+            "mcp-secret-scan",
+            "block-project-memory-write",
+            "portable-paths-scan",
         }
-        codex_block = tomllib.loads(
-            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
-                encoding="utf-8"
-            )
-        )
-        codex_groups = codex_block["hooks"]["PreToolUse"]
-        codex_bash = next(group for group in codex_groups if group["matcher"] == "Bash")
-        codex_commands = "\n".join(hook["command"] for hook in codex_bash["hooks"])
-
-        claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
-        claude_bash = next(group for group in claude_hooks if group["matcher"] == "Bash")
-        claude_commands = "\n".join(claude_group_delegates(claude_bash))
-
-        for script in expected_scripts:
-            with self.subTest(product="codex", script=script):
-                self.assertIn(f"hooks/{script}", codex_commands)
-            with self.subTest(product="claude", script=script):
-                self.assertIn(script, claude_commands)
+        for product in ("codex", "claude"):
+            for handler in expected_handlers:
+                with self.subTest(product=product, handler=handler):
+                    rules = inventory_rules(
+                        product=product,
+                        event="PreToolUse",
+                        handler=handler,
+                    )
+                    self.assertIn("Bash", inventory_tools(rules))
 
     def test_finish_line_outcome_hooks_registered_for_supported_products(self) -> None:
-        codex_hooks = tomllib.loads(
-            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
-                encoding="utf-8"
+        for product in ("codex", "claude"):
+            finish_line = inventory_rules(
+                product=product,
+                event="PreToolUse",
+                handler="finish-line-record",
             )
-        )["hooks"]
-        codex_pre = next(
-            group for group in codex_hooks["PreToolUse"] if group["matcher"] == "Bash"
-        )
-        self.assertTrue(
-            any("finish-line-record.py" in hook["command"] for hook in codex_pre["hooks"])
-        )
-        for event in ("PostToolUse", "PostToolUseFailure"):
-            self.assertTrue(
-                all(
-                    "session-coordination-guard.py" in hook["command"]
-                    for group in codex_hooks[event]
-                    for hook in group["hooks"]
+            self.assertIn("Bash", inventory_tools(finish_line), product)
+            for event in ("PostToolUse", "PostToolUseFailure"):
+                coordination = inventory_rules(
+                    product=product,
+                    event=event,
+                    capability="agent-session.coordination.v1",
                 )
-            )
-
-        claude_hooks = load_claude_hook_fragment()["hooks"]
-        claude_pre = next(
-            group for group in claude_hooks["PreToolUse"] if group["matcher"] == "Bash"
-        )
-        self.assertTrue(
-            "finish-line-record.py" in claude_group_delegates(claude_pre)
-        )
-        for event in ("PostToolUse", "PostToolUseFailure"):
-            self.assertTrue(
-                all(
-                    "session-coordination-guard.py" in hook["command"]
-                    for group in claude_hooks[event]
-                    for hook in group["hooks"]
-                )
-            )
+                self.assertTrue(coordination, f"{product}:{event}")
 
     def test_session_coordination_guard_registration_matches_supported_products(
         self,
     ) -> None:
-        codex_hooks = tomllib.loads(
-            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
-                encoding="utf-8"
-            )
-        )["hooks"]
-        claude_hooks = load_claude_hook_fragment()["hooks"]
-        for product, hooks, expected in (
+        for product, expected in (
             (
                 "codex",
-                codex_hooks,
                 {"Bash", "Write", "Edit", "NotebookEdit", "apply_patch"},
             ),
             (
                 "claude",
-                claude_hooks,
                 {"Bash", "Write", "Edit", "NotebookEdit", "MultiEdit"},
             ),
         ):
             for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
-                registered = {
-                    tool
-                    for group in hooks[event]
-                    if any(
-                        "session-coordination-guard.py" in hook["command"]
-                        for hook in group["hooks"]
+                registered = inventory_tools(
+                    inventory_rules(
+                        product=product,
+                        event=event,
+                        capability="agent-session.coordination.v1",
                     )
-                    or (
-                        product == "claude"
-                        and event == "PreToolUse"
-                        and "session-coordination-guard.py"
-                        in claude_group_delegates(group)
-                    )
-                    for tool in group["matcher"].split("|")
-                }
+                )
                 self.assertEqual(registered, expected, f"{product}:{event}")
-            for group in hooks["PreToolUse"]:
-                commands = [hook["command"] for hook in group["hooks"]]
-                if any("session-coordination-guard.py" in item for item in commands):
-                    self.assertIn("session-coordination-guard.py", commands[-1])
-                if product == "claude":
-                    delegates = list(claude_group_delegates(group))
-                    self.assertIn("session-coordination-guard.py", delegates)
-                    self.assertEqual(
-                        load_claude_pretool_sequences()[group["matcher"].split("|")[0]][-1],
-                        "session-coordination-guard.py",
-                    )
-            stop_commands = "\n".join(
-                hook["command"] for group in hooks["Stop"] for hook in group["hooks"]
+            stop = inventory_rules(
+                product=product,
+                event="Stop",
+                capability="agent-session.coordination.v1",
             )
-            self.assertIn("session-coordination-guard.py", stop_commands, product)
+            self.assertEqual(len(stop), 1, product)
+            self.assertIsNone(stop[0]["matcher"])
 
     def test_pre_edit_intent_gate_registration_matches_supported_products(self) -> None:
-        codex_groups = tomllib.loads(
-            (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
-                encoding="utf-8"
-            )
-        )["hooks"]["PreToolUse"]
-        claude_groups = load_claude_hook_fragment()["hooks"]["PreToolUse"]
-
-        for product, groups, expected in (
+        for product, expected in (
             (
                 "codex",
-                codex_groups,
                 {"Bash", "Write", "Edit", "NotebookEdit", "apply_patch"},
             ),
             (
                 "claude",
-                claude_groups,
                 {"Bash", "Write", "Edit", "NotebookEdit", "MultiEdit"},
             ),
         ):
-            gated = {
-                tool
-                for group in groups
-                if any("pre-edit-intent-gate.py" in hook["command"] for hook in group["hooks"])
-                or (
-                    product == "claude"
-                    and "pre-edit-intent-gate.py" in claude_group_delegates(group)
+            gated = inventory_tools(
+                inventory_rules(
+                    product=product,
+                    event="PreToolUse",
+                    handler="pre-edit-intent-gate",
                 )
-                for tool in group["matcher"].split("|")
-            }
+            )
             self.assertEqual(gated, expected, product)
 
         hermes_sources = "\n".join(
@@ -12465,50 +12398,28 @@ exit 65
         self.assertNotIn("pre-edit-intent-gate.py", hermes_sources)
 
     def test_checkout_lease_guard_is_wired_for_prompt_mutation_and_stop(self) -> None:
-        codex_hooks = tomllib.loads(
-            (
-                REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml"
-            ).read_text(encoding="utf-8")
-        )["hooks"]
-        claude_hooks = load_claude_hook_fragment()["hooks"]
-
-        for product, hooks in (("codex", codex_hooks), ("claude", claude_hooks)):
-            prompt_hooks = [
-                hook
-                for group in hooks["UserPromptSubmit"]
-                for hook in group["hooks"]
-                if "checkout-lease-guard.py" in hook["command"]
-            ]
-            self.assertEqual(len(prompt_hooks), 1, product)
-            if product == "codex":
-                self.assertGreater(prompt_hooks[0]["timeout"], 35)
-
-            pre_tool_groups = hooks["PreToolUse"]
-            mutation_matchers = {
-                group["matcher"]
-                for group in pre_tool_groups
-                if any(
-                    "checkout-lease-guard.py" in hook["command"]
-                    for hook in group["hooks"]
-                )
-                or (
-                    product == "claude"
-                    and "checkout-lease-guard.py" in claude_group_delegates(group)
-                )
-            }
-            self.assertIn("Bash", mutation_matchers, product)
-            self.assertTrue(
-                any("Write" in matcher.split("|") for matcher in mutation_matchers),
-                product,
+        for product in ("codex", "claude"):
+            prompt = inventory_rules(
+                product=product,
+                event="UserPromptSubmit",
+                handler="checkout-lease-guard",
             )
-            self.assertTrue(
-                any(
-                    "checkout-lease-guard.py" in hook["command"]
-                    for group in hooks["Stop"]
-                    for hook in group["hooks"]
-                ),
-                product,
+            self.assertEqual(len(prompt), 1, product)
+            mutations = inventory_tools(
+                inventory_rules(
+                    product=product,
+                    event="PreToolUse",
+                    handler="checkout-lease-guard",
+                )
             )
+            self.assertIn("Bash", mutations, product)
+            self.assertIn("Write", mutations, product)
+            stop = inventory_rules(
+                product=product,
+                event="Stop",
+                handler="checkout-lease-guard",
+            )
+            self.assertEqual(len(stop), 1, product)
 
         hermes_sources = "\n".join(
             path.read_text(encoding="utf-8")
@@ -16898,76 +16809,39 @@ exit 65
             self.assertTrue(linked.is_dir())
 
     def test_claude_memory_reminder_matches_all_edit_tools(self) -> None:
-        claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
-        reminder_groups = [
-            group
-            for group in claude_hooks
-            if group["matcher"] != "Bash"
-            and "memory-write-principle-reminder.py" in claude_group_delegates(group)
-        ]
-        self.assertGreaterEqual(len(reminder_groups), 1)
-        matcher_tools = {
-            tool
-            for group in reminder_groups
-            for tool in group["matcher"].split("|")
-        }
+        reminder_rules = inventory_rules(
+            product="claude",
+            event="PreToolUse",
+            handler="memory-write-principle-reminder",
+        )
+        matcher_tools = inventory_tools(reminder_rules)
         self.assertTrue(
             {"Write", "Edit", "MultiEdit", "NotebookEdit"} <= matcher_tools,
             matcher_tools,
         )
 
     def test_claude_multiedit_hooks_exclude_content_only_scanners(self) -> None:
-        claude_hooks = load_claude_hook_fragment()["hooks"]["PreToolUse"]
-        multiedit_groups = [
-            group
-            for group in claude_hooks
-            if "MultiEdit" in group["matcher"].split("|")
+        multiedit = [
+            rule
+            for rule in inventory_rules(product="claude", event="PreToolUse")
+            if "MultiEdit" in inventory_tools([rule])
         ]
-        self.assertTrue(multiedit_groups)
+        self.assertTrue(multiedit)
+        handlers = {rule["legacy_handler"] for rule in multiedit}
+        self.assertNotIn("mcp-secret-scan", handlers)
+        self.assertNotIn("portable-paths-scan", handlers)
 
-        multiedit_commands = "\n".join(
-            script for group in multiedit_groups for script in claude_group_delegates(group)
-        )
-        self.assertNotIn("mcp-secret-scan.py", multiedit_commands)
-        self.assertNotIn("portable-paths-scan.py", multiedit_commands)
-
-    def test_codex_hook_paths_fall_back_when_codex_home_is_unset(self) -> None:
+    def test_provider_fragments_defer_path_resolution_to_agent_hook(self) -> None:
         codex_block = (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
             encoding="utf-8"
         )
-        path_exprs: list[str] = []
-        for line in codex_block.splitlines():
-            stripped = line.strip()
-            if not stripped.startswith("command = "):
-                continue
-            command = json.loads(stripped.split("=", 1)[1].strip())
-            parts = command.split('"')
-            self.assertEqual(parts[0], "AGENT_RUNTIME_PRODUCT=codex ")
-            self.assertEqual(len(parts), 3)
-            path_exprs.append(parts[1])
-
-        self.assertGreater(len(path_exprs), 0)
-        for path_expr in path_exprs:
-            script_name = path_expr.rsplit("/", 1)[-1]
-            completed = subprocess.run(
-                [
-                    "env",
-                    "-u",
-                    "CODEX_HOME",
-                    "HOME=/Users/example",
-                    "sh",
-                    "-c",
-                    f'printf "%s\\n" "{path_expr}"',
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(
-                completed.stdout.strip(),
-                f"/Users/example/.codex/hooks/{script_name}",
-            )
+        claude_fragment = (
+            REPO_ROOT / "core" / "hooks" / "claude" / "settings.hooks.jsonc"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("command =", codex_block)
+        self.assertNotIn('"command"', claude_fragment)
+        self.assertIn("agent-hook setup", codex_block)
+        self.assertIn("agent-hook setup", claude_fragment)
 
     def test_codex_hook_block_source_matches_install_body_template(self) -> None:
         source_block = (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(

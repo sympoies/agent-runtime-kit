@@ -33,8 +33,8 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude surface)
-  ships inside nils-cli; minimum supported **v1.25.0**; validated snapshot
-  **v1.25.0**
+  ships inside nils-cli; minimum supported **v1.25.5**; validated snapshot
+  **v1.25.5**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,
@@ -189,8 +189,8 @@ a uniform shape:
 
 ### 8. Hook scripts (`hooks/<name>.*`)
 
-- Claude reads from: `$HOME/.claude/hooks/<name>.*` referenced by
-  `settings.json` `hooks` block (`manifests/product-capabilities.yaml`).
+- Claude reads from: `$HOME/.claude/hooks/<name>.*` invoked by the
+  setup-owned `agent-hook dispatch --product claude` ingress.
 - Source: portable logic under `core/hooks/shared/`; Claude adapter slot
   reserved under `core/hooks/claude/` (`core/hooks/` tree present in
   repo).
@@ -200,13 +200,9 @@ a uniform shape:
   `targets/claude/hooks/`; no files shipped under that path yet.
 - Acceptance lane: hooks adapter contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
-- Claude runs all mutation-blocking `PreToolUse` prerequisites and final session
-  admission inside the single `claude-pretool-sequence.py` command. This is a
-  correctness boundary because Claude schedules sibling matching hooks in
-  parallel; a separate admission hook could otherwise lease a denied tool. The
-  child-specific and 250-second outer timeouts cover the full declared
-  sequential budget, including the checkout lease guard's explicit 25-second
-  allowance and the admission guard's 50-second global subprocess deadline.
+- `agent-hook` aggregates all mutation-blocking `PreToolUse` prerequisites
+  before invoking the locked coordination capability. Claude therefore has no
+  sibling admission hook or provider-owned sequencing wrapper.
 - `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
   and `Stop`, but performs lease work only for explicit coordination mode
   `enforce`. Default/advisory/off and unmanaged launches never acquire or block
@@ -226,20 +222,18 @@ a uniform shape:
   `statusLine`, etc. (`manifests/product-capabilities.yaml`,
   `hook_config_strategy: settings-json` in
   `manifests/runtime-roots.yaml`).
-- Source: `core/hooks/claude/settings.hooks.jsonc` is the runtime-kit
-  hook registration fragment. It intentionally is not a full
-  `settings.json` replacement.
+- Source: `core/policies/agent-hook/runtime-kit-v1.toml` with the audited
+  inventory in `manifests/hook-rules.yaml`.
 - Install mechanism: `scripts/sync-runtime-surfaces.sh --apply --product
-  claude` merges the fragment into `$HOME/.claude/settings.json` after
-  `agent-runtime install`, replacing only runtime-kit managed hook
-  commands and preserving custom user hooks / unrelated settings.
+  claude` clears retired runtime-kit commands, installs the digest-pinned XDG
+  policy/config, then applies the exact reviewed `agent-hook setup` plan.
+  Setup preserves custom user hooks and unrelated settings.
 - Acceptance lane: runtime-smoke `meta.sync-runtime-surfaces` fixture
   validates custom hook preservation, retired managed hook removal,
-  source hook insertion, and idempotency. Hook parity tests require the shared
-  lease guard in `UserPromptSubmit` as well as mutation and Stop phases.
-- Support today: **shipped** for the `hooks` block managed by
-  runtime-kit; other `settings.json` surfaces such as `statusLine`
-  remain not shipped.
+  setup-owned insertion, and idempotency. Agent-hook migration tests enforce
+  one dispatcher per event/matcher group.
+- Support today: **shipped** through `agent-hook setup`; other
+  `settings.json` surfaces such as `statusLine` remain not shipped.
 
 ### 10. Output styles (`output-styles/<name>.md`)
 
@@ -309,7 +303,7 @@ a uniform shape:
 | 6 | `commands/<n>.md` | yes | linked directory | 2.1.145 | v0.17.5 |
 | 7 | `agents/<n>.md` | yes | rendered + directory symlink into `~/.claude/agents` | 2.1.145 | v1.3.0 |
 | 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.5 |
-| 9 | `settings.json` hooks block | yes | fragment merge into live settings | 2.1.145 | v0.17.5 |
+| 9 | `settings.json` hooks block | yes | digest-bound `agent-hook setup` | 2.1.145 | v1.25.5 |
 | 10 | `output-styles/<n>.md` | no | — | n/a | n/a |
 | 11 | `statusLine` | no | — | n/a | n/a |
 | 12 | MCP servers | no | — | n/a | n/a |

@@ -1,0 +1,15 @@
+{
+  "schema_version": "agent-runtime-kit.coordination-cases.v1",
+  "cases": [
+    {"case": "semantic-definite", "expected_action": "block"},
+    {"case": "semantic-potential", "expected_action": "warn"},
+    {"case": "semantic-unknown", "expected_action": "warn"},
+    {"case": "semantic-clear", "expected_action": "allow"},
+    {"case": "writer-active-foreign", "expected_action": "block"},
+    {"case": "writer-stale-clean", "expected_action": "allow"},
+    {"case": "writer-stale-dirty", "expected_action": "block"},
+    {"case": "writer-orphaned-clean", "expected_action": "warn"},
+    {"case": "writer-orphaned-dirty", "expected_action": "block"},
+    {"case": "writer-unknown", "expected_action": "block"}
+  ]
+}

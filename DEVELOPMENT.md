@@ -17,7 +17,7 @@ publishes is the standalone Linux container image at
 `ghcr.io/graysurf/agent-runtime-kit`; see [`RELEASING.md`](RELEASING.md) for how
 that image is versioned and cut.
 
-The local gate stack is mature. `scripts/ci/all.sh` runs sixteen positions
+The local gate stack is mature. `scripts/ci/all.sh` runs seventeen positions
 covering plan/skill governance, nils-cli pin alignment, Codex/Claude render and
 golden diff, drift audit, surface-registry acceptance, the skill-surface shape
 diagnostic, sandbox install rehearsal, runtime-smoke, project-local overlay
@@ -411,7 +411,7 @@ That currently performs:
 10. sandbox install rehearsal dry-run plus expected skill-list diff
 11. `bash tests/runtime-smoke/run.sh --mode deterministic`
 12. `bash tests/projects/project-local-smoke/run.sh`
-13. `bash tests/hooks/run.sh`
+13. `bash tests/agent-hook/run.sh`, then `bash tests/hooks/run.sh`
 14. `python3 scripts/ci/version-baseline-audit.py check` — deterministic,
     network-free consistency gate over the version-baseline mirrors: the
     `README.md` "Version baseline" table, each `docs/source/harness-shape-*.md`

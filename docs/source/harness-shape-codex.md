@@ -50,8 +50,8 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex surface)
-  ships inside nils-cli; minimum supported **v1.25.0**; validated snapshot
-  **v1.25.0**
+  ships inside nils-cli; minimum supported **v1.25.5**; validated snapshot
+  **v1.25.5**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),
@@ -215,15 +215,16 @@ a uniform shape:
 
 ### 8. Hook scripts (`hooks/<name>.*`)
 
-- Codex reads from: scripts referenced from the managed block inside
-  `$CODEX_HOME/config.toml`; hook commands call files under
-  `$CODEX_HOME/hooks/` (`manifests/product-capabilities.yaml`,
-  `targets/codex/hooks/config.block.toml`).
+- Codex reads from: one `agent-hook dispatch --product codex` command per
+  owned event/matcher group in `$CODEX_HOME/config.toml`; the dispatcher
+  invokes allowlisted files under `$CODEX_HOME/hooks/` from the selected
+  policy.
 - Source: portable logic under `core/hooks/shared/`; there is no
-  `core/hooks/codex/` tree today, and product-specific activation lives
-  in `targets/codex/hooks/` plus the link map (`core/hooks/README.md`).
+  `core/hooks/codex/` tree today. Registration behavior is canonical in
+  `core/policies/agent-hook/runtime-kit-v1.toml` and
+  `manifests/hook-rules.yaml`.
   The Codex-only `user-prompt-agent-memory.sh` hook lives in the shared hook
-  source tree for install reuse, but is registered only by the Codex TOML block;
+  source tree for install reuse, but is selected only by the Codex policy;
   it reads bounded `agent-memory recall startup` context once per session
   without falling back to the full global index. The untrusted cue directs
   Codex to write stable proposals only through `agent-memory candidate add
@@ -333,25 +334,17 @@ a uniform shape:
 
 - Codex reads from: `$CODEX_HOME/config.toml` TOML hook definitions
   (`manifests/product-capabilities.yaml`, `manifests/runtime-roots.yaml`).
-- Source: `targets/codex/hooks/config.block.toml`; the source tree does
-  **not** have `targets/codex/config.block.toml` at the root. The actual
-  artifact is the hook-scoped file
-  (`targets/codex/hooks/config.block.toml`).
-- Install mechanism: `managed-block` into `config.toml`, surface `hooks`,
-  with hash comment markers (`targets/codex/link-map.yaml`). The
-  managed-block contract preserves everything outside the marker pair
-  byte-for-byte.
-  The managed UserPromptSubmit block registers `user-prompt-agent-memory.sh`
-  for Codex only, injecting bounded `agent-memory recall startup` context into
-  sessions that lack Claude's native memory loader. The same block registers
-  the shared checkout lease guard so opt-in dirty-checkout challenge issuance
-  uses the same producer/consumer contract as Claude; its timeout exceeds the
-  bounded 35-second released snapshot probe. Candidate writes route to
-  the Codex producer root; curated promotion remains a separately reviewed,
-  explicitly approved action.
-- Acceptance lane: drift audit checks managed-block presence; hook tests
-  verify the referenced shared scripts (`DEVELOPMENT.md`).
-- Support today: **shipped (managed block)**.
+- Source: `core/policies/agent-hook/runtime-kit-v1.toml` with the audited
+  inventory in `manifests/hook-rules.yaml`. The compatibility source
+  `targets/codex/hooks/config.block.toml` intentionally contains no commands.
+- Install mechanism: `sync-runtime-surfaces.sh` clears the retired managed
+  registrations, installs the digest-pinned XDG policy/config, then applies the
+  exact reviewed `agent-hook setup` plan. Setup owns one dispatcher per
+  event/matcher group and composes Codex `notify` without losing a foreign or
+  Computer Use notifier.
+- Acceptance lane: agent-hook policy, executable, migration, runtime-smoke,
+  and shared hook contract tests (`DEVELOPMENT.md`).
+- Support today: **shipped (setup-owned dispatcher)**.
 
 ### 17. Work-tier delegation policy (`core/policies/work-tier-levels.md`)
 
@@ -384,7 +377,7 @@ a uniform shape:
 | 13 | Heuristic system | yes | shared policy root | 0.130.0 | v1.8.0 (heuristic-inbox) |
 | 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 | 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | retired; plugin-scoped discovery is row 5 | n/a | n/a |
-| 16 | `config.toml` hook managed block | yes | managed-block sync | 0.130.0 | v0.17.5 |
+| 16 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.25.5 |
 | 17 | work-tier delegation policy | yes | agent-docs policy routing | 0.130.0 | v0.16.0 |
 
 Status legend:

@@ -1,0 +1,46 @@
+{
+  "schema_version": "agent-runtime-kit.hook-cutover-sequencing.v1",
+  "cases": [
+    {
+      "case": "pre-tool-blocked",
+      "event": "PreToolUse",
+      "rule_result": "block",
+      "coordination_operation": "none",
+      "provider_result": "block"
+    },
+    {
+      "case": "pre-tool-allowed",
+      "event": "PreToolUse",
+      "rule_result": "allow",
+      "coordination_operation": "admit",
+      "provider_result": "allow"
+    },
+    {
+      "case": "post-tool-passed",
+      "event": "PostToolUse",
+      "rule_result": "allow",
+      "coordination_operation": "complete-pass",
+      "provider_result": "allow"
+    },
+    {
+      "case": "post-tool-failed",
+      "event": "PostToolUseFailure",
+      "rule_result": "allow",
+      "coordination_operation": "complete-fail",
+      "provider_result": "allow"
+    },
+    {
+      "case": "stop-with-pending-operation",
+      "event": "Stop",
+      "rule_result": "allow",
+      "coordination_operation": "reconcile",
+      "provider_result": "block"
+    }
+  ],
+  "invariants": {
+    "provider_ingress_per_group": 1,
+    "coordination_runs_only_after_allow": true,
+    "provider_sibling_coordination_hook": false,
+    "setup_owner": "agent-hook"
+  }
+}

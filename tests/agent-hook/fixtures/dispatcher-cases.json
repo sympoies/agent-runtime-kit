@@ -1,0 +1,110 @@
+{
+  "schema_version": "agent-runtime-kit.dispatcher-cases.v1",
+  "cases": [
+    {
+      "product": "codex",
+      "event": "PreToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "Bash",
+      "shadow_rule_count": 18
+    },
+    {
+      "product": "codex",
+      "event": "PreToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "Write",
+      "shadow_rule_count": 12
+    },
+    {
+      "product": "codex",
+      "event": "UserPromptSubmit",
+      "matcher_field": null,
+      "matcher": null,
+      "shadow_rule_count": 6
+    },
+    {
+      "product": "codex",
+      "event": "SessionStart",
+      "matcher_field": "source",
+      "matcher": "startup",
+      "shadow_rule_count": 2
+    },
+    {
+      "product": "codex",
+      "event": "Stop",
+      "matcher_field": null,
+      "matcher": null,
+      "shadow_rule_count": 6
+    },
+    {
+      "product": "claude",
+      "event": "PreToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "Bash",
+      "shadow_rule_count": 19
+    },
+    {
+      "product": "claude",
+      "event": "PreToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "Write",
+      "shadow_rule_count": 12
+    },
+    {
+      "product": "claude",
+      "event": "PreToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "MultiEdit",
+      "shadow_rule_count": 10
+    },
+    {
+      "product": "claude",
+      "event": "UserPromptSubmit",
+      "matcher_field": null,
+      "matcher": null,
+      "shadow_rule_count": 5
+    },
+    {
+      "product": "claude",
+      "event": "SessionStart",
+      "matcher_field": "source",
+      "matcher": "resume",
+      "shadow_rule_count": 2
+    },
+    {
+      "product": "claude",
+      "event": "Stop",
+      "matcher_field": null,
+      "matcher": null,
+      "shadow_rule_count": 6
+    },
+    {
+      "product": "codex",
+      "event": "PostToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "Write",
+      "shadow_rule_count": 1
+    },
+    {
+      "product": "codex",
+      "event": "PostToolUseFailure",
+      "matcher_field": "tool_name",
+      "matcher": "Bash",
+      "shadow_rule_count": 1
+    },
+    {
+      "product": "claude",
+      "event": "PostToolUse",
+      "matcher_field": "tool_name",
+      "matcher": "MultiEdit",
+      "shadow_rule_count": 1
+    },
+    {
+      "product": "claude",
+      "event": "PostToolUseFailure",
+      "matcher_field": "tool_name",
+      "matcher": "Edit",
+      "shadow_rule_count": 1
+    }
+  ]
+}

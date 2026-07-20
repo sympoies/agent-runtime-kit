@@ -1,21 +1,37 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-20 (refreshed for `v1.25.0`)
+- Snapshot date: 2026-07-20 (refreshed for `v1.25.5`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.25.0`
+- Active `git describe --tags` output: `v1.25.5`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.0`,
-  `validated_tag: v1.25.0`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.5`,
+  `validated_tag: v1.25.5`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `7d9f7dfa`
-  (`feat(agent-runtime): support split version policy (#1307)`)
+- Head commit: `7a04b0c9`
+  (`chore(release): bump cli versions to 1.25.5 (#1332)`)
 - Release:
-  [`v1.25.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.0),
+  [`v1.25.5`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.5),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
+- `v1.25.5` is both the minimum supported and validated release. Runtime-kit
+  intentionally retires older compatibility because its shared hook control
+  plane requires the `agent-hook` binary and setup-owned provider ingress:
+  - `agent-hook setup` owns one exact provider ingress for Codex and Claude,
+    migrates compatible legacy registrations through an operation-bound
+    preview/apply digest, and preserves unrelated provider hooks
+    ([#1314](https://github.com/sympoies/nils-cli/pull/1314)).
+  - `agent-hook` sequences the locked
+    `agent-session.coordination.v1` capability after aggregate allow and
+    completes or reconciles terminal lifecycle events
+    ([#1330](https://github.com/sympoies/nils-cli/pull/1330)). Runtime-kit
+    consumes this contract, so the new `agent-hook` floor is `>=1.25.5`;
+    the existing `agent-session >=1.24.5` floor remains sufficient.
+  - Codex notification ownership composes and restores foreign or Computer
+    Use notifier state without dropping either consumer
+    ([#1329](https://github.com/sympoies/nils-cli/pull/1329)).
 - `v1.25.0` establishes the schema-v2 compatibility floor and validated-role
   policy:
   - `agent-runtime doctor --class version-alignment` accepts separate

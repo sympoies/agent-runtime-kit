@@ -35,8 +35,8 @@ Scope rules:
   `min_version_effective_from`: **2026-06-30**; probe:
   `hermes --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Hermes surface)
-  ships inside nils-cli; minimum supported **v1.25.0**; validated snapshot
-  **v1.25.0**
+  ships inside nils-cli; minimum supported **v1.25.5**; validated snapshot
+  **v1.25.5**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Hermes support was introduced in nils-cli v1.20.0 (`render --product hermes`,
   `render --target support-matrix` with a hermes column, `install` / `doctor`

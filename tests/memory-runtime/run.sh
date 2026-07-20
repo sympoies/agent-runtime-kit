@@ -20,12 +20,14 @@ env -u AGENT_HOME -u AGENT_RUNTIME_MEMORY_AUDIT_OUT \
   bash scripts/ci/retired-memory-audit.sh --self-test >/dev/null
 
 python3 - <<'PY'
+import json
 from pathlib import Path
 
 root = Path.cwd()
 policy = (root / "core/policies/memory.md").read_text(encoding="utf-8")
-codex = (root / "targets/codex/hooks/config.block.toml").read_text(encoding="utf-8")
-claude = (root / "core/hooks/claude/settings.hooks.jsonc").read_text(encoding="utf-8")
+inventory = json.loads(
+    (root / "manifests/hook-rules.yaml").read_text(encoding="utf-8")
+)["rules"]
 codex_harness = (root / "docs/source/harness-shape-codex.md").read_text(encoding="utf-8")
 
 for text in (
@@ -39,8 +41,11 @@ for text in (
 ):
     assert text in policy, text
 
-assert "user-prompt-agent-memory.sh" in codex
-assert "user-prompt-agent-memory.sh" not in claude
+memory_rules = [
+    rule for rule in inventory if rule["legacy_handler"] == "user-prompt-agent-memory"
+]
+assert memory_rules
+assert all(rule["products"] == ["codex"] for rule in memory_rules)
 assert "agent-memory recall startup" in codex_harness
 assert "agent-memory candidate add\n  codex" in codex_harness
 assert "agent-memory index global" not in codex_harness

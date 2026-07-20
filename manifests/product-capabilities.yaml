@@ -36,15 +36,17 @@ products:
       loaded_at_runtime: true
       schema_ref: "core/docs/schemas/codex-plugin.schema.json"
     hooks_model:
-      config_surface: "$CODEX_HOME/config.toml (agent-runtime-kit managed block)"
-      payload_shape: "codex-toml-managed-block"
+      config_surface: "$CODEX_HOME/config.toml (agent-hook setup-owned ingress)"
+      payload_shape: "agent-hook normalized codex"
       supports_inline_python: false
     config_activation:
       - "$CODEX_HOME/AGENTS.md"
       - "$CODEX_HOME/plugins/<domain>/.codex-plugin/plugin.json"
       - "$CODEX_HOME/plugins/<domain>/skills/<skill>/SKILL.md"
-      - "$CODEX_HOME/config.toml (managed block only)"
-      - "$CODEX_HOME/hooks/<name>/ (scripts referenced from managed block)"
+      - "$CODEX_HOME/config.toml (agent-hook owned groups only)"
+      - "$CODEX_HOME/hooks/<name>/ (allowlisted policy handlers)"
+      - "${XDG_CONFIG_HOME:-$HOME/.config}/agent-hook/config.toml"
+      - "${XDG_DATA_HOME:-$HOME/.local/share}/agent-hook/policies/runtime-kit-v1.toml"
     runtime_state:
       state_home_env: "CODEX_AGENT_STATE_HOME"
       default_path: "${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/codex"
@@ -63,14 +65,16 @@ products:
       loaded_at_runtime: true
       schema_ref: "core/docs/schemas/claude-plugin.schema.json"
     hooks_model:
-      config_surface: "$HOME/.claude/settings.json (hook block) + .claude/hooks/<name>.py"
-      payload_shape: "claude-pretool-v1"
+      config_surface: "$HOME/.claude/settings.json (agent-hook setup-owned groups) + .claude/hooks/<name>.*"
+      payload_shape: "agent-hook normalized claude"
       supports_inline_python: true
     config_activation:
       - "$HOME/.claude/settings.json"
       - "${CLAUDE_PLUGIN_ROOT}/<plugin>/.claude-plugin/plugin.json"
       - "${CLAUDE_PLUGIN_ROOT}/<plugin>/skills/<skill>/"
       - "$HOME/.claude/marketplace.json"
+      - "${XDG_CONFIG_HOME:-$HOME/.config}/agent-hook/config.toml"
+      - "${XDG_DATA_HOME:-$HOME/.local/share}/agent-hook/policies/runtime-kit-v1.toml"
     runtime_state:
       state_home_env: "CLAUDE_KIT_STATE_HOME"
       default_path: "${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/claude"

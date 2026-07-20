@@ -1,0 +1,41 @@
+{
+  "schema_version": "agent-runtime-kit.hook-parity.v1",
+  "cases": [
+    {
+      "case": "unrelated-read-only-command",
+      "expected_action": "allow",
+      "rule_id": null,
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_checkout_lease_preserves_read_only_bash_and_stop_is_non_destructive"
+    },
+    {
+      "case": "optional-memory-write-reminder",
+      "expected_action": "warn",
+      "rule_id": "runtime.codex.pre-tool-use.bash.memory-write-principle-reminder",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_memory_write_principle_reminder"
+    },
+    {
+      "case": "direct-git-commit",
+      "expected_action": "block",
+      "rule_id": "runtime.codex.pre-tool-use.bash.block-direct-git-commit",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_direct_git_commit_hook"
+    },
+    {
+      "case": "active-intent-preflight-cue",
+      "expected_action": "context",
+      "rule_id": "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_preflight_cue_expands_only_active_intents_when_sessions_supported"
+    },
+    {
+      "case": "validation-outcome-wrapper",
+      "expected_action": "transform",
+      "rule_id": "runtime.codex.pre-tool-use.bash.finish-line-record",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_finish_line_rewrite_preserves_input_and_directly_consumes_pending"
+    },
+    {
+      "case": "unavailable-required-intent-verifier",
+      "expected_action": "failure",
+      "rule_id": "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_pre_edit_intent_gate_capability_detection_fails_closed"
+    }
+  ]
+}

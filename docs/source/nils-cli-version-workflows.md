@@ -63,7 +63,7 @@ Use a release-scoped full surface without touching Homebrew or policy:
 
 ```bash
 scripts/dev/with-nils-version.sh release:v1.24.3 -- agent-runtime --version
-scripts/dev/with-nils-version.sh release:v1.25.0 -- bash scripts/ci/all.sh
+scripts/dev/with-nils-version.sh release:v1.25.5 -- bash scripts/ci/all.sh
 ```
 
 An older release below minimum is expected to stop at Position 1. Run a

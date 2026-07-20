@@ -546,6 +546,7 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
 
   rm -rf "$root"
   mkdir -p "$source_root/scripts/ci" \
+    "$source_root/core/policies/agent-hook" \
     "$source_root/targets/codex/.agents/plugins" \
     "$source_root/targets/codex/plugins/meta/.codex-plugin" \
     "$source_root/manifests" \
@@ -554,6 +555,9 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
 
   printf '# raw AGENT_HOME fixture\n' >"$source_root/AGENT_HOME.md"
   printf 'skills: []\n' >"$source_root/manifests/skills.yaml"
+  printf 'schema_version = "agent-hook.policy.v1"\n' \
+    >"$source_root/core/policies/agent-hook/runtime-kit-v1.toml"
+  chmod 0600 "$source_root/core/policies/agent-hook/runtime-kit-v1.toml"
   printf '#!/usr/bin/env bash\n' >"$source_root/scripts/sync-runtime-surfaces.sh"
   ln -s "$previous_source_root/build/codex/AGENT_HOME.md" "$codex_home/AGENTS.md"
   printf 'manual codex policy\n' >"$collision_codex_home/AGENTS.md"
@@ -573,7 +577,8 @@ esac
 SH
   chmod +x "$source_root/scripts/ci/skill-governance-audit.sh"
 
-  git -C "$source_root" add AGENT_HOME.md manifests/skills.yaml scripts/sync-runtime-surfaces.sh
+  git -C "$source_root" add AGENT_HOME.md core/policies/agent-hook/runtime-kit-v1.toml \
+    manifests/skills.yaml scripts/sync-runtime-surfaces.sh
   git -C "$source_root" \
     -c user.name='Runtime Smoke' -c user.email='runtime-smoke@example.invalid' \
     -c commit.gpgSign=false commit -qm 'fixture: establish runtime-kit identity'
@@ -739,7 +744,24 @@ case "$*" in
     ;;
 esac
 SH
-  chmod +x "$stub_bin/agent-runtime" "$stub_bin/codex"
+  cat >"$stub_bin/agent-hook" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+command_name="${1:-}"
+case "$command_name" in
+  validate)
+    printf '{"schema_version":"cli.agent-hook.validate.v1","ok":true,"data":{}}\n'
+    ;;
+  setup)
+    printf '{"schema_version":"cli.agent-hook.setup.v1","ok":true,"data":{"schema_version":"agent-hook.setup-result.v1","plan_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","configured":true}}\n'
+    ;;
+  *)
+    printf 'unexpected agent-hook command: %s\n' "$command_name" >&2
+    exit 64
+    ;;
+esac
+SH
+  chmod +x "$stub_bin/agent-runtime" "$stub_bin/agent-hook" "$stub_bin/codex"
   : >"$stub_log"
 
   (
@@ -2447,9 +2469,9 @@ assert len(bash_groups) == 1, bash_groups
 commands = [hook.get("command") for hook in bash_groups[0]["hooks"]]
 assert "echo custom" in commands, commands
 assert not any("retired-managed-hook.py" in command for command in commands), commands
-assert any("claude-pretool-sequence.py" in command for command in commands), commands
+assert not any("agent-runtime-kit:" in str(hook.get("statusMessage", "")) for hook in bash_groups[0]["hooks"])
 assert len(commands) == len(set(commands)), commands
-assert "UserPromptSubmit" in settings["hooks"], settings["hooks"]
+assert commands == ["echo custom"], commands
 PY
   grep -q "claude settings hooks synced" "$out"
 }
