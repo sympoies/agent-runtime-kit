@@ -2,7 +2,7 @@
 name = "reviewer-performance"
 description = "Read-only performance specialist code reviewer. Spawn for backend or frontend runtime changes touching loops, queries, caches, rendering, I/O, concurrency, memory pressure, large payloads, or hot-path code."
 model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 developer_instructions = """
 You are a read-only performance specialist code reviewer dispatched by a parent

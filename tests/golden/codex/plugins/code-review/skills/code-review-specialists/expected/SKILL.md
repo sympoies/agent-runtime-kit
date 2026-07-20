@@ -24,10 +24,14 @@ Prereqs:
   open/close issues, or post live provider comments.
 - Dispatch the managed read-only `reviewer-<lens>` subagents for the selected
   lenses whenever the active host exposes subagent dispatch. In Codex sessions,
-  if `multi_agent_v1.spawn_agent` or an equivalent dispatch tool is exposed,
-  Codex must dispatch the selected reviewers; inline lens execution is only the
-  fallback when dispatch is unavailable or blocked, and the fallback must be
-  stated. The parent agent owns lens selection, dispatch, validation, and merge.
+  Codex must dispatch the selected reviewers only when the tool schema exposes
+  a custom-agent selector. The current `multi_agent_v1.spawn_agent` selector,
+  `agent_type`, must be the canonical custom-agent identity from
+  `manifests/agents.yaml`; `task_name` is only a workflow label and must not
+  stand in for the reviewer identity. If the selector is absent or rejects the
+  requested identity, do not spawn a generic child: report the host capability
+  limitation and use the matching inline fallback. The parent agent owns lens
+  selection, dispatch, validation, and merge.
 - Leave provider review decisions to the owning PR or dispatch parent. Create a
   `review-evidence` CLI record only when findings need retained evidence.
 
@@ -91,8 +95,10 @@ The caller requests the review outcome; the workflow selects the mode.
 - **Focused** — the user explicitly asks for one or more lenses. Force only
   those lenses unless scope reveals a mandatory safety lens.
 - **Quick** — the diff is small or ordinary, with no migration, security,
-  public API, or other specialist trigger. Inspect the complete diff directly
-  and report concrete findings or a clean result plus residual test risk.
+  public API, or other specialist trigger. Dispatch `reviewer-quick` when the
+  active host exposes the custom-agent selector; otherwise inspect the complete
+  diff through the explicit inline fallback. Report concrete findings or a
+  clean result plus residual test risk.
 - **Specialist** — the diff is broad, risky, cross-cutting, or exceeds normal
   reviewer confidence. Use scope detection and the specialist workflow below.
 
@@ -106,10 +112,12 @@ parent owns base selection, synthesis, and any authorized provider action.
    PR/MR base or merge-base rather than a moving `origin/main` guess. Inspect
    previous findings and delivery context before selecting a mode.
 2. Select the mode using the precedence above.
-3. For **quick** mode, inspect the complete diff, changed tests, and validation
-   evidence directly. Report findings first with file anchors; if clean, state
-   that explicitly and name residual test or validation risk. Stop without
-   manufacturing specialist work.
+3. For **quick** mode, dispatch the canonical `reviewer-quick` custom agent
+   when selector-capable dispatch is available. Otherwise state that the
+   selector is unavailable and inspect the complete diff, changed tests, and
+   validation evidence through the inline fallback. Report findings first with
+   file anchors; if clean, state that explicitly and name residual test or
+   validation risk. Stop without manufacturing specialist work.
 4. For **follow-up** mode, re-check every supplied finding against the current
    diff and classify it as `resolved`, `unresolved`, `accepted`, or
    `residual-risk`. Do not broaden scope unless a fix created a new concrete
@@ -132,18 +140,22 @@ parent owns base selection, synthesis, and any authorized provider action.
    - Consider `data-migration` for migration, schema, or data transform changes.
    - Consider `api-contract` for route, controller, API schema, OpenAPI,
      GraphQL, or protocol changes.
-7. Select the matching managed reviewer subagents for the chosen lenses
-   (`reviewer-testing`, `reviewer-maintainability`, `reviewer-security`,
-   `reviewer-performance`, `reviewer-data-migration`, `reviewer-api-contract`),
-   installed at `~/.codex/agents/reviewer-<lens>.toml` and
+7. Resolve the matching managed reviewer through the manifest inventory:
+   `reviewer-quick`, `reviewer-testing`, `reviewer-maintainability`,
+   `reviewer-security`, `reviewer-performance`, `reviewer-data-migration`,
+   `reviewer-api-contract`, and `reviewer-red-team`. These are installed at
+   `~/.codex/agents/reviewer-<lens>.toml` and
    `~/.claude/agents/reviewer-<lens>.md`.
 8. Dispatch the selected read-only reviewer subagents one per lens, handing each
    the base ref and scope; each inspects read-only and returns JSONL findings for
-   its lens. In Codex, use `multi_agent_v1.spawn_agent` when it is available.
-   If dispatch is unavailable or blocked, state the fallback reason and run the
-   same lenses inline by reading the prompt from `references/specialists/`. You
-   stay the parent: you own base-ref selection, lens selection, dispatch,
-   fallback justification, and the validation/merge steps below.
+   its lens. In Codex, set `agent_type` to the canonical custom-agent identity
+   exactly as rendered from the manifest. `task_name` is only a workflow label;
+   an underscore-form task label never selects the profile. If the active tool
+   schema lacks `agent_type`, or the canonical identity is rejected, do not
+   spawn a generic child. State the limitation and run the same lenses through
+   the inline fallback by reading `references/specialists/`. You stay the
+   parent: you own base-ref selection, lens selection, dispatch, fallback
+   justification, and the validation/merge steps below.
 9. Collect each subagent's JSONL findings (or the inline equivalent) following
    `references/SPECIALIST_REVIEW_CONTRACT.md`. Treat malformed JSONL, missing
    required fields, unsupported severities, or absent evidence anchors as a
@@ -158,9 +170,10 @@ parent owns base selection, synthesis, and any authorized provider action.
 
 11. Run red-team only after the selected specialists when `diff_lines > 200`, any
    selected specialist produced a `critical` finding, or the reviewer forced it.
-   Dispatch `reviewer-red-team` when subagent dispatch is available. If dispatch
-   is unavailable or blocked, state the fallback reason and run the same
-   red-team lens inline from `references/specialists/red-team.md`.
+   Dispatch `reviewer-red-team` with `agent_type = "reviewer-red-team"`
+   when selector-capable subagent dispatch is available. If the selector is
+   unavailable or blocked, state the fallback reason and run the same red-team
+   lens through the inline fallback from `references/specialists/red-team.md`.
    Hand it the
    merged first-wave findings so it can probe cross-cutting failure modes. Pass
    the red-team JSONL through `review-specialists validate`, then append it to

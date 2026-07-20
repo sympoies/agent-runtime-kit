@@ -113,7 +113,7 @@ run_root_audit_drift() {
     return "$audit_status"
   fi
 
-  if AUDIT_DRIFT_JSON="$audit_json" python3 - <<'PY'
+  if AUDIT_DRIFT_JSON="$audit_json" python3 - <<'PY'; then
 import json
 import os
 import sys
@@ -143,7 +143,6 @@ print(
     "clean-checkout CI remains strict."
 )
 PY
-  then
     return 0
   fi
 
@@ -203,6 +202,7 @@ plan-tooling validate --format text --explain
 bash scripts/ci/skill-governance-audit.sh
 bash scripts/ci/skill-governance-audit.sh --fixture count-refresh
 bash scripts/ci/skill-governance-audit.sh --fixture codex-plugin
+bash scripts/ci/skill-governance-audit.sh --fixture reviewer-profile
 bash scripts/ci/skill-governance-audit.sh --fixture description-limit
 bash scripts/ci/skill-governance-audit.sh --fixture exposure-contract
 bash scripts/ci/skill-governance-audit.sh --fixture create
@@ -296,7 +296,7 @@ bash scripts/ci/expect-command-failure.sh \
   "ci/all.sh: invalid surface acceptance fixture rejected as expected" \
   "ci/all.sh: invalid surface acceptance fixture unexpectedly passed" \
   bash scripts/ci/validate-surfaces-manifest.sh \
-    tests/surfaces/invalid-acceptance.yaml
+  tests/surfaces/invalid-acceptance.yaml
 ACCEPTANCE_OUT_DIR="${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}/out/ci-all/surface-acceptance"
 ACCEPTANCE_CODEX_HOME="${ACCEPTANCE_OUT_DIR}/codex-home"
 rm -rf "$ACCEPTANCE_CODEX_HOME"

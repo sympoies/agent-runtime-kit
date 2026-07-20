@@ -11,7 +11,7 @@ SHAPE_PATHS=()
 
 usage() {
   cat <<'USAGE'
-Usage: bash scripts/ci/skill-governance-audit.sh [--check-counts|--update-counts] [--fixture create|remove|create-project|remove-project|count-refresh|codex-plugin|description-limit|exposure-contract] [--shape-only [paths...]]
+Usage: bash scripts/ci/skill-governance-audit.sh [--check-counts|--update-counts] [--fixture create|remove|create-project|remove-project|count-refresh|codex-plugin|reviewer-profile|description-limit|exposure-contract] [--shape-only [paths...]]
 
 Checks:
   default                   Validate active repo source/manifests/plugins/reminders/counts.
@@ -23,6 +23,7 @@ Checks:
   --fixture remove-project  Validate the remove-project-skill dry-run fixture coverage.
   --fixture count-refresh   Validate stale count detection and whitelist updates.
   --fixture codex-plugin    Validate Codex plugin skill-list drift detection.
+  --fixture reviewer-profile  Validate missing Codex reviewer profile fields fail closed.
   --fixture description-limit  Validate the >240-char and missing-description hard-fail paths.
   --fixture exposure-contract  Validate v2 admission, exposure, and disposition failure paths.
   --shape-only [paths...]   Lint H2 section shape on the given SKILL.md.tera paths
@@ -42,7 +43,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --fixture)
       if [ "$#" -lt 2 ]; then
-        echo "skill-governance-audit: --fixture requires create|remove|create-project|remove-project|count-refresh|codex-plugin|description-limit|exposure-contract" >&2
+        echo "skill-governance-audit: --fixture requires create|remove|create-project|remove-project|count-refresh|codex-plugin|reviewer-profile|description-limit|exposure-contract" >&2
         exit 2
       fi
       case "$2" in
@@ -54,6 +55,9 @@ while [ "$#" -gt 0 ]; do
           ;;
         codex-plugin)
           MODE="codex-plugin-fixture"
+          ;;
+        reviewer-profile)
+          MODE="reviewer-profile-fixture"
           ;;
         description-limit)
           MODE="description-limit-fixture"
@@ -286,6 +290,126 @@ def parse_skills(path: Path) -> list[dict[str, object]]:
                 "retire_after": retire_after.group(1) if retire_after else None,
             }
     return entries
+
+
+def parse_agents(path: Path) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    product: str | None = None
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if raw.startswith("  - id: "):
+            if current is not None:
+                entries.append(current)
+            current = {"id": strip_quotes(raw.split(": ", 1)[1])}
+            product = None
+            continue
+        if current is None:
+            continue
+        if raw.startswith("    source: "):
+            current["source"] = strip_quotes(raw.split(": ", 1)[1])
+        elif re.match(r"^      [a-z]+:$", raw):
+            product = raw.strip().removesuffix(":")
+        elif product == "codex" and raw.startswith("        name: "):
+            current["codex_name"] = strip_quotes(raw.split(": ", 1)[1])
+        elif product == "codex" and raw.startswith("        render_to: "):
+            current["codex_render_to"] = strip_quotes(raw.split(": ", 1)[1])
+    if current is not None:
+        entries.append(current)
+    return entries
+
+
+def toml_string(body: str, field: str) -> str | None:
+    match = re.search(rf'^{re.escape(field)} = "([^"]+)"$', body, flags=re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def codex_reviewer_profile_errors(root: Path) -> list[str]:
+    manifest_path = root / "manifests" / "agents.yaml"
+    if not manifest_path.is_file():
+        return ["missing manifests/agents.yaml"]
+
+    reviewers = [
+        entry
+        for entry in parse_agents(manifest_path)
+        if entry["id"].startswith("code-review.reviewer-")
+    ]
+    errors: list[str] = []
+    names = [entry.get("codex_name", "") for entry in reviewers]
+    if not reviewers:
+        errors.append("manifests/agents.yaml declares no code-review reviewers")
+    if not all(names) or len(names) != len(set(names)):
+        errors.append("Codex reviewer names are missing or duplicated")
+    if "reviewer-quick" not in names:
+        errors.append("manifest inventory is missing reviewer-quick")
+
+    for entry in reviewers:
+        reviewer_id = entry["id"]
+        name = entry.get("codex_name", "")
+        source = entry.get("source", "")
+        expected_name = reviewer_id.split(".", 1)[1]
+        if name != expected_name:
+            errors.append(
+                f"{reviewer_id}: Codex name {name!r} != canonical {expected_name!r}"
+            )
+        if entry.get("codex_render_to") != f"agents/{name}.toml":
+            errors.append(f"{reviewer_id}: Codex render target must match {name!r}")
+        template_path = root / source / "AGENT.md.tera"
+        if not template_path.is_file():
+            errors.append(f"{reviewer_id}: missing source template {source}/AGENT.md.tera")
+            continue
+        codex = template_path.read_text(encoding="utf-8").split("{%- else -%}", 1)[0]
+        actual_name = toml_string(codex, "name")
+        model = toml_string(codex, "model")
+        effort = toml_string(codex, "model_reasoning_effort")
+        sandbox = toml_string(codex, "sandbox_mode")
+        if actual_name != name:
+            errors.append(f"{reviewer_id}: template name {actual_name!r} != manifest {name!r}")
+        if model is None or effort is None or sandbox is None:
+            errors.append(
+                f"{reviewer_id}: Codex template must explicitly set model, "
+                "model_reasoning_effort, and sandbox_mode"
+            )
+            continue
+        expected_model = "gpt-5.6-terra" if name == "reviewer-quick" else "gpt-5.6-sol"
+        if model != expected_model:
+            errors.append(f"{reviewer_id}: model {model!r} != {expected_model!r}")
+        if effort != "medium":
+            errors.append(f"{reviewer_id}: effort {effort!r} != 'medium'")
+        if sandbox != "read-only":
+            errors.append(f"{reviewer_id}: sandbox {sandbox!r} != 'read-only'")
+
+    skill_path = root / "core" / "skills" / "code-review" / "code-review-specialists" / "SKILL.md.tera"
+    policy_path = root / "core" / "policies" / "code-review-delegation-codex.md"
+    if not skill_path.is_file() or not policy_path.is_file():
+        errors.append("Codex reviewer dispatch contract source is missing")
+        return errors
+    skill = skill_path.read_text(encoding="utf-8")
+    policy = policy_path.read_text(encoding="utf-8")
+    for name in names:
+        if f"`{name}`" not in skill:
+            errors.append(f"dispatch contract does not name manifest reviewer {name}")
+        underscored = name.replace("-", "_")
+        if underscored in skill:
+            errors.append(f"dispatch contract uses non-canonical reviewer identity {underscored}")
+    for needle in (
+        "canonical custom-agent identity",
+        "`agent_type`",
+        "`task_name` is only a workflow label",
+        "do not spawn a generic child",
+        "inline fallback",
+    ):
+        if needle not in skill:
+            errors.append(f"code-review skill missing dispatch contract phrase: {needle}")
+    for needle in ("`agent_type`", "do not spawn a generic child", "inline fallback"):
+        if needle not in policy:
+            errors.append(f"Codex review policy missing fail-closed phrase: {needle}")
+    return errors
+
+
+def validate_codex_reviewer_profiles(root: Path) -> None:
+    errors = codex_reviewer_profile_errors(root)
+    if errors:
+        fail("Codex reviewer profile contract failed: " + "; ".join(errors))
 
 
 def parse_skill_migration(path: Path) -> dict[str, object]:
@@ -1648,6 +1772,7 @@ def validate_exposure_contract_fixture() -> None:
 
 def validate_repo() -> None:
     validate_exposure_contract(ROOT)
+    validate_codex_reviewer_profiles(ROOT)
     skills = parse_skills(ROOT / "manifests" / "skills.yaml")
     plugins = parse_plugins(ROOT / "manifests" / "plugins.yaml")
     by_id = {str(entry["id"]): entry for entry in skills}
@@ -2080,6 +2205,68 @@ def validate_codex_plugin_fixture() -> None:
     print("skill-governance-audit: codex-plugin fixture OK stale_skill_detected=true")
 
 
+def validate_reviewer_profile_fixture() -> None:
+    with tempfile.TemporaryDirectory(prefix="reviewer-profile-") as tmp:
+        fixture = Path(tmp)
+        (fixture / "manifests").mkdir(parents=True)
+        shutil.copy2(ROOT / "manifests" / "agents.yaml", fixture / "manifests" / "agents.yaml")
+        shutil.copytree(
+            ROOT / "core" / "agents" / "code-review",
+            fixture / "core" / "agents" / "code-review",
+        )
+        skill_target = fixture / "core" / "skills" / "code-review" / "code-review-specialists"
+        skill_target.mkdir(parents=True)
+        shutil.copy2(
+            ROOT / "core" / "skills" / "code-review" / "code-review-specialists" / "SKILL.md.tera",
+            skill_target / "SKILL.md.tera",
+        )
+        policy_target = fixture / "core" / "policies"
+        policy_target.mkdir(parents=True)
+        shutil.copy2(
+            ROOT / "core" / "policies" / "code-review-delegation-codex.md",
+            policy_target / "code-review-delegation-codex.md",
+        )
+
+        baseline_errors = codex_reviewer_profile_errors(fixture)
+        if baseline_errors:
+            fail(f"reviewer-profile fixture baseline failed: {baseline_errors}")
+
+        template = fixture / "core" / "agents" / "code-review" / "reviewer-testing" / "AGENT.md.tera"
+        template.write_text(
+            template.read_text(encoding="utf-8").replace(
+                'model_reasoning_effort = "medium"\n', "", 1
+            ),
+            encoding="utf-8",
+        )
+        missing_field_errors = codex_reviewer_profile_errors(fixture)
+        if not any("must explicitly set model" in error for error in missing_field_errors):
+            fail("reviewer-profile fixture did not reject a missing explicit profile field")
+
+        shutil.copy2(
+            ROOT / "core" / "agents" / "code-review" / "reviewer-testing" / "AGENT.md.tera",
+            template,
+        )
+        skill_fixture = skill_target / "SKILL.md.tera"
+        skill_fixture.write_text(
+            skill_fixture.read_text(encoding="utf-8").replace(
+                "do not spawn a generic child", "generic fallback is unspecified"
+            ),
+            encoding="utf-8",
+        )
+        fallback_errors = codex_reviewer_profile_errors(fixture)
+        if not any(
+            "missing dispatch contract phrase: do not spawn a generic child" in error
+            for error in fallback_errors
+        ):
+            fail("reviewer-profile fixture did not reject a silent generic fallback")
+
+    print(
+        "skill-governance-audit: reviewer-profile fixture OK "
+        "manifest_inventory=true missing_field_rejected=true "
+        "generic_fallback_rejected=true"
+    )
+
+
 if MODE == "repo":
     validate_repo()
 elif MODE == "count-check":
@@ -2104,6 +2291,8 @@ elif MODE == "count-refresh-fixture":
     validate_count_refresh_fixture()
 elif MODE == "codex-plugin-fixture":
     validate_codex_plugin_fixture()
+elif MODE == "reviewer-profile-fixture":
+    validate_reviewer_profile_fixture()
 elif MODE == "description-limit-fixture":
     validate_description_limit_fixture()
 elif MODE == "exposure-contract-fixture":

@@ -101,17 +101,33 @@ Automated coverage (in default CI):
   agent set against `tests/sandbox/<product>/expected-agents.txt` for both
   products (`all.sh` sandbox-install position), failing on a missing or renamed
   reviewer agent.
+- `bash scripts/ci/skill-governance-audit.sh` inventories every
+  `code-review.reviewer-*` declaration in `manifests/agents.yaml` and fails
+  when a Codex profile omits or changes its explicit model, `medium` reasoning
+  effort, or read-only sandbox. The `--fixture reviewer-profile` negative case
+  proves a missing field is rejected.
 
-Live product discovery is manual-only — it needs an authenticated product
-session and stays outside default CI:
+Live product discovery needs an authenticated product session and stays outside
+default CI:
 
 - Claude: in a session, run `/agents` and confirm `reviewer-quick` and the seven
   `reviewer-<lens>` specialists appear under the user scope. Expected: all eight
   are listed and invokable via the Agent tool.
-- Codex: start a session with `CODEX_HOME` pointed at the installed home and
-  confirm the definitions in `$CODEX_HOME/agents/*.toml` are offered for
-  delegation. Expected: `reviewer-quick` (and the specialists) are spawnable as
-  read-only subagents.
+- Codex: after installing or syncing the runtime surface, run:
+
+  ```bash
+  RUNTIME_SMOKE_CODEX_AUTHENTICATED=1 \
+    bash tests/runtime-smoke/product/codex-reviewer-dispatch.sh
+  ```
+
+  The probe derives all eight reviewer names from `manifests/agents.yaml`,
+  validates the installed TOML profiles, and uses an isolated parent configured
+  as `gpt-5.4` / `xhigh` / `danger-full-access` so inherited defaults
+  cannot satisfy the child-profile checks. When the dispatch schema exposes
+  `agent_type`, it selects every canonical hyphenated reviewer identity while
+  deliberately using unrelated `task_name` labels. When the selector is
+  absent, the result is an explicit `skip-host-capability` with
+  `fallback=inline`; the probe never spawns a generic child.
 
 ## Matrix Contract
 

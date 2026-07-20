@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deterministic probes for code review workflow skills.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2016,SC2329
 
 set -euo pipefail
 
@@ -46,6 +46,19 @@ run_testing_specialist_contract_probe() {
     grep -Fiq 'deterministic fixtures' "$path"
     grep -Fiq 'residual gaps' "$path"
   done
+}
+
+run_codex_reviewer_profile_contract_probe() {
+  local repo_out="$CODE_REVIEW_ARTIFACTS_DIR/reviewer-profile-repo.txt"
+  local fixture_out="$CODE_REVIEW_ARTIFACTS_DIR/reviewer-profile-fixture.txt"
+
+  bash "$REPO_ROOT/scripts/ci/skill-governance-audit.sh" >"$repo_out" 2>&1
+  bash "$REPO_ROOT/scripts/ci/skill-governance-audit.sh" --fixture reviewer-profile >"$fixture_out" 2>&1
+
+  grep -Fq 'skill-governance-audit: repo OK' "$repo_out"
+  grep -Fq 'manifest_inventory=true' "$fixture_out"
+  grep -Fq 'missing_field_rejected=true' "$fixture_out"
+  grep -Fq 'generic_fallback_rejected=true' "$fixture_out"
 }
 
 run_portable_review_identity_contract_probe() {
@@ -274,6 +287,7 @@ run_code_review_outcome_routing_probe() {
 
 failures=0
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
+record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe

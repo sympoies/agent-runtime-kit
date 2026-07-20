@@ -203,15 +203,23 @@ a uniform shape:
   `$CODEX_HOME/agents/` (`targets/codex/link-map.yaml`).
 - Acceptance lane: render / golden / audit-drift / sandbox install rehearsal
   gates (the rehearsal pins the installed reviewer agents per product against
-  `tests/sandbox/codex/expected-agents.txt`); the live Codex discovery probe is
-  manual-only, documented in `tests/runtime-smoke/README.md`.
+  `tests/sandbox/codex/expected-agents.txt`) plus manifest-driven governance
+  of every Codex reviewer's explicit model, reasoning effort, and sandbox.
+  The opt-in authenticated probe
+  `tests/runtime-smoke/product/codex-reviewer-dispatch.sh` checks installed
+  profiles and dispatches every canonical identity when the active
+  `spawn_agent` schema exposes `agent_type`. A selector-less host records
+  `skip-host-capability` and the required inline fallback instead of silently
+  spawning a generic child.
 - Support today: **shipped (`reviewer-quick` + seven specialist lenses)**. The
   cross-product agents render surface ships in nils-cli v1.3.0; the managed
   read-only reviewers are `reviewer-quick` (quick pass) plus seven specialist
   lenses (testing, maintainability, security, performance, api-contract,
   data-migration, red-team). Codex renders `reviewer-quick` with
   `gpt-5.6-terra` / `medium` reasoning and all seven specialists with
-  `gpt-5.6-sol` / `high` reasoning; Claude agent definitions remain unpinned.
+  `gpt-5.6-sol` / `medium` reasoning; all eight are read-only. Dispatch uses
+  each manifest's canonical hyphenated identity as `agent_type`; `task_name`
+  remains only a workflow label. Claude agent definitions remain unpinned.
 
 ### 8. Hook scripts (`hooks/<name>.*`)
 
