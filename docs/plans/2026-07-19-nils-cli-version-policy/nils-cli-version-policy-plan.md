@@ -347,29 +347,32 @@ and close the L2 lifecycle without local ambiguity.
   - exact validated packaging dry-run
   - optional approved runtime doctors/receipts only when activated
 
-### Task 4.2: Audit, close, archive, and clean local worktrees
+### Task 4.2: Prepare the terminal closeout transaction
 
 - **Location**:
-  - L2 tracker, plan archive, and managed worktrees
-- **Description**: Finalize every ledger row, post state/validation/review
-  evidence, require strict `tracking close-ready --expect-visible`, close through
-  `plan-issue record close`, read back and audit provider evidence, run archive
-  discovery/migration dry-run, apply only with explicit archive authorization,
-  then perform exactly-once local cleanup under provider merge/head proof.
+  - L2 tracker and terminal execution-state ledger
+- **Description**: Finalize every implementation and acceptance ledger row with
+  provider-safe evidence, then prepare the terminal transition for
+  controller-owned exact-head review, provider checks, and merge. The controller
+  also owns the later issue close, closed-state audit, archive decision, and
+  worktree cleanup through the Issue Closeout Gate; none of those future gates
+  are evidence that this preparation task already performed them.
 - **Dependencies**:
   - Task 4.1
 - **Complexity**: 5
 - **Acceptance criteria**:
-  - Close-ready reports `ready=true` and no blockers.
-  - Closed provider state and labels read back correctly.
-  - Archive routing is reported truthfully and applied only if authorized.
-  - Dirty, locked, or unverifiable worktrees are retained; eligible worktrees and
-    matching disposable branches are cleaned separately and safely.
+  - Every implementation and acceptance row is terminal with non-empty factual
+    evidence; no row claims that a future controller finalizer already ran.
+  - The prepared terminal transition names the closeout PR and the exact ordered
+    controller finalizers, including exact-head review/merge, lifecycle-label
+    normalization, and strict post-close audit before archive or cleanup.
+  - Scoped plan validation and privacy review pass before handoff to the
+    controller; no provider merge or post-merge action is claimed as task
+    evidence.
 - **Validation**:
-  - `plan-issue tracking close-ready --expect-visible --format json`
-  - `plan-issue record audit --profile tracking --expect-visible --format json`
-  - `plan-archive discover --format json`
-  - provider and local cleanup read-back
+  - `plan-tooling validate --format json`
+  - `rumdl check` over the three-file plan bundle
+  - `git diff --check` and provider-safe text inspection
 
 ## Issue Closeout Gate
 
@@ -380,3 +383,11 @@ validated packaging is proven, required reviews/threads/tasks are converged, the
 ledger is complete, and strict close-ready returns no blockers. A skipped live
 runtime apply is acceptable only when it was never authorized or required; it
 must be stated explicitly rather than implied complete.
+
+Task 4.2 prepares the terminal ledger transition needed by the active closeout
+contract. After the controller merges that transition, it must reconcile the
+PR into run state, require strict close-ready, normalize lifecycle labels,
+close and read the provider issue back, run strict post-close audit, report
+archive routing, and clean only provider-proven session-owned worktrees. Those
+finalizers complete the overall issue closeout but remain outside the already
+terminal task ledger so the close-ready gate can consume a stable merged bundle.

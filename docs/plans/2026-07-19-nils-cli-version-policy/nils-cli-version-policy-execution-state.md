@@ -5,29 +5,35 @@
 
 - Source document: `docs/plans/2026-07-19-nils-cli-version-policy/nils-cli-version-policy-plan.md`
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/688>
-- Current sprint: Sprint 3 consume the released version policy in runtime-kit
-- Status: in progress; nils-cli v1.25.0 released and deployed, runtime-kit
-  independent review findings repaired with focused green evidence
-- Current gate: commit review repairs, rerun commit-bound full validation and
-  affected specialist follow-up, then governed PR delivery and provider CI
-- Current task: Task 3.4 review, deliver, merge, and verify runtime-kit
-- Next task: Task 4.1 run post-merge acceptance and authorized activation
+- Current sprint: Sprint 4 acceptance and closeout
+- Status: ready for closeout transaction; all plan tasks are terminal, and the
+  provider record is not yet closed
+- Current gate: terminal-ledger exact-head review and merge, run-state/provider
+  reconciliation, strict pre-close readiness, provider close/read-back, strict
+  post-close audit, then archive migration dry-run
+- Current task: none; all plan tasks are terminal
+- Next task: execute the ordered closeout workflow finalizers below
 - Planned implementation branches: `feat/issue-688-version-policy` in nils-cli
   and `feat/issue-688-nils-cli-policy` in runtime-kit
 - Plan-authoring branch: `feat/issue-688-nils-cli-policy` in runtime-kit
-- Release prerequisite: explicitly authorized by the maintainer's active goal;
-  choose and publish the exact version only through the release workflow
-- Installed-surface activation: explicitly authorized for M4 sympoies after
-  both repositories merge and release/read-back gates pass
+- Release prerequisite: satisfied; v1.25.0 signed release commit
+  `a28da671d31c` has approved source `7d9f7dfa9bf4` as its sole parent and was
+  deployed successfully
+- Installed-surface activation: completed after explicit authorization;
+  dry-run, apply, and clean postcondition read-back passed on both authorized
+  hosts
 - Blockers: none
-- Last updated: 2026-07-19
-- Branch/commit/PR: runtime-kit implementation branch
-  `feat/issue-688-nils-cli-policy` at `10718eb`; nils-cli PR
+- Last updated: 2026-07-20
+- Branch/commit/PR: nils-cli PR
   <https://github.com/sympoies/nils-cli/pull/1307> reviewed at final head
   `dff0624cd61a7eee0b4d0c2f6d4c373feda4e43d` and squash-merged to provider
   main as `7d9f7dfa9bf42948dd0beab564df241f3cb3614b`; release
   <https://github.com/sympoies/nils-cli/releases/tag/v1.25.0> published and
-  fixed-fleet broker run 29703330495 succeeded
+  fixed-fleet broker run 29703330495 succeeded; runtime-kit PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/692> exact head
+  `73b8274a941c` squash-merged as `092bf46f1998`; terminal-ledger PR
+  <https://github.com/graysurf/agent-runtime-kit/pull/697> is carried by branch
+  `docs/issue-688-version-policy-closeout`
 
 ## Validation Plan
 
@@ -57,9 +63,9 @@
 | 3.1 | done | Capture runtime-kit meaningful red and migrate the manifest | released schema-v2 binary verified at v1.25.0; authoritative Linux release digests resolved; focused owner test failed meaningfully against schema-v1/exact-pin production state; schema-v2 manifest and eight focused owner tests green | Initial migration sets minimum and validated to v1.25.0 because older binaries cannot parse schema v2; later ordinary bumps move validated only |
 | 3.2 | done | Add ambient, minimum, validated, and canary execution paths | de-duplicated exact-role matrix; 102-pass deterministic runtime-smoke with below-minimum, exact-role, admitted-ahead, and malformed-range cases; scheduled/manual latest-stable canary | Minimum and validated are blocking roles; equal tags share one physical lane while preserving both labels |
 | 3.3 | done | Preserve validated packaging and update policy mirrors | Docker/publish inputs use validated tag and release digests; baseline 29/29; product-leak 234 files with 14 active allow entries; render/golden and docs mirrors green | Ordinary bump leaves minimum unchanged; `__pycache__/` is ignored to keep direct Python test runs from dirtying the checkout |
-| 3.4 | in-progress | Review, deliver, merge, and verify runtime-kit | API/maintainability, testing, and security/red-team reviewed exact head 4ae3fba; five medium findings (one overlapping) repaired; focused policy 11/11, security audit, strict v1.25.0 digest execution, and deterministic smoke 102/0/1 green | Commit-bound full gate and affected follow-up review next; no live sync implied by merge alone |
-| 4.1 | pending | Run post-merge acceptance and optional authorized activation | pending | Record explicit no-apply when activation is not approved |
-| 4.2 | pending | Audit, close, archive, and clean local worktrees | pending | Strict close-ready and provider proof required |
+| 3.4 | done | Review, deliver, merge, and verify runtime-kit | API/maintainability, testing, and security/red-team reviewed exact head 4ae3fba; five medium findings (one overlapping) repaired; focused policy 11/11, security audit, strict v1.25.0 digest execution, and deterministic smoke 102/0/1 green; runtime-kit PR #692 exact head 73b8274a941c passed all 17 CI positions, hooks 306/306, baseline 29/29, focused policy/security/runtime-smoke gates, six specialist no-findings reviews, exact-head approval, provider CI and CodeQL; squash merge 092bf46f1998 verified on main | Provider merge and main read-back complete; no unresolved review threads or required checks |
+| 4.1 | done | Run post-merge acceptance and optional authorized activation | Main canary run 29711443486 resolved latest stable v1.25.1 and passed all 17 positions; ambient v1.25.1 warned without blocking, exact v1.25.0 minimum/validated passed, Docker dry-run retained validated v1.25.0 digests; authorized sync applied on both approved hosts, which remained clean at 092bf46f1998 with Codex, Claude, and Hermes doctor read-backs fully green | Maintainer explicitly authorized both-host activation; dry-run preceded apply and postconditions proved clean exact-main convergence |
+| 4.2 | done | Prepare the terminal closeout transaction | PR #697 carries the provider-safe terminal transition after all implementation, provider, post-merge acceptance, and activation evidence was reconciled; the source plan explicitly assigns issue close, post-close audit, archive routing, and cleanup to controller finalizers outside this ledger task | Exact-head review and provider checks gate this transition; after merge the controller must reconcile PR #697 and execute every ordered finalizer below without treating this row as prior proof of those operations |
 
 ## Validation Log
 
@@ -206,6 +212,43 @@
   explicit ASCII digits after proving a full-width digit tag could otherwise
   displace the valid canary candidate; helper parity coverage also names the
   semver-suffix rejection path.
+- 2026-07-20: Runtime-kit exact head `73b8274a941c` passed all 17 CI positions,
+  focused version-policy 12/12, security-hardening audit, deterministic runtime
+  smoke 102 pass / 0 fail / 1 expected skip, shared hooks 306/306, and version
+  baseline 29/29. Testing, maintainability, performance, API-contract,
+  security, and red-team follow-ups reported no findings; exact-head approval,
+  provider CI, and CodeQL passed. PR #692 squash-merged as `092bf46f1998`, and
+  provider-main CI plus CodeQL read-back remained green.
+- 2026-07-20: Post-merge canary run
+  <https://github.com/graysurf/agent-runtime-kit/actions/runs/29711443486>
+  resolved latest stable nils-cli v1.25.1 and passed all 17 positions. Ambient
+  v1.25.1 produced the intended admitted-ahead warning without a block, exact
+  released v1.25.0 passed minimum/validated policy with no warnings or blocks,
+  and Docker dry-run retained the validated v1.25.0 platform digests.
+- 2026-07-20: The explicitly authorized runtime-surface activation completed
+  dry-run-first on both authorized hosts. Both converged cleanly to runtime-kit
+  main `092bf46f1998`; Codex, Claude, and Hermes skill-surface and
+  installed-runtime doctor read-backs reported no warnings or blocks on either
+  host.
+
+## Closeout Workflow Finalizers
+
+1. Merge this terminal execution-state transition only after exact-head review
+   and provider checks pass.
+2. Reconcile terminal-ledger PR #697 and its merged SHA into run state; post the
+   live terminal checkpoint and dashboard repair, then require strict
+   `tracking close-ready --expect-visible` to report ready with no blockers.
+3. Preflight reversible provider prerequisites, then run `record close` with
+   `--remove-label state::blocked --add-label state::closed`. Read issue #688
+   back as closed and require `record audit --profile tracking
+   --expect-visible` to pass against the closed provider body and comments.
+4. Only after the strict post-close audit passes, run archive migration dry-run;
+   apply only with the distinct authorization
+   required by the archive workflow, and record the retained, archived,
+   skipped, or blocked outcome.
+5. Synchronize any new post-close factual state through a scoped follow-up when
+   needed, then audit and remove only clean, provider-merged, session-owned
+   worktrees. Preserve unrelated or lease-blocked worktrees unchanged.
 
 ## Decision Log
 
@@ -226,23 +269,26 @@
 
 ## Session Notes
 
-- Managed worktree identity:
-  `agent-runtime-kit-228a9c3a/issue-688-nils-cli-policy`
-  under the runtime-kit worktree root; omit the machine-local absolute prefix
-  from provider-visible records.
-- Current runtime-kit branch contains the complete schema-v2 consumption change
-  plus repaired independent-review findings; commit-bound full validation and
-  affected follow-up review remain before provider delivery.
-- The existing exact-gate validation limitation is the subject of this plan; do
-  not claim an ambient ahead host is formally validated.
-- Do not rerun the prior #672 live runtime synchronization as part of this plan.
+- Managed worktree identity: the session-owned closeout worktree under the
+  runtime-kit worktree root; omit machine-local identifiers and absolute
+  prefixes from provider-visible records.
+- Nils-cli v1.25.0 is released; runtime-kit policy, CI hardening, regression
+  coverage, packaging identity, and Python cache hygiene are merged through PR
+  #692. The authorized two-host activation is complete.
+- An ambient ahead host is admitted with a warning and exercised downstream;
+  only the declared validated release remains formally validated for packaging.
+- Keep local evidence paths and host-specific runtime details out of provider
+  records; preserve the old lease-blocked worktree unchanged.
 
 ## Handoff
 
-1. Read the discussion source, plan, and this execution state completely.
-2. Run `plan-issue tracking status --expect-visible --format json` against the
-   retained run state and reconcile the selected task.
-3. Complete Tasks 3.1 through 3.4 test-first, including independent review,
-   provider CI, merge, and provider-main read-back.
-4. Run Task 4 acceptance and the explicitly authorized M4/sympoies activation,
-   then close the tracker through the strict closeout gates.
+1. No implementation or activation task remains; all ledger rows are terminal,
+   but the controller-required closeout workflow finalizers have not yet run.
+2. Execute the finalizers in their declared order: terminal-ledger merge,
+   run-state/provider reconciliation and strict close-ready, provider
+   close/read-back, strict post-close audit, archive migration dry-run, factual
+   follow-up sync when needed, then safe owned-worktree cleanup.
+3. Preserve the exact released nils-cli v1.25.0 provenance, runtime-kit PR #692
+   evidence, canary run, and two-host postconditions in any later audit.
+4. Keep provider-visible records privacy-minimized and preserve unrelated or
+   lease-blocked worktrees unchanged.
