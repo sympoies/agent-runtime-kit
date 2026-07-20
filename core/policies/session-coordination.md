@@ -6,13 +6,28 @@ replace `project-dev`, provider rules, user consent, or formal L3/provider
 dispatch. Plain iTerm-launched agents are valid non-participants and remain
 usable without managed-session metadata.
 
+## Work authorization and collision response
+
+- Work authorization comes from the user, repository policy, provider rules,
+  and any required consent or dispatch workflow. Presence, work context, peer
+  summaries, and acknowledgements can improve coordination but cannot grant or
+  revoke that authority.
+- Before mutable work, use managed-session advice to avoid another agent's
+  physical worktree or overlapping task/path scope when practical. The hook
+  checks recognized mutations automatically; use `work-context status` or
+  `advise` explicitly when choosing a worktree or investigating a warning.
+- When advice reports overlap, prefer a separate worktree, narrow the declared
+  scope, or coordinate with the peer. If the overlap is intentional, verify the
+  reason, optionally acknowledge the current warning, and continue. Advisory
+  overlap is never a permission denial.
+
 ## Trigger and preparation
 
 - Activate the source-declared `session-coordination` intent independently of
   `project-dev` before mutable work.
-- A broker-ready managed session automatically publishes presence. Use
-  `agent-session work-context status` or `advise` for privacy-safe awareness;
-  no manual claim is required in the default `advisory` mode.
+- A broker-ready managed session automatically publishes presence, and the hook
+  obtains privacy-safe advice for recognized mutations. No manual claim or
+  mechanical pre-task check is required in the default `advisory` mode.
 - When a task description would improve the signal, use `work-context set`.
   It infers the current session, capability, checkout, worktree, and repository;
   add only the smallest useful summary, tier, paths, or provider references.

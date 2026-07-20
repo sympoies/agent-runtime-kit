@@ -166,7 +166,7 @@ scope = "home"
 path = "core/policies/session-coordination.md"
 required = true
 when = "always"
-notes = "Metadata-first managed-session work context, claim/admission lifecycle, privacy boundaries, advisory/conflict behavior, and recovery."
+notes = "Global work-authorization and collision-awareness boundary: advisory and unmanaged coordination need no claim and do not block work; overlap warnings guide worktree/scope choices, while explicit enforce owns claims, checkout leases, and recovery."
 
 [[document]]
 context = "session-coordination"

@@ -52,6 +52,23 @@ agent-docs preflight --docs-home "$PWD" --intent task-tools --strict
 agent-docs audit --docs-home "$PWD" --target project --strict
 ```
 
+### Managed-session coordination documentation
+
+`AGENT_HOME.md` carries the global invariant: coordination helps agents avoid
+worktree and task-scope collisions, but it does not grant work authorization.
+`core/policies/session-coordination.md` is the canonical detailed policy for
+default advisory behavior, warning response, unmanaged sessions, and explicit
+enforcement. `AGENT_DOCS.toml` loads that policy through the home-scoped
+`session-coordination` intent; inspect the resolved contract with:
+
+```bash
+agent-docs preflight --docs-home "$PWD" --intent session-coordination --strict
+```
+
+Keep user authorization, repository policy, and provider consent distinct from
+work-context metadata. Global policy and hook guidance belong here; the
+`agent-session` CLI and protocol contract belong in `sympoies/nils-cli`.
+
 Rendered home prompts live under `build/<product>/AGENT_HOME.md`, so manual
 checks in this checkout should pass `--docs-home "$PWD"` explicitly and prefer
 strict preflight for home-scoped docs until the released `agent-docs audit`
