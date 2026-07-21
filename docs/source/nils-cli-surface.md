@@ -6,7 +6,7 @@
   `sympoies/nils-cli` release worktree
 - Active `git describe --tags` output: `v1.25.8`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.5`,
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.8`,
   `validated_tag: v1.25.8`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
@@ -16,8 +16,14 @@
   [`v1.25.8`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.8),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.25.8` advances only the validated release from `v1.25.5`; the
-  compatibility minimum and every `required_clis[]` floor remain unchanged:
+- `v1.25.8` is both the compatibility minimum and the validated release. The
+  release uptake initially moved only the validated role, but runtime-kit's
+  subsequent read-only shadow integration consumes `execution.read-only.v1`.
+  `agent-hook` v1.25.5 cannot parse that capability, so PR #720 explicitly
+  retires the old minimum ([failed minimum job](https://github.com/graysurf/agent-runtime-kit/actions/runs/29815639931/job/88586262640),
+  [current-head review](https://github.com/graysurf/agent-runtime-kit/pull/720#pullrequestreview-4742842523)).
+  The `agent-hook` consumer floor remains `>=1.25.8`; v1.25.9 is reserved for
+  the later enforce cutover and is not adopted here:
   - `agent-hook doctor` now validates policy-backed handler trust before it
     reports activation convergence ([#1342](https://github.com/sympoies/nils-cli/pull/1342)).
     Runtime-kit's disposable setup-migration fixture materializes regular
@@ -26,11 +32,13 @@
   - The release also includes read-only operation descriptors and shadow
     evaluation, resumable review transactions, bounded review delivery,
     Linux `agent-run inspect`, typed fail-closed macOS inspection, and Codex
-    prompt recovery. Those additive surfaces are not consumed by this bounded
-    baseline bump, so they do not raise a compatibility floor here.
-- `v1.25.5` remains the minimum supported release. Runtime-kit intentionally
-  retires older compatibility because its shared hook control plane requires
-  the `agent-hook` binary and setup-owned provider ingress:
+    prompt recovery. The versioned runtime-kit policy now consumes the
+    shadow-only evaluator at its existing Bash ingress; production admission
+    remains the legacy decision.
+- `v1.25.5` introduced the required setup-owned provider ingress, but it is now
+  below the supported minimum. It passes the earlier schema and ingress gates
+  yet rejects the committed policy because `execution.read-only.v1` is an
+  unknown capability:
   - `agent-hook setup` owns one exact provider ingress for Codex and Claude,
     migrates compatible legacy registrations through an operation-bound
     preview/apply digest, and preserves unrelated provider hooks
@@ -38,9 +46,11 @@
   - `agent-hook` sequences the locked
     `agent-session.coordination.v1` capability after aggregate allow and
     completes or reconciles terminal lifecycle events
-    ([#1330](https://github.com/sympoies/nils-cli/pull/1330)). Runtime-kit
-    consumes this contract, so the new `agent-hook` floor is `>=1.25.5`;
-    the existing `agent-session >=1.24.5` floor remains sufficient.
+    ([#1330](https://github.com/sympoies/nils-cli/pull/1330)). That ingress set
+    the historical `agent-hook >=1.25.5` floor; the read-only shadow consumer
+    above supersedes it with `>=1.25.8` and makes v1.25.8 the global
+    compatibility minimum. The existing `agent-session >=1.24.5` floor remains
+    sufficient.
   - Codex notification ownership composes and restores foreign or Computer
     Use notifier state without dropping either consumer
     ([#1329](https://github.com/sympoies/nils-cli/pull/1329)).

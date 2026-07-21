@@ -18,8 +18,8 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # v1.25.5 is the first release that includes the required agent-hook ingress.
-  minimum_supported_tag: "v1.25.5"
+  # v1.25.8 is the first release whose agent-hook parses execution.read-only.v1.
+  minimum_supported_tag: "v1.25.8"
   # Exact surface used by blocking validated CI and all packaged artifacts.
   validated_tag: "v1.25.8"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
@@ -37,8 +37,8 @@ nils_cli:
 # consumed surface each binary must satisfy. Values track the
 # surface-introduction versions recorded in docs/source/nils-cli-surface.md.
 required_clis:
-  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + typed post-allow agent-session coordination transaction
-    min: "1.25.5"
+  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
+    min: "1.25.8"
   - bin: plan-issue       # tracking controller + execution-state sync/writeback + review evidence context gate + provider payload privacy gate + lifecycle mutation lock + unified terminal closeout rows
     min: "1.1.0"
   - bin: plan-tooling     # ledger-update / ledger-sync + exec-state-sync repair

@@ -19,6 +19,9 @@ INVENTORY = REPO_ROOT / "manifests/hook-rules.yaml"
 POLICY = REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml"
 PARITY_CASES = REPO_ROOT / "tests/agent-hook/fixtures/parity-cases.json"
 COORDINATION_CASES = REPO_ROOT / "tests/agent-hook/fixtures/coordination-cases.json"
+READ_ONLY_SHADOW_CASES = (
+    REPO_ROOT / "tests/agent-hook/fixtures/read-only-shadow-cases.json"
+)
 LEGACY_REGISTRATIONS = (
     REPO_ROOT / "tests/agent-hook/fixtures/legacy-registrations.tsv"
 )
@@ -101,6 +104,8 @@ COORDINATION_CAPABILITY_COUNTS = Counter(
         "agent-session.coordination.v1": 8,
     }
 )
+
+READ_ONLY_SHADOW_RULE_ID = "runtime.shared.pre-tool-use.bash.read-only-shadow"
 
 TERMINAL_COORDINATION_GROUPS = {
     (
@@ -236,7 +241,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
-        self.assertEqual(len(rules), 94)
+        self.assertEqual(len(rules), 95)
         ids = [rule["id"] for rule in rules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate inventory rule id")
         for rule in rules:
@@ -273,7 +278,23 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             self.assertEqual(values, sorted(values), key)
             self.assertEqual(len(values), len(set(values)), key)
 
-        coordination_rules = [rule for rule in rules if rule["legacy_handler"] is None]
+        added_rules = [rule for rule in rules if rule["legacy_handler"] is None]
+        read_only_rules = [
+            rule for rule in added_rules if rule["id"] == READ_ONLY_SHADOW_RULE_ID
+        ]
+        self.assertEqual(len(read_only_rules), 1)
+        self.assertEqual(
+            read_only_rules[0]["capability"]["id"], "execution.read-only.v1"
+        )
+        self.assertEqual(read_only_rules[0]["products"], ["codex", "claude"])
+        self.assertEqual(read_only_rules[0]["events"], ["PreToolUse"])
+        self.assertEqual(read_only_rules[0]["matcher"], "Bash")
+        self.assertEqual(read_only_rules[0]["mode"], "shadow")
+        self.assertEqual(read_only_rules[0]["disposition"], "added-read-only-shadow")
+
+        coordination_rules = [
+            rule for rule in added_rules if rule["id"] != READ_ONLY_SHADOW_RULE_ID
+        ]
         self.assertEqual(len(coordination_rules), 26)
         self.assertEqual(
             Counter(rule["capability"]["id"] for rule in coordination_rules),
@@ -356,6 +377,23 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             if case["rule_id"] is not None:
                 self.assertIn(case["rule_id"], inventory_ids)
             self.assertRegex(case["owner_test"], r"^tests/")
+
+    def test_read_only_shadow_mismatches_have_finite_dispositions(self) -> None:
+        fixture = json.loads(READ_ONLY_SHADOW_CASES.read_text(encoding="utf-8"))
+        self.assertEqual(
+            fixture["schema_version"],
+            "agent-runtime-kit.read-only-shadow-cases.v1",
+        )
+        self.assertEqual(fixture["rule_id"], READ_ONLY_SHADOW_RULE_ID)
+        self.assertEqual(fixture["production_authority"], "legacy-pre-edit-intent-gate")
+        self.assertEqual(len(fixture["unknown_feedback_routes"]), 2)
+        self.assertIn("agent-run inspect", fixture["unknown_feedback_routes"][0])
+        self.assertIn("prepare project-dev", fixture["unknown_feedback_routes"][1])
+        comparisons = Counter(case["comparison"] for case in fixture["cases"])
+        self.assertEqual(comparisons, Counter({"mismatch": 2, "parity": 2}))
+        for case in fixture["cases"]:
+            self.assertTrue(case["disposition"].strip(), case["case"])
+            self.assertNotIn("allowlist", case["disposition"].lower())
 
     def test_coordination_admission_baseline_is_conservative(self) -> None:
         cases = json.loads(COORDINATION_CASES.read_text(encoding="utf-8"))

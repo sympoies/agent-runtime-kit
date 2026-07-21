@@ -125,7 +125,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         manifest = read("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.25.5")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.25.8")
         self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.25.8")
         self.assertNotIn("pinned_tag:", manifest)
         self.assertEqual(
@@ -139,15 +139,15 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.25.5"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.25.8"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "5db8e4cbd0c6c3c229ada635da69685e58c99cc8fd72507a9a18dadfed1f6100",
+            "8c2cb292383e1dcedac630f9d6f4dc542fbb64cb813a00d6464c784bdbfe49ad",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "29151b667d30f83caa558365cb3043eb98d40832f252a2248be23c65181b2be2",
+            "b1656e6435c347826965e4b315e3b3edb261d7fac06185d3a317e1e2b8251db5",
         )
 
     def test_blocking_ci_builds_deduplicated_minimum_validated_matrix(self) -> None:

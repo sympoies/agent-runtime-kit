@@ -50,7 +50,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex surface)
-  ships inside nils-cli; minimum supported **v1.25.5**; validated snapshot
+  ships inside nils-cli; minimum supported **v1.25.8**; validated snapshot
   **v1.25.8**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
@@ -385,7 +385,7 @@ a uniform shape:
 | 13 | Heuristic system | yes | shared policy root | 0.130.0 | v1.8.0 (heuristic-inbox) |
 | 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 | 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | retired; plugin-scoped discovery is row 5 | n/a | n/a |
-| 16 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.25.5 |
+| 16 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.25.8 |
 | 17 | work-tier delegation policy | yes | agent-docs policy routing | 0.130.0 | v0.16.0 |
 
 Status legend:

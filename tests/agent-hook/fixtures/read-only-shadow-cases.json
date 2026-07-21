@@ -1,0 +1,39 @@
+{
+  "schema_version": "agent-runtime-kit.read-only-shadow-cases.v1",
+  "rule_id": "runtime.shared.pre-tool-use.bash.read-only-shadow",
+  "production_authority": "legacy-pre-edit-intent-gate",
+  "unknown_feedback_routes": [
+    "builtin command /absolute/path/agent-run inspect --cwd <exact-target> -- <argv...>",
+    "prepare project-dev for <exact-target> and rerun the exact original command"
+  ],
+  "cases": [
+    {
+      "case": "exact-managed-query",
+      "legacy_decision": "project-dev-dependent",
+      "shadow_decision": "allow",
+      "comparison": "mismatch",
+      "disposition": "keep legacy admission; use the exact agent-docs or forge-cli tool contract"
+    },
+    {
+      "case": "raw-local-read",
+      "legacy_decision": "allow",
+      "shadow_decision": "block",
+      "comparison": "mismatch",
+      "disposition": "keep legacy admission; route future exploration through agent-run inspect"
+    },
+    {
+      "case": "mutation",
+      "legacy_decision": "block",
+      "shadow_decision": "block",
+      "comparison": "parity",
+      "disposition": "retain mutation gate"
+    },
+    {
+      "case": "unknown",
+      "legacy_decision": "block",
+      "shadow_decision": "block",
+      "comparison": "parity",
+      "disposition": "offer exactly the two finite feedback routes"
+    }
+  ]
+}

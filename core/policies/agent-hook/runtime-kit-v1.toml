@@ -1,6 +1,17 @@
 schema_version = "agent-hook.policy.v1"
 bundle_id = "runtime-kit"
-version = "2026.07.20.1"
+version = "2026.07.21.1"
+[[rules]]
+id = "runtime.shared.pre-tool-use.bash.read-only-shadow"
+products = ["codex", "claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 90
+mode = "shadow"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "execution.read-only.v1", reason_code = "read-only-capability" }
+
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate"
 products = ["codex"]

@@ -21,7 +21,12 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-POLICY = REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml"
+POLICY = Path(
+    os.environ.get(
+        "AGENT_HOOK_POLICY",
+        REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml",
+    )
+)
 DISPATCH_CASES = REPO_ROOT / "tests/agent-hook/fixtures/dispatcher-cases.json"
 TEMP_ROOT = REPO_ROOT / "agent-out/test-agent-hook"
 LATENCY_BUDGET_MS = 25.0
@@ -179,12 +184,12 @@ class AgentHookExecutableContractTests(unittest.TestCase):
     def test_policy_validates_and_inventory_is_complete(self) -> None:
         validated = self.json_result(self.run_hook("validate", "--format", "json"))
         self.assertEqual(validated["bundle_id"], "runtime-kit")
-        self.assertEqual(validated["rule_count"], 94)
+        self.assertEqual(validated["rule_count"], 95)
 
         inventory = self.json_result(self.run_hook("inventory", "--format", "json"))
         self.assertEqual(inventory["schema_version"], "agent-hook.inventory.v1")
-        self.assertEqual(len(inventory["rules"]), 94)
-        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 94)
+        self.assertEqual(len(inventory["rules"]), 95)
+        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 95)
 
     def test_grouped_matchers_select_exact_rules_in_global_shadow(self) -> None:
         fixture = json.loads(DISPATCH_CASES.read_text(encoding="utf-8"))
@@ -254,8 +259,71 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         )
         after = self.snapshot_tree()
         self.assertEqual(decision["action"], "allow")
-        self.assertEqual(len(decision["shadow"]), 18)
+        self.assertEqual(len(decision["shadow"]), 19)
         self.assertEqual(after, before)
+
+    def test_read_only_capability_shadow_is_product_parity_evidence_only(self) -> None:
+        agent_docs = self.binary.with_name("agent-docs")
+        cases = (
+            (
+                "managed-query",
+                " ".join(
+                    (
+                        "builtin command",
+                        str(agent_docs),
+                        "--docs-home",
+                        str(REPO_ROOT),
+                        "--project-path",
+                        str(REPO_ROOT),
+                        "preflight --intent project-dev --format json",
+                    )
+                ),
+                "allow",
+                "read-only-capability",
+            ),
+            (
+                "mutation",
+                "printf changed > tracked.txt",
+                "block",
+                "read-only-command-unsupported",
+            ),
+            (
+                "unknown",
+                "echo unsupported",
+                "block",
+                "read-only-command-unsupported",
+            ),
+        )
+        for case_name, command, expected_action, expected_code in cases:
+            decisions = []
+            for product in ("codex", "claude"):
+                decision = self.json_result(
+                    self.run_hook(
+                        "dispatch",
+                        "--product",
+                        product,
+                        "--shadow",
+                        "--format",
+                        "json",
+                        payload={
+                            "hook_event_name": "PreToolUse",
+                            "tool_name": "Bash",
+                            "cwd": str(REPO_ROOT),
+                            "tool_input": {"command": command},
+                        },
+                    )
+                )
+                evidence = [
+                    row
+                    for row in decision["shadow"]
+                    if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only-shadow"
+                ]
+                self.assertEqual(len(evidence), 1, (case_name, product, decision))
+                self.assertEqual(evidence[0]["action"], expected_action)
+                self.assertEqual(evidence[0]["code"], expected_code)
+                self.assertEqual(decision["action"], "allow")
+                decisions.append(evidence[0])
+            self.assertEqual(decisions[0], decisions[1], case_name)
 
     def test_trace_and_output_do_not_retain_private_provider_fields(self) -> None:
         sentinels = [
@@ -263,6 +331,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             "fixture-private-mailbox",
             "fixture-private-authorization",
             "fixture-private-token",
+            "fixture-private-command-material",
         ]
         payload = {
             "hook_event_name": "PreToolUse",
@@ -272,7 +341,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             "mailbox": sentinels[1],
             "authorization": sentinels[2],
             "token": sentinels[3],
-            "tool_input": {"command": "git status --short"},
+            "tool_input": {"command": sentinels[4]},
         }
         result = self.run_hook(
             "dispatch",

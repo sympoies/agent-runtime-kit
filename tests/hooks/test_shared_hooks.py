@@ -8244,6 +8244,9 @@ exit 64
             (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
             bin_dir = root / "runtime-bin"
             bin_dir.mkdir()
+            agent_run = bin_dir / "agent-run"
+            agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            agent_run.chmod(0o755)
             active_marker = root / "active"
             self._write_fake_agent_docs(
                 bin_dir,
@@ -8343,6 +8346,26 @@ exit 64
             reason = str(decision.get("reason", ""))
             self.assertIn(prepare_cmd, reason)
             self.assertIn("[reason: project-dev-required]", reason)
+
+            unknown_payload = command_payload("python3 -c 'print(1)'")
+            unknown_payload["session_id"] = "intent-recovery"
+            code, unknown_decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", unknown_payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(unknown_decision, "project-dev")
+            assert unknown_decision is not None
+            unknown_reason = str(unknown_decision.get("reason", ""))
+            inspect_route = (
+                "builtin command "
+                + shlex.quote(str(agent_run.resolve()))
+                + " inspect --cwd "
+                + shlex.quote(str(repo.resolve()))
+                + " -- <argv...>"
+            )
+            self.assertEqual(unknown_reason.count("Route "), 2)
+            self.assertIn(f"Route 1 (local exploration): `{inspect_route}`", unknown_reason)
+            self.assertIn(f"Route 2 (exact-target project-dev): run `{prepare_cmd}`", unknown_reason)
 
             direct_edit = write_payload("src/lib.rs", "fn main() {}\n")
             direct_edit["session_id"] = "intent-recovery"

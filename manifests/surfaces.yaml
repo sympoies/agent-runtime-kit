@@ -505,7 +505,7 @@ surfaces:
           - core/hooks/claude/settings.hooks.jsonc
           - scripts/sync-runtime-surfaces.sh
         min_product: "2.1.145"
-        min_nils_cli: "v1.25.5"
+        min_nils_cli: "v1.25.8"
         acceptance:
           - kind: ci
             note: "gate 8 (runtime-smoke)"
@@ -865,7 +865,7 @@ surfaces:
           - targets/codex/hooks/config.block.toml
           - scripts/sync-runtime-surfaces.sh
         min_product: "0.130.0"
-        min_nils_cli: "v1.25.5"
+        min_nils_cli: "v1.25.8"
         acceptance:
           - kind: ci
             note: "agent-hook migration suite, gate 8 (runtime-smoke), gate 10 (`tests/hooks/run.sh`)"

@@ -33,7 +33,7 @@ Scope rules:
   `min_version_effective_from`: **2026-07-10**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude surface)
-  ships inside nils-cli; minimum supported **v1.25.5**; validated snapshot
+  ships inside nils-cli; minimum supported **v1.25.8**; validated snapshot
   **v1.25.8**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
@@ -303,7 +303,7 @@ a uniform shape:
 | 6 | `commands/<n>.md` | yes | linked directory | 2.1.145 | v0.17.5 |
 | 7 | `agents/<n>.md` | yes | rendered + directory symlink into `~/.claude/agents` | 2.1.145 | v1.3.0 |
 | 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.5 |
-| 9 | `settings.json` hooks block | yes | digest-bound `agent-hook setup` | 2.1.145 | v1.25.5 |
+| 9 | `settings.json` hooks block | yes | digest-bound `agent-hook setup` | 2.1.145 | v1.25.8 |
 | 10 | `output-styles/<n>.md` | no | — | n/a | n/a |
 | 11 | `statusLine` | no | — | n/a | n/a |
 | 12 | MCP servers | no | — | n/a | n/a |

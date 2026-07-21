@@ -37,6 +37,7 @@ sys.dont_write_bytecode = True
 from hook_common import (
     ALLOW,
     SHELL_EFFECT_READ_ONLY,
+    SHELL_EFFECT_UNKNOWN,
     apply_patch_paths,
     audited_text_read_invocation,
     classify_shell_effect,
@@ -1433,6 +1434,36 @@ def main() -> int:
             failures.append(code)
     if not failures:
         return ALLOW
+    if (
+        read_effect is not None
+        and read_effect.kind == SHELL_EFFECT_UNKNOWN
+        and len(repos) == 1
+    ):
+        agent_run_executable = resolved_executable("agent-run")
+        if agent_run_executable:
+            inspect_route = (
+                "builtin command "
+                + shlex.quote(agent_run_executable)
+                + " inspect --cwd "
+                + shlex.quote(os.path.realpath(repos[0]))
+                + " -- <argv...>"
+            )
+            prepare_route = recovery_command(
+                repo_root=repos[0],
+                executable=agent_docs_executable,
+                current_session=current_session,
+                product=product,
+                phase=phase,
+            )
+            emit_block(
+                "This shell effect is unknown, so choose exactly one finite route. "
+                f"Route 1 (local exploration): `{inspect_route}`. "
+                f"Route 2 (exact-target project-dev): run `{prepare_route}`, then "
+                "rerun the exact original command. No legacy read-only allowlist "
+                "entry was added. [reason: project-dev-required] "
+                f"Verification code: {failures[0]}."
+            )
+            return ALLOW
     reason = (
         "This command was not admitted by the audited read-only classifier; no "
         "repository mutation was observed, but this shell shape could not be proven "

@@ -12,7 +12,8 @@ can validate it without an additional parser dependency. The inventory records
 every policy rule's behavior owner, recovery class, documentation, and test
 owner. It freezes all 68 legacy Codex and Claude registrations across 22
 shared handlers as the parity baseline, adds 18 typed coordination/liveness
-rules, and adds eight locked transaction rules for 94 rules total. Each
+rules, adds eight locked transaction rules, and adds one shared read-only
+capability shadow rule for 95 rules total. Each
 migrated handler remains a distinct ordered rule so the cutover proves provider
 parity without changing grouped matchers or handler order.
 
@@ -30,6 +31,15 @@ aggregate decision precedence, rendering, redacted tracing, configuration
 overrides, and governed recovery. The scripts continue to own their existing
 state and output contracts until a separately tested typed capability replaces
 them.
+
+The shared Bash `execution.read-only.v1` rule is shadow-only. It asks the
+released same-version verifier for evidence from exact `builtin command`
+invocations of an absolute `agent-run`, `agent-docs`, or `forge-cli` producer,
+but its result is trace evidence only. Legacy handlers remain the sole
+production admission authority in this policy version. Raw local exploration
+that mismatches the capability routes to `agent-run inspect`; managed queries
+route through the exact tool-owned operation-effect contracts. No mismatch may
+expand the legacy allowlist.
 
 Priority ranges are local to a product/event/matcher group:
 

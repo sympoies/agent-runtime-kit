@@ -6,7 +6,7 @@
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "Bash",
-      "shadow_rule_count": 18
+      "shadow_rule_count": 19
     },
     {
       "product": "codex",
@@ -41,7 +41,7 @@
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "Bash",
-      "shadow_rule_count": 19
+      "shadow_rule_count": 20
     },
     {
       "product": "claude",

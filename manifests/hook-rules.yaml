@@ -5,6 +5,32 @@
   "legacy_registration_count": 68,
   "rules": [
     {
+      "id": "runtime.shared.pre-tool-use.bash.read-only-shadow",
+      "products": [
+        "codex",
+        "claude"
+      ],
+      "events": [
+        "PreToolUse"
+      ],
+      "matcher": "Bash",
+      "capability": {
+        "id": "execution.read-only.v1",
+        "reason_code": "read-only-capability"
+      },
+      "mode": "shadow",
+      "priority": 90,
+      "failure_posture": "closed",
+      "override_class": "locked",
+      "state_owner": "none",
+      "transformation": "shadow-evidence-only",
+      "recovery": "none",
+      "docs": "core/policies/agent-hook/README.md",
+      "test_owner": "tests/agent-hook/test_executable_contract.py::AgentHookExecutableContractTests.test_read_only_capability_shadow_is_product_parity_evidence_only",
+      "disposition": "added-read-only-shadow",
+      "legacy_handler": null
+    },
+    {
       "id": "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate",
       "products": [
         "codex"
