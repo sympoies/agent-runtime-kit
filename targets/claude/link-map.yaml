@@ -115,11 +115,6 @@ entries:
     destination: plugins/dispatch/skills
     recursive: true
 
-  - id: hooks.shared-scripts
-    kind: symlinked-file
-    source: core/hooks/shared
-    destination: hooks
-
   - id: claude-kit.marketplace
     kind: plugin-manifest-copy
     source: targets/claude/.claude-plugin/marketplace.json

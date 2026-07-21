@@ -238,9 +238,11 @@ a uniform shape:
   Codex to write stable proposals only through `agent-memory candidate add
   codex`; curated promotion remains dry-run-first and requires explicit user
   approval.
-- Install mechanism: `symlinked-file` (`targets/codex/link-map.yaml`,
-  `id: hooks.shared-scripts`, source `core/hooks/shared` →
-  `$CODEX_HOME/hooks`).
+- Install mechanism: `scripts/sync-runtime-surfaces.sh` copies the shared
+  source into an independently owned `$CODEX_HOME/hooks` directory. Handler
+  files are materialized as owner-only regular files (`0700`; non-executable
+  data files use `0600`) so source-checkout permission drift cannot make the
+  live hook root untrusted.
 - Acceptance lane: shared hook contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
 - `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
@@ -377,7 +379,7 @@ a uniform shape:
 | 5 | `plugins/<p>/skills/<s>/` discovery | yes | bundled `skills/<skill>/SKILL.md` discovered as `<plugin>:<skill>` once installed | 0.141.0 | v0.20.0 |
 | 6 | `commands/<n>.md` | not-applicable | — | n/a | n/a |
 | 7 | `agents/<n>.toml` | yes | rendered + directory symlink into `$CODEX_HOME/agents` | 0.139.0 | v1.3.0 |
-| 8 | `hooks/<n>.*` scripts | yes | shared scripts symlinked to `$CODEX_HOME/hooks` | 0.130.0 | v1.24.5 |
+| 8 | `hooks/<n>.*` scripts | yes | shared scripts materialized as owner-only regular files under `$CODEX_HOME/hooks` | 0.130.0 | v1.24.5 |
 | 9 | `settings.json` hooks block | not-applicable | — | n/a | n/a |
 | 10 | `output-styles/<n>.md` | not-applicable | — | n/a | n/a |
 | 11 | `statusLine` / `settings.json` | not-applicable | — | n/a | n/a |

@@ -546,6 +546,7 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
 
   rm -rf "$root"
   mkdir -p "$source_root/scripts/ci" \
+    "$source_root/core/hooks/shared" \
     "$source_root/core/policies/agent-hook" \
     "$source_root/targets/codex/.agents/plugins" \
     "$source_root/targets/codex/plugins/meta/.codex-plugin" \
@@ -558,6 +559,9 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
   printf 'schema_version = "agent-hook.policy.v1"\n' \
     >"$source_root/core/policies/agent-hook/runtime-kit-v1.toml"
   chmod 0600 "$source_root/core/policies/agent-hook/runtime-kit-v1.toml"
+  printf '#!/usr/bin/env sh\nprintf "{}\\n"\n' \
+    >"$source_root/core/hooks/shared/runtime-smoke-handler.sh"
+  chmod 0700 "$source_root/core/hooks/shared/runtime-smoke-handler.sh"
   printf '#!/usr/bin/env bash\n' >"$source_root/scripts/sync-runtime-surfaces.sh"
   ln -s "$previous_source_root/build/codex/AGENT_HOME.md" "$codex_home/AGENTS.md"
   printf 'manual codex policy\n' >"$collision_codex_home/AGENTS.md"
@@ -577,7 +581,8 @@ esac
 SH
   chmod +x "$source_root/scripts/ci/skill-governance-audit.sh"
 
-  git -C "$source_root" add AGENT_HOME.md core/policies/agent-hook/runtime-kit-v1.toml \
+  git -C "$source_root" add AGENT_HOME.md core/hooks/shared/runtime-smoke-handler.sh \
+    core/policies/agent-hook/runtime-kit-v1.toml \
     manifests/skills.yaml scripts/sync-runtime-surfaces.sh
   git -C "$source_root" \
     -c user.name='Runtime Smoke' -c user.email='runtime-smoke@example.invalid' \

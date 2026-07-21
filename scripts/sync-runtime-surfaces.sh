@@ -698,6 +698,343 @@ install_product() {
     "$mode_flag"
 }
 
+sync_agent_hook_handlers() {
+  local product="$1"
+  local live_home="$2"
+  local source_hooks="$SOURCE_ROOT/core/hooks/shared"
+  local live_hooks="$live_home/hooks"
+
+  case "$product" in
+    codex | claude) ;;
+    hermes)
+      log "hermes: no runtime-kit agent-hook handlers to materialize"
+      return 0
+      ;;
+    *)
+      err "unknown product for agent-hook handler materialization: $product"
+      return 2
+      ;;
+  esac
+
+  if [ ! -d "$source_hooks" ]; then
+    err "missing runtime-kit agent-hook handlers: $source_hooks"
+    return 2
+  fi
+
+  log "materializing trusted agent-hook handlers product=$product live_home=$live_home"
+  print_cmd python3 - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
+    "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]}"
+  python3 - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
+    "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]}" <<'PY'
+import hashlib
+import json
+import os
+import secrets
+import shutil
+import stat
+import sys
+import tempfile
+
+source_path, destination_path, product, apply_flag, source_root, *owned_roots = sys.argv[1:]
+apply = apply_flag == "1"
+owner = os.getuid()
+marker_name = ".agent-runtime-kit-owner.json"
+schema = "agent-runtime-kit.trusted-hook-materialization.v1"
+source_path = os.path.abspath(source_path)
+destination_path = os.path.abspath(destination_path)
+live_home = os.path.dirname(destination_path)
+
+
+def fail(message):
+    raise SystemExit(f"trusted agent-hook materialization refused: {message}")
+
+
+def refuse_live(message):
+    if apply:
+        fail(message)
+    print(f"warn: trusted agent-hook materialization would refuse apply: {message}", file=sys.stderr)
+    print(
+        f"trusted agent-hook handlers dry-run: product={product} "
+        "changed=true review-needed=true"
+    )
+    raise SystemExit(0)
+
+
+def mode(metadata):
+    return stat.S_IMODE(metadata.st_mode)
+
+
+def read_source_files():
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        directory_fd = os.open(source_path, flags)
+    except OSError as exc:
+        fail(f"source handler root is unavailable or symlinked: {source_path}: {exc}")
+    try:
+        directory_metadata = os.fstat(directory_fd)
+        if not stat.S_ISDIR(directory_metadata.st_mode) or directory_metadata.st_uid != owner:
+            fail(f"source handler root is not an owner-controlled directory: {source_path}")
+        files = []
+        for name in sorted(os.listdir(directory_fd)):
+            if name == marker_name or name in {".", ".."} or "/" in name:
+                fail(f"reserved source handler name: {name}")
+            before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            if not stat.S_ISREG(before.st_mode) or before.st_uid != owner:
+                fail(f"source handler must be an owner-controlled regular file: {name}")
+            file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(name, file_flags, dir_fd=directory_fd)
+            try:
+                opened = os.fstat(descriptor)
+                if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                    fail(f"source handler changed during open: {name}")
+                chunks = []
+                while True:
+                    chunk = os.read(descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                after = os.fstat(descriptor)
+                if (
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+                    != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+                ):
+                    fail(f"source handler changed while reading: {name}")
+            finally:
+                os.close(descriptor)
+            content = b"".join(chunks)
+            target_mode = 0o700 if mode(before) & 0o111 else 0o600
+            files.append(
+                {
+                    "name": name,
+                    "mode": target_mode,
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "content": content,
+                }
+            )
+        if not files:
+            fail(f"source handler root is empty: {source_path}")
+        return files
+    finally:
+        os.close(directory_fd)
+
+
+desired_files = read_source_files()
+desired_record = {
+    "schema_version": schema,
+    "product": product,
+    "files": [
+        {"name": item["name"], "mode": item["mode"], "sha256": item["sha256"]}
+        for item in desired_files
+    ],
+}
+desired_marker = (json.dumps(desired_record, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def trusted_regular(path, expected_digest=None):
+    metadata = os.lstat(path)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != owner
+        or metadata.st_nlink != 1
+    ):
+        refuse_live(f"materialized handler is not an owner-controlled regular file: {path}")
+    with open(path, "rb") as handle:
+        content = handle.read()
+    digest = hashlib.sha256(content).hexdigest()
+    if expected_digest is not None and digest != expected_digest:
+        refuse_live(f"materialized handler content drifted: {path}")
+    return metadata, content, digest
+
+
+def verify_owned_directory(path):
+    metadata = os.lstat(path)
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != owner:
+        refuse_live(f"live handler root is not an owner-controlled directory: {path}")
+    marker_path = os.path.join(path, marker_name)
+    try:
+        marker_metadata, marker_content, _ = trusted_regular(marker_path)
+        record = json.loads(marker_content)
+    except FileNotFoundError:
+        refuse_live(f"existing live handler directory lacks its ownership marker: {path}")
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        refuse_live(f"live handler ownership marker is invalid: {marker_path}: {exc}")
+    if record.get("schema_version") != schema or record.get("product") != product:
+        refuse_live(f"live handler ownership marker does not match product={product}: {marker_path}")
+    recorded_files = record.get("files")
+    if not isinstance(recorded_files, list) or not recorded_files:
+        refuse_live(f"live handler ownership marker has no file inventory: {marker_path}")
+    expected_names = {marker_name}
+    normalized = []
+    for entry in recorded_files:
+        if not isinstance(entry, dict):
+            refuse_live(f"live handler ownership marker has an invalid entry: {marker_path}")
+        name = entry.get("name")
+        digest = entry.get("sha256")
+        recorded_mode = entry.get("mode")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in {".", "..", marker_name}
+            or "/" in name
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or recorded_mode not in {0o600, 0o700}
+            or name in expected_names
+        ):
+            refuse_live(f"live handler ownership marker has an invalid entry: {marker_path}")
+        expected_names.add(name)
+        child_path = os.path.join(path, name)
+        child_metadata, _, child_digest = trusted_regular(child_path, digest)
+        normalized.append(
+            {"name": name, "mode": recorded_mode, "sha256": child_digest, "actual_mode": mode(child_metadata)}
+        )
+    actual_names = set(os.listdir(path))
+    if actual_names != expected_names:
+        refuse_live(f"live handler directory contains unowned or missing entries: {path}")
+    return metadata, marker_metadata, marker_content, normalized
+
+
+def allowed_symlink_targets():
+    roots = [source_root, *owned_roots]
+    return {
+        os.path.realpath(os.path.join(root, "core", "hooks", "shared"))
+        for root in roots
+    }
+
+
+kind = "missing"
+target_snapshot = None
+changed = True
+if os.path.lexists(destination_path):
+    destination_metadata = os.lstat(destination_path)
+    target_snapshot = (destination_metadata.st_dev, destination_metadata.st_ino)
+    if stat.S_ISLNK(destination_metadata.st_mode):
+        resolved = os.path.realpath(destination_path)
+        if destination_metadata.st_uid != owner or resolved not in allowed_symlink_targets():
+            refuse_live(f"live handler symlink is not owned by an authorized runtime-kit source: {destination_path}")
+        kind = "symlink"
+        target_snapshot += (os.readlink(destination_path),)
+    elif stat.S_ISDIR(destination_metadata.st_mode):
+        kind = "directory"
+        root_metadata, marker_metadata, marker_content, recorded = verify_owned_directory(
+            destination_path
+        )
+        desired_without_content = [
+            {"name": item["name"], "mode": item["mode"], "sha256": item["sha256"]}
+            for item in desired_files
+        ]
+        changed = not (
+            mode(root_metadata) == 0o700
+            and mode(marker_metadata) == 0o600
+            and marker_content == desired_marker
+            and [
+                {"name": item["name"], "mode": item["mode"], "sha256": item["sha256"]}
+                for item in recorded
+            ]
+            == desired_without_content
+            and all(item["actual_mode"] == item["mode"] for item in recorded)
+        )
+    else:
+        refuse_live(f"live handler root is neither an owned directory nor an authorized symlink: {destination_path}")
+
+print(
+    f"trusted agent-hook handlers {'apply' if apply else 'dry-run'}: "
+    f"product={product} changed={'true' if changed else 'false'}"
+)
+if not apply or not changed:
+    raise SystemExit(0)
+
+home_metadata = os.lstat(live_home)
+if (
+    not stat.S_ISDIR(home_metadata.st_mode)
+    or home_metadata.st_uid != owner
+    or mode(home_metadata) & 0o022
+):
+    fail(f"live runtime home is not an owner-controlled directory: {live_home}")
+
+stage = tempfile.mkdtemp(prefix=".hooks.agent-runtime-kit-stage.", dir=live_home)
+os.chmod(stage, 0o700)
+backup = None
+try:
+    for item in desired_files:
+        target = os.path.join(stage, item["name"])
+        descriptor = os.open(
+            target,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            content = item["content"]
+            offset = 0
+            while offset < len(content):
+                offset += os.write(descriptor, content[offset:])
+            os.fchmod(descriptor, item["mode"])
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    marker_path = os.path.join(stage, marker_name)
+    marker_fd = os.open(
+        marker_path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        os.write(marker_fd, desired_marker)
+        os.fchmod(marker_fd, 0o600)
+        os.fsync(marker_fd)
+    finally:
+        os.close(marker_fd)
+    stage_fd = os.open(stage, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(stage_fd)
+    finally:
+        os.close(stage_fd)
+
+    if kind == "missing":
+        if os.path.lexists(destination_path):
+            fail(f"live handler root appeared after validation: {destination_path}")
+    else:
+        current = os.lstat(destination_path)
+        current_snapshot = (current.st_dev, current.st_ino)
+        if current_snapshot != target_snapshot[:2]:
+            fail(f"live handler root changed after validation: {destination_path}")
+        if kind == "symlink":
+            if not stat.S_ISLNK(current.st_mode) or os.readlink(destination_path) != target_snapshot[2]:
+                fail(f"live handler symlink changed after validation: {destination_path}")
+        else:
+            verify_owned_directory(destination_path)
+        backup = os.path.join(
+            live_home,
+            f".hooks.agent-runtime-kit-backup.{secrets.token_hex(8)}",
+        )
+        os.rename(destination_path, backup)
+    try:
+        os.rename(stage, destination_path)
+        stage = None
+    except BaseException:
+        if backup is not None and not os.path.lexists(destination_path):
+            os.rename(backup, destination_path)
+            backup = None
+        raise
+    parent_fd = os.open(live_home, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+    if backup is not None:
+        if os.path.islink(backup):
+            os.unlink(backup)
+        else:
+            shutil.rmtree(backup)
+        backup = None
+finally:
+    if stage is not None and os.path.isdir(stage) and not os.path.islink(stage):
+        shutil.rmtree(stage)
+    if backup is not None and os.path.lexists(backup) and not os.path.lexists(destination_path):
+        os.rename(backup, destination_path)
+PY
+}
+
 resolve_agent_hook_paths() {
   AGENT_HOOK_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/agent-hook/config.toml"
   AGENT_HOOK_POLICY="${XDG_DATA_HOME:-$HOME/.local/share}/agent-hook/policies/runtime-kit-v1.toml"
@@ -4034,6 +4371,7 @@ main() {
     render_home_prompt_product "$product"
     ensure_home_prompt "$product"
     render_product "$product"
+    sync_agent_hook_handlers "$product" "$(product_live_home "$product")"
     prepare_agent_hook_cutover "$product"
     if install_product "$product"; then
       :

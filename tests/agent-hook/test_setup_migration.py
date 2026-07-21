@@ -126,6 +126,123 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
             check=check,
         )
 
+    def sync_trusted_handlers(
+        self,
+        source_root: Path,
+        product: str,
+        live_home: Path,
+        *,
+        apply: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                (
+                    'SYNC_RUNTIME_SURFACES_LIB=1 . "$1"; '
+                    'SOURCE_ROOT="$2"; APPLY="$3"; OWNED_SOURCE_ROOTS=(); '
+                    'sync_agent_hook_handlers "$4" "$5"'
+                ),
+                "bash",
+                str(SYNC),
+                str(source_root),
+                "1" if apply else "0",
+                product,
+                str(live_home),
+            ],
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_sync_materializes_trusted_handlers_from_group_writable_source(
+        self,
+    ) -> None:
+        source_root = self.root / "source"
+        source_hooks = source_root / "core/hooks/shared"
+        shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
+        source_hooks.chmod(0o775)
+        for source in source_hooks.iterdir():
+            source.chmod(0o775 if source.stat().st_mode & 0o100 else 0o664)
+
+        live_hooks = self.codex_home / "hooks"
+        shutil.rmtree(live_hooks)
+        live_hooks.symlink_to(source_hooks, target_is_directory=True)
+
+        preview = self.sync_trusted_handlers(
+            source_root, "codex", self.codex_home, apply=False
+        )
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertIn("changed=true", preview.stdout)
+        self.assertTrue(live_hooks.is_symlink())
+
+        applied = self.sync_trusted_handlers(
+            source_root, "codex", self.codex_home, apply=True
+        )
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertIn("changed=true", applied.stdout)
+        self.assertTrue(live_hooks.is_dir())
+        self.assertFalse(live_hooks.is_symlink())
+        self.assertEqual(live_hooks.stat().st_mode & 0o777, 0o700)
+        for source in source_hooks.iterdir():
+            target = live_hooks / source.name
+            self.assertTrue(target.is_file())
+            self.assertFalse(target.is_symlink())
+            expected_mode = 0o700 if source.stat().st_mode & 0o100 else 0o600
+            self.assertEqual(target.stat().st_mode & 0o777, expected_mode)
+
+        write_private(self.codex_home / "config.toml", "# test config\n")
+        add = self.setup_preview("codex")
+        read_json(self.setup_apply("codex", add["plan_digest"], "--apply"))
+        self.assert_doctor("codex")
+        damaged = live_hooks / "pre-edit-intent-gate.py"
+        damaged.chmod(0o770)
+        rejected = self.agent_hook(
+            "doctor", "--product", "codex", check=False
+        )
+        self.assertEqual(rejected.returncode, 65)
+        self.assertEqual(json.loads(rejected.stdout)["error"]["code"], "handler-untrusted")
+
+        restored = self.sync_trusted_handlers(
+            source_root, "codex", self.codex_home, apply=True
+        )
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        self.assertIn("changed=true", restored.stdout)
+        self.agent_hook("doctor", "--product", "codex")
+
+        converged = self.sync_trusted_handlers(
+            source_root, "codex", self.codex_home, apply=True
+        )
+        self.assertEqual(converged.returncode, 0, converged.stderr)
+        self.assertIn("changed=false", converged.stdout)
+
+    def test_sync_refuses_foreign_live_handler_symlink(self) -> None:
+        source_root = self.root / "source"
+        source_hooks = source_root / "core/hooks/shared"
+        shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
+        foreign_hooks = self.root / "foreign-hooks"
+        shutil.copytree(REPO_ROOT / "core/hooks/shared", foreign_hooks)
+
+        live_hooks = self.codex_home / "hooks"
+        shutil.rmtree(live_hooks)
+        live_hooks.symlink_to(foreign_hooks, target_is_directory=True)
+
+        preview = self.sync_trusted_handlers(
+            source_root, "codex", self.codex_home, apply=False
+        )
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertIn("review-needed=true", preview.stdout)
+        self.assertTrue(live_hooks.is_symlink())
+
+        refused = self.sync_trusted_handlers(
+            source_root, "codex", self.codex_home, apply=True
+        )
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("not owned by an authorized runtime-kit source", refused.stderr)
+        self.assertTrue(live_hooks.is_symlink())
+        self.assertEqual(live_hooks.resolve(), foreign_hooks.resolve())
+
     def assert_doctor(self, product: str, expected: str = "converged") -> None:
         data = read_json(self.agent_hook("doctor", "--product", product))["data"]
         self.assertEqual(len(data), 1)
@@ -183,6 +300,8 @@ selected_products() { printf '%s\n' codex; }
 render_home_prompt_product() { :; }
 ensure_home_prompt() { :; }
 render_product() { printf '%s\n' render; }
+product_live_home() { printf '%s\n' "$HOME/.codex"; }
+sync_agent_hook_handlers() { printf '%s\n' materialize-agent-hook; }
 prepare_agent_hook_cutover() { printf '%s\n' prepare-agent-hook; }
 sync_agent_hook_setup() { printf '%s\n' direct-agent-hook-setup; }
 install_product() { printf '%s\n' install-product; }
@@ -200,6 +319,7 @@ main
             if line
             in {
                 "render",
+                "materialize-agent-hook",
                 "prepare-agent-hook",
                 "direct-agent-hook-setup",
                 "install-product",
@@ -212,6 +332,7 @@ main
             operations,
             [
                 "render",
+                "materialize-agent-hook",
                 "prepare-agent-hook",
                 "install-product",
                 "prune-product",

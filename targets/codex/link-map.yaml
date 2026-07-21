@@ -122,11 +122,6 @@ entries:
     source: targets/codex/.agents/plugins/marketplace.json
     destination: .agents/plugins/marketplace.json
 
-  - id: hooks.shared-scripts
-    kind: symlinked-file
-    source: core/hooks/shared
-    destination: hooks
-
   - id: hooks.codex-config
     kind: managed-block
     destination: config.toml

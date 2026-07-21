@@ -429,7 +429,7 @@ surfaces:
     products:
       codex:
         state: shipped
-        mechanism: "`core/hooks/shared/` symlinked into `$CODEX_HOME/hooks`"
+        mechanism: "`sync-runtime-surfaces.sh` materializes `core/hooks/shared/` into owner-only regular files under `$CODEX_HOME/hooks`"
         source_artifacts:
           - core/hooks/shared/
         min_product: "0.130.0"
@@ -443,10 +443,11 @@ surfaces:
             descriptive_only: true
         source_manifest:
           - "docs/source/harness-shape-codex.md#8-hook-scripts-hooksname"
-          - targets/codex/link-map.yaml
+          - scripts/sync-runtime-surfaces.sh
+          - tests/agent-hook/test_setup_migration.py
       claude:
         state: partial
-        mechanism: "`core/hooks/shared/` symlinked into `~/.claude/hooks`; `targets/claude/hooks/` adapter slot reserved but empty"
+        mechanism: "`sync-runtime-surfaces.sh` materializes `core/hooks/shared/` into owner-only regular files under `~/.claude/hooks`; `targets/claude/hooks/` adapter slot reserved but empty"
         source_artifacts:
           - core/hooks/shared/
         min_product: "2.1.145"
@@ -460,7 +461,8 @@ surfaces:
             descriptive_only: true
         source_manifest:
           - "docs/source/harness-shape-claude.md#8-hook-scripts-hooksname"
-          - targets/claude/link-map.yaml
+          - scripts/sync-runtime-surfaces.sh
+          - tests/agent-hook/test_setup_migration.py
 
       hermes:
         state: not-applicable

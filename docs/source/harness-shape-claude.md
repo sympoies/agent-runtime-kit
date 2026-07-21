@@ -194,9 +194,11 @@ a uniform shape:
 - Source: portable logic under `core/hooks/shared/`; Claude adapter slot
   reserved under `core/hooks/claude/` (`core/hooks/` tree present in
   repo).
-- Install mechanism: `symlinked-file` (`targets/claude/link-map.yaml`,
-  `id: hooks.shared-scripts`, source `core/hooks/shared` →
-  `$HOME/.claude/hooks`). Per-product adapters are expected under
+- Install mechanism: `scripts/sync-runtime-surfaces.sh` copies the shared
+  source into an independently owned `$HOME/.claude/hooks` directory. Handler
+  files are materialized as owner-only regular files (`0700`; non-executable
+  data files use `0600`) so source-checkout permission drift cannot make the
+  live hook root untrusted. Per-product adapters are expected under
   `targets/claude/hooks/`; no files shipped under that path yet.
 - Acceptance lane: hooks adapter contract tests
   (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
