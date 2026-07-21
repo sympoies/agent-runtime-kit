@@ -30,7 +30,8 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` can o
 
 ## Work Tier Levels
 
-- Classify into the lowest applicable tier: L0 untracked, L1 follow-up issue, L2 plan-tracking issue, L3 dispatch plan. PR delivery is the default; direct-main is the L0 exception only, needs explicit maintainer authorization in the current request, and uses the governed route in `git-delivery.md` (never inferred from "small" or "hotfix").
+- Use lowest tier: L0 untracked, L1 follow-up, L2 plan, L3 dispatch. PR is default; direct-main is L0-only with current-request maintainer approval via `git-delivery.md`, never inferred from "small" or "hotfix".
+- Review depth is separate: eligible L0/L1 may quick-pass; L2/L3 or risk uses full specialists. Escalation keeps the tier.
 - State the tier and next step up front; surface L1+ or ambiguous as a decision and wait; re-triage if work escalates. Full ladder and per-tier methods: `core/policies/work-tier-levels.md`.
 
 ## Evidence, Memory, External Facts

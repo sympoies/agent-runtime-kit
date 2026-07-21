@@ -1199,6 +1199,7 @@ run_deliver_github_probe() {
   local review_threads="$PR_ARTIFACTS_DIR/deliver-github-review-threads.json"
   local out="$PR_ARTIFACTS_DIR/deliver-github.json"
   local provider_review_out="$PR_ARTIFACTS_DIR/deliver-github-provider-review.json"
+  local quick_review_out="$PR_ARTIFACTS_DIR/deliver-github-quick-review.json"
   local review_out="$PR_ARTIFACTS_DIR/deliver-github-specialist-scope.json"
   require_pr_bin forge-cli || return 1
   mkdir -p "$workspace"
@@ -1256,6 +1257,23 @@ run_deliver_github_probe() {
   grep -q '"schema_version":"cli.forge-cli.pr.review.v1"' "$provider_review_out"
   grep -q '"decision":"comments-only"' "$provider_review_out"
   grep -q '"planned_review_threads"' "$provider_review_out"
+  (
+    cd "$workspace"
+    forge-cli --provider github --repo graysurf/agent-runtime-kit \
+      --dry-run --format json \
+      pr review 123 \
+      --decision approve \
+      --comment-file "$review_body" \
+      --lens quick
+  ) >"$quick_review_out" 2>&1
+  jq -e '
+    .schema_version == "cli.forge-cli.pr.review.v1" and
+    .ok == true and
+    .data.decision == "approve" and
+    .data.submitted_review == false and
+    .data.lenses == ["quick"] and
+    (.data.plan | length > 0)
+  ' "$quick_review_out" >/dev/null
 }
 
 run_deliver_gitlab_probe() {
@@ -1422,11 +1440,19 @@ run_pr_outcome_routing_probe() {
   local rendered_helper="$REPO_ROOT/tests/runtime-smoke/lib/rendered-contract.sh"
 
   grep -Fq '## Lifecycle Mode Selection' "$skill"
+  grep -Fq '## Review Profile Selection' "$skill"
   grep -Fq '**Create only**' "$skill"
   grep -Fq '**Deliver**' "$skill"
   grep -Fq '**Review repair**' "$skill"
   grep -Fq '**Merge**' "$skill"
   grep -Fq '**Close unmerged**' "$skill"
+  grep -Fq '**Quick merge**' "$skill"
+  grep -Fq 'L0 or L1' "$skill"
+  grep -Fq 'L2 or L3' "$skill"
+  grep -Fq 'scope suggests or forces no risk' "$skill"
+  grep -Fq 'A clean `pass` is terminal' "$skill"
+  grep -Fq 'review evidence for the current head' "$skill"
+  grep -Fq 'routes to the full pre-merge profile without changing the work tier' "$skill"
   grep -Fq '.agents/scripts/pre-pr.sh' "$skill"
   grep -Fq 'semantic-commit' "$skill"
   grep -Fq 'The user requests the PR/MR outcome, not a lifecycle helper.' "$skill"
@@ -1444,6 +1470,8 @@ run_pr_outcome_routing_probe() {
 
   rendered_contract_assert_skill pr deliver-pr
   rendered_contract_assert_all_contain pr deliver-pr '## Lifecycle Mode Selection'
+  rendered_contract_assert_all_contain pr deliver-pr '## Review Profile Selection'
+  rendered_contract_assert_all_contain pr deliver-pr '**Quick merge**'
   rendered_contract_assert_all_contain pr deliver-pr '**Close unmerged**'
   rendered_contract_assert_all_contain pr deliver-pr 'run `forge-cli pr close` and stop before delivery'
 }
@@ -1452,8 +1480,8 @@ failures=0
 record_case "pr.outcome-routing.create" "forge-cli GitHub+GitLab pr create dry-run passed" run_create_pr_probe
 record_case "pr.outcome-routing.dispatch-lane" "forge-cli dispatch lane pr create dry-run passed" run_create_dispatch_lane_probe
 record_case "pr.outcome-routing.close" "forge-cli GitHub+GitLab close dry-runs and optional specialist scope passed" run_close_pr_probe
-record_case "pr.deliver-pr" "forge-cli GitHub+GitLab delivery macro and mandatory specialist scope passed" run_deliver_pr_probe
+record_case "pr.deliver-pr" "forge-cli GitHub+GitLab delivery macro and full-review scope passed" run_deliver_pr_probe
 record_case "pr.outcome-routing.review-threads" "forge-cli review-threads resolve/reply offline dry-runs, GitLab fail-closed, and documented shared skill surface" run_review_thread_cleanup_probe
-record_case "pr.outcome-routing.contract" "one governed PR/MR outcome selects create, deliver, repair, merge, and close modes internally" run_pr_outcome_routing_probe
+record_case "pr.outcome-routing.contract" "one governed PR/MR outcome selects lifecycle mode plus quick or full review" run_pr_outcome_routing_probe
 
 exit "$failures"

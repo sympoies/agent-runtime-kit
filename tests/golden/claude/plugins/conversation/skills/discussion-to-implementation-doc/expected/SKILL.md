@@ -191,10 +191,10 @@ Failure modes:
      writing a source document. Put the expected review gate in the document's
      validation plan or execution notes.
    - When the document does prescribe review, pick the workflow from the
-     "Relationship To Nearby Outcomes" section below — quick mode for ordinary
-     diffs, focused mode for explicit lenses, pre-merge mode for PR/MR delivery
-     gates, follow-up mode after fixes, and specialist mode for broad or risky
-     bundles.
+     "Relationship To Nearby Outcomes" section below — quick depth for ordinary
+     diffs, focused depth for explicit lenses, pre-merge context for PR/MR
+     delivery gates, follow-up after fixes, and specialist depth for broad or
+     risky bundles.
    - Link `review-evidence` CLI records when retained review findings or validation
      records materially affect the implementation source. Keep this document as
      the primary read-first artifact.
@@ -232,9 +232,10 @@ Failure modes:
 
 ## Relationship To Nearby Outcomes
 
-- `code-review-specialists`: use for later read-only review; it selects quick,
-  focused, pre-merge, follow-up, or specialist mode from scope and delivery
-  context. Link any retained `review-evidence` CLI record from this document.
+- `code-review-specialists`: use for later read-only review; it selects ad-hoc,
+  follow-up, or pre-merge context plus quick, focused, or specialist depth from
+  scope and delivery risk. Link any retained `review-evidence` CLI record from
+  this document.
 - `deliver-plan-tracking-issue`: use when a lightweight issue-backed plan is
   ready to open or resume, execute, and deliver.
 - `deliver-dispatch-plan`: use when implementation needs dispatch lanes,

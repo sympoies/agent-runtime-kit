@@ -16,7 +16,8 @@ Prereqs:
   `forge-cli >=1.22.12`, `review-specialists`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
-- PR delivery runs the generic code-review outcome in pre-merge mode and posts
+- PR delivery runs the generic code-review outcome in pre-merge context with the
+  full profile and posts
   native review events per
   `core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md`.
   Every tracking PR runs the full gate; there is no single-author self-review
@@ -216,7 +217,7 @@ REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
 
 SELECTED_REVIEW_LENSES=(testing maintainability)
-# Append every risk lens selected by generic pre-merge review.
+# Append every risk lens selected by the full pre-merge review.
 REVIEW_LENS_ARGS=()
 TRACKING_LENS_ARGS=()
 for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
@@ -225,7 +226,7 @@ for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
 done
 
 # Repeat this specialist block once for each returned lens: testing,
-# maintainability, plus any risk lens selected by generic pre-merge review.
+# maintainability, plus any risk lens selected by the full pre-merge review.
 THREAD_FILE_ARGS=()
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
@@ -489,7 +490,7 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
 3. **PR branch** — deliver with `forge-cli pr deliver --no-merge` (or adopt and
    verify `LINKED_PR` through `pr deliver` existing-PR adoption). Do not merge
    yet; the review gate runs first.
-4. **Review gate** — run the generic code-review outcome in pre-merge mode (min `testing` +
+4. **Review gate** — run the generic code-review outcome in pre-merge context with the full profile (min `testing` +
    `maintainability`; add risk lenses per scope). Post each lens's specialist
    review comment through `forge-cli pr review` as it returns (native `COMMENT`
    on GitHub via `--submit-review`, semantic `--lens`; `--thread-file`

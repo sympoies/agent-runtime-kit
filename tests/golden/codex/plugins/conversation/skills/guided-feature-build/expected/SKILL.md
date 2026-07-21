@@ -134,10 +134,10 @@ Do not start without explicit user approval.
 
 ### Phase 6 — Quality Review
 
-1. Route the diff to the generic `code-review-specialists` outcome. Its
-   internal mode selection chooses quick review for a small ordinary diff and
-   focused, specialist, follow-up, or pre-merge review when the request or risk
-   requires it. Do not define a separate review rubric here.
+1. Route the diff to the generic `code-review-specialists` outcome. It selects
+   ad-hoc, follow-up, or pre-merge context and chooses quick, focused, or
+   specialist depth from the request and risk. Do not define a separate review
+   rubric here.
 2. Present the consolidated findings and ask the user how to proceed — fix now,
    fix later, or proceed as-is — then act on the decision. When this build is
    being delivered through a PR/MR, surface the findings on it before fixing,

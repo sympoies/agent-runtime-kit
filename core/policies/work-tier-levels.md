@@ -15,7 +15,7 @@ full ladder, judge, methods, and behavior contract.
 
 ## Principle
 
-Work has two independent axes. Do not collapse them:
+Work has three independent axes. Do not collapse them:
 
 - **Delivery axis — PR by default.** Almost any code change lands as a PR
   squash-merged into `main`. The PR is the durable record of *what changed and
@@ -24,6 +24,11 @@ Work has two independent axes. Do not collapse them:
 - **Tracking axis — the tier.** How much durable, cross-time tracking the
   problem or plan needs: none, a follow-up issue, or a plan tracking issue. This
   axis is what the tiers below measure.
+- **Review axis — risk-selected depth.** Every delivered PR receives a
+  pre-merge review, but the review can be quick or full. Eligible L0/L1 routine
+  diffs may use a quick review whose clean `pass` is terminal for the reviewed
+  head; findings block merge and an `escalate` verdict routes to the full
+  specialist gate. L2/L3 PRs and risk-triggering diffs keep the full gate.
 
 The tiers are ordered by overhead. Pick the lowest tier that satisfies the
 work's actual needs, and escalate only when a concrete trigger fires. Size alone
@@ -46,7 +51,7 @@ one dispatch issue; the user decides whether the scale warrants running it.
 
 ## Cross-Cutting Concepts
 
-Two things ride alongside the ladder and must not be mistaken for tiers:
+Several concepts ride alongside the ladder and must not be mistaken for tiers:
 
 - **PR = the default delivery path.** L1–L3 always deliver through PRs; L0 does
   too unless the maintainer explicitly requests direct commit and push to the
@@ -66,6 +71,12 @@ Two things ride alongside the ladder and must not be mistaken for tiers:
   change stays L0/L1 but ships as several reviewable PRs. See
   `core/policies/review-thread-convergence.md` for dispositioning the threads
   that do accumulate.
+- **Review profile is not a tier.** Tracking need does not determine code risk:
+  a tiny deferred L1 fix can qualify for quick review, while a security-sensitive
+  L0 change requires specialists. `deliver-pr` selects the smallest safe
+  pre-merge profile from the outer lifecycle, changed scope, validation, existing
+  review state, and reviewer confidence. Escalating review depth does not change
+  the work tier or require a new tracking artifact.
 - **Implementation-readiness doc = an optional spec, not a tier.** A
   `discussion-to-implementation-doc` artifact (default home
   `docs/discussions/<YYYY-MM-DD>-<slug>.md`; inside the
@@ -124,6 +135,8 @@ already provides enough tracking, keep the lower tier and use
 
 - Do the work, commit through the `semantic-commit` CLI, deliver through
   `deliver-pr` (squash → `main`) by default.
+- Let `deliver-pr` select quick or full pre-merge review from scope and risk;
+  requesting quick review never bypasses automatic escalation.
 - Only when the maintainer explicitly authorizes direct commit and push to the
   default branch in the current task, use the direct-main mode in
   `git-delivery.md`. Do not carry that authorization into another task.
@@ -142,6 +155,8 @@ already provides enough tracking, keep the lower tier and use
   of truth once the issue exists.
 - When implementing, deliver via the L0 PR path and link the PR to the issue;
   record merge / close on the issue.
+- A bounded low-risk L1 implementation may use quick review; the durable issue
+  timeline does not by itself require specialist depth.
 - Graduate to L2 when the work becomes a committed, state-tracked plan.
 
 ### L2 — Plan tracking issue
@@ -204,6 +219,10 @@ escalation boundary, never on routine L0 work.
 ## Examples
 
 - Fix a typo, a clear bug, or add a flag — finished in one pass → **L0**.
+- A small low-risk fix retained on an existing follow-up issue → **L1** tracking
+  with an eligible quick-review PR.
+- A security-sensitive change finished in one pass → **L0** tracking with a full
+  specialist-review PR.
 - A bug is found but other work comes first, or the root cause is unknown → **L1**.
 - "Refactor subsystem X" spanning several days and PRs with progress to
   track → **L2**.

@@ -1,15 +1,15 @@
 ---
 name: code-review-specialists
 description: >
-  Review a code change through an internally selected quick, focused,
-  specialist, follow-up, or pre-merge mode and return evidence-grounded findings.
+  Review a code change through an internally selected context and quick,
+  focused, or specialist depth, then return evidence-grounded findings.
 ---
 
 # Code Review
 
 Use this as the generic read-only code-review outcome. The workflow selects the
-smallest review mode that satisfies the request and risk, then returns findings
-before any summary.
+review context and the smallest depth that satisfies the request and risk, then
+returns findings before any summary.
 
 ## Contract
 
@@ -48,8 +48,9 @@ Inputs:
 
 Outputs:
 
-- A mode decision (`quick`, `focused`, `specialist`, `follow-up`, or
-  `pre-merge`) grounded in request, scope, and delivery context.
+- A context decision (`ad-hoc`, `follow-up`, or `pre-merge`) and a depth
+  decision (`quick`, `focused`, or `specialist`) grounded in request, scope,
+  outer lifecycle, and delivery context.
 - Scope JSON from `review-specialists scope` describing changed files, diff
   size, stack signals, test framework signals, and suggested specialists.
 - Read-only specialist findings with concrete file or evidence anchors.
@@ -85,13 +86,17 @@ review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profi
 
 ## Mode Selection
 
-The caller requests the review outcome; the workflow selects the mode.
+The caller requests the review outcome; the workflow selects context and depth.
 
+- Pre-merge is a delivery context, not a review depth. Every delivered PR still
+  receives a review before merge; the workflow selects quick or full depth
+  inside that context.
 - **Follow-up** — previous findings or review threads are supplied and must be
   classified as resolved, unresolved, accepted, or residual risk.
-- **Pre-merge** — the review is a delivery gate. Force at least `testing` and
-  `maintainability`, add risk lenses, preserve comment-before-fix ordering, and
-  return a decision to the delivery owner.
+- **Pre-merge** — the review is a delivery gate. Select quick depth only for an
+  eligible L0/L1 routine diff; use the full profile for L2/L3 delivery or any
+  risk trigger. Preserve comment-before-fix ordering and return a decision to
+  the delivery owner.
 - **Focused** — the user explicitly asks for one or more lenses. Force only
   those lenses unless scope reveals a mandatory safety lens.
 - **Quick** — the diff is small or ordinary, with no migration, security,
@@ -101,6 +106,12 @@ The caller requests the review outcome; the workflow selects the mode.
   clean result plus residual test risk.
 - **Specialist** — the diff is broad, risky, cross-cutting, or exceeds normal
   reviewer confidence. Use scope detection and the specialist workflow below.
+- **Quick pre-merge** — quick depth may terminate the delivery review when scope
+  is bounded, validation and checks pass, no suggested or forced risk-specialist
+  trigger or unresolved review state exists, and the outer work is L0 or L1. A `pass` verdict is
+  terminal review evidence for the current head; `findings` blocks merge and
+  enters repair/follow-up. A verdict of `escalate` routes to the full pre-merge
+  profile without changing the work tier.
 
 All modes are read-only. When reviewer subagents are available and a mode uses
 one or more lenses, the workflow must dispatch the selected reviewers. The
@@ -111,19 +122,22 @@ parent owns base selection, synthesis, and any authorized provider action.
 1. Establish the review target and base ref. For a PR/MR, use the actual
    PR/MR base or merge-base rather than a moving `origin/main` guess. Inspect
    previous findings and delivery context before selecting a mode.
-2. Select the mode using the precedence above.
+2. Select the context and review depth using the precedence above. A caller may
+   prefer quick review, but scope, risk, outer lifecycle, or reviewer confidence
+   can force the full pre-merge profile.
 3. For **quick** mode, dispatch the canonical `reviewer-quick` custom agent
    when selector-capable dispatch is available. Otherwise state that the
    selector is unavailable and inspect the complete diff, changed tests, and
    validation evidence through the inline fallback. Report findings first with
    file anchors; if clean, state that explicitly and name residual test or
-   validation risk. Stop without manufacturing specialist work.
+   validation risk. In quick pre-merge context, return `pass`, `findings`, or
+   `escalate` to the delivery owner; stop without manufacturing specialist work.
 4. For **follow-up** mode, re-check every supplied finding against the current
    diff and classify it as `resolved`, `unresolved`, `accepted`, or
    `residual-risk`. Do not broaden scope unless a fix created a new concrete
    regression.
-5. For **focused**, **specialist**, and **pre-merge** modes, run deterministic
-   scope detection:
+5. Run deterministic scope detection for every pre-merge review and for
+   **focused** or **specialist** ad-hoc review:
 
    ```bash
    review-specialists scope --base "$BASE_REF" --format json
@@ -131,7 +145,8 @@ parent owns base selection, synthesis, and any authorized provider action.
 
 6. Select specialists:
    - In focused mode, use the requested lenses.
-   - In pre-merge mode, always include `testing` and `maintainability`.
+   - In the full pre-merge profile, always include `testing` and
+     `maintainability`.
    - In specialist mode, use the scope suggestions and rules below.
    - Always consider `testing` and `maintainability` for larger diffs.
    - Consider `security` for auth changes or backend changes over 100 diff
@@ -181,7 +196,8 @@ parent owns base selection, synthesis, and any authorized provider action.
    combined input so duplicate
    fingerprints, confirming specialists, and confidence ordering are resolved in
    the final report.
-12. Use the report template for the final synthesis. For pre-merge mode, apply
+12. Use the report template for the final synthesis. For either pre-merge
+   profile, apply
    `references/DELIVERY_SPECIALIST_REVIEW_GATE.md` and
    `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`; the delivery owner, not a
    reviewer, posts provider comments and makes the merge decision. For every

@@ -1,6 +1,6 @@
 # Delivery Review Outcome Comment
 
-Use this shared outcome contract after the delivery specialist review gate has
+Use this shared outcome contract after the delivery quick or full review gate has
 enough information to decide whether delivery can merge, must stop, or can
 continue with an accepted residual risk. The owning delivery workflow posts the
 outcome through `forge-cli pr review`; `code-review-specialists` stays
@@ -10,10 +10,10 @@ Disposition vocabulary and reason/evidence rules are canonical in
 `references/DELIVERY_REVIEW_OUTCOME_SCHEMA.md`.
 Provider posting ownership, bot identity, and optional issue mirroring are
 canonical in `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`.
-Single-lens specialist progress comments use
+Single-lens quick-finding or specialist progress comments use
 `references/SPECIALIST_REVIEW_COMMENT.md` instead.
 Resolvable GitHub review threads for actionable findings are attached to the
-specialist progress comments that first surface those findings, not to the final
+progress comments that first surface those findings, not to the final
 combined approval summary.
 
 ## Ownership
@@ -33,7 +33,7 @@ combined approval summary.
   `--decision` and repeated selected `--lens` flags.
 - If review blocks delivery, post a blocked outcome comment before stopping when
   provider auth and permissions allow it.
-- Do not use this format for individual specialist reports. Those comments
+- Do not use this format for individual quick-finding or specialist reports. Those comments
   report findings only; the parent/main agent owns the dispositions recorded
   here.
 - If outcome posting fails, stop before merge and report the provider command,
@@ -56,7 +56,11 @@ case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
     [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
     ;;
 esac
-SELECTED_REVIEW_LENSES=(testing maintainability)
+case "$REVIEW_PROFILE" in
+  quick) SELECTED_REVIEW_LENSES=(quick) ;;
+  full) SELECTED_REVIEW_LENSES=(testing maintainability) ;;
+  *) echo "unsupported review profile: $REVIEW_PROFILE" >&2; exit 64 ;;
+esac
 REVIEW_LENS_ARGS=()
 for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
   REVIEW_LENS_ARGS+=(--lens "$selected_lens")
@@ -80,7 +84,7 @@ decision is recorded as outcome-note metadata only (no native approval state).
 GitHub without that capability also uses the outcome-note path so the ambient
 PR author is not asked to self-approve.
 Use `SPECIALIST_REVIEW_COMMENT.md` with `--decision comments-only` for
-non-decisional specialist notes, adding `--thread-file` only when that note
+non-decisional quick-finding or specialist notes, adding `--thread-file` only when that note
 surfaces actionable findings that need owner changes.
 
 ## Required Comment Shape
@@ -91,7 +95,7 @@ surfaces actionable findings that need owner changes.
 
 - Reviewable: PR #123
 - Decision: proceed-to-merge | blocked | proceed-with-accepted-residual
-- Lenses: testing, maintainability, api-contract
+- Lenses: quick | testing, maintainability, api-contract
 - Validation: scripts/check.sh --all pass
 - Provider checks: required checks pass
 
@@ -108,7 +112,8 @@ Required fields:
 - Reviewable identifier: PR number/URL or MR number/URL.
 - Decision: `proceed-to-merge`, `blocked`, or
   `proceed-with-accepted-residual`.
-- Lenses used, including the full selected lens set and forced minimum lenses.
+- Lenses used: `quick` for a terminal quick pass, or the full selected lens set
+  including forced minimum lenses.
 - Validation and provider check or pipeline status.
 - Findings table. Use a single `none` row when there were no findings or
   residual risks to report.

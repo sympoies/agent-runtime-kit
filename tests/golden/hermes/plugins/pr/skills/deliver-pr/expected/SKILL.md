@@ -12,8 +12,8 @@ Prereqs:
 
 - `agent-runtime`, `forge-cli >=1.22.12`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
-  available on `PATH`. The generic code-review outcome uses
-  `review-specialists` in pre-merge mode; native review summaries and observed
+  available on `PATH`. The generic code-review outcome uses a quick or full
+  profile in pre-merge context; native review summaries and observed
   convergence need `forge-cli` 1.21.34, guarded pending-review recovery needs
   1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
   needs 1.0.17, and
@@ -44,7 +44,8 @@ Inputs:
 - Optional `--no-merge` when the workflow should stop after checks.
 - Optional `--no-closeout` to stop after delivery readiness checks and before
   linked issue closeout.
-- Mandatory generic code review in pre-merge mode.
+- Mandatory generic code review in pre-merge context. The caller may prefer
+  quick or full review, but scope and risk own the final profile selection.
 - Local terminal identity captured before merge: checkout root, branch,
   delivered head SHA, base ref, and whether the checkout is primary or a
   managed linked worktree. When an outer L2/L3 or requested post-merge workflow
@@ -63,9 +64,11 @@ Outputs:
 
 - A draft or ready GitHub PR or GitLab MR opened from the current branch.
 - Required checks / pipeline state waited through `forge-cli pr wait-checks`.
-- A generic pre-merge review result completed before merge with at least
-  `testing` and `maintainability`.
-- Compact specialist reviews posted to the PR/MR as each reviewer lens returns
+- A generic pre-merge review result completed before merge: either an eligible
+  quick `pass` for the current head, or a full review with at least `testing`
+  and `maintainability`.
+- Compact quick-finding or specialist reviews posted to the PR/MR as each
+  blocking reviewer result returns
   (native `COMMENT` review events on GitHub via `--submit-review`, outcome notes
   on GitLab). These use portable `--decision comments-only` and `--lens`
   semantics and report findings and evidence only; the active environment owns
@@ -105,7 +108,8 @@ Failure modes:
   missing without an explicit no-checks decision.
 - Selected labels fail catalog validation or the provider rejects label
   application.
-- Mandatory pre-merge review gate findings are unresolved or undispositioned.
+- Mandatory quick or full pre-merge review findings are unresolved or
+  undispositioned.
 - Current-head native review summaries are unread or contain actionable
   feedback that has not been repaired, accepted with rationale, or moved to a
   follow-up.
@@ -145,9 +149,9 @@ The user requests the PR/MR outcome, not a lifecycle helper.
   record with `forge-cli pr create`, return its URL, and stop before checks,
   review, merge, or linked-issue closeout.
 - **Deliver** — create or adopt the record, wait for checks, run the mandatory
-  review gate, inspect and disposition native summaries, then merge through the
-  CLI-owned convergence/thread/task gates unless the user requested a readiness
-  stop.
+  risk-selected review gate, inspect and disposition native summaries, then
+  merge through the CLI-owned convergence/thread/task gates unless the user
+  requested a readiness stop.
 - **Review repair** — adopt the existing record, classify unresolved review
   threads, make authorized fixes, rerun validation and affected review modes,
   and return to the delivery gates.
@@ -160,6 +164,30 @@ The user requests the PR/MR outcome, not a lifecycle helper.
 
 Dispatch lane PR creation remains an internal L3 dispatch role because its
 plan-branch target and lane checkpoint authority belong to that outcome.
+
+## Review Profile Selection
+
+Pre-merge remains mandatory. Select the smallest safe profile after checks and
+scope detection; a user request such as "PR quick merge" expresses a preference,
+not permission to bypass escalation.
+
+- **Quick merge** — available for an L0 or L1 PR only when the diff is bounded,
+  required validation and checks pass, scope suggests or forces no risk
+  specialist, no unresolved current-head review state exists, and `reviewer-quick` has
+  enough confidence to inspect the complete change. A clean `pass` is terminal
+  review evidence for the current head; post one final outcome with `--lens
+  quick`, then continue through the ordinary merge gates.
+- **Quick findings** — post concrete findings before repair, block merge, rerun
+  affected validation, and use quick follow-up only while the scope stays
+  bounded.
+- **Full review** — mandatory for L2 or L3 delivery, any specialist trigger,
+  existing unresolved review state, insufficient quick-review confidence, or a
+  quick `escalate` verdict. It routes to the full pre-merge profile without changing the work tier
+  or requiring another user decision.
+
+The quick profile changes review depth only. It never skips checks, final
+provider review-state inspection, convergence, unresolved-thread, unchecked-task,
+expected-head, linked-lifecycle, or terminal cleanup gates.
 
 ## Body Format
 
@@ -218,10 +246,17 @@ the policy-owned `test-first-evidence` CLI flow produces. Omit it for the exempt
 `chore` / `ci` / `refactor`); without it delivery fails closed with
 `test_first_evidence_required`.
 
-Run the generic code-review outcome in pre-merge mode before merge. Its minimum
-underlying scope is:
+Run the generic code-review outcome in pre-merge context before merge. Start
+without forced lenses so scope can admit quick review; when quick is ineligible
+or returns `escalate`, rerun scope with the full profile's minimum lenses:
 
 ```bash
+review-specialists scope \
+  --base "$BASE_REF" \
+  --format json
+
+# Full-profile route only: L2/L3, a risk trigger, unresolved review state, or
+# quick-review escalation.
 review-specialists scope \
   --base "$BASE_REF" \
   --testing \
@@ -248,9 +283,14 @@ if [ "$PROVIDER" = github ]; then
     jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
       '.ok == true and .data.head_sha == $head' >/dev/null
 fi
-# Reuse the complete selected lens set for the final provider outcome.
-SELECTED_REVIEW_LENSES=(testing maintainability)
-# Append every risk lens selected by review-specialists scope.
+# Reuse the complete selected lens set for the final provider outcome. Quick
+# uses one final semantic lens; full starts with testing + maintainability and
+# appends every risk lens selected by review-specialists scope.
+case "$REVIEW_PROFILE" in
+  quick) SELECTED_REVIEW_LENSES=(quick) ;;
+  full) SELECTED_REVIEW_LENSES=(testing maintainability) ;;
+  *) echo "unsupported review profile: $REVIEW_PROFILE" >&2; exit 64 ;;
+esac
 REVIEW_LENS_ARGS=()
 for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
   REVIEW_LENS_ARGS+=(--lens "$selected_lens")
@@ -506,11 +546,16 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    stop. Otherwise run `forge-cli pr deliver` with selected `--label` flags,
    `--label-catalog manifests/forge-labels.yaml` when present, and
    `--no-merge` so checks / pipelines complete before the mandatory review gate.
-9. Run the generic code-review outcome in pre-merge mode.
-10. Keep review workers read-only. As each reviewer lens returns,
-   post one compact specialist review comment through `forge-cli pr review`
+9. Run the generic code-review outcome in pre-merge context. Start with
+   unforced scope detection and select quick or full through **Review Profile
+   Selection**. Quick requires an eligible L0/L1 change and a `pass`; L2/L3,
+   risk signals, unresolved current-head review state, or `escalate` select full.
+10. Keep review workers read-only. For a clean quick pass, defer provider write
+   to the single final outcome in step 13. As each full-profile lens or blocking
+   quick finding returns, post one compact review comment through `forge-cli pr review`
    (a native `COMMENT` review event via `--submit-review` on GitHub)
-   with `--decision comments-only` and that semantic `--lens`. The parent
+   with `--decision comments-only` and that semantic `--lens` (`quick` for a
+   quick finding). The parent
    delivery workflow posts; reviewer
    subagents never call the provider. Post the moment each lens returns — before
    the repair in step 11, never batched after it; the comment is the finding the
@@ -519,8 +564,9 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    `--thread-file` for actionable findings so the fix can close a native review
    thread; summary-only reviews omit it.
 11. Repair concrete findings in this delivery workflow, then rerun validation,
-   checks, and affected review lenses. Post each focused follow-up specialist
-   review comment with the same semantic lens before continuing.
+   checks, and affected review. Post each focused follow-up review comment with
+   the same semantic lens before continuing. Quick follow-up remains eligible
+   only while scope is bounded; otherwise switch to full.
 12. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
     semantically disposition every actionable current-head summary; stale-head
     reviews are informational. When `summary_truncated` is true, obtain the full
@@ -528,8 +574,9 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     path and do not invoke the unsupported snapshot. Do not implement a polling
     or sleep loop in the workflow.
 13. Post the final combined delivery review outcome body produced by the
-   generic review's pre-merge mode with `forge-cli pr review` before merge. Use
-   the final `--decision` and repeat every selected `--lens`; add native GitHub
+   selected pre-merge profile with `forge-cli pr review` before merge. Use the
+   final `--decision` and repeat every selected `--lens` (`quick` for quick
+   merge; the complete specialist set for full); add native GitHub
    approval only through the declared independent-identity capability, and keep
    identity selection outside the public skill. If native submission
    returns `github_pending_review_exists`, use the exact-node
@@ -573,7 +620,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 `forge-cli` owns provider create, checks/pipeline wait, ready, native-review
 convergence, thread/task enforcement, provider-head binding, and merge calls.
 `plan-issue record` owns linked issue lifecycle closeout. The workflow owner
-owns scope judgment, code changes, local validation, pre-merge gate decisions,
+owns scope judgment, code changes, local validation, review-profile and
+pre-merge gate decisions,
 repair loops, delivery outcome comments, and any temporary provider fallback
 decision. The outermost workflow also owns terminal local cleanup after all
 downstream duties; child delivery workflows hand off rather than clean early.

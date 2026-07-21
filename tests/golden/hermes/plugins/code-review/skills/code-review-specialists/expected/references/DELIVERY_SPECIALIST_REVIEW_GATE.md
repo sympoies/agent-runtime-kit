@@ -12,8 +12,8 @@ without making low-level close skills mandatory review orchestrators.
 - `deliver-plan-tracking-issue` relies on this delivery gate for each PR, then adds
   issue-visible evidence, runtime-finding disposition, lifecycle completion, and
   closeout requirements.
-- `deliver-dispatch-plan` uses `code-review-specialists` in pre-merge or
-  specialist mode before the parent decision for dispatch PRs.
+- `deliver-dispatch-plan` uses `code-review-specialists` in pre-merge context
+  with the full specialist profile before the parent decision for dispatch PRs.
 - `code-review-specialists` remains read-only. It supplies scope detection,
   specialist findings, and reports; it does not fix code, post PR or MR
   comments, mark draft reviewables ready, merge, close issues, or clean
@@ -21,7 +21,8 @@ without making low-level close skills mandatory review orchestrators.
 
 ## Mandatory Gate
 
-For every end-to-end delivery PR or MR:
+Every end-to-end delivery PR or MR receives a pre-merge review. Pre-merge is the
+delivery context; quick or full is the review profile inside that context.
 
 1. Resolve reviewable metadata and diff base:
    - GitHub PR: use `forge-cli --provider github pr view <pr>` or the
@@ -32,15 +33,58 @@ For every end-to-end delivery PR or MR:
      branch, source branch, draft state, and pipeline state.
    - Use the PR base branch or MR target branch as the `code-review-specialists`
      diff base.
-2. Run deterministic scope detection with forced minimum lenses:
+2. Run `review-specialists scope --base "$BASE_REF" --format json` without
+   forced lenses first. Select quick only when every eligibility condition below
+   holds; otherwise select full. A user preference for quick is not a bypass.
+3. Bind the selected review to the current provider head. Findings block merge,
+   provider-native review state remains authoritative, and the owning delivery
+   workflow retains the convergence, thread, task, and head-drift gates.
+
+## Quick Pre-Merge Profile
+
+Quick review is eligible only when all of these are true:
+
+- The outer work is L0 or L1, not L2 or L3 plan/dispatch delivery.
+- The diff is bounded and ordinary, required validation and provider checks
+  pass, and there is no unresolved current-head finding, change request, or
+  review thread.
+- Scope detection neither suggests nor forces security, API-contract,
+  data-migration, performance, red-team, or another risk-specialist lens.
+  Treat either `suggested_specialists` or `forced_specialists` as a quick-review
+  disqualifier when it contains one of those lenses.
+- The quick reviewer can inspect the complete diff, affected call sites, changed
+  tests, and supplied validation evidence with sufficient confidence.
+
+Dispatch `reviewer-quick` when the runtime exposes its managed reviewer profile;
+otherwise use the declared inline fallback. Its verdict controls the route:
+
+- `pass`: a clean result plus residual risks is terminal review evidence for the
+  current head. The delivery owner posts one final outcome with `--lens quick`
+  and may proceed to the unchanged merge gates.
+- `findings`: post concrete actionable findings before repair, block merge,
+  rerun affected validation, and use quick follow-up only while scope remains
+  bounded. A clean follow-up can then become the final outcome.
+- `escalate`: select the full pre-merge profile and its required lenses without
+  changing the work tier or requesting another user decision.
+
+A clean quick pass does not need a separate `comments-only` lens post before the
+final outcome. Quick findings do: use `--decision comments-only --lens quick`
+and `--thread-file` on GitHub when the finding is actionable, preserving the
+posting order in `REVIEW_OUTCOME_POSTING_CONTRACT.md`.
+
+## Full Pre-Merge Profile
+
+Use the full profile for every L2/L3 PR and whenever quick eligibility fails.
+
+1. Run deterministic scope detection with forced minimum lenses:
 
    ```bash
    review-specialists scope --base "$BASE_REF" --testing --maintainability --format json
    ```
 
-3. Run the selected specialist lenses. The forced minimum means a small diff is
+2. Run the selected specialist lenses. The forced minimum means a small diff is
    still reviewed; do not skip only because `diff_lines < 50`.
-4. Add risk lenses when the scope warrants them:
+3. Add risk lenses when the scope warrants them:
    - `--security` for auth, permission, credential-handling, dependency,
      supply-chain, or backend changes over 100 diff lines.
    - `--api-contract` for route, controller, API schema, OpenAPI, GraphQL,
@@ -52,16 +96,16 @@ For every end-to-end delivery PR or MR:
    - `--red-team` when `diff_lines > 200`, a previous specialist pass found a
      critical issue, or the reviewable changes safety/security-sensitive
      behavior.
-5. For doc-only, generated-only, formatting-only, or mechanical metadata
-   reviewables, the review may be a short testing/maintainability pass that
+4. For doc-only, generated-only, formatting-only, or mechanical metadata
+   reviewables that are ineligible for quick only because of their outer
+   lifecycle, the full review may be a short testing/maintainability pass that
    records "no concrete findings" plus why broader lenses were not selected.
-6. For delivery gates with provider write access, the owning parent posts a
-   compact specialist review comment through `forge-cli pr review` after each
-   selected lens returns — on GitHub a native `COMMENT` review event via
-   `--submit-review`, plus `--thread-file` when the lens surfaces actionable
-   findings that require owner changes. Use `--decision comments-only`, the
-   same semantic `--lens`, and the provider-guarded command from
-   `REVIEW_OUTCOME_POSTING_CONTRACT.md`. The
+5. The owning parent posts a compact specialist review comment through
+   `forge-cli pr review` after each selected lens returns — on GitHub a native
+   `COMMENT` review event via `--submit-review`, plus `--thread-file` when the
+   lens surfaces actionable findings that require owner changes. Use
+   `--decision comments-only`, the same semantic `--lens`, and the
+   provider-guarded command from `REVIEW_OUTCOME_POSTING_CONTRACT.md`. The
    reviewer subagent remains read-only and does not post directly. Specialist
    comments report findings only; the parent records final dispositions later.
 
@@ -106,12 +150,12 @@ command block containing a `forge-cli`, `gh`, or `glab` invocation:
 
 ## Findings And Repair Loop
 
-- Treat evidence-backed concrete findings as blocking before merge.
+- Treat evidence-backed quick or specialist findings as blocking before merge.
 - Repair concrete findings on the same delivery branch when they are inside the
   accepted delivery scope.
 - After repairs, rerun focused validation, provider checks or pipelines, and the
-  affected specialist lenses. Post the focused follow-up specialist review
-  comment with the same semantic lens before continuing to the next gate step.
+  affected quick or specialist review. Post the focused follow-up review comment
+  with the same semantic lens before continuing to the next gate step.
   Resolve the original GitHub review threads after the fix is verified; follow-up
   pass comments normally omit `--thread-file`.
 - At the merge gate, `forge-cli pr merge` counts only unresolved threads that are

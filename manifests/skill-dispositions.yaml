@@ -649,12 +649,12 @@ dispositions:
     parent_intents: [code-review, delivery]
     current_clis: [review-specialists, forge-cli]
     current_hooks: [code review delegation policy]
-    enforcement_point: "Delivery invokes the generic review outcome in pre-merge mode."
-    migration_path: "Merge pre-merge mode into code-review-specialists and the PR parent."
+    enforcement_point: "Delivery invokes the generic review outcome in pre-merge context."
+    migration_path: "Merge pre-merge context into code-review-specialists and the PR parent."
     replacement: code-review.code-review-specialists
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "The pre-merge gate is a routed review mode."
+    rationale: "The pre-merge gate is a routed delivery context with risk-selected review depth."
   - id: code-review.code-review-quick-pass
     status: reviewed
     user_outcome: no

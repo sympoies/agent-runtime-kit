@@ -73,8 +73,13 @@ run_portable_review_identity_contract_probe() {
   fi
   grep -Fq 'FINAL_SUBMIT_REVIEW' "$posting"
   grep -Fq 'AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED' "$posting"
+  grep -Fq 'For a clean quick pass' "$posting"
+  grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
+  grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
   grep -Fq 'FINAL_SUBMIT_REVIEW' "$delivery"
+  grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
+  grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
   grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
   grep -Fq -- '--decision comments-only' "$gate"
@@ -260,6 +265,7 @@ run_code_review_specialists_probe() {
 
 run_code_review_outcome_routing_probe() {
   local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
+  local delivery_gate="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
 
   grep -Fq '# Code Review' "$skill"
   grep -Fq '## Mode Selection' "$skill"
@@ -268,12 +274,23 @@ run_code_review_outcome_routing_probe() {
   grep -Fq '**Specialist**' "$skill"
   grep -Fq '**Follow-up**' "$skill"
   grep -Fq '**Pre-merge**' "$skill"
-  grep -Fq 'The caller requests the review outcome; the workflow selects the mode.' "$skill"
+  grep -Fq 'The caller requests the review outcome; the workflow selects context and depth.' "$skill"
   grep -Fq 'must dispatch the selected reviewers' "$skill"
+  grep -Fq 'Pre-merge is a delivery context, not a review depth.' "$skill"
+  grep -Fq '**Quick pre-merge**' "$skill"
+  grep -Fq 'A `pass` verdict is' "$skill"
+  grep -Fq 'terminal review evidence for the current head' "$skill"
+  grep -Fq 'A verdict of `escalate` routes to the full pre-merge' "$skill"
+  grep -Fq '## Quick Pre-Merge Profile' "$delivery_gate"
+  grep -Fq '## Full Pre-Merge Profile' "$delivery_gate"
+  grep -Fq 'L2 or L3' "$delivery_gate"
+  grep -Fq 'either `suggested_specialists` or `forced_specialists`' "$delivery_gate"
 
   rendered_contract_assert_skill code-review code-review-specialists
   rendered_contract_assert_all_contain code-review code-review-specialists '# Code Review'
   rendered_contract_assert_all_contain code-review code-review-specialists '## Mode Selection'
+  rendered_contract_assert_all_contain code-review code-review-specialists '**Quick pre-merge**'
+  rendered_contract_assert_all_contain code-review code-review-specialists 'Pre-merge is a delivery context, not a review depth.'
   rendered_contract_assert_product_contains code-review code-review-specialists codex '`multi_agent_v1.spawn_agent`'
   rendered_contract_assert_product_omits code-review code-review-specialists codex '`delegate_task`'
   rendered_contract_assert_product_contains code-review code-review-specialists claude '`~/.claude/agents/reviewer-<lens>.md`'
@@ -291,10 +308,10 @@ record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Cod
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
-record_case "code-review.outcome-routing.pre-merge" "pre-merge gate mandatory forced specialists passed" run_pre_merge_gate_probe
+record_case "code-review.outcome-routing.pre-merge" "full pre-merge profile forced specialists passed" run_pre_merge_gate_probe
 record_case "code-review.cli-command-contract-policy" "delivery skill CLI command blocks require pinned-surface dry-run contract evidence" run_cli_command_contract_policy_probe
 record_case "code-review.outcome-routing.quick" "quick-pass scope sizing probe passed" run_quick_pass_probe
 record_case "code-review.code-review-specialists" "review-specialists scope, validate, merge, and render probes passed" run_code_review_specialists_probe
-record_case "code-review.outcome-routing.contract" "one review outcome selects quick, focused, specialist, follow-up, and pre-merge modes internally" run_code_review_outcome_routing_probe
+record_case "code-review.outcome-routing.contract" "one review outcome selects delivery context and risk-appropriate review depth" run_code_review_outcome_routing_probe
 
 exit "$failures"

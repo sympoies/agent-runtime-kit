@@ -87,7 +87,7 @@ Routing guidance for the skill family lives in
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| Code review | [code-review-specialists](./code-review/code-review-specialists/) | Selects quick, focused, specialist, follow-up, or pre-merge mode internally and returns evidence-grounded findings. |
+| Code review | [code-review-specialists](./code-review/code-review-specialists/) | Selects review context plus quick, focused, or specialist depth internally and returns evidence-grounded findings. |
 
 ## Conversation
 

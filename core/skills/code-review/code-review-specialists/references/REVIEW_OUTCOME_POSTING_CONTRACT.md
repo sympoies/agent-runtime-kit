@@ -1,9 +1,9 @@
 # Review Outcome Posting Contract
 
 Use this contract when a review workflow needs provider-visible PR/MR review
-activity for either a single-lens specialist report or a combined delivery-owner
-outcome. `forge-cli pr review` is the only provider primitive for this path. On
-GitHub specialist reports pass `--submit-review` so each post is a native
+activity for either a single-lens quick-finding/specialist report or a combined
+delivery-owner outcome. `forge-cli pr review` is the only provider primitive for
+this path. On GitHub finding reports pass `--submit-review` so each post is a native
 `COMMENT` pull request review event (the `#pullrequestreview-` object) authored
 by the active provider identity. A combined delivery-owner outcome becomes a
 native `APPROVE` / `REQUEST_CHANGES` review only when an environment-owned
@@ -18,8 +18,10 @@ single review event or resolvable-thread creation surface, so it omits
 is preserved by the guards in the snippets below).
 
 Reviewer subagents remain read-only. The owning parent, dispatch, or delivery
-workflow writes every provider-visible comment. Specialist review comments are
-pre-disposition `comments-only` reports posted after one lens returns. Combined
+workflow writes every provider-visible comment. Quick-finding and specialist
+review comments are pre-disposition `comments-only` reports posted after one
+lens returns. A clean quick pass skips that redundant progress post and appears
+once in the final outcome with `--lens quick`. Combined
 delivery-owner outcomes are post-disposition comments posted after the owner has
 synthesized findings, decided repairs or tradeoffs, and chosen the final review
 decision.
@@ -93,13 +95,15 @@ Only the final combined delivery-owner outcome — the disposition (`approve` or
 decided once the findings it resolves exist. Findings post first as they return;
 the disposition posts last.
 
-For delivery review gates, the required posting order is:
+For a clean quick pass, the parent posts only the final delivery-owner outcome
+with `--lens quick`; there is no finding to preserve before repair. For quick
+findings and full-profile review, the required posting order is:
 
 1. After each reviewer lens returns, the parent posts a compact single-lens
-   specialist review comment with that semantic `--lens`.
+   finding/specialist review comment with that semantic `--lens`.
 2. If the lens blocks delivery, the parent repairs in the delivery branch,
    commits, reruns validation, and reruns the affected lens.
-3. The parent posts the follow-up specialist review comment with the same
+3. The parent posts the follow-up review comment with the same
    semantic lens.
 4. After all selected lenses pass or are explicitly dispositioned, the parent
    posts one combined delivery-owner outcome with the selected lenses and final
@@ -107,7 +111,7 @@ For delivery review gates, the required posting order is:
 
 The subagent never calls the provider. This keeps provider credentials in the
 parent workflow while still making review progress visible in PR/MR and optional
-issue activity. Specialist comments report findings and evidence only; the
+issue activity. Finding comments report findings and evidence only; the
 combined delivery-owner outcome records final dispositions.
 
 ## Inputs
@@ -126,9 +130,9 @@ combined delivery-owner outcome records final dispositions.
 - Optional `REVIEW_THREAD_FILE`: GitHub-only JSON array of actionable findings
   to create as resolvable review threads. Omit this when there are no requested
   changes or when posting to GitLab.
-- `REVIEW_LENS`: the single specialist lens for a specialist review comment.
-  For combined owner outcomes, pass repeated `--lens` flags from the selected
-  lens list.
+- `REVIEW_LENS`: `quick` for a quick finding, or the single specialist lens for
+  a specialist review comment. For combined owner outcomes, pass repeated
+  `--lens` flags from the selected lens list.
 - Optional `ISSUE`: tracking or dispatch issue that should receive a compact
   activity mirror.
 
@@ -158,7 +162,7 @@ cannot write the review, stop and surface the provider error.
 
 ## Command
 
-Native specialist review events and `--thread-file` are GitHub-only. A combined
+Native finding/specialist review events and `--thread-file` are GitHub-only. A combined
 native approval additionally requires the environment capability that promises
 an independent review identity. Without it, the final semantic decision is an
 outcome note, which keeps ambient-identity workflows usable without asking a PR
@@ -182,7 +186,7 @@ if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
 fi
 ```
 
-Single specialist lens report:
+Single quick-finding or specialist-lens report:
 
 ```bash
 forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
@@ -195,11 +199,16 @@ forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --format json
 ```
 
-Build the selected lens list once, including every risk lens chosen by scope,
-then reuse its repeated flags for the combined owner outcome:
+Build the selected lens list once, then reuse its repeated flags for the
+combined owner outcome. Quick uses only `quick`; full starts with `testing` and
+`maintainability` and includes every risk lens chosen by scope:
 
 ```bash
-SELECTED_REVIEW_LENSES=(testing maintainability)
+case "$REVIEW_PROFILE" in
+  quick) SELECTED_REVIEW_LENSES=(quick) ;;
+  full) SELECTED_REVIEW_LENSES=(testing maintainability) ;;
+  *) echo "unsupported review profile: $REVIEW_PROFILE" >&2; exit 64 ;;
+esac
 # Append every selected risk lens, for example: SELECTED_REVIEW_LENSES+=(security)
 REVIEW_LENS_ARGS=()
 for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
