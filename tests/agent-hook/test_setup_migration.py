@@ -47,6 +47,14 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
         self.policy = self.data_home / "agent-hook/policies/runtime-kit-v1.toml"
         self.config = self.config_home / "agent-hook/config.toml"
         self.state = self.state_home / "agent-hook"
+        for hook_home in (
+            self.codex_home / "hooks",
+            self.claude_home / "hooks",
+        ):
+            hook_home.mkdir(parents=True)
+            for handler in sorted((REPO_ROOT / "core/hooks/shared").iterdir()):
+                if handler.is_file() and not handler.is_symlink():
+                    shutil.copy2(handler, hook_home / handler.name)
         self.policy.parent.mkdir(parents=True)
         shutil.copyfile(POLICY_SOURCE, self.policy)
         self.policy.chmod(0o600)
@@ -215,7 +223,7 @@ main
     def test_forced_setup_failure_preserves_legacy_provider_bytes(self) -> None:
         provider = self.codex_home / "config.toml"
         original = self.legacy_codex_config()
-        provider.parent.mkdir(parents=True)
+        provider.parent.mkdir(parents=True, exist_ok=True)
         provider.write_bytes(original)
         provider.chmod(0o600)
 
@@ -246,7 +254,7 @@ fi
     def test_successful_cutover_remove_restores_exact_legacy_bytes(self) -> None:
         provider = self.codex_home / "config.toml"
         original = self.legacy_codex_config()
-        provider.parent.mkdir(parents=True)
+        provider.parent.mkdir(parents=True, exist_ok=True)
         provider.write_bytes(original)
         provider.chmod(0o600)
 
@@ -316,7 +324,7 @@ remove_agent_hook_cutover codex
         )
 
     def test_codex_add_remove_is_exact_and_preserves_unrelated_notify(self) -> None:
-        self.codex_home.mkdir(parents=True)
+        self.codex_home.mkdir(parents=True, exist_ok=True)
         original_notify = ["custom-notify", "--flag"]
         write_private(
             self.codex_home / "config.toml",

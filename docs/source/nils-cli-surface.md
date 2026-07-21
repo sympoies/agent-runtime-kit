@@ -1,24 +1,36 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-20 (refreshed for `v1.25.5`)
+- Snapshot date: 2026-07-21 (refreshed for `v1.25.8`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.25.5`
+- Active `git describe --tags` output: `v1.25.8`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.5`,
-  `validated_tag: v1.25.5`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.25.8`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `7a04b0c9`
-  (`chore(release): bump cli versions to 1.25.5 (#1332)`)
+- Head commit: `d7edafe0`
+  (`chore(release): bump cli versions to 1.25.8 (#1347)`)
 - Release:
-  [`v1.25.5`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.5),
+  [`v1.25.8`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.8),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.25.5` is both the minimum supported and validated release. Runtime-kit
-  intentionally retires older compatibility because its shared hook control
-  plane requires the `agent-hook` binary and setup-owned provider ingress:
+- `v1.25.8` advances only the validated release from `v1.25.5`; the
+  compatibility minimum and every `required_clis[]` floor remain unchanged:
+  - `agent-hook doctor` now validates policy-backed handler trust before it
+    reports activation convergence ([#1342](https://github.com/sympoies/nils-cli/pull/1342)).
+    Runtime-kit's disposable setup-migration fixture materializes regular
+    handler files into both product homes so this stronger validated-role check
+    exercises a trusted runtime shape.
+  - The release also includes read-only operation descriptors and shadow
+    evaluation, resumable review transactions, bounded review delivery,
+    Linux `agent-run inspect`, typed fail-closed macOS inspection, and Codex
+    prompt recovery. Those additive surfaces are not consumed by this bounded
+    baseline bump, so they do not raise a compatibility floor here.
+- `v1.25.5` remains the minimum supported release. Runtime-kit intentionally
+  retires older compatibility because its shared hook control plane requires
+  the `agent-hook` binary and setup-owned provider ingress:
   - `agent-hook setup` owns one exact provider ingress for Codex and Claude,
     migrates compatible legacy registrations through an operation-bound
     preview/apply digest, and preserves unrelated provider hooks
