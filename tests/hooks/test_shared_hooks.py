@@ -30,7 +30,11 @@ TEST_RUNTIME_STATE = tempfile.TemporaryDirectory(
 )
 sys.path.insert(0, str(HOOK_DIR))
 
-from hook_common import command_matches_validation, effective_workdir  # noqa: E402
+from hook_common import (  # noqa: E402
+    command_matches_validation,
+    effective_workdir,
+    session_id_from_payload,
+)
 
 
 def parse_stdout(stdout: str) -> dict[str, object] | None:
@@ -130,6 +134,9 @@ def run_hook(
     dont_write_bytecode: bool = True,
 ) -> tuple[int, dict[str, object] | None, str]:
     full_env = dict(os.environ)
+    # Tests model an unmanaged launch unless the fixture explicitly supplies a
+    # managed session identity. Do not inherit the runner's managed identity.
+    full_env.pop("AGENT_SESSION_ID", None)
     full_env["PYTHONPATH"] = str(HOOK_DIR)
     if dont_write_bytecode:
         full_env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -190,6 +197,7 @@ def run_shell_hook(
 ) -> tuple[int, dict[str, object] | None, str]:
     """Run a shell (bash) shared hook; mirrors run_hook for `.sh` hooks."""
     full_env = dict(os.environ)
+    full_env.pop("AGENT_SESSION_ID", None)
     if env:
         full_env.update(env)
     trusted = prepare_trusted_test_agent_docs(full_env, cwd)
@@ -266,6 +274,15 @@ class SharedHookTests(unittest.TestCase):
 
     def assert_allowed(self, decision: dict[str, object] | None) -> None:
         self.assertIsNone(decision)
+
+    def test_session_id_from_payload_prefers_managed_launch_identity(self) -> None:
+        payload = {"session_id": "provider-session"}
+        with mock.patch.dict(
+            os.environ, {"AGENT_SESSION_ID": "managed-session"}, clear=False
+        ):
+            self.assertEqual(session_id_from_payload(payload), "managed-session")
+        with mock.patch.dict(os.environ, {"AGENT_SESSION_ID": ""}, clear=False):
+            self.assertEqual(session_id_from_payload(payload), "provider-session")
 
     def test_blocks_direct_git_commit(self) -> None:
         code, decision, stderr = run_hook(
@@ -2665,6 +2682,7 @@ class SharedHookTests(unittest.TestCase):
         log_path: Path,
         marker: Path,
         product: str = "codex",
+        prepared_intent: str = "project-dev",
         advertise_phase: bool = True,
     ) -> str:
         """Fake agent-docs that records argv and models the #601 3d phase surface.
@@ -2696,7 +2714,7 @@ fi
 if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
 if [[ "$*" == *"session prepare"* ]]; then
   printf 'prepared\\n' > {marker_q}
-  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"record_file":"r.json","verified":true,"prepared_intents":["project-dev"],"reason":"prepared"}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":["{prepared_intent}"],"record_file":"r.json","verified":true,"prepared_intents":["{prepared_intent}"],"reason":"prepared"}}}}'
   exit 0
 fi
 if [[ "$*" == *"session verify"* ]]; then
@@ -9397,6 +9415,112 @@ exit 64
             self.assertTrue(all("--phase edit" in line for line in prepare_calls))
             self.assertTrue(all("--format json" in line for line in prepare_calls))
 
+    def test_pre_edit_intent_gate_recovers_from_trusted_prepare_shape_mismatch(
+        self,
+    ) -> None:
+        """Recoverable stale prepares preserve their intent and phase."""
+        cases = (
+            (
+                "project-dev-edit",
+                "project-dev",
+                "edit",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+            ),
+            (
+                "project-dev-delivery",
+                "project-dev",
+                "delivery",
+                command_payload("forge-cli pr create"),
+            ),
+            ("task-tools", "task-tools", None, None),
+        )
+        for name, intent, phase, original_payload in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text(
+                    "# fixture\n", encoding="utf-8"
+                )
+                bin_dir = root / "runtime-bin"
+                bin_dir.mkdir()
+                call_log = root / "calls.log"
+                marker = root / "prepared"
+                self._write_fake_agent_docs(
+                    bin_dir,
+                    self._phase_aware_fake_agent_docs(
+                        log_path=call_log,
+                        marker=marker,
+                        prepared_intent=intent,
+                    ),
+                )
+                managed_session = f"managed-shape-recovery-{name}"
+                env = dict(
+                    self._phase_gate_env(repo, bin_dir),
+                    AGENT_SESSION_ID=managed_session,
+                )
+                agent_docs = str((bin_dir / "agent-docs").resolve())
+                base = [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo.resolve()),
+                    "--project-path",
+                    str(repo.resolve()),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    managed_session,
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str((repo / "state").resolve()),
+                    "--intent",
+                    intent,
+                ]
+                if phase is not None:
+                    base += ["--phase", phase]
+                stale_prepare = shlex.join(base)
+                canonical_prepare = shlex.join(base + ["--format", "json"])
+
+                stale_payload = command_payload(stale_prepare)
+                stale_payload["session_id"] = "provider-shape-recovery"
+                code, decision, stderr = run_hook(
+                    "pre-edit-intent-gate.py", stale_payload, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(
+                    decision, "agent-docs-bootstrap-shape-mismatch"
+                )
+                assert decision is not None
+                recovery_commands = re.findall(
+                    r"`([^`\n]+)`", str(decision.get("reason", ""))
+                )
+                self.assertEqual(recovery_commands, [canonical_prepare])
+                self.assertFalse(
+                    marker.exists(), "the stale command must not execute"
+                )
+
+                recovery_payload = command_payload(recovery_commands[0])
+                recovery_payload["session_id"] = "provider-shape-recovery"
+                code, decision, stderr = run_hook(
+                    "pre-edit-intent-gate.py", recovery_payload, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "[reason: prepared]")
+                self.assertTrue(marker.exists())
+
+                if original_payload is not None:
+                    original_payload["session_id"] = "provider-shape-recovery"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        original_payload,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
     def test_session_coordination_guard_requires_claim_for_managed_mutation(
         self,
     ) -> None:
@@ -11552,6 +11676,7 @@ exit 64
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_SESSION_ID": "managed-selective-cue",
                 "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -11559,7 +11684,7 @@ exit 64
 
             code, decision, stderr = run_shell_hook(
                 "user-prompt-agent-docs.sh",
-                {"session_id": "selective-cue", "prompt": "test the browser"},
+                {"session_id": "provider-selective-cue", "prompt": "test the browser"},
                 cwd=repo,
                 env=env,
             )
@@ -11581,6 +11706,8 @@ exit 64
             self.assertIn(f"--docs-home {repo.resolve()}", context)
             self.assertIn(f"--project-path {repo.resolve()}", context)
             self.assertIn(f"--state-home {repo / 'state'}", context)
+            self.assertIn("--session-id managed-selective-cue", context)
+            self.assertIn("--intent <intent> --format json", context)
             # P0-2 bullet 6: ordinary durable-session cues do not expand the full
             # validation command list (the finish-line gate still enforces it).
             self.assertNotIn("scripts/ci/all.sh", context)

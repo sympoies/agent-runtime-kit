@@ -89,7 +89,11 @@ payload="$(cat)"
 # session id is present), so the cue stays a start-of-task nudge.
 session_id="$(
   "$python_bin" -c '
-import json, sys
+import json, os, sys
+managed = os.environ.get("AGENT_SESSION_ID", "").strip()
+if managed:
+    print(managed)
+    raise SystemExit(0)
 try:
     p = json.load(sys.stdin)
 except Exception:
@@ -404,7 +408,8 @@ if session_supported:
             lines.append(
                 "Classify the request, then prepare only relevant inactive intents before writing: "
                 f"{prefix} session prepare --session-id {shlex.quote(session_id)} "
-                f"--product {product} --state-home {shlex.quote(state_home)} --intent <intent>."
+                f"--product {product} --state-home {shlex.quote(state_home)} "
+                "--intent <intent> --format json."
             )
         else:
             lines.append(

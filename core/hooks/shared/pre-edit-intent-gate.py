@@ -50,6 +50,7 @@ from hook_common import (
     is_git_recovery_argv,
     patch_text_candidates,
     read_payload,
+    session_id_from_payload,
     simple_commands_with_nested_shells,
     tool_input_dict,
 )
@@ -193,14 +194,6 @@ DYNAMIC_WORKDIR_CHARACTERS = frozenset("$`*?[{(")
 
 def tool_name(payload: Mapping[str, Any]) -> str:
     for key in ("tool_name", "toolName", "tool"):
-        value = payload.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return ""
-
-
-def session_id(payload: Mapping[str, Any]) -> str:
-    for key in ("session_id", "sessionId", "session", "conversation_id"):
         value = payload.get(key)
         if isinstance(value, str) and value:
             return value
@@ -874,6 +867,70 @@ def recovery_command(
     return shlex.join(args)
 
 
+def recoverable_prepare_parameters(
+    command_words: list[str],
+    *,
+    current_session: str,
+    product: str,
+    repo_root: str,
+    agent_docs_executable: str,
+) -> tuple[tuple[str, ...], str | None] | None:
+    """Recover intent/phase only from a current-context stale prepare.
+
+    A safely recoverable command has the exact trusted `session prepare`
+    prefix for this executable, repository, session, product, and state home.
+    Its tail contains only intent pairs, at most one recognized workflow phase,
+    and at most one non-JSON format pair (or no format pair). The stale command
+    is never executed; these parameters only rebuild the canonical JSON prepare.
+    """
+    base = activation_base_args(
+        repo_root=repo_root,
+        executable=agent_docs_executable,
+        current_session=current_session,
+        product=product,
+        subcommand="prepare",
+    )
+    if command_words[: len(base)] != base:
+        return None
+
+    intents: list[str] = []
+    phase: str | None = None
+    format_seen = False
+    index = len(base)
+    while index < len(command_words):
+        token = command_words[index]
+        if token == "--intent" and index + 1 < len(command_words):
+            intents.append(command_words[index + 1])
+            index += 2
+            continue
+        if (
+            token == "--phase"
+            and index + 1 < len(command_words)
+            and phase is None
+        ):
+            candidate = command_words[index + 1]
+            if candidate not in {PHASE_EDIT, PHASE_DELIVERY}:
+                return None
+            phase = candidate
+            index += 2
+            continue
+        if (
+            token == "--format"
+            and index + 1 < len(command_words)
+            and not format_seen
+        ):
+            if command_words[index + 1] == "json":
+                return None
+            format_seen = True
+            index += 2
+            continue
+        return None
+
+    if not intents:
+        return None
+    return tuple(intents), phase
+
+
 def bootstrap_activation_intents(
     command: str,
     *,
@@ -1236,9 +1293,8 @@ def main() -> int:
     ):
         return ALLOW
 
-    capability, detail = session_capability(
-        agent_docs_args(repos[0], agent_docs_executable)
-    )
+    primary_agent_docs_args = agent_docs_args(repos[0], agent_docs_executable)
+    capability, detail = session_capability(primary_agent_docs_args)
     if capability == "legacy":
         return ALLOW
     if capability != "supported":
@@ -1248,7 +1304,7 @@ def main() -> int:
         )
         return ALLOW
 
-    current_session = session_id(payload)
+    current_session = session_id_from_payload(payload)
     if not current_session:
         emit_block(
             "Selective intent enforcement is available, but this mutation payload has no "
@@ -1324,12 +1380,32 @@ def main() -> int:
             )
             return ALLOW
         if command_words and agent_docs_near_miss_invocation(command_words):
+            recovered = recoverable_prepare_parameters(
+                command_words,
+                current_session=current_session,
+                product=product,
+                repo_root=repos[0],
+                agent_docs_executable=agent_docs_executable,
+            )
+            intents, phase = (
+                recovered if recovered is not None else (("project-dev",), None)
+            )
+            if phase is not None and not phase_supported(primary_agent_docs_args):
+                phase = None
+            canonical_recovery = recovery_command(
+                repo_root=repos[0],
+                executable=agent_docs_executable,
+                current_session=current_session,
+                product=product,
+                intents=intents,
+                phase=phase,
+            )
             emit_block(
                 "This trusted agent-docs preparation did not match the exact "
                 "repository, session, product, state-home, phase, and JSON output "
-                "shape required by the bootstrap. Use the exact command from the "
-                "latest intent cue; another declared intent does not require "
-                "project-dev first. [reason: agent-docs-bootstrap-shape-mismatch]"
+                "shape required by the bootstrap. The stale command was not executed. "
+                f"Retry with the freshly resolved current-context command `{canonical_recovery}`. "
+                "[reason: agent-docs-bootstrap-shape-mismatch]"
             )
             return ALLOW
 
@@ -1342,7 +1418,7 @@ def main() -> int:
     # already-fully-prepared session both stay unblocked.
     phase = (
         phase_for(tool, command_words)
-        if phase_supported(agent_docs_args(repos[0], agent_docs_executable))
+        if phase_supported(primary_agent_docs_args)
         else None
     )
     failures: list[str] = []

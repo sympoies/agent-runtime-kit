@@ -184,7 +184,14 @@ def effective_workdir(payload: Mapping[str, Any]) -> Path:
 
 
 def session_id_from_payload(payload: Mapping[str, Any]) -> str:
-    """Return the opaque runtime session identifier when the hook supplies one."""
+    """Return the canonical runtime session identifier for this hook process.
+
+    Managed launches provide a trusted identity through ``AGENT_SESSION_ID``.
+    Provider payload ids are fallbacks for otherwise-unmanaged sessions.
+    """
+    managed_session = os.environ.get("AGENT_SESSION_ID", "").strip()
+    if managed_session:
+        return managed_session
     for key in ("session_id", "sessionId", "session", "conversation_id"):
         value = payload.get(key)
         if isinstance(value, str) and value:
