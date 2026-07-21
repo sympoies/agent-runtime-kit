@@ -370,11 +370,12 @@ def codex_reviewer_profile_errors(root: Path) -> list[str]:
                 "model_reasoning_effort, and sandbox_mode"
             )
             continue
-        expected_model = "gpt-5.6-terra" if name == "reviewer-quick" else "gpt-5.6-sol"
+        expected_model = "gpt-5.6-sol"
+        expected_effort = "low" if name == "reviewer-quick" else "medium"
         if model != expected_model:
             errors.append(f"{reviewer_id}: model {model!r} != {expected_model!r}")
-        if effort != "medium":
-            errors.append(f"{reviewer_id}: effort {effort!r} != 'medium'")
+        if effort != expected_effort:
+            errors.append(f"{reviewer_id}: effort {effort!r} != {expected_effort!r}")
         if sandbox != "read-only":
             errors.append(f"{reviewer_id}: sandbox {sandbox!r} != 'read-only'")
 

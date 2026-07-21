@@ -215,9 +215,9 @@ a uniform shape:
   cross-product agents render surface ships in nils-cli v1.3.0; the managed
   read-only reviewers are `reviewer-quick` (quick pass) plus seven specialist
   lenses (testing, maintainability, security, performance, api-contract,
-  data-migration, red-team). Codex renders `reviewer-quick` with
-  `gpt-5.6-terra` / `medium` reasoning and all seven specialists with
-  `gpt-5.6-sol` / `medium` reasoning; all eight are read-only. Dispatch uses
+  data-migration, red-team). Codex renders all eight with `gpt-5.6-sol`:
+  `reviewer-quick` uses `low` reasoning and all seven specialists use `medium`
+  reasoning; all eight are read-only. Dispatch uses
   each manifest's canonical hyphenated identity as `agent_type`; `task_name`
   remains only a workflow label. Claude agent definitions remain unpinned.
 

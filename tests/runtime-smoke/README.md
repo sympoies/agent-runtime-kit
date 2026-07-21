@@ -103,9 +103,10 @@ Automated coverage (in default CI):
   reviewer agent.
 - `bash scripts/ci/skill-governance-audit.sh` inventories every
   `code-review.reviewer-*` declaration in `manifests/agents.yaml` and fails
-  when a Codex profile omits or changes its explicit model, `medium` reasoning
-  effort, or read-only sandbox. The `--fixture reviewer-profile` negative case
-  proves a missing field is rejected.
+  when a Codex profile omits or changes its explicit `gpt-5.6-sol` model,
+  the quick reviewer's `low` or a specialist's `medium` reasoning effort, or
+  the read-only sandbox. The `--fixture reviewer-profile` negative case proves
+  a missing field is rejected.
 
 Live product discovery needs an authenticated product session and stays outside
 default CI:
@@ -122,11 +123,11 @@ default CI:
 
   The probe derives all eight reviewer names from `manifests/agents.yaml`,
   validates the installed TOML profiles, and uses an isolated parent configured
-  as `gpt-5.4` / `xhigh` / `danger-full-access` so inherited defaults
-  cannot satisfy the child-profile checks. When the dispatch schema exposes
-  `agent_type`, it selects every canonical hyphenated reviewer identity while
-  deliberately using unrelated `task_name` labels. When the selector is
-  absent, the result is an explicit `skip-host-capability` with
+  as `gpt-5.6-sol` / `xhigh` / `danger-full-access` so inherited reasoning and
+  sandbox defaults cannot satisfy the child-profile checks. When the dispatch
+  schema exposes `agent_type`, it selects every canonical hyphenated reviewer
+  identity while deliberately using unrelated `task_name` labels. When the
+  selector is absent, the result is an explicit `skip-host-capability` with
   `fallback=inline`; the probe never spawns a generic child.
 
 ## Matrix Contract

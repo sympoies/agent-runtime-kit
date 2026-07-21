@@ -83,11 +83,12 @@ for name in names:
         ) else None
         for field in ("name", "model", "model_reasoning_effort", "sandbox_mode")
     }
-    expected_model = "gpt-5.6-terra" if name == "reviewer-quick" else "gpt-5.6-sol"
+    expected_model = "gpt-5.6-sol"
+    expected_effort = "low" if name == "reviewer-quick" else "medium"
     expected = {
         "name": name,
         "model": expected_model,
-        "model_reasoning_effort": "medium",
+        "model_reasoning_effort": expected_effort,
         "sandbox_mode": "read-only",
     }
     actual = {key: profile.get(key) for key in expected}
@@ -97,7 +98,7 @@ inventory_file.write_text("\n".join(names) + "\n", encoding="utf-8")
 PY
 
 {
-  printf 'model = "gpt-5.4"\n'
+  printf 'model = "gpt-5.6-sol"\n'
   printf 'model_reasoning_effort = "xhigh"\n'
   printf 'sandbox_mode = "danger-full-access"\n'
   printf '[features]\n'
@@ -165,4 +166,4 @@ while IFS= read -r reviewer; do
   fi
 done <"$INVENTORY_FILE"
 
-echo "codex-reviewer-dispatch: status=pass reviewers=8 parent=gpt-5.4/xhigh/danger-full-access child-profiles=explicit/medium/read-only artifacts=$ARTIFACTS_DIR"
+echo "codex-reviewer-dispatch: status=pass reviewers=8 parent=gpt-5.6-sol/xhigh/danger-full-access child-profiles=sol/quick-low/specialists-medium/read-only artifacts=$ARTIFACTS_DIR"
