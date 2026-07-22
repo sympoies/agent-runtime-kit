@@ -74,9 +74,12 @@ retaining where the value came from or whether it was attested. [F2]
    path, source, attestation, and an optional stable diagnostic.
    `effective_workdir()` remains a compatibility wrapper over the context path.
 7. V1 admits cross-repository shell work only through host-attested workdir
-   metadata: Codex inline workdir, a matching bounded transcript call, or the
-   provider session cwd shape. Process cwd is recorded as un-attested and is
-   never silently promoted to an attested cross-repository target.
+   metadata: Codex inline workdir, a matching bounded transcript call, the
+   provider session cwd shape, or a bounded private ready `agent-session` record
+   whose id, agent, runtime incarnation, owner/mode, and cwd match the hook
+   process. This managed-session route was added after live Claude acceptance
+   showed that Bash envelopes can omit cwd. Plain process cwd remains
+   un-attested and is never silently promoted to a cross-repository target.
 8. Shell-embedded `agent-run exec --cwd` remains fail-closed in this bounded
    change. Safe admission needs a nils-cli typed command-context result that
    binds the exact same release as `agent-docs`, canonical target, wrapper
@@ -196,8 +199,11 @@ not because of fixture setup or compilation errors.
 6. A direct A+B edit verifies both targets independently in either activation
    order and reports sorted target-specific failures/recovery.
 7. Command context distinguishes Codex inline workdir, matching Codex
-   transcript workdir, Claude session cwd, payload metadata, and process cwd;
-   missing or mismatched call ids never attest the fallback as the target call.
+   transcript workdir, Claude session cwd, authenticated managed-session cwd,
+   payload metadata, and process cwd; missing or mismatched call ids never
+   attest the fallback as the target call. A managed record must match the
+   current session id, provider, ready state, runtime incarnation, file
+   owner/mode, and physical process cwd.
 8. Relative, dynamic, duplicate, symlink-alias, reordered, extra-flag, wrapper,
    shell-control, and executable-shadow preparation/cross-repository forms fail
    closed under enforce.

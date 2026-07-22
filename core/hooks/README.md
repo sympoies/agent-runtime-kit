@@ -100,9 +100,14 @@ still run.
 
 Direct edits discover and verify each explicit target independently. Bash uses
 a host-attested command workdir: Codex inline metadata, a matching bounded
-transcript call, or provider session cwd. A process-cwd or mismatched-call
-fallback is recorded as un-attested and receives `workdir-attestation-missing`
-instead of silently becoming a cross-repository target. Shell-expanded
+transcript call, provider session cwd, or the exact cwd in a ready private
+`agent-session` record whose session id and runtime incarnation match the hook
+process. This last route keeps a target-rooted Claude worker usable when its
+Bash envelope omits cwd. A plain process-cwd or mismatched-call fallback is
+recorded as un-attested and receives `workdir-attestation-missing` instead of
+silently becoming a cross-repository target. Its message tells the agent not to
+repeat unchanged Bash and names the supported Codex workdir, managed
+target-rooted session, and exact-path edit routes. Shell-expanded
 destinations remain unobservable. A shell-embedded `agent-run exec --cwd`
 cross-repository hop stays fail-closed in enforce mode with
 `cross-repository-target-unsupported`; V1 requires a target-rooted session or
@@ -144,11 +149,14 @@ workdir keys (`workdir`, `cwd`, `current_working_directory`,
 `working_directory`) nested anywhere in the tool input; then the Codex
 `exec_command` transcript, whose `arguments` carry the `workdir` in the event
 matching this call's `tool_use_id`/`call_id`; then non-session payload metadata;
-then the top-level session `cwd`; and finally process cwd. Absolute inline,
-matching-transcript, payload, and ordinary session-cwd values are attested.
-Relative values, process cwd, and fallback after transcript-call mismatch are
-not. The transcript tail remains capped at 4 MiB. Direct-edit verification stays
-target-based; shell verification is command-context based.
+then the top-level session `cwd`; then a bounded 64 KiB private managed-session
+record whose id, agent, ready state, runtime incarnation, owner/mode, and cwd all
+match the current hook process; and finally process cwd. Absolute inline,
+matching-transcript, payload, ordinary session-cwd, and authenticated
+managed-session-cwd values are attested. Relative values, plain process cwd,
+and fallback after transcript-call mismatch are not. The transcript tail remains
+capped at 4 MiB. Direct-edit verification stays target-based; shell verification
+is command-context based.
 
 `checkout-lease-guard.py` coordinates one writer per physical Git checkout
 across Codex and Claude only when the managed launch explicitly selects

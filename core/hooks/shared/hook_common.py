@@ -94,9 +94,12 @@ COMMAND_CONTEXT_SOURCES = frozenset(
         "matching-transcript-call",
         "payload",
         "session-cwd",
+        "managed-session-cwd",
         "process-cwd",
     }
 )
+MANAGED_SESSION_RECORD_MAX_BYTES = 64 * 1024
+MANAGED_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class CommandContext(NamedTuple):
@@ -214,6 +217,92 @@ def _context_from_value(
     )
 
 
+def _managed_session_cwd() -> Path | None:
+    """Return the authenticated managed-session cwd when it matches this process.
+
+    Claude's Bash hook envelope does not consistently carry a per-call workdir.
+    A target-rooted ``agent-session`` launch still has a durable private record,
+    runtime incarnation, and process cwd. Treat that exact three-way match as
+    host attestation without starting a subprocess or trusting prompt text.
+    Malformed, replaced, symlinked, oversized, foreign-owned, or writable state
+    fails soft to the ordinary un-attested process-cwd fallback.
+    """
+    session_id = os.environ.get("AGENT_SESSION_ID", "").strip()
+    state_raw = os.environ.get("AGENT_SESSION_STATE_DIR", "").strip()
+    runtime_id = os.environ.get("AGENT_SESSION_RUNTIME_ID", "").strip()
+    if (
+        not MANAGED_SESSION_ID_RE.fullmatch(session_id)
+        or not state_raw
+        or not runtime_id
+    ):
+        return None
+    state_root = Path(state_raw).expanduser()
+    if not state_root.is_absolute():
+        return None
+    try:
+        state_root = state_root.resolve(strict=True)
+        session_dir = state_root / "sessions" / session_id
+        session_metadata = os.stat(session_dir, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(session_metadata.st_mode)
+            or session_metadata.st_uid != os.geteuid()
+            or session_metadata.st_mode & stat.S_IWOTH
+        ):
+            return None
+        record_path = session_dir / "session.json"
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        descriptor = os.open(record_path, flags)
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                or metadata.st_size > MANAGED_SESSION_RECORD_MAX_BYTES
+            ):
+                return None
+            with os.fdopen(descriptor, "rb", closefd=False) as handle:
+                raw = handle.read(MANAGED_SESSION_RECORD_MAX_BYTES + 1)
+        finally:
+            os.close(descriptor)
+        if len(raw) > MANAGED_SESSION_RECORD_MAX_BYTES:
+            return None
+        record = json.loads(raw)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(record, Mapping):
+        return None
+    runtime = record.get("runtime")
+    startup = record.get("startup")
+    if (
+        record.get("id") != session_id
+        or not isinstance(runtime, Mapping)
+        or runtime.get("launch_id") != runtime_id
+        or not isinstance(startup, Mapping)
+        or startup.get("state") != "ready"
+    ):
+        return None
+    product = os.environ.get("AGENT_RUNTIME_PRODUCT", "").strip()
+    if product and record.get("agent") != product:
+        return None
+    value = record.get("cwd")
+    if not isinstance(value, str) or not value:
+        return None
+    managed_cwd = Path(value).expanduser()
+    if not managed_cwd.is_absolute():
+        return None
+    try:
+        managed_cwd = managed_cwd.resolve(strict=True)
+        process_cwd = Path.cwd().resolve(strict=True)
+    except OSError:
+        return None
+    return managed_cwd if managed_cwd == process_cwd else None
+
+
 def command_context(payload: Mapping[str, Any]) -> CommandContext:
     """Resolve canonical workdir provenance for one provider tool call.
 
@@ -221,10 +310,10 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
     workdir keys nested anywhere in the tool input, then the Codex transcript
     arguments (referenced by ``call_id``/``tool_use_id``), then non-session
     workdir keys nested elsewhere in the payload, then the top-level session
-    ``cwd``, and finally process cwd. Transcript metadata that cannot be matched
-    prevents a later fallback from becoming attested for that call. The resolver
-    is pure in-process work except for the existing bounded transcript file read;
-    it never starts a subprocess.
+    ``cwd``, then an authenticated managed-session cwd, and finally process cwd.
+    Transcript metadata that cannot be matched prevents a later fallback from
+    becoming attested for that call. The resolver is pure in-process except for
+    bounded transcript/session-record reads; it never starts a subprocess.
     """
     tool_input = tool_input_dict(payload)
     for value in iter_workdir_values(tool_input):
@@ -262,6 +351,8 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
             source="session-cwd",
             inherited_diagnostic=transcript_diagnostic,
         )
+    if transcript_diagnostic is None and (managed_cwd := _managed_session_cwd()):
+        return CommandContext(managed_cwd, "managed-session-cwd", True, None)
     return CommandContext(
         Path.cwd().resolve(strict=False),
         "process-cwd",

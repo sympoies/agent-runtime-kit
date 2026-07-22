@@ -1685,9 +1685,12 @@ def main() -> int:
         and not context.attested
     ):
         message = (
-            "The shell target lacks matching host workdir attestation. Use an inline "
-            "absolute workdir, a matching Codex transcript call, a provider session "
-            "cwd, or a target-rooted worker. [reason: workdir-attestation-missing]"
+            "The shell target lacks matching host workdir attestation. Do not retry "
+            "the unchanged Bash call. In Codex, submit the tool call with an explicit "
+            "absolute workdir. In Codex or Claude, continue from a managed session "
+            "rooted at the intended repository; an exact-path Edit/Write remains the "
+            "supported cross-repository file route. "
+            "[reason: workdir-attestation-missing]"
         )
         if mode == "enforce":
             emit_block(message)

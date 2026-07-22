@@ -8013,6 +8013,51 @@ exit 65
             self.assertEqual(process.source, "process-cwd")
             self.assertFalse(process.attested)
             self.assertEqual(process.diagnostic, "workdir-attestation-missing")
+
+            managed_state = root / "agent-session-state"
+            managed_id = "managed-claude"
+            managed_dir = managed_state / "sessions" / managed_id
+            managed_dir.mkdir(parents=True)
+            (managed_dir / "session.json").write_text(
+                json.dumps(
+                    {
+                        "id": managed_id,
+                        "agent": "claude",
+                        "cwd": str(target),
+                        "runtime": {"launch_id": "managed-launch"},
+                        "startup": {"state": "ready"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (managed_dir / "session.json").chmod(0o600)
+            managed_env = {
+                "AGENT_SESSION_ID": managed_id,
+                "AGENT_SESSION_STATE_DIR": str(managed_state),
+                "AGENT_SESSION_RUNTIME_ID": "managed-launch",
+                "AGENT_RUNTIME_PRODUCT": "claude",
+            }
+            with (
+                mock.patch.dict(os.environ, managed_env, clear=False),
+                mock.patch.object(hook_common.Path, "cwd", return_value=target),
+            ):
+                managed = resolver(command_payload("touch out"))
+            self.assertEqual(managed.path, target.resolve())
+            self.assertEqual(managed.source, "managed-session-cwd")
+            self.assertTrue(managed.attested)
+            self.assertIsNone(managed.diagnostic)
+
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {**managed_env, "AGENT_SESSION_RUNTIME_ID": "wrong-launch"},
+                    clear=False,
+                ),
+                mock.patch.object(hook_common.Path, "cwd", return_value=target),
+            ):
+                mismatched_managed = resolver(command_payload("touch out"))
+            self.assertEqual(mismatched_managed.source, "process-cwd")
+            self.assertFalse(mismatched_managed.attested)
             self.assertEqual(
                 hook_common.COMMAND_CONTEXT_SOURCES,
                 {
@@ -8020,6 +8065,7 @@ exit 65
                     "matching-transcript-call",
                     "payload",
                     "session-cwd",
+                    "managed-session-cwd",
                     "process-cwd",
                 },
             )

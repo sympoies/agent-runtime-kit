@@ -81,7 +81,12 @@ project-defined validation. This file is the procedural detail behind them.
   same call and returns an exact, phase-qualified
   `agent-docs preflight --intent project-dev` next action for reading the newly
   prepared contract. A host-attested absolute workdir is the supported
-  cross-repository shell route. An `agent-run exec --cwd` wrapper targeting
+  cross-repository shell route. A ready target-rooted managed session may attest
+  its exact cwd through its private session record when a provider Bash envelope
+  omits cwd; session id, runtime incarnation, agent, owner/mode, and process cwd
+  must all match. A missing attestation tells the agent not to repeat unchanged
+  Bash and points to explicit Codex workdir, target-rooted session, or exact-path
+  edit recovery. An `agent-run exec --cwd` wrapper targeting
   another repository or worktree remains unsupported until nils-cli provides
   one typed command context shared by every guard; dynamic, duplicated, opaque,
   relative, shadowed, and wrapped shapes use
@@ -109,5 +114,5 @@ diagnostics, audits, and explicit cleanup planning.
   so `.envrc` / `.env` handling is explicit in non-interactive agent sessions,
   but only when `<repo>` is already the host-attested command repository. Do not
   use the shell wrapper to hop from one repository/worktree to another; submit
-  a host-attested workdir or start the command from a session rooted at that
-  target. Do not run `direnv allow` automatically.
+  a host-attested workdir or start the command from a managed session rooted at
+  that target. Do not run `direnv allow` automatically.
