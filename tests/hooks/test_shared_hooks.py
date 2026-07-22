@@ -30,6 +30,7 @@ TEST_RUNTIME_STATE = tempfile.TemporaryDirectory(
 )
 sys.path.insert(0, str(HOOK_DIR))
 
+import hook_common  # noqa: E402
 from hook_common import (  # noqa: E402
     command_matches_validation,
     effective_workdir,
@@ -45,6 +46,15 @@ def parse_stdout(stdout: str) -> dict[str, object] | None:
     if not isinstance(parsed, dict):
         raise AssertionError(f"hook stdout was not a JSON object: {stdout!r}")
     return parsed
+
+
+def snapshot_repository_content(repo: Path) -> dict[str, bytes]:
+    """Capture working-tree file content without private Git metadata."""
+    return {
+        path.relative_to(repo).as_posix(): path.read_bytes()
+        for path in sorted(repo.rglob("*"))
+        if path.is_file() and ".git" not in path.relative_to(repo).parts
+    }
 
 
 def load_claude_hook_fragment() -> dict[str, Any]:
@@ -149,13 +159,43 @@ def run_hook(
     }
     if not env or state_overrides.isdisjoint(env):
         full_env["AGENT_RUNTIME_STATE_HOME"] = TEST_RUNTIME_STATE.name
+    # Existing strict project-dev fixtures test the enforce contract. Keep that
+    # partition explicit now that production defaults to advisory; default-mode
+    # tests pass an empty value, which deterministically selects advisory.
+    if script_name == "pre-edit-intent-gate.py":
+        full_env["AGENT_RUNTIME_PROJECT_DEV_MODE"] = "enforce"
     if env:
         full_env.update(env)
+    payload_for_hook = payload
+    if (
+        script_name == "pre-edit-intent-gate.py"
+        and cwd is not None
+        and payload.get("tool_name") == "Bash"
+        and "transcript_path" not in payload
+        and "cwd" not in payload
+    ):
+        tool_input = payload.get("tool_input")
+        if isinstance(tool_input, dict) and not any(
+            key in tool_input
+            for key in (
+                "workdir",
+                "cwd",
+                "current_working_directory",
+                "working_directory",
+            )
+        ):
+            # Model the host-attested per-call workdir that real hooked Bash
+            # envelopes carry, without mutating the caller's fixture object.
+            payload_for_hook = dict(payload)
+            payload_for_hook["tool_input"] = {
+                **tool_input,
+                "workdir": str(cwd.resolve()),
+            }
     trusted = prepare_trusted_test_agent_docs(full_env, cwd)
     try:
         completed = subprocess.run(
             [sys.executable, str(HOOK_DIR / script_name)],
-            input=json.dumps(payload),
+            input=json.dumps(payload_for_hook),
             capture_output=True,
             text=True,
             cwd=cwd,
@@ -7868,6 +7908,661 @@ exit 65
             }
             self.assertEqual(effective_workdir(busy_payload), target)
 
+    def test_command_context_records_workdir_provenance_and_attestation(self) -> None:
+        """Cross-repository gating retains where the canonical target came from."""
+        resolver = getattr(hook_common, "command_context", None)
+        self.assertTrue(callable(resolver), "command_context resolver is missing")
+        assert callable(resolver)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+
+            inline = resolver(
+                command_payload("touch out", workdir=str(target))
+            )
+            self.assertEqual(inline.path, target.resolve())
+            self.assertEqual(inline.source, "tool-input")
+            self.assertTrue(inline.attested)
+            self.assertIsNone(inline.diagnostic)
+
+            transcript = root / "transcript.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "call_id": "context-call",
+                            "arguments": json.dumps(
+                                {"command": "touch out", "workdir": str(target)}
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            transcript_context = resolver(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "touch out"},
+                    "tool_use_id": "context-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(root),
+                }
+            )
+            self.assertEqual(transcript_context.path, target.resolve())
+            self.assertEqual(transcript_context.source, "matching-transcript-call")
+            self.assertTrue(transcript_context.attested)
+
+            mismatched = resolver(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "touch out"},
+                    "tool_use_id": "different-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(root),
+                }
+            )
+            self.assertEqual(mismatched.path, root.resolve())
+            self.assertEqual(mismatched.source, "session-cwd")
+            self.assertFalse(mismatched.attested)
+            self.assertEqual(mismatched.diagnostic, "workdir-attestation-missing")
+
+            missing_call_id = resolver(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "touch out"},
+                    "transcript_path": str(transcript),
+                    "cwd": str(root),
+                }
+            )
+            self.assertEqual(missing_call_id.source, "session-cwd")
+            self.assertFalse(missing_call_id.attested)
+            self.assertEqual(
+                missing_call_id.diagnostic, "workdir-attestation-missing"
+            )
+
+            payload_metadata = resolver(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "touch out"},
+                    "host": {"working_directory": str(target)},
+                }
+            )
+            self.assertEqual(payload_metadata.source, "payload")
+            self.assertTrue(payload_metadata.attested)
+
+            relative = resolver(command_payload("touch out", workdir="target"))
+            self.assertEqual(relative.source, "tool-input")
+            self.assertFalse(relative.attested)
+            self.assertEqual(relative.diagnostic, "workdir-attestation-missing")
+
+            claude = resolver(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "touch out"},
+                    "cwd": str(target),
+                }
+            )
+            self.assertEqual(claude.source, "session-cwd")
+            self.assertTrue(claude.attested)
+
+            with mock.patch.object(hook_common.Path, "cwd", return_value=target):
+                process = resolver(command_payload("touch out"))
+            self.assertEqual(process.path, target.resolve())
+            self.assertEqual(process.source, "process-cwd")
+            self.assertFalse(process.attested)
+            self.assertEqual(process.diagnostic, "workdir-attestation-missing")
+            self.assertEqual(
+                hook_common.COMMAND_CONTEXT_SOURCES,
+                {
+                    "tool-input",
+                    "matching-transcript-call",
+                    "payload",
+                    "session-cwd",
+                    "process-cwd",
+                },
+            )
+
+    def test_command_context_hot_path_is_in_process_and_under_latency_budget(
+        self,
+    ) -> None:
+        """A synthetic hot path adds no subprocess and keeps p95 below 10 ms."""
+        resolver = getattr(hook_common, "command_context", None)
+        self.assertTrue(callable(resolver), "command_context resolver is missing")
+        assert callable(resolver)
+        payload = command_payload("touch out", workdir=str(REPO_ROOT))
+        durations: list[float] = []
+        with mock.patch.object(
+            hook_common.subprocess,
+            "run",
+            side_effect=AssertionError("command context must not spawn"),
+        ):
+            for _ in range(1000):
+                started = time.perf_counter()
+                resolver(payload)
+                durations.append(time.perf_counter() - started)
+        p95 = sorted(durations)[949]
+        self.assertLess(p95, 0.010, f"command-context p95 {p95:.6f}s")
+
+    def test_pre_edit_intent_gate_project_dev_modes_are_isolated(self) -> None:
+        """Default advisory, invalid, off, and enforce have distinct contracts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            git_bin = shutil.which("git")
+            assert git_bin is not None
+            (bin_dir / "git").symlink_to(git_bin)
+            base_env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "HOME": str(root / "home"),
+                "PATH": str(bin_dir),
+            }
+            (root / "home").mkdir()
+            payload = write_payload(str(repo / "src" / "lib.rs"), "x\n")
+            payload["session_id"] = "project-dev-mode"
+
+            for mode in ("", "advisory"):
+                with self.subTest(mode=mode or "default"):
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=repo,
+                        env={**base_env, "AGENT_RUNTIME_PROJECT_DEV_MODE": mode},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    assert decision is not None
+                    self.assertNotEqual(decision.get("decision"), "block")
+                    self.assertIn(
+                        "[reason: project-dev-advisory-unavailable]", str(decision)
+                    )
+                    self.assertIn("work remains allowed", str(decision).lower())
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={**base_env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "unexpected"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("Invalid AGENT_RUNTIME_PROJECT_DEV_MODE", str(decision))
+            self.assertIn("work remains allowed", str(decision).lower())
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={**base_env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "off"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={**base_env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "enforce"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "capability")
+
+            # Project-dev off does not bypass a separately registered delivery
+            # control: raw commits remain blocked by their own hook.
+            code, decision, stderr = run_hook(
+                "block-direct-git-commit.py",
+                command_payload("git commit -m bypass"),
+                cwd=repo,
+                env={**base_env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "off"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "semantic-commit")
+
+    def test_pre_edit_intent_gate_consumes_prepare_for_literal_target_repo(
+        self,
+    ) -> None:
+        """A target-B prepare from workdir A is consumed for B, not rebuilt for A."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_a = root / "repo-a"
+            repo_b = root / "repo-b"
+            for repo in (repo_a, repo_b):
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            docs_home = root / "docs-home"
+            docs_home.mkdir()
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> {shlex.quote(str(call_log))}
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session verify --help"* ]]; then echo '--phase'; exit 0; fi
+if [[ "$*" == *"session prepare"* ]]; then
+  project=''
+  state=''
+  previous=''
+  for token in "$@"; do
+    if [[ "$previous" == '--project-path' ]]; then project="$token"; fi
+    if [[ "$previous" == '--state-home' ]]; then state="$token"; fi
+    previous="$token"
+  done
+  mkdir -p "$state/fixture-prepared"
+  touch "$state/fixture-prepared/${{project##*/}}.prepared"
+  echo '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  project=''
+  state=''
+  previous=''
+  for token in "$@"; do
+    if [[ "$previous" == '--project-path' ]]; then project="$token"; fi
+    if [[ "$previous" == '--state-home' ]]; then state="$token"; fi
+    previous="$token"
+  done
+  if [[ -f "$state/fixture-prepared/${{project##*/}}.prepared" ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            state = root / "state"
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_PROJECT_DEV_MODE": "enforce",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+                "HOME": str(root / "home"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            (root / "home").mkdir()
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            prepare = shlex.join(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(docs_home.resolve()),
+                    "--project-path",
+                    str(repo_b.resolve()),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    "target-b-prepare",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state.resolve()),
+                    "--intent",
+                    "project-dev",
+                    "--phase",
+                    "edit",
+                    "--format",
+                    "json",
+                ]
+            )
+            payload = command_payload(prepare, workdir=str(repo_a))
+            payload["session_id"] = "target-b-prepare"
+            before_a = snapshot_repository_content(repo_a)
+            before_b = snapshot_repository_content(repo_b)
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo_a, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[reason: prepared]")
+            self.assertIn("[action: retry-original]", str(decision))
+            self.assertTrue(
+                (state / "fixture-prepared" / "repo-b.prepared").exists()
+            )
+            self.assertFalse(
+                (state / "fixture-prepared" / "repo-a.prepared").exists()
+            )
+            self.assertEqual(snapshot_repository_content(repo_a), before_a)
+            self.assertEqual(snapshot_repository_content(repo_b), before_b)
+
+            edit_b = write_payload(str(repo_b / "src" / "lib.rs"), "x\n")
+            edit_b["session_id"] = "target-b-prepare"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", edit_b, cwd=repo_a, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            edit_a = write_payload(str(repo_a / "src" / "lib.rs"), "x\n")
+            edit_a["session_id"] = "target-b-prepare"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", edit_a, cwd=repo_a, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev-required")
+
+    def test_pre_edit_intent_gate_verifies_and_prepares_multi_target_edits(
+        self,
+    ) -> None:
+        """A+B edits preserve repository/code pairs in either activation order."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo_a = root / "repo-a"
+            repo_b = root / "repo-b"
+            for repo in (repo_a, repo_b):
+                (repo / "src").mkdir(parents=True)
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+                (repo / "src" / "lib.rs").write_text("old\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> {shlex.quote(str(call_log))}
+if [[ "$*" == *"session verify --help"* ]]; then echo '--phase'; exit 0; fi
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+project=''
+state=''
+previous=''
+for token in "$@"; do
+  if [[ "$previous" == '--project-path' ]]; then project="$token"; fi
+  if [[ "$previous" == '--state-home' ]]; then state="$token"; fi
+  previous="$token"
+done
+marker="$state/fixture-prepared/${{project##*/}}.prepared"
+if [[ "$*" == *"session prepare"* ]]; then
+  mkdir -p "$state/fixture-prepared"
+  touch "$marker"
+  echo '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+  exit 0
+fi
+if [[ "$*" == *"session verify"* ]]; then
+  if [[ -f "$marker" ]]; then
+    echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"codex","active_intents":["project-dev"],"verified":true}}}}'
+    exit 0
+  fi
+  echo '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{{"code":"required-intent-not-active"}}}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(root),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                "AGENT_SESSION_STATE_DIR": str(root / "coordination-state"),
+                "HOME": str(root / "home"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            (root / "home").mkdir()
+            fixture_markers = root / "state" / "fixture-prepared"
+            before_contents = {
+                repo: snapshot_repository_content(repo) for repo in (repo_a, repo_b)
+            }
+            payload = {
+                "tool_name": "apply_patch",
+                "tool_input": {
+                    "patch": (
+                        f"*** Update File: {repo_a / 'src' / 'lib.rs'}\n"
+                        f"*** Update File: {repo_b / 'src' / 'lib.rs'}\n"
+                    )
+                },
+                "session_id": "multi-target",
+            }
+
+            for active, missing in ((repo_a, repo_b), (repo_b, repo_a)):
+                with self.subTest(active=active.name):
+                    for repo in (repo_a, repo_b):
+                        (fixture_markers / f"{repo.name}.prepared").unlink(
+                            missing_ok=True
+                        )
+                    fixture_markers.mkdir(parents=True, exist_ok=True)
+                    (fixture_markers / f"{active.name}.prepared").write_text(
+                        "prepared\n", encoding="utf-8"
+                    )
+                    call_log.write_text("", encoding="utf-8")
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=repo_a,
+                        env={**env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "enforce"},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev-required")
+                    reason = str(decision)
+                    self.assertIn(str(missing.resolve()), reason)
+                    self.assertNotIn(
+                        f"Target `{active.resolve()}` failed", reason
+                    )
+                    verify_lines = [
+                        line
+                        for line in call_log.read_text(encoding="utf-8").splitlines()
+                        if "session verify" in line and "--help" not in line
+                    ]
+                    self.assertEqual(len(verify_lines), 2)
+                    self.assertTrue(
+                        all(
+                            any(f"--project-path {repo.resolve()}" in line for line in verify_lines)
+                            for repo in (repo_a, repo_b)
+                        )
+                    )
+
+                    call_log.write_text("", encoding="utf-8")
+                    code, advisory, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=repo_a,
+                        env={**env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "advisory"},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(advisory)
+                    assert advisory is not None
+                    self.assertNotEqual(advisory.get("decision"), "block")
+                    advisory_reason = str(advisory)
+                    self.assertIn("[reason: prepared]", advisory_reason)
+                    self.assertTrue(
+                        (fixture_markers / f"{missing.name}.prepared").exists()
+                    )
+                    self.assertTrue(
+                        (fixture_markers / f"{active.name}.prepared").exists()
+                    )
+                    expected_preflight = shlex.join(
+                        [
+                            str((bin_dir / "agent-docs").resolve()),
+                            "--docs-home",
+                            str(root.resolve()),
+                            "--project-path",
+                            str(missing.resolve()),
+                            "preflight",
+                            "--intent",
+                            "project-dev",
+                            "--phase",
+                            "edit",
+                        ]
+                    )
+                    self.assertIn(expected_preflight, advisory_reason)
+                    self.assertEqual(
+                        {
+                            repo: snapshot_repository_content(repo)
+                            for repo in (repo_a, repo_b)
+                        },
+                        before_contents,
+                    )
+                    prepare_lines = [
+                        line
+                        for line in call_log.read_text(encoding="utf-8").splitlines()
+                        if "session prepare" in line
+                    ]
+                    self.assertEqual(len(prepare_lines), 1)
+                    self.assertIn(
+                        f"--project-path {missing.resolve()}", prepare_lines[0]
+                    )
+
+            self.assertFalse((root / "coordination-state").exists())
+
+    def test_pre_edit_intent_gate_prepare_parser_rejects_adversarial_argv(
+        self,
+    ) -> None:
+        """Target-first parsing rejects aliases, reordered flags, and wrappers."""
+        spec = importlib.util.spec_from_file_location(
+            "pre_edit_intent_gate_adversarial",
+            HOOK_DIR / "pre-edit-intent-gate.py",
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            alias = root / "repo-alias"
+            alias.symlink_to(repo, target_is_directory=True)
+            executable = root / "agent-docs"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            state = root / "state"
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(root),
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                valid = gate.activation_base_args(
+                    repo_root=str(repo.resolve()),
+                    executable=str(executable.resolve()),
+                    current_session="adversarial",
+                    product="codex",
+                    subcommand="prepare",
+                ) + [
+                    "--intent",
+                    "project-dev",
+                    "--phase",
+                    "edit",
+                    "--format",
+                    "json",
+                ]
+                self.assertEqual(
+                    gate.literal_prepare_target(
+                        valid, agent_docs_executable=str(executable.resolve())
+                    ),
+                    str(repo.resolve()),
+                )
+                parsed = gate.bootstrap_activation_intents(
+                    shlex.join(valid),
+                    current_session="adversarial",
+                    product="codex",
+                    repo_root=str(repo.resolve()),
+                    agent_docs_executable=str(executable.resolve()),
+                )
+                self.assertIsNotNone(parsed)
+
+                project_index = valid.index("--project-path") + 1
+                literal_rejections = []
+                relative = list(valid)
+                relative[project_index] = "../repo"
+                literal_rejections.append(relative)
+                symlink_alias = list(valid)
+                symlink_alias[project_index] = str(alias)
+                literal_rejections.append(symlink_alias)
+                duplicate_project = list(valid)
+                duplicate_project[project_index + 1 : project_index + 1] = [
+                    "--project-path",
+                    str(repo.resolve()),
+                ]
+                literal_rejections.append(duplicate_project)
+                equals_project = list(valid)
+                equals_project[project_index - 1 : project_index + 1] = [
+                    f"--project-path={repo.resolve()}"
+                ]
+                literal_rejections.append(equals_project)
+                bare = list(valid)
+                bare[0] = "agent-docs"
+                literal_rejections.append(bare)
+                for words in literal_rejections:
+                    with self.subTest(literal_words=words):
+                        self.assertIsNone(
+                            gate.literal_prepare_target(
+                                words,
+                                agent_docs_executable=str(executable.resolve()),
+                            )
+                        )
+
+                parser_rejections = []
+                reordered = list(valid[:-4]) + [
+                    "--format",
+                    "json",
+                    "--phase",
+                    "edit",
+                ]
+                parser_rejections.append(reordered)
+                duplicate_phase = list(valid[:-2]) + [
+                    "--phase",
+                    "delivery",
+                    "--format",
+                    "json",
+                ]
+                parser_rejections.append(duplicate_phase)
+                duplicate_intent = list(valid[:-4]) + [
+                    "--intent",
+                    "project-dev",
+                    "--phase",
+                    "edit",
+                    "--format",
+                    "json",
+                ]
+                parser_rejections.append(duplicate_intent)
+                unknown_phase = list(valid)
+                unknown_phase[-3] = "unknown"
+                parser_rejections.append(unknown_phase)
+                extra_flag = list(valid) + ["--strict"]
+                parser_rejections.append(extra_flag)
+                for words in parser_rejections:
+                    with self.subTest(parser_words=words):
+                        self.assertIsNone(
+                            gate.bootstrap_activation_intents(
+                                shlex.join(words),
+                                current_session="adversarial",
+                                product="codex",
+                                repo_root=str(repo.resolve()),
+                                agent_docs_executable=str(executable.resolve()),
+                            )
+                        )
+
+                for wrapped in (
+                    "env " + shlex.join(valid),
+                    "time " + shlex.join(valid),
+                    "bash -c " + shlex.quote(shlex.join(valid)),
+                    shlex.join(valid) + "; true",
+                ):
+                    with self.subTest(wrapped=wrapped):
+                        self.assertIsNone(
+                            gate.bootstrap_activation_intents(
+                                wrapped,
+                                current_session="adversarial",
+                                product="codex",
+                                repo_root=str(repo.resolve()),
+                                agent_docs_executable=str(executable.resolve()),
+                            )
+                        )
+
     def test_pre_edit_intent_gate_requires_active_project_dev_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -9167,11 +9862,9 @@ exit 64
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(
-                        decision, "different repository or worktree"
-                    )
+                    self.assert_blocked(decision, "session rooted at")
                     self.assertIn(
-                        "[reason: cross-repository-workdir-unsupported]",
+                        "[reason: cross-repository-target-unsupported]",
                         str(decision),
                     )
                     self.assertIn(str(target_repo.resolve()), str(decision))
@@ -9195,11 +9888,9 @@ exit 64
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(
-                        decision, "cannot be resolved statically"
-                    )
+                    self.assert_blocked(decision, "cannot be resolved and attested")
                     self.assertIn(
-                        "[reason: cross-repository-workdir-unsupported]",
+                        "[reason: cross-repository-target-unsupported]",
                         str(decision),
                     )
 
@@ -9961,6 +10652,26 @@ exit 64
 
                 stale_payload = command_payload(stale_prepare)
                 stale_payload["session_id"] = "provider-shape-recovery"
+                code, advisory, stderr = run_hook(
+                    "pre-edit-intent-gate.py",
+                    stale_payload,
+                    cwd=repo,
+                    env={
+                        **env,
+                        "AGENT_RUNTIME_PROJECT_DEV_MODE": "advisory",
+                    },
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNotNone(advisory)
+                assert advisory is not None
+                self.assertNotEqual(advisory.get("decision"), "block")
+                advisory_reason = str(advisory.get("systemMessage", ""))
+                self.assertIn(
+                    "not treated as a trusted bootstrap", advisory_reason
+                )
+                self.assertIn("will execute normally", advisory_reason)
+                self.assertNotIn("was not executed", advisory_reason)
+
                 code, decision, stderr = run_hook(
                     "pre-edit-intent-gate.py", stale_payload, cwd=repo, env=env
                 )

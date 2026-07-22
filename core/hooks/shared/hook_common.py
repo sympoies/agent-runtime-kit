@@ -88,16 +88,50 @@ def iter_workdir_values(value: Any) -> list[str]:
 # call, so a tail read suffices while capping memory and latency now that the
 # resolver runs inside the mutation/lease guards on every command.
 MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024
+COMMAND_CONTEXT_SOURCES = frozenset(
+    {
+        "tool-input",
+        "matching-transcript-call",
+        "payload",
+        "session-cwd",
+        "process-cwd",
+    }
+)
+
+
+class CommandContext(NamedTuple):
+    """Canonical workdir plus its host-observable provenance.
+
+    ``attested`` means the target came from an absolute provider/tool value for
+    this call. It is deliberately false for process cwd, relative metadata, and
+    a fallback selected after transcript-call matching failed. Consumers can
+    therefore retain same-repository compatibility without silently treating a
+    process-local fallback as an attested cross-repository target.
+    """
+
+    path: Path
+    source: str
+    attested: bool
+    diagnostic: str | None = None
+
+
+class TranscriptWorkdirResult(NamedTuple):
+    value: str | None
+    diagnostic: str | None
 
 
 @functools.lru_cache(maxsize=64)
-def _transcript_workdir_value(transcript_path: str, tool_use_id: str) -> str | None:
-    """Raw workdir string from the newest matching transcript event, or ``None``.
+def _transcript_workdir_result(
+    transcript_path: str, tool_use_id: str
+) -> TranscriptWorkdirResult:
+    """Raw workdir and a stable matching diagnostic from a bounded tail read.
 
     Cached per (path, call id) so repeated guard resolutions in one process read
     the transcript once. Reads only the tail (``MAX_TRANSCRIPT_BYTES``) and fails
-    soft to ``None`` on ANY error (missing, unreadable, oversized/OOM, malformed)
-    so a hostile or corrupt transcript can never crash a fail-closed guard.
+    soft on ANY error (missing, unreadable, oversized/OOM, malformed) so a
+    hostile or corrupt transcript can never crash a fail-closed guard. The
+    public context intentionally collapses these private details to
+    ``workdir-attestation-missing``.
     """
     try:
         path = Path(transcript_path).expanduser()
@@ -113,7 +147,7 @@ def _transcript_workdir_value(transcript_path: str, tool_use_id: str) -> str | N
         if start > 0 and lines:
             lines = lines[1:]
     except Exception:
-        return None
+        return TranscriptWorkdirResult(None, "transcript-unavailable")
     for line in reversed(lines):
         try:
             event = json.loads(line)
@@ -126,15 +160,20 @@ def _transcript_workdir_value(transcript_path: str, tool_use_id: str) -> str | N
             continue
         arguments = event_payload.get("arguments")
         if not isinstance(arguments, str):
-            return None
+            return TranscriptWorkdirResult(None, "transcript-arguments-missing")
         try:
             parsed_arguments = json.loads(arguments)
         except json.JSONDecodeError:
-            return None
+            return TranscriptWorkdirResult(None, "transcript-arguments-malformed")
         for value in iter_workdir_values(parsed_arguments):
-            return value
-        return None
-    return None
+            return TranscriptWorkdirResult(value, None)
+        return TranscriptWorkdirResult(None, "transcript-workdir-missing")
+    return TranscriptWorkdirResult(None, "transcript-call-mismatch")
+
+
+def _transcript_workdir_value(transcript_path: str, tool_use_id: str) -> str | None:
+    """Compatibility helper returning only the bounded transcript value."""
+    return _transcript_workdir_result(transcript_path, tool_use_id).value
 
 
 def workdir_from_transcript(payload: Mapping[str, Any]) -> Path | None:
@@ -155,32 +194,85 @@ def workdir_from_transcript(payload: Mapping[str, Any]) -> Path | None:
     return workdir if workdir.is_absolute() else Path.cwd() / workdir
 
 
-def effective_workdir(payload: Mapping[str, Any]) -> Path:
-    """Resolve the working directory a tool call actually runs in.
+def _context_from_value(
+    value: str,
+    *,
+    source: str,
+    inherited_diagnostic: str | None = None,
+) -> CommandContext:
+    expanded = Path(value).expanduser()
+    absolute = expanded.is_absolute()
+    path = expanded if absolute else Path.cwd() / expanded
+    diagnostic = inherited_diagnostic
+    if not absolute or diagnostic is not None:
+        diagnostic = "workdir-attestation-missing"
+    return CommandContext(
+        path.resolve(strict=False),
+        source,
+        absolute and diagnostic is None,
+        diagnostic,
+    )
+
+
+def command_context(payload: Mapping[str, Any]) -> CommandContext:
+    """Resolve canonical workdir provenance for one provider tool call.
 
     Fans out across the union of Codex and Claude envelope shapes: explicit
     workdir keys nested anywhere in the tool input, then the Codex transcript
-    arguments (referenced by ``call_id``/``tool_use_id``), then workdir keys
-    nested anywhere in the payload, then the top-level ``cwd``, and finally the
-    hook process cwd. The returned path is not canonicalized; callers that need a
-    resolved path apply ``resolve`` themselves. A relative workdir is anchored to
-    the hook process cwd.
+    arguments (referenced by ``call_id``/``tool_use_id``), then non-session
+    workdir keys nested elsewhere in the payload, then the top-level session
+    ``cwd``, and finally process cwd. Transcript metadata that cannot be matched
+    prevents a later fallback from becoming attested for that call. The resolver
+    is pure in-process work except for the existing bounded transcript file read;
+    it never starts a subprocess.
     """
     tool_input = tool_input_dict(payload)
     for value in iter_workdir_values(tool_input):
-        path = Path(value).expanduser()
-        return path if path.is_absolute() else Path.cwd() / path
-    transcript_workdir = workdir_from_transcript(payload)
-    if transcript_workdir is not None:
-        return transcript_workdir
-    for value in iter_workdir_values(payload):
-        path = Path(value).expanduser()
-        return path if path.is_absolute() else Path.cwd() / path
+        return _context_from_value(value, source="tool-input")
+
+    transcript_diagnostic: str | None = None
+    transcript_path = payload.get("transcript_path")
+    tool_use_id = payload.get("tool_use_id")
+    if isinstance(transcript_path, str) and transcript_path:
+        if isinstance(tool_use_id, str) and tool_use_id:
+            result = _transcript_workdir_result(transcript_path, tool_use_id)
+            if result.value is not None:
+                return _context_from_value(
+                    result.value, source="matching-transcript-call"
+                )
+            transcript_diagnostic = result.diagnostic
+        else:
+            transcript_diagnostic = "transcript-call-id-missing"
+
+    payload_metadata = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"tool_input", "cwd", "transcript_path", "tool_use_id"}
+    }
+    for value in iter_workdir_values(payload_metadata):
+        return _context_from_value(
+            value,
+            source="payload",
+            inherited_diagnostic=transcript_diagnostic,
+        )
     top_cwd = payload.get("cwd")
     if isinstance(top_cwd, str) and top_cwd:
-        path = Path(top_cwd).expanduser()
-        return path if path.is_absolute() else Path.cwd() / path
-    return Path.cwd()
+        return _context_from_value(
+            top_cwd,
+            source="session-cwd",
+            inherited_diagnostic=transcript_diagnostic,
+        )
+    return CommandContext(
+        Path.cwd().resolve(strict=False),
+        "process-cwd",
+        False,
+        "workdir-attestation-missing",
+    )
+
+
+def effective_workdir(payload: Mapping[str, Any]) -> Path:
+    """Compatibility wrapper returning the shared command-context path."""
+    return command_context(payload).path
 
 
 def session_id_from_payload(payload: Mapping[str, Any]) -> str:

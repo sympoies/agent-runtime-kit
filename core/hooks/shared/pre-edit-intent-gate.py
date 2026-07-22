@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Require durable project-dev activation at observable edit boundaries.
+"""Guide or require durable project-dev activation at edit boundaries.
 
 Direct-edit targets are canonicalized and checked per repository. Bash is
-checked against its working repository only: a pre-tool hook cannot observe
-shell-expanded filesystem destinations reliably, so cross-repository shell
-mutations must run with the target repository as CWD. Only an explicitly
-versioned pre-session ``agent-docs`` release receives compatibility behavior.
+checked against one provenance-aware command context: a pre-tool hook cannot
+observe shell-expanded filesystem destinations reliably, so cross-repository
+shell mutations need a host-attested target workdir. Project-dev is advisory by
+default, explicitly fail-closed under ``enforce``, and solely bypassed by
+``off``. Only an explicitly versioned pre-session ``agent-docs`` release
+receives compatibility behavior.
 
-Enforcement is scoped to the boundary that owns the risk. Repository mutation
-(direct edits and mutation-capable shell) requires prepared ``project-dev``.
+Enforcement is scoped to the boundary that owns the risk. In enforce mode,
+repository mutation (direct edits and mutation-capable shell) requires prepared
+``project-dev``; advisory mode attempts preparation and preserves work.
 Two narrow lanes are admitted without that activation because they cannot mutate
 tracked content: an audited read-only inspection allowlist, and trusted
 ``agent-docs`` preparation/read commands for any declared intent (so a session
@@ -43,6 +46,7 @@ from hook_common import (
     audited_text_read_invocation,
     classify_shell_effect,
     command_from,
+    command_context,
     effective_workdir,
     emit_block,
     env_target_tokens,
@@ -192,6 +196,28 @@ TRUSTED_HELP_EXECUTABLES = frozenset({"agent-docs", "forge-cli"})
 HELP_FLAGS = frozenset({"-h", "--help"})
 VERSION_FLAGS = frozenset({"-V", "--version"})
 DYNAMIC_WORKDIR_CHARACTERS = frozenset("$`*?[{(")
+PROJECT_DEV_MODE_ENV = "AGENT_RUNTIME_PROJECT_DEV_MODE"
+PROJECT_DEV_MODES = frozenset({"advisory", "enforce", "off"})
+
+
+def project_dev_mode() -> tuple[str, str | None]:
+    """Return explicit mode and a stable warning for invalid launch input."""
+    raw = os.environ.get(PROJECT_DEV_MODE_ENV, "").strip()
+    if not raw:
+        return "advisory", None
+    if raw in PROJECT_DEV_MODES:
+        return raw, None
+    return (
+        "advisory",
+        "Invalid AGENT_RUNTIME_PROJECT_DEV_MODE; defaulting to advisory. ",
+    )
+
+
+def emit_advisory(message: str, *, mode_warning: str | None = None) -> None:
+    """Emit non-blocking provider guidance without retaining private bodies."""
+    prefix = mode_warning or ""
+    sys.stdout.write(json.dumps({"systemMessage": prefix + message}))
+    sys.stdout.write("\n")
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -1176,6 +1202,62 @@ def recovery_command(
     return shlex.join(args)
 
 
+def contract_preflight_command(
+    *,
+    repo_root: str,
+    executable: str,
+    intent: str = "project-dev",
+    phase: str | None = None,
+) -> str:
+    """Exact read-only command for the contract a preparation just activated."""
+    args = agent_docs_args(repo_root, executable) + [
+        "preflight",
+        "--intent",
+        intent,
+    ]
+    if phase:
+        args += ["--phase", phase]
+    return shlex.join(args)
+
+
+def literal_prepare_target(
+    command_words: list[str] | None, *, agent_docs_executable: str
+) -> str | None:
+    """Canonical project target named by a literal trusted prepare command.
+
+    This bounded extraction intentionally happens before ordinary shell workdir
+    selection. It does not admit the command; ``bootstrap_activation_intents``
+    still validates the complete identity tuple and exact ordered tail before
+    execution. Relative paths, symlink aliases, duplicate project flags, bare or
+    shadow executables, and non-prepare commands have no trusted target.
+    """
+    if (
+        not command_words
+        or not os.path.isabs(command_words[0])
+        or os.path.realpath(command_words[0])
+        != os.path.realpath(agent_docs_executable)
+        or command_words.count("--project-path") != 1
+        or any(word.startswith("--project-path=") for word in command_words)
+    ):
+        return None
+    index = command_words.index("--project-path")
+    if index + 1 >= len(command_words):
+        return None
+    raw = command_words[index + 1]
+    if not os.path.isabs(raw) or os.path.realpath(raw) != raw:
+        return None
+    if command_words[index + 2 : index + 4] != ["session", "prepare"]:
+        return None
+    repo = git_toplevel(raw)
+    if (
+        not repo
+        or os.path.realpath(repo) != raw
+        or not os.path.isfile(os.path.join(raw, "AGENT_DOCS.toml"))
+    ):
+        return None
+    return raw
+
+
 def recoverable_prepare_parameters(
     command_words: list[str],
     *,
@@ -1189,8 +1271,9 @@ def recoverable_prepare_parameters(
     A safely recoverable command has the exact trusted `session prepare`
     prefix for this executable, repository, session, product, and state home.
     Its tail contains only intent pairs, at most one recognized workflow phase,
-    and at most one non-JSON format pair (or no format pair). The stale command
-    is never executed; these parameters only rebuild the canonical JSON prepare.
+    and at most one non-JSON format pair (or no format pair). These parameters
+    only rebuild the canonical JSON prepare. Enforce mode blocks the mismatched
+    command; advisory mode describes the mismatch and lets it execute normally.
     """
     base = activation_base_args(
         repo_root=repo_root,
@@ -1278,36 +1361,26 @@ def bootstrap_activation_intents(
             continue
         tail = words[len(base) :]
         intents: list[str] = []
-        phase_seen = False
-        json_format_seen = False
         index = 0
-        malformed = False
-        while index < len(tail):
-            if tail[index] == "--intent" and index + 1 < len(tail):
-                intents.append(tail[index + 1])
-                index += 2
-                continue
-            # A single phase-scoped `--phase <value>` (issue #601 P1 slice 3d) is
-            # accepted so the phase-scoped recovery command the gate itself emits
-            # is recognized as a preparation and consumed, not re-dispatched. The
-            # value is not validated here; agent-docs rejects an unknown phase.
-            if tail[index] == "--phase" and index + 1 < len(tail) and not phase_seen:
-                phase_seen = True
-                index += 2
-                continue
+        while tail[index : index + 1] == ["--intent"] and index + 1 < len(tail):
+            intent = tail[index + 1]
+            if not intent or intent in intents:
+                break
+            intents.append(intent)
+            index += 2
+        if not intents:
+            continue
+        if tail[index : index + 1] == ["--phase"]:
             if (
-                subcommand == "prepare"
-                and tail[index] == "--format"
-                and index + 1 < len(tail)
-                and tail[index + 1] == "json"
-                and not json_format_seen
+                index + 1 >= len(tail)
+                or tail[index + 1] not in {PHASE_EDIT, PHASE_DELIVERY}
             ):
-                json_format_seen = True
-                index += 2
                 continue
-            malformed = True
-            break
-        if malformed or not intents or (subcommand == "prepare" and not json_format_seen):
+            index += 2
+        if subcommand == "prepare":
+            if tail[index:] != ["--format", "json"]:
+                continue
+        elif index != len(tail):
             continue
         return words, intents, subcommand
     return None
@@ -1482,9 +1555,8 @@ def main() -> int:
     product = os.environ.get("AGENT_RUNTIME_PRODUCT", "").strip()
     if product not in {"codex", "claude"}:
         return ALLOW
-
-    repos = target_repositories(payload, tool)
-    if not repos:
+    mode, mode_warning = project_dev_mode()
+    if mode == "off":
         return ALLOW
 
     command = command_from(payload) if tool in COMMAND_TOOLS else ""
@@ -1498,17 +1570,42 @@ def main() -> int:
                 "AGENT_SESSION_CAPABILITY_FILE", ""
             ).strip(),
         )
+
+    agent_docs_executable = resolved_executable("agent-docs")
+    prepare_target = (
+        literal_prepare_target(
+            command_words, agent_docs_executable=agent_docs_executable
+        )
+        if tool in COMMAND_TOOLS and agent_docs_executable
+        else None
+    )
+    context = command_context(payload) if tool in COMMAND_TOOLS else None
+    repos = (
+        [prepare_target]
+        if prepare_target is not None
+        else target_repositories(payload, tool)
+    )
+    if not repos:
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
+        return ALLOW
+
     if tool in COMMAND_TOOLS and len(repos) == 1:
         for nested_workdir in agent_run_exec_workdirs(command):
             if nested_workdir is None:
-                emit_block(
-                    "This agent-run exec --cwd target cannot be resolved statically. "
-                    "The hook cannot safely apply the hook-visible repository's "
-                    "activation to an opaque or dynamic nested process. Start or run "
-                    "the original command from a session rooted at the target; do not "
-                    "wrap it from the current repository. No activation was changed. "
-                    "[reason: cross-repository-workdir-unsupported]"
+                message = (
+                    "This agent-run exec --cwd target cannot be resolved and attested "
+                    "as one typed command context. Run the original command from a "
+                    "target-rooted session; no project-dev activation was changed. "
+                    "[reason: cross-repository-target-unsupported]"
                 )
+                if mode == "enforce":
+                    emit_block(message)
+                else:
+                    emit_advisory(
+                        message + " Work remains allowed because project-dev is advisory.",
+                        mode_warning=mode_warning,
+                    )
                 return ALLOW
             target_path = canonical_path(nested_workdir, payload_base(payload))
             target_repo = containing_repo(target_path)
@@ -1517,16 +1614,20 @@ def main() -> int:
                 and os.path.isfile(os.path.join(target_repo, "AGENT_DOCS.toml"))
                 and os.path.realpath(target_repo) != os.path.realpath(repos[0])
             ):
-                emit_block(
-                    "This agent-run exec --cwd target is a different repository or "
-                    "worktree from the hook-visible session repository. The hook cannot "
-                    "safely apply one repository's activation to that nested process. "
-                    f"Start or run the original command from a session rooted at "
-                    f"`{os.path.realpath(target_repo)}`; do not wrap it from the current "
-                    "repository, and prepare project-dev there before mutation. No "
-                    "activation was changed. "
-                    "[reason: cross-repository-workdir-unsupported]"
+                message = (
+                    "This shell-embedded agent-run route cannot supply one typed target "
+                    "to every mutation-sensitive guard. Start or run the original "
+                    f"command from a session rooted at `{os.path.realpath(target_repo)}`. "
+                    "No project-dev activation was changed. "
+                    "[reason: cross-repository-target-unsupported]"
                 )
+                if mode == "enforce":
+                    emit_block(message)
+                else:
+                    emit_advisory(
+                        message + " Work remains allowed because project-dev is advisory.",
+                        mode_warning=mode_warning,
+                    )
                 return ALLOW
     # A sole `git <op> --abort`/`--quit` recovery command restores the clean
     # pre-operation state and authors no content, so it must run even when
@@ -1536,6 +1637,8 @@ def main() -> int:
     # exact-match narrow as the activation bootstrap: no operators, pipes,
     # redirections, or nested shells slip through.
     if command_words and is_git_recovery_argv(command_words):
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
     # Read-only exploration is not a repository mutation. An audited single
     # simple command from the inspection allowlist is admitted without
@@ -1553,32 +1656,99 @@ def main() -> int:
         else None
     )
     if read_effect is not None and read_effect.kind == SHELL_EFFECT_READ_ONLY:
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
 
     if tool in EDIT_TOOLS and not edit_paths(payload):
-        emit_block("Repository edit target extraction failed closed; retry with an explicit path.")
-        return ALLOW
-    agent_docs_executable = resolved_executable("agent-docs")
-    if not agent_docs_executable:
-        emit_block(
-            "agent-docs capability is unavailable for a supported repository mutation; "
-            "restore the governed runtime before retrying."
+        message = (
+            "Repository edit target extraction did not produce a canonical target. "
+            "Retry with an explicit path. [reason: workdir-attestation-missing]"
         )
+        if mode == "enforce":
+            emit_block(message)
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
+        return ALLOW
+
+    # A shell mutation without call-attested workdir metadata cannot be used as
+    # a cross-repository verification target. Exact trusted prepare commands are
+    # exempt because their literal canonical --project-path is independently
+    # bound above before ordinary workdir selection.
+    if (
+        tool in COMMAND_TOOLS
+        and prepare_target is None
+        and context is not None
+        and not context.attested
+    ):
+        message = (
+            "The shell target lacks matching host workdir attestation. Use an inline "
+            "absolute workdir, a matching Codex transcript call, a provider session "
+            "cwd, or a target-rooted worker. [reason: workdir-attestation-missing]"
+        )
+        if mode == "enforce":
+            emit_block(message)
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
+        return ALLOW
+
+    if not agent_docs_executable:
+        message = (
+            "agent-docs capability is unavailable. Restore the governed runtime or "
+            "continue from a target-rooted worker. "
+            "[reason: project-dev-advisory-unavailable]"
+        )
+        if mode == "enforce":
+            emit_block(
+                "agent-docs capability is unavailable for enforced repository mutation; "
+                "restore the governed runtime before retrying. "
+                "[reason: project-dev-required]"
+            )
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
         return ALLOW
     if not trusted_agent_docs_executable(agent_docs_executable, repos):
         if command_words and agent_docs_near_miss_invocation(command_words):
-            emit_block(
+            message = (
                 "This command resembles an agent-docs read or intent preparation, but "
                 "the resolved executable is not a trusted managed agent-docs binary. "
                 "Preparing task-tools, memory, browser-test, or another declared intent "
                 "does not require project-dev. Use the exact absolute-path command from "
                 "the latest intent cue. [reason: agent-docs-command-untrusted]"
             )
+            if mode == "enforce":
+                emit_block(message)
+            else:
+                emit_advisory(
+                    message + " Work remains allowed because project-dev is advisory.",
+                    mode_warning=mode_warning,
+                )
             return ALLOW
-        emit_block(
-            "A trusted agent-docs executable is unavailable for this governed "
-            "repository mutation; restore the managed runtime CLI path before retrying."
+        message = (
+            "A trusted agent-docs executable is unavailable; restore the managed CLI "
+            "path or use a target-rooted worker. "
+            "[reason: project-dev-advisory-unavailable]"
         )
+        if mode == "enforce":
+            emit_block(
+                "A trusted agent-docs executable is unavailable for this enforced "
+                "repository mutation; restore the managed runtime CLI path before "
+                "retrying. [reason: project-dev-required]"
+            )
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
         return ALLOW
 
     if command_words and main_agent_readiness_invocation(
@@ -1587,6 +1757,8 @@ def main() -> int:
         agent_docs_executable=agent_docs_executable,
         current_session=current_session,
     ):
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
 
     if (
@@ -1598,7 +1770,7 @@ def main() -> int:
             != os.path.realpath(agent_docs_executable)
         )
     ):
-        emit_block(
+        message = (
             "This command resembles an agent-docs read or intent preparation, but "
             "it did not use the resolved trusted agent-docs executable and exact "
             "session context. Preparing task-tools, memory, browser-test, or another "
@@ -1606,6 +1778,13 @@ def main() -> int:
             "command from the latest intent cue. "
             "[reason: agent-docs-command-untrusted]"
         )
+        if mode == "enforce":
+            emit_block(message)
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
         return ALLOW
 
     # Trusted agent-docs preparation and read commands are admitted for ANY
@@ -1617,24 +1796,51 @@ def main() -> int:
     if command_words and agent_docs_read_only_invocation(
         command_words, agent_docs_executable
     ):
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
 
     primary_agent_docs_args = agent_docs_args(repos[0], agent_docs_executable)
     capability, detail = session_capability(primary_agent_docs_args)
     if capability == "legacy":
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
     if capability != "supported":
-        emit_block(
-            "agent-docs session capability could not be verified and repository mutation "
-            f"fails closed ({detail})."
+        message = (
+            "agent-docs session capability could not be verified "
+            f"({detail}). [reason: project-dev-advisory-unavailable]"
         )
+        if mode == "enforce":
+            emit_block(
+                "agent-docs session capability could not be verified and enforced "
+                f"repository mutation fails closed ({detail}). "
+                "[reason: project-dev-required]"
+            )
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
         return ALLOW
 
     if not current_session:
-        emit_block(
-            "Selective intent enforcement is available, but this mutation payload has no "
-            "session id. Retry from a Codex or Claude session with session context."
+        message = (
+            "The mutation payload has no session id; retry from a target-rooted Codex "
+            "or Claude session to prepare project-dev. "
+            "[reason: project-dev-advisory-unavailable]"
         )
+        if mode == "enforce":
+            emit_block(
+                "Selective intent enforcement is available, but this mutation payload "
+                "has no session id. Retry from a Codex or Claude session with session "
+                "context. [reason: project-dev-required]"
+            )
+        else:
+            emit_advisory(
+                message + " Work remains allowed because project-dev is advisory.",
+                mode_warning=mode_warning,
+            )
         return ALLOW
 
     if tool in COMMAND_TOOLS and len(repos) == 1:
@@ -1693,9 +1899,10 @@ def main() -> int:
                     "[reason: activation-verify-failed]"
                 )
                 return ALLOW
-            preflight = shlex.join(
-                agent_docs_args(repos[0], agent_docs_executable)
-                + ["preflight", "--intent", intents[0]]
+            preflight = contract_preflight_command(
+                repo_root=repos[0],
+                executable=agent_docs_executable,
+                intent=intents[0],
             )
             emit_block(
                 f"Prepared {prepared} inside the hook (verified); the activation command "
@@ -1725,13 +1932,29 @@ def main() -> int:
                 intents=intents,
                 phase=phase,
             )
-            emit_block(
+            mismatch = (
                 "This trusted agent-docs preparation did not match the exact "
                 "repository, session, product, state-home, phase, and JSON output "
-                "shape required by the bootstrap. The stale command was not executed. "
-                f"Retry with the freshly resolved current-context command `{canonical_recovery}`. "
-                "[reason: agent-docs-bootstrap-shape-mismatch]"
+                "shape required by the bootstrap and is not treated as a trusted "
+                "bootstrap. "
             )
+            if mode == "enforce":
+                emit_block(
+                    mismatch
+                    + "The mismatched command was blocked before execution. Retry "
+                    f"with `{canonical_recovery}`. "
+                    "[reason: agent-docs-bootstrap-shape-mismatch]"
+                )
+            else:
+                emit_advisory(
+                    mismatch
+                    + "It will execute normally as an ordinary advisory command. To "
+                    "submit it as a trusted bootstrap, use "
+                    f"`{canonical_recovery}`. Work remains allowed because "
+                    "project-dev is advisory. "
+                    "[reason: agent-docs-bootstrap-shape-mismatch]",
+                    mode_warning=mode_warning,
+                )
             return ALLOW
 
     # Phase-scope the verification to the observed mutation (issue #601 P1 slice
@@ -1746,7 +1969,7 @@ def main() -> int:
         if phase_supported(primary_agent_docs_args)
         else None
     )
-    failures: list[str] = []
+    failures: list[tuple[str, str]] = []
     for repo_root in repos:
         verified, code = verify_intent(
             agent_docs_args(repo_root, agent_docs_executable),
@@ -1755,9 +1978,77 @@ def main() -> int:
             phase=phase,
         )
         if not verified:
-            failures.append(code)
+            failures.append((os.path.realpath(repo_root), code))
     if not failures:
+        if mode_warning:
+            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
+
+    if mode == "advisory":
+        remaining: list[tuple[str, str]] = []
+        prepared_targets: list[str] = []
+        for repo_root, verification_code in failures:
+            prepare_args = shlex.split(
+                recovery_command(
+                    repo_root=repo_root,
+                    executable=agent_docs_executable,
+                    current_session=current_session,
+                    product=product,
+                    phase=phase,
+                )
+            )
+            completed, outcome = run_probe(prepare_args)
+            if completed is None:
+                remaining.append((repo_root, f"prepare-{outcome}"))
+                continue
+            ok, code = consume_prepare_result(
+                completed, product=product, required_intents=("project-dev",)
+            )
+            if ok:
+                prepared_targets.append(repo_root)
+            else:
+                remaining.append((repo_root, code or verification_code))
+        if not remaining:
+            targets = ", ".join(f"`{target}`" for target in sorted(prepared_targets))
+            next_actions = " ".join(
+                f"For `{target}`, run `"
+                + contract_preflight_command(
+                    repo_root=target,
+                    executable=agent_docs_executable,
+                    phase=phase,
+                )
+                + "` to read the prepared contract."
+                for target in sorted(prepared_targets)
+            )
+            emit_advisory(
+                f"Prepared project-dev for {targets}; the original work remains allowed. "
+                f"{next_actions} [reason: prepared] [action: read-contract]",
+                mode_warning=mode_warning,
+            )
+            return ALLOW
+        details = "; ".join(
+            f"`{repo_root}` ({code})" for repo_root, code in sorted(remaining)
+        )
+        recoveries = " ".join(
+            f"For `{repo_root}`, run `"
+            + recovery_command(
+                repo_root=repo_root,
+                executable=agent_docs_executable,
+                current_session=current_session,
+                product=product,
+                phase=phase,
+            )
+            + "`."
+            for repo_root, _code in sorted(remaining)
+        )
+        emit_advisory(
+            "Project-dev advisory preparation was unavailable for "
+            f"{details}. {recoveries} Work remains allowed because project-dev is "
+            "advisory. [reason: project-dev-advisory-unavailable]",
+            mode_warning=mode_warning,
+        )
+        return ALLOW
+
     if (
         read_effect is not None
         and read_effect.kind == SHELL_EFFECT_UNKNOWN
@@ -1789,7 +2080,7 @@ def main() -> int:
                 f"Route 2 (exact-target project-dev): run `{prepare_route}`, then "
                 "rerun the exact original command. No legacy read-only allowlist "
                 "entry was added. [reason: project-dev-required] "
-                f"Verification code: {failures[0]}."
+                f"Verification code: {failures[0][1]}."
             )
             return ALLOW
     reason = (
@@ -1802,11 +2093,11 @@ def main() -> int:
         "executable and complete session context. If a Git operation is stuck mid-run, a "
         "sole `git <op> --abort` recovers in place without preparation. "
     )
-    if len(repos) == 1:
+    for repo_root, code in sorted(failures):
         reason += (
-            "Run `"
+            f"Target `{repo_root}` failed with `{code}`. Run `"
             + recovery_command(
-                repo_root=repos[0],
+                repo_root=repo_root,
                 executable=agent_docs_executable,
                 current_session=current_session,
                 product=product,
@@ -1814,13 +2105,9 @@ def main() -> int:
             )
             + "`. "
         )
-    else:
-        reason += (
-            "Use the exact `session prepare` command from the latest agent-docs intent cue. "
-        )
     reason += (
-        "Shell enforcement is CWD-scoped; run cross-repository shell mutations with each "
-        f"target repository as CWD. [reason: project-dev-required] Verification code: {failures[0]}."
+        "Shell enforcement is command-context scoped; use a host-attested workdir for "
+        "cross-repository shell work. [reason: project-dev-required]"
     )
     emit_block(reason)
     return ALLOW

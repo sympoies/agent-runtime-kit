@@ -58,22 +58,34 @@ project-defined validation. This file is the procedural detail behind them.
   read-only argv shape. Redirection, command substitution, another shell
   operator, an unsafe stage, or an untrusted executable leaves the effect
   `unknown`; it does not prove that a mutation occurred.
-- The pre-edit intent gate remains fail-closed for `unknown`. Its
+- `AGENT_RUNTIME_PROJECT_DEV_MODE` controls only the project-dev workflow gate:
+  `advisory` is the default, `enforce` is explicit fail-closed behavior, and
+  `off` bypasses this one check. Invalid values degrade to advisory with a stable
+  warning. Advisory attempts bounded exact target preparation when safe, but
+  missing/stale activation, capability, or workdir attestation never blocks the
+  repository command by itself. Enforce remains fail-closed for `unknown`; its
   `project-dev-required` recovery means the shell shape was not proven
   read-only, not that the hook observed a write. Exact trusted `agent-docs`
   preparation for another declared intent is admitted without first preparing
-  `project-dev`; a near miss receives targeted trusted-command recovery. Exact
+  `project-dev`; a near miss receives targeted trusted-command recovery. In
+  advisory mode that near miss is explicitly not treated as a trusted bootstrap
+  and executes normally; in enforce mode it is blocked before execution. Exact
   help/version argv for the managed `agent-docs` and `forge-cli` release surface
   is also read-only; a help flag embedded in an operational argv, a trailing
   argument, a different PATH binary, or a repository-local shadow is not.
-- A successful in-hook `session prepare` is a completed state transition. Its
+- A successful explicitly submitted in-hook `session prepare` is a completed
+  state transition. Its
   block result carries `[reason: prepared] [action: retry-original]`: retry the
   original blocked command and do not run or modify the preparation command
-  again. An `agent-run exec --cwd` wrapper targeting another repository or
-  worktree is rejected with one target-specific diagnostic because the nested
-  process cannot safely inherit the hook-visible repository's activation;
-  dynamic, duplicated, opaque, and relative cwd shapes under a cwd-changing
-  wrapper use the same fail-closed route.
+  again. Advisory auto-preparation instead allows the original command in the
+  same call and returns an exact, phase-qualified
+  `agent-docs preflight --intent project-dev` next action for reading the newly
+  prepared contract. A host-attested absolute workdir is the supported
+  cross-repository shell route. An `agent-run exec --cwd` wrapper targeting
+  another repository or worktree remains unsupported until nils-cli provides
+  one typed command context shared by every guard; dynamic, duplicated, opaque,
+  relative, shadowed, and wrapped shapes use
+  `cross-repository-target-unsupported` plus the target-rooted worker fallback.
 - Hook source and managed config live under the active hook source checkout plus
   the managed block in the tool's runtime config (Codex `config.toml`, Claude
   `settings.json`).
@@ -95,6 +107,7 @@ diagnostics, audits, and explicit cleanup planning.
 - When running project build, test, validation, or repository-owned script
   commands, prefer `agent-run exec --cwd <repo> -- <command> ...` when available
   so `.envrc` / `.env` handling is explicit in non-interactive agent sessions,
-  but only when `<repo>` is the hook-visible effective repository. Do not use
-  the wrapper to hop from one repository/worktree to another; start the command
-  from a session rooted at that target. Do not run `direnv allow` automatically.
+  but only when `<repo>` is already the host-attested command repository. Do not
+  use the shell wrapper to hop from one repository/worktree to another; submit
+  a host-attested workdir or start the command from a session rooted at that
+  target. Do not run `direnv allow` automatically.

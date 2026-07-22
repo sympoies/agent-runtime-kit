@@ -27,6 +27,11 @@ task. If the change grows beyond one commit, its expected base moves, signing
 cannot be verified, the checkout is dirty, or the delivery mode is uncertain,
 use a PR.
 
+`AGENT_RUNTIME_PROJECT_DEV_MODE` changes only workflow preparation guidance.
+Advisory or off project-dev mode does not relax this delivery matrix, commit
+signing, checkout ownership, branch, provider, or user-authorization controls;
+their independent hooks and governed CLIs continue to decide admission.
+
 The direct-main primitive permits only a verified fast-forward update. It
 requires the selected remote to have exactly one actual push URL (including any
 configured `pushurl`), binds that destination to the provider repository, and

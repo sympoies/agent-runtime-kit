@@ -76,23 +76,39 @@ A failed outcome stays outstanding and the Stop gate proposes owner-based
 routing before honoring a validation waiver. The hooks retain neither raw
 command output nor provider artifacts and never open an issue automatically.
 
-Selective intent activation is enforced only when the installed `agent-docs`
+Selective intent activation is available when the installed `agent-docs`
 exposes durable `session activate/status/verify`. `user-prompt-agent-docs.sh`
 expands required docs for active intents and lists inactive routes without
-injecting their runbooks. `pre-edit-intent-gate.py` then verifies
-`project-dev` for every canonical target repository before direct edits. Direct
-edits are gated against each explicit edit target; Bash is gated against its
-effective working repository, resolved through the shared `effective_workdir`
-helper (see below) rather than the hook process cwd. A pre-tool payload still
-cannot reliably expose shell-expanded destinations, so cross-repository shell
-mutations must run with each target repository as their effective workdir. When
-an `agent-run exec --cwd` wrapper names a different repository or worktree from
-the hook-visible session repository, the pre-edit gate rejects it once with
-`cross-repository-workdir-unsupported`; the nested process cannot inherit the
-session repository's activation. Dynamic, duplicated, opaque, or relative cwd
-shapes under a cwd-changing wrapper use the same terminal reason because their
-target cannot be proven. Start a session rooted at the target instead of using
-the wrapper as a cross-repository hop.
+injecting their runbooks. `pre-edit-intent-gate.py` then checks `project-dev`
+for every canonical target repository before direct edits and against the
+shared shell command context.
+
+`AGENT_RUNTIME_PROJECT_DEV_MODE` selects `advisory` (the default), `enforce`, or
+`off`. Advisory mode attempts one bounded exact preparation for each unprepared
+attested target and allows the original work whether preparation succeeds or
+not. Successful auto-preparation includes the exact, phase-qualified
+`agent-docs preflight --intent project-dev` command to read the prepared
+contract; failures use `project-dev-advisory-unavailable` plus exact recovery
+when available. A preparation near miss in advisory mode is not consumed as a
+trusted bootstrap and executes normally with corrected bootstrap guidance;
+enforce mode blocks the same near miss before execution. Invalid mode values
+deterministically degrade to advisory. Enforce retains fail-closed verification
+and target-specific recovery. Off disables only this project-dev workflow
+check; checkout ownership, work-context coordination, validation,
+delivery/signing, credential-protection, provider, OS, and user-authority hooks
+still run.
+
+Direct edits discover and verify each explicit target independently. Bash uses
+a host-attested command workdir: Codex inline metadata, a matching bounded
+transcript call, or provider session cwd. A process-cwd or mismatched-call
+fallback is recorded as un-attested and receives `workdir-attestation-missing`
+instead of silently becoming a cross-repository target. Shell-expanded
+destinations remain unobservable. A shell-embedded `agent-run exec --cwd`
+cross-repository hop stays fail-closed in enforce mode with
+`cross-repository-target-unsupported`; V1 requires a target-rooted session or
+host-attested workdir. Admitting that wrapper later requires a typed nils-cli
+command-context primitive that binds release provenance, canonical cwd, wrapper
+grammar, and child argv once for every mutation-sensitive guard.
 Exact help/version argv for the
 managed `agent-docs` and `forge-cli` release surface remains read-only, while
 extra options, trailing arguments, and executable shadows fail closed. When
@@ -116,22 +132,23 @@ rejected. These hooks are mechanical guardrails, not a security sandbox: the
 product launch environment, managed runtime home, and an explicit trusted-root
 override remain host trust boundaries. Hermes has no runtime-kit hook runner.
 
-The shared `effective_workdir` helper in `hook_common.py` resolves the working
-directory a tool call actually runs in, so `pre-edit-intent-gate.py`,
+The shared `command_context` helper in `hook_common.py` resolves the canonical
+working directory, source, attestation, and optional stable diagnostic for a
+tool call. Its `effective_workdir` compatibility wrapper means
+`pre-edit-intent-gate.py`,
 `checkout-lease-guard.py`, `block-unsafe-default-delivery.py`,
 `agent-scope-lock-guard.py`, and `block-direct-python.py` all agree on the
 target repository instead of each reading the hook process cwd (issue #601
 P0-4). It fans out across the union of Codex and Claude tool envelopes: explicit
 workdir keys (`workdir`, `cwd`, `current_working_directory`,
 `working_directory`) nested anywhere in the tool input; then the Codex
-`exec_command` transcript, whose `arguments` carry the `workdir` in the
-transcript event matching this call's `tool_use_id`/`call_id`; then workdir keys
-anywhere in the payload; then the top-level `cwd`; and finally the hook process
-cwd. Claude submits the session `cwd` and no per-command workdir, so a Claude
-command resolves to the session directory; a Codex command submitted with an
-out-of-repo `workdir` resolves to that directory, not the launch repository.
-Direct-edit verification stays target-based (each edit path's repository);
-shell verification is working-repository-based on this effective workdir.
+`exec_command` transcript, whose `arguments` carry the `workdir` in the event
+matching this call's `tool_use_id`/`call_id`; then non-session payload metadata;
+then the top-level session `cwd`; and finally process cwd. Absolute inline,
+matching-transcript, payload, and ordinary session-cwd values are attested.
+Relative values, process cwd, and fallback after transcript-call mismatch are
+not. The transcript tail remains capped at 4 MiB. Direct-edit verification stays
+target-based; shell verification is command-context based.
 
 `checkout-lease-guard.py` coordinates one writer per physical Git checkout
 across Codex and Claude only when the managed launch explicitly selects
