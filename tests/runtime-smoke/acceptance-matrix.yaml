@@ -365,6 +365,19 @@ cases:
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
+  - id: conversation.main-agent-mode.shared-cli.deterministic
+    product: shared-cli
+    domain: conversation
+    skill_id: conversation.main-agent-mode
+    mode: deterministic
+    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
+    setup: render current Codex and Claude product surfaces
+    invocation: verify explicit activation, doctor and compatibility-preview gates, main/worker ownership, verified prompt transport, stop rules, and the Hermes product ceiling
+    expected_exit_code: 0
+    expected_artifacts: Codex and Claude rendered skill and protocol files with no Hermes skill render
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
   - id: conversation.handoff-session-prompt.shared-cli.deterministic
     product: shared-cli
     domain: conversation

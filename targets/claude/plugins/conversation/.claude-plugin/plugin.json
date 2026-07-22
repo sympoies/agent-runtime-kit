@@ -1,7 +1,7 @@
 {
   "name": "conversation",
   "version": "0.1.0",
-  "description": "Discussion capture, guided feature build, and handoff prompt outcomes.",
+  "description": "Conversation planning, guided delivery, and handoff outcomes.",
   "author": {
     "name": "graysurf"
   },

@@ -1,7 +1,7 @@
 {
   "name": "conversation",
   "version": "0.1.0",
-  "description": "Discussion capture, guided feature build, and handoff prompt outcomes.",
+  "description": "Conversation planning, guided delivery, and handoff outcomes.",
   "author": {
     "name": "graysurf"
   },
@@ -17,6 +17,10 @@
     {
       "id": "handoff-session-prompt",
       "source": "core/skills/conversation/handoff-session-prompt"
+    },
+    {
+      "id": "main-agent-mode",
+      "source": "core/skills/conversation/main-agent-mode"
     }
   ]
 }

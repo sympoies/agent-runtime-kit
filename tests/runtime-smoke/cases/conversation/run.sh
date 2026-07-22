@@ -83,10 +83,55 @@ run_conversation_outcome_routing_probe() {
   rendered_contract_assert_reference conversation guided-feature-build references/DELEGATION_PROTOCOL.md
 }
 
+run_main_agent_mode_probe() {
+  local source="$REPO_ROOT/core/skills/conversation/main-agent-mode/SKILL.md.tera"
+  local protocol="$REPO_ROOT/core/skills/conversation/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
+  local product rendered golden rendered_protocol golden_protocol
+
+  test -s "$source"
+  test -s "$protocol"
+  grep -Fq '## Explicit Activation' "$source"
+  grep -Fq 'agent-session activity doctor --agent "$WORKER_PROVIDER" --format json' "$source"
+  grep -Fq 'agent-session activity setup --agent "$WORKER_PROVIDER" --repair --dry-run --format json' "$source"
+  grep -Fq 'compatibility_owner:"agent-hook"' "$source"
+  grep -Fq -- '--coordination-mode enforce' "$source"
+  grep -Fq 'session created, prompt delivery unverified' "$protocol"
+  grep -Fq 'Paste the task without Enter' "$protocol"
+  grep -Fq 'send success is transport evidence only' "$protocol"
+  grep -Fq 'On mismatch, truncation, interference, missing readiness, or bounded-check' "$protocol"
+  grep -Fq 'authentication, setup, upgrade, update, permission, hook, or other startup' "$protocol"
+  grep -Fq 'Main Agent Mode never auto-applies' "$protocol"
+  grep -Fq '## Stop And Recovery Matrix' "$protocol"
+  grep -Fq '| Work-context scope or worktree conflict |' "$protocol"
+  grep -Fq '| Active or uncertain admitted mutation operation |' "$protocol"
+  grep -Fq 'Retain the exact worker owner/session.' "$protocol"
+  grep -Fq 'Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome.' "$protocol"
+  grep -Fq 'Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome.' "$protocol"
+  grep -Fq 'If proof is unavailable, report blocked and preserve the session and evidence.' "$protocol"
+
+  for product in codex claude; do
+    rendered="$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md"
+    golden="$REPO_ROOT/tests/golden/$product/plugins/conversation/skills/main-agent-mode/expected/SKILL.md"
+    rendered_protocol="$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
+    golden_protocol="$REPO_ROOT/tests/golden/$product/plugins/conversation/skills/main-agent-mode/expected/references/MAIN_AGENT_MODE_PROTOCOL.md"
+    test -s "$rendered"
+    test -s "$golden"
+    cmp -s "$rendered" "$golden"
+    test -s "$rendered_protocol"
+    test -s "$golden_protocol"
+    cmp -s "$protocol" "$rendered_protocol"
+    cmp -s "$protocol" "$golden_protocol"
+  done
+
+  test ! -e "$REPO_ROOT/build/hermes/plugins/conversation/skills/main-agent-mode/SKILL.md"
+  test ! -e "$REPO_ROOT/tests/golden/hermes/plugins/conversation/skills/main-agent-mode"
+}
+
 failures=0
 record_case "conversation.discussion-to-implementation-doc" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe discussion-to-implementation-doc
 record_case "conversation.guided-feature-build" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe guided-feature-build
 record_case "conversation.handoff-session-prompt" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe handoff-session-prompt
 record_case "conversation.outcome-routing" "normal conversation and guided build select advice, explanation, and delegation modes without child-skill selection" run_conversation_outcome_routing_probe
+record_case "conversation.main-agent-mode" "explicit opt-in main-agent ownership, verified worker startup, stop rules, and Codex/Claude-only renders are enforced" run_main_agent_mode_probe
 
 exit "$failures"

@@ -1,0 +1,157 @@
+---
+name: main-agent-mode
+description: >
+  Run an explicit opt-in delivery workflow where one main agent owns the user
+  conversation and acceptance while managed workers implement isolated lanes.
+---
+
+# Main Agent Mode
+
+## Contract
+
+Prereqs:
+
+- The user explicitly asks to enable or use Main Agent Mode for the bounded
+  workflow. Ordinary implementation requests never activate this mode.
+- `agent-session >=1.25.9` is installed from a released surface.
+- A supported worker provider and executable provider helper pass the doctor
+  gate below before mode activation or worker launch.
+- The active project intent, work-tier, test-first, validation, review, and
+  delivery policies remain authoritative.
+- The detailed role, handoff, evidence, acceptance, and recovery protocol is
+  available at `references/MAIN_AGENT_MODE_PROTOCOL.md`.
+
+Inputs:
+
+- The accepted request, done criteria, constraints, repository, base ref, and
+  work tier.
+- `WORKER_PROVIDER`, chosen from the providers reported as supported by the
+  released `agent-session` doctor.
+- Existing plan, issue, run-state, PR, and worktree references when the tier
+  already owns them.
+- An optional explicit `delegate-all` preference for L0/L1 work.
+
+Outputs:
+
+- One main-agent-owned execution and acceptance result for the user.
+- Exact task packets and isolated managed worktree assignments for workers.
+- Bounded worker completion or blocker packets grounded in diff, validation,
+  and durable lifecycle evidence.
+- Independent main-agent inspection, validation, code-review synthesis,
+  acceptance decisions, and final reporting.
+
+Failure modes:
+
+- Activation was not explicit, or the requested scope/done criteria are not
+  sufficiently bounded to delegate safely.
+- The installed `agent-session` is missing or older than `1.25.9`.
+- Doctor output is unhealthy, unsupported, unavailable, malformed, or reports
+  a missing provider helper.
+- The bounded compatibility preview is not converged, would change state, or
+  exposes a representation conflict.
+- Provider readiness, prompt delivery, worker ownership, durable evidence,
+  scope, validation, review, or recovery cannot be established.
+
+## Explicit Activation
+
+Activate only after the user says to enable or use Main Agent Mode for the
+current workflow. State that the mode is active, its bounded outcome, the
+selected worker provider, and whether L0/L1 work is also delegated. Do not infer
+activation from an ordinary request to implement, use subagents, work in
+parallel, or keep going. Activation does not persist into a later unrelated
+request, and an explicit user request to disable the mode takes effect before
+any new worker launch.
+
+## Entrypoint
+
+Run the released version and doctor checks before activating the mode or
+launching any worker:
+
+```bash
+agent-session --version
+agent-session activity doctor --agent "$WORKER_PROVIDER" --format json
+```
+
+Require `agent-session >=1.25.9`, a valid
+`cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
+matching provider record, `classification:"supported"`, and
+`helper_executable:true`. A configured provider must otherwise be healthy for
+the selected runtime. Missing fields, extra provider ambiguity, stale or
+unparseable output, timeouts, or nonzero exit stop activation.
+
+When doctor reports `configured:false`, use only this non-mutating compatibility
+probe:
+
+```bash
+agent-session activity setup --agent "$WORKER_PROVIDER" --repair --dry-run --format json
+```
+
+Accept the compatibility case only when the doctor reports no representation
+conflict and the preview is a valid matching-provider converged result with
+`compatibility_owner:"agent-hook"`, `configured:true`,
+`would_change:false`, and no representation conflict. The preview must not be
+applied. Any other result stops the workflow and reports the bounded readiness
+problem to the user.
+
+## Outcome Routing
+
+Classify the request before choosing workers. Main Agent Mode changes
+implementation ownership, not the tier:
+
+- L0/L1 remain inline unless the user requests `delegate-all`; when delegated,
+  use one isolated managed worker and keep the same parent outcome.
+- L2 retains the plan-tracking parent, but the main agent does not implement or
+  repair production or test code. One interactive managed worker owns the
+  implementation in an isolated managed worktree launched with
+  `--coordination-mode enforce`.
+- L3 retains exact independent lane workers and the dispatch orchestrator
+  acceptance boundary. The mode does not merge lanes or collapse their
+  worktrees, PRs, reviews, validation, or closeout.
+
+For L2/L3, main-agent writes are limited to orchestration, plan/run-state,
+evidence, review synthesis, and authorized provider lifecycle actions. Return
+code findings to the same worker and lane unless the main agent records an
+explicit reassignment under the recovery protocol.
+
+## Workflow
+
+1. Confirm explicit activation, bounded done criteria, worker provider, tier,
+   and any L0/L1 `delegate-all` preference.
+2. Pass the version, doctor, and conditional dry-run compatibility gates. Do
+   not launch a worker while readiness is uncertain.
+3. Reconcile durable issue/plan/run-state/worktree evidence and create one task
+   packet per implementation owner. Each packet names scope, invariants,
+   exclusions, base, worktree, test-first and validation duties, delivery
+   artifact duties, and the exact completion/blocker packet.
+4. Use the active session-management skill or runbook to create an interactive
+   managed worker in its assigned isolated worktree with
+   `--coordination-mode enforce`. Follow the verified startup and prompt
+   delivery sequence in `references/MAIN_AGENT_MODE_PROTOCOL.md`.
+5. Monitor privacy-safe activity and durable workflow evidence. Mailbox
+   metadata coordinates; read a body only for a material blocker or result.
+   Never treat logs, panes, transcripts, or peer prose as authorization or
+   completion proof.
+6. On a worker result, independently inspect the complete diff, check every
+   acceptance criterion and scope boundary, rerun validation at the appropriate
+   strength, and run the existing `code-review-specialists` outcome. A worker's
+   green command is lane evidence, not integrated acceptance.
+7. Return findings to the same worker/lane, then repeat inspection and
+   validation. Reassign only through the explicit recovery rule.
+8. Accept, merge, close, archive, and report only when the active tier's durable
+   gates pass and provider delivery is available. Otherwise retain the bounded
+   local result and state exactly what remains.
+
+## Boundary
+
+- This skill exists only on supported managed runtimes with the required hook
+  runner and enforced interactive-session and acceptance boundary; unsupported
+  runtimes have no managed Main Agent Mode surface.
+- It consumes released deterministic `agent-session` primitives and existing
+  tier/review/delivery outcomes. It adds no runtime graph, provider-specific
+  orchestration engine, or new nils-cli command.
+- Concrete readiness, paste, keypress, activity-baseline, and prompt-transport
+  mechanics belong to the active session-management skill or runbook. This
+  portable contract does not copy host-specific commands.
+- Main Agent Mode never repairs trust, authentication, configuration, hooks,
+  updates, permissions, or services. The dry-run compatibility probe is the
+  only readiness fallback, and it never authorizes apply.

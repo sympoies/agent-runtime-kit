@@ -497,6 +497,27 @@ skills:
     required_clis: {}
     state_out_mode: runtime
 
+  - id: conversation.main-agent-mode
+    domain: conversation
+    source: core/skills/conversation/main-agent-mode
+    invocation:
+      role: workflow
+      intents: [project-dev, session-coordination]
+      example_request: "Enable Main Agent Mode for this implementation"
+      admission_rationale: "An explicitly selected main-agent/worker delivery boundary is a complete user-requested workflow outcome."
+    exposure:
+      profile: default
+    products:
+      codex:
+        name: main-agent-mode
+        render_to: plugins/conversation/skills/main-agent-mode/SKILL.md
+      claude:
+        name: main-agent-mode
+        render_to: plugins/conversation/skills/main-agent-mode/SKILL.md
+    required_clis:
+      agent-session: ">=1.25.9"
+    state_out_mode: runtime
+
   - id: issue.issue-follow-up
     domain: issue
     source: core/skills/issue/issue-follow-up

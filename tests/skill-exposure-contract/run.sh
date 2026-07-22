@@ -248,16 +248,40 @@ assert report["product"] == product, (product, report.get("product"))
 skills = report["skills"]
 manifest = Path(sys.argv[3]).read_text()
 active_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", manifest, re.M)
+assert len(active_ids) == 28, (product, len(active_ids))
 pending_ids = set(
     re.findall(r"^    - ([a-z0-9.-]+)$", manifest.split("skills:", 1)[0], re.M)
 )
+skill_chunks = {}
+for chunk in re.split(r"(?=^  - id: )", manifest, flags=re.M):
+    id_match = re.match(r"^  - id: ([a-z0-9.-]+)$", chunk, re.M)
+    if id_match:
+        skill_chunks[id_match.group(1)] = chunk
+
+expected_ids = set()
+for skill_id, chunk in skill_chunks.items():
+    in_products = False
+    products = set()
+    for line in chunk.splitlines():
+        if line == "    products:":
+            in_products = True
+            continue
+        if not in_products:
+            continue
+        if line and not line.startswith("      "):
+            break
+        product_match = re.match(r"^      ([a-z0-9-]+):$", line)
+        if product_match:
+            products.add(product_match.group(1))
+    if product in products:
+        expected_ids.add(skill_id)
+
 reported = {item["id"]: item for item in skills}
-assert set(reported) == set(active_ids), (product, set(active_ids) - set(reported), set(reported) - set(active_ids))
-assert len(active_ids) == 27, (product, len(active_ids))
+assert set(reported) == expected_ids, (product, expected_ids - set(reported), set(reported) - expected_ids)
 assert not pending_ids, (product, pending_ids)
 
 manifest_semantics = {}
-for chunk in re.split(r"(?=^  - id: )", manifest, flags=re.M):
+for chunk in skill_chunks.values():
     id_match = re.match(r"^  - id: ([a-z0-9.-]+)$", chunk, re.M)
     if not id_match or not re.search(r"^    invocation:$", chunk, re.M):
         continue
@@ -282,7 +306,7 @@ for chunk in re.split(r"(?=^  - id: )", manifest, flags=re.M):
         },
     }
 
-for skill_id in active_ids:
+for skill_id in sorted(expected_ids):
     item = reported[skill_id]
     if skill_id in pending_ids:
         assert item["pending_disposition"] is True, (product, skill_id)

@@ -102,6 +102,14 @@
     "record_when": "The workflow implements a feature, edits files, or routes to review or delivery for a guided build."
   },
   {
+    "skill": "main-agent-mode",
+    "tier": "exact-only",
+    "match_mode": "action_or_explicit",
+    "aliases": ["main-agent-mode", "main agent mode", "enable main agent mode", "use main agent mode"],
+    "reason": "Main Agent Mode is an explicit user-selected ownership boundary for managed implementation workers.",
+    "record_when": "The workflow activates Main Agent Mode, launches a managed worker, or performs its acceptance loop."
+  },
+  {
     "skill": "deliver-plan-tracking-issue",
     "tier": "default",
     "match_mode": "action_or_explicit",

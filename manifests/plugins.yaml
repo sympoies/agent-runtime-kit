@@ -69,6 +69,7 @@ plugins:
       - conversation.discussion-to-implementation-doc
       - conversation.guided-feature-build
       - conversation.handoff-session-prompt
+      - conversation.main-agent-mode
     product_manifests:
       codex: targets/codex/plugins/conversation/.codex-plugin/plugin.json
       claude: targets/claude/plugins/conversation/.claude-plugin/plugin.json
