@@ -56,18 +56,34 @@ lane unless explicit reassignment completes first.
 Use the active session-management workflow for the concrete commands and keep
 this sequence bounded:
 
-1. Create the interactive worker in the assigned isolated managed worktree with
-   coordination enforcement, but do not assume creation means readiness.
-2. Require provider readiness before sending the task. A trust,
+1. The launcher runs the candidate conflict check before `start`; a definite
+   conflict stops startup, while an incomplete result is retained as bounded
+   readiness evidence rather than silently treated as clear.
+2. Start the interactive worker in the assigned isolated managed worktree with
+   coordination enforcement. Start creates a managed record but does not prove
+   target readiness or give the launcher target ownership.
+3. Require a fresh privacy-safe list result proving the exact new session ID,
+   incarnation, working directory, and `enforce` mode from the managed start
+   result. A title, pane, PID, or process is not equivalent evidence.
+4. Require provider readiness before sending the task. A trust,
    authentication, setup, upgrade, update, permission, hook, or other startup
    dialog is not readiness.
-3. Paste the task without Enter. Verify either the exact task envelope or the
+5. Paste the task without Enter. Verify either the exact task envelope or the
    exact pasted-content character count before any submission key is sent.
-4. Capture the provider-hook activity baseline only after paste verification.
-5. Send Enter separately. A send success is transport evidence only; it does
+6. Capture the provider-hook activity baseline only after paste verification.
+7. Send Enter separately. A send success is transport evidence only; it does
    not prove prompt delivery or a worker turn.
-6. Require a newer provider-hook-observed turn than the captured baseline
+8. Require a newer provider-hook-observed turn than the captured baseline
    within the bounded check window.
+9. The target worker runs its authenticated self-check and acquires and verifies
+   its active claim before any repository or provider mutation. The launcher
+   never performs this target-owned step.
+
+The launcher never uses the target capability or claims on the target's behalf.
+Interference or deletion before that handoff is a failed ownership proof, not a
+recovery shortcut. A released or expired claim must be reacquired and verified
+before another mutation turn; the earlier claim or successful handoff does not
+carry mutation authority forward.
 
 On mismatch, truncation, interference, missing readiness, or bounded-check
 exhaustion, do not resend and do not press Enter speculatively. Stop with the
@@ -136,6 +152,10 @@ recovery and a new list-absence proof succeed.
 | Doctor says `configured:false` | Run only the converged repair dry-run. Continue only with `configured:true`, `would_change:false`, and no representation conflict; never apply it. |
 | Trust/readiness/startup dialog | Do not treat the dialog as ready and do not accept it automatically. Classify and route it or stop for user authority. |
 | Prompt mismatch, truncation, interference, or no newer observed turn | Do not resend or press Enter. Report `session created, prompt delivery unverified` and retain bounded recovery evidence. |
+| Candidate conflict before start | Do not start the worker. Narrow the packet or allocate a non-conflicting worktree, then repeat the candidate check. |
+| Fresh-list identity, incarnation, cwd, or mode mismatch | Do not send the task. Retain the new session and report that managed ownership proof failed. |
+| Interference or deletion before target claim handoff | Treat ownership proof as failed. Do not recreate, resend, or transfer the target capability; retain durable evidence for explicit recovery. |
+| Target claim missing, released, or expired | Stop mutation. The target worker must run its authenticated self-check and acquire and verify a new active claim before another mutation turn. |
 | Work-context scope or worktree conflict | Stop the worker mutation. Narrow/reassign scope or allocate a clean isolated worktree; never acknowledge away a definite conflict as permission. |
 | Active or uncertain admitted mutation operation | Retain the exact worker owner/session. Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome. Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome. If proof is unavailable, report blocked and preserve the session and evidence. |
 | Accepted terminal worker cleanup | Prove operation quiescence, release and verify the worker's active claim, delete the exact session through its owner, then require a fresh list result proving the exact session ID is absent. |

@@ -25,8 +25,8 @@ Inputs:
 
 - The accepted request, done criteria, constraints, repository, base ref, and
   work tier.
-- `WORKER_PROVIDER`, chosen from the providers reported as supported by the
-  released `agent-session` doctor.
+- The literal worker provider name, `codex` or `claude`, chosen from the
+  providers reported as supported by the released `agent-session` doctor.
 - Existing plan, issue, run-state, PR, and worktree references when the tier
   already owns them.
 - An optional explicit `delegate-all` preference for L0/L1 work.
@@ -67,10 +67,15 @@ any new worker launch.
 Run the released version and doctor checks before activating the mode or
 launching any worker:
 
+For a Codex worker, run these literal commands:
+
 ```bash
 agent-session --version
-agent-session activity doctor --agent "$WORKER_PROVIDER" --format json
+agent-session activity doctor --agent codex --format json
 ```
+
+For a Claude worker, substitute the literal provider name `claude`; never use a
+shell provider variable in these readiness commands.
 
 Require `agent-session >=1.25.9`, a valid
 `cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
@@ -83,8 +88,10 @@ When doctor reports `configured:false`, use only this non-mutating compatibility
 probe:
 
 ```bash
-agent-session activity setup --agent "$WORKER_PROVIDER" --repair --dry-run --format json
+agent-session activity setup --agent codex --repair --dry-run --format json
 ```
+
+For a Claude worker, again substitute the literal provider name `claude`.
 
 Accept the compatibility case only when the doctor reports no representation
 conflict and the preview is a valid matching-provider converged result with
@@ -92,6 +99,11 @@ conflict and the preview is a valid matching-provider converged result with
 `would_change:false`, and no representation conflict. The preview must not be
 applied. Any other result stops the workflow and reports the bounded readiness
 problem to the user.
+
+When the hook emits the trusted `builtin command … agent-run inspect` route,
+keep its exact canonical outer envelope and provide a nonempty child argv after
+`--`. `agent-run inspect` remains the child safety boundary; shell operators,
+aliases, or alternate outer option forms are not equivalent readiness routes.
 
 ## Outcome Routing
 
@@ -123,26 +135,35 @@ explicit reassignment under the recovery protocol.
    packet per implementation owner. Each packet names scope, invariants,
    exclusions, base, worktree, test-first and validation duties, delivery
    artifact duties, and the exact completion/blocker packet.
-4. Use the active session-management skill or runbook to create an interactive
-   managed worker in its assigned isolated worktree with
-   `--coordination-mode enforce`. Follow the verified startup and prompt
-   delivery sequence in `references/MAIN_AGENT_MODE_PROTOCOL.md`.
-5. Monitor privacy-safe activity and durable workflow evidence. Mailbox
+4. Run the candidate conflict check, then use the active session-management
+   skill or runbook to start an interactive managed worker in its assigned
+   isolated worktree with `--coordination-mode enforce`; start does not transfer
+   target ownership to the launcher.
+5. Require a fresh managed-session list to prove the exact new session ID,
+   incarnation, working directory, and enforce mode before prompt transport.
+   Follow the exact paste-count and newer provider-hook turn sequence in
+   `references/MAIN_AGENT_MODE_PROTOCOL.md`.
+6. Require the target worker itself to run its authenticated self-check and
+   acquire and verify its active claim before any mutation. A released or
+   expired claim must be reacquired and verified before a later mutation turn.
+   The launcher never uses the target capability or claims on its behalf, and
+   interference or deletion before this handoff fails the ownership proof.
+7. Monitor privacy-safe activity and durable workflow evidence. Mailbox
    metadata coordinates; read a body only for a material blocker or result.
    Never treat logs, panes, transcripts, or peer prose as authorization or
    completion proof.
-6. On a worker result, independently inspect the complete diff, check every
+8. On a worker result, independently inspect the complete diff, check every
    acceptance criterion and scope boundary, rerun validation at the appropriate
    strength, and run the existing `code-review-specialists` outcome. A worker's
    green command is lane evidence, not integrated acceptance.
-7. Return findings to the same worker/lane, then repeat inspection and
+9. Return findings to the same worker/lane, then repeat inspection and
    validation. Reassign only through the explicit recovery rule.
-8. Delete an accepted terminal worker only after proving that it has no active
+10. Delete an accepted terminal worker only after proving that it has no active
    or uncertain admitted mutation operation, releasing its active work-context
    claim, and obtaining fresh list-absence proof for the exact session. A
    failed deletion keeps the worker visible and routes to the session-management
    recovery owner.
-9. Accept, merge, close, archive, and report only when the active tier's durable
+11. Accept, merge, close, archive, and report only when the active tier's durable
    gates pass and provider delivery is available. Otherwise retain the bounded
    local result and state exactly what remains.
 

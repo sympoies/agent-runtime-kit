@@ -772,12 +772,28 @@ def repository_safe_read_only_invocation(
 def trusted_release_companion(
     name: str, *, agent_docs_executable: str, repositories: list[str]
 ) -> str | None:
-    """Resolve one nils-cli companion from the same trusted release bin dir."""
+    """Resolve one nils-cli companion beside the trusted ``agent-docs``.
+
+    Trust has two independent path components: the PATH-selected lexical entry
+    must come from the same bin directory as the PATH-selected ``agent-docs``,
+    and both entries must resolve into the same release bin directory.  This
+    keeps Homebrew's shared ``bin`` symlink surface working while rejecting a
+    repository shadow or a foreign directory that merely aliases a trusted
+    release binary.
+    """
     candidate = shutil.which(name)
-    if not candidate or not os.path.isabs(candidate):
+    agent_docs_candidate = shutil.which("agent-docs")
+    if (
+        not candidate
+        or not os.path.isabs(candidate)
+        or not agent_docs_candidate
+        or not os.path.isabs(agent_docs_candidate)
+    ):
         return None
     lexical = os.path.abspath(candidate)
     resolved = os.path.realpath(candidate)
+    agent_docs_lexical = os.path.abspath(agent_docs_candidate)
+    agent_docs_resolved = os.path.realpath(agent_docs_executable)
     if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
         return None
     if any(
@@ -785,9 +801,9 @@ def trusted_release_companion(
         for repository in repositories
     ):
         return None
-    if os.path.dirname(resolved) != os.path.dirname(
-        os.path.realpath(agent_docs_executable)
-    ):
+    if os.path.dirname(lexical) != os.path.dirname(agent_docs_lexical):
+        return None
+    if os.path.dirname(resolved) != os.path.dirname(agent_docs_resolved):
         return None
     if not trusted_agent_docs_executable(resolved, repositories):
         return None
@@ -907,7 +923,7 @@ def main_agent_readiness_invocation(
     )
     if not agent_run_executable:
         return False
-    return words == [
+    prefix = [
         "builtin",
         "command",
         agent_run_executable,
@@ -915,11 +931,10 @@ def main_agent_readiness_invocation(
         "--cwd",
         os.path.realpath(repositories[0]),
         "--",
-        "rg",
-        "--no-config",
-        "readiness",
-        ".",
     ]
+    # ``agent-run inspect`` owns child safety.  This readiness lane validates
+    # only the exact trusted outer command and requires a nonempty child argv.
+    return len(words) > len(prefix) and words[: len(prefix)] == prefix
 
 
 def agent_docs_near_miss_invocation(words: list[str]) -> bool:
@@ -1634,7 +1649,11 @@ def main() -> int:
         and read_effect.kind == SHELL_EFFECT_UNKNOWN
         and len(repos) == 1
     ):
-        agent_run_executable = resolved_executable("agent-run")
+        agent_run_executable = trusted_release_companion(
+            "agent-run",
+            agent_docs_executable=agent_docs_executable,
+            repositories=repos,
+        )
         if agent_run_executable:
             inspect_route = (
                 "builtin command "

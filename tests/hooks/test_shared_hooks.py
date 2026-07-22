@@ -8734,6 +8734,7 @@ exit 64
                 claim,
                 literal_claim,
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
             )
             for command in allowed:
@@ -8759,6 +8760,12 @@ exit 64
 
             blocked = (
                 "agent-session --help",
+                "agent-session -V",
+                "agent-session --version | cat",
+                f"agent-session --version > {root / 'version.txt'}",
+                "agent-session --version && true",
+                "agent-session --version; true",
+                'echo "$(agent-session --version)"',
                 f"{agent_session.resolve()} --version",
                 claim.replace("agent-session", str(agent_session.resolve()), 1),
                 claim.replace(
@@ -8766,6 +8773,9 @@ exit 64
                 ),
                 "agent-session activity doctor --agent gemini --format json",
                 "agent-session activity doctor --agent codex",
+                "agent-session activity doctor --format json --agent codex",
+                "agent-session activity doctor --agent=codex --format json",
+                "agent-session activity doctor --agent codex --format=json",
                 "agent-session activity doctor --agent codex --format json extra",
                 "agent-session activity setup --agent codex --repair --format json",
                 "agent-session activity setup --agent codex --repair --dry-run",
@@ -8832,6 +8842,13 @@ exit 64
                 f"builtin command {trusted_agent_run} inspect --cwd '$PWD' -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} --",
+                f"builtin command {trusted_agent_run} inspect --cwd={repo.resolve()} -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect -- {repo.resolve()} --cwd rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg readiness . | cat",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg readiness . > {root / 'inspect.txt'}",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg readiness . && true",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg readiness .; true",
+                f'echo "$(builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg readiness .)"',
                 f"builtin command {trusted_agent_run} --future inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"env builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 "rg readiness .",
@@ -8853,10 +8870,17 @@ exit 64
                 "#!/bin/sh\nexit 0\n", encoding="utf-8"
             )
             shadow_agent_session.chmod(0o755)
+            shadow_agent_run = shadow_bin / "agent-run"
+            shadow_agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shadow_agent_run.chmod(0o755)
             for candidate in (shadow_bin, foreign_bin):
-                for command in ("agent-session --version", claim):
+                for command in (
+                    "agent-session --version",
+                    claim,
+                    f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                ):
                     with self.subTest(
-                        agent_session_shadow=candidate, command=command
+                        readiness_companion_shadow=candidate, command=command
                     ):
                         payload = command_payload(command)
                         payload["session_id"] = "main-agent-readiness"
@@ -8871,6 +8895,141 @@ exit 64
                         )
                         self.assertEqual(code, 0, stderr)
                         self.assert_blocked(decision, "project-dev")
+
+            alias_bin = root / "foreign-alias-bin"
+            alias_bin.mkdir()
+            (alias_bin / "agent-session").symlink_to(agent_session.resolve())
+            (alias_bin / "agent-run").symlink_to(agent_run.resolve())
+            alias_env = {
+                **env,
+                "PATH": f"{alias_bin}{os.pathsep}{env['PATH']}",
+            }
+            alias_commands = (
+                "agent-session --version",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+            )
+            for command in alias_commands:
+                with self.subTest(foreign_same_release_alias=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "main-agent-readiness"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py",
+                        payload,
+                        cwd=repo,
+                        env=alias_env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
+
+            payload = command_payload("python3 -c 'print(1)'")
+            payload["session_id"] = "main-agent-readiness"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env=alias_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            assert decision is not None
+            self.assertNotIn("Route 1", str(decision.get("reason", "")))
+
+    def test_pre_edit_trusted_release_companions_require_lexical_and_resolved_siblings(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "pre_edit_companion_trust_under_test",
+            HOOK_DIR / "pre-edit-intent-gate.py",
+        )
+        assert spec is not None and spec.loader is not None
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            release_bin = root / "release" / "bin"
+            release_bin.mkdir(parents=True)
+            foreign_release_bin = root / "foreign-release" / "bin"
+            foreign_release_bin.mkdir(parents=True)
+            for directory in (release_bin, foreign_release_bin):
+                for name in ("agent-docs", "agent-session", "agent-run"):
+                    executable = directory / name
+                    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                    executable.chmod(0o755)
+
+            linked_bin = root / "linked-bin"
+            linked_bin.mkdir()
+            for name in ("agent-docs", "agent-session", "agent-run"):
+                (linked_bin / name).symlink_to(release_bin / name)
+
+            base_env = {
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(linked_bin),
+                "PATH": f"{linked_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            with mock.patch.dict(os.environ, base_env, clear=False):
+                for name in ("agent-session", "agent-run"):
+                    with self.subTest(valid_shared_symlink_surface=name):
+                        self.assertEqual(
+                            gate.trusted_release_companion(
+                                name,
+                                agent_docs_executable=str(
+                                    (release_bin / "agent-docs").resolve()
+                                ),
+                                repositories=[str(repo.resolve())],
+                            ),
+                            str((release_bin / name).resolve()),
+                        )
+
+            alias_bin = root / "foreign-alias-bin"
+            alias_bin.mkdir()
+            for name in ("agent-session", "agent-run"):
+                (alias_bin / name).symlink_to(release_bin / name)
+            with mock.patch.dict(
+                os.environ,
+                {
+                    **base_env,
+                    "PATH": f"{alias_bin}{os.pathsep}{base_env['PATH']}",
+                },
+                clear=False,
+            ):
+                for name in ("agent-session", "agent-run"):
+                    with self.subTest(foreign_lexical_alias=name):
+                        self.assertIsNone(
+                            gate.trusted_release_companion(
+                                name,
+                                agent_docs_executable=str(
+                                    (release_bin / "agent-docs").resolve()
+                                ),
+                                repositories=[str(repo.resolve())],
+                            )
+                        )
+
+            mixed_bin = root / "mixed-bin"
+            mixed_bin.mkdir()
+            (mixed_bin / "agent-docs").symlink_to(release_bin / "agent-docs")
+            for name in ("agent-session", "agent-run"):
+                (mixed_bin / name).symlink_to(foreign_release_bin / name)
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(mixed_bin),
+                    "PATH": f"{mixed_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+                },
+                clear=False,
+            ):
+                for name in ("agent-session", "agent-run"):
+                    with self.subTest(foreign_resolved_release=name):
+                        self.assertIsNone(
+                            gate.trusted_release_companion(
+                                name,
+                                agent_docs_executable=str(
+                                    (release_bin / "agent-docs").resolve()
+                                ),
+                                repositories=[str(repo.resolve())],
+                            )
+                        )
 
     def test_pre_edit_intent_gate_rejects_cross_repository_agent_run_workdir_once(
         self,
