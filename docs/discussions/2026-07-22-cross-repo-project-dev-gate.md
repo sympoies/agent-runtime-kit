@@ -78,8 +78,12 @@ retaining where the value came from or whether it was attested. [F2]
    provider session cwd shape, or a bounded private ready `agent-session` record
    whose id, agent, runtime incarnation, owner/mode, and cwd match the hook
    process. This managed-session route was added after live Claude acceptance
-   showed that Bash envelopes can omit cwd. Plain process cwd remains
-   un-attested and is never silently promoted to a cross-repository target.
+   showed that Bash envelopes can omit cwd and that the current call may reach
+   the hook before it is flushed to the transcript. A transcript miss still
+   rejects unauthenticated payload/session cwd metadata; it cannot suppress an
+   independent managed-record match for the same physical cwd. Plain process
+   cwd remains un-attested and is never silently promoted to a cross-repository
+   target.
 8. Shell-embedded `agent-run exec --cwd` remains fail-closed in this bounded
    change. Safe admission needs a nils-cli typed command-context result that
    binds the exact same release as `agent-docs`, canonical target, wrapper
@@ -201,9 +205,9 @@ not because of fixture setup or compilation errors.
 7. Command context distinguishes Codex inline workdir, matching Codex
    transcript workdir, Claude session cwd, authenticated managed-session cwd,
    payload metadata, and process cwd; missing or mismatched call ids never
-   attest the fallback as the target call. A managed record must match the
-   current session id, provider, ready state, runtime incarnation, file
-   owner/mode, and physical process cwd.
+   attest an unauthenticated fallback as the target call. A managed record may
+   independently attest the same physical cwd and must match the current
+   session id, provider, ready state, runtime incarnation, and file owner/mode.
 8. Relative, dynamic, duplicate, symlink-alias, reordered, extra-flag, wrapper,
    shell-control, and executable-shadow preparation/cross-repository forms fail
    closed under enforce.

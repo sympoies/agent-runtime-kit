@@ -8048,6 +8048,25 @@ exit 65
             self.assertIsNone(managed.diagnostic)
 
             with (
+                mock.patch.dict(os.environ, managed_env, clear=False),
+                mock.patch.object(hook_common.Path, "cwd", return_value=target),
+            ):
+                managed_before_transcript_flush = resolver(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "touch out"},
+                        "tool_use_id": "not-yet-flushed",
+                        "transcript_path": str(transcript),
+                        "cwd": str(target),
+                    }
+                )
+            self.assertEqual(
+                managed_before_transcript_flush.source, "managed-session-cwd"
+            )
+            self.assertTrue(managed_before_transcript_flush.attested)
+            self.assertIsNone(managed_before_transcript_flush.diagnostic)
+
+            with (
                 mock.patch.dict(
                     os.environ,
                     {**managed_env, "AGENT_SESSION_RUNTIME_ID": "wrong-launch"},

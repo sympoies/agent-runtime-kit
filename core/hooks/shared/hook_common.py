@@ -311,9 +311,13 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
     arguments (referenced by ``call_id``/``tool_use_id``), then non-session
     workdir keys nested elsewhere in the payload, then the top-level session
     ``cwd``, then an authenticated managed-session cwd, and finally process cwd.
-    Transcript metadata that cannot be matched prevents a later fallback from
-    becoming attested for that call. The resolver is pure in-process except for
-    bounded transcript/session-record reads; it never starts a subprocess.
+    Transcript metadata that cannot be matched prevents an unauthenticated
+    payload/session cwd from becoming attested for that call. An independently
+    authenticated managed-session record may still attest the same real process
+    cwd; this is required for Claude, whose current tool call can reach the hook
+    before it is flushed to the transcript. The resolver is pure in-process
+    except for bounded transcript/session-record reads; it never starts a
+    subprocess.
     """
     tool_input = tool_input_dict(payload)
     for value in iter_workdir_values(tool_input):
@@ -339,19 +343,29 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
         if key not in {"tool_input", "cwd", "transcript_path", "tool_use_id"}
     }
     for value in iter_workdir_values(payload_metadata):
-        return _context_from_value(
+        context = _context_from_value(
             value,
             source="payload",
             inherited_diagnostic=transcript_diagnostic,
         )
+        if context.attested:
+            return context
+        if (managed_cwd := _managed_session_cwd()) == context.path:
+            return CommandContext(managed_cwd, "managed-session-cwd", True, None)
+        return context
     top_cwd = payload.get("cwd")
     if isinstance(top_cwd, str) and top_cwd:
-        return _context_from_value(
+        context = _context_from_value(
             top_cwd,
             source="session-cwd",
             inherited_diagnostic=transcript_diagnostic,
         )
-    if transcript_diagnostic is None and (managed_cwd := _managed_session_cwd()):
+        if context.attested:
+            return context
+        if (managed_cwd := _managed_session_cwd()) == context.path:
+            return CommandContext(managed_cwd, "managed-session-cwd", True, None)
+        return context
+    if managed_cwd := _managed_session_cwd():
         return CommandContext(managed_cwd, "managed-session-cwd", True, None)
     return CommandContext(
         Path.cwd().resolve(strict=False),
