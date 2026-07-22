@@ -1,6 +1,7 @@
 # Main Agent Orchestration Runtime Implementation Handoff
 
-- **Status**: ready for local implementation
+- **Status**: locally implemented across nils-cli, agent-runtime-kit, and
+  agent-console; cross-repository live acceptance in progress (see Execution)
 - **Date**: 2026-07-22
 - **Source**: `discussion-to-implementation-doc` capture of the Main Agent Mode
   workflow, durable recovery, managed-worker relationship, and Agent Console UX
@@ -187,13 +188,20 @@ controls remain the mutation boundaries.
 - Safely project additive orchestration fields through shared, edge, and UI
   schemas.
 - Render Main, Worker, and Standalone roles and group sessions by run.
+- Present every managed worker card as the interactive live terminal of its
+  `agent-session`-managed Codex/Claude session: the real WebSocket attach route
+  streams the actual provider conversation and stays attachable, never a blank,
+  detached, or metadata-only card. Terminal bytes stay outside the orchestration
+  projection; only privacy-safe byte/frame counts or digests are projected.
 - Link worker cards to their primary Main Agent and Main cards to worker state
   counts.
 - Render orphaned, borrowed, cross-managed, stale, and cleanup-eligible states.
 - Remove producer-tombstoned sessions from the ordinary grid and render any
   physical cleanup backlog in a separate operator recovery surface.
 - Add live acceptance for external CLI deletion convergence, termination-race
-  reconciliation, and janitor failure without card residue.
+  reconciliation, janitor failure without card residue, and WebSocket attach
+  yielding non-empty terminal bytes for both Codex and Claude workers before and
+  after provider resume.
 
 ## Non-Scope
 
@@ -363,6 +371,14 @@ displayable as unsupported/stale metadata.
   updates under an expected run-revision fence. A recreated (delete/recreate)
   session presents a clean incarnation with no continuity and is refused rebind,
   staying orphaned until an explicit adopt.
+- Worker assignment rebind follows the same fence: a worker may atomically
+  rebind its assignment on an authenticated, active-claim, revision/idempotency-
+  fenced checkpoint only for the same public session ID and original `created_at`,
+  and only after the prior incarnation is no longer live. The rebind updates the
+  worker incarnation reference under an expected assignment-revision fence and
+  must not regress a terminal assignment state (`accepted`, `released`, or
+  `cancelled`); a recreated session with a new `created_at` presents no
+  continuity and is refused rebind, staying orphaned until an explicit adopt.
 - Agent Console output is allowlisted. Recovery output excludes secrets,
   prompts, transcripts, mailbox bodies, raw private paths, capabilities, tmux
   IDs, PIDs, and environment values.
@@ -468,6 +484,13 @@ Recovery behavior:
 
 - Badges: `Main`, `Worker`, and `Standalone`.
 - Group by orchestration run while retaining standalone view.
+- Every worker card is the live, attachable terminal of an interactive
+  `agent-session`-managed Codex/Claude session. Opening it attaches over the
+  same real WebSocket route standalone managed sessions use and streams the
+  actual provider conversation; a metadata-only record, detached one-shot, or
+  blank/unattachable card is a defect, not a presentation state. The projection
+  still carries no transcript, pane, or terminal body — only role, run,
+  assignment, manager, incarnation, and privacy-safe counts.
 - Main cards show working, blocked, submitted, accepted, cleanup-pending, and
   orphaned worker totals.
 - Worker cards show `Managed by <main title>`, jump-to-main, and run navigation.
@@ -536,6 +559,15 @@ Recovery behavior:
   must acquire or confirm the target-owned claim before its first durable write,
   and every other facade mutation stays fail-closed without the required claim,
   revision/absence fence, and idempotency key.
+- **R18**: Every `main-agent worker start` yields an interactive
+  `agent-session`-managed Codex or Claude session whose live terminal is visible
+  and attachable in Agent Console through the real WebSocket attach route — never
+  a metadata-only record, detached one-shot execution, or blank/unattachable
+  card. Terminal content is not part of the orchestration projection or public
+  evidence: the projection carries only role, run, assignment, manager,
+  incarnation, state, and privacy-safe byte/frame counts or digests, so worker
+  terminal visibility never turns transcripts or pane bodies into orchestration
+  metadata.
 
 ## Acceptance Criteria
 
@@ -626,6 +658,18 @@ Recovery behavior:
   tombstone, default `agent-session list` excludes the incarnation, Agent
   Console removes the card within one poll interval, and an injected filesystem
   cleanup failure appears only in the maintenance projection.
+- **A31**: Both Codex and Claude `main-agent worker start` flows produce an
+  interactive managed session that (a) appears in authoritative `agent-session
+  list` and the Agent Console API with the exact role, run, assignment, manager,
+  and incarnation projection; (b) yields non-empty bytes through the real Agent
+  Console WebSocket attach route, proving the live provider conversation is
+  attachable rather than a blank or metadata-only card; (c) stays attachable and
+  keeps the same public session identity and original `created_at` across a
+  stopped/resumable provider resume while incarnation fencing authorizes the new
+  live incarnation; (d) keeps terminal content out of public orchestration
+  metadata and evidence, retaining only privacy-safe byte/frame counts or
+  digests; and (e) is removed only by the governed terminal-assignment plus
+  producer-delete lifecycle, never by hiding a still-live or resumable session.
 
 ## Findings And Fix-Later Backlog
 
@@ -633,6 +677,7 @@ Recovery behavior:
 | --- | --- | --- | --- | --- |
 | P0 | Main purpose and worker ownership are not durable across compaction. | Session schema lacks run/assignment; protocol is procedural. [F1][F3] | nils-cli + runtime-kit | A7–A11 |
 | P0 | Main Agent Mode currently denies the graph/new CLI required here. | Current skill boundary. [F4] | runtime-kit after nils | R10, A25–A28 |
+| P0 | `main-agent worker start` was observed producing an empty one-shot / metadata-only worker with no attachable live terminal, which defeats any operator value over provider-native subagents. | 2026-07-23 live testing: blank/detached worker card, no non-empty WebSocket attach bytes; broker recursion and resumed-worker incarnation discontinuity implicated. [U2][A4] | nils-cli + Agent Console | R18, A31 |
 | P1 | Agent Console cannot render authoritative relationships and drops unknown fields. | Projection allowlist. [F5] | Agent Console | A19–A21 |
 | P1 | External successful CLI deletion lacks live browser acceptance. | Source has stream/poll paths; only backend absence was proven. [F6][A1] | Agent Console | A23 |
 | P1 | A termination race can leave a physically dead session rendered as an ordinary stopped card. | Failed producer delete retained metadata even after no matching process was found. [A3] | nils-cli + Agent Console | R14, A18, A22, A30 |
@@ -698,6 +743,11 @@ Recovery behavior:
 - Exercise Codex and Claude with one Main Agent, two workers, a second Main
   collaborator, one borrow, one handoff, one resumed incarnation, one orphan
   recovery, and terminal cleanup.
+- For each Codex and Claude worker, attach through the real Agent Console
+  WebSocket route and assert non-empty terminal bytes both before and after a
+  stopped/resumable provider resume, confirming the session keeps the same
+  public identity and original `created_at` and stays attachable under the new
+  live incarnation (R18, A31).
 - Collect privacy/latency evidence without session content, then remove
   disposable sessions/state while retaining sanitized machine results.
 - Run one focused independent review per repository and one integration review
@@ -736,7 +786,15 @@ Recovery behavior:
 
 ## Execution
 
-- Status: not started; ready for local cross-repository implementation.
+- Status: locally implemented across the three repositories with
+  cross-repository live acceptance in progress; not yet finally complete. The
+  `main-agent` facade, `agent-session` orchestration primitives, runtime-kit
+  consumption, and Agent Console projection/UI exist and run locally. The
+  broker-recursion hotfix that unblocked worker start is locally delivered; a
+  resumed-worker incarnation continuity hotfix (keeping the same public
+  identity/`created_at` and WebSocket attach across provider resume, per
+  R18/A31) is still being finalized. Do not claim final completion until A31 and
+  the integrated live acceptance pass.
 - Next-task source: this document.
 - Recommended workflow: a newly activated Main Agent reads this document,
   rehydrates repository/provider state, creates bounded managed-worktree lanes,
@@ -780,6 +838,13 @@ owning canonical docs. Do not retain a stale duplicate of promoted canon.
 - `[U1]` User requirements from the 2026-07-22 Main Agent Mode discussion:
   compaction recovery, manager/worker UI, durable relationships, dedicated CLI,
   and flexible cross-manager worker use.
+- `[U2]` User hard requirement clarified after 2026-07-23 live testing: every
+  `main-agent worker start` session must be an interactive `agent-session`-managed
+  Codex/Claude session whose actual terminal conversation is visible and
+  attachable in Agent Console. A metadata-only record, detached one-shot, blank
+  terminal card, or card whose provider content cannot be attached is a failure,
+  because Main Agent would otherwise add no operator value over provider-native
+  subagents. Captured by R18, A31, and the Agent Console UX contract.
 - `[F1]` `$HOME/Project/sympoies/nils-cli/crates/agent-session/src/lib.rs`
   (`SessionRecord`, `SessionView`).
 - `[F2]`
@@ -804,6 +869,12 @@ owning canonical docs. Do not retain a stale duplicate of promoted canon.
   privacy-safe process lookup found no matching session process; producer
   metadata was correctly retained under the current contract, exposing the UI
   recovery-projection gap captured by A30.
+- `[A4]` 2026-07-23 live testing of `main-agent worker start`: a worker started
+  as an empty one-shot / metadata-only card with no attachable live terminal and
+  no non-empty WebSocket attach bytes. Broker recursion (now locally hotfixed)
+  and resumed-worker incarnation discontinuity were implicated; the
+  incarnation-continuity hotfix is still being finalized. Captured by R18, A31,
+  and the P0 worker-visibility finding.
 - `DEVELOPMENT.md` and
   `docs/source/docs-placement-retention-policy-v1.md` in this repository.
 - `AGENTS.md`, `AGENT_DOCS.toml`, and `DEVELOPMENT.md` in each affected repo.
