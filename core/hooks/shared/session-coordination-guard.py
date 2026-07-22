@@ -376,6 +376,317 @@ def literal_claim_bootstrap_words(command: str) -> list[str] | None:
     return [values.get(word, word) for word in words]
 
 
+def lifecycle_identifier(value: str) -> bool:
+    return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is not None
+
+
+def lifecycle_revision(value: str) -> bool:
+    if re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None:
+        return False
+    return int(value) <= (2**64 - 1)
+
+
+def lifecycle_idempotency_key(value: str) -> bool:
+    return 8 <= len(value) <= 128 and all(
+        character.isascii() and character.isprintable() for character in value
+    )
+
+
+def lifecycle_duration(value: str, maximum_seconds: int) -> bool:
+    match = re.fullmatch(r"(0|[1-9][0-9]*)([smhd]?)", value)
+    if match is None:
+        return False
+    multiplier = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[
+        match.group(2)
+    ]
+    seconds = int(match.group(1)) * multiplier
+    return 0 < seconds <= maximum_seconds
+
+
+def lifecycle_private_file(
+    raw: str, repository: str | None, *, json_file: bool = False
+) -> bool:
+    if (
+        not os.path.isabs(raw)
+        or os.path.normpath(raw) != raw
+        or os.path.islink(raw)
+        or not os.path.isfile(raw)
+        or (json_file and not raw.endswith(".json"))
+    ):
+        return False
+    if repository:
+        try:
+            if os.path.commonpath(
+                (os.path.realpath(raw), os.path.realpath(repository))
+            ) == os.path.realpath(repository):
+                return False
+        except ValueError:
+            return False
+    return True
+
+
+def projected_lifecycle_invocation(
+    words: list[str],
+    *,
+    session_sentinel: str,
+    capability_sentinel: str,
+    repository: str | None,
+) -> bool:
+    """Validate one finite authenticated lifecycle or mailbox command."""
+    if words[:1] != ["agent-session"] or words[-2:] != ["--format", "json"]:
+        return False
+
+    capability = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+    if not capability or not lifecycle_private_file(capability, repository):
+        return False
+
+    if words in (
+        [
+            "agent-session",
+            "work-context",
+            "check",
+            "--self",
+            "--capability-file",
+            capability_sentinel,
+            "--format",
+            "json",
+        ],
+        [
+            "agent-session",
+            "work-context",
+            "show",
+            "--session",
+            session_sentinel,
+            "--capability-file",
+            capability_sentinel,
+            "--format",
+            "json",
+        ],
+        [
+            "agent-session",
+            "broker",
+            "status",
+            "--session",
+            session_sentinel,
+            "--capability-file",
+            capability_sentinel,
+            "--format",
+            "json",
+        ],
+    ):
+        return True
+
+    if words[1:3] == ["work-context", "renew"] or words[1:3] == [
+        "work-context",
+        "release",
+    ]:
+        return (
+            len(words) == 15
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--claim"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9:11] == ["--capability-file", capability_sentinel]
+            and words[11] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[12])
+        )
+
+    if words[1:3] == ["work-context", "admit"]:
+        return (
+            len(words) == 21
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--claim"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9] == "--targets-file"
+            and lifecycle_private_file(words[10], repository, json_file=True)
+            and words[11] == "--operation"
+            and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", words[12]) is not None
+            and words[13] == "--execution-token-file"
+            and lifecycle_private_file(words[14], repository)
+            and words[15:17] == ["--capability-file", capability_sentinel]
+            and words[17] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[18])
+        )
+
+    if words[1:3] == ["work-context", "complete"]:
+        return (
+            len(words) == 19
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--lease"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9] == "--execution-token-file"
+            and lifecycle_private_file(words[10], repository)
+            and words[11] == "--outcome"
+            and words[12] in {"pass", "fail"}
+            and words[13:15] == ["--capability-file", capability_sentinel]
+            and words[15] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[16])
+        )
+
+    if words[1:3] == ["work-context", "reconcile"]:
+        return (
+            len(words) == 17
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--lease"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9] == "--proof-file"
+            and lifecycle_private_file(words[10], repository, json_file=True)
+            and words[11:13] == ["--capability-file", capability_sentinel]
+            and words[13] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[14])
+        )
+
+    if words[1:3] == ["message", "send"]:
+        if (
+            len(words) < 15
+            or words[3:5] != ["--from", session_sentinel]
+            or words[5] != "--to"
+            or not lifecycle_identifier(words[6])
+            or words[7] != "--body-file"
+            or not lifecycle_private_file(words[8], repository)
+            or words[9:11] != ["--capability-file", capability_sentinel]
+            or words[11] != "--idempotency-key"
+            or not lifecycle_idempotency_key(words[12])
+        ):
+            return False
+        tail = words[13:-2]
+        if tail[:1] == ["--reply-to"]:
+            if len(tail) < 2 or not lifecycle_identifier(tail[1]):
+                return False
+            tail = tail[2:]
+        if tail[:1] == ["--expires-in"]:
+            if len(tail) < 2 or not lifecycle_duration(tail[1], 7 * 86400):
+                return False
+            tail = tail[2:]
+        return not tail
+
+    if words[1:3] == ["message", "inbox"]:
+        if (
+            len(words) < 9
+            or words[3:5] != ["--session", session_sentinel]
+            or words[5:7] != ["--capability-file", capability_sentinel]
+        ):
+            return False
+        tail = words[7:-2]
+        if tail[:1] == ["--state"]:
+            if len(tail) < 2 or tail[1] not in {
+                "unread",
+                "read",
+                "acknowledged",
+                "expired",
+            }:
+                return False
+            tail = tail[2:]
+        if tail[:1] == ["--cursor"]:
+            if len(tail) < 2 or not lifecycle_identifier(tail[1]):
+                return False
+            tail = tail[2:]
+        if tail[:1] == ["--limit"]:
+            if (
+                len(tail) < 2
+                or re.fullmatch(r"[1-9][0-9]{0,2}", tail[1]) is None
+                or int(tail[1]) > 100
+            ):
+                return False
+            tail = tail[2:]
+        return not tail
+
+    if words[1:3] == ["message", "show"]:
+        return (
+            len(words) == 11
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--message"
+            and lifecycle_identifier(words[6])
+            and words[7:9] == ["--capability-file", capability_sentinel]
+        )
+
+    if words[1:3] == ["message", "ack"]:
+        return (
+            len(words) == 15
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--message"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9:11] == ["--capability-file", capability_sentinel]
+            and words[11] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[12])
+        )
+
+    if words[1:3] == ["message", "reply"]:
+        return (
+            len(words) == 17
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--message"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9] == "--body-file"
+            and lifecycle_private_file(words[10], repository)
+            and words[11:13] == ["--capability-file", capability_sentinel]
+            and words[13] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[14])
+        )
+
+    if words[1:3] == ["message", "wait"]:
+        return (
+            len(words) == 15
+            and words[3:5] == ["--session", session_sentinel]
+            and words[5] == "--message"
+            and lifecycle_identifier(words[6])
+            and words[7] == "--if-revision"
+            and lifecycle_revision(words[8])
+            and words[9] == "--timeout"
+            and lifecycle_duration(words[10], 60)
+            and words[11:13] == ["--capability-file", capability_sentinel]
+        )
+    return False
+
+
+def literal_projected_lifecycle_words(
+    command: str, base: Path | None
+) -> list[str] | None:
+    """Expand only target-owned variables in finite authenticated CLI shapes."""
+    current_session = os.environ.get("AGENT_SESSION_ID", "").strip()
+    capability_file = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+    if not current_session or not capability_file:
+        return None
+    session_sentinel = "__AGENT_SESSION_LITERAL_ID_1C4E__"
+    capability_sentinel = "__AGENT_SESSION_LITERAL_CAPABILITY_1C4E__"
+    if session_sentinel in command or capability_sentinel in command:
+        return None
+    if command.count('"$AGENT_SESSION_ID"') > 1 or command.count(
+        '"$AGENT_SESSION_CAPABILITY_FILE"'
+    ) != 1:
+        return None
+    sanitized = command.replace('"$AGENT_SESSION_ID"', session_sentinel).replace(
+        '"$AGENT_SESSION_CAPABILITY_FILE"', capability_sentinel
+    )
+    words = simple_words(sanitized)
+    if not words:
+        return None
+    repository = bounded_git_toplevel(str(base)) if base is not None else None
+    if not projected_lifecycle_invocation(
+        words,
+        session_sentinel=session_sentinel,
+        capability_sentinel=capability_sentinel,
+        repository=repository,
+    ):
+        return None
+    values = {
+        session_sentinel: current_session,
+        capability_sentinel: capability_file,
+    }
+    return [values.get(word, word) for word in words]
+
+
 def unwrap_nested_shell(words: list[str]) -> tuple[list[str] | None, bool]:
     current = words
     wrapped = False
@@ -579,12 +890,17 @@ def invocation_bypasses_admission(
             return trusted and claim_bootstrap_invocation(
                 words, agent_session_executable, base
             )
-        return trusted and words[1] in {
-            "work-context",
-            "broker",
-            "message",
-            "activity",
-        }
+        if words[1] == "work-context":
+            return trusted and len(words) >= 3 and words[2] in {
+                "status",
+                "set",
+                "clear",
+                "advise",
+                "acknowledge",
+                "--help",
+                "help",
+            }
+        return trusted and words[1] == "activity"
     if name == "agent-docs":
         candidate = words[0] if os.path.isabs(words[0]) else shutil.which(words[0])
         trusted = resolved_trusted_cli("agent-docs")
@@ -886,10 +1202,16 @@ def command_effect(
 def command_bypasses_admission(
     command: str, agent_session_executable: str, base: Path | None = None
 ) -> bool:
-    literal_words = literal_claim_bootstrap_words(command)
-    if literal_words is not None:
+    claim_words = literal_claim_bootstrap_words(command)
+    if claim_words is not None:
         return invocation_bypasses_admission(
-            literal_words, agent_session_executable, base
+            claim_words, agent_session_executable, base
+        )
+    lifecycle_words = literal_projected_lifecycle_words(command, base)
+    if lifecycle_words is not None:
+        candidate = shutil.which(lifecycle_words[0])
+        return bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
+            agent_session_executable
         )
     effect = classify_shell_effect(
         command,
@@ -898,6 +1220,24 @@ def command_bypasses_admission(
         ),
     )
     return effect.kind == SHELL_EFFECT_READ_ONLY
+
+
+def literal_lifecycle_near_miss(command: str) -> bool:
+    """Detect raw owner-selecting control-plane commands that missed validation."""
+    words = simple_words(command)
+    if not words or words[:1] != ["agent-session"] or len(words) < 3:
+        return False
+    if words[1] == "work-context":
+        return words[2] in {
+            "show",
+            "check",
+            "renew",
+            "release",
+            "admit",
+            "complete",
+            "reconcile",
+        }
+    return words[1] in {"broker", "message"}
 
 
 def nested_paths(value: Any) -> Iterable[str]:
@@ -1431,10 +1771,19 @@ def _pre_tool_locked(
     product: str,
 ) -> int:
     tool = tool_name(payload)
-    if tool in COMMAND_TOOLS and command_bypasses_admission(
-        command_from(payload), executable, effective_workdir(payload).resolve()
-    ):
-        return ALLOW
+    if tool in COMMAND_TOOLS:
+        command = command_from(payload)
+        if command_bypasses_admission(
+            command, executable, effective_workdir(payload).resolve()
+        ):
+            return ALLOW
+        if literal_lifecycle_near_miss(command):
+            emit_block(
+                "Managed coordination lifecycle commands must use the exact "
+                "authenticated current-session shape. "
+                "[reason: coordination-lifecycle-untrusted]"
+            )
+            return ALLOW
     call_id = tool_use_id(payload)
     if not call_id:
         emit_block(

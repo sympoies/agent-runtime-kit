@@ -11481,6 +11481,308 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "active work-context claim")
 
+    def test_session_coordination_guard_allows_only_exact_projected_lifecycle_commands(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repo.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context check"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.conflict-evaluation.v1","classification":"clear","complete":true,"reasons":[],"peers":[]}}'
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+
+            capability_file = root / "capability"
+            capability_file.write_text("fixture\n", encoding="utf-8")
+            capability_file.chmod(0o600)
+            foreign_capability_file = root / "foreign-capability"
+            foreign_capability_file.write_text("fixture\n", encoding="utf-8")
+            foreign_capability_file.chmod(0o600)
+            targets_file = root / "operation-targets.json"
+            targets_file.write_text("{}\n", encoding="utf-8")
+            token_file = root / "execution-token"
+            token_file.write_text("fixture-token\n", encoding="utf-8")
+            token_file.chmod(0o600)
+            proof_file = root / "reconcile-proof.json"
+            proof_file.write_text("{}\n", encoding="utf-8")
+            body_file = root / "message-body"
+            body_file.write_text("fixture body\n", encoding="utf-8")
+            body_file.chmod(0o600)
+            repository_proof = repo / "proof.json"
+            repository_proof.write_text("{}\n", encoding="utf-8")
+            repository_body = repo / "message-body"
+            repository_body.write_text("fixture body\n", encoding="utf-8")
+            repository_token = repo / "execution-token"
+            repository_token.write_text("fixture-token\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            projected_check = (
+                "agent-session work-context check --self "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json'
+            )
+            projected_show = (
+                "agent-session work-context show "
+                '--session "$AGENT_SESSION_ID" '
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json'
+            )
+            projected_status = (
+                "agent-session broker status "
+                '--session "$AGENT_SESSION_ID" '
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json'
+            )
+            projected_renew = (
+                "agent-session work-context renew "
+                '--session "$AGENT_SESSION_ID" --claim claim-1234 '
+                "--if-revision 7 "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key renew-key-0001 --format json"
+            )
+            projected_release = projected_renew.replace(
+                "work-context renew", "work-context release"
+            ).replace("renew-key-0001", "release-key-0001")
+            projected_admit = (
+                "agent-session work-context admit "
+                '--session "$AGENT_SESSION_ID" --claim claim-1234 '
+                f"--if-revision 7 --targets-file {targets_file.resolve()} "
+                f"--operation shell-mutation --execution-token-file {token_file.resolve()} "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key admit-key-0001 --format json"
+            )
+            projected_complete = (
+                "agent-session work-context complete "
+                '--session "$AGENT_SESSION_ID" --lease lease-1234 '
+                f"--if-revision 3 --execution-token-file {token_file.resolve()} "
+                "--outcome pass "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key complete-key-0001 --format json"
+            )
+            projected_reconcile = (
+                "agent-session work-context reconcile "
+                '--session "$AGENT_SESSION_ID" --lease lease-1234 '
+                f"--if-revision 4 --proof-file {proof_file.resolve()} "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key reconcile-key-0001 --format json"
+            )
+            projected_send = (
+                "agent-session message send "
+                '--from "$AGENT_SESSION_ID" --to worker-session '
+                f"--body-file {body_file.resolve()} "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key message-send-0001 "
+                "--reply-to message-1234 --expires-in 15m --format json"
+            )
+            projected_inbox = (
+                "agent-session message inbox "
+                '--session "$AGENT_SESSION_ID" '
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--state unread --cursor cursor-1234 --limit 50 --format json"
+            )
+            projected_message_show = (
+                "agent-session message show "
+                '--session "$AGENT_SESSION_ID" --message message-1234 '
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json'
+            )
+            projected_ack = (
+                "agent-session message ack "
+                '--session "$AGENT_SESSION_ID" --message message-1234 '
+                "--if-revision 2 "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key message-ack-0001 --format json"
+            )
+            projected_reply = (
+                "agent-session message reply "
+                '--session "$AGENT_SESSION_ID" --message message-1234 '
+                f"--if-revision 2 --body-file {body_file.resolve()} "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key message-reply-0001 --format json"
+            )
+            projected_wait = (
+                "agent-session message wait "
+                '--session "$AGENT_SESSION_ID" --message message-1234 '
+                "--if-revision 2 --timeout 30s "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json'
+            )
+
+            for index, command in enumerate(
+                (
+                    projected_check,
+                    projected_show,
+                    projected_status,
+                    projected_renew,
+                    projected_release,
+                    projected_admit,
+                    projected_complete,
+                    projected_reconcile,
+                    projected_send,
+                    projected_send.replace(
+                        " --reply-to message-1234 --expires-in 15m", ""
+                    ),
+                    projected_inbox,
+                    projected_inbox.replace(
+                        " --state unread --cursor cursor-1234 --limit 50", ""
+                    ),
+                    projected_message_show,
+                    projected_ack,
+                    projected_reply,
+                    projected_wait,
+                )
+            ):
+                with self.subTest(allowed=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "cwd": str(repo),
+                            "session_id": "product-session",
+                            "tool_use_id": f"projected-lifecycle-allowed-{index}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py",
+                        payload,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            blocked = (
+                projected_check.replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    '"$OTHER_CAPABILITY_FILE"',
+                ),
+                projected_show.replace('"$AGENT_SESSION_ID"', '"$OTHER_SESSION_ID"'),
+                projected_show.replace('"$AGENT_SESSION_ID"', "foreign-session").replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    str(capability_file.resolve()),
+                ),
+                projected_show.replace('"$AGENT_SESSION_ID"', "managed-session").replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    str(foreign_capability_file.resolve()),
+                ),
+                projected_renew.replace('"$AGENT_SESSION_ID"', "managed-session").replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    str(capability_file.resolve()),
+                ),
+                projected_show.replace('"$AGENT_SESSION_ID"', "$AGENT_SESSION_ID"),
+                projected_show.replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    "$AGENT_SESSION_CAPABILITY_FILE",
+                ),
+                projected_show.replace(
+                    '--session "$AGENT_SESSION_ID" '
+                    '--capability-file "$AGENT_SESSION_CAPABILITY_FILE"',
+                    '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                    '--session "$AGENT_SESSION_ID"',
+                ),
+                projected_show.replace(
+                    " --format json",
+                    " --host untrusted --format json",
+                ),
+                projected_show.replace(
+                    " --format json",
+                    f" --state-dir {root / 'other-state'} --format json",
+                ),
+                projected_show + " extra",
+                projected_check.replace("--self", "--candidate candidate.json"),
+                projected_show.replace("work-context show", "work-context renew"),
+                projected_show.replace("work-context show", "work-context release"),
+                projected_renew.replace("claim-1234", "../foreign-claim"),
+                projected_renew.replace("--if-revision 7", "--if-revision -1"),
+                projected_renew.replace("--if-revision 7", "--if-revision 01"),
+                projected_renew.replace(
+                    "--if-revision 7", "--if-revision 18446744073709551616"
+                ),
+                projected_renew.replace("renew-key-0001", "short"),
+                projected_admit.replace(
+                    str(token_file.resolve()), str(repository_token.resolve())
+                ),
+                projected_complete.replace("--outcome pass", "--outcome unknown"),
+                projected_reconcile.replace(
+                    str(proof_file.resolve()), str(repository_proof.resolve())
+                ),
+                projected_send.replace(
+                    str(body_file.resolve()), str(repository_body.resolve())
+                ),
+                projected_send.replace("--expires-in 15m", "--expires-in 8d"),
+                projected_inbox.replace("--state unread", "--state deleted"),
+                projected_inbox.replace("cursor-1234", "../foreign-cursor"),
+                projected_inbox.replace("--limit 50", "--limit 101"),
+                projected_wait.replace("--timeout 30s", "--timeout 61s"),
+                projected_ack.replace(
+                    '--session "$AGENT_SESSION_ID"',
+                    '--session "$AGENT_SESSION_ID" --session "$AGENT_SESSION_ID"',
+                ),
+                projected_send.replace("agent-session", "foreign-agent-session", 1),
+                f"sh -c '{projected_show}'",
+                projected_show + " | cat",
+                projected_show + f" > {root / 'status.json'}",
+                f'echo "$(agent-session work-context show '
+                '--session "$AGENT_SESSION_ID" '
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json)"',
+            )
+            for index, command in enumerate(blocked):
+                with self.subTest(blocked=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "cwd": str(repo),
+                            "session_id": "product-session",
+                            "tool_use_id": f"projected-lifecycle-blocked-{index}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py",
+                        payload,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    fragment = (
+                        "coordination-lifecycle-untrusted"
+                        if command.startswith("agent-session") and "$" not in command
+                        else "shell-target-unresolved"
+                    )
+                    self.assert_blocked(decision, fragment)
+
     def test_session_coordination_effect_avoids_git_probe_for_non_mutations(
         self,
     ) -> None:
