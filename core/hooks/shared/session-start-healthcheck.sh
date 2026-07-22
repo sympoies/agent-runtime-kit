@@ -59,7 +59,7 @@ if configured:
         for item in configured.split(os.pathsep)
         if item
     ]
-    trusted = candidate_path.parent in roots
+    trusted = candidate_path.parent.resolve() in roots
 else:
     for prefix_raw in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
         prefix = pathlib.Path(prefix_raw)

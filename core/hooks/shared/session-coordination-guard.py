@@ -1273,7 +1273,12 @@ def invocation_is_recognized_mutation(
     if name in {"gh", "forge-cli"}:
         return provider_mutates(invocation)
     if name == "semantic-commit":
-        return bool(arguments) and arguments[0] in {"commit", "fixup", "squash"}
+        return bool(arguments) and arguments[0] in {
+            "commit",
+            "fixup",
+            "squash",
+            "local-default",
+        }
     return name == "git-cli" and len(arguments) >= 2 and (
         arguments[0], arguments[1]
     ) in {

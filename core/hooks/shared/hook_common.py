@@ -468,7 +468,7 @@ def file_paths_from_payload(payload: Mapping[str, Any]) -> list[str]:
 
 
 def is_semantic_commit_commit(command: str) -> bool:
-    """True when the command is a mutating `semantic-commit commit` invocation.
+    """True for a mutating semantic-commit authoring invocation.
 
     Dry-run / validate-only / help / non-commit subcommands are excluded so
     message-content gates only fire on commands that actually write a commit.
@@ -488,7 +488,7 @@ def is_semantic_commit_commit(command: str) -> bool:
             authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
                 arguments
             )
-            if arguments and arguments[0] == "commit" and authors_commit:
+            if arguments and arguments[0] in {"commit", "local-default"} and authors_commit:
                 return True
     return False
 
@@ -497,11 +497,14 @@ SEMANTIC_COMMIT_VALUE_OPTIONS = frozenset(
     {
         "--body-bullet",
         "--expect-head",
+        "--expected-branch",
         "--format",
         "--max-header-width",
         "--message",
         "--message-file",
         "--message-out",
+        "--receipt-out",
+        "--remote-mode",
         "--repo",
         "--scope",
         "--subject",
@@ -525,7 +528,12 @@ def semantic_commit_invocation_effects(
     writer admission but does not author a commit. Help exits before work.
     """
 
-    if not arguments or arguments[0] not in {"commit", "fixup", "squash"}:
+    if not arguments or arguments[0] not in {
+        "commit",
+        "fixup",
+        "squash",
+        "local-default",
+    }:
         return False, False, ""
 
     help_requested = False

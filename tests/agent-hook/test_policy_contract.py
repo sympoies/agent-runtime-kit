@@ -69,6 +69,7 @@ INVENTORY_RULE_FIELDS = {
     "mode",
     "priority",
     "failure_posture",
+    "timeout_posture",
     "override_class",
     "state_owner",
     "transformation",
@@ -87,6 +88,7 @@ POLICY_RULE_FIELDS = {
     "priority",
     "mode",
     "failure_posture",
+    "timeout_posture",
     "override_class",
     "capability",
 }
@@ -352,10 +354,16 @@ class AgentHookPolicyContractTests(unittest.TestCase):
                 "priority",
                 "mode",
                 "failure_posture",
+                "timeout_posture",
                 "override_class",
                 "capability",
             ):
                 self.assertEqual(rule[key], expected[key], f"{rule['id']}:{key}")
+            self.assertIn(
+                rule["timeout_posture"],
+                {"closed", "warn", "effect_gated"},
+                rule["id"],
+            )
             self.assertEqual(rule.get("matcher"), expected["matcher"], f"{rule['id']}:matcher")
             capability_id = rule["capability"]["id"]
             if rule["override_class"] == "locked" or capability_id in LOCKED_CAPABILITIES:

@@ -26,7 +26,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `CL
 
 ## Work Tier Levels
 
-- Use lowest tier: L0 untracked, L1 follow-up, L2 plan, L3 dispatch. PR is default; direct-main is L0-only with current-request maintainer approval via `git-delivery.md`, never inferred from "small" or "hotfix".
+- Use lowest tier: L0 untracked, L1 follow-up, L2 plan, L3 dispatch. PR is default; default-branch delivery is L0-only with current-request maintainer approval via `git-delivery.md`, never inferred from "small" or "hotfix".
 - Review depth is separate: eligible L0/L1 may quick-pass; L2/L3 or risk uses full specialists. Escalation keeps the tier.
 - State the tier and next step up front; surface L1+ or ambiguous as a decision and wait; re-triage if work escalates. Full ladder and per-tier methods: `core/policies/work-tier-levels.md`.
 
@@ -46,7 +46,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `CL
 ## Git, Commits, Issues, PRs, MRs
 
 - Commit via `semantic-commit`, manage worktrees via `git-cli worktree`, and open provider issues, PRs, and MRs via `forge-cli` or the active workflow. Direct `git commit`, `git worktree`, `gh pr create`, or `glab mr create` are blocked by hook.
-- Author commits only on a non-default managed-worktree branch; never force-push `main`, enable `extensions.worktreeConfig`, set per-worktree identity or signing config, or use `--no-gpg-sign` for tracked work (stop and report if signing fails). Commit-body gate, branch naming, label selection, PR/MR body format, and the authorized L0 direct-main route (`forge-cli repo push-default`): `core/policies/git-delivery.md`.
+- Commit only through a non-default managed worktree or approved L0 `semantic-commit local-default`; never force-push `main`, enable `extensions.worktreeConfig`, set per-worktree identity or signing config, or use `--no-gpg-sign` for tracked work (stop and report if signing fails). Commit-body gate, branch naming, labels, PR/MR body format, and default-branch routes: `core/policies/git-delivery.md`.
 
 ## Plan Archive & Session Closeout
 

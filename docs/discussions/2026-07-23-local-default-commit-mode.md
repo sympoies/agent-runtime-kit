@@ -84,13 +84,17 @@ direct-main provider gate.
    Connectivity and provider availability therefore cannot block local commit
    creation.
 9. When the checked-out branch has a locally resolvable upstream tracking ref,
-   its pre-commit relation must be `aligned`. Existing `ahead`, `behind`, or
-   `diverged` state is outside this bounded hotfix mode and fails closed.
+   its pre-commit relation must be `aligned` or `ahead-only`. `Behind`,
+   `diverged`, unresolved, or otherwise unknown ancestry fails closed.
    A branch with no configured upstream is allowed and recorded as `untracked`;
    a configured upstream whose cached ref cannot be resolved fails closed.
 10. A successful remote-present result is explicitly local-only. If the cached
-    upstream was aligned, the postcondition is `ahead-by-one`; otherwise it
-    remains `untracked`. Neither state is presented as live provider truth.
+    upstream was aligned, the postcondition is `ahead-by-one`; if it was already
+    ahead by N commits, the postcondition is ahead by N+1; otherwise it remains
+    `untracked`. Canonical v1 serialization keeps `ahead-by-one` for a count of
+    one and uses `ahead-by-<decimal>` without a leading zero for counts of two
+    or more. No new receipt field is introduced. Neither state is presented as
+    live provider truth.
 11. The mutating command requires `--receipt-out <path>`. The CLI preflights a
     new, non-symlink destination outside the repository worktree, writes the
     receipt atomically, and refuses to overwrite an existing file. Runtime-kit
@@ -100,8 +104,10 @@ direct-main provider gate.
     “hotfix”, or “docs” never imply authorization.
 13. Local-default completion is an L0-only exception: exactly one signed commit,
     no issue, no PR, no provider mutation, and no cross-session state ledger.
-    Work that cannot finish in the current run or requires multiple commits is
-    retained on a managed branch and re-triaged.
+    A pre-existing ahead-only gap may come from earlier completed tasks, but it
+    does not enlarge the current authorization. Work that cannot finish in the
+    current run or requires multiple new commits is retained on a managed branch
+    and re-triaged.
 14. A later provider push is a new action with fresh authorization. Extend
     `forge-cli repo push-default` with
     `--local-default-receipt <path>` so it can adopt the exact governed local
@@ -184,8 +190,10 @@ Before creating a commit, the implementation must prove all of the following:
 10. Configured remotes are counted using local Git configuration only. Remote
     URLs are not printed or stored in the receipt.
 11. When remotes exist, `--remote-mode` is exactly `local-only`.
-12. If `@{upstream}` exists, its cached commit resolves and equals the current
-    pre-commit `HEAD`. If there is no upstream, state is `untracked`.
+12. If `@{upstream}` exists, its cached commit resolves and is either equal to
+    the current pre-commit `HEAD` or an ancestor of it. A cached upstream ahead
+    of local `HEAD`, divergent history, unresolved ref, or unknown ancestry
+    fails closed. If there is no upstream, state is `untracked`.
 
 Checkout ownership remains a runtime-kit hook responsibility. Codex and Claude
 must hold or acquire the ordinary checkout writer lease before edits, staging,
@@ -260,7 +268,8 @@ be omitted when state is `untracked`.
 Receipt files are local runtime evidence under `agent-out`, never tracked in a
 working repository and never copied verbatim into provider bodies. A later
 provider command may consume the file locally and expose only bounded delivery
-facts.
+facts. `completion.provider_delivered` is always `false`, including when
+`cached_relation_before` was already ahead-only.
 
 ## Later Provider Delivery
 
@@ -289,6 +298,12 @@ Receipt mode must revalidate rather than trust the file:
 - selected push URL, provider repository, rewrite protections, bounded reason
   file, exact-old-object lease, push, and post-push read-back satisfy the
   existing `push-default` contract.
+
+An ahead-only local gap may contain commits from earlier local tasks. The newest
+receipt does not make that multi-commit gap eligible for single-commit adoption:
+receipt adoption remains restricted to the canonical `aligned` to
+`ahead-by-one` relation pair, and the live `--expected-base` plus exact existing
+one-commit range checks must also pass.
 
 Fresh explicit maintainer authorization is required for this provider mutation.
 The earlier local-default authorization cannot be reused. If the live remote
@@ -442,7 +457,7 @@ Expected local terminal state:
 ## Non-Scope
 
 - Multiple local-default commits in one task.
-- Existing ahead, behind, or diverged upstream reconciliation.
+- Behind, diverged, unresolved, or unknown upstream reconciliation.
 - Unsigned commits, force updates, reset-based delivery, auto-stash, automatic
   rollback, amend/fixup/squash, or history rewriting.
 - Automatically pushing after local commit.
@@ -463,8 +478,10 @@ Expected local terminal state:
 - **R3**: Configured remote count greater than zero requires
   `--remote-mode local-only`; remote connectivity is irrelevant and no network
   process runs.
-- **R4**: Aligned cached upstream state may become ahead-by-one; pre-existing
-  ahead/behind/diverged state fails; untracked state is allowed and explicit.
+- **R4**: Aligned or ahead-only cached upstream state is allowed; one current
+  authorization creates exactly one new commit and records the prior count plus
+  one. Behind, diverged, unresolved, or unknown state fails; untracked state is
+  allowed and explicit.
 - **R5**: No unstaged/untracked paths, empty commits, unsigned commits, Git
   operations, branch drift, expected-base drift, or linked-worktree targets are
   admitted.
@@ -495,8 +512,10 @@ Expected local terminal state:
 - **A3**: A repository with a configured remote rejects omission or drift of
   `--remote-mode local-only`; the exact mode succeeds without executing any
   network command.
-- **A4**: Cached aligned upstream becomes ahead-by-one; no-upstream becomes
-  untracked; missing cached upstream and ahead/behind/diverged states fail.
+- **A4**: Cached aligned upstream becomes ahead-by-one; cached ahead-only stays
+  ahead-only with one additional commit using the canonical v1 relation string;
+  no-upstream becomes untracked; missing cached upstream and
+  behind/diverged/unknown states fail.
 - **A5**: Linked worktree, wrong/detached branch, expected-head mismatch,
   in-progress Git operation, no staged changes, unstaged/untracked residue,
   signing failure, unsafe receipt path, and prohibited options each return a
@@ -570,9 +589,10 @@ or pin-promotion commands during the local-only phase.
 - **Remote presence mistaken for delivery**: a local commit may look finished
   while the provider remains behind. Guardrail: required remote mode, explicit
   receipt fields, local-only terminology, and deploy/release gates unchanged.
-- **Stale cached upstream**: cached alignment may not match live provider state.
-  Guardrail: never claim live truth; later push performs a fresh live
-  compare-and-swap check.
+- **Stale cached upstream**: cached aligned or ahead-only ancestry may not match
+  live provider state. Guardrail: never claim live truth; later push performs a
+  fresh live compare-and-swap check, and multi-commit local gaps remain
+  ineligible for single-commit receipt adoption.
 - **Receipt forgery**: local files are not trusted authorization. Guardrail:
   `push-default` revalidates repository, base, branch, commit shape, signature,
   remote, and provider independently; receipt only selects the governed

@@ -9,6 +9,7 @@ matcher = "Bash"
 priority = 90
 mode = "shadow"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "execution.read-only.v1", reason_code = "read-only-capability" }
 
@@ -20,6 +21,7 @@ matcher = "Bash"
 priority = 100
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
 
@@ -31,6 +33,7 @@ matcher = "Bash"
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -42,6 +45,7 @@ matcher = "Bash"
 priority = 120
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-commit" }
 
@@ -53,6 +57,7 @@ matcher = "Bash"
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-unsafe-default-delivery" }
 
@@ -64,6 +69,7 @@ matcher = "Bash"
 priority = 140
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-worktree" }
 
@@ -75,6 +81,7 @@ matcher = "Bash"
 priority = 150
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "semantic-commit-body-gate" }
 
@@ -86,6 +93,7 @@ matcher = "Bash"
 priority = 160
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-python" }
 
@@ -97,6 +105,7 @@ matcher = "Bash"
 priority = 170
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
@@ -108,6 +117,7 @@ matcher = "Bash"
 priority = 180
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
 
@@ -119,6 +129,7 @@ matcher = "Bash"
 priority = 190
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
 
@@ -130,6 +141,7 @@ matcher = "Bash"
 priority = 200
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
 
@@ -141,6 +153,7 @@ matcher = "Bash"
 priority = 210
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-pr-create" }
 
@@ -152,6 +165,7 @@ matcher = "Bash"
 priority = 220
 mode = "enforce"
 failure_posture = "warn"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "forge-label-reminder" }
 
@@ -163,6 +177,7 @@ matcher = "Bash"
 priority = 230
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
@@ -174,6 +189,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 100
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
 
@@ -185,6 +201,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 110
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
 
@@ -196,6 +213,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 120
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
@@ -207,6 +225,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
 
@@ -218,6 +237,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 140
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
 
@@ -229,6 +249,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 150
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
 
@@ -240,6 +261,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 160
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -251,6 +273,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 170
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
@@ -261,6 +284,7 @@ events = ["UserPromptSubmit"]
 priority = 100
 mode = "enforce"
 failure_posture = "warn"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-docs" }
 
@@ -271,6 +295,7 @@ events = ["UserPromptSubmit"]
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -281,6 +306,7 @@ events = ["UserPromptSubmit"]
 priority = 120
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-memory" }
 
@@ -291,6 +317,7 @@ events = ["UserPromptSubmit"]
 priority = 130
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "skill-usage-reminder" }
 
@@ -302,6 +329,7 @@ matcher = "startup|resume|clear"
 priority = 100
 mode = "enforce"
 failure_posture = "warn"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "session-start-healthcheck" }
 
@@ -312,6 +340,7 @@ events = ["Stop"]
 priority = 100
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "stop-pre-pr-reminder" }
 
@@ -322,6 +351,7 @@ events = ["Stop"]
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
 
@@ -332,6 +362,7 @@ events = ["Stop"]
 priority = 120
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -342,6 +373,7 @@ events = ["Stop"]
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "stop-finish-line-gate" }
 
@@ -352,6 +384,7 @@ events = ["UserPromptSubmit"]
 priority = 100
 mode = "enforce"
 failure_posture = "warn"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-docs" }
 
@@ -362,6 +395,7 @@ events = ["UserPromptSubmit"]
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -372,6 +406,7 @@ events = ["UserPromptSubmit"]
 priority = 120
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "skill-usage-reminder" }
 
@@ -382,6 +417,7 @@ events = ["Stop"]
 priority = 100
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "stop-pre-pr-reminder" }
 
@@ -392,6 +428,7 @@ events = ["Stop"]
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
 
@@ -402,6 +439,7 @@ events = ["Stop"]
 priority = 120
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -412,6 +450,7 @@ events = ["Stop"]
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "stop-finish-line-gate" }
 
@@ -423,6 +462,7 @@ matcher = "startup|resume|clear"
 priority = 100
 mode = "enforce"
 failure_posture = "warn"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "session-start-healthcheck" }
 
@@ -434,6 +474,7 @@ matcher = "Bash"
 priority = 100
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
 
@@ -445,6 +486,7 @@ matcher = "Bash"
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -456,6 +498,7 @@ matcher = "Bash"
 priority = 120
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-commit" }
 
@@ -467,6 +510,7 @@ matcher = "Bash"
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-unsafe-default-delivery" }
 
@@ -478,6 +522,7 @@ matcher = "Bash"
 priority = 140
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-worktree" }
 
@@ -489,6 +534,7 @@ matcher = "Bash"
 priority = 150
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "semantic-commit-body-gate" }
 
@@ -500,6 +546,7 @@ matcher = "Bash"
 priority = 160
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-claude-coauthor-trailer" }
 
@@ -511,6 +558,7 @@ matcher = "Bash"
 priority = 170
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-pr-create" }
 
@@ -522,6 +570,7 @@ matcher = "Bash"
 priority = 180
 mode = "enforce"
 failure_posture = "warn"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "forge-label-reminder" }
 
@@ -533,6 +582,7 @@ matcher = "Bash"
 priority = 190
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "downgrade-only"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-python" }
 
@@ -544,6 +594,7 @@ matcher = "Bash"
 priority = 200
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
@@ -555,6 +606,7 @@ matcher = "Bash"
 priority = 210
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
 
@@ -566,6 +618,7 @@ matcher = "Bash"
 priority = 220
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
 
@@ -577,6 +630,7 @@ matcher = "Bash"
 priority = 230
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
 
@@ -588,6 +642,7 @@ matcher = "Bash"
 priority = 240
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
@@ -599,6 +654,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 100
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
@@ -610,6 +666,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 110
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
 
@@ -621,6 +678,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 120
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
 
@@ -632,6 +690,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
 
@@ -643,6 +702,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 140
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan" }
 
@@ -654,6 +714,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 150
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
 
@@ -665,6 +726,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 160
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -676,6 +738,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 170
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
@@ -687,6 +750,7 @@ matcher = "MultiEdit"
 priority = 100
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory-write" }
 
@@ -698,6 +762,7 @@ matcher = "MultiEdit"
 priority = 110
 mode = "enforce"
 failure_posture = "open"
+timeout_posture = "warn"
 override_class = "free"
 capability = { id = "runtime-kit.handler.v1", handler_id = "memory-write-principle-reminder" }
 
@@ -709,6 +774,7 @@ matcher = "MultiEdit"
 priority = 120
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-guard" }
 
@@ -720,6 +786,7 @@ matcher = "MultiEdit"
 priority = 130
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate" }
 
@@ -731,6 +798,7 @@ matcher = "MultiEdit"
 priority = 140
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
@@ -742,6 +810,7 @@ matcher = "MultiEdit"
 priority = 150
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
@@ -752,6 +821,7 @@ events = ["UserPromptSubmit", "Stop"]
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -763,6 +833,7 @@ matcher = "startup|resume|clear"
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -774,6 +845,7 @@ matcher = "Bash"
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -785,6 +857,7 @@ matcher = "Bash"
 priority = 20
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 [[rules]]
@@ -795,6 +868,7 @@ matcher = "Bash"
 priority = 30
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
 
@@ -806,6 +880,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -817,6 +892,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 20
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 
@@ -828,6 +904,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 30
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
 
@@ -839,6 +916,7 @@ matcher = "Bash"
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -850,6 +928,7 @@ matcher = "Bash"
 priority = 20
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 
@@ -861,6 +940,7 @@ matcher = "Bash"
 priority = 30
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
 
@@ -872,6 +952,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -883,6 +964,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 20
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 
@@ -894,6 +976,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 30
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
 
@@ -905,6 +988,7 @@ matcher = "MultiEdit"
 priority = 10
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
@@ -916,6 +1000,7 @@ matcher = "MultiEdit"
 priority = 20
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 
@@ -927,6 +1012,7 @@ matcher = "MultiEdit"
 priority = 30
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
 
@@ -937,6 +1023,7 @@ events = ["UserPromptSubmit"]
 priority = 20
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 
@@ -948,6 +1035,7 @@ matcher = "Bash"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -959,6 +1047,7 @@ matcher = "Write|Edit|NotebookEdit|apply_patch"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -970,6 +1059,7 @@ matcher = "Bash|Write|Edit|NotebookEdit|apply_patch"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -981,6 +1071,7 @@ matcher = "Bash"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -992,6 +1083,7 @@ matcher = "Write|Edit|NotebookEdit"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -1003,6 +1095,7 @@ matcher = "MultiEdit"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -1014,6 +1107,7 @@ matcher = "Bash|Write|Edit|NotebookEdit|MultiEdit"
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }
 
@@ -1024,5 +1118,6 @@ events = ["Stop"]
 priority = 900
 mode = "enforce"
 failure_posture = "closed"
+timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.coordination.v1", reason_code = "operation-lifecycle" }

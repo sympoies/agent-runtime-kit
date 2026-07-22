@@ -20,6 +20,7 @@ detail behind the one-line gates.
 | --- | --- | --- | --- |
 | PR (default) | Ordinary implementation request | Signed `semantic-commit` on a non-default managed-worktree branch, then the active `deliver-pr` path | PR/MR URL, delivered head, reviews/checks, and provider merge read-back |
 | Direct-main (L0 exception) | The maintainer explicitly requests direct commit and push to the default branch in the current task | Exactly one signed `semantic-commit` on a non-default managed-worktree branch, then `forge-cli repo push-default --expected-base <full-sha> --reason-file <path>` | Structured receipt whose post-push `observed_remote_sha` equals the delivered head |
+| Local-default (L0 local completion) | The maintainer explicitly requests one local-only default-branch commit in the current task | Exact `semantic-commit local-default` in the clean primary checkout; no provider call | `cli.semantic-commit.local-default.v1` receipt with `provider_delivered=false` |
 
 Never infer direct-main authorization from a change being small, obvious,
 urgent, or described as a hotfix. The authorization expires with the current
@@ -31,6 +32,11 @@ use a PR.
 Advisory or off project-dev mode does not relax this delivery matrix, commit
 signing, checkout ownership, branch, provider, or user-authorization controls;
 their independent hooks and governed CLIs continue to decide admission.
+
+Never infer local-default authorization from the same words. It permits one
+signed commit only, must finish in the current run, and is not provider
+delivery. If it grows to multiple commits or cannot complete locally, retain
+the managed branch and re-triage.
 
 The direct-main primitive permits only a verified fast-forward update. It
 requires the selected remote to have exactly one actual push URL (including any
@@ -50,11 +56,50 @@ exposes no force, delete, retry, or direct merge option. Raw
 are blocked by hook
 on supported Codex/Claude hosts, including Git's wildcard and matching-branch
 refspec forms. Explicit feature-branch refspecs and documented read-only
-help/dry-run forms remain available. If the bounded live default-branch probe
-times out, only exact explicit branch refspecs may use the cached remote HEAD;
-implicit, all/mirror, delete, matching, wildcard, missing-cache, non-timeout
-failure, and live/cache disagreement cases fail closed. Hermes has no hook
-runner; policy and the governed CLI contract remain authoritative there.
+help/dry-run forms remain available. The PreToolUse hook uses cached local
+default-branch metadata only and performs no `ls-remote` or other network
+probe. Missing or ambiguous cache state fails closed; live truth belongs to
+`forge-cli`. Hermes has no hook runner; policy and the governed CLI
+contract remain authoritative there.
+
+### Local-default completion
+
+Use `semantic-commit local-default` only after the current request explicitly
+authorizes this local outcome. Bind the invocation to the full current `HEAD`,
+the exact checked-out branch, and a new receipt path allocated outside the
+repository through `agent-out`. With configured remotes, include
+`--remote-mode local-only`; with none, omit it. The CLI requires the primary
+worktree, an attached matching branch, staged-only changes, no Git operation,
+a cached upstream that is aligned, ahead-only, or absent, and usable signing.
+Behind, diverged, unresolved, or otherwise unknown cached ancestry fails
+closed. It performs no fetch, `ls-remote`, push, or provider lookup.
+
+An existing ahead-only gap does not enlarge the current authorization: each
+authorized invocation still creates exactly one new signed commit from its
+caller-bound `--expect-head`. The receipt remains local evidence with
+`provider_delivered=false`, regardless of the pre-existing ahead count.
+Cached relation strings preserve the v1 schema: an aligned base is `aligned`,
+one ahead commit is `ahead-by-one`, and counts of two or more are
+`ahead-by-<decimal>` with no leading zero. The post-commit count must be exactly
+the pre-commit ahead count plus one.
+
+The successful receipt records privacy-safe repository and object identities,
+signature verification, cached upstream relation, and that provider delivery
+is still false. Never commit this receipt. Receipt finalization failure after a
+successful commit is a partial success: keep the commit for inspection and do
+not reset or amend it automatically.
+
+A later provider push is a new authorized action. Use
+`forge-cli repo push-default --local-default-receipt <path>` with a fresh
+expected remote base and reason file. Receipt adoption is the only exception
+that permits `push-default` from the checked-out default branch; it rechecks
+the live remote, exact parent/head/tree, one-commit ancestry, signature,
+destination, compare-and-swap, and read-back. The local receipt never bypasses
+project deploy or release gates. Single-commit receipt adoption remains
+restricted to a receipt whose cached relation changed from `aligned` to
+`ahead-by-one`; a receipt created from an already-ahead branch is not eligible
+to promote a multi-commit local gap. The live expected-base and exact
+one-commit range checks still must pass.
 
 ## Commits
 
@@ -62,7 +107,8 @@ runner; policy and the governed CLI contract remain authoritative there.
   trivial commits may omit the body.
 - Author commits only on a non-default managed-worktree branch. This applies to
   both PR and direct-main delivery; direct-main changes are not authored in the
-  primary checkout.
+  primary checkout. The sole exception is the exact authorized local-default
+  command and receipt contract above.
 - Each body bullet must start with a dash, one following space, and an uppercase
   ASCII letter, or a two-space continuation line. A lowercase word, a
   backticked identifier, or a leading double-dash flag is rejected as the opener;
@@ -105,8 +151,9 @@ runner; policy and the governed CLI contract remain authoritative there.
 - A clean linked worktree can acquire a lease. The primary checkout has a
   narrow direct-edit exception: it must be clean, on the resolved default
   branch, outside an existing Git operation, and free of a live foreign lease.
-  This is editing-isolation policy only; it does not authorize a commit or
-  delivery mode and does not turn a small change into direct-main delivery.
+  This editing exception does not itself authorize a commit or delivery mode.
+  Only the current-request local-default authorization plus its exact CLI shape
+  can extend it to one commit.
 - Once acquired, the owning session refreshes its lease and may continue after
   its own edits dirty the checkout, including resolving a Git operation it
   initiated after acquisition. A live foreign lease, dirty checkout without a

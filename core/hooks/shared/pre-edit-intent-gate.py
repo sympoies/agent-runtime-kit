@@ -1419,7 +1419,7 @@ def trusted_agent_docs_executable(executable: str, repos: list[str]) -> bool:
     configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
     if configured:
         roots = [os.path.realpath(item) for item in configured.split(os.pathsep) if item]
-        return os.path.dirname(candidate) in roots and not any(
+        return os.path.realpath(os.path.dirname(candidate)) in roots and not any(
             path_within(executable, repo_root) for repo_root in repos
         )
     for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import errno
 import hashlib
 import importlib.util
 import json
@@ -14477,6 +14478,16 @@ exit 65
             check=True,
         )
 
+    @staticmethod
+    def _add_checkout_lease_worktree(primary: Path, branch: str) -> Path:
+        linked = primary.parent / f"{primary.name}-{branch.replace('/', '-')}"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "-b", branch, str(linked)],
+            cwd=primary,
+            check=True,
+        )
+        return linked
+
     def assert_process_stopped(self, pid: int) -> None:
         deadline = time.monotonic() + 1.0
         while time.monotonic() < deadline:
@@ -14581,6 +14592,45 @@ exit 65
     @staticmethod
     def _invalid_utf8_checkout_path(root: Path, name: bytes = b"repo-\xff") -> Path:
         return Path(os.fsdecode(os.fsencode(root) + os.fsencode(os.sep) + name))
+
+    def _native_non_utf8_checkout_path_or_skip(self, root: Path) -> Path:
+        path = self._invalid_utf8_checkout_path(root)
+        try:
+            path.mkdir()
+            path.rmdir()
+        except OSError as exc:
+            if exc.errno == errno.EILSEQ:
+                self.skipTest(
+                    "host filesystem/Python rejects native non-UTF-8 path bytes"
+                )
+            raise
+        return path
+
+    def _dirty_snapshot_capability_or_skip(self, repo: Path) -> None:
+        if sys.platform != "darwin":
+            return
+        completed = subprocess.run(
+            ["git-cli", "worktree", "dirty-snapshot", "--format=json"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode == 0:
+            return
+        try:
+            envelope = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return
+        error = envelope.get("error") if isinstance(envelope, dict) else None
+        if (
+            isinstance(error, dict)
+            and error.get("code") == "dirty-checkout-resource-unavailable"
+        ):
+            self.skipTest(
+                "Darwin kqueue NOTE_TRACK is unavailable for dirty-snapshot "
+                "process containment"
+            )
 
     @staticmethod
     def _released_v2_fixture_for_paths(
@@ -14736,6 +14786,7 @@ exit 65
                 "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
+            self._dirty_snapshot_capability_or_skip(repo)
 
             code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
@@ -14813,6 +14864,7 @@ exit 65
                 "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
+            self._dirty_snapshot_capability_or_skip(repo)
 
             code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
@@ -14852,6 +14904,7 @@ exit 65
                 "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
+            self._dirty_snapshot_capability_or_skip(repo)
             reason_paths: list[Path] = []
 
             for prompt in ("first authorization turn", "second authorization turn"):
@@ -14973,6 +15026,7 @@ exit 65
                 replacement_instance + "\n", encoding="ascii"
             )
             (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            self._dirty_snapshot_capability_or_skip(repo)
 
             code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
@@ -15007,6 +15061,7 @@ exit 65
                 "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                 "AGENT_RUNTIME_STATE_HOME": str(state),
             }
+            self._dirty_snapshot_capability_or_skip(repo)
             code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 {
@@ -15102,6 +15157,7 @@ exit 65
                 "AGENT_RUNTIME_STATE_HOME": str(state),
                 "AGENT_RUNTIME_CHECKOUT_LEASE_TTL_SECONDS": "60",
             }
+            self._dirty_snapshot_capability_or_skip(repo)
 
             code, advisory, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
@@ -15310,6 +15366,7 @@ exit 65
                     "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
                     "AGENT_RUNTIME_STATE_HOME": str(state),
                 }
+                self._dirty_snapshot_capability_or_skip(repo)
                 code, advisory, stderr = run_enforced_hook(
                     "checkout-lease-guard.py",
                     {
@@ -15860,17 +15917,15 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "could not be resolved safely")
 
-    def test_default_delivery_hook_fails_closed_when_remote_is_unreachable(
+    def test_default_delivery_hook_does_not_probe_an_unreachable_remote(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = root / "repo"
-            self._init_checkout_lease_repo(repo)
-            subprocess.run(
-                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
-                cwd=repo,
-                check=True,
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
             )
             subprocess.run(
                 [
@@ -15892,7 +15947,7 @@ exit 65
                 cwd=repo,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "could not be resolved safely")
+            self.assert_allowed(decision)
 
     def test_default_delivery_git_probe_caps_output_and_kills_descendants(
         self,
@@ -16006,7 +16061,7 @@ exit 65
         finally:
             sys.modules.pop(spec.name, None)
 
-    def test_default_delivery_hook_rejects_stale_cached_remote_head(self) -> None:
+    def test_default_delivery_hook_blocks_stale_cached_remote_head(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             self._init_checkout_lease_repo(repo)
@@ -16026,9 +16081,9 @@ exit 65
                 cwd=repo,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "forge-cli repo push-default")
+            self.assert_blocked(decision, "could not be resolved safely")
 
-    def test_default_delivery_hook_uses_cached_head_only_for_timed_out_exact_branch_refspecs(
+    def test_default_delivery_hook_uses_only_cached_head_for_push_classification(
         self,
     ) -> None:
         import importlib.util
@@ -16047,26 +16102,37 @@ exit 65
                 def __init__(
                     self,
                     *,
-                    live_status: str = "timeout",
                     cached_ref: str = "origin/main\n",
+                    primary_ref: str = "main",
                 ) -> None:
-                    self.live_status = live_status
                     self.cached_ref = cached_ref
+                    self.primary_ref = primary_ref
 
                 def run(
                     self, _cwd: Path, *arguments: str
                 ) -> subprocess.CompletedProcess[str] | None:
-                    if "ls-remote" in arguments:
-                        return None
-                    if arguments[:4] == ("remote", "get-url", "--push", "--all"):
-                        return subprocess.CompletedProcess(
-                            ["git", *arguments], 0, "ssh://example.test/repo.git\n", ""
-                        )
+                    if "ls-remote" in arguments or arguments[:2] == (
+                        "remote",
+                        "get-url",
+                    ):
+                        raise AssertionError(f"network probe attempted: {arguments!r}")
                     if arguments[-1] == "refs/remotes/origin/HEAD":
                         return subprocess.CompletedProcess(
                             ["git", *arguments],
                             0 if self.cached_ref else 1,
                             self.cached_ref,
+                            "",
+                        )
+                    if arguments[-2:] == ("list", "--porcelain"):
+                        branch = (
+                            f"branch refs/heads/{self.primary_ref}\n"
+                            if self.primary_ref
+                            else ""
+                        )
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments],
+                            0,
+                            f"worktree /repo\nHEAD deadbeef\n{branch}\n",
                             "",
                         )
                     if arguments[-1] == "HEAD":
@@ -16078,20 +16144,6 @@ exit 65
                             ["git", *arguments], 1, "", ""
                         )
                     raise AssertionError(f"unexpected git probe: {arguments!r}")
-
-                def run_with_status(
-                    self, cwd: Path, *arguments: str
-                ) -> tuple[subprocess.CompletedProcess[str] | None, str]:
-                    if "ls-remote" in arguments:
-                        if self.live_status == "nonzero":
-                            return (
-                                subprocess.CompletedProcess(
-                                    ["git", *arguments], 1, "", "unreachable"
-                                ),
-                                "",
-                            )
-                        return None, self.live_status
-                    return self.run(cwd, *arguments), ""
 
             for arguments in (
                 ["origin", "feat/tiny-repair"],
@@ -16127,32 +16179,31 @@ exit 65
                     [],
                 )
             )
+            self.assertIsNone(
+                module.push_targets_default(
+                    DefaultBranchProbe(primary_ref=""),
+                    ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+                    Path("."),
+                    [],
+                )
+            )
 
-            for arguments in (
-                ["origin"],
-                ["--all", "origin"],
-                ["--mirror", "origin"],
-                ["--delete", "origin", "feat/tiny-repair"],
-                ["origin", ":feat/tiny-repair"],
-                ["origin", "HEAD"],
-                ["origin", "refs/heads/release/*:refs/heads/release/*"],
-            ):
-                with self.subTest(blocked=arguments):
-                    self.assertIsNone(
+            expected = (
+                (["origin"], None),
+                (["--all", "origin"], True),
+                (["--mirror", "origin"], True),
+                (["--delete", "origin", "feat/tiny-repair"], False),
+                (["origin", ":feat/tiny-repair"], False),
+                (["origin", "HEAD"], False),
+                (["origin", "refs/heads/release/*:refs/heads/release/*"], False),
+            )
+            for arguments, result in expected:
+                with self.subTest(arguments=arguments):
+                    self.assertIs(
                         module.push_targets_default(
                             DefaultBranchProbe(), arguments, Path("."), []
-                        )
-                    )
-
-            for live_status in ("execution", "read", "output-limit", "nonzero"):
-                with self.subTest(live_status=live_status):
-                    self.assertIsNone(
-                        module.push_targets_default(
-                            DefaultBranchProbe(live_status=live_status),
-                            ["origin", "HEAD:refs/heads/feat/tiny-repair"],
-                            Path("."),
-                            [],
-                        )
+                        ),
+                        result,
                     )
         finally:
             sys.modules.pop(spec.name, None)
@@ -16161,12 +16212,10 @@ exit 65
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "repo"
-            self._init_checkout_lease_repo(repo)
-            subprocess.run(
-                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
-                cwd=repo,
-                check=True,
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
             )
             commands = (
                 "semantic-commit commit --message 'fix: tiny repair'",
@@ -16216,6 +16265,107 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
 
+    def test_default_delivery_hook_allows_exact_local_default_shape_when_ahead(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            receipts = root / "agent-out"
+            receipts.mkdir()
+            self._init_checkout_lease_repo(repo)
+            (repo / "README.md").write_text(
+                "# lease fixture\n\nlocal-only commit\n", encoding="utf-8"
+            )
+            subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "fixture: local ahead"],
+                cwd=repo,
+                check=True,
+            )
+            cached_gap = subprocess.run(
+                ["git", "rev-list", "--count", "origin/main..HEAD"],
+                cwd=repo,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            self.assertEqual(cached_gap, "1", "fixture must be ahead-only")
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            governed = (
+                "semantic-commit local-default --message 'fix: tiny repair' "
+                f"--expect-head {head} --expected-branch main "
+                "--remote-mode local-only "
+                f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
+                "--automation --format json"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(governed),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            invalid = (
+                "semantic-commit local-default --message 'fix: tiny repair' "
+                f"--expect-head {head} --expected-branch main "
+                f"--receipt-out {shlex.quote(str(repo / 'receipt.json'))}"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(invalid),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_blocks_raw_default_branch_rewrites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "git merge feat/unsafe",
+                "git cherry-pick HEAD",
+                "git reset --hard HEAD^",
+                "git update-ref refs/heads/main HEAD^",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "Do not author or push")
+
+    def test_default_delivery_hook_preserves_recovery_and_ff_only_sync(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "git merge --abort",
+                "git cherry-pick --abort",
+                "git reset -- README.md",
+                "git pull --ff-only origin main",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
     def test_default_delivery_hook_blocks_ambiguous_feature_pushes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -16238,12 +16388,10 @@ exit 65
     def test_default_delivery_hook_honors_explicit_repository_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = root / "repo"
-            self._init_checkout_lease_repo(repo)
-            subprocess.run(
-                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
-                cwd=repo,
-                check=True,
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
             )
             commands = (
                 (f"git -C {shlex.quote(str(repo))} push origin HEAD:main", True),
@@ -17582,7 +17730,7 @@ exit 65
             self.skipTest("native non-UTF-8 path bytes require a POSIX filesystem")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = self._invalid_utf8_checkout_path(root)
+            repo = self._native_non_utf8_checkout_path_or_skip(root)
             state = root / "state"
             self._init_checkout_lease_repo(repo)
 
@@ -17620,7 +17768,7 @@ exit 65
                 state = root / "state"
                 common_dir = root / "common"
                 common_dir.mkdir()
-                native_root = self._invalid_utf8_checkout_path(root)
+                native_root = self._native_non_utf8_checkout_path_or_skip(root)
                 native_git_dir = native_root / ".git"
                 native_git_dir.mkdir(parents=True)
                 repository_checkout = module.Checkout(
@@ -17696,7 +17844,7 @@ exit 65
                 state = root / "state"
                 common_dir = root / "common"
                 common_dir.mkdir()
-                native_root = self._invalid_utf8_checkout_path(root)
+                native_root = self._native_non_utf8_checkout_path_or_skip(root)
                 native_git_dir = native_root / ".git"
                 native_git_dir.mkdir(parents=True)
                 repository_checkout = module.Checkout(

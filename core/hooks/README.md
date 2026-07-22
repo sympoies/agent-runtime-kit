@@ -245,6 +245,16 @@ bodies, or private registry paths. The physical checkout lease above shares the
 same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
 runner.
 
+Executable runtime rules use independent child deadlines and an explicit
+`timeout_posture`. A timeout no longer erases completed outcomes or skips later
+mandatory rules. Allowed `warn` or `effect_gated` timeouts create mode-0600,
+redacted incidents under the XDG state `agent-hook/degraded` tree; terminal
+PostTool success/failure correlates them without retaining raw commands,
+paths, prompts, or provider identifiers. A bounded summary keyed by policy,
+rule, error, effect, product, and platform aggregates recurrence and the latest
+completion. Completed blocks and closed/unknown effect outcomes remain
+authoritative.
+
 Dirty-checkout adoption is an opt-in advisory layered over the enforce-mode
 checkout gate. With `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` set to `1` and
 coordination mode set to `enforce`, a dirty
@@ -285,25 +295,28 @@ dirt. Codex and Claude register the shared guard on `UserPromptSubmit`; Hermes
 has no runtime-kit hook runner and does not support this enforcement.
 
 `block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
-It resolves the selected remote's default branch and blocks live raw `git push`
+It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also
 blocks mutating
 `semantic-commit commit`, `fixup`, and `squash` on the checked-out default
-branch. Ambiguous live
+branch. Ambiguous
 pushes without an explicit refspec fail closed because Git configuration can
-retarget them. When the live default-branch probe exhausts its bounded deadline,
-the hook may use the cached remote HEAD only for exact explicit branch refspecs;
-implicit, all/mirror, delete, matching, wildcard, missing-cache, and non-timeout
-failure cases still fail closed, and a completed live probe must agree with the
-cache. It leaves explicit feature-branch pushes,
+retarget them. PreToolUse performs no live `ls-remote` or provider probe;
+implicit, all/mirror, delete, matching, wildcard, and missing-cache cases fail
+closed, while live remote truth remains owned by the delivery CLI. It leaves explicit feature-branch pushes,
 `git push --dry-run`, semantic-commit help/dry-run, and the governed `forge-cli
-repo push-default` invocation available. The hook is a guardrail rather than a
-shell sandbox; provider rules and the forge-cli expected-base, one-signed-commit,
-verified-fast-forward, exact-old-object compare-and-swap, and post-push
-read-back contract are authoritative. The internal exact lease does not make
-raw or caller-controlled `--force-with-lease` an allowed route. Hermes has no
-runtime-kit hook runner.
+repo push-default` invocation available. Exact authorized `semantic-commit
+local-default` is also admitted when expected branch/head and the outside-repo
+receipt destination are statically visible; ordinary default-branch commit
+forms remain blocked. Hook admission is intentionally independent of cached
+upstream ancestry: `semantic-commit local-default` owns the aligned/ahead-only
+proof and rejects behind, diverged, or unknown relations. The hook is a
+guardrail rather than a shell sandbox; provider rules and the forge-cli
+expected-base, one-signed-commit, verified-fast-forward, exact-old-object
+compare-and-swap, and post-push read-back contract are authoritative. The
+internal exact lease does not make raw or caller-controlled
+`--force-with-lease` an allowed route. Hermes has no runtime-kit hook runner.
 
 Install surfaces:
 

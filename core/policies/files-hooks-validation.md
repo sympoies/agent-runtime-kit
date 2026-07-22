@@ -24,6 +24,10 @@ project-defined validation. This file is the procedural detail behind them.
 - Do not override established tool/workflow artifact contracts; use
   `agent-out audit` before cleaning or enforcing the runtime-kit state out tree
   (`${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/out/`).
+- Local-default commit receipts are private runtime evidence. Allocate them
+  outside the checkout through `agent-out`, never add them to a repository,
+  and retain them only while local completion or a separately authorized later
+  `push-default --local-default-receipt` reconciliation needs them.
 - The `agent-out` tree is scratch space, not a database. `skill-usage` records
   are written there unconditionally (a useful breadcrumb even when no archive is
   configured) and are **not** auto-reaped — they persist until manually cleaned
@@ -52,6 +56,17 @@ project-defined validation. This file is the procedural detail behind them.
 ## Hooks
 
 - Hooks may enforce mechanical guardrails, but hooks do not replace policy.
+- Executable rules have an explicit `timeout_posture` separate from ordinary
+  capability failure. Each rule gets its own child deadline and later rules
+  still run. `closed` blocks; `warn` admits with a warning; `effect_gated`
+  admits only a trusted in-process `local_reversible` classification. A
+  completed block always dominates. Every allowed timeout writes a redacted
+  private incident under `${XDG_STATE_HOME:-$HOME/.local/state}/agent-hook/degraded/`;
+  a bounded privacy-safe fingerprint summary in the same directory aggregates
+  recurrence and terminal status. Continue eligible work and report the
+  incident ID in the final response.
+  Never treat the incident as a generic bypass for operations that are
+  external, destructive, credential-sensitive, transaction-sensitive, or unknown.
 - Shell inspection uses a shared tri-state effect contract: `read-only`,
   `mutation`, or `unknown`. Read-only admission is exact and narrow: a pipeline
   may contain pipe separators only, and every stage must match an audited

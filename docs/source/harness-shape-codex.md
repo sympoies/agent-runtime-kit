@@ -441,6 +441,15 @@ Quarantined (not in default CI):
   `--probe-only` validates isolated CLI invocation without full prompt
   execution.
 
+`codex-cli agent prompt`, `advice`, `knowledge`, and `commit` are a separate
+one-shot child surface. They default to a temporary `CODEX_HOME`, ignore user
+config and project rules, disable lifecycle hooks and optional runtime
+features, and always run ephemerally. This isolates the child only: an outer
+managed Codex invocation remains governed by the hooks above. Explicit
+`--runtime inherited` restores the legacy full-home behavior, while
+`agent resume` is always inherited. `codex-cli agent doctor --format json`
+provides the no-API capability probe used by product smoke.
+
 Live Codex acceptance:
 
 - Public convergence acceptance validates four isolated prompt/route contract

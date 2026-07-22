@@ -53,9 +53,11 @@ run_codex_probe() {
   local prompt_err="$root/codex.prompt.stderr.txt"
   local prompt_exit="$root/codex.prompt.exit"
   local files_out="$root/files.txt"
+  local agent_doctor_out="$root/codex-cli.agent-doctor.json"
   local exit_code
 
   require_product_bin codex || return "$?"
+  require_product_bin codex-cli || return "$?"
   mkdir -p "$home" "$codex_home" "$xdg"
 
   HOME="$home" CODEX_HOME="$codex_home" XDG_CONFIG_HOME="$xdg" \
@@ -68,6 +70,11 @@ run_codex_probe() {
   grep -q 'Run Codex non-interactively' "$exec_help_out"
   grep -q -- '--ephemeral' "$exec_help_out"
   grep -q -- '--ignore-user-config' "$exec_help_out"
+
+  HOME="$home" CODEX_HOME="$codex_home" XDG_CONFIG_HOME="$xdg" \
+    codex-cli agent doctor --format json >"$agent_doctor_out"
+  grep -q '"schema_version":"cli.codex-cli.agent.doctor.v1"' "$agent_doctor_out"
+  grep -q '"ready":true' "$agent_doctor_out"
 
   set +e
   HOME="$home" CODEX_HOME="$codex_home" XDG_CONFIG_HOME="$xdg" \
@@ -172,7 +179,7 @@ run_product_probe() {
     status="pass"
     case "$product" in
       codex)
-        note="isolation=supported via CODEX_HOME and ephemeral exec; prompt execution is outside product mode"
+        note="isolation=supported via codex-cli agent doctor, temporary CODEX_HOME, and ephemeral exec; prompt execution is outside product mode"
         ;;
       claude)
         note="isolation=supported via CLAUDE_CONFIG_DIR and bare print; prompt execution is outside product mode"

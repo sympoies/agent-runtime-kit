@@ -50,7 +50,7 @@ if configured:
         for item in configured.split(os.pathsep)
         if item
     ]
-    trusted = candidate_path.parent in roots
+    trusted = candidate_path.parent.resolve() in roots
 else:
     for prefix_raw in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
         prefix = pathlib.Path(prefix_raw)
@@ -275,7 +275,7 @@ preflight_identity="$(printf '%s\n' "${preflights[@]}" | cksum 2>/dev/null || tr
 # invalidate via active_intents / status / verify / preflight / catalog.
 activation_key="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s' \
   "$session_supported" "$active_intents" "$activation_stale" "$status_json" \
-  "$verify_json" "$preflight_identity" "$catalog_identity" | \
+  "$verify_json" "$preflight_identity" "$catalog_identity" |
   cksum | awk '{print $1}' || true)"
 stamp="${stamp_base}-${activation_key:-legacy}.stamp"
 [[ -f "$stamp" ]] && exit 0

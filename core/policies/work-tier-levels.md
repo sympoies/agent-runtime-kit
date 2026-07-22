@@ -19,8 +19,9 @@ Work has three independent axes. Do not collapse them:
 
 - **Delivery axis — PR by default.** Almost any code change lands as a PR
   squash-merged into `main`. The PR is the durable record of *what changed and
-  why*. The only exception is an explicitly authorized L0 direct-main delivery
-  using the governed one-commit receipt path in `git-delivery.md`.
+  why*. The exceptions are explicitly authorized L0 direct-main delivery and
+  local-default completion using the separate governed one-commit receipt paths
+  in `git-delivery.md`.
 - **Tracking axis — the tier.** How much durable, cross-time tracking the
   problem or plan needs: none, a follow-up issue, or a plan tracking issue. This
   axis is what the tiers below measure.
@@ -38,7 +39,7 @@ is never a reason to escalate — *"state worth tracking"* is.
 
 | Tier | Name | Tracking artifact | Primary method |
 | --- | --- | --- | --- |
-| **L0** | Untracked delivery | None | `semantic-commit` → `deliver-pr` by default; governed direct-main only when explicitly authorized |
+| **L0** | Untracked delivery | None | `semantic-commit` → `deliver-pr` by default; governed direct-main or local-default only when explicitly authorized |
 | **L1** | Follow-up issue | One provider issue + comment timeline | `issue-follow-up` |
 | **L2** | Plan tracking issue | Plan bundle + issue + lifecycle | `deliver-plan-tracking-issue` |
 | **L3** | Dispatch plan | Shared dispatch issue + lanes | `deliver-dispatch-plan` |
@@ -61,6 +62,16 @@ Several concepts ride alongside the ladder and must not be mistaken for tiers:
   push-default`; its remote-SHA receipt replaces the PR record. For PR delivery,
   keep the body grounded in the diff with at least `## Summary` + `## Test plan`,
   produced by the active delivery skill / `agent-runtime pr-body render`.
+- **Local-default = local completion, not delivery.** When the maintainer
+  explicitly requests one local-only commit on the primary default checkout,
+  `semantic-commit local-default` may create exactly one signed commit and an
+  outside-checkout receipt. It opens no issue or PR and performs no provider
+  mutation. A configured remote requires `--remote-mode local-only`; remote
+  unavailability is irrelevant because the command performs no network access.
+  Cached ancestry may be aligned, ahead-only, or absent; behind, diverged, and
+  unknown ancestry fail closed. A pre-existing ahead-only gap does not carry
+  authorization forward: the current request still authorizes one new commit,
+  and its receipt remains `provider_delivered=false`.
 - **Reviewable size — split what review cannot converge.** A change is sized for
   review as well as for tracking. When one PR's review surface is too large to
   converge — enough findings or threads accumulate that reviewers churn and the
@@ -140,6 +151,10 @@ already provides enough tracking, keep the lower tier and use
 - Only when the maintainer explicitly authorizes direct commit and push to the
   default branch in the current task, use the direct-main mode in
   `git-delivery.md`. Do not carry that authorization into another task.
+- Only when the maintainer explicitly authorizes local-default completion in
+  the current task, use the local-default mode in `git-delivery.md`. It is
+  terminal only for the local task; later provider delivery requires fresh
+  authorization and live revalidation.
 - PR body: `## Summary` + `## Test plan`, grounded in the diff.
 - If a spec doc backs the work, link it in the PR body and close the doc's loop
   per its retention intent (retire when cleanup-eligible, promote when durable).

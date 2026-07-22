@@ -11,12 +11,13 @@ active, and open a full runbook only for the phase that needs it.
   code, scripts, config, or docs in a governed repository.
 - **Must**: read the repo's declared `project-dev` docs before writing; classify
   the work tier and state it; follow the test-first lifecycle for behavior
-  changes; commit via `semantic-commit` on a non-default managed-worktree branch;
+  changes; commit via `semantic-commit` on a non-default managed-worktree branch,
+  except for an exact current-request authorized L0 `local-default` completion;
   deliver via the active workflow or `forge-cli`; run declared validation before
   declaring the task done.
 - **Never**: direct `git commit`, `git worktree`, `gh pr create`, or
-  `glab mr create`; force-push `main`; infer direct-main delivery from "small" or
-  "hotfix".
+  `glab mr create`; force-push `main`; infer direct-main or local-default from
+  "small" or "hotfix".
 - **Next**: activate `project-dev`. Runbooks — `core/policies/work-tier-levels.md`,
   `core/policies/git-delivery.md`, `core/policies/files-hooks-validation.md`,
   `core/policies/evidence-control-plane.md`, and (Codex)

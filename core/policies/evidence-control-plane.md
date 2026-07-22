@@ -179,8 +179,13 @@ Codex and Claude share the same runtime-kit hook decisions and nils-cli record
 verification. An explicitly recognized `agent-docs` version older than the
 durable-session floor keeps legacy compatibility behavior and does not claim
 activation was enforced; direct preflight remains the fallback. Missing
-binaries and timeout, crash, malformed-version, or required-capability failures
-are not legacy signals and block supported-host repository mutations.
+binaries, crashes, malformed versions, and required-capability failures are not
+legacy signals and retain their configured failure posture. Executable
+timeouts use the rule's distinct `timeout_posture`: only trusted
+`local_reversible` work may pass an `effect_gated` timeout, with a redacted
+private incident, a bounded recurrence summary, and final-response reporting;
+external, destructive, sensitive, transaction, and unknown effects remain
+closed.
 
 Hermes receives shared policy and can run the same released CLI verification,
 but runtime-kit does not install an agent-docs hook runner into Hermes. A Hermes

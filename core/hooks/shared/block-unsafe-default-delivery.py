@@ -3,10 +3,10 @@
 
 PR delivery remains the default. A maintainer-authorized L0 direct-main change
 is authored as one signed commit on a non-default managed worktree and is
-delivered through ``forge-cli repo push-default``. This hook blocks the two raw
-shell paths that would otherwise bypass that contract: authoring with
-``semantic-commit`` on the checked-out default branch and targeting the remote
-default branch with a live ``git push``.
+delivered through ``forge-cli repo push-default``. A separately authorized L0
+local-default task may use ``semantic-commit local-default`` to author one
+signed local-only commit in the primary checkout. This hook blocks raw shell
+paths that would otherwise bypass either contract.
 
 This is a mechanical guardrail, not a shell sandbox. Provider branch rules and
 the forge-cli expected-base/signature/read-back contract remain authoritative.
@@ -51,7 +51,9 @@ BLOCK_REASON = (
     "shell path. PR delivery is the default. When the maintainer explicitly "
     "authorized direct-main delivery in the current task, author one signed "
     "commit in a non-default managed worktree and use `forge-cli repo "
-    "push-default` with the expected base and reason file."
+    "push-default` with the expected base and reason file. When local-default "
+    "completion was explicitly authorized instead, use the exact governed "
+    "`semantic-commit local-default` receipt flow."
 )
 AMBIGUOUS_REASON = (
     "Default-branch delivery target could not be resolved safely. " + BLOCK_REASON
@@ -174,6 +176,12 @@ PUSH_OPTIONS_WITH_VALUE_PREFIXES = (
 GIT_PROBE_TIMEOUT_SECONDS = 4.0
 GIT_PROBE_OUTPUT_LIMIT_BYTES = 1024 * 1024
 GIT_PROBE_STATUS_TIMEOUT = "timeout"
+GIT_DEFAULT_BRANCH_REWRITE_COMMANDS = frozenset(
+    {"cherry-pick", "merge", "reset", "update-ref"}
+)
+GIT_EXPLICIT_RECOVERY_OPTIONS = frozenset(
+    {"--abort", "--continue", "--quit", "--skip"}
+)
 
 
 def payload_base(payload: Mapping[str, Any]) -> Path:
@@ -341,21 +349,31 @@ def git_context(
         if token == "-c":
             if index + 1 >= len(arguments):
                 return cwd, "", [], config_arguments, False
-            config_arguments.extend((token, arguments[index + 1]))
+            value = arguments[index + 1]
+            config_arguments.extend((token, value))
+            if delivery_sensitive_config(value):
+                context_valid = False
             index += 2
             continue
         if token.startswith("-c") and token != "-c":
             config_arguments.append(token)
+            if delivery_sensitive_config(token[2:]):
+                context_valid = False
             index += 1
             continue
         if token in {"--config-env"}:
             if index + 1 >= len(arguments):
                 return cwd, "", [], config_arguments, False
-            config_arguments.extend((token, arguments[index + 1]))
+            value = arguments[index + 1]
+            config_arguments.extend((token, value))
+            if delivery_sensitive_config(value):
+                context_valid = False
             index += 2
             continue
         if token.startswith("--config-env="):
             config_arguments.append(token)
+            if delivery_sensitive_config(token.removeprefix("--config-env=")):
+                context_valid = False
             index += 1
             continue
         if token in GIT_REPOSITORY_CONTEXT_OPTIONS:
@@ -387,6 +405,22 @@ def git_context(
     if index < len(arguments):
         return cwd, arguments[index], arguments[index + 1 :], config_arguments, context_valid
     return cwd, "", [], config_arguments, context_valid
+
+
+def delivery_sensitive_config(value: str) -> bool:
+    """Reject command-local Git config that can retarget a delivery."""
+    key = value.split("=", 1)[0].strip().lower()
+    if key in {"remote.pushdefault", "push.default", "include.path"}:
+        return True
+    if key.startswith("includeif.") and key.endswith(".path"):
+        return True
+    if key.startswith("remote."):
+        return key.endswith((".url", ".pushurl", ".push", ".mirror"))
+    if key.startswith("branch."):
+        return key.endswith((".remote", ".pushremote", ".merge"))
+    return key.startswith("url.") and key.endswith(
+        (".insteadof", ".pushinsteadof")
+    )
 
 
 def config_environment_variables(arguments: list[str]) -> set[str]:
@@ -620,49 +654,45 @@ def cached_default_branch(
     return remote_ref[len(prefix) :] if remote_ref.startswith(prefix) else ""
 
 
+def primary_worktree_branch(
+    probe: GitProbe,
+    cwd: Path,
+    config_arguments: list[str],
+) -> str:
+    """Return the primary worktree branch from Git's local worktree inventory."""
+    worktrees = probe.run(
+        cwd,
+        *config_arguments,
+        "worktree",
+        "list",
+        "--porcelain",
+    )
+    if not worktrees or worktrees.returncode != 0:
+        return ""
+    branch_prefix = "branch refs/heads/"
+    for line in worktrees.stdout.splitlines():
+        if not line:
+            break
+        if line.startswith(branch_prefix):
+            return line.removeprefix(branch_prefix)
+    return ""
+
+
 def resolve_default_branch(
     probe: GitProbe,
     cwd: Path,
     remote: str = "origin",
     config_arguments: list[str] | None = None,
 ) -> tuple[str, bool]:
-    """Return the default branch and whether it came from timeout fallback."""
+    """Resolve an authoritative local default branch without network I/O."""
     if not remote or "/" in remote or ":" in remote:
         return "", False
     git_config = config_arguments or []
-    push_urls = probe.run(
-        cwd, *git_config, "remote", "get-url", "--push", "--all", remote
-    )
-    if not push_urls or push_urls.returncode != 0:
+    cached = cached_default_branch(probe, cwd, remote, git_config)
+    primary = primary_worktree_branch(probe, cwd, git_config)
+    if not cached or not primary or cached != primary:
         return "", False
-    urls = [line for line in push_urls.stdout.splitlines() if line]
-    if len(urls) != 1:
-        return "", False
-    cached_before_live = cached_default_branch(probe, cwd, remote, git_config)
-    authoritative, status = probe.run_with_status(
-        cwd, *git_config, "ls-remote", "--symref", urls[0], "HEAD"
-    )
-    if not authoritative:
-        if status == GIT_PROBE_STATUS_TIMEOUT and cached_before_live:
-            return cached_before_live, True
-        return "", False
-    if authoritative.returncode != 0:
-        return "", False
-    expected = ""
-    for line in authoritative.stdout.splitlines():
-        if not line.startswith("ref: refs/heads/"):
-            continue
-        reference, separator, name = line.partition("\t")
-        if separator and name == "HEAD":
-            expected = reference[len("ref: refs/heads/") :]
-            break
-    if not expected:
-        return "", False
-    cached_after_live = cached_default_branch(probe, cwd, remote, git_config)
-    cached = cached_after_live or cached_before_live
-    if cached and cached != expected:
-        return "", False
-    return expected, False
+    return cached, False
 
 
 def default_branch(
@@ -691,18 +721,154 @@ def semantic_commit_targets_default(
     authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
         arguments
     )
-    if (
-        not arguments
-        or arguments[0] not in {"commit", "fixup", "squash"}
-        or not authors_commit
-    ):
+    if not arguments or not authors_commit:
         return False
     cwd = semantic_commit_repo(arguments, base)
+    if arguments[0] == "local-default":
+        return False if valid_local_default_invocation(probe, arguments, cwd) else None
+    if arguments[0] not in {"commit", "fixup", "squash"}:
+        return False
     branch = current_branch(probe, cwd)
     expected = default_branch(probe, cwd)
     if not branch or not expected:
         return None
     return branch == expected
+
+
+def update_ref_target(arguments: list[str]) -> str | None:
+    """Return the single ref target, or None for an ambiguous update-ref shape."""
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token in {"-h", "--help"}:
+            return ""
+        if token in {"-m", "--message"}:
+            index += 2
+            continue
+        if token.startswith("--message="):
+            index += 1
+            continue
+        if token in {"--create-reflog", "-d", "--delete", "-z"}:
+            index += 1
+            continue
+        if token in {"--stdin", "--no-deref"}:
+            return None
+        if token.startswith("-"):
+            return None
+        return token
+    return None
+
+
+def git_default_branch_rewrite_targets_default(
+    probe: GitProbe,
+    subcommand: str,
+    arguments: list[str],
+    cwd: Path,
+    config_arguments: list[str],
+) -> bool | None:
+    """Classify raw ref/commit-producing Git paths that could bypass delivery."""
+    if subcommand not in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
+        return False
+    if any(argument in GIT_EXPLICIT_RECOVERY_OPTIONS for argument in arguments):
+        return False
+    if any(argument in {"-h", "--help"} for argument in arguments):
+        return False
+    if subcommand == "reset":
+        if not arguments:
+            return False
+        if "--" in arguments and arguments.index("--") < len(arguments) - 1:
+            return False
+
+    expected = default_branch(probe, cwd, config_arguments=config_arguments)
+    if not expected:
+        return None
+
+    current = current_branch(probe, cwd, config_arguments)
+    if subcommand != "update-ref":
+        if not current:
+            return None
+        return current == expected
+
+    target = update_ref_target(arguments)
+    if target is None:
+        return None
+    if not target:
+        return False
+    if target in {"HEAD", "@"}:
+        if not current:
+            return None
+        return current == expected
+    if target.startswith("refs/heads/"):
+        return target.removeprefix("refs/heads/") == expected
+    if target.startswith("heads/"):
+        return target.removeprefix("heads/") == expected
+    if target.startswith("refs/"):
+        return False
+    return target == expected
+
+
+def option_value(arguments: list[str], name: str) -> str:
+    for index, token in enumerate(arguments):
+        if token == name and index + 1 < len(arguments):
+            return arguments[index + 1]
+        if token.startswith(f"{name}="):
+            return token.split("=", 1)[1]
+    return ""
+
+
+def valid_local_default_invocation(
+    probe: GitProbe, arguments: list[str], cwd: Path
+) -> bool:
+    if any(
+        token in {"--amend", "--allow-empty", "--message-only", "--no-edit"}
+        for token in arguments
+    ):
+        return False
+    expected_branch = option_value(arguments, "--expected-branch")
+    expected_head = option_value(arguments, "--expect-head")
+    receipt = option_value(arguments, "--receipt-out")
+    remote_mode = option_value(arguments, "--remote-mode")
+    if (
+        not expected_branch
+        or len(expected_head) not in {40, 64}
+        or any(character not in "0123456789abcdef" for character in expected_head)
+        or (remote_mode and remote_mode != "local-only")
+    ):
+        return False
+    receipt_path = Path(receipt).expanduser()
+    if not receipt_path.is_absolute() or not receipt_path.parent.exists():
+        return False
+    try:
+        repository = cwd.resolve(strict=True)
+        receipt_parent = receipt_path.parent.resolve(strict=True)
+    except OSError:
+        return False
+    if receipt_parent == repository or repository in receipt_parent.parents:
+        return False
+    head = probe.run(repository, "rev-parse", "--verify", "HEAD")
+    git_dir = probe.run(
+        repository, "rev-parse", "--path-format=absolute", "--git-dir"
+    )
+    common_dir = probe.run(
+        repository, "rev-parse", "--path-format=absolute", "--git-common-dir"
+    )
+    if not all(
+        result is not None and result.returncode == 0
+        for result in (head, git_dir, common_dir)
+    ):
+        return False
+    assert head is not None and git_dir is not None and common_dir is not None
+    try:
+        primary = Path(git_dir.stdout.strip()).resolve(strict=True) == Path(
+            common_dir.stdout.strip()
+        ).resolve(strict=True)
+    except OSError:
+        return False
+    return (
+        primary
+        and current_branch(probe, repository) == expected_branch
+        and head.stdout.strip() == expected_head
+    )
 
 
 def normalized_branch(value: str, current: str) -> str:
@@ -888,6 +1054,19 @@ def invocation_block_reason(
             invocation[1:], base
         )
         if subcommand != "push" and subcommand in probe.builtin_commands(cwd):
+            if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
+                if not environment_safe or not context_valid:
+                    return AMBIGUOUS_REASON
+                target = git_default_branch_rewrite_targets_default(
+                    probe, subcommand, action, cwd, config_arguments
+                )
+                return (
+                    BLOCK_REASON
+                    if target is True
+                    else AMBIGUOUS_REASON
+                    if target is None
+                    else ""
+                )
             return ""
         if subcommand == "push" and push_shape(action)[0]:
             return ""
@@ -900,6 +1079,17 @@ def invocation_block_reason(
             return AMBIGUOUS_REASON
         subcommand, action = resolved
         if subcommand != "push":
+            if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
+                target = git_default_branch_rewrite_targets_default(
+                    probe, subcommand, action, cwd, config_arguments
+                )
+                return (
+                    BLOCK_REASON
+                    if target is True
+                    else AMBIGUOUS_REASON
+                    if target is None
+                    else ""
+                )
             return ""
         if push_shape(action)[0]:
             return ""
