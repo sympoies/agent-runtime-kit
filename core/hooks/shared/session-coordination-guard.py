@@ -350,6 +350,32 @@ def simple_words(command: str) -> list[str] | None:
     return words or None
 
 
+def literal_claim_bootstrap_words(command: str) -> list[str] | None:
+    """Expand only the two exact quoted variables in the claim recovery shape."""
+    current_session = os.environ.get("AGENT_SESSION_ID", "").strip()
+    capability_file = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+    if not current_session or not capability_file:
+        return None
+    replacements = (
+        ('"$AGENT_SESSION_ID"', "__AGENT_SESSION_LITERAL_ID_7F3A__", current_session),
+        (
+            '"$AGENT_SESSION_CAPABILITY_FILE"',
+            "__AGENT_SESSION_LITERAL_CAPABILITY_7F3A__",
+            capability_file,
+        ),
+    )
+    sanitized = command
+    for literal, sentinel, _value in replacements:
+        if sanitized.count(literal) != 1 or sentinel in sanitized:
+            return None
+        sanitized = sanitized.replace(literal, sentinel)
+    words = simple_words(sanitized)
+    if not words or words[:3] != ["agent-session", "work-context", "claim"]:
+        return None
+    values = {sentinel: value for _literal, sentinel, value in replacements}
+    return [values.get(word, word) for word in words]
+
+
 def unwrap_nested_shell(words: list[str]) -> tuple[list[str] | None, bool]:
     current = words
     wrapped = False
@@ -487,17 +513,78 @@ def provider_group_action(words: list[str]) -> tuple[int, str, str] | None:
     return parsed
 
 
+def claim_bootstrap_invocation(
+    words: list[str], agent_session_executable: str, base: Path | None
+) -> bool:
+    if len(words) != 13 or words[:3] != [
+        "agent-session",
+        "work-context",
+        "claim",
+    ]:
+        return False
+    candidate = shutil.which(words[0])
+    if not candidate or os.path.realpath(candidate) != os.path.realpath(
+        agent_session_executable
+    ):
+        return False
+    current_session = os.environ.get("AGENT_SESSION_ID", "").strip()
+    capability_file = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+    if (
+        words[3] != "--session"
+        or not current_session
+        or words[4] != current_session
+        or words[5] != "--file"
+        or words[7] != "--capability-file"
+        or not capability_file
+        or words[8] != capability_file
+        or words[9] != "--idempotency-key"
+        or words[11:] != ["--format", "json"]
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", words[10]) is None
+    ):
+        return False
+    for raw, require_json in ((words[6], True), (words[8], False)):
+        if (
+            not os.path.isabs(raw)
+            or os.path.normpath(raw) != raw
+            or os.path.islink(raw)
+            or not os.path.isfile(raw)
+            or (require_json and not raw.endswith(".json"))
+        ):
+            return False
+        if base is not None:
+            repository = bounded_git_toplevel(str(base))
+            if repository:
+                try:
+                    if os.path.commonpath(
+                        (os.path.realpath(raw), os.path.realpath(repository))
+                    ) == os.path.realpath(repository):
+                        return False
+                except ValueError:
+                    return False
+    return True
+
+
 def invocation_bypasses_admission(
-    words: list[str], agent_session_executable: str
+    words: list[str], agent_session_executable: str, base: Path | None = None
 ) -> bool:
     if "/" in words[0] and not os.path.isabs(words[0]):
         return False
     name = os.path.basename(words[0])
     if name == "agent-session" and len(words) >= 2:
         candidate = shutil.which(words[0]) if "/" not in words[0] else words[0]
-        return bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
+        trusted = bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
             agent_session_executable
-        ) and words[1] in {"work-context", "broker", "message", "activity"}
+        )
+        if words[1:3] == ["work-context", "claim"]:
+            return trusted and claim_bootstrap_invocation(
+                words, agent_session_executable, base
+            )
+        return trusted and words[1] in {
+            "work-context",
+            "broker",
+            "message",
+            "activity",
+        }
     if name == "agent-docs":
         candidate = words[0] if os.path.isabs(words[0]) else shutil.which(words[0])
         trusted = resolved_trusted_cli("agent-docs")
@@ -778,7 +865,7 @@ def command_effect(
         return classify_shell_effect(
             command,
             read_only_invocation=lambda words: invocation_bypasses_admission(
-                words, agent_session_executable
+                words, agent_session_executable, base
             ),
             mutation_invocation=lambda tokens: invocation_is_recognized_mutation(
                 tokens, repository_root
@@ -796,11 +883,18 @@ def command_effect(
     return classify(repository_root)
 
 
-def command_bypasses_admission(command: str, agent_session_executable: str) -> bool:
+def command_bypasses_admission(
+    command: str, agent_session_executable: str, base: Path | None = None
+) -> bool:
+    literal_words = literal_claim_bootstrap_words(command)
+    if literal_words is not None:
+        return invocation_bypasses_admission(
+            literal_words, agent_session_executable, base
+        )
     effect = classify_shell_effect(
         command,
         read_only_invocation=lambda words: invocation_bypasses_admission(
-            words, agent_session_executable
+            words, agent_session_executable, base
         ),
     )
     return effect.kind == SHELL_EFFECT_READ_ONLY
@@ -1338,7 +1432,7 @@ def _pre_tool_locked(
 ) -> int:
     tool = tool_name(payload)
     if tool in COMMAND_TOOLS and command_bypasses_admission(
-        command_from(payload), executable
+        command_from(payload), executable, effective_workdir(payload).resolve()
     ):
         return ALLOW
     call_id = tool_use_id(payload)
@@ -1522,7 +1616,7 @@ def pre_tool(
 ) -> int:
     tool = tool_name(payload)
     if tool in COMMAND_TOOLS and command_bypasses_admission(
-        command_from(payload), executable
+        command_from(payload), executable, effective_workdir(payload).resolve()
     ):
         return ALLOW
     call_id = tool_use_id(payload)

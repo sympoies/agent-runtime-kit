@@ -418,6 +418,32 @@ def simple_shell_words(command: str) -> list[str] | None:
     return words or None
 
 
+def literal_claim_bootstrap_words(
+    command: str, *, current_session: str, capability_file: str
+) -> list[str] | None:
+    """Expand only the two exact quoted variables in the claim recovery shape."""
+    if not current_session or not capability_file:
+        return None
+    replacements = (
+        ('"$AGENT_SESSION_ID"', "__AGENT_SESSION_LITERAL_ID_7F3A__", current_session),
+        (
+            '"$AGENT_SESSION_CAPABILITY_FILE"',
+            "__AGENT_SESSION_LITERAL_CAPABILITY_7F3A__",
+            capability_file,
+        ),
+    )
+    sanitized = command
+    for literal, sentinel, _value in replacements:
+        if sanitized.count(literal) != 1 or sentinel in sanitized:
+            return None
+        sanitized = sanitized.replace(literal, sentinel)
+    words = simple_shell_words(sanitized)
+    if not words or words[:3] != ["agent-session", "work-context", "claim"]:
+        return None
+    values = {sentinel: value for _literal, sentinel, value in replacements}
+    return [values.get(word, word) for word in words]
+
+
 def _skip_value_options(
     tokens: list[str], value_options: frozenset[str]
 ) -> int:
@@ -741,6 +767,159 @@ def repository_safe_read_only_invocation(
         # entry from inheriting the trusted help-only bypass.
         return os.path.dirname(resolved) == os.path.dirname(agent_docs)
     return True
+
+
+def trusted_release_companion(
+    name: str, *, agent_docs_executable: str, repositories: list[str]
+) -> str | None:
+    """Resolve one nils-cli companion from the same trusted release bin dir."""
+    candidate = shutil.which(name)
+    if not candidate or not os.path.isabs(candidate):
+        return None
+    lexical = os.path.abspath(candidate)
+    resolved = os.path.realpath(candidate)
+    if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+        return None
+    if any(
+        path_within(lexical, repository) or path_within(resolved, repository)
+        for repository in repositories
+    ):
+        return None
+    if os.path.dirname(resolved) != os.path.dirname(
+        os.path.realpath(agent_docs_executable)
+    ):
+        return None
+    if not trusted_agent_docs_executable(resolved, repositories):
+        return None
+    return resolved
+
+
+def trusted_private_input_file(raw: str, repositories: list[str]) -> bool:
+    """Accept a canonical absolute regular file outside governed repositories."""
+    if not raw or not os.path.isabs(raw) or os.path.normpath(raw) != raw:
+        return False
+    if os.path.islink(raw) or not os.path.isfile(raw):
+        return False
+    return not any(path_within(raw, repository) for repository in repositories)
+
+
+def main_agent_readiness_invocation(
+    words: list[str],
+    *,
+    repositories: list[str],
+    agent_docs_executable: str,
+    current_session: str,
+) -> bool:
+    """Admit only the exact non-repository Main Agent Mode bootstrap shapes."""
+    if not words:
+        return False
+
+    if words[0] == "agent-session":
+        if trusted_release_companion(
+            "agent-session",
+            agent_docs_executable=agent_docs_executable,
+            repositories=repositories,
+        ) is None:
+            return False
+        if words == ["agent-session", "--version"]:
+            return True
+        if words in (
+            [
+                "agent-session",
+                "activity",
+                "doctor",
+                "--agent",
+                "codex",
+                "--format",
+                "json",
+            ],
+            [
+                "agent-session",
+                "activity",
+                "doctor",
+                "--agent",
+                "claude",
+                "--format",
+                "json",
+            ],
+            [
+                "agent-session",
+                "activity",
+                "setup",
+                "--agent",
+                "codex",
+                "--repair",
+                "--dry-run",
+                "--format",
+                "json",
+            ],
+            [
+                "agent-session",
+                "activity",
+                "setup",
+                "--agent",
+                "claude",
+                "--repair",
+                "--dry-run",
+                "--format",
+                "json",
+            ],
+        ):
+            return True
+        if len(words) != 13 or words[:3] != [
+            "agent-session",
+            "work-context",
+            "claim",
+        ]:
+            return False
+        if (
+            words[3] != "--session"
+            or words[4] != current_session
+            or not current_session
+            or words[5] != "--file"
+            or words[7] != "--capability-file"
+            or words[9] != "--idempotency-key"
+            or words[11:] != ["--format", "json"]
+        ):
+            return False
+        capability_file = os.environ.get(
+            "AGENT_SESSION_CAPABILITY_FILE", ""
+        ).strip()
+        if words[8] != capability_file or not trusted_private_input_file(
+            capability_file, repositories
+        ):
+            return False
+        if not words[6].endswith(".json") or not trusted_private_input_file(
+            words[6], repositories
+        ):
+            return False
+        return (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", words[10])
+            is not None
+        )
+
+    if words[:2] != ["builtin", "command"] or len(repositories) != 1:
+        return False
+    agent_run_executable = trusted_release_companion(
+        "agent-run",
+        agent_docs_executable=agent_docs_executable,
+        repositories=repositories,
+    )
+    if not agent_run_executable:
+        return False
+    return words == [
+        "builtin",
+        "command",
+        agent_run_executable,
+        "inspect",
+        "--cwd",
+        os.path.realpath(repositories[0]),
+        "--",
+        "rg",
+        "--no-config",
+        "readiness",
+        ".",
+    ]
 
 
 def agent_docs_near_miss_invocation(words: list[str]) -> bool:
@@ -1180,7 +1359,16 @@ def main() -> int:
         return ALLOW
 
     command = command_from(payload) if tool in COMMAND_TOOLS else ""
+    current_session = session_id_from_payload(payload)
     command_words = simple_shell_words(command) if tool in COMMAND_TOOLS else None
+    if tool in COMMAND_TOOLS and command_words is None:
+        command_words = literal_claim_bootstrap_words(
+            command,
+            current_session=current_session,
+            capability_file=os.environ.get(
+                "AGENT_SESSION_CAPABILITY_FILE", ""
+            ).strip(),
+        )
     if tool in COMMAND_TOOLS and len(repos) == 1:
         for nested_workdir in agent_run_exec_workdirs(command):
             if nested_workdir is None:
@@ -1264,6 +1452,14 @@ def main() -> int:
         )
         return ALLOW
 
+    if command_words and main_agent_readiness_invocation(
+        command_words,
+        repositories=repos,
+        agent_docs_executable=agent_docs_executable,
+        current_session=current_session,
+    ):
+        return ALLOW
+
     if (
         command_words
         and agent_docs_near_miss_invocation(command_words)
@@ -1305,7 +1501,6 @@ def main() -> int:
         )
         return ALLOW
 
-    current_session = session_id_from_payload(payload)
     if not current_session:
         emit_block(
             "Selective intent enforcement is available, but this mutation payload has no "

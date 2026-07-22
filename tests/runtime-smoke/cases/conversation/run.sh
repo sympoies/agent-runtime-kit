@@ -108,6 +108,17 @@ run_main_agent_mode_probe() {
   grep -Fq 'Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome.' "$protocol"
   grep -Fq 'Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome.' "$protocol"
   grep -Fq 'If proof is unavailable, report blocked and preserve the session and evidence.' "$protocol"
+  grep -Fq 'Delete an accepted terminal worker only after proving that it has no active' "$source"
+  grep -Fq 'or uncertain admitted mutation operation, releasing its active work-context' "$source"
+  grep -Fq '## Terminal Worker Cleanup' "$protocol"
+  grep -Fq 'durable operation state that no active or uncertain admitted mutation operation' "$protocol"
+  grep -Fq 'After operation quiescence is proven, have the exact worker release its active' "$protocol"
+  grep -Fq 'work-context claim through the authenticated session-management lifecycle' "$protocol"
+  grep -Fq 'Cleanup is complete only when a fresh privacy-safe `list`' "$protocol"
+  grep -Fq 'result proves the exact session ID is absent' "$protocol"
+  grep -Fq 'visible worker card and its structured error' "$protocol"
+  grep -Fq 'and route the failed deletion' "$protocol"
+  grep -Fq 'through the session-management recovery owner' "$protocol"
 
   for product in codex claude; do
     rendered="$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md"

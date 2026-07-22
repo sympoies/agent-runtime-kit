@@ -106,6 +106,28 @@ For each worker result, the main agent:
    validation, and review checks on the revised head.
 6. Accepts and advances provider lifecycle only when all durable gates pass.
 
+## Terminal Worker Cleanup
+
+An accepted worker becomes cleanup-eligible only when its lane is terminal and
+all worker-owned duties are complete. Before deletion, prove from privacy-safe
+durable operation state that no active or uncertain admitted mutation operation
+remains. If an operation is uncertain, keep the exact worker/session and follow
+the authenticated completion or reconciliation rule; do not release its claim
+or delete it.
+
+After operation quiescence is proven, have the exact worker release its active
+work-context claim through the authenticated session-management lifecycle and
+verify the release. The session-management owner may then delete the exact
+managed session. Cleanup is complete only when a fresh privacy-safe `list`
+result proves the exact session ID is absent; a delete response, UI action, or
+missing process alone is not list-absence proof.
+
+If deletion fails or the fresh list still returns the session, retain the
+visible worker card and its structured error, and route the failed deletion
+through the session-management recovery owner. Do not hide the card, remove its
+metadata manually, or report worker cleanup complete before producer-owned
+recovery and a new list-absence proof succeed.
+
 ## Stop And Recovery Matrix
 
 | Condition | Required stop/recovery |
@@ -116,6 +138,8 @@ For each worker result, the main agent:
 | Prompt mismatch, truncation, interference, or no newer observed turn | Do not resend or press Enter. Report `session created, prompt delivery unverified` and retain bounded recovery evidence. |
 | Work-context scope or worktree conflict | Stop the worker mutation. Narrow/reassign scope or allocate a clean isolated worktree; never acknowledge away a definite conflict as permission. |
 | Active or uncertain admitted mutation operation | Retain the exact worker owner/session. Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome. Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome. If proof is unavailable, report blocked and preserve the session and evidence. |
+| Accepted terminal worker cleanup | Prove operation quiescence, release and verify the worker's active claim, delete the exact session through its owner, then require a fresh list result proving the exact session ID is absent. |
+| Worker deletion or list-absence failure | Retain the visible worker card and structured error, keep cleanup incomplete, and route the exact failed deletion through the session-management recovery owner. |
 | Missing diff, validation, run-state, PR, or completion evidence | Keep the lane incomplete and request the exact missing durable evidence from the same worker. |
 | Worker loss or unavailable session | Inspect durable worktree/branch/diff/run-state evidence without reading logs or transcripts. Resume the same owner only when identity and state are proven; otherwise reassign explicitly. |
 | Scope drift | Stop acceptance, preserve the diff, and return the out-of-scope work to the same lane for removal or obtain an explicit user-approved scope change before a new packet. |

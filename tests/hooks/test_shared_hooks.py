@@ -8649,6 +8649,229 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_pre_edit_intent_gate_allows_only_trusted_main_agent_readiness_commands(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            other_repo = root / "other-repo"
+            other_repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=other_repo, check=True)
+            (other_repo / "AGENT_DOCS.toml").write_text(
+                "# fixture\n", encoding="utf-8"
+            )
+
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session verify --help"* ]]; then echo '--phase'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  printf '%s\n' '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            agent_session.chmod(0o755)
+            agent_run = bin_dir / "agent-run"
+            agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            agent_run.chmod(0o755)
+
+            private_dir = root / "private"
+            private_dir.mkdir()
+            claim_file = private_dir / "work-context.json"
+            claim_file.write_text("{}\n", encoding="utf-8")
+            claim_file.chmod(0o600)
+            capability_file = private_dir / "capability"
+            capability_file.write_text("fixture\n", encoding="utf-8")
+            capability_file.chmod(0o600)
+            foreign_capability_file = private_dir / "foreign-capability"
+            foreign_capability_file.write_text("fixture\n", encoding="utf-8")
+            foreign_capability_file.chmod(0o600)
+            repository_claim_file = repo / "work-context.json"
+            repository_claim_file.write_text("{}\n", encoding="utf-8")
+            repository_claim_file.chmod(0o600)
+
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "AGENT_SESSION_ID": "main-agent-readiness",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            trusted_agent_run = str(agent_run.resolve())
+            claim = (
+                "agent-session work-context claim "
+                "--session main-agent-readiness "
+                f"--file {claim_file.resolve()} "
+                f"--capability-file {capability_file.resolve()} "
+                "--idempotency-key readiness-claim-0001 --format json"
+            )
+            literal_claim = (
+                "agent-session work-context claim "
+                '--session "$AGENT_SESSION_ID" '
+                f"--file {claim_file.resolve()} "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key readiness-claim-0001 --format json"
+            )
+            allowed = (
+                "agent-session --version",
+                "agent-session activity doctor --agent codex --format json",
+                "agent-session activity doctor --agent claude --format json",
+                "agent-session activity setup --agent codex --repair --dry-run --format json",
+                "agent-session activity setup --agent claude --repair --dry-run --format json",
+                claim,
+                literal_claim,
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                "rg --no-config readiness .",
+            )
+            for command in allowed:
+                with self.subTest(allowed=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "main-agent-readiness"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            foreign_bin = root / "foreign-bin"
+            foreign_bin.mkdir()
+            foreign_agent_session = foreign_bin / "agent-session"
+            foreign_agent_session.write_text(
+                "#!/bin/sh\nexit 0\n", encoding="utf-8"
+            )
+            foreign_agent_session.chmod(0o755)
+            foreign_agent_run = foreign_bin / "agent-run"
+            foreign_agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            foreign_agent_run.chmod(0o755)
+
+            blocked = (
+                "agent-session --help",
+                f"{agent_session.resolve()} --version",
+                claim.replace("agent-session", str(agent_session.resolve()), 1),
+                claim.replace(
+                    "agent-session", str(foreign_agent_session.resolve()), 1
+                ),
+                "agent-session activity doctor --agent gemini --format json",
+                "agent-session activity doctor --agent codex",
+                "agent-session activity doctor --agent codex --format json extra",
+                "agent-session activity setup --agent codex --repair --format json",
+                "agent-session activity setup --agent codex --repair --dry-run",
+                "agent-session activity setup --agent codex --repair --dry-run --apply --format json",
+                "agent-session activity setup --agent codex --repair --dry-run --format json extra",
+                claim.replace("--session main-agent-readiness ", ""),
+                claim.replace("--file " + str(claim_file.resolve()) + " ", ""),
+                claim.replace(
+                    "--capability-file " + str(capability_file.resolve()) + " ", ""
+                ),
+                claim.replace("--idempotency-key readiness-claim-0001 ", ""),
+                claim.replace(" --format json", ""),
+                claim.replace(
+                    "--session main-agent-readiness", "--session another-session"
+                ),
+                claim.replace(str(claim_file.resolve()), "work-context.json"),
+                claim.replace(
+                    str(claim_file.resolve()), str(repository_claim_file.resolve())
+                ),
+                claim.replace(
+                    str(capability_file.resolve()),
+                    str(foreign_capability_file.resolve()),
+                ),
+                claim + " extra",
+                claim.replace(
+                    "--idempotency-key readiness-claim-0001 --format json",
+                    "--format json --idempotency-key readiness-claim-0001",
+                ),
+                claim.replace("--format json", "--if-revision 1 --format json"),
+                claim.replace(
+                    "work-context claim", "--host untrusted work-context claim"
+                ),
+                claim.replace(
+                    "work-context claim",
+                    f"--state-dir {repo.resolve()} work-context claim",
+                ),
+                literal_claim.replace(
+                    "$AGENT_SESSION_ID", "$OTHER_SESSION_ID"
+                ),
+                literal_claim.replace(
+                    "$AGENT_SESSION_CAPABILITY_FILE", "$OTHER_CAPABILITY_FILE"
+                ),
+                literal_claim.replace('"$AGENT_SESSION_ID"', "$AGENT_SESSION_ID"),
+                literal_claim.replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    "$AGENT_SESSION_CAPABILITY_FILE",
+                ),
+                literal_claim.replace(
+                    "--idempotency-key readiness-claim-0001 --format json",
+                    "--format json --idempotency-key readiness-claim-0001",
+                ),
+                literal_claim + " --if-revision 1",
+                f"agent-run inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"{trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"builtin {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"command builtin {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"builtin -- command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"builtin command -- {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"builtin command {foreign_agent_run.resolve()} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd . -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve() / '..' / 'repo'} -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd {other_repo.resolve()} -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd '$PWD' -- rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} rg --no-config readiness .",
+                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} --",
+                f"builtin command {trusted_agent_run} --future inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                f"env builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
+                "rg readiness .",
+            )
+            for command in blocked:
+                with self.subTest(blocked=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "main-agent-readiness"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
+
+            shadow_bin = repo / "bin"
+            shadow_bin.mkdir()
+            shadow_agent_session = shadow_bin / "agent-session"
+            shadow_agent_session.write_text(
+                "#!/bin/sh\nexit 0\n", encoding="utf-8"
+            )
+            shadow_agent_session.chmod(0o755)
+            for candidate in (shadow_bin, foreign_bin):
+                for command in ("agent-session --version", claim):
+                    with self.subTest(
+                        agent_session_shadow=candidate, command=command
+                    ):
+                        payload = command_payload(command)
+                        payload["session_id"] = "main-agent-readiness"
+                        code, decision, stderr = run_hook(
+                            "pre-edit-intent-gate.py",
+                            payload,
+                            cwd=repo,
+                            env={
+                                **env,
+                                "PATH": f"{candidate}{os.pathsep}{env['PATH']}",
+                            },
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "project-dev")
+
     def test_pre_edit_intent_gate_rejects_cross_repository_agent_run_workdir_once(
         self,
     ) -> None:
@@ -10976,6 +11199,128 @@ exit 64
             self.assertFalse(
                 guard.command_bypasses_admission(f"{shadow} status", agent_session)
             )
+
+    def test_session_coordination_guard_allows_only_exact_literal_claim_bootstrap(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+
+            private_dir = root / "private"
+            private_dir.mkdir()
+            claim_file = private_dir / "work-context.json"
+            claim_file.write_text("{}\n", encoding="utf-8")
+            claim_file.chmod(0o600)
+            repository_claim_file = repo / "work-context.json"
+            repository_claim_file.write_text("{}\n", encoding="utf-8")
+            repository_claim_file.chmod(0o600)
+            capability_file = private_dir / "capability"
+            capability_file.write_text("fixture\n", encoding="utf-8")
+            capability_file.chmod(0o600)
+            foreign_capability_file = private_dir / "foreign-capability"
+            foreign_capability_file.write_text("fixture\n", encoding="utf-8")
+            foreign_capability_file.chmod(0o600)
+
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            literal_claim = (
+                "agent-session work-context claim "
+                '--session "$AGENT_SESSION_ID" '
+                f"--file {claim_file.resolve()} "
+                '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                "--idempotency-key claim-bootstrap-0001 --format json"
+            )
+            expanded_claim = (
+                "agent-session work-context claim "
+                "--session managed-session "
+                f"--file {claim_file.resolve()} "
+                f"--capability-file {capability_file.resolve()} "
+                "--idempotency-key claim-bootstrap-0001 --format json"
+            )
+
+            payload = command_payload(literal_claim)
+            payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-session",
+                    "tool_use_id": "literal-claim-allowed",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            blocked = (
+                literal_claim.replace("$AGENT_SESSION_ID", "$OTHER_SESSION_ID"),
+                literal_claim.replace(
+                    "$AGENT_SESSION_CAPABILITY_FILE", "$OTHER_CAPABILITY_FILE"
+                ),
+                literal_claim.replace('"$AGENT_SESSION_ID"', "$AGENT_SESSION_ID"),
+                literal_claim.replace(
+                    '"$AGENT_SESSION_CAPABILITY_FILE"',
+                    "$AGENT_SESSION_CAPABILITY_FILE",
+                ),
+                literal_claim.replace(
+                    "--idempotency-key claim-bootstrap-0001 --format json",
+                    "--format json --idempotency-key claim-bootstrap-0001",
+                ),
+                literal_claim + " --if-revision 1",
+                expanded_claim.replace(
+                    "--session managed-session", "--session foreign-session"
+                ),
+                expanded_claim.replace(
+                    str(capability_file.resolve()),
+                    str(foreign_capability_file.resolve()),
+                ),
+                literal_claim.replace(
+                    str(claim_file.resolve()), str(repository_claim_file.resolve())
+                ),
+            )
+            for index, command in enumerate(blocked):
+                with self.subTest(blocked=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "cwd": str(repo),
+                            "session_id": "product-session",
+                            "tool_use_id": f"literal-claim-blocked-{index}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py",
+                        payload,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "active work-context claim")
 
     def test_session_coordination_effect_avoids_git_probe_for_non_mutations(
         self,

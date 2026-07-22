@@ -137,7 +137,12 @@ explicit reassignment under the recovery protocol.
    green command is lane evidence, not integrated acceptance.
 7. Return findings to the same worker/lane, then repeat inspection and
    validation. Reassign only through the explicit recovery rule.
-8. Accept, merge, close, archive, and report only when the active tier's durable
+8. Delete an accepted terminal worker only after proving that it has no active
+   or uncertain admitted mutation operation, releasing its active work-context
+   claim, and obtaining fresh list-absence proof for the exact session. A
+   failed deletion keeps the worker visible and routes to the session-management
+   recovery owner.
+9. Accept, merge, close, archive, and report only when the active tier's durable
    gates pass and provider delivery is available. Otherwise retain the bounded
    local result and state exactly what remains.
 
