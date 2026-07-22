@@ -82,8 +82,9 @@ run_home_prompt_render_probe() {
     "$codex_home" \
     "$claude_home" \
     "$hermes_home"; do
-    grep -Fq 'agent-out project --topic <topic> --mkdir' "$home_policy"
-    grep -Fq 'never create or use repo-root `./agent-out/`' "$home_policy"
+    grep -Fq 'Put temp/debug artifacts in XDG state with `agent-out project`' "$home_policy"
+    grep -Fq 'never use repo `./agent-out`' "$home_policy"
+    grep -Fq 'cite the path.' "$home_policy"
   done
   grep -Fq "or directory \`AGENTS.md\` / \`CLAUDE.md\` can override or extend it." "$neutral_home"
   grep -q '## Code Review Delegation' "$codex_home"
