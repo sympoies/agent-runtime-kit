@@ -51,9 +51,16 @@ controls remain the mutation boundaries.
   unknown fields. New orchestration fields require intentional shared/edge/UI
   projections; placing unknown members in a session record is insufficient.
   [F5]
-- Agent Console removes a card locally only after producer-confirmed delete,
-  reconciles externally changed session lists through activity delivery, and
-  polls the authoritative list every four seconds. [F6]
+- Agent Console removes a card locally only after producer-confirmed delete. The
+  activity stream never removes a card; a gap or a projection that omits a known
+  session only signals an authoritative-list refresh, which performs the removal.
+  It polls that authoritative list at a bounded interval (currently four seconds).
+  [F6]
+- Under `enforce`, the runtime-kit coordination-guard hook fails managed
+  mutations closed unless an active work-context claim is held, and admits only
+  an enumerated allowlist of read-only and claim-bootstrap command shapes;
+  `agent-session` enforce mode itself only rejects conflicting work-context
+  declarations. No `main-agent` shapes are in that allowlist today. [F7]
 - The previously observed stopped worker card remained because the initial
   producer delete had not succeeded. The worker was later deleted and is absent
   from `agent-session list`; backend registry residue was not found. Browser
@@ -90,9 +97,11 @@ controls remain the mutation boundaries.
    authority.
 7. **Stable run and assignment identities**: run IDs and assignment IDs survive
    provider compaction, resume, and controller incarnation rotation.
-8. **Session references are incarnation-fenced**: a reference contains machine,
-   session ID, and session incarnation. Reusing a public ID never restores the
-   previous relationship.
+8. **Session references are incarnation-fenced**: the authorization fence is the
+   `agent-session` session ID plus session incarnation. `machine` is only an
+   advisory display/routing hint, not part of identity or authorization. Reusing
+   a public ID never restores the previous relationship, and V1 keeps a run's
+   participants on one `agent-session` host/state root.
 9. **Private packet, public summary**: full requests, done criteria,
    constraints, private refs, and checkpoints live in capability-protected
    mode-0600 records. Public projections expose only bounded summaries, state,
@@ -111,6 +120,16 @@ controls remain the mutation boundaries.
     signed local commits, local validation/review, and explicit local
     integration. Do not push, publish, dispatch Actions, or open provider
     artifacts until the user confirms restoration and authorizes delivery.
+14. **Enforce-mode bootstrap stays usable**: under `enforce` coordination a Main
+    Agent or worker starts before holding a work-context claim. The runtime-kit
+    coordination-guard hook fails facade mutations closed until an authenticated
+    claim and revision fence exist, but must admit the facade's read-only
+    discovery (`self show`, `rehydrate`, `status`, `worker list/show`) and
+    run/claim bootstrap (`init` and claim acquisition) before a claim exists.
+    Admission is a hook-layer allowlist concern: `agent-session` enforce mode
+    itself only rejects conflicting declarations, so the new facade shapes must
+    be added to the guard allowlist or a fresh Main Agent cannot discover state
+    or bootstrap.
 
 ## Scope
 
@@ -134,6 +153,13 @@ controls remain the mutation boundaries.
   available.
 - Add bounded rehydration/checkpoint instructions and hook reminders for Main
   Agents and managed workers.
+- Extend the coordination-guard admission allowlist to the exact facade
+  read-only discovery and run/claim bootstrap command shapes so `enforce` stays
+  usable before a claim, keeping mutations, foreign identities, unsafe files, and
+  option drift fail-closed.
+- Keep reminders and instructions product-neutral and degrade gracefully where
+  the host-specific `main-agent` CLI is absent, honoring the portable-contract
+  boundary.
 - Preserve user authority, tiering, test-first, validation, review, delivery,
   coordination, secret, and provider boundaries.
 - Add Codex/Claude fixtures for compaction/recovery, worker loss, handoff,
@@ -168,6 +194,9 @@ controls remain the mutation boundaries.
   be resumable and retain provider conversations.
 - No broad cleanup of dirty, rescue, locked, or unrelated worktrees/sessions.
 - No public copy of the complete user request.
+- No cross-host orchestration registry in V1: a run's participants share one
+  `agent-session` host/state root, and multi-host federation is future scope
+  alongside provider-native subagents.
 
 ## Architecture And Ownership Boundaries
 
@@ -235,6 +264,14 @@ Use a private versioned record such as
 - Controller loss marks the run orphaned/recovery-needed; it does not delete
   the run or assignments.
 - Run close requires terminal assignments or explicit retained exceptions.
+- `controller.machine` is an advisory display/routing hint (as in Agent Console's
+  per-session `machine` and `agent-session`'s transient SSH-attach host); the
+  authorization fence is `session_id` plus `session_incarnation`. V1 keeps all of
+  a run's participants on one `agent-session` host/state root.
+- Orchestration run/assignment records are a new typed store owned by
+  `agent-session` under its trusted state root, distinct from per-session
+  `session.json` and the coordination `registry.json`; the facade never writes
+  them directly.
 
 ### Session orchestration projection
 
@@ -302,6 +339,13 @@ displayable as unsupported/stale metadata.
 - Operator/API actions use server-operator authentication and expected
   revision/incarnation fences. Operator authority cannot manufacture a session
   capability or impersonate a worker.
+- Controller rebind after incarnation rotation is authorized only when the same
+  public session ID authenticates at the new live incarnation with a fresh
+  capability and `agent-session` proves the prior incarnation stopped (its
+  broker-provision continuity guarantee); the run's controller reference then
+  updates under an expected run-revision fence. A recreated (delete/recreate)
+  session presents a clean incarnation with no continuity and is refused rebind,
+  staying orphaned until an explicit adopt.
 - Agent Console output is allowlisted. Recovery output excludes secrets,
   prompts, transcripts, mailbox bodies, raw private paths, capabilities, tmux
   IDs, PIDs, and environment values.
@@ -317,7 +361,7 @@ main-agent rehydrate --format json|markdown
 main-agent status --format json
 main-agent checkpoint --file <private-json> --if-revision <n> --format json
 
-main-agent worker start --assignment-file <private-json> --format json
+main-agent worker start --assignment-file <private-json> --if-run-revision <n> --format json
 main-agent worker list --format json
 main-agent worker show <assignment-id> --format json
 main-agent worker message <assignment-id> --body-file <private-file> --format json
@@ -325,8 +369,8 @@ main-agent worker accept <assignment-id> --if-revision <n> --format json
 main-agent worker release <assignment-id> --if-revision <n> --format json
 main-agent worker delete <assignment-id> --if-revision <n> --format json
 
-main-agent collaborate <assignment-id> --session <ref> --format json
-main-agent borrow <assignment-id> --session <ref> --duration <bounded> --format json
+main-agent collaborate <assignment-id> --session <ref> --if-revision <n> --format json
+main-agent borrow <assignment-id> --session <ref> --duration <bounded> --if-revision <n> --format json
 main-agent handoff <assignment-id> --to <session-ref> --if-revision <n> --format json
 main-agent adopt <assignment-id> --if-revision <n> --format json
 main-agent close --if-revision <n> --format json
@@ -335,6 +379,11 @@ main-agent close --if-revision <n> --format json
 The facade must:
 
 - resolve its Main Agent from authenticated self context, not a role env flag;
+- fence every state-mutating command with an expected revision (`--if-revision`,
+  or `--if-run-revision` for run-scoped creation) and an `--idempotency-key`,
+  matching the `agent-session` work-context lifecycle contract, while read-only
+  discovery (`self show`, `status`, `rehydrate`, `worker list/show`) carries
+  neither;
 - preserve candidate check, exact start/list identity, readiness, paste-count,
   provider-turn acceptance, worker self-check, and claim handoff;
 - return partial/uncertain outcomes explicitly and never equate transport with
@@ -359,6 +408,12 @@ are not accidentally omitted.
 - managed assignment counts and each worker's privacy-safe state;
 - blockers/findings and pending acceptance duties;
 - latest checkpoint, next action, and stale/orphan/cleanup warnings.
+
+The capsule is a deterministic function of the run/assignment records at a named
+revision: worker entries are ordered by assignment ID and counts derive from
+those records, so identical durable state yields byte-stable output. Only the
+liveness-derived annotations (stale/orphan/cleanup, checkpoint age) vary with the
+observation clock and are labeled as observation-time.
 
 Workers need an authenticated self command returning only their assignment,
 constraints, scope, result contract, manager relationship, and current
@@ -404,8 +459,10 @@ Recovery behavior:
 - A stopped card is not automatically residue. Preserve it when producer truth
   still lists a resumable or failed-delete session.
 - UI delete removes local card/slot/focus only after producer confirmation.
-- External CLI delete triggers immediate activity reconciliation; four-second
-  polling is the bounded fallback.
+- External CLI delete makes the stream flag a reconcile (missing projection or
+  sequence gap), which refreshes the authoritative list and removes the card; the
+  bounded authoritative poll (currently four seconds) is the fallback when no
+  stream signal arrives.
 - Delete failure retains the card and structured recovery UI.
 - Never hide a card to simulate cleanup while producer truth lists it.
 
@@ -438,6 +495,10 @@ Recovery behavior:
   truth changes; prove successful external deletion disappears live.
 - **R15**: Use one product-neutral contract for Codex and Claude.
 - **R16**: Keep V1 managed-session-only; do not invent provider-native IDs.
+- **R17**: Admit facade read-only discovery and run/claim bootstrap under
+  `enforce` before a claim exists via the coordination-guard allowlist, while
+  every facade mutation stays fail-closed until an authenticated claim and
+  revision fence are present.
 
 ## Acceptance Criteria
 
@@ -458,13 +519,17 @@ Recovery behavior:
 
 ### Rehydration and lifecycle
 
-- **A7**: A Main Agent creates a run and two assignments, checkpoints, loses
-  conversational context, and recovers objective, constraints, workers,
-  checkpoint, and next action only through authenticated rehydrate output.
-- **A8**: A worker similarly recovers only its assignment/manager after resume
-  or context reset.
-- **A9**: Controller incarnation rotation requires validated rebind without
-  deleting or silently transferring the run.
+- **A7**: A Main Agent creates a run and two assignments, checkpoints, then a
+  fresh controller incarnation with no in-memory context recovers objective,
+  constraints, workers, checkpoint, and next action solely from authenticated
+  rehydrate output, byte-stable across repeated calls at the same revision.
+- **A8**: A fresh worker incarnation similarly recovers only its
+  assignment/manager from authenticated self output after resume or context reset.
+- **A9**: Controller incarnation rotation rebinds the run only after the same
+  public session ID authenticates at the new incarnation with a fresh capability,
+  `agent-session` proves the prior incarnation stopped, and the run-revision fence
+  matches; the run is neither deleted nor silently transferred, and a recreated
+  (ABA) session is refused rebind.
 - **A10**: Stale checkpoint revision returns current metadata/retry guidance
   without invalidating the run.
 - **A11**: Reminders are bounded/private and do not block unrelated safe work.
@@ -486,15 +551,17 @@ Recovery behavior:
 ### Agent Console and regression
 
 - **A19**: Desktop/mobile distinguish and group Main, Worker, Standalone.
-- **A20**: Navigation uses exact machine, session ID/incarnation, run ID,
-  assignment ID, and revisions.
+- **A20**: Navigation uses exact session ID/incarnation, run ID, assignment ID,
+  and revisions as the fence, with `machine` as a display/routing hint only.
 - **A21**: Orphaned, borrowed, cross-managed, stale, and cleanup states render
   without private packet leakage.
 - **A22**: Delete failure retains card/recovery; UI delete success removes only
   after producer confirmation.
-- **A23**: With Agent Console open, external exact `agent-session delete`
-  removes the card through activity reconciliation or four-second fallback,
-  without manual refresh.
+- **A23**: With Agent Console open, external exact `agent-session delete` removes
+  the card through an authoritative-list refresh — triggered eagerly by the stream
+  reconcile signal or by the bounded poll (currently four seconds) — within one
+  poll interval and without manual refresh; a dropped stream event (sequence gap)
+  still converges via the poll.
 - **A24**: Stopped but listed/resumable remains visible.
 - **A25**: Disposable Codex/Claude Main/worker pairs pass create, rehydrate,
   checkpoint, collaborate, handoff, accept, release, and cleanup.
@@ -503,6 +570,10 @@ Recovery behavior:
 - **A27**: Advisory/enforce/off and locked hook semantics remain unchanged.
 - **A28**: Unrelated/native/third-party hooks and Codex notifier composition
   survive deployment.
+- **A29**: Under `enforce` with no active claim, facade read-only discovery and
+  run/claim bootstrap are admitted, while a facade mutation without a claim/lease
+  fails closed with claim-recovery guidance; `agent-session` advisory/enforce/off
+  semantics are otherwise unchanged.
 
 ## Findings And Fix-Later Backlog
 
@@ -513,6 +584,7 @@ Recovery behavior:
 | P1 | Agent Console cannot render authoritative relationships and drops unknown fields. | Projection allowlist. [F5] | Agent Console | A19–A21 |
 | P1 | External successful CLI deletion lacks live browser acceptance. | Source has stream/poll paths; only backend absence was proven. [F6][A1] | Agent Console | A23 |
 | P1 | GitHub restriction prevents normal issue/PR/Actions delivery and the pending nils-cli release. | nils-cli remains ahead by two commits; provider Actions rejected the account. [A2] | External/later delivery | Local-only guardrail |
+| P1 | Under `enforce`, the coordination-guard admission allowlist has no `main-agent` shapes, so a fresh Main Agent's read-only discovery and run/claim bootstrap would be blocked before a claim. | Hook admission allowlist. [F7] | runtime-kit | R17, A29 |
 | P2 | Provider-native subagents lack stable Agent Console identity. | UI consumes managed sessions only. [F5] | Future integration | Outside V1 |
 
 ## Validation Plan
@@ -596,6 +668,10 @@ Recovery behavior:
   signing/rules or claim provider success.
 - **Unrelated dirty work**: use isolated managed worktrees and preserve primary
   `agent-out`, user untracked paths, dirty/rescue branches, and other sessions.
+- **Enforce starves bootstrap**: extend the hook admission allowlist to the exact
+  facade read-only and run/claim bootstrap shapes so `enforce` stays usable
+  before a claim; keep every mutation, foreign identity, and unsafe file
+  fail-closed. [F7]
 
 ## Execution
 
@@ -653,6 +729,10 @@ owning canonical docs. Do not retain a stale duplicate of promoted canon.
   `$HOME/Project/serenvia/agent-console/packages/ui/src/types.ts`.
 - `[F6]` `$HOME/Project/serenvia/agent-console/packages/ui/src/Dashboard.tsx`
   and `packages/ui/src/activityStream.ts`.
+- `[F7]` `core/hooks/shared/session-coordination-guard.py` — the coordination
+  admission allowlist (`invocation_bypasses_admission` /
+  `command_bypasses_admission`) that fails mutations closed without a claim and
+  admits only enumerated read-only and claim-bootstrap command shapes.
 - `[A1]` 2026-07-22 live `agent-session list` and worker-delete reconciliation
   during runtime-kit #686 final cleanup.
 - `[A2]` Runtime-kit #686/#709 provider read-back plus local git/deployed
