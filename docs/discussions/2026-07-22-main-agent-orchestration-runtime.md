@@ -122,14 +122,16 @@ controls remain the mutation boundaries.
     artifacts until the user confirms restoration and authorizes delivery.
 14. **Enforce-mode bootstrap stays usable**: under `enforce` coordination a Main
     Agent or worker starts before holding a work-context claim. The runtime-kit
-    coordination-guard hook fails facade mutations closed until an authenticated
-    claim and revision fence exist, but must admit the facade's read-only
-    discovery (`self show`, `rehydrate`, `status`, `worker list/show`) and
-    run/claim bootstrap (`init` and claim acquisition) before a claim exists.
-    Admission is a hook-layer allowlist concern: `agent-session` enforce mode
-    itself only rejects conflicting declarations, so the new facade shapes must
-    be added to the guard allowlist or a fresh Main Agent cannot discover state
-    or bootstrap.
+    coordination-guard hook fails orchestration writes closed until an
+    authenticated claim exists, but must admit the facade's read-only discovery
+    (`self show`, `rehydrate`, `status`, `worker list/show`) and the exact `init`
+    bootstrap entrypoint before a claim exists. `init` must acquire or confirm
+    the target-owned work-context claim before its first orchestration-record
+    write, then apply that write under expected-absence and idempotency fences;
+    it is not a general pre-claim mutation bypass. Admission is a hook-layer
+    allowlist concern: `agent-session` enforce mode itself only rejects
+    conflicting declarations, so the new facade shapes must be added to the
+    guard allowlist or a fresh Main Agent cannot discover state or bootstrap.
 
 ## Scope
 
@@ -355,35 +357,39 @@ displayable as unsupported/stale metadata.
 The exact syntax may follow nils-cli conventions, but V1 must cover:
 
 ```text
-main-agent init --packet-file <private-json> --format json
+main-agent init --packet-file <private-json> --if-absent --idempotency-key <key> --format json
 main-agent self show --format json
 main-agent rehydrate --format json|markdown
 main-agent status --format json
-main-agent checkpoint --file <private-json> --if-revision <n> --format json
+main-agent checkpoint --file <private-json> --if-revision <n> --idempotency-key <key> --format json
 
-main-agent worker start --assignment-file <private-json> --if-run-revision <n> --format json
+main-agent worker start --assignment-file <private-json> --if-run-revision <n> --idempotency-key <key> --format json
 main-agent worker list --format json
 main-agent worker show <assignment-id> --format json
-main-agent worker message <assignment-id> --body-file <private-file> --format json
-main-agent worker accept <assignment-id> --if-revision <n> --format json
-main-agent worker release <assignment-id> --if-revision <n> --format json
-main-agent worker delete <assignment-id> --if-revision <n> --format json
+main-agent worker message <assignment-id> --body-file <private-file> --idempotency-key <key> --format json
+main-agent worker accept <assignment-id> --if-revision <n> --idempotency-key <key> --format json
+main-agent worker release <assignment-id> --if-revision <n> --idempotency-key <key> --format json
+main-agent worker delete <assignment-id> --if-revision <n> --idempotency-key <key> --format json
 
-main-agent collaborate <assignment-id> --session <ref> --if-revision <n> --format json
-main-agent borrow <assignment-id> --session <ref> --duration <bounded> --if-revision <n> --format json
-main-agent handoff <assignment-id> --to <session-ref> --if-revision <n> --format json
-main-agent adopt <assignment-id> --if-revision <n> --format json
-main-agent close --if-revision <n> --format json
+main-agent collaborate <assignment-id> --session <ref> --if-revision <n> --idempotency-key <key> --format json
+main-agent borrow <assignment-id> --session <ref> --duration <bounded> --if-revision <n> --idempotency-key <key> --format json
+main-agent handoff <assignment-id> --to <session-ref> --if-revision <n> --idempotency-key <key> --format json
+main-agent adopt <assignment-id> --if-revision <n> --idempotency-key <key> --format json
+main-agent close --if-revision <n> --idempotency-key <key> --format json
 ```
 
 The facade must:
 
 - resolve its Main Agent from authenticated self context, not a role env flag;
-- fence every state-mutating command with an expected revision (`--if-revision`,
-  or `--if-run-revision` for run-scoped creation) and an `--idempotency-key`,
-  matching the `agent-session` work-context lifecycle contract, while read-only
-  discovery (`self show`, `status`, `rehydrate`, `worker list/show`) carries
-  neither;
+- fence every orchestration-state mutation with expected absence or revision
+  (`--if-absent`, `--if-revision`, or `--if-run-revision`) and every mutation
+  with an `--idempotency-key`, matching the underlying `agent-session`
+  primitive; mailbox send remains idempotent but has no invented assignment
+  revision fence. Read-only discovery (`self show`, `status`, `rehydrate`,
+  `worker list/show`) carries neither;
+- make `init` acquire or confirm the authenticated target-owned claim before
+  its first orchestration-record write; a claim conflict or unavailable claim
+  returns a typed no-write outcome;
 - preserve candidate check, exact start/list identity, readiness, paste-count,
   provider-turn acceptance, worker self-check, and claim handoff;
 - return partial/uncertain outcomes explicitly and never equate transport with
@@ -409,11 +415,13 @@ are not accidentally omitted.
 - blockers/findings and pending acceptance duties;
 - latest checkpoint, next action, and stale/orphan/cleanup warnings.
 
-The capsule is a deterministic function of the run/assignment records at a named
-revision: worker entries are ordered by assignment ID and counts derive from
-those records, so identical durable state yields byte-stable output. Only the
-liveness-derived annotations (stale/orphan/cleanup, checkpoint age) vary with the
-observation clock and are labeled as observation-time.
+The capsule separates a `durable` section from an `observed` section. `durable`
+is a deterministic function of run/assignment records at a named revision:
+worker entries are ordered by assignment ID and counts derive from those
+records, so identical durable state yields a byte-stable durable projection.
+Liveness-derived annotations (stale/orphan/cleanup, checkpoint age) live only in
+`observed`, carry `observed_at`, and may vary with the observation clock; tests
+compare the durable projection independently or freeze the observation clock.
 
 Workers need an authenticated self command returning only their assignment,
 constraints, scope, result contract, manager relationship, and current
@@ -496,9 +504,10 @@ Recovery behavior:
 - **R15**: Use one product-neutral contract for Codex and Claude.
 - **R16**: Keep V1 managed-session-only; do not invent provider-native IDs.
 - **R17**: Admit facade read-only discovery and run/claim bootstrap under
-  `enforce` before a claim exists via the coordination-guard allowlist, while
-  every facade mutation stays fail-closed until an authenticated claim and
-  revision fence are present.
+  `enforce` before a claim exists via the coordination-guard allowlist; `init`
+  must acquire or confirm the target-owned claim before its first durable write,
+  and every other facade mutation stays fail-closed without the required claim,
+  revision/absence fence, and idempotency key.
 
 ## Acceptance Criteria
 
@@ -522,7 +531,9 @@ Recovery behavior:
 - **A7**: A Main Agent creates a run and two assignments, checkpoints, then a
   fresh controller incarnation with no in-memory context recovers objective,
   constraints, workers, checkpoint, and next action solely from authenticated
-  rehydrate output, byte-stable across repeated calls at the same revision.
+  rehydrate output; the durable projection is byte-stable across repeated calls
+  at the same revision, while separately labeled observation-time fields are
+  compared with a frozen clock or excluded from the byte comparison.
 - **A8**: A fresh worker incarnation similarly recovers only its
   assignment/manager from authenticated self output after resume or context reset.
 - **A9**: Controller incarnation rotation rebinds the run only after the same
@@ -567,13 +578,18 @@ Recovery behavior:
   checkpoint, collaborate, handoff, accept, release, and cleanup.
 - **A26**: Standalone start/list/resume/activity/message/delete remains
   compatible except additive optional fields.
-- **A27**: Advisory/enforce/off and locked hook semantics remain unchanged.
+- **A27**: Advisory/enforce/off coordination semantics and locked-control /
+  operation-lock fail-closed invariants remain unchanged except for the exact
+  additive pre-claim discovery/bootstrap shapes required by A29.
 - **A28**: Unrelated/native/third-party hooks and Codex notifier composition
   survive deployment.
 - **A29**: Under `enforce` with no active claim, facade read-only discovery and
-  run/claim bootstrap are admitted, while a facade mutation without a claim/lease
-  fails closed with claim-recovery guidance; `agent-session` advisory/enforce/off
-  semantics are otherwise unchanged.
+  the exact `init` bootstrap entrypoint are admitted; `init` either acquires or
+  confirms the target-owned claim before its first durable write or returns a
+  typed no-write conflict/unavailable result. Every other facade mutation
+  without its required claim/lease and revision/idempotency fences fails closed
+  with recovery guidance; `agent-session` advisory/enforce/off semantics are
+  otherwise unchanged.
 
 ## Findings And Fix-Later Backlog
 
@@ -654,8 +670,8 @@ Recovery behavior:
   summaries, and capability-backed reads.
 - **Relationship mistaken for authority**: claims/leases remain independent;
   borrow/collaboration are tested not to grant mutation.
-- **Stale/ABA identity**: machine + ID + incarnation refs, revisions, and
-  explicit rebind/handoff.
+- **Stale/ABA identity**: session ID + incarnation refs, revisions, and explicit
+  rebind/handoff; `machine` remains a non-authoritative display/routing hint.
 - **Facade skips proof**: atomic primitive outcomes and existing verified
   handoff sequence remain mandatory.
 - **Compaction loses reminder**: durable self-rehydrate, start/resume projection,
@@ -700,9 +716,10 @@ not moving targets:
   `16644968869414397c1d806dd5d61d9cba9e44d9`, ahead of remote; the local
   agent-hook hotfix is deployed while Homebrew 1.25.9 remains rollback.
 - Agent Console local `main`:
-  `7c29824eaafa2cadbc6b4b8c266b7e7808412820`, equal to `origin/main`, with an
-  unrelated repo-root `agent-out/` that must not be deleted/absorbed without
-  verification.
+  `7c29824eaafa2cadbc6b4b8c266b7e7808412820`, equal to `origin/main`. The focused
+  review read-back found no repo-root `agent-out/`; if one appears later, treat
+  it as untracked user/runtime material until ownership is verified rather than
+  deleting or absorbing it.
 - Runtime-kit final live evidence:
   `$HOME/.local/state/agent-runtime-kit/out/projects/graysurf__agent-runtime-kit/20260722-164155-final-live-acceptance/`.
 
