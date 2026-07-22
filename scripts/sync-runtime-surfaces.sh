@@ -470,7 +470,8 @@ is_managed_runtime_kit_checkout_root() {
   # A durable independent clone may be on a branch that diverged from the
   # primary checkout. Its local origin still provides an exact ownership link
   # to that checkout; accept only that canonical path relation.
-  if source_origin="$(python3 - "$SOURCE_ROOT" <<'PY'
+  if source_origin="$(
+    python3 - "$SOURCE_ROOT" <<'PY'
 import subprocess
 import sys
 
@@ -1296,12 +1297,12 @@ sync_agent_hook_setup() {
     --dry-run \
     --format json
   if preview_json="$(agent-hook setup \
-      --config "$AGENT_HOOK_CONFIG" \
-      --state-dir "$AGENT_HOOK_STATE_DIR" \
-      --product "$product" \
-      ${action:+"$action"} \
-      --dry-run \
-      --format json)"; then
+    --config "$AGENT_HOOK_CONFIG" \
+    --state-dir "$AGENT_HOOK_STATE_DIR" \
+    --product "$product" \
+    ${action:+"$action"} \
+    --dry-run \
+    --format json)"; then
     :
   else
     apply_status=$?
@@ -1322,12 +1323,12 @@ sync_agent_hook_setup() {
     --expected-plan-digest "$plan_digest" \
     --format json
   if apply_json="$(agent-hook setup \
-      --config "$AGENT_HOOK_CONFIG" \
-      --state-dir "$AGENT_HOOK_STATE_DIR" \
-      --product "$product" \
-      "$apply_action" \
-      --expected-plan-digest "$plan_digest" \
-      --format json)"; then
+    --config "$AGENT_HOOK_CONFIG" \
+    --state-dir "$AGENT_HOOK_STATE_DIR" \
+    --product "$product" \
+    "$apply_action" \
+    --expected-plan-digest "$plan_digest" \
+    --format json)"; then
     :
   else
     apply_status=$?
@@ -3278,7 +3279,7 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
 
   log "cleaning retired Hermes local runtime-kit skill links live_home=$live_home"
   print_cmd python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only"
-python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only" <<'PY'
+  python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only" <<'PY'
 import ctypes
 import errno
 import os
@@ -3291,6 +3292,18 @@ import sys
 
 source_root = pathlib.Path(sys.argv[1]).resolve()
 anchor_home = pathlib.Path(sys.argv[2])
+# macOS exposes the fixed system alias /var -> /private/var. The descriptor
+# walk below intentionally rejects symlink ancestors, so translate only this
+# audited platform alias before opening components with O_NOFOLLOW. Arbitrary
+# symlinked homes remain rejected, and the canonical chain is still inode-pinned.
+if (
+    sys.platform == "darwin"
+    and anchor_home.is_absolute()
+    and anchor_home.parts[:2] == ("/", "var")
+):
+    canonical_var = pathlib.Path("/var").resolve(strict=True)
+    if canonical_var == pathlib.Path("/private/var"):
+        anchor_home = canonical_var.joinpath(*anchor_home.parts[2:])
 profile_name = sys.argv[3]
 apply = sys.argv[4] == "1"
 classify_only = sys.argv[5] == "1"

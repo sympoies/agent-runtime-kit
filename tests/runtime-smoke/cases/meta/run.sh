@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Deterministic probes for meta skills.
-# shellcheck disable=SC2329
+# The probes intentionally use dynamic fixture sources, literal backtick
+# needles, and subshell-local state while exercising the generated scripts.
+# shellcheck disable=SC1090,SC2015,SC2016,SC2030,SC2031,SC2167,SC2329
 
 set -euo pipefail
 
@@ -553,6 +555,7 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
   local state_home="$root/state"
   local stub_bin="$root/bin"
   local stub_log="$root/codex.log"
+  local expected_home_prompt
   local status
 
   rm -rf "$root"
@@ -816,7 +819,11 @@ SH
   status=$?
   set -e
   [ "$status" -ne 0 ]
-  grep -q "expected $source_root/build/codex/AGENT_HOME.md" "$lookalike_out"
+  expected_home_prompt="$(
+    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' \
+      "$source_root/build/codex/AGENT_HOME.md"
+  )"
+  grep -Fq "expected $expected_home_prompt" "$lookalike_out"
   assert_symlink_target "$lookalike_codex_home/AGENTS.md" \
     "$lookalike_source_root/build/codex/AGENT_HOME.md"
 
