@@ -74,8 +74,6 @@ agent-session --version
 agent-session activity doctor --agent codex --format json
 ```
 
-For a Claude worker, substitute the literal provider name `claude`; never use a
-shell provider variable in these readiness commands.
 
 Require `agent-session >=1.25.9`, a valid
 `cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
@@ -84,14 +82,14 @@ matching provider record, `classification:"supported"`, and
 the selected runtime. Missing fields, extra provider ambiguity, stale or
 unparseable output, timeouts, or nonzero exit stop activation.
 
-When doctor reports `configured:false`, use only this non-mutating compatibility
-probe:
+When doctor reports `configured:false`, use only the product's literal
+non-mutating compatibility probe; never use a shell provider variable in these
+readiness commands:
 
 ```bash
 agent-session activity setup --agent codex --repair --dry-run --format json
 ```
 
-For a Claude worker, again substitute the literal provider name `claude`.
 
 Accept the compatibility case only when the doctor reports no representation
 conflict and the preview is a valid matching-provider converged result with

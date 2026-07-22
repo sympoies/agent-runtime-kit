@@ -92,8 +92,9 @@ run_main_agent_mode_probe() {
   test -s "$protocol"
   grep -Fq '## Explicit Activation' "$source"
   grep -Fq 'agent-session activity doctor --agent codex --format json' "$source"
+  grep -Fq 'agent-session activity doctor --agent claude --format json' "$source"
   grep -Fq 'agent-session activity setup --agent codex --repair --dry-run --format json' "$source"
-  grep -Fq 'substitute the literal provider name `claude`' "$source"
+  grep -Fq 'agent-session activity setup --agent claude --repair --dry-run --format json' "$source"
   if grep -Fq '$WORKER_PROVIDER' "$source"; then
     return 1
   fi
@@ -132,6 +133,17 @@ run_main_agent_mode_probe() {
   grep -Fq 'visible worker card and its structured error' "$protocol"
   grep -Fq 'and route the failed deletion' "$protocol"
   grep -Fq 'through the session-management recovery owner' "$protocol"
+
+  rendered_contract_assert_product_contains conversation main-agent-mode codex 'For a Codex worker, run these literal commands:'
+  rendered_contract_assert_product_contains conversation main-agent-mode codex 'agent-session activity doctor --agent codex --format json'
+  rendered_contract_assert_product_contains conversation main-agent-mode codex 'agent-session activity setup --agent codex --repair --dry-run --format json'
+  rendered_contract_assert_product_omits conversation main-agent-mode codex 'Claude'
+  rendered_contract_assert_product_omits conversation main-agent-mode codex '--agent claude'
+  rendered_contract_assert_product_contains conversation main-agent-mode claude 'For a Claude worker, run these literal commands:'
+  rendered_contract_assert_product_contains conversation main-agent-mode claude 'agent-session activity doctor --agent claude --format json'
+  rendered_contract_assert_product_contains conversation main-agent-mode claude 'agent-session activity setup --agent claude --repair --dry-run --format json'
+  rendered_contract_assert_product_omits conversation main-agent-mode claude 'Codex'
+  rendered_contract_assert_product_omits conversation main-agent-mode claude '--agent codex'
 
   for product in codex claude; do
     rendered="$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md"
