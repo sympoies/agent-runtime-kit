@@ -65,6 +65,11 @@ controls remain the mutation boundaries.
   producer delete had not succeeded. The worker was later deleted and is absent
   from `agent-session list`; backend registry residue was not found. Browser
   acceptance for external-delete UI convergence is still missing. [A1]
+- A producer delete can currently fail during process termination even after the
+  provider process has disappeared. Retaining that record as an ordinary
+  stopped session card exposes an implementation-recovery concern as if it were
+  still useful session state. V1 needs a durable logical-delete boundary and a
+  separate maintenance projection for physical cleanup failures. [A3]
 - Runtime-kit issues #686 and #709 are closed after live acceptance. At the
   final read-back for this capture, runtime-kit and Agent Console local `main`
   match their remote-tracking refs, while nils-cli remains two commits ahead.
@@ -132,6 +137,12 @@ controls remain the mutation boundaries.
     allowlist concern: `agent-session` enforce mode itself only rejects
     conflicting declarations, so the new facade shapes must be added to the
     guard allowlist or a fresh Main Agent cannot discover state or bootstrap.
+15. **Live sessions and cleanup records are separate projections**: a verified
+    delete commits a durable tombstone first and excludes that incarnation from
+    the default live-session list. Agent Console then removes its ordinary card.
+    Provider/filesystem cleanup may continue asynchronously; a failed janitor is
+    visible only in an explicit maintenance/recovery surface, never as a normal
+    stopped session card. A merely stopped but resumable session remains live.
 
 ## Scope
 
@@ -142,6 +153,8 @@ controls remain the mutation boundaries.
 - Private durable orchestration storage under the trusted `agent-session`
   state boundary.
 - Revision-fenced lifecycle and authenticated self/operator APIs.
+- Durable logical-delete tombstones, exact-incarnation liveness reconciliation,
+  and a bounded physical-cleanup janitor/recovery projection.
 - Additive `agent-session` orchestration primitives used by the facade and
   Agent Console.
 - New `main-agent` binary and stable JSON envelopes.
@@ -177,8 +190,10 @@ controls remain the mutation boundaries.
 - Link worker cards to their primary Main Agent and Main cards to worker state
   counts.
 - Render orphaned, borrowed, cross-managed, stale, and cleanup-eligible states.
-- Preserve producer-confirmed deletion and add live acceptance for external
-  CLI deletion convergence.
+- Remove producer-tombstoned sessions from the ordinary grid and render any
+  physical cleanup backlog in a separate operator recovery surface.
+- Add live acceptance for external CLI deletion convergence, termination-race
+  reconciliation, and janitor failure without card residue.
 
 ## Non-Scope
 
@@ -396,8 +411,15 @@ The facade must:
   acceptance;
 - never use a worker capability, pre-admit mutation, or infer completion;
 - delete only after terminal assignment, operation quiescence, claim release,
-  producer confirmation, and fresh list absence;
-- retain failed workers and recovery metadata when deletion/list absence fails.
+  and an exact-incarnation liveness check;
+- atomically commit the logical-delete tombstone before reporting success, then
+  prove default-list absence independently of physical provider/filesystem
+  cleanup;
+- reconcile a termination race by re-reading exact process/session identity: if
+  no exact process remains and no operation/claim is active, commit the
+  tombstone instead of returning a permanent `process-still-running` residue;
+- retain unresolved live workers as actionable cards, but retain post-tombstone
+  cleanup failures only as structured maintenance records.
 
 Low-level `agent-session` APIs may expose primitives for workers/tests/Agent
 Console, but ordinary Main Agent operation uses the facade so required proofs
@@ -459,20 +481,25 @@ Recovery behavior:
 - `Borrowed`: temporary collaborator present; primary ownership is unchanged.
 - `Cross-managed`: coordinated by more than one run/session without transfer.
 - `Stale`: UI revision older than daemon state; reconcile before mutation.
-- `Cleanup pending`: logical delete committed; physical janitor may remain,
-  while the session is absent from the live list.
+- `Cleanup pending`: maintenance-only record; logical delete committed and the
+  session is absent from the live list, while a physical janitor may remain.
 
 ### Delete behavior
 
 - A stopped card is not automatically residue. Preserve it when producer truth
-  still lists a resumable or failed-delete session.
-- UI delete removes local card/slot/focus only after producer confirmation.
+  still lists a resumable session or cannot yet prove the exact incarnation is
+  quiescent.
+- UI delete removes local card/slot/focus after the producer durably commits the
+  logical-delete tombstone; it does not wait for physical cleanup.
 - External CLI delete makes the stream flag a reconcile (missing projection or
   sequence gap), which refreshes the authoritative list and removes the card; the
   bounded authoritative poll (currently four seconds) is the fallback when no
   stream signal arrives.
-- Delete failure retains the card and structured recovery UI.
-- Never hide a card to simulate cleanup while producer truth lists it.
+- A pre-tombstone delete failure retains an actionable card and exact recovery
+  reason. A post-tombstone janitor failure is shown only in the separate
+  maintenance/recovery surface and cannot resurrect the card.
+- Never hide an actually live/resumable session to simulate cleanup, and never
+  keep a tombstoned incarnation in the ordinary session grid.
 
 ## Requirements
 
@@ -499,8 +526,9 @@ Recovery behavior:
   general agent capability.
 - **R12**: Project safe data through Agent Console shared/edge/API/activity/UI.
 - **R13**: Add desktop/mobile role grouping and manager/worker navigation.
-- **R14**: Preserve stopped/resumable and failed-delete cards until producer
-  truth changes; prove successful external deletion disappears live.
+- **R14**: Preserve stopped/resumable cards until producer truth changes;
+  atomically tombstone verified deletes, remove them from the live projection,
+  and keep physical cleanup failures out of the ordinary session grid.
 - **R15**: Use one product-neutral contract for Codex and Claude.
 - **R16**: Keep V1 managed-session-only; do not invent provider-native IDs.
 - **R17**: Admit facade read-only discovery and run/claim bootstrap under
@@ -557,7 +585,9 @@ Recovery behavior:
 - **A17**: Worker loss marks orphan/unavailable while retaining durable task,
   diff, worktree, validation, and result refs.
 - **A18**: Cleanup requires terminal assignment, no active/uncertain operation,
-  released claim, producer delete, and fresh list absence.
+  released claim, exact-incarnation quiescence, a durable logical-delete
+  tombstone, and fresh default-list absence. Physical janitor completion is
+  separately observable and cannot restore the live projection.
 
 ### Agent Console and regression
 
@@ -566,8 +596,9 @@ Recovery behavior:
   and revisions as the fence, with `machine` as a display/routing hint only.
 - **A21**: Orphaned, borrowed, cross-managed, stale, and cleanup states render
   without private packet leakage.
-- **A22**: Delete failure retains card/recovery; UI delete success removes only
-  after producer confirmation.
+- **A22**: A pre-tombstone delete failure retains an actionable card; a durable
+  tombstone removes the card even when physical cleanup remains pending, and the
+  cleanup record appears only in the maintenance/recovery surface.
 - **A23**: With Agent Console open, external exact `agent-session delete` removes
   the card through an authoritative-list refresh — triggered eagerly by the stream
   reconcile signal or by the bounded poll (currently four seconds) — within one
@@ -590,6 +621,11 @@ Recovery behavior:
   without its required claim/lease and revision/idempotency fences fails closed
   with recovery guidance; `agent-session` advisory/enforce/off semantics are
   otherwise unchanged.
+- **A30**: Simulate termination returning `process-still-running` after the exact
+  provider process has exited. One bounded identity re-read commits the
+  tombstone, default `agent-session list` excludes the incarnation, Agent
+  Console removes the card within one poll interval, and an injected filesystem
+  cleanup failure appears only in the maintenance projection.
 
 ## Findings And Fix-Later Backlog
 
@@ -599,6 +635,7 @@ Recovery behavior:
 | P0 | Main Agent Mode currently denies the graph/new CLI required here. | Current skill boundary. [F4] | runtime-kit after nils | R10, A25–A28 |
 | P1 | Agent Console cannot render authoritative relationships and drops unknown fields. | Projection allowlist. [F5] | Agent Console | A19–A21 |
 | P1 | External successful CLI deletion lacks live browser acceptance. | Source has stream/poll paths; only backend absence was proven. [F6][A1] | Agent Console | A23 |
+| P1 | A termination race can leave a physically dead session rendered as an ordinary stopped card. | Failed producer delete retained metadata even after no matching process was found. [A3] | nils-cli + Agent Console | R14, A18, A22, A30 |
 | P1 | GitHub restriction prevents normal issue/PR/Actions delivery and the pending nils-cli release. | nils-cli remains ahead by two commits; provider Actions rejected the account. [A2] | External/later delivery | Local-only guardrail |
 | P1 | Under `enforce`, the coordination-guard admission allowlist has no `main-agent` shapes, so a fresh Main Agent's read-only discovery and run/claim bootstrap would be blocked before a claim. | Hook admission allowlist. [F7] | runtime-kit | R17, A29 |
 | P2 | Provider-native subagents lack stable Agent Console identity. | UI consumes managed sessions only. [F5] | Future integration | Outside V1 |
@@ -612,6 +649,9 @@ Recovery behavior:
   cleanup.
 - Focused `agent-session`/`main-agent` tests plus serve/API/CLI JSON fixtures,
   legacy compatibility, and claim/lease regression.
+- Termination-race, tombstone atomicity, list filtering, idempotent retry, and
+  janitor-failure tests; maintenance records must remain privacy-safe and must
+  not re-enter the live-session projection.
 - Repository gate:
 
   ```bash
@@ -637,7 +677,7 @@ Recovery behavior:
 - Shared/edge/UI projection tests for optional fields, limits, unknown members,
   privacy, revisions, and old daemons.
 - Desktop/mobile behavior tests for grouping, badges, navigation, orphan,
-  borrow, stale state, and deletion convergence.
+  borrow, stale state, deletion convergence, and maintenance-only cleanup.
 - Declared gate:
 
   ```bash
@@ -649,7 +689,8 @@ Recovery behavior:
   ```
 
 - Live browser acceptance with open Agent Console, disposable sessions,
-  external deletion, activity interruption, reconnect, and poll fallback.
+  external deletion, simulated termination race, injected janitor failure,
+  activity interruption, reconnect, and poll fallback.
 
 ### Integrated acceptance
 
@@ -676,8 +717,12 @@ Recovery behavior:
   handoff sequence remain mandatory.
 - **Compaction loses reminder**: durable self-rehydrate, start/resume projection,
   and repeated lightweight safe-boundary reminders.
-- **Stopped-card auto-hide loses data**: only producer-confirmed deletion and
-  fresh list absence remove sessions.
+- **Stopped-card auto-hide loses data**: only a producer-committed tombstone and
+  authoritative list absence remove a card; ordinary stopped/resumable sessions
+  remain visible.
+- **Cleanup failure pollutes the session grid**: logical deletion and physical
+  cleanup are separate states; janitor failures use a bounded maintenance
+  projection and cannot resurrect tombstoned cards.
 - **Version skew**: implement nils schema/CLI first locally, then runtime-kit
   consumers and Agent Console against the exact built surface.
 - **GitHub unavailable**: retain signed local commits/exact heads; never weaken
@@ -754,6 +799,11 @@ owning canonical docs. Do not retain a stale duplicate of promoted canon.
   during runtime-kit #686 final cleanup.
 - `[A2]` Runtime-kit #686/#709 provider read-back plus local git/deployed
   evidence in the final live evidence directory above.
+- `[A3]` 2026-07-22 exact stopped-worker delete returned
+  `session-termination-failed` / `process-still-running` twice while a
+  privacy-safe process lookup found no matching session process; producer
+  metadata was correctly retained under the current contract, exposing the UI
+  recovery-projection gap captured by A30.
 - `DEVELOPMENT.md` and
   `docs/source/docs-placement-retention-policy-v1.md` in this repository.
 - `AGENTS.md`, `AGENT_DOCS.toml`, and `DEVELOPMENT.md` in each affected repo.
