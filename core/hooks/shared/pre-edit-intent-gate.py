@@ -26,6 +26,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
@@ -819,6 +820,51 @@ def trusted_private_input_file(raw: str, repositories: list[str]) -> bool:
     return not any(path_within(raw, repository) for repository in repositories)
 
 
+def trusted_private_packet(raw: str, repositories: list[str]) -> bool:
+    if not raw.endswith(".json") or not trusted_private_input_file(raw, repositories):
+        return False
+    try:
+        metadata = os.stat(raw, follow_symlinks=False)
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_uid == os.geteuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+    )
+
+
+def companion_versions_match(first: str, second: str) -> bool:
+    first_probe, _ = run_probe([first, "--version"])
+    second_probe, _ = run_probe([second, "--version"])
+    if (
+        first_probe is None
+        or second_probe is None
+        or first_probe.returncode != 0
+        or second_probe.returncode != 0
+    ):
+        return False
+    first_version = parsed_version(first_probe.stdout + "\n" + first_probe.stderr)
+    second_version = parsed_version(second_probe.stdout + "\n" + second_probe.stderr)
+    return first_version is not None and first_version == second_version
+
+
+def lifecycle_identifier(value: str) -> bool:
+    return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is not None
+
+
+def lifecycle_revision(value: str) -> bool:
+    if re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None:
+        return False
+    return int(value) <= (2**64 - 1)
+
+
+def lifecycle_idempotency_key(value: str) -> bool:
+    return 8 <= len(value) <= 128 and all(
+        character.isascii() and character.isprintable() for character in value
+    )
+
+
 def main_agent_readiness_invocation(
     words: list[str],
     *,
@@ -829,6 +875,65 @@ def main_agent_readiness_invocation(
     """Admit only the exact non-repository Main Agent Mode bootstrap shapes."""
     if not words:
         return False
+
+    if words[0] == "main-agent":
+        main_agent = trusted_release_companion(
+            "main-agent",
+            agent_docs_executable=agent_docs_executable,
+            repositories=repositories,
+        )
+        agent_session = trusted_release_companion(
+            "agent-session",
+            agent_docs_executable=agent_docs_executable,
+            repositories=repositories,
+        )
+        capability_file = os.environ.get(
+            "AGENT_SESSION_CAPABILITY_FILE", ""
+        ).strip()
+        if (
+            not main_agent
+            or not agent_session
+            or not companion_versions_match(main_agent, agent_session)
+            or not current_session
+            or not trusted_private_input_file(capability_file, repositories)
+        ):
+            return False
+        if words == ["main-agent", "--version"]:
+            return True
+        if words in (
+            ["main-agent", "self", "show", "--format", "json"],
+            ["main-agent", "rehydrate", "--format", "json"],
+            ["main-agent", "rehydrate", "--format", "markdown"],
+            ["main-agent", "status", "--format", "json"],
+            ["main-agent", "worker", "list", "--format", "json"],
+        ):
+            return True
+        if words[:3] == ["main-agent", "worker", "show"]:
+            return (
+                len(words) == 6
+                and lifecycle_identifier(words[3])
+                and words[4:] == ["--format", "json"]
+            )
+        if (
+            len(words) < 4
+            or words[:3] != ["main-agent", "init", "--packet-file"]
+            or not trusted_private_packet(words[3], repositories)
+        ):
+            return False
+        if len(words) == 9:
+            return (
+                words[4:6] == ["--if-absent", "--idempotency-key"]
+                and lifecycle_idempotency_key(words[6])
+                and words[7:] == ["--format", "json"]
+            )
+        return (
+            len(words) == 10
+            and words[4] == "--if-revision"
+            and lifecycle_revision(words[5])
+            and words[6] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[7])
+            and words[8:] == ["--format", "json"]
+        )
 
     if words[0] == "agent-session":
         if trusted_release_companion(
@@ -882,26 +987,33 @@ def main_agent_readiness_invocation(
             ],
         ):
             return True
-        if len(words) != 13 or words[:3] != [
+        if words[:3] != [
             "agent-session",
             "work-context",
             "claim",
         ]:
+            return False
+        tail_index = 7
+        if words[7:8] == ["--if-revision"]:
+            if len(words) != 15 or not lifecycle_revision(words[8]):
+                return False
+            tail_index = 9
+        elif len(words) != 13:
             return False
         if (
             words[3] != "--session"
             or words[4] != current_session
             or not current_session
             or words[5] != "--file"
-            or words[7] != "--capability-file"
-            or words[9] != "--idempotency-key"
-            or words[11:] != ["--format", "json"]
+            or words[tail_index] != "--capability-file"
+            or words[tail_index + 2] != "--idempotency-key"
+            or words[tail_index + 4 :] != ["--format", "json"]
         ):
             return False
         capability_file = os.environ.get(
             "AGENT_SESSION_CAPABILITY_FILE", ""
         ).strip()
-        if words[8] != capability_file or not trusted_private_input_file(
+        if words[tail_index + 1] != capability_file or not trusted_private_input_file(
             capability_file, repositories
         ):
             return False
@@ -910,7 +1022,9 @@ def main_agent_readiness_invocation(
         ):
             return False
         return (
-            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", words[10])
+            re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", words[tail_index + 3]
+            )
             is not None
         )
 

@@ -8681,17 +8681,30 @@ exit 64
 """,
             )
             agent_session = bin_dir / "agent-session"
-            agent_session.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            agent_session.write_text(
+                "#!/bin/sh\necho 'agent-session 1.24.5'\nexit 0\n",
+                encoding="utf-8",
+            )
             agent_session.chmod(0o755)
             agent_run = bin_dir / "agent-run"
             agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             agent_run.chmod(0o755)
+            main_agent = bin_dir / "main-agent"
+            main_agent_script = """#!/bin/sh
+if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
+exit 0
+"""
+            main_agent.write_text(main_agent_script, encoding="utf-8")
+            main_agent.chmod(0o755)
 
             private_dir = root / "private"
             private_dir.mkdir()
             claim_file = private_dir / "work-context.json"
             claim_file.write_text("{}\n", encoding="utf-8")
             claim_file.chmod(0o600)
+            packet_file = private_dir / "orchestration-packet.json"
+            packet_file.write_text("{}\n", encoding="utf-8")
+            packet_file.chmod(0o600)
             capability_file = private_dir / "capability"
             capability_file.write_text("fixture\n", encoding="utf-8")
             capability_file.chmod(0o600)
@@ -8725,6 +8738,18 @@ exit 64
                 '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
                 "--idempotency-key readiness-claim-0001 --format json"
             )
+            revision_fenced_claim = literal_claim.replace(
+                f"--file {claim_file.resolve()} ",
+                f"--file {claim_file.resolve()} --if-revision 1 ",
+            )
+            init = (
+                f"main-agent init --packet-file {packet_file.resolve()} "
+                "--if-absent --idempotency-key readiness-init-0001 --format json"
+            )
+            revision_fenced_init = (
+                f"main-agent init --packet-file {packet_file.resolve()} "
+                "--if-revision 1 --idempotency-key readiness-init-0002 --format json"
+            )
             allowed = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
@@ -8733,6 +8758,16 @@ exit 64
                 "agent-session activity setup --agent claude --repair --dry-run --format json",
                 claim,
                 literal_claim,
+                revision_fenced_claim,
+                "main-agent --version",
+                "main-agent self show --format json",
+                "main-agent rehydrate --format json",
+                "main-agent rehydrate --format markdown",
+                "main-agent status --format json",
+                "main-agent worker list --format json",
+                "main-agent worker show assignment-1234 --format json",
+                init,
+                revision_fenced_init,
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
@@ -8747,6 +8782,18 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
 
+            main_agent.write_text(
+                main_agent_script.replace("1.24.5", "1.24.6"), encoding="utf-8"
+            )
+            payload = command_payload("main-agent status --format json")
+            payload["session_id"] = "main-agent-readiness"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "project-dev")
+            main_agent.write_text(main_agent_script, encoding="utf-8")
+
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
             foreign_agent_session = foreign_bin / "agent-session"
@@ -8757,9 +8804,25 @@ exit 64
             foreign_agent_run = foreign_bin / "agent-run"
             foreign_agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             foreign_agent_run.chmod(0o755)
+            foreign_main_agent = foreign_bin / "main-agent"
+            foreign_main_agent.write_text(main_agent_script, encoding="utf-8")
+            foreign_main_agent.chmod(0o755)
 
             blocked = (
                 "agent-session --help",
+                "main-agent --help",
+                "main-agent status --format json extra",
+                "main-agent checkpoint --file packet.json --if-revision 1 --idempotency-key checkpoint-0001 --format json",
+                init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
+                init.replace(" --if-absent", ""),
+                init.replace("readiness-init-0001", "short"),
+                revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
+                revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
+                revision_fenced_init.replace(
+                    "--if-revision 1 --idempotency-key readiness-init-0002",
+                    "--idempotency-key readiness-init-0002 --if-revision 1",
+                ),
+                revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
                 "agent-session -V",
                 "agent-session --version | cat",
                 f"agent-session --version > {root / 'version.txt'}",
@@ -8876,6 +8939,7 @@ exit 64
             for candidate in (shadow_bin, foreign_bin):
                 for command in (
                     "agent-session --version",
+                    "main-agent status --format json",
                     claim,
                     f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 ):
@@ -8900,12 +8964,14 @@ exit 64
             alias_bin.mkdir()
             (alias_bin / "agent-session").symlink_to(agent_session.resolve())
             (alias_bin / "agent-run").symlink_to(agent_run.resolve())
+            (alias_bin / "main-agent").symlink_to(main_agent.resolve())
             alias_env = {
                 **env,
                 "PATH": f"{alias_bin}{os.pathsep}{env['PATH']}",
             }
             alias_commands = (
                 "agent-session --version",
+                "main-agent status --format json",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
             )
             for command in alias_commands:
@@ -8954,14 +9020,19 @@ exit 64
             foreign_release_bin = root / "foreign-release" / "bin"
             foreign_release_bin.mkdir(parents=True)
             for directory in (release_bin, foreign_release_bin):
-                for name in ("agent-docs", "agent-session", "agent-run"):
+                for name in (
+                    "agent-docs",
+                    "agent-session",
+                    "agent-run",
+                    "main-agent",
+                ):
                     executable = directory / name
                     executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                     executable.chmod(0o755)
 
             linked_bin = root / "linked-bin"
             linked_bin.mkdir()
-            for name in ("agent-docs", "agent-session", "agent-run"):
+            for name in ("agent-docs", "agent-session", "agent-run", "main-agent"):
                 (linked_bin / name).symlink_to(release_bin / name)
 
             base_env = {
@@ -8969,7 +9040,7 @@ exit 64
                 "PATH": f"{linked_bin}{os.pathsep}{os.environ.get('PATH', '')}",
             }
             with mock.patch.dict(os.environ, base_env, clear=False):
-                for name in ("agent-session", "agent-run"):
+                for name in ("agent-session", "agent-run", "main-agent"):
                     with self.subTest(valid_shared_symlink_surface=name):
                         self.assertEqual(
                             gate.trusted_release_companion(
@@ -8984,7 +9055,7 @@ exit 64
 
             alias_bin = root / "foreign-alias-bin"
             alias_bin.mkdir()
-            for name in ("agent-session", "agent-run"):
+            for name in ("agent-session", "agent-run", "main-agent"):
                 (alias_bin / name).symlink_to(release_bin / name)
             with mock.patch.dict(
                 os.environ,
@@ -8994,7 +9065,7 @@ exit 64
                 },
                 clear=False,
             ):
-                for name in ("agent-session", "agent-run"):
+                for name in ("agent-session", "agent-run", "main-agent"):
                     with self.subTest(foreign_lexical_alias=name):
                         self.assertIsNone(
                             gate.trusted_release_companion(
@@ -9009,7 +9080,7 @@ exit 64
             mixed_bin = root / "mixed-bin"
             mixed_bin.mkdir()
             (mixed_bin / "agent-docs").symlink_to(release_bin / "agent-docs")
-            for name in ("agent-session", "agent-run"):
+            for name in ("agent-session", "agent-run", "main-agent"):
                 (mixed_bin / name).symlink_to(foreign_release_bin / name)
             with mock.patch.dict(
                 os.environ,
@@ -9019,7 +9090,7 @@ exit 64
                 },
                 clear=False,
             ):
-                for name in ("agent-session", "agent-run"):
+                for name in ("agent-session", "agent-run", "main-agent"):
                     with self.subTest(foreign_resolved_release=name):
                         self.assertIsNone(
                             gate.trusted_release_companion(
@@ -11412,6 +11483,10 @@ exit 64
                 '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
                 "--idempotency-key claim-bootstrap-0001 --format json"
             )
+            revision_fenced_claim = literal_claim.replace(
+                f"--file {claim_file.resolve()} ",
+                f"--file {claim_file.resolve()} --if-revision 1 ",
+            )
             expanded_claim = (
                 "agent-session work-context claim "
                 "--session managed-session "
@@ -11420,20 +11495,22 @@ exit 64
                 "--idempotency-key claim-bootstrap-0001 --format json"
             )
 
-            payload = command_payload(literal_claim)
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "literal-claim-allowed",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            for index, command in enumerate((literal_claim, revision_fenced_claim)):
+                with self.subTest(allowed=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "cwd": str(repo),
+                            "session_id": "product-session",
+                            "tool_use_id": f"literal-claim-allowed-{index}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
             blocked = (
                 literal_claim.replace("$AGENT_SESSION_ID", "$OTHER_SESSION_ID"),
@@ -11469,6 +11546,211 @@ exit 64
                             "cwd": str(repo),
                             "session_id": "product-session",
                             "tool_use_id": f"literal-claim-blocked-{index}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py",
+                        payload,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "active work-context claim")
+
+    def test_session_coordination_guard_allows_only_exact_main_agent_bootstrap(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            main_agent = bin_dir / "main-agent"
+            main_agent_script = """#!/bin/sh
+if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
+exit 0
+"""
+            main_agent.write_text(main_agent_script, encoding="utf-8")
+            main_agent.chmod(0o755)
+
+            private_dir = root / "private"
+            private_dir.mkdir()
+            packet_file = private_dir / "orchestration-packet.json"
+            packet_file.write_text("{}\n", encoding="utf-8")
+            packet_file.chmod(0o600)
+            repository_packet = repo / "orchestration-packet.json"
+            repository_packet.write_text("{}\n", encoding="utf-8")
+            repository_packet.chmod(0o600)
+            capability_file = private_dir / "capability"
+            capability_file.write_text("fixture\n", encoding="utf-8")
+            capability_file.chmod(0o600)
+            shadow_dir = root / "shadow"
+            shadow_dir.mkdir()
+            shadow_main_agent = shadow_dir / "main-agent"
+            shadow_main_agent.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shadow_main_agent.chmod(0o755)
+
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            init = (
+                f"main-agent init --packet-file {packet_file.resolve()} "
+                "--if-absent --idempotency-key main-agent-init-0001 --format json"
+            )
+            revision_fenced_init = (
+                f"main-agent init --packet-file {packet_file.resolve()} "
+                "--if-revision 1 --idempotency-key main-agent-init-0002 --format json"
+            )
+            allowed = (
+                "main-agent --version",
+                "main-agent self show --format json",
+                "main-agent rehydrate --format json",
+                "main-agent rehydrate --format markdown",
+                "main-agent status --format json",
+                "main-agent worker list --format json",
+                "main-agent worker show assignment-1234 --format json",
+                init,
+                revision_fenced_init,
+            )
+            for index, command in enumerate(allowed):
+                with self.subTest(allowed=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "cwd": str(repo),
+                            "session_id": "product-session",
+                            "tool_use_id": f"main-agent-bootstrap-allowed-{index}",
+                            "hook_event_name": "PreToolUse",
+                        }
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py",
+                        payload,
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            foreign_bin = root / "foreign-bin"
+            foreign_bin.mkdir()
+            foreign_main_agent = foreign_bin / "main-agent"
+            foreign_main_agent.write_text(main_agent_script, encoding="utf-8")
+            foreign_main_agent.chmod(0o755)
+            payload = command_payload("main-agent status --format json")
+            payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-session",
+                    "tool_use_id": "main-agent-foreign-release-root",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                payload,
+                cwd=repo,
+                env={
+                    **env,
+                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": os.pathsep.join(
+                        (str(foreign_bin), str(bin_dir))
+                    ),
+                    "PATH": f"{foreign_bin}{os.pathsep}{env['PATH']}",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "active work-context claim")
+
+            main_agent.write_text(
+                main_agent_script.replace("1.24.5", "1.24.6"), encoding="utf-8"
+            )
+            payload = command_payload("main-agent status --format json")
+            payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-session",
+                    "tool_use_id": "main-agent-version-mismatch",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "active work-context claim")
+            main_agent.write_text(main_agent_script, encoding="utf-8")
+
+            blocked = (
+                "main-agent --version extra",
+                "main-agent self show --format markdown",
+                "main-agent self show --format json extra",
+                "main-agent rehydrate --format yaml",
+                "main-agent worker show ../foreign --format json",
+                "main-agent worker list --format json extra",
+                init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
+                init.replace(str(packet_file.resolve()), str(repository_packet.resolve())),
+                init.replace(" --if-absent", ""),
+                init.replace(
+                    "--if-absent --idempotency-key main-agent-init-0001",
+                    "--idempotency-key main-agent-init-0001 --if-absent",
+                ),
+                init.replace("main-agent-init-0001", "short"),
+                init.replace("--format json", "--format markdown"),
+                init + " extra",
+                revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
+                revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
+                revision_fenced_init.replace(
+                    "--if-revision 1 --idempotency-key main-agent-init-0002",
+                    "--idempotency-key main-agent-init-0002 --if-revision 1",
+                ),
+                revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
+                f"{shadow_main_agent} status --format json",
+                "main-agent status --format json | cat",
+                f"main-agent status --format json > {root / 'status.json'}",
+                "sh -c 'main-agent status --format json'",
+                (
+                    f"main-agent checkpoint --file {packet_file.resolve()} "
+                    "--if-revision 1 --idempotency-key checkpoint-0001 --format json"
+                ),
+                (
+                    f"main-agent worker start --assignment-file {packet_file.resolve()} "
+                    "--if-run-revision 1 --idempotency-key worker-start-0001 "
+                    "--format json"
+                ),
+                (
+                    "main-agent collaborate assignment-1234 --session worker-5678 "
+                    "--if-revision 1 --idempotency-key collaborate-0001 --format json"
+                ),
+                "main-agent close --if-revision 1 --idempotency-key close-0001 --format json",
+            )
+            for index, command in enumerate(blocked):
+                with self.subTest(blocked=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "cwd": str(repo),
+                            "session_id": "product-session",
+                            "tool_use_id": f"main-agent-bootstrap-blocked-{index}",
                             "hook_event_name": "PreToolUse",
                         }
                     )

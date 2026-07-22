@@ -827,7 +827,7 @@ def provider_group_action(words: list[str]) -> tuple[int, str, str] | None:
 def claim_bootstrap_invocation(
     words: list[str], agent_session_executable: str, base: Path | None
 ) -> bool:
-    if len(words) != 13 or words[:3] != [
+    if words[:3] != [
         "agent-session",
         "work-context",
         "claim",
@@ -840,20 +840,33 @@ def claim_bootstrap_invocation(
         return False
     current_session = os.environ.get("AGENT_SESSION_ID", "").strip()
     capability_file = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+    tail_index = 7
+    if words[7:8] == ["--if-revision"]:
+        if len(words) != 15 or not lifecycle_revision(words[8]):
+            return False
+        tail_index = 9
+    elif len(words) != 13:
+        return False
     if (
         words[3] != "--session"
         or not current_session
         or words[4] != current_session
         or words[5] != "--file"
-        or words[7] != "--capability-file"
+        or words[tail_index] != "--capability-file"
         or not capability_file
-        or words[8] != capability_file
-        or words[9] != "--idempotency-key"
-        or words[11:] != ["--format", "json"]
-        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", words[10]) is None
+        or words[tail_index + 1] != capability_file
+        or words[tail_index + 2] != "--idempotency-key"
+        or words[tail_index + 4 :] != ["--format", "json"]
+        or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", words[tail_index + 3]
+        )
+        is None
     ):
         return False
-    for raw, require_json in ((words[6], True), (words[8], False)):
+    for raw, require_json in (
+        (words[6], True),
+        (words[tail_index + 1], False),
+    ):
         if (
             not os.path.isabs(raw)
             or os.path.normpath(raw) != raw
@@ -875,12 +888,122 @@ def claim_bootstrap_invocation(
     return True
 
 
+def main_agent_private_packet(raw: str, repository: str | None) -> bool:
+    if not lifecycle_private_file(raw, repository, json_file=True):
+        return False
+    try:
+        metadata = os.stat(raw, follow_symlinks=False)
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_uid == os.geteuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+    )
+
+
+def trusted_main_agent_sibling(agent_session_executable: str) -> str | None:
+    """Resolve a same-release ``main-agent`` sibling of ``agent-session``."""
+    main_candidate = shutil.which("main-agent")
+    session_candidate = shutil.which("agent-session")
+    trusted_main = resolved_trusted_cli("main-agent")
+    if (
+        not main_candidate
+        or not session_candidate
+        or not trusted_main
+        or not os.path.isabs(main_candidate)
+        or not os.path.isabs(session_candidate)
+    ):
+        return None
+    if os.path.dirname(os.path.abspath(main_candidate)) != os.path.dirname(
+        os.path.abspath(session_candidate)
+    ):
+        return None
+    if os.path.dirname(os.path.realpath(trusted_main)) != os.path.dirname(
+        os.path.realpath(agent_session_executable)
+    ):
+        return None
+    if os.path.realpath(session_candidate) != os.path.realpath(
+        agent_session_executable
+    ):
+        return None
+    main_version = run_cli([trusted_main, "--version"])
+    session_version = run_cli([agent_session_executable, "--version"])
+    if (
+        main_version is None
+        or session_version is None
+        or main_version.returncode != 0
+        or session_version.returncode != 0
+    ):
+        return None
+    parsed_main = parse_version(main_version.stdout + "\n" + main_version.stderr)
+    parsed_session = parse_version(
+        session_version.stdout + "\n" + session_version.stderr
+    )
+    if parsed_main is None or parsed_main != parsed_session:
+        return None
+    return trusted_main
+
+
+def main_agent_bypass_invocation(
+    words: list[str], agent_session_executable: str, base: Path | None
+) -> bool:
+    """Validate one finite trusted pre-claim Main Agent command."""
+    if words[:1] != ["main-agent"]:
+        return False
+    candidate = shutil.which(words[0])
+    trusted = trusted_main_agent_sibling(agent_session_executable)
+    if (
+        not candidate
+        or not trusted
+        or os.path.realpath(candidate) != os.path.realpath(trusted)
+    ):
+        return False
+    if words == ["main-agent", "--version"]:
+        return True
+    if words in (
+        ["main-agent", "self", "show", "--format", "json"],
+        ["main-agent", "rehydrate", "--format", "json"],
+        ["main-agent", "rehydrate", "--format", "markdown"],
+        ["main-agent", "status", "--format", "json"],
+        ["main-agent", "worker", "list", "--format", "json"],
+    ):
+        return True
+    if words[:3] == ["main-agent", "worker", "show"]:
+        return (
+            len(words) == 6
+            and lifecycle_identifier(words[3])
+            and words[4:] == ["--format", "json"]
+        )
+    if len(words) < 4 or words[:3] != ["main-agent", "init", "--packet-file"]:
+        return False
+    repository = bounded_git_toplevel(str(base)) if base is not None else None
+    if not main_agent_private_packet(words[3], repository):
+        return False
+    if len(words) == 9:
+        return (
+            words[4:6] == ["--if-absent", "--idempotency-key"]
+            and lifecycle_idempotency_key(words[6])
+            and words[7:] == ["--format", "json"]
+        )
+    return (
+        len(words) == 10
+        and words[4] == "--if-revision"
+        and lifecycle_revision(words[5])
+        and words[6] == "--idempotency-key"
+        and lifecycle_idempotency_key(words[7])
+        and words[8:] == ["--format", "json"]
+    )
+
+
 def invocation_bypasses_admission(
     words: list[str], agent_session_executable: str, base: Path | None = None
 ) -> bool:
     if "/" in words[0] and not os.path.isabs(words[0]):
         return False
     name = os.path.basename(words[0])
+    if name == "main-agent":
+        return main_agent_bypass_invocation(words, agent_session_executable, base)
     if name == "agent-session" and len(words) >= 2:
         candidate = shutil.which(words[0]) if "/" not in words[0] else words[0]
         trusted = bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
@@ -1212,6 +1335,11 @@ def command_bypasses_admission(
         candidate = shutil.which(lifecycle_words[0])
         return bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
             agent_session_executable
+        )
+    if re.search(r"(?<![A-Za-z0-9_.-])main-agent(?:\s|$)", command):
+        words = simple_words(command)
+        return bool(words) and invocation_bypasses_admission(
+            words, agent_session_executable, base
         )
     effect = classify_shell_effect(
         command,

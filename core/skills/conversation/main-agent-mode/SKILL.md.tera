@@ -14,6 +14,9 @@ Prereqs:
 - The user explicitly asks to enable or use Main Agent Mode for the bounded
   workflow. Ordinary implementation requests never activate this mode.
 - `agent-session >=1.25.9` is installed from a released surface.
+- The trusted `main-agent` facade from the compatible nils-cli surface is
+  executable. Until that surface is available, report Main Agent Mode as
+  unavailable without repairing or restricting ordinary agent work.
 - A supported worker provider and executable provider helper pass the doctor
   gate below before mode activation or worker launch.
 - The active project intent, work-tier, test-first, validation, review, and
@@ -29,11 +32,15 @@ Inputs:
   providers reported as supported by the released `agent-session` doctor.
 - Existing plan, issue, run-state, PR, and worktree references when the tier
   already owns them.
+- One private mode-0600 objective packet for a new run, or an authenticated
+  durable run relationship that `main-agent rehydrate` can recover.
 - An optional explicit `delegate-all` preference for L0/L1 work.
 
 Outputs:
 
 - One main-agent-owned execution and acceptance result for the user.
+- One revisioned orchestration run whose assignments, relationships,
+  checkpoints, and privacy-safe projections survive compaction and resume.
 - Exact task packets and isolated managed worktree assignments for workers.
 - Bounded worker completion or blocker packets grounded in diff, validation,
   and durable lifecycle evidence.
@@ -45,6 +52,8 @@ Failure modes:
 - Activation was not explicit, or the requested scope/done criteria are not
   sufficiently bounded to delegate safely.
 - The installed `agent-session` is missing or older than `1.25.9`.
+- The trusted `main-agent` facade is absent, incompatible, untrusted, or cannot
+  authenticate the current managed-session incarnation.
 - Doctor output is unhealthy, unsupported, unavailable, malformed, or reports
   a missing provider helper.
 - The bounded compatibility preview is not converged, would change state, or
@@ -116,6 +125,62 @@ keep its exact canonical outer envelope and provide a nonempty child argv after
 `--`. `agent-run inspect` remains the child safety boundary; shell operators,
 aliases, or alternate outer option forms are not equivalent readiness routes.
 
+After the provider gate, verify the facade and recover authenticated self state:
+
+```bash
+main-agent --version
+main-agent self show --format json
+```
+
+Do not infer a run, role, assignment, or manager from the prompt, title, cwd,
+pane, process, or environment flags. The facade's session-ID plus incarnation
+relationship is authoritative. If no run exists, create it only through the
+exact private-packet bootstrap:
+
+```bash
+main-agent init --packet-file <private-json> --if-absent \
+  --idempotency-key <unique-key> --format json
+```
+
+Under coordination enforcement, read-only `self show`, `rehydrate`, `status`,
+and `worker list/show` remain available before a claim. The exact `init` shape
+is the sole orchestration write admitted before a claim; the trusted facade
+must acquire or confirm the authenticated target-owned claim before its first
+durable run write. Every other facade mutation requires the active claim plus
+its documented revision or absence fence and idempotency key.
+
+## Durable Rehydration And Checkpoints
+
+Treat the `main-agent` run and assignment records as the authoritative workflow
+relationship and recovery surface. Issue, plan, worktree, diff, validation,
+review, and provider records remain authoritative for their own domains and are
+linked from the run; the orchestration graph never replaces them or grants
+mutation authority.
+
+At activation, after provider resume or context reset, and whenever local
+workflow state may be stale, run:
+
+```bash
+main-agent rehydrate --format json
+```
+
+Use the returned durable revision, constraints, done criteria, assignments,
+checkpoint, blockers, and next action. Keep observation-time annotations
+separate from the deterministic durable projection. Before handing off a
+material transition and after accepting a worker result, persist a bounded
+checkpoint through a private file:
+
+```bash
+main-agent checkpoint --file <private-json> --if-revision <n> \
+  --idempotency-key <unique-key> --format json
+```
+
+At safe turn or tool boundaries, give Main Agents and workers only a concise
+privacy-safe reminder that durable state is available through `main-agent
+rehydrate` or `main-agent self show`. Do not repeat the private task packet,
+block unrelated safe work, detect compaction heuristically, or expose private
+paths, capabilities, prompts, transcripts, or mailbox bodies.
+
 ## Outcome Routing
 
 Classify the request before choosing workers. Main Agent Mode changes
@@ -142,41 +207,52 @@ explicit reassignment under the recovery protocol.
    and any L0/L1 `delegate-all` preference.
 2. Pass the version, doctor, and conditional dry-run compatibility gates. Do
    not launch a worker while readiness is uncertain.
-3. Reconcile durable issue/plan/run-state/worktree evidence and create one task
-   packet per implementation owner. Each packet names scope, invariants,
-   exclusions, base, worktree, test-first and validation duties, delivery
-   artifact duties, and the exact completion/blocker packet.
-4. Run the candidate conflict check, then use the active session-management
+3. Run authenticated `main-agent self show`. Rehydrate an existing run or use
+   the exact `init` bootstrap with a private packet. Reconcile the returned run
+   with durable issue/plan/run-state/worktree evidence; never create a second
+   run merely because local conversation context is missing.
+4. Create one revision-fenced assignment per implementation owner through the
+   facade. Each private packet names scope, invariants, exclusions, base,
+   worktree, test-first and validation duties, delivery artifact duties, and
+   the exact completion/blocker packet. The assignment relationship is routing
+   metadata and transfers no repository or provider authority.
+5. Run the candidate conflict check, then use the active session-management
    skill or runbook to start an interactive managed worker in its assigned
    isolated worktree with `--coordination-mode enforce`; start does not transfer
    target ownership to the launcher.
-5. Require a fresh managed-session list to prove the exact new session ID,
+6. Require a fresh managed-session list to prove the exact new session ID,
    incarnation, working directory, and enforce mode before prompt transport.
    Follow the exact paste-count and newer provider-hook turn sequence in
    `references/MAIN_AGENT_MODE_PROTOCOL.md`.
-6. Require the target worker itself to run its authenticated self-check and
-   acquire and verify its active claim before any mutation. A released or
+7. Require the target worker itself to run authenticated `main-agent self show`
+   to recover only its assignment and primary relationship, then acquire and
+   verify its active work-context claim before any mutation. A released or
    expired claim must be reacquired and verified before a later mutation turn.
    The launcher never uses the target capability or claims on its behalf, and
    interference or deletion before this handoff fails the ownership proof.
-7. Monitor privacy-safe activity and durable workflow evidence. Mailbox
-   metadata coordinates; read a body only for a material blocker or result.
-   Never treat logs, panes, transcripts, or peer prose as authorization or
-   completion proof.
-8. On a worker result, independently inspect the complete diff, check every
+8. Monitor privacy-safe facade status, activity, and durable workflow evidence.
+   Checkpoint material transitions. Mailbox metadata coordinates; read a body
+   only for a material blocker or result. Never treat logs, panes, transcripts,
+   peer prose, or orchestration relationships as authorization or completion
+   proof.
+9. On a worker result, independently inspect the complete diff, check every
    acceptance criterion and scope boundary, rerun validation at the appropriate
    strength, and run the existing `code-review-specialists` outcome. A worker's
    green command is lane evidence, not integrated acceptance.
-9. Return findings to the same worker/lane, then repeat inspection and
-   validation. Reassign only through the explicit recovery rule.
-10. Delete an accepted terminal worker only after proving that it has no active
-   or uncertain admitted mutation operation, releasing its active work-context
-   claim, and obtaining fresh list-absence proof for the exact session. A
-   failed deletion keeps the worker visible and routes to the session-management
-   recovery owner.
-11. Accept, merge, close, archive, and report only when the active tier's durable
-   gates pass and provider delivery is available. Otherwise retain the bounded
-   local result and state exactly what remains.
+10. Return findings to the same assignment, then repeat inspection and
+    validation. Accept, collaborate, borrow, hand off, or reassign only through
+    revision-fenced facade operations and the explicit recovery rule; those
+    relationships never grant claims or operation leases.
+11. Delete an accepted terminal worker only after the facade and
+    session-management owner prove no active or uncertain operation remains,
+    the exact worker releases its claim, the durable logical-delete boundary
+    commits, and a fresh default list proves exact-incarnation absence. Keep
+    physical cleanup failures in the maintenance projection rather than the live
+    worker list.
+12. Checkpoint and close the run only when assignments are terminal or carry an
+    explicit retained exception and the active tier's durable gates pass.
+    Accept, merge, archive, and report only when provider delivery is available;
+    otherwise retain the bounded local result and state exactly what remains.
 
 ## Boundary
 
