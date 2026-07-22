@@ -62,6 +62,7 @@ run_home_prompt_render_probe() {
   local claude_home="$REPO_ROOT/build/claude/AGENT_HOME.md"
   local hermes_home="$REPO_ROOT/build/hermes/AGENT_HOME.md"
   local neutral_home="$REPO_ROOT/build/neutral/AGENT_HOME.md"
+  local home_policy
   require_meta_bin agent-runtime || return 1
   (
     cd "$REPO_ROOT"
@@ -75,6 +76,15 @@ run_home_prompt_render_probe() {
   test -f "$codex_home"
   test -f "$claude_home"
   test -f "$hermes_home"
+  for home_policy in \
+    "$REPO_ROOT/AGENT_HOME.md" \
+    "$neutral_home" \
+    "$codex_home" \
+    "$claude_home" \
+    "$hermes_home"; do
+    grep -Fq 'agent-out project --topic <topic> --mkdir' "$home_policy"
+    grep -Fq 'never create or use repo-root `./agent-out/`' "$home_policy"
+  done
   grep -Fq "or directory \`AGENTS.md\` / \`CLAUDE.md\` can override or extend it." "$neutral_home"
   grep -q '## Code Review Delegation' "$codex_home"
   grep -q '## Active Goal Waits' "$codex_home"

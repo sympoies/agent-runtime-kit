@@ -12,6 +12,7 @@ import shutil
 import stat
 import statistics
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -28,9 +29,86 @@ POLICY = Path(
     )
 )
 DISPATCH_CASES = REPO_ROOT / "tests/agent-hook/fixtures/dispatcher-cases.json"
-TEMP_ROOT = REPO_ROOT / "agent-out/test-agent-hook"
 LATENCY_BUDGET_MS = 25.0
 LATENCY_ITERATIONS = 35
+
+
+def default_test_output_root() -> Path:
+    command = [
+        "agent-out",
+        "project",
+        "--topic",
+        "agent-hook-tests-direct",
+        "--repo",
+        str(REPO_ROOT),
+        "--mkdir",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"agent-hook test output allocation failed: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or "no stderr"
+        raise RuntimeError(
+            f"agent-hook test output allocation failed ({result.returncode}): {detail}"
+        )
+    paths = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(paths) != 1:
+        raise RuntimeError(
+            "agent-hook test output allocation returned "
+            f"{len(paths)} paths; expected exactly one"
+        )
+    output_root = Path(paths[0]).expanduser()
+    if not output_root.is_absolute():
+        raise RuntimeError(
+            f"agent-hook test output allocation returned a relative path: {output_root}"
+        )
+    return output_root
+
+
+def validate_test_output_root(
+    output_root: Path, repo_root: Path = REPO_ROOT
+) -> Path:
+    lexical_repo_root = Path(os.path.abspath(repo_root.expanduser()))
+    lexical_output_root = Path(os.path.abspath(output_root.expanduser()))
+    try:
+        lexical_output_root.relative_to(lexical_repo_root)
+    except ValueError:
+        pass
+    else:
+        raise RuntimeError(
+            "agent-hook test output root must not use a repository path: "
+            f"{lexical_output_root}"
+        )
+
+    resolved_output_root = lexical_output_root.resolve()
+    try:
+        resolved_output_root.relative_to(lexical_repo_root.resolve())
+    except ValueError:
+        return resolved_output_root
+    raise RuntimeError(
+        "agent-hook test output root must resolve outside repository: "
+        f"{resolved_output_root}"
+    )
+
+
+configured_test_output_root = os.environ.get("AGENT_HOOK_TEST_OUTPUT_ROOT")
+if configured_test_output_root:
+    candidate_test_output_root = Path(configured_test_output_root).expanduser()
+    if not candidate_test_output_root.is_absolute():
+        raise RuntimeError(
+            "AGENT_HOOK_TEST_OUTPUT_ROOT must be an absolute path: "
+            f"{candidate_test_output_root}"
+        )
+    TEMP_ROOT = validate_test_output_root(candidate_test_output_root)
+else:
+    TEMP_ROOT = validate_test_output_root(default_test_output_root())
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -49,6 +127,60 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         if not cls.binary.is_file() or not os.access(cls.binary, os.X_OK):
             raise RuntimeError(f"AGENT_HOOK_BIN is not executable: {cls.binary}")
         TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+
+    def test_output_root_is_outside_repository(self) -> None:
+        try:
+            TEMP_ROOT.relative_to(REPO_ROOT)
+        except ValueError:
+            return
+        self.fail(f"agent-hook test output root is inside repository: {TEMP_ROOT}")
+
+    def test_inside_repository_output_override_fails_before_creation(self) -> None:
+        repo_agent_out = REPO_ROOT / "agent-out"
+        inside_root = repo_agent_out / "test-agent-hook-inside-override"
+        self.assertFalse(repo_agent_out.exists() or repo_agent_out.is_symlink())
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "AgentHookExecutableContractTests.test_output_root_is_outside_repository",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "AGENT_HOOK_BIN": str(self.binary),
+                "AGENT_HOOK_TEST_OUTPUT_ROOT": str(inside_root),
+            },
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "agent-hook test output root must not use a repository path",
+            result.stderr,
+        )
+        self.assertFalse(inside_root.exists())
+        self.assertFalse(repo_agent_out.exists() or repo_agent_out.is_symlink())
+
+    def test_lexical_repo_symlink_escape_is_rejected(self) -> None:
+        synthetic_root = self.root / "synthetic"
+        synthetic_repo = synthetic_root / "repo"
+        external_root = synthetic_root / "external-agent-out"
+        synthetic_repo.mkdir(parents=True)
+        external_root.mkdir()
+        repo_agent_out = synthetic_repo / "agent-out"
+        repo_agent_out.symlink_to(external_root, target_is_directory=True)
+        inside_root = repo_agent_out / "test-agent-hook-symlink-escape"
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "agent-hook test output root must not use a repository path",
+        ):
+            validate_test_output_root(inside_root, repo_root=synthetic_repo)
+
+        self.assertFalse((external_root / inside_root.name).exists())
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="case-", dir=TEMP_ROOT)

@@ -41,7 +41,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `CL
 
 ## Files, Hooks, Validation
 
-- Follow the project's conventions for deliverables and generated files; do not create durable discussion or decision artifacts unless asked or clearly reusable. Keep temporary or debug artifacts out of `/tmp` — put them under `agent-out` and cite the path. Hooks guard mechanically but do not replace policy. Prefer project-defined validation, else the smallest meaningful checks — `core/policies/files-hooks-validation.md`.
+- Follow the project's conventions for deliverables and generated files; do not create durable discussion or decision artifacts unless asked or clearly reusable. Allocate temporary/debug artifacts under the runtime-kit XDG state out tree (`${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/out/`) with `agent-out project --topic <topic> --mkdir`; never create or use repo-root `./agent-out/`, and cite the allocated path. Hooks guard mechanically but do not replace policy. Prefer project-defined validation, else the smallest meaningful checks — `core/policies/files-hooks-validation.md`.
 
 ## Git, Commits, Issues, PRs, MRs
 
