@@ -110,9 +110,15 @@ Measure dispatcher overhead independently from handler execution with at least
 30 warm iterations per provider/event shape. The v1 budget is p95 no greater
 than 25 ms for normalization, selection, aggregation, rendering, and redacted
 trace bookkeeping. End-to-end migrated rule chains must remain within 15% of
-the corresponding direct-handler p95 baseline. A platform that misses either
-budget cannot be promoted without a reviewed optimization or an explicit plan
-waiver containing the measurements and impact.
+the corresponding direct-handler p95 baseline. Controlled CI (`CI=true`) and
+an explicit local benchmark (`AGENT_HOOK_ENFORCE_LATENCY_BUDGET=1`) enforce the
+25 ms budget as a hard gate. An uncontrolled local development host still
+emits the complete report and a visible warning when it exceeds the budget,
+but scheduler jitter alone does not block the rest of the validation chain.
+Local advisory results are not promotion evidence. A platform that misses
+either budget under hard-gate conditions cannot be promoted without a reviewed
+optimization or an explicit plan waiver containing the measurements and
+impact.
 
 Run the static owner suite with:
 

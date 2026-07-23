@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,29 @@ POLICY = Path(
 DISPATCH_CASES = REPO_ROOT / "tests/agent-hook/fixtures/dispatcher-cases.json"
 LATENCY_BUDGET_MS = 25.0
 LATENCY_ITERATIONS = 35
+LATENCY_HARD_GATE_ENV = "AGENT_HOOK_ENFORCE_LATENCY_BUDGET"
+
+
+def boolean_environment_value(
+    environ: Mapping[str, str], name: str
+) -> bool:
+    value = environ.get(name)
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"", "0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(
+        f"{name} must be a boolean value, got {value!r}"
+    )
+
+
+def latency_budget_is_hard(environ: Mapping[str, str]) -> bool:
+    return boolean_environment_value(
+        environ, "CI"
+    ) or boolean_environment_value(environ, LATENCY_HARD_GATE_ENV)
 
 
 def default_test_output_root() -> Path:
@@ -786,6 +810,8 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
             samples.append((time.perf_counter() - started) * 1000)
         ordered = sorted(samples)
         p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
+        hard_gate = latency_budget_is_hard(os.environ)
+        exceeded = p95 > LATENCY_BUDGET_MS
         report = {
             "schema_version": "agent-runtime-kit.agent-hook-latency.v1",
             "iterations": len(samples),
@@ -799,12 +825,33 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
             "matcher": "Bash",
             "mode": "shadow",
             "trace": True,
+            "enforcement": "hard" if hard_gate else "advisory",
+            "exceeded": exceeded,
         }
         if report_path := os.environ.get("AGENT_HOOK_LATENCY_REPORT"):
             destination = Path(report_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        self.assertLessEqual(p95, LATENCY_BUDGET_MS, report)
+        if exceeded and hard_gate:
+            self.fail(report)
+        if exceeded:
+            print(
+                "warning: uncontrolled-host agent-hook latency budget "
+                f"exceeded: {json.dumps(report, sort_keys=True)}",
+                file=sys.stderr,
+            )
+
+    def test_latency_budget_hard_gate_is_ci_or_explicit(self) -> None:
+        self.assertFalse(latency_budget_is_hard({}))
+        self.assertFalse(latency_budget_is_hard({"CI": "false"}))
+        self.assertTrue(latency_budget_is_hard({"CI": "true"}))
+        self.assertTrue(
+            latency_budget_is_hard({LATENCY_HARD_GATE_ENV: "1"})
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, LATENCY_HARD_GATE_ENV
+        ):
+            latency_budget_is_hard({LATENCY_HARD_GATE_ENV: "sometimes"})
 
     def install_fixture_handler(self, product: str, handler: str, output: str) -> None:
         if product == "codex":
