@@ -1954,9 +1954,15 @@ def lease_error_block_reason(error: LeaseError) -> str:
     if isinstance(error, MutationScopeError):
         return (
             "Checkout mutation scope could not be verified and fails closed: "
-            f"{error}. Use a concrete executable with an explicit target, and keep a "
-            "target-aware managed worktree removal or repo-scoped commit as the "
-            "command's sole mutation, then retry."
+            f"{error}. Use a concrete executable with an explicit target. Resubmit "
+            "cross-repository filesystem or index work as a "
+            "standalone tool call whose top-level `workdir` is the target checkout. "
+            "For staging, run `git add -- <owned-paths>` there, then invoke the "
+            "repo-scoped `semantic-commit` separately. Do not retarget with shell `cd`, "
+            "raw `git -C`, or nested `agent-run exec --cwd`; use a target-rooted managed "
+            "session when the host cannot attest the workdir. Keep a target-aware "
+            "managed worktree removal or repo-scoped commit as the command's sole "
+            "mutation, then retry."
         )
     if isinstance(error, LeaseStatePathError):
         return (

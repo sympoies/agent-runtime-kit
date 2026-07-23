@@ -145,6 +145,12 @@ one-commit range checks still must pass.
   can commit into a second repository's managed worktree without switching CWD.
   Both carve-outs require the target-aware command to be its command's sole
   mutation; raw `git -C <path>` / `--git-dir` mutations stay CWD-scoped.
+  Cross-repository staging is a separate tool call: set the tool call's
+  top-level `workdir` to the target checkout and run
+  `git add -- <owned-paths>` there. Do not encode that transition with shell
+  `cd`, raw `git -C`, or nested `agent-run exec --cwd`; if the host cannot
+  attest a target workdir, continue from a managed session rooted at the target
+  checkout.
   A nested `agent-run exec --cwd <other-repo>` is not another target-aware
   exception: the pre-edit gate rejects that cross-repository wrapper and directs
   the agent to a session rooted at the target checkout.
@@ -286,6 +292,14 @@ helper. Before provider mutation, the PR parent runs the repository-owned
 `.agents/scripts/pre-pr.sh` dispatcher when present and stops on failure. Keep
 the deterministic CLI and repository dispatcher directly callable for
 diagnostics without exposing either as a separate delivery outcome.
+
+For a second repository, the parent must stage its owned paths itself through a
+standalone shell tool call whose top-level `workdir` is that repository, then
+invoke the repo-scoped `semantic-commit` as a separate sole mutation. A blocked
+`git -C` or shell-embedded cwd change is a routing instruction, not a request
+for the user to stage on the agent's behalf. If no attested target-workdir
+surface exists, use a target-rooted managed session; only report a capability
+blocker after that route is unavailable.
 
 ## Labels
 

@@ -21,7 +21,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `CL
 
 ## Intent Routing
 
-- Classify the request and activate only the relevant intents: `project-dev` (implementation and delivery), `session-coordination` (managed mutations), `browser-test` (browser acceptance), `task-tools` (external or unstable facts). Read each activated intent's docs before writing. Use `agent-docs session activate/status/verify`; the pre-edit hook verifies `project-dev` for direct edits and shell repos. Run cross-repo shell mutations with each target repository as CWD (hooks cannot observe expanded shell destinations). Coordination defaults to advisory, never permission; avoid overlap; claims/checkout leases need `enforce`.
+- Classify the request and activate only relevant intents: `project-dev`, `session-coordination`, `browser-test`, `task-tools`. Read their docs before writing. Use `agent-docs session activate/status/verify`; the pre-edit hook verifies `project-dev` for direct edits and shell repos. For cross-repo shell mutations, set the tool call's top-level `workdir` to the target repo; stage owned paths there, then commit separately. Never retarget with `git -C` or shell `cd`; if workdir is unavailable, use a target-rooted session. Coordination defaults to advisory, never permission; avoid overlap; claims/checkout leases need `enforce`.
 - Per-intent trigger / must / never / next action: `core/policies/intent-cards.md`.
 
 ## Work Tier Levels

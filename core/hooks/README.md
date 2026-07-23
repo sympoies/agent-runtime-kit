@@ -117,6 +117,12 @@ cross-repository hop stays fail-closed in enforce mode with
 host-attested workdir. Admitting that wrapper later requires a typed nils-cli
 command-context primitive that binds release provenance, canonical cwd, wrapper
 grammar, and child argv once for every mutation-sensitive guard.
+Recovery diagnostics make that route operational: resubmit the mutation as a
+standalone tool call whose top-level `workdir` is the target checkout; for
+staging, run `git add -- <owned-paths>` there and invoke `semantic-commit`
+separately. They explicitly reject shell `cd`, raw `git -C`, and nested
+`agent-run exec --cwd` as substitutes, and name a target-rooted managed session
+as the fallback when the host cannot attest a target workdir.
 Exact help/version argv for the
 managed `agent-docs` and `forge-cli` release surface remains read-only, while
 extra options, trailing arguments, and executable shadows fail closed. When

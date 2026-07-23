@@ -1799,6 +1799,25 @@ def claim_recovery_reason(code: str) -> str:
     )
 
 
+def mutation_target_recovery(reason: str) -> str:
+    if reason == "cross-repository-shell-target":
+        return (
+            "Managed mutation targets could not be proven from a cross-repository "
+            "shell target. Resubmit the mutation as a standalone tool call whose "
+            "top-level `workdir` is the target checkout. For staging, run "
+            "`git add -- <owned-paths>` there, then invoke `semantic-commit` "
+            "separately. Do not retarget with shell `cd`, raw `git -C`, or nested "
+            "`agent-run exec --cwd`; use a target-rooted managed session when the "
+            "host cannot attest the workdir. "
+            "[reason: cross-repository-shell-target]"
+        )
+    return (
+        "Managed mutation targets could not be proven as a subset of the active claim. "
+        "Use explicit repository-relative edit targets or an explicit repository-scoped "
+        f"claim, then retry. [reason: {reason}]"
+    )
+
+
 def emit_advisory_unavailable(reason: str) -> None:
     emit_system(
         "Session coordination is unavailable, but work remains allowed because "
@@ -1992,11 +2011,7 @@ def _pre_tool_locked(
     target_result = operation_targets(payload, tool)
     operation, targets_or_reason = target_result
     if operation is None:
-        emit_block(
-            "Managed mutation targets could not be proven as a subset of the active claim. "
-            "Use explicit repository-relative edit targets or an explicit repository-scoped "
-            f"claim, then retry. [reason: {targets_or_reason}]"
-        )
+        emit_block(mutation_target_recovery(str(targets_or_reason)))
         return ALLOW
     assert isinstance(targets_or_reason, dict)
     check = run_cli(

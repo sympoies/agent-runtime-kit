@@ -1625,8 +1625,12 @@ def main() -> int:
             ):
                 message = (
                     "This shell-embedded agent-run route cannot supply one typed target "
-                    "to every mutation-sensitive guard. Start or run the original "
-                    f"command from a session rooted at `{os.path.realpath(target_repo)}`. "
+                    "to every mutation-sensitive guard. In Codex, resubmit the original "
+                    "command as a standalone tool call whose top-level `workdir` is "
+                    f"`{os.path.realpath(target_repo)}`. Do not use shell `cd`, raw "
+                    "`git -C`, or nested `agent-run exec --cwd` to retarget it. If the "
+                    "host cannot attest that workdir, start or run the original command "
+                    f"from a managed session rooted at `{os.path.realpath(target_repo)}`. "
                     "No project-dev activation was changed. "
                     "[reason: cross-repository-target-unsupported]"
                 )
@@ -1695,10 +1699,13 @@ def main() -> int:
     ):
         message = (
             "The shell target lacks matching host workdir attestation. Do not retry "
-            "the unchanged Bash call. In Codex, submit the tool call with an explicit "
-            "absolute workdir. In Codex or Claude, continue from a managed session "
-            "rooted at the intended repository; an exact-path Edit/Write remains the "
-            "supported cross-repository file route. "
+            "the unchanged Bash call. In Codex, resubmit it as a standalone tool call "
+            "whose top-level `workdir` is the target repository. For staging, run "
+            "`git add -- <owned-paths>` there, then invoke `semantic-commit` separately. "
+            "Do not use shell `cd`, raw `git -C`, or nested `agent-run exec --cwd` to "
+            "retarget it. In Codex or Claude, continue from a managed session rooted at "
+            "the intended repository when the host cannot attest a target workdir; an "
+            "exact-path Edit/Write remains the supported cross-repository file route. "
             "[reason: workdir-attestation-missing]"
         )
         if mode == "enforce":

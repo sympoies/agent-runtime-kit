@@ -9946,6 +9946,8 @@ exit 64
                         str(decision),
                     )
                     self.assertIn(str(target_repo.resolve()), str(decision))
+                    self.assertIn("top-level `workdir`", str(decision))
+                    self.assertIn("Do not use shell `cd`", str(decision))
                     self.assertNotIn("session prepare", str(decision))
 
             for command in (
@@ -11940,6 +11942,13 @@ exit 64
                         self.assertEqual(result, reason)
             finally:
                 os.chdir(prior)
+
+            recovery = guard.mutation_target_recovery(
+                "cross-repository-shell-target"
+            )
+            self.assertIn("top-level `workdir`", recovery)
+            self.assertIn("`git add -- <owned-paths>`", recovery)
+            self.assertIn("target-rooted managed session", recovery)
 
             os.chdir(repo)
             try:
@@ -18109,6 +18118,7 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "could not be verified")
+                    self.assertIn("top-level `workdir`", str(decision))
 
     def test_checkout_lease_semantic_commit_repo_targets_the_target_checkout(
         self,
