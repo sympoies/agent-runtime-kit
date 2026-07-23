@@ -400,7 +400,7 @@ main-agent quick --assignment-file F           # ephemeral run+assignment, auto-
 
 ## Execution Status
 
-- **T6 auto-retry — implemented + validated locally (uncommitted), 2026-07-23.**
+- **T6 auto-retry — implemented + validated + committed 2026-07-23 (`7d5fd28`, folded with T7).**
   In `nils-cli` (`crates/agent-session/src/main_agent.rs`, +191/−30 on a clean
   working tree at `6af12242`): a facade-level `retry_transient_store` wrapper at
   `dispatch` re-runs the resolved command (via a new `run_command`) with bounded
@@ -415,7 +415,7 @@ main-agent quick --assignment-file F           # ephemeral run+assignment, auto-
   (exit 0, 0 warnings), `cargo test -p nils-agent-session --lib` (549 passed,
   0 failed). Not committed; no runtime-kit consumption needed (behavioral, no
   new command shape, no admission-allowlist change).
-- **T7 lightweight rebind — implemented + validated locally (uncommitted), 2026-07-23.**
+- **T7 lightweight rebind — implemented + validated + committed 2026-07-23 (`7d5fd28`, folded with T6).**
   Shape decision: a dedicated `main-agent rebind --if-revision N
   --idempotency-key K --format json` subcommand (not `init --rebind`), keeping
   `init` single-purpose and the allowlist entry simple.
@@ -441,10 +441,37 @@ main-agent quick --assignment-file F           # ephemeral run+assignment, auto-
     rebind branch mirrors the already-shipped `run_init` continuity path and the
     new logic is a straight-line `read_packet` + `ensure_or_acquire_claim`; the
     hook allowlist (the security-relevant surface) is fully unit-covered.
-- **Remaining waves** (nils-cli-led): T3 `worker wait` (self-contained, T6-like)
-  · T1 fold verified proofs into `worker start` (behavioral) · T2 assignment/run
-  revision decouple + batch (schema/migration) · T5 `depends_on` (schema, same
-  wave as T2) · `main-agent quick` fast-path.
+- **T3 `worker wait` — implemented + validated + committed 2026-07-23 (`25833e8`).**
+  In `nils-cli` (`crates/agent-session/src/main_agent.rs`, +233, on `main` at
+  `7d5fd28`): a new read-only `worker wait [ASSIGNMENT_ID | --any]
+  --until submitted|blocked|terminal [--timeout D]` — a bounded (1-60s),
+  level-triggered long-poll over assignment state. It mirrors `worker show`
+  (`authenticated_self` → `load_registry_readonly` → `require_current_main`),
+  takes **no** registry lock (side-stepping lock contention and any T6
+  auto-retry deadline reset), needs no claim/idempotency key, and returns
+  `{outcome: transitioned, assignment}` or `{outcome: timeout}` — a deliberate
+  ergonomic divergence from the mailbox `message wait` Err-timeout, since the
+  consumer is the orchestrating agent (documented in the spec). Wired through
+  `run_worker` / `run_command` / `command_name` / `command_output_format`; the
+  worker arg structs were already `Clone` from the T6 diff. Spec updated (facade
+  list + read-only / level-trigger / never-acceptance note). Test-first: 5 unit
+  tests (`WaitUntil::matches` inclusion+exclusion, `parse_wait_timeout` bounds +
+  suffixes; **verified red** by relaxing the 60s bound → `61s` wrongly accepted →
+  fail → revert) + 1 binary-driven integration test (level-trigger
+  `transitioned`, `--any`, `timeout` outcome, `assignment-not-found`,
+  `worker-wait-target`). Scoped validation green: `cargo fmt --check`,
+  `cargo clippy -p nils-agent-session --all-targets --all-features -- -D warnings`
+  (0 warnings), `cargo test -p nils-agent-session --lib` (554 passed) + the
+  worker-wait integration test. **Scoped waiver**: the crate's
+  `cli::serve_usage_*` integration tests fail in this sandbox on `/usage`
+  connection-refused (local HTTP server unreachable), unrelated to this diff, so
+  a full `--local-fast` cannot pass here. No runtime-kit admission-allowlist
+  change: `worker wait` runs post-`init` and is admitted generically like
+  `worker list`/`show`. Committed 2026-07-23 (`25833e8`) on top of `7d5fd28`.
+- **Remaining waves** (nils-cli-led): T1 fold verified proofs into
+  `worker start` (behavioral) · T2 assignment/run revision decouple + batch
+  (schema/migration) · T5 `depends_on` (schema, same wave as T2) ·
+  `main-agent quick` fast-path.
 
 ## Open Decisions For The Next Step
 
