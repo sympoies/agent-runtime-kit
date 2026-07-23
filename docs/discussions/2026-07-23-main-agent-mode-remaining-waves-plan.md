@@ -160,7 +160,7 @@ an autonomous commit path. Runtime-kit Wave 4 commits from this repo normally.
 | 1 | T2 decouple + T5 depends_on (schema) | **done — gate green; commit pending** |
 | 2 | T2 batch + `main-agent quick` | **done — gate green; commit pending** |
 | 3 | T1 `worker start --await-ready` fold + `worker retire` | **done — gate green; commit pending** |
-| 4 | runtime-kit: T1 prose + T4 policy + allowlist + golden | **in progress — `quick` allowlist landed in both hooks; prose/T4/golden remain** |
+| 4 | runtime-kit: T1 prose + T4 policy + allowlist + golden | **done — committed to main `50aa99b` (local-only) + smoke-probe follow-up; change-relevant gate green, two pre-existing waivers** |
 
 ## Waves 2–3 result (2026-07-23)
 
@@ -185,12 +185,56 @@ worker's authenticated checkpoint to advance past `starting`; typed `readiness`
 
 ## Wave 4 progress (2026-07-23)
 
-Runtime-kit (this repo, committable here). Landed: the `main-agent quick`
-pre-claim admission entry in **both** byte-exact allowlists
-(`core/hooks/shared/session-coordination-guard.py`,
-`core/hooks/shared/pre-edit-intent-gate.py`), mirroring `init` (private-packet
-check + optional `--tier L0..L3`). Remaining: `quick` allowed+rejected hook-test
-coverage in both mirror blocks; `MAIN_AGENT_MODE_PROTOCOL.md` verified-startup
-rewrite to the `--await-ready`/`worker retire` typed-result form (T1 prose); T4
-parallel acceptance-gather policy; golden + runtime-smoke refresh; gate
-`bash scripts/ci/all.sh && bash tests/hooks/run.sh`.
+Runtime-kit (this repo, committed here). **All Wave 4 items landed:**
+
+- `main-agent quick` pre-claim admission in **both** byte-exact allowlists
+  (`session-coordination-guard.py`, `pre-edit-intent-gate.py`), mirroring `init`
+  (private-packet check + optional `--tier L0..L3`), with allowed + rejected
+  hook-test coverage in both mirror blocks.
+- `MAIN_AGENT_MODE_PROTOCOL.md` reworked to the folded form (T1): Verified
+  Worker Startup now "invoke the workflow's verified-launch step; branch on the
+  typed ready/not-ready result", hand-run sequence kept as fallback; Terminal
+  Worker Cleanup reconciled with the folded retire step.
+- T4 parallel acceptance-gather codified in the Acceptance Loop (read-only
+  gather may parallelize per lane; only the decision + lifecycle advance stay
+  serialized and main-agent-owned).
+- Golden refreshed (claude + codex protocol); `runtime-smoke`
+  `conversation.main-agent-mode` probe realigned to the reworked prose (now
+  passing).
+
+**Delivery (final):** committed to `main` as `50aa99b`
+(`semantic-commit local-default`, `--remote-mode local-only`,
+signature verified-good) plus a smoke-probe follow-up commit; both local-only
+(origin push deferred — see below). Change-relevant validation is green:
+skill-governance, exposure-contract, golden diff, the `quick` hook tests, and
+`conversation.main-agent-mode` smoke all pass.
+
+**Pre-existing waivers surfaced by the full `scripts/ci/all.sh` gate** (both
+unrelated to this change, both fail independently of Wave 4):
+
+- Position 11 `meta.sync-runtime-surfaces.hermes-legacy` — the Hermes
+  legacy-cleanup probe (`cp -R`/inventory-hash discrepancy, `<stdin>` line-26
+  `AssertionError`) in a subsystem this change never touches; main-agent-mode is
+  Codex/Claude-only and never renders to Hermes. Route: heuristic-inbox
+  (runtime-kit `sync-runtime-surfaces` probe).
+- Position 13 `tests/hooks/run.sh` `test_finish_line_*` (~15) — the committed
+  `#599` discovered-defect routing-review gate emits its prompt (and the marker
+  cannot persist in the hermetic temp env) where the older tests still assert the
+  pre-`#599` block strings. Hook is clean in this tree. Route: heuristic-inbox
+  (runtime-kit finish-line hook/test isolation).
+
+## GitHub / cross-repo delivery status (blocked)
+
+- **GitHub write mutations are blocked**: the active `gh` account `graysurf`
+  returns `HTTP 403 … marked as spammy` on the GraphQL write path; reads still
+  work. This blocks the L1 issue **and** any PR-based delivery to either main.
+  Per user decision: defer all GitHub steps, land runtime-kit locally.
+- **nils-cli L1 issue-follow-up** (flaky
+  `cli::start_captures_stable_codex_session_meta_before_full_timeout`,
+  `crates/agent-session/tests/integration/cli.rs:6684`, a hard `elapsed < 750ms`
+  wall-clock assert): fully drafted + `forge-cli … --dry-run` validated (title
+  65 chars, 6 labels, repo `sympoies/nils-cli`); blocked only by the 403. Body
+  saved at scratchpad `nils-cli-flaky-issue.md`. Fires the moment auth is healthy.
+- **nils-cli Waves 1–3** remain uncommitted on worktree `feat/main-agent-flow`
+  (foreign-cwd `semantic-commit` block); need the user to commit from a
+  nils-cli-rooted session, then push both repos once auth is restored.
