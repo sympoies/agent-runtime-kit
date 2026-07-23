@@ -55,6 +55,31 @@ These gate the rest of the plan; all are green as of install.
 
 ---
 
+## Execution results — 2026-07-24 run (agent-executed)
+
+Full run executed against the installed baseline. Summary:
+
+| Tier | Command | Result |
+| --- | --- | --- |
+| **auto** | `cargo test -p nils-agent-session` | **721 passed / 0 failed** (577 lib @24.5s + 144 integration @4.6s). Previously-waived `serve_usage_*` now pass (sandbox off → loopback binds). |
+| **hook + smoke + docs + golden** | `scripts/ci/all.sh` | **positions 1–17 OK** (exit 0). Hook mirror (quick/rebind), main-agent-mode smoke probe, golden, docs-hygiene for the new doc all green. AGENT_HOME budget rows are documented waivers (#601). |
+| **live** | arg/error paths on the deployed binary | mutual-exclusion, required-arg, and await-ready fold contract all confirmed (see A2/A3). |
+| **Part C (interactive)** | `main-agent init` (bootstrap probe) | **environment-blocked**: `coordination-unauthorized`. Not a defect — the surface correctly refuses an unauthorized coordination write from a non-managed session (see Part C verdict). |
+
+**Waves 1–3 behaviors proven by named auto tests**: `main_agent_quick_validates_before_launch`,
+`maybe_autoclose_closes_only_ephemeral_runs_with_terminal_work`,
+`parse_await_ready_treats_zero_as_launch_only`,
+`main_agent_worker_start_batch_isolates_per_lane_results`,
+`main_agent_worker_retire_rejects_non_terminal_and_missing`,
+`unsatisfied_dependencies_clears_on_accepted_and_flags_the_rest`.
+
+**Overall**: correctness bar **met** for every tier automatable from this session;
+the one gap is the live interactive-worker loop (Part C), blocked by an
+architectural precondition, with the underlying state machine already proven by
+the auto integration tests. Improvement proposals: **Part F**.
+
+---
+
 ## Part A — Functional correctness matrix
 
 Each row: how it is exercised, the expected typed contract, and the pass
@@ -176,6 +201,22 @@ The one flow the automated tiers cannot fully cover — a real managed worker.
 transition and branching on a typed result* — no hand-run choreography. Capture
 the exact command count (feeds Part D + F).
 
+**Verdict (2026-07-24 run): environment-blocked 🔴.** `main-agent self show` and
+`init` (with a fully valid objective packet) both return `coordination-unauthorized`
+("coordination authority could not be verified"). The orchestration surface
+requires a **broker-registered managed-session incarnation** to hold coordination
+authority; this top-level Claude Code session carries an ambient
+`AGENT_SESSION_ID` but is not a broker-registered main-agent run (it is absent
+from `agent-session list`). Therefore `init`/`quick`/`worker start`/`retire`
+(all requiring authority + a claim) cannot be driven from here. This is **not a
+defect** — the refusal is correct fail-closed behavior (a Part B property,
+observed live: no verified authority → write refused). To execute Part C the
+loop must be driven from a real managed `agent-session` incarnation (launch the
+operator *as* a managed session) or by a human operator. In lieu, the auto
+integration tests (`coordination.rs`) prove the full state machine end-to-end
+against the compiled binary; only the live-provider-in-tmux reaching-`ready`
+edge is left unexecuted.
+
 ---
 
 ## Part D — Flow-smoothness re-audit (ceremony scorecard)
@@ -275,11 +316,26 @@ proposal or strike it):
    pair; is there a runtime check that they are the compatible pair, or can a
    split install (like the one this session repaired) recur silently?
 
-**Proposal table (to populate):**
+**Proposal table (populated from the 2026-07-24 run):**
 
 | # | Observation (from case) | Friction | Proposed change | Owner | Tier | Priority |
 | --- | --- | --- | --- | --- | --- | --- |
-| F1 | | | | | | |
+| F1 | `quick` requires **both** `--assignment-file` and `--idempotency-key` (LIVE-4) | "fast path" still needs two required args | Default the idempotency key from the packet content digest when omitted → one required arg | nils-cli binary | L1 | Med |
+| F2 | `coordination-unauthorized` is opaque (hit 3× in Part C) | message "authority could not be verified" gives no remedy; had to reverse-engineer the cause | Add a `hint` naming the missing precondition (e.g. "not a broker-registered incarnation; run inside a managed agent-session") — mirror the excellent `worktree remove` slug/path hint | nils-cli binary | L1 | **High** |
+| F3 | `worker start` parse-error lists an **empty** arg set (LIVE-1/LIVE-3): "the following required arguments were not provided:" with no names | operator can't tell *which* arg is missing from the JSON envelope | Name the missing arguments in the error envelope (clap knows them; the envelope truncates) | nils-cli binary | L1 | Med |
+| F4 | init packet schema is undiscoverable — required reverse-engineering `schema_version`, canonical `owner/name` repo, `intent`, `work_context` from source; errors surfaced one field per attempt | high friction to author a first packet | `main-agent init --print-packet-schema` (or example) + first error names the expected `schema_version` | nils-cli binary + spec | L1 | **High** |
+| F5 | `await-ready` help confirms it folds readiness+newer-turn+identity into a typed result (LIVE-6), but `safe_state`/`readiness_failed` payload could not be observed live | if `readiness_failed` lacks the last checkpoint state, the agent still needs a follow-up `worker show` — an incomplete fold | Verify (needs Part C live) that `readiness_failed` carries enough to branch without a second read; if not, enrich it | nils-cli binary | L1 | Med (unverified) |
+| F6 | Hook↔binary argv coupling: the gate admits `quick`/`rebind` by exact argv shape; the binary owns the real flags | flag drift silently over/under-admits; golden+smoke catch prose, not the argv binding | Add a contract test binding the hook allowlist patterns to the binary's accepted argv (generate from `--help` or a shared spec) | runtime-kit + nils-cli | L1 | Med |
+| F7 | This whole session's root cause was a **split/stale install** (`main-agent` @b6abfa35 vs source @a8b83732; `agent-docs` missing) | a silently stale/mismatched runtime is undetected until a command is missing | `doctor` check that installed nils-cli binaries are mutually version-consistent and not older than the runtime-kit policy/protocol they pair with | nils-cli doctor + runtime-kit sync | L1 | **High** |
+| F8 | `activity doctor` reports providers `configured: false` even though non-orchestration use works | ambiguous whether a worker can launch for main-agent-mode | Clarify `configured` semantics / add an explicit "can-launch-worker" readiness signal | nils-cli binary | L2 | Low |
+
+**Correctness verdict: PASS** for all automatable tiers. **Smoothness (Part D):
+the folds are real** — `--await-ready` (readiness+newer-turn+identity → typed
+result), `--batch` (per-lane isolation), `quick` (one-shot), `retire`
+(release→delete→absence), `depends_on` (survives rehydrate) all exist and pass
+their auto tests, flipping the companion doc's High/Medium ⛔ rows toward Low ✅
+at the contract level. Residual: the live interactive loop (Part C) and F5's
+payload check need a managed-incarnation run to fully close.
 
 **Routing after execution**: repository/test/CI defects → L1 `issue-follow-up`
 in the owning repo; agent-workflow / hook / protocol gaps → `heuristic-inbox`
