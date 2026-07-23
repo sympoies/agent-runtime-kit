@@ -9511,6 +9511,10 @@ exit 0
                 f"main-agent init --packet-file {packet_file.resolve()} "
                 "--if-revision 1 --idempotency-key readiness-init-0002 --format json"
             )
+            rebind = (
+                "main-agent rebind --if-revision 1 "
+                "--idempotency-key readiness-rebind-0001 --format json"
+            )
             allowed = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
@@ -9529,6 +9533,7 @@ exit 0
                 "main-agent worker show assignment-1234 --format json",
                 init,
                 revision_fenced_init,
+                rebind,
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
@@ -9577,6 +9582,13 @@ exit 0
                 init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
                 init.replace(" --if-absent", ""),
                 init.replace("readiness-init-0001", "short"),
+                rebind + " extra",
+                rebind.replace("--if-revision 1 ", ""),
+                rebind.replace("--if-revision 1", "--if-revision 01"),
+                rebind.replace(
+                    "--if-revision 1 --idempotency-key readiness-rebind-0001",
+                    "--idempotency-key readiness-rebind-0001 --if-revision 1",
+                ),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
                 revision_fenced_init.replace(
@@ -12398,6 +12410,10 @@ exit 0
                 f"main-agent init --packet-file {packet_file.resolve()} "
                 "--if-revision 1 --idempotency-key main-agent-init-0002 --format json"
             )
+            rebind = (
+                "main-agent rebind --if-revision 1 "
+                "--idempotency-key main-agent-rebind-0001 --format json"
+            )
             allowed = (
                 "main-agent --version",
                 "main-agent self show --format json",
@@ -12408,6 +12424,7 @@ exit 0
                 "main-agent worker show assignment-1234 --format json",
                 init,
                 revision_fenced_init,
+                rebind,
             )
             for index, command in enumerate(allowed):
                 with self.subTest(allowed=command):
@@ -12494,6 +12511,13 @@ exit 0
                 init.replace("main-agent-init-0001", "short"),
                 init.replace("--format json", "--format markdown"),
                 init + " extra",
+                rebind + " extra",
+                rebind.replace("--if-revision 1 ", ""),
+                rebind.replace("--if-revision 1", "--if-revision 01"),
+                rebind.replace(
+                    "--if-revision 1 --idempotency-key main-agent-rebind-0001",
+                    "--idempotency-key main-agent-rebind-0001 --if-revision 1",
+                ),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
                 revision_fenced_init.replace(

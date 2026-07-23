@@ -975,6 +975,15 @@ def main_agent_bypass_invocation(
             and lifecycle_identifier(words[3])
             and words[4:] == ["--format", "json"]
         )
+    if words[:2] == ["main-agent", "rebind"]:
+        return (
+            len(words) == 8
+            and words[2] == "--if-revision"
+            and lifecycle_revision(words[3])
+            and words[4] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[5])
+            and words[6:] == ["--format", "json"]
+        )
     if len(words) < 4 or words[:3] != ["main-agent", "init", "--packet-file"]:
         return False
     repository = bounded_git_toplevel(str(base)) if base is not None else None
