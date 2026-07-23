@@ -1,6 +1,6 @@
 schema_version = "agent-hook.policy.v1"
 bundle_id = "runtime-kit"
-version = "2026.07.21.1"
+version = "2026.07.24.1"
 [[rules]]
 id = "runtime.shared.pre-tool-use.bash.read-only-shadow"
 products = ["codex", "claude"]
@@ -818,6 +818,17 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" 
 id = "coord.activity.prompt-stop"
 products = ["codex", "claude"]
 events = ["UserPromptSubmit", "Stop"]
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.claude.stop-failure.activity"
+products = ["claude"]
+events = ["StopFailure"]
 priority = 10
 mode = "enforce"
 failure_posture = "closed"

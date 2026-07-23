@@ -557,6 +557,16 @@ remove_agent_hook_cutover codex
         owned = [command for command in commands if command.startswith("agent-hook dispatch")]
         self.assertEqual(len(owned), len(applied["owned_groups"]))
         self.assertEqual(commands.count("third-party-hook"), 1)
+        self.assertIn("StopFailure", applied["owned_events"])
+        self.assertEqual(
+            [
+                group
+                for group in applied["owned_groups"]
+                if group["event"] == "StopFailure"
+            ],
+            [{"event": "StopFailure"}],
+        )
+        self.assertEqual(len(settings["hooks"]["StopFailure"]), 1)
         self.assert_doctor("claude")
 
         remove = self.setup_preview("claude", "--remove")
