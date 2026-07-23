@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-23
 - Area: runtime
 - Severity: medium
@@ -46,6 +46,25 @@ Treat the position-11 `hermes-legacy` red as a documented, pre-existing waiver;
 confirm the change's own smoke probe(s) pass individually (e.g.
 `conversation.main-agent-mode`) rather than relying on `pass=105/105`.
 
+## Resolution
+
+Resolved 2026-07-23 in agent-runtime-kit. The quarantine step itself is
+mode-preserving (`os.rename` plus explicit `fchmod`); the divergence came from
+the probe's setup. The inventory assertion compares exact `S_IMODE` bits against
+the canonical source, but the fake legacy copy was staged with plain `cp -R`,
+which remodes files through the ambient umask (a 664 source file becomes 600
+under umask 077), diverging host to host while `diff -r` stayed silent because
+it ignores mode bits.
+
+Fix: stage the `guided-feature-build` legacy copy with `cp -Rp` in
+`tests/runtime-smoke/cases/meta/run.sh` so the staged tree faithfully mirrors
+source modes and the "quarantine preserved the tree exactly" assertion holds
+across umasks.
+
+Validation: `bash tests/runtime-smoke/run.sh --mode deterministic` ->
+`total=105 pass=104 fail=0 skip-host-capability=1`, with
+`meta.sync-runtime-surfaces.hermes-legacy status=pass`.
+
 ## Promotion Criteria
 
 Promote after the durable fix or accepted-risk decision is implemented,
@@ -53,4 +72,12 @@ validated, and linked from this entry.
 
 ## Next Action
 
-Make the Hermes legacy-cleanup inventory/hash comparison portable across cp -R symlink/mode differences on Linux hosts, or characterize the divergence as host-specific in the probe
+None. Resolved in agent-runtime-kit: the hermes-legacy probe in
+`tests/runtime-smoke/cases/meta/run.sh` now stages the `guided-feature-build`
+copy with `cp -Rp` so the exact-mode inventory assertion is umask-portable;
+`runtime-smoke --mode deterministic` is green (105, 0 fail). See Resolution.
+
+## Archive
+
+- Archived: 2026-07-23
+- Reason: fixed in agent-runtime-kit; see ENTRY Resolution

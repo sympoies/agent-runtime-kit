@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-23
 - Area: hooks
 - Severity: medium
@@ -47,6 +47,27 @@ validate the specific change through targeted probes (skill-governance,
 exposure-contract, golden diff, runtime-smoke, and the change's own hook tests)
 instead of relying on a fully green `tests/hooks/run.sh`.
 
+## Resolution
+
+Resolved 2026-07-23 in agent-runtime-kit. The root cause was narrower than the
+first diagnosis: both the finish-line hook and the `test_finish_line_*`
+assertions were correct, and there was no marker-persistence defect (the marker
+persisted fine in the writable temp repos). The real defect was test
+hermeticity — `run_hook`/`run_shell_hook` in
+`tests/hooks/test_shared_hooks.py` built the hook subprocess environment from
+`dict(os.environ)` and scrubbed only `AGENT_SESSION_ID`, so the live agent's
+ambient `AGENT_RUNTIME_VALIDATION_WAIVER=1` (a `WAIVER_ENVS` member) leaked in
+and forced the `#599` routing-review branch for every fixture that expected the
+ordinary block message.
+
+Fix: scrub the finish-line waiver/suppress envs (`AMBIENT_GATE_ENVS`) from the
+inherited environment before applying each fixture's explicit `env=`, so tests
+that exercise the waiver/suppress path re-supply it deliberately and all others
+run hermetically.
+
+Validation: `bash tests/hooks/run.sh` -> all 329 tests pass across 16 shards
+(previously ~45 `test_finish_line_*` failures across 15/16 shards).
+
 ## Promotion Criteria
 
 Promote after the durable fix or accepted-risk decision is implemented,
@@ -54,4 +75,12 @@ validated, and linked from this entry.
 
 ## Next Action
 
-Realign the ~15 test_finish_line_* assertions to the #599 routing-review prompt, and make the routing-review marker persist under hermetic temp envs
+None. Resolved in agent-runtime-kit: `run_hook`/`run_shell_hook` in
+`tests/hooks/test_shared_hooks.py` now scrub the ambient finish-line
+waiver/suppress envs (`AMBIENT_GATE_ENVS`) before applying each fixture's
+explicit `env=`, so all 329 hook tests pass across 16 shards. See Resolution.
+
+## Archive
+
+- Archived: 2026-07-23
+- Reason: fixed in agent-runtime-kit; see ENTRY Resolution

@@ -1311,7 +1311,11 @@ run_sync_runtime_surfaces_hermes_legacy_cleanup_probe() {
     "$(dirname "$foreign")" "$(dirname "$regular")" "$(dirname "$development_policy")"
   ln -s "$REPO_ROOT/build/hermes/plugins/meta/skills/bootstrap/SKILL.md" "$stale_skill"
   ln -s "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build/SKILL.md" "$stale_ref"
-  cp -R "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build" \
+  # Preserve source modes when staging the fake legacy copy: the inventory
+  # assertion below compares exact S_IMODE bits against the canonical source,
+  # and plain `cp -R` remodes files through the ambient umask (e.g. a 664
+  # source file becomes 600 under umask 077), which would diverge host to host.
+  cp -Rp "$REPO_ROOT/build/hermes/plugins/conversation/skills/guided-feature-build" \
     "$copied_skill"
   mkdir -p "$(dirname "$retired_copy")"
   cp -R "$REPO_ROOT/tests/fixtures/retired-hermes-skill-copies/browser/canary-check" "$retired_copy"

@@ -136,6 +136,26 @@ def prepare_trusted_test_agent_docs(
     return trusted
 
 
+# Finish-line waiver/suppress envs (mirror WAIVER_ENVS + SUPPRESS_ENVS in
+# stop-finish-line-gate.py). The live agent runtime commonly exports these in
+# the session, so scrub them from the inherited environment before launching a
+# hook subprocess; a test that exercises the waiver/suppress path re-supplies
+# the env explicitly via `env=`, which is applied after the scrub.
+AMBIENT_GATE_ENVS = (
+    "AGENT_RUNTIME_VALIDATION_WAIVER",
+    "AGENT_KIT_VALIDATION_WAIVER",
+    "CLAUDE_KIT_VALIDATION_WAIVER",
+    "AGENT_RUNTIME_SUPPRESS_FINISH_GATE",
+    "AGENT_KIT_SUPPRESS_FINISH_GATE",
+    "CLAUDE_KIT_SUPPRESS_FINISH_GATE",
+)
+
+
+def scrub_ambient_gate_envs(full_env: dict[str, str]) -> None:
+    for name in AMBIENT_GATE_ENVS:
+        full_env.pop(name, None)
+
+
 def run_hook(
     script_name: str,
     payload: dict[str, Any],
@@ -148,6 +168,7 @@ def run_hook(
     # Tests model an unmanaged launch unless the fixture explicitly supplies a
     # managed session identity. Do not inherit the runner's managed identity.
     full_env.pop("AGENT_SESSION_ID", None)
+    scrub_ambient_gate_envs(full_env)
     full_env["PYTHONPATH"] = str(HOOK_DIR)
     if dont_write_bytecode:
         full_env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -239,6 +260,7 @@ def run_shell_hook(
     """Run a shell (bash) shared hook; mirrors run_hook for `.sh` hooks."""
     full_env = dict(os.environ)
     full_env.pop("AGENT_SESSION_ID", None)
+    scrub_ambient_gate_envs(full_env)
     if env:
         full_env.update(env)
     trusted = prepare_trusted_test_agent_docs(full_env, cwd)
