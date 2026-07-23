@@ -9515,6 +9515,14 @@ exit 0
                 "main-agent rebind --if-revision 1 "
                 "--idempotency-key readiness-rebind-0001 --format json"
             )
+            quick = (
+                f"main-agent quick --assignment-file {packet_file.resolve()} "
+                "--idempotency-key readiness-quick-0001 --format json"
+            )
+            tiered_quick = (
+                f"main-agent quick --assignment-file {packet_file.resolve()} "
+                "--tier L1 --idempotency-key readiness-quick-0002 --format json"
+            )
             allowed = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
@@ -9534,6 +9542,8 @@ exit 0
                 init,
                 revision_fenced_init,
                 rebind,
+                quick,
+                tiered_quick,
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
@@ -9589,6 +9599,11 @@ exit 0
                     "--if-revision 1 --idempotency-key readiness-rebind-0001",
                     "--idempotency-key readiness-rebind-0001 --if-revision 1",
                 ),
+                quick + " extra",
+                quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
+                quick.replace("--assignment-file", "--packet-file"),
+                quick.replace("readiness-quick-0001", "short"),
+                tiered_quick.replace("--tier L1", "--tier L9"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
                 revision_fenced_init.replace(
@@ -12423,6 +12438,14 @@ exit 0
                 "main-agent rebind --if-revision 1 "
                 "--idempotency-key main-agent-rebind-0001 --format json"
             )
+            quick = (
+                f"main-agent quick --assignment-file {packet_file.resolve()} "
+                "--idempotency-key main-agent-quick-0001 --format json"
+            )
+            tiered_quick = (
+                f"main-agent quick --assignment-file {packet_file.resolve()} "
+                "--tier L1 --idempotency-key main-agent-quick-0002 --format json"
+            )
             allowed = (
                 "main-agent --version",
                 "main-agent self show --format json",
@@ -12434,6 +12457,8 @@ exit 0
                 init,
                 revision_fenced_init,
                 rebind,
+                quick,
+                tiered_quick,
             )
             for index, command in enumerate(allowed):
                 with self.subTest(allowed=command):
@@ -12518,6 +12543,11 @@ exit 0
                     "--idempotency-key main-agent-init-0001 --if-absent",
                 ),
                 init.replace("main-agent-init-0001", "short"),
+                quick + " extra",
+                quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
+                quick.replace("--assignment-file", "--packet-file"),
+                quick.replace("main-agent-quick-0001", "short"),
+                tiered_quick.replace("--tier L1", "--tier L9"),
                 init.replace("--format json", "--format markdown"),
                 init + " extra",
                 rebind + " extra",

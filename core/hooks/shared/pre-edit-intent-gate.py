@@ -949,6 +949,30 @@ def main_agent_readiness_invocation(
                 and lifecycle_idempotency_key(words[5])
                 and words[6:] == ["--format", "json"]
             )
+        if words[:2] == ["main-agent", "quick"]:
+            # quick acquires the work-context claim as its first durable act
+            # (like init), so its exact pre-claim shape is admitted here. --tier
+            # is optional (default L0).
+            if (
+                len(words) < 4
+                or words[2] != "--assignment-file"
+                or not trusted_private_packet(words[3], repositories)
+            ):
+                return False
+            if len(words) == 8:
+                return (
+                    words[4] == "--idempotency-key"
+                    and lifecycle_idempotency_key(words[5])
+                    and words[6:] == ["--format", "json"]
+                )
+            return (
+                len(words) == 10
+                and words[4] == "--tier"
+                and words[5] in ("L0", "L1", "L2", "L3")
+                and words[6] == "--idempotency-key"
+                and lifecycle_idempotency_key(words[7])
+                and words[8:] == ["--format", "json"]
+            )
         if (
             len(words) < 4
             or words[:3] != ["main-agent", "init", "--packet-file"]

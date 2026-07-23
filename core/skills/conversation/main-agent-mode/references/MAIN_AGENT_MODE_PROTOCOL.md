@@ -53,43 +53,54 @@ lane unless explicit reassignment completes first.
 
 ## Verified Worker Startup And Prompt Delivery
 
-Use the active session-management workflow for the concrete commands and keep
-this sequence bounded:
+Verified startup establishes, before any task reaches a worker, that: the
+candidate conflict check cleared or was retained as bounded evidence rather than
+silently treated as clear; the worker started in its assigned isolated managed
+worktree under coordination enforcement; a fresh privacy-safe list proved the
+exact new session ID, incarnation, working directory, and `enforce` mode; a
+provider-readiness state, not a trust, authentication, setup, upgrade, update,
+permission, hook, or other startup dialog, held before send; the task was pasted
+without Enter and verified by the exact task envelope or the exact
+pasted-content character count before any submission key; a provider-hook
+activity baseline was captured only after that paste verification; Enter was
+sent separately; and a newer provider-hook-observed turn than the baseline
+appeared within the bounded check window. Startup creates a managed record but
+never proves readiness or gives the launcher target ownership, and a send
+success is transport evidence only.
 
-1. The launcher runs the candidate conflict check before `start`; a definite
-   conflict stops startup, while an incomplete result is retained as bounded
-   readiness evidence rather than silently treated as clear.
-2. Start the interactive worker in the assigned isolated managed worktree with
-   coordination enforcement. Start creates a managed record but does not prove
-   target readiness or give the launcher target ownership.
-3. Require a fresh privacy-safe list result proving the exact new session ID,
-   incarnation, working directory, and `enforce` mode from the managed start
-   result. A title, pane, PID, or process is not equivalent evidence.
-4. Require provider readiness before sending the task. A trust,
-   authentication, setup, upgrade, update, permission, hook, or other startup
-   dialog is not readiness.
-5. Paste the task without Enter. Verify either the exact task envelope or the
-   exact pasted-content character count before any submission key is sent.
-6. Capture the provider-hook activity baseline only after paste verification.
-7. Send Enter separately. A send success is transport evidence only; it does
-   not prove prompt delivery or a worker turn.
-8. Require a newer provider-hook-observed turn than the captured baseline
-   within the bounded check window.
-9. The target worker runs its authenticated self-check and acquires and verifies
-   its active claim before any repository or provider mutation. The launcher
-   never performs this target-owned step.
+Where the session-management workflow provides a verified-launch step that folds
+these proofs into one call, the main agent invokes that step and branches on its
+typed result instead of hand-running the sequence. A ready result carries the
+proven session identity and the newer-turn evidence; any not-ready result
+carries a bounded safe-state annotation and is treated exactly like the failed
+proof below. The main agent never downgrades a not-ready typed result into a
+resend or a speculative Enter, and never reads panes or transcripts to overrule
+it. The concrete command, flags, and typed-result vocabulary belong to that
+workflow's skill or runbook; this contract fixes only the required proofs and
+the branch on them.
 
-The launcher never uses the target capability or claims on the target's behalf.
-Interference or deletion before that handoff is a failed ownership proof, not a
-recovery shortcut. A released or expired claim must be reacquired and verified
-before another mutation turn; the earlier claim or successful handoff does not
-carry mutation authority forward.
+Where no folded step exists, run the bounded sequence directly and keep it
+bounded: (1) candidate conflict check; (2) start under coordination enforcement;
+(3) fresh-list identity, incarnation, cwd, and `enforce` proof — a title, pane,
+PID, or process is not equivalent evidence; (4) provider-readiness proof; (5)
+paste without Enter, verified by envelope or character count; (6) capture the
+activity baseline only after paste verification; (7) send Enter separately; (8)
+require a newer observed turn than the baseline within the window.
 
-On mismatch, truncation, interference, missing readiness, or bounded-check
-exhaustion, do not resend and do not press Enter speculatively. Stop with the
-exact status `session created, prompt delivery unverified`, retain the session
-for bounded recovery, and report the failed proof to the user-facing main
-agent.
+Either path, the target worker then runs its own authenticated self-check and
+acquires and verifies its active claim before any repository or provider
+mutation. The launcher never performs this target-owned step, never uses the
+target capability or claims on the target's behalf, and interference or deletion
+before that handoff is a failed ownership proof, not a recovery shortcut. A
+released or expired claim must be reacquired and verified before another
+mutation turn; the earlier claim or successful handoff does not carry mutation
+authority forward.
+
+On mismatch, truncation, interference, missing readiness, a not-ready typed
+result, or bounded-check exhaustion, do not resend and do not press Enter
+speculatively. Stop with the exact status `session created, prompt delivery
+unverified`, retain the session for bounded recovery, and report the failed
+proof to the user-facing main agent.
 
 ## Startup Dialog And Helper Routing
 
@@ -122,6 +133,16 @@ For each worker result, the main agent:
    validation, and review checks on the revised head.
 6. Accepts and advances provider lifecycle only when all durable gates pass.
 
+The mechanical evidence gather — full-diff extraction, focused and
+affected-suite validation, and the code-review-specialist passes — is read-only
+and may run in parallel across lanes and across independent review dimensions
+within a lane. Only the acceptance decision and provider lifecycle advance are
+serialized and main-agent-owned: the main agent synthesizes the gathered
+evidence one lane at a time and never lets a gather sub-agent accept, advance
+lifecycle, cross into another lane, or treat its own output as authorization.
+Bound each gatherer to read-only work, and re-gather on every revised head
+before re-deciding.
+
 ## Terminal Worker Cleanup
 
 An accepted worker becomes cleanup-eligible only when its lane is terminal and
@@ -143,6 +164,16 @@ visible worker card and its structured error, and route the failed deletion
 through the session-management recovery owner. Do not hide the card, remove its
 metadata manually, or report worker cleanup complete before producer-owned
 recovery and a new list-absence proof succeed.
+
+Where the session-management workflow provides a folded retire step, invoke it
+and branch on its typed result instead of hand-running these stages. The folded
+step must still prove operation quiescence, a verified claim release, a
+committed logical-delete boundary, and fresh list-absence, and must surface a
+typed failure with its safe state rather than a bare success. Treat a missing or
+ambiguous stage result as a failed deletion and route it through the recovery
+owner; a folded success never substitutes for a proof the main agent has not
+seen. The concrete command and typed-result vocabulary belong to that workflow's
+skill or runbook.
 
 ## Stop And Recovery Matrix
 
