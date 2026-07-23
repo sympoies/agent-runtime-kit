@@ -54,7 +54,15 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
             hook_home.mkdir(parents=True)
             for handler in sorted((REPO_ROOT / "core/hooks/shared").iterdir()):
                 if handler.is_file() and not handler.is_symlink():
-                    shutil.copy2(handler, hook_home / handler.name)
+                    destination = hook_home / handler.name
+                    shutil.copy2(handler, destination)
+                    # Match the installed runtime posture: sync-runtime-surfaces
+                    # writes handlers 0o700/0o600, and the agent-hook trust check
+                    # rejects group/world-writable handlers. Normalize here so the
+                    # fixture does not inherit a group-writable working-tree mode
+                    # left by a lax checkout umask (git tracks these as 0o755).
+                    executable = bool(handler.stat().st_mode & 0o111)
+                    destination.chmod(0o700 if executable else 0o600)
         self.policy.parent.mkdir(parents=True)
         shutil.copyfile(POLICY_SOURCE, self.policy)
         self.policy.chmod(0o600)
