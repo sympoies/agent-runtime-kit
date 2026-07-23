@@ -32,10 +32,15 @@ schema, silent version skew) and Part C stays manually-tested unless these land.
 Owner legend: **NC** = nils-cli (Rust binary), **RK** = agent-runtime-kit
 (hooks/tests/sync).
 
-- [ ] **PARTC** (NC) — Add a hermetic `worker start --await-ready` e2e test
+- [~] **PARTC** (NC) — Add a hermetic `worker start --await-ready` e2e test
   (typed `ready` + `readiness_failed`+`safe_state`) and a full
   `quick → ready → accept → retire` lifecycle test via the seed-broker /
   fake-tmux harness. Converts Part C from manual to auto; subsumes F5. **High.**
+  **Authored + validated (integration test ran green: 1 passed; `readiness_from_state`
+  unit test added). Commit BLOCKED by nils-cli contention (see Blocker).** Work
+  preserved at scratchpad `partc-nils-cli.patch` (126 lines, 2 files: `main_agent.rs`
+  +11, `coordination.rs` +93). Confirmed F5 already met: `readiness_failed` carries
+  `assignment_state` + actionable `safe_state`.
 - [ ] **F2** (NC) — `coordination-unauthorized` returns no remedy `hint`; add one
   naming the missing precondition (mirror `git-cli worktree remove`'s hint). **High.**
 - [ ] **F4** (NC) — objective-packet schema undiscoverable; add
@@ -65,8 +70,25 @@ Promote when the backlog above is drained (all High + Med landed and validated o
 local `main` of the owning repo), with each fix's commit linked here. F8 (L2/Low)
 may be split to a follow-up if it needs design.
 
+## Blocker (2026-07-24) — nils-cli checkout contended
+
+nils-cli `main` is being actively developed by another session: `main` was
+rebased (`662b5479 → cecdb30`, same subjects/new hashes) and the main checkout
+holds ~730 lines of that session's uncommitted `git-summary`/`git-cli` work
+(incl. an untracked `crates/git-summary/src/lib.rs`). `semantic-commit
+local-default` requires a clean tree (`error: unstaged or untracked changes
+present`), and stashing/removing their work would disrupt a live session, so the
+nils-cli side of this backlog **cannot be committed until that checkout is
+quiescent**. All nils-cli fixes (PARTC + F1/F2/F3/F4/F8 + F7-doctor) are gated on
+this. My PARTC edits were reverted from the checkout (left pristine) and preserved
+as the patch above.
+
 ## Next Action
 
-Fix in priority order: PARTC → F2 → F4 → F7 → F1 → F3 → F6 → F8. nils-cli fixes
-land on nils-cli local `main` (target-rooted `semantic-commit local-default`);
-runtime-kit fixes land here. Update the checkboxes and link commits as each lands.
+1. **nils-cli side (gated on quiescence)**: when the other session's work is
+   committed/cleared, apply + commit PARTC:
+   `cd <nils-cli> && git apply <scratchpad>/partc-nils-cli.patch && git add crates/agent-session/src/main_agent.rs crates/agent-session/tests/integration/coordination.rs && semantic-commit local-default --expect-head <HEAD> --expected-branch main --type test --scope agent-session --subject "cover the worker-start await-ready readiness fold" --remote-mode local-only --receipt-out <path> --format json`
+   then author + validate F2 → F4 → F7-doctor → F1 → F3 → F8 the same way.
+2. **runtime-kit side (unblocked, land here)**: F6 (hook↔binary argv contract
+   test) and the F7 sync-time skew check can commit to this repo's `main` now.
+Update checkboxes + link commits as each lands.
