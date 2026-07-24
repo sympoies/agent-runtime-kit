@@ -57,12 +57,19 @@ Owner legend: **NC** = nils-cli (Rust binary), **RK** = agent-runtime-kit
 - [x] **F3** (NC) — `worker start` (and all) parse-errors now name the actual
   missing argument (pulled from clap's structured context) instead of an unnamed
   "required arguments were not provided" line. **Med.** Delivered via the script.
-- [ ] **F6** (RK) — hook↔binary argv coupling has no binding contract test; add
-  one asserting the `quick`/`rebind` allowlist matches the binary's argv. **Med.**
-  Runtime-kit-local; still open.
-- [ ] **F7-sync** (RK) — sync-time guard that the installed nils-cli binaries are
-  not older than the paired runtime-kit policy/protocol. **High.** Runtime-kit-local;
-  still open. (NC-side visibility shipped as F7-doctor above.)
+- [x] **F6** (RK) — hook/binary argv contract test: asserts every canonical
+  main-agent readiness shape the two hook allowlists admit (self show, rehydrate,
+  status, worker list/show, rebind, quick, init) is accepted (parsed) by the real
+  `main-agent` binary (`tests/agent-hook/test_main_agent_argv_contract.py`, wired
+  into `tests/agent-hook/run.sh` / CI Position 13, gated on binary presence).
+  **Med.** Validated 2/2 standalone + inside run.sh; delivered via
+  `deliver-rk-f6-f7-sync.sh`.
+- [x] **F7-sync** (RK) — `sync-runtime-surfaces.sh --apply` now runs
+  `agent-runtime doctor --class version-alignment --pin docs/source/nils-cli-pin.yaml`
+  (the CI Position-1 admission floor), refusing to sync against a stale/split
+  nils-cli. **High.** Behavioral smoke `tests/smoke/sync-version-guard.sh` +
+  CI-gated static wiring guard in `tests/ci/test_nils_cli_version_policy.py`
+  (14/14). Delivered via the script.
 - [x] **F8** (NC) — `activity doctor` gains an explicit `can_launch_worker` signal
   (`classification == "supported" && configured`), distinct from the
   config-presence `configured` axis, with clarified field docs. **Low.** Delivered
@@ -94,12 +101,18 @@ with PARTC's `48f57047`, which incidentally captured a codex-cli snapshot).
 
 ## Next Action
 
-1. **nils-cli side (DONE, pending user run):** run
-   `scratchpad/deliver-nils-cli-ergonomics.sh` (optionally `--install`) to land
-   the F1/F2/F3/F4/F7-doctor/F8 batch on nils-cli `main` from
-   `scratchpad/nils-cli-ergonomics-followups.patch` (6 agent-session files,
-   +379/-14). PARTC already landed at `48f57047`.
-2. **runtime-kit side (open):** F6 (hook↔binary argv contract test) and F7-sync
-   (install-time skew guard) are runtime-kit-local and still to be authored.
-   Update checkboxes + link commits as each lands; promote/archive this entry
-   when F6 + F7-sync are drained.
+Backlog is drained — all items delivered:
+
+1. **nils-cli side (LANDED):** PARTC at `48f57047`; F1/F2/F3/F4/F7-doctor/F8 as a
+   single commit cherry-picked onto `main` at `cc2b9ccd` (3-way auto-merged over
+   the concurrent session-groups work `92b042d2`; full agent-session suite green,
+   583 unit + 150 integration, 0 failed).
+2. **runtime-kit side (delivered via `scratchpad/deliver-rk-f6-f7-sync.sh`):** F6
+   (hook/binary argv contract) + F7-sync (sync-time version-alignment guard),
+   landed as two commits cherry-picked onto `main` when the owned files are clean.
+   Validated: F6 2/2 (standalone + run.sh / CI Position 13); F7-sync smoke green +
+   version-policy 14/14; shfmt + shellcheck clean.
+
+Remaining: promote/archive this entry (backlog drained). Optionally run the full
+`scripts/ci/all.sh` gate on the landed runtime-kit tip for final acceptance
+(`deliver-rk-f6-f7-sync.sh --full-ci` runs it on the clean branch before landing).
