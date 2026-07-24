@@ -600,6 +600,10 @@ run_skill_and_matrix_contract_probe() {
   grep -Fq 'macos-agent mcp' "$skill"
   grep -Fq 'macos-agent journal summarize' "$skill"
   grep -Fq 'macos-agent journal review' "$skill"
+  grep -Fq 'cold app-runtime state,' "$skill"
+  grep -Fq 'not a terminal blocker.' "$skill"
+  grep -Fq 'Bootstrap it autonomously with one bounded read-only' "$skill"
+  grep -Fq 'rerun strict doctor and capabilities before any mutation' "$skill"
   assert_homogeneous_run_contract "$skill"
   grep -Fq 'Never create an issue automatically' "$skill"
   grep -Fq 'docs/source/macos-agent-capability-matrix.md' "$skill"
@@ -611,6 +615,9 @@ run_skill_and_matrix_contract_probe() {
   fi
 
   grep -Fq 'macos-agent backend install --strict --format json' "$setup"
+  grep -Fq 'Cold GUI Bridge Recovery' "$setup"
+  grep -Fq 'Do not reinstall' "$setup"
+  grep -Fq 'an already verified backend for this state.' "$setup"
   if grep -Eq 'brew install .*peekaboo|npx .*peekaboo|latest' "$setup"; then
     return 1
   fi

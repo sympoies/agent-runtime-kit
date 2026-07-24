@@ -70,6 +70,33 @@ The adapter owns batch SSH, fixed remote commands, request framing, private
 staging, digest-checked artifact transfer, cleanup audit, and host redaction.
 Do not wrap these commands in a second transport layer.
 
+## Cold GUI Bridge Recovery
+
+`doctor --strict` intentionally observes readiness without launching the app
+runtime. When its only blocked check is `bridge` with
+`Peekaboo GUI Bridge exact build is unavailable`, and backend verification,
+runtime, permissions, and every capability probe pass, run one bounded
+read-only observation through the intended app runtime:
+
+```bash
+out="$(agent-out project --topic macos-adapter-verify --repo "$PWD" --mkdir)"
+macos-agent exec \
+  --out-dir "$out" \
+  --intent "Bootstrap the verified GUI Bridge and inspect the target" \
+  --runtime app \
+  -- see --app "$TARGET_APP" --json
+macos-agent doctor --strict --format json
+macos-agent capabilities --strict --format json
+```
+
+For SSH, pass the same trusted runtime alias to every command. The read-only
+`exec` asks the adapter to start the owned stable app when the exact Bridge is
+cold, then verifies the locked handshake before observation. Do not reinstall
+an already verified backend for this state. If observation fails, another
+doctor check remains blocked, or any other hard check is not passing, stop and
+classify the failure as backend, Peekaboo/adapter, runtime-skill, or TCC
+environment work before attempting a mutation.
+
 ## Functional Verification
 
 Allocate a private evidence root and prove one read-only observation before

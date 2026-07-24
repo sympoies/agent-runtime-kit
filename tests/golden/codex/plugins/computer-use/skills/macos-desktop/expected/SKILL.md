@@ -98,6 +98,29 @@ readiness gate for a live mutation. Report-only doctor may be used to inventory
 degraded capabilities. A locked standalone-CLI notary waiver is visible as
 `notary=waived` / `security_posture=reduced`; never relabel it as passing.
 
+A strict doctor result whose only blocked check is `bridge` with
+`Peekaboo GUI Bridge exact build is unavailable`, while backend verification,
+runtime, permissions, and capability probes pass, is a cold app-runtime state,
+not a terminal blocker. Bootstrap it autonomously with one bounded read-only
+`exec --runtime app` observation of the named target. The adapter launches the
+owned stable app when needed and verifies its exact GUI Bridge handshake:
+
+```bash
+macos-agent exec \
+  --out-dir "$exec_out" \
+  --intent "Bootstrap the verified GUI Bridge and inspect the target" \
+  --runtime app \
+  -- see --app "$TARGET_APP" --json
+macos-agent doctor --strict --format json
+macos-agent capabilities --strict --format json
+```
+
+For SSH, pass the same runtime alias to all three commands. After the read-only
+bootstrap, rerun strict doctor and capabilities before any mutation. Do not
+reinstall an already verified backend for this state, do not use a floating
+Peekaboo build, and do not treat a backend mismatch, permission denial, failed
+observation, or still-blocked strict result as cold-start recovery.
+
 ## Execute And Prove Postconditions
 
 Peekaboo arguments follow `--` unchanged, and each verb's argument shape
