@@ -24,6 +24,16 @@ Dispositions
                       different commit (patch-id is unreliable — see the net
                       two-dot diff in ``evidence``), or it may be genuine
                       unmerged work. Requires human judgment; never auto-pruned.
+                      The ``evidence.likely_superseded`` flag is only an
+                      advisory patch-id hint: the skill confirms supersession
+                      definitively with a rebase probe (rebasing the branch onto
+                      the base and checking whether every commit drops as an
+                      already-applied cherry-pick), which this read-only scanner
+                      does not run.
+
+Each repo record also carries ``base_freshness`` (``base``/``upstream``/
+``behind_upstream``) when the base has an upstream, so the caller can tell that
+landing rescued work onto a *local* base would commit onto a stale line.
 
 The ``rescue-candidate`` evidence deliberately carries the two-dot
 ``git diff <base> <tip>`` shortstat (insertions/deletions/``net_subtractive``):
@@ -198,6 +208,28 @@ def is_dirty(repo: str) -> bool:
     return bool(git(repo, "status", "--porcelain", check=False).strip())
 
 
+def base_freshness(repo: str, base: str) -> dict | None:
+    """How far ``base`` trails its own upstream — the stale-local-base signal.
+
+    When ``base`` is a local branch (e.g. ``main``) its ``@{upstream}`` is the
+    remote-tracking ref; a large ``behind_upstream`` means landing rescued work
+    onto this base would commit onto a stale line, so the skill should keep the
+    branch and land after refreshing the base instead. Returns ``None`` when the
+    base has no upstream (e.g. ``base`` is itself a remote-tracking ref such as
+    ``origin/main``). Read-only.
+    """
+    upstream = git(
+        repo, "rev-parse", "--abbrev-ref", f"{base}@{{upstream}}", check=False
+    ).strip()
+    if not upstream or "@{upstream}" in upstream:
+        return None
+    return {
+        "base": base,
+        "upstream": upstream,
+        "behind_upstream": rev_count(repo, f"{base}..{upstream}"),
+    }
+
+
 def repo_key_for_path(worktree_root: str | None, path: str) -> str | None:
     if not worktree_root:
         return None
@@ -318,6 +350,9 @@ def scan_repo(
         "repo_common_dir": common_dir,
         "worktree_count": len(records),
     }
+    freshness = base_freshness(repo, base)
+    if freshness:
+        info["base_freshness"] = freshness
     return info, records
 
 
