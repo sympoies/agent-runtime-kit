@@ -66,12 +66,25 @@ main-agent worker start --assignment-file <private-json> --await-ready 5m \
 ```
 
 The runtime creates and binds the interactive worker, transports one generated
-prompt, and waits for a newer authenticated worker checkpoint. Continue only
-when the typed result reports all of:
+prompt, and waits for a newer authenticated worker checkpoint. If a fresh
+supported worker remains `starting`, the runtime may send exactly one recovery
+Enter within the original `--await-ready` deadline. Before sending it, the
+runtime rechecks that the same session incarnation is still live and serializes
+the input through the session lifecycle guard. It never resends the prompt,
+never applies this recovery to an existing/replayed worker, and never attempts a
+second recovery Enter. The Main Agent never decides whether to inject this
+keypress and never sends it itself.
+
+Continue only when the typed result reports all of:
 
 - `state: ready`;
 - `delivery.state: confirmed`;
-- `delivery.transport_state: submit-command-succeeded`;
+- `delivery.transport_state: submit-command-succeeded` with recovery not needed,
+  or `delivery.transport_state: submit-key-recovery-succeeded` with
+  `submit_key_recovery.eligible: true`,
+  `submit_key_recovery.attempted: true`,
+  `submit_key_recovery.attempt_count: 1`, and
+  `submit_key_recovery.result: checkpoint-confirmed`;
 - `delivery.proof: authenticated-worker-checkpoint`; and
 - the expected worker session ID and incarnation.
 
@@ -91,12 +104,14 @@ must be reacquired and verified before another mutation turn; the earlier claim
 or successful handoff does not carry mutation authority forward.
 
 A typed `readiness_failed` result reports `delivery.state: unverified`,
-`automatic_retry_safe: false`, and a bounded safe state. Do not resend the
-prompt or inject another Enter. Never inspect panes or transcripts to overrule
-the typed result, and never downgrade it into a speculative retry. Retain the
-exact bound worker; use `main-agent self show` or `rehydrate` as read-only
-diagnostics only after a typed failure, then fix the reported identity,
-claim-conflict, packet, or provider cause through its owning workflow.
+`automatic_retry_safe: false`, the bounded `submit_key_recovery` disposition,
+and a bounded safe state. The runtime has either exhausted its one recovery
+Enter or marked the worker ineligible. Do not resend the prompt or inject
+another Enter. Never inspect panes or transcripts to overrule the typed result,
+and never downgrade it into a speculative retry. Retain the exact bound worker.
+Use `main-agent self show` or `rehydrate` as read-only diagnostics only after a
+typed failure; then fix the reported identity, claim-conflict, packet, or
+provider cause through its owning workflow.
 
 On mismatch, truncation, interference, missing readiness, a not-ready typed
 result, or bounded-check exhaustion, stop with the exact status `session
@@ -186,7 +201,7 @@ skill or runbook.
 | Doctor missing, old, unhealthy, unsupported, malformed, or helper unavailable | Do not activate or launch. Report the bounded provider/version problem; route upgrades or repairs to their owner with required user authority. |
 | Doctor says `configured:false` | Run only the converged repair dry-run. Continue only with `configured:true`, `would_change:false`, and no representation conflict; never apply it. |
 | Trust/readiness/startup dialog | Do not treat the dialog as ready and do not accept it automatically. Classify and route it or stop for user authority. |
-| `readiness_failed`, prompt mismatch, truncation, interference, or no authenticated checkpoint | Do not resend the prompt or inject another Enter. Preserve `automatic_retry_safe: false`, report `session created, prompt delivery unverified`, and retain the exact worker plus bounded recovery evidence. |
+| `readiness_failed`, prompt mismatch, truncation, interference, or no authenticated checkpoint | Treat runtime-owned single-Enter recovery as exhausted or ineligible. Do not resend the prompt or inject another Enter. Preserve `automatic_retry_safe: false`, report `session created, prompt delivery unverified`, and retain the exact worker plus bounded recovery evidence. |
 | Candidate conflict before start | Do not start the worker. Narrow the packet or allocate a non-conflicting worktree, then repeat the candidate check. |
 | Fresh-list identity, incarnation, cwd, or mode mismatch | Do not send the task. Retain the new session and report that managed ownership proof failed. |
 | Interference or deletion before target claim handoff | Treat ownership proof as failed. Do not recreate, resend, or transfer the target capability; retain durable evidence for explicit recovery. |

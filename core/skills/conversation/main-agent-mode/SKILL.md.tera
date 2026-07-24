@@ -230,11 +230,20 @@ explicit reassignment under the recovery protocol.
    `--coordination-mode enforce`.
 6. Branch only on the returned typed readiness. Continue only for
    `state:"ready"`, `delivery.state:"confirmed"`, and
-   `delivery.proof:"authenticated-worker-checkpoint"`. A
+   `delivery.proof:"authenticated-worker-checkpoint"`. For a fresh supported
+   worker whose assignment remains `starting`, the folded runtime may submit
+   exactly one recovery Enter within the original wait deadline after rechecking
+   the exact session incarnation and live runtime. The prompt is never resent.
+   The runtime owns this recovery decision and keypress; the Main Agent only
+   verifies the `submit_key_recovery` projection and accepts either the initial
+   `submit-command-succeeded` transport or the recovered
+   `submit-key-recovery-succeeded` transport when the authenticated checkpoint
+   also succeeds. A
    `state:"readiness_failed"` result has `delivery.state:"unverified"` and
-   `automatic_retry_safe:false`: do not resend the prompt, inject Enter, or
-   inspect a pane/transcript to overrule it. Retain the exact worker and typed
-   safe state for diagnostics.
+   `automatic_retry_safe:false`: runtime recovery is then exhausted or
+   ineligible, so do not resend the prompt, inject another Enter, or inspect a
+   pane/transcript to overrule it. Retain the exact worker and typed safe state
+   for diagnostics.
 7. The generated worker prompt invokes the exact compatible executable's
    `main-agent bootstrap` command. The authenticated worker alone resolves its
    private assignment, acquires the assignment-derived claim, and records the
@@ -276,8 +285,8 @@ explicit reassignment under the recovery protocol.
   orchestration engine, or new nils-cli command.
 - Concrete provider transport mechanics remain runtime-owned. Main Agent Mode
   consumes only `worker start --await-ready` and its typed authenticated
-  checkpoint proof; it never implements provider-specific paste, keypress, or
-  pane heuristics.
+  checkpoint proof, including the bounded `submit_key_recovery` result; it never
+  implements provider-specific paste, keypress, or pane heuristics.
 - Main Agent Mode never repairs trust, authentication, configuration, hooks,
   updates, permissions, or services. The dry-run compatibility probe is the
   only readiness fallback, and it never authorizes apply.

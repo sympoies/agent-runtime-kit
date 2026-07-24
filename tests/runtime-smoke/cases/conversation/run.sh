@@ -103,6 +103,8 @@ run_main_agent_mode_probe() {
   grep -Fq -- '--coordination-mode enforce' "$source"
   grep -Fq -- 'main-agent worker start --assignment-file <private-json> --await-ready 5m' "$source"
   grep -Fq 'delivery.proof:"authenticated-worker-checkpoint"' "$source"
+  grep -Fq 'submit_key_recovery' "$source"
+  grep -Fq 'The runtime owns this recovery decision and keypress' "$source"
   grep -Fq 'automatic_retry_safe:false' "$source"
   grep -Fq 'main-agent bootstrap' "$source"
   grep -Fq 'candidate conflict check cleared' "$protocol"
@@ -115,9 +117,13 @@ run_main_agent_mode_probe() {
   grep -Fq 'session created, prompt delivery unverified' "$protocol"
   grep -Fq 'main-agent worker start --assignment-file <private-json> --await-ready 5m' "$protocol"
   grep -Fq 'delivery.proof: authenticated-worker-checkpoint' "$protocol"
+  grep -Fq 'delivery.transport_state: submit-key-recovery-succeeded' "$protocol"
+  grep -Fq 'The Main Agent never decides whether to inject this' "$protocol"
+  grep -Fq 'keypress and never sends it itself.' "$protocol"
   grep -Fq 'automatic_retry_safe: false' "$protocol"
   grep -Fq 'main-agent bootstrap' "$protocol"
-  grep -Fq 'diagnostics only after a typed failure' "$protocol"
+  grep -Fq 'as read-only diagnostics only after a' "$protocol"
+  grep -Fq 'typed failure; then fix' "$protocol"
   grep -Fq 'Do not resend the prompt or inject another Enter' "$protocol"
   if grep -Fq 'paste without Enter, verified by envelope or character count' "$protocol"; then
     return 1
