@@ -52,6 +52,11 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
             self.claude_home / "hooks",
         ):
             hook_home.mkdir(parents=True)
+            # Match the installed runtime posture for the directory chain too.
+            # A group-writable checkout umask must not make the live runtime-home
+            # fixture fail the production owner-controlled-directory guard.
+            hook_home.parent.chmod(0o700)
+            hook_home.chmod(0o700)
             for handler in sorted((REPO_ROOT / "core/hooks/shared").iterdir()):
                 if handler.is_file() and not handler.is_symlink():
                     destination = hook_home / handler.name
