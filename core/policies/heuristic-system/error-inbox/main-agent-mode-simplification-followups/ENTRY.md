@@ -32,32 +32,41 @@ schema, silent version skew) and Part C stays manually-tested unless these land.
 Owner legend: **NC** = nils-cli (Rust binary), **RK** = agent-runtime-kit
 (hooks/tests/sync).
 
-- [~] **PARTC** (NC) — Add a hermetic `worker start --await-ready` e2e test
-  (typed `ready` + `readiness_failed`+`safe_state`) and a full
-  `quick → ready → accept → retire` lifecycle test via the seed-broker /
-  fake-tmux harness. Converts Part C from manual to auto; subsumes F5. **High.**
-  **Authored + validated (integration test ran green: 1 passed; `readiness_from_state`
-  unit test added). Commit BLOCKED by nils-cli contention (see Blocker).** Work
-  preserved at scratchpad `partc-nils-cli.patch` (126 lines, 2 files: `main_agent.rs`
-  +11, `coordination.rs` +93). Confirmed F5 already met: `readiness_failed` carries
-  `assignment_state` + actionable `safe_state`.
-- [ ] **F2** (NC) — `coordination-unauthorized` returns no remedy `hint`; add one
-  naming the missing precondition (mirror `git-cli worktree remove`'s hint). **High.**
-- [ ] **F4** (NC) — objective-packet schema undiscoverable; add
-  `init --print-packet-schema` (or example) and make the first validation error
-  name the expected `schema_version`. **High.**
-- [ ] **F7** (NC doctor + RK sync) — no guard against a split/stale install
-  (this session's root cause: `main-agent`@b6abfa35 vs source@a8b83732,
-  `agent-docs` missing); add a doctor check for mutually-consistent nils-cli
-  binaries not older than the paired runtime-kit policy/protocol. **High.**
-- [ ] **F1** (NC) — `quick` needs both `--assignment-file` and
-  `--idempotency-key`; default the key from the packet digest → one required arg. **Med.**
-- [ ] **F3** (NC) — `worker start` parse-error lists an empty required-arg set;
-  name the missing arguments in the JSON error envelope. **Med.**
-- [ ] **F6** (RK + NC) — hook↔binary argv coupling has no binding contract test;
-  add one asserting the `quick`/`rebind` allowlist matches the binary's argv. **Med.**
-- [ ] **F8** (NC) — `activity doctor` `configured:false` semantics ambiguous for
-  worker-launch readiness; clarify or add a `can-launch-worker` signal. **Low / L2.**
+- [x] **PARTC** (NC) — hermetic `worker start --await-ready` e2e test (typed
+  `readiness_failed` + `safe_state`) plus a `readiness_from_state` unit test.
+  **High.** **LANDED** on nils-cli `main` at `48f57047` (2026-07-24). Confirmed F5
+  already met: `readiness_failed` carries `assignment_state` + actionable
+  `safe_state`.
+- [x] **F2** (NC) — `coordination-unauthorized` now carries a remedy `hint`
+  naming the missing precondition. **High.** Added an optional `hint` to
+  agent-session `CliError` + wired it through both binaries' `render_error`
+  (mirrors git-cli). **Authored + validated** (worktree `chore/main-agent-ergonomics-followups`,
+  full agent-session suite green: 579 unit + 150 integration, 0 failed). Delivered via
+  `deliver-nils-cli-ergonomics.sh`.
+- [x] **F4** (NC) — added `main-agent packet-schema` (prints an example objective
+  packet naming both nested `schema_version` constants) and made schema-mismatch
+  errors name the expected `schema_version` and hint back at `packet-schema`.
+  **High.** Authored + validated; delivered via the script.
+- [x] **F7-doctor** (NC) — `activity doctor` now surfaces the running binary
+  version (`binary_version`, git-describe form) so a stale/split install is
+  diagnosable against source. **High.** Authored + validated; delivered via the
+  script. **Remaining (RK):** a sync-time skew guard — still open below.
+- [x] **F1** (NC) — `quick` defaults `--idempotency-key` from a digest of the
+  assignment packet, so the fast-path needs only `--assignment-file`; an explicit
+  key still wins. **Med.** Authored + validated; delivered via the script.
+- [x] **F3** (NC) — `worker start` (and all) parse-errors now name the actual
+  missing argument (pulled from clap's structured context) instead of an unnamed
+  "required arguments were not provided" line. **Med.** Delivered via the script.
+- [ ] **F6** (RK) — hook↔binary argv coupling has no binding contract test; add
+  one asserting the `quick`/`rebind` allowlist matches the binary's argv. **Med.**
+  Runtime-kit-local; still open.
+- [ ] **F7-sync** (RK) — sync-time guard that the installed nils-cli binaries are
+  not older than the paired runtime-kit policy/protocol. **High.** Runtime-kit-local;
+  still open. (NC-side visibility shipped as F7-doctor above.)
+- [x] **F8** (NC) — `activity doctor` gains an explicit `can_launch_worker` signal
+  (`classification == "supported" && configured`), distinct from the
+  config-presence `configured` axis, with clarified field docs. **Low.** Delivered
+  via the script.
 
 ## Current Workaround
 
@@ -70,25 +79,27 @@ Promote when the backlog above is drained (all High + Med landed and validated o
 local `main` of the owning repo), with each fix's commit linked here. F8 (L2/Low)
 may be split to a follow-up if it needs design.
 
-## Blocker (2026-07-24) — nils-cli checkout contended
+## Blocker (2026-07-24) — nils-cli checkout contended — RESOLVED (workaround)
 
-nils-cli `main` is being actively developed by another session: `main` was
-rebased (`662b5479 → cecdb30`, same subjects/new hashes) and the main checkout
-holds ~730 lines of that session's uncommitted `git-summary`/`git-cli` work
-(incl. an untracked `crates/git-summary/src/lib.rs`). `semantic-commit
-local-default` requires a clean tree (`error: unstaged or untracked changes
-present`), and stashing/removing their work would disrupt a live session, so the
-nils-cli side of this backlog **cannot be committed until that checkout is
-quiescent**. All nils-cli fixes (PARTC + F1/F2/F3/F4/F8 + F7-doctor) are gated on
-this. My PARTC edits were reverted from the checkout (left pristine) and preserved
-as the patch above.
+nils-cli `main` is continuously developed by another session (codex-cli
+execution-capsule work; the tree is rarely clean), and with GitHub 403 the
+agent-side commit paths fail closed: `semantic-commit local-default` needs a
+clean tree, and worktree/branch commits need a resolvable remote default.
+**Resolved** by (a) authoring + validating every nils-cli fix in an isolated
+managed worktree (`chore/main-agent-ergonomics-followups`, base `48f57047`) so
+the shared checkout is never touched, and (b) delivering through a user-run
+script that commits ONLY the owned files with `git commit --only -- <paths>` —
+so the other agent's staged/dirty work can never be swept in (as happened once
+with PARTC's `48f57047`, which incidentally captured a codex-cli snapshot).
 
 ## Next Action
 
-1. **nils-cli side (gated on quiescence)**: when the other session's work is
-   committed/cleared, apply + commit PARTC:
-   `cd <nils-cli> && git apply <scratchpad>/partc-nils-cli.patch && git add crates/agent-session/src/main_agent.rs crates/agent-session/tests/integration/coordination.rs && semantic-commit local-default --expect-head <HEAD> --expected-branch main --type test --scope agent-session --subject "cover the worker-start await-ready readiness fold" --remote-mode local-only --receipt-out <path> --format json`
-   then author + validate F2 → F4 → F7-doctor → F1 → F3 → F8 the same way.
-2. **runtime-kit side (unblocked, land here)**: F6 (hook↔binary argv contract
-   test) and the F7 sync-time skew check can commit to this repo's `main` now.
-Update checkboxes + link commits as each lands.
+1. **nils-cli side (DONE, pending user run):** run
+   `scratchpad/deliver-nils-cli-ergonomics.sh` (optionally `--install`) to land
+   the F1/F2/F3/F4/F7-doctor/F8 batch on nils-cli `main` from
+   `scratchpad/nils-cli-ergonomics-followups.patch` (6 agent-session files,
+   +379/-14). PARTC already landed at `48f57047`.
+2. **runtime-kit side (open):** F6 (hook↔binary argv contract test) and F7-sync
+   (install-time skew guard) are runtime-kit-local and still to be authored.
+   Update checkboxes + link commits as each lands; promote/archive this entry
+   when F6 + F7-sync are drained.
