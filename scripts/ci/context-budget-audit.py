@@ -82,13 +82,14 @@ BUDGETS = [
         "measure": ("file", "build/codex/AGENT_HOME.md"),
         "target": 4 * KIB,
         "override": {
-            "allow": 6656,
+            "allow": 7168,
             "reason": "Documented budget decision (#601 slice 3c): 4 KiB is the "
-                      "aspirational target; ~6.5 KiB is the irreducible always-on "
+                      "aspirational target; ~7 KiB is the irreducible always-on "
                       "floor after the three-layer compaction (from 11,360 bytes). "
                       "The remainder is safety and behavioral invariants "
                       "(delivery gates, memory/consent boundaries, goal-wait, "
-                      "tier and intent routing); detailed procedure moved to "
+                      "tier and intent routing, and the execution-capsule route); "
+                      "detailed procedure moved to "
                       "core/policies/intent-cards.md and the runbooks this layer "
                       "points to. Further reduction would compress "
                       "safety-critical wording.",
@@ -101,9 +102,9 @@ BUDGETS = [
         "measure": ("file", "build/claude/AGENT_HOME.md"),
         "target": 4 * KIB,
         "override": {
-            "allow": 6400,
+            "allow": 6656,
             "reason": "Documented budget decision (#601 slice 3c): same "
-                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6 KiB "
+                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6.5 KiB "
                       "irreducible always-on floor after compaction "
                       "(from 10,612 bytes).",
             "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
@@ -115,9 +116,9 @@ BUDGETS = [
         "measure": ("file", "build/hermes/AGENT_HOME.md"),
         "target": 4 * KIB,
         "override": {
-            "allow": 6272,
+            "allow": 6400,
             "reason": "Documented budget decision (#601 slice 3c): same "
-                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6 KiB "
+                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6.25 KiB "
                       "irreducible always-on floor after compaction "
                       "(from 9,963 bytes).",
             "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
