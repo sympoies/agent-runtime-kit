@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-07-23
 - Area: cli
 - Severity: medium
@@ -101,7 +101,7 @@ with PARTC's `48f57047`, which incidentally captured a codex-cli snapshot).
 
 ## Next Action
 
-Backlog is drained — all items delivered:
+None. Backlog drained — all items delivered:
 
 1. **nils-cli side (LANDED):** PARTC at `48f57047`; F1/F2/F3/F4/F7-doctor/F8 as a
    single commit cherry-picked onto `main` at `cc2b9ccd` (3-way auto-merged over
@@ -113,6 +113,13 @@ Backlog is drained — all items delivered:
    Validated: F6 2/2 (standalone + run.sh / CI Position 13); F7-sync smoke green +
    version-policy 14/14; shfmt + shellcheck clean.
 
-Remaining: promote/archive this entry (backlog drained). Optionally run the full
-`scripts/ci/all.sh` gate on the landed runtime-kit tip for final acceptance
-(`deliver-rk-f6-f7-sync.sh --full-ci` runs it on the clean branch before landing).
+Optional (non-blocking): run the full `scripts/ci/all.sh` gate on the landed
+runtime-kit tip for final acceptance (`deliver-rk-f6-f7-sync.sh --full-ci` runs
+it on the clean branch before landing).
+
+Lifecycle link: `docs/discussions/2026-07-23-main-agent-mode-simplification-acceptance-test-plan.md`
+
+## Archive
+
+- Archived: 2026-07-24
+- Reason: Completed entry archived out of the active error inbox.
