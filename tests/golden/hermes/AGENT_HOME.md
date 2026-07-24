@@ -42,6 +42,7 @@ Safe fallback for any workspace; a closer project or directory `AGENTS.md` / `.h
 ## Files, Hooks, Validation
 
 - Follow the project's conventions for deliverables and generated files; do not create durable discussion or decision artifacts unless asked or clearly reusable. Put temp/debug artifacts in XDG state with `agent-out project`; never use repo `./agent-out`; cite the path. Hermes has no hook runner here; policy still applies. Prefer project-defined validation, else the smallest meaningful checks — `core/policies/files-hooks-validation.md`.
+- When an authorized local operation cannot run in the current environment, package a private Execution Capsule with one directly runnable script and an explicit supervised route. Host access is operator-authorized access expansion only; it never waives repository rules, hooks, signing, or concurrency guards — `core/policies/execution-capsules.md`.
 
 ## Git, Commits, Issues, PRs, MRs
 

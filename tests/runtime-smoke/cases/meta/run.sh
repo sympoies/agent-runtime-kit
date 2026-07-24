@@ -87,6 +87,8 @@ run_home_prompt_render_probe() {
     grep -Fq 'Put temp/debug artifacts in XDG state with `agent-out project`' "$home_policy"
     grep -Fq 'never use repo `./agent-out`' "$home_policy"
     grep -Fq 'cite the path.' "$home_policy"
+    grep -Fq 'Execution Capsule' "$home_policy"
+    grep -Fq '`core/policies/execution-capsules.md`' "$home_policy"
   done
   grep -Fq "or directory \`AGENTS.md\` / \`CLAUDE.md\` can override or extend it." "$neutral_home"
   grep -q '## Code Review Delegation' "$codex_home"
@@ -566,6 +568,10 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
     "$source_root/targets/codex/plugins/meta/.codex-plugin" \
     "$source_root/manifests" \
     "$codex_home" "$collision_codex_home" "$lookalike_codex_home" "$stub_bin"
+  # Live handler sync trusts only operator-owned, owner-only runtime homes.
+  chmod 0700 "$home" "$codex_home" \
+    "$collision_home" "$collision_codex_home" \
+    "$lookalike_home" "$lookalike_codex_home"
   git -C "$source_root" init -q
 
   printf '# raw AGENT_HOME fixture\n' >"$source_root/AGENT_HOME.md"
