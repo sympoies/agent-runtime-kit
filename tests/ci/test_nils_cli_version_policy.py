@@ -200,6 +200,20 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             gate_stack.index("plan-tooling validate --format text --explain"),
         )
 
+    def test_sync_runtime_surfaces_enforces_version_alignment_on_apply(self) -> None:
+        # F7-sync: `sync-runtime-surfaces.sh --apply` must reuse the same
+        # version-alignment admission floor as CI Position 1, so a stale/split
+        # nils-cli install is caught at sync time and not only in CI.
+        sync = read("scripts/sync-runtime-surfaces.sh")
+        self.assertIn(
+            "agent-runtime doctor --class version-alignment --pin", sync
+        )
+        self.assertIn("docs/source/nils-cli-pin.yaml", sync)
+        # A definition plus at least one call site (the --apply preflight).
+        self.assertGreaterEqual(
+            sync.count("verify_nils_cli_version_alignment"), 2
+        )
+
     def test_matrix_builder_covers_equal_and_distinct_roles(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
 

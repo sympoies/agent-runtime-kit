@@ -4296,6 +4296,26 @@ verify_codex_prompt_input() {
   run_cmd codex debug prompt-input
 }
 
+verify_nils_cli_version_alignment() {
+  # F7-sync: guard against a stale/split nils-cli install at sync time. Reuses
+  # the exact CI admission floor (agent-runtime doctor --class version-alignment)
+  # so a --apply sync never installs surfaces against binaries below the pinned
+  # minimum -- the root cause when a host runs an older binary than the source it
+  # renders from. Read-only: the doctor blocks below minimum_supported_tag and
+  # warns above validated_tag; this wrapper propagates the block.
+  local pin="$SOURCE_ROOT/docs/source/nils-cli-pin.yaml"
+  if [ ! -f "$pin" ]; then
+    log "warning: nils-cli pin manifest not found ($pin); skipping version-alignment check"
+    return 0
+  fi
+  log "verifying installed nils-cli against pin ($pin)"
+  if ! agent-runtime doctor --class version-alignment --pin "$pin" --format text; then
+    log "error: installed nils-cli is below the pinned minimum; refusing to sync surfaces against a stale toolchain (upgrade nils-cli, or move the pin via meta:nils-cli-bump)"
+    return 1
+  fi
+  return 0
+}
+
 run_verification() {
   local product
 
@@ -4364,6 +4384,9 @@ main() {
 
   if [ "$APPLY" = "1" ]; then
     require_commands agent-runtime agent-hook
+    if ! verify_nils_cli_version_alignment; then
+      return 1
+    fi
   fi
 
   log "$PROG_NAME starting (source_root=$SOURCE_ROOT product=$PRODUCT apply=$APPLY no_pull=$NO_PULL no_prune=$NO_PRUNE no_verify=$NO_VERIFY)"
