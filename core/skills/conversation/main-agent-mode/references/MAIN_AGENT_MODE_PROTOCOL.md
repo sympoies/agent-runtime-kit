@@ -53,54 +53,58 @@ lane unless explicit reassignment completes first.
 
 ## Verified Worker Startup And Prompt Delivery
 
-Verified startup establishes, before any task reaches a worker, that: the
-candidate conflict check cleared or was retained as bounded evidence rather than
-silently treated as clear; the worker started in its assigned isolated managed
-worktree under coordination enforcement; a fresh privacy-safe list proved the
-exact new session ID, incarnation, working directory, and `enforce` mode; a
-provider-readiness state, not a trust, authentication, setup, upgrade, update,
-permission, hook, or other startup dialog, held before send; the task was pasted
-without Enter and verified by the exact task envelope or the exact
-pasted-content character count before any submission key; a provider-hook
-activity baseline was captured only after that paste verification; Enter was
-sent separately; and a newer provider-hook-observed turn than the baseline
-appeared within the bounded check window. Startup creates a managed record but
-never proves readiness or gives the launcher target ownership, and a send
-success is transport evidence only.
+Verified startup begins only after the candidate conflict check cleared or was
+retained as bounded evidence rather than silently treated as clear. Every
+mutating assignment names an isolated managed worktree, `enforce` coordination,
+a repository, and scopes that do not overlap the Main Agent claim or another
+worker. Main Agent Mode has no manual paste/Enter startup path. It invokes the
+released folded boundary:
 
-Where the session-management workflow provides a verified-launch step that folds
-these proofs into one call, the main agent invokes that step and branches on its
-typed result instead of hand-running the sequence. A ready result carries the
-proven session identity and the newer-turn evidence; any not-ready result
-carries a bounded safe-state annotation and is treated exactly like the failed
-proof below. The main agent never downgrades a not-ready typed result into a
-resend or a speculative Enter, and never reads panes or transcripts to overrule
-it. The concrete command, flags, and typed-result vocabulary belong to that
-workflow's skill or runbook; this contract fixes only the required proofs and
-the branch on them.
+```bash
+main-agent worker start --assignment-file <private-json> --await-ready 5m \
+  --idempotency-key <unique-key> --format json
+```
 
-Where no folded step exists, run the bounded sequence directly and keep it
-bounded: (1) candidate conflict check; (2) start under coordination enforcement;
-(3) fresh-list identity, incarnation, cwd, and `enforce` proof — a title, pane,
-PID, or process is not equivalent evidence; (4) provider-readiness proof; (5)
-paste without Enter, verified by envelope or character count; (6) capture the
-activity baseline only after paste verification; (7) send Enter separately; (8)
-require a newer observed turn than the baseline within the window.
+The runtime creates and binds the interactive worker, transports one generated
+prompt, and waits for a newer authenticated worker checkpoint. Continue only
+when the typed result reports all of:
 
-Either path, the target worker then runs its own authenticated self-check and
-acquires and verifies its active claim before any repository or provider
-mutation. The launcher never performs this target-owned step, never uses the
-target capability or claims on the target's behalf, and interference or deletion
-before that handoff is a failed ownership proof, not a recovery shortcut. A
-released or expired claim must be reacquired and verified before another
-mutation turn; the earlier claim or successful handoff does not carry mutation
-authority forward.
+- `state: ready`;
+- `delivery.state: confirmed`;
+- `delivery.transport_state: submit-command-succeeded`;
+- `delivery.proof: authenticated-worker-checkpoint`; and
+- the expected worker session ID and incarnation.
+
+After readiness, a fresh privacy-safe list must still prove the exact new
+session ID, incarnation, working directory, and `enforce` mode. A title, pane,
+PID, process, send return, or provider prose is not equivalent evidence.
+
+The generated prompt invokes the exact compatible `main-agent` executable's
+`main-agent bootstrap` command with a deterministic idempotency key. The target
+worker then runs its own authenticated self-check as part of bootstrap,
+resolves only its private assignment packet, acquires the assignment-derived
+claim, and records the revision-fenced `working` checkpoint. The launcher never
+performs this target-owned step, never uses the target capability or claims on
+the target's behalf, and interference or deletion before that handoff is a
+failed ownership proof, not a recovery shortcut. A released or expired claim
+must be reacquired and verified before another mutation turn; the earlier claim
+or successful handoff does not carry mutation authority forward.
+
+A typed `readiness_failed` result reports `delivery.state: unverified`,
+`automatic_retry_safe: false`, and a bounded safe state. Do not resend the
+prompt or inject another Enter. Never inspect panes or transcripts to overrule
+the typed result, and never downgrade it into a speculative retry. Retain the
+exact bound worker; use `main-agent self show` or `rehydrate` as read-only
+diagnostics only after a typed failure, then fix the reported identity,
+claim-conflict, packet, or provider cause through its owning workflow.
 
 On mismatch, truncation, interference, missing readiness, a not-ready typed
-result, or bounded-check exhaustion, do not resend and do not press Enter
-speculatively. Stop with the exact status `session created, prompt delivery
-unverified`, retain the session for bounded recovery, and report the failed
-proof to the user-facing main agent.
+result, or bounded-check exhaustion, stop with the exact status `session
+created, prompt delivery unverified`, retain the session for bounded recovery,
+and report the failed proof to the user-facing main agent. If the installed
+released surface lacks `--await-ready`, the typed delivery fields, or
+`main-agent bootstrap`, Main Agent Mode is unavailable; do not fall back to
+manual keypress recovery.
 
 ## Startup Dialog And Helper Routing
 
@@ -182,11 +186,11 @@ skill or runbook.
 | Doctor missing, old, unhealthy, unsupported, malformed, or helper unavailable | Do not activate or launch. Report the bounded provider/version problem; route upgrades or repairs to their owner with required user authority. |
 | Doctor says `configured:false` | Run only the converged repair dry-run. Continue only with `configured:true`, `would_change:false`, and no representation conflict; never apply it. |
 | Trust/readiness/startup dialog | Do not treat the dialog as ready and do not accept it automatically. Classify and route it or stop for user authority. |
-| Prompt mismatch, truncation, interference, or no newer observed turn | Do not resend or press Enter. Report `session created, prompt delivery unverified` and retain bounded recovery evidence. |
+| `readiness_failed`, prompt mismatch, truncation, interference, or no authenticated checkpoint | Do not resend the prompt or inject another Enter. Preserve `automatic_retry_safe: false`, report `session created, prompt delivery unverified`, and retain the exact worker plus bounded recovery evidence. |
 | Candidate conflict before start | Do not start the worker. Narrow the packet or allocate a non-conflicting worktree, then repeat the candidate check. |
 | Fresh-list identity, incarnation, cwd, or mode mismatch | Do not send the task. Retain the new session and report that managed ownership proof failed. |
 | Interference or deletion before target claim handoff | Treat ownership proof as failed. Do not recreate, resend, or transfer the target capability; retain durable evidence for explicit recovery. |
-| Target claim missing, released, or expired | Stop mutation. The target worker must run its authenticated self-check and acquire and verify a new active claim before another mutation turn. |
+| Target claim missing, released, or expired | Stop mutation. The target worker must use its authenticated bootstrap/recovery path and acquire and verify a new active claim before another mutation turn. |
 | Work-context scope or worktree conflict | Stop the worker mutation. Narrow/reassign scope or allocate a clean isolated worktree; never acknowledge away a definite conflict as permission. |
 | Active or uncertain admitted mutation operation | Retain the exact worker owner/session. Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome. Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome. If proof is unavailable, report blocked and preserve the session and evidence. |
 | Accepted terminal worker cleanup | Prove operation quiescence, release and verify the worker's active claim, delete the exact session through its owner, then require a fresh list result proving the exact session ID is absent. |

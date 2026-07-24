@@ -13,7 +13,7 @@ Prereqs:
 
 - The user explicitly asks to enable or use Main Agent Mode for the bounded
   workflow. Ordinary implementation requests never activate this mode.
-- `agent-session >=1.25.9` is installed from a released surface.
+- `agent-session >=1.25.10` is installed from a released surface.
 - The trusted `main-agent` facade from the compatible nils-cli surface is
   executable. Until that surface is available, report Main Agent Mode as
   unavailable without repairing or restricting ordinary agent work.
@@ -51,7 +51,7 @@ Failure modes:
 
 - Activation was not explicit, or the requested scope/done criteria are not
   sufficiently bounded to delegate safely.
-- The installed `agent-session` is missing or older than `1.25.9`.
+- The installed `agent-session` is missing or older than `1.25.10`.
 - The trusted `main-agent` facade is absent, incompatible, untrusted, or cannot
   authenticate the current managed-session incarnation.
 - Doctor output is unhealthy, unsupported, unavailable, malformed, or reports
@@ -84,7 +84,7 @@ agent-session activity doctor --agent claude --format json
 ```
 
 
-Require `agent-session >=1.25.9`, a valid
+Require `agent-session >=1.25.10`, a valid
 `cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
 matching provider record, `classification:"supported"`, and
 `helper_executable:true`. A configured provider must otherwise be healthy for
@@ -199,21 +199,33 @@ explicit reassignment under the recovery protocol.
    with durable issue/plan/run-state/worktree evidence; never create a second
    run merely because local conversation context is missing.
 4. Create one revision-fenced assignment per implementation owner through the
-   facade. Each private packet names scope, invariants, exclusions, base,
-   worktree, test-first and validation duties, delivery artifact duties, and
-   the exact completion/blocker packet. The assignment relationship is routing
-   metadata and transfers no repository or provider authority.
-5. Run the candidate conflict check, then use the active session-management
-   skill or runbook to start an interactive managed worker in its assigned
-   isolated worktree with `--coordination-mode enforce`; start does not transfer
-   target ownership to the launcher.
-6. Require a fresh managed-session list to prove the exact new session ID,
-   incarnation, working directory, and enforce mode before prompt transport.
-   Follow the exact paste-count and newer provider-hook turn sequence in
-   `references/MAIN_AGENT_MODE_PROTOCOL.md`.
-7. Require the target worker itself to run authenticated `main-agent self show`
-   to recover only its assignment and primary relationship, then acquire and
-   verify its active work-context claim before any mutation. A released or
+   facade. Each private packet names a repository, non-overlapping scope,
+   invariants, exclusions, base, isolated managed worktree, test-first and
+   validation duties, delivery artifact duties, and the exact
+   completion/blocker packet. The Main Agent claim must not overlap a worker
+   scope. The assignment relationship is routing metadata and transfers no
+   repository or provider authority.
+5. Run the candidate conflict check, then launch through the folded readiness
+   boundary:
+
+   ```bash
+   main-agent worker start --assignment-file <private-json> --await-ready 5m \
+     --idempotency-key <unique-key> --format json
+   ```
+
+   The assignment itself must request the isolated worktree and
+   `--coordination-mode enforce`.
+6. Branch only on the returned typed readiness. Continue only for
+   `state:"ready"`, `delivery.state:"confirmed"`, and
+   `delivery.proof:"authenticated-worker-checkpoint"`. A
+   `state:"readiness_failed"` result has `delivery.state:"unverified"` and
+   `automatic_retry_safe:false`: do not resend the prompt, inject Enter, or
+   inspect a pane/transcript to overrule it. Retain the exact worker and typed
+   safe state for diagnostics.
+7. The generated worker prompt invokes the exact compatible executable's
+   `main-agent bootstrap` command. The authenticated worker alone resolves its
+   private assignment, acquires the assignment-derived claim, and records the
+   revision-fenced `working` checkpoint that proves readiness. A released or
    expired claim must be reacquired and verified before a later mutation turn.
    The launcher never uses the target capability or claims on its behalf, and
    interference or deletion before this handoff fails the ownership proof.
@@ -249,9 +261,10 @@ explicit reassignment under the recovery protocol.
 - It consumes released deterministic `agent-session` primitives and existing
   tier/review/delivery outcomes. It adds no runtime graph, provider-specific
   orchestration engine, or new nils-cli command.
-- Concrete readiness, paste, keypress, activity-baseline, and prompt-transport
-  mechanics belong to the active session-management skill or runbook. This
-  portable contract does not copy host-specific commands.
+- Concrete provider transport mechanics remain runtime-owned. Main Agent Mode
+  consumes only `worker start --await-ready` and its typed authenticated
+  checkpoint proof; it never implements provider-specific paste, keypress, or
+  pane heuristics.
 - Main Agent Mode never repairs trust, authentication, configuration, hooks,
   updates, permissions, or services. The dry-run compatibility probe is the
   only readiness fallback, and it never authorizes apply.
