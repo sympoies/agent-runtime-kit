@@ -48,7 +48,9 @@ from manifests/cli-tools.yaml, clones agent-runtime-kit into
 symlinks, verifies declared agent docs, and then uses
 \`agent-runtime bootstrap-host\` for the runtime surface bootstrap when the
 installed nils-cli surface provides it. Older nils-cli pins fall back to the
-manual render / install / prune-stale phase commands. The script finishes with
+manual render / install / prune-stale phase commands. It then delegates to
+\`scripts/sync-runtime-surfaces.sh\` to activate the plugin registries and the
+\`agent-hook\`-owned provider hook ingress. The script finishes with
 \`agent-runtime doctor\` for both products.
 
 For daily runtime surface refreshes, see \`scripts/sync-runtime-surfaces.sh\`.

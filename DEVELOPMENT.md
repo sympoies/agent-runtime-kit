@@ -25,8 +25,9 @@ smoke, the shared hook contract, version-baseline mirrors, product leakage
 audit, and deterministic memory policy/retired-reference routing.
 `scripts/setup.sh` contains the brew-first host bootstrap path for installing
 the released `agent-runtime` binary, rendering and wiring home prompt docs,
-activating Claude/Codex runtime homes, pruning stale managed surfaces, and
-running doctor.
+activating Claude/Codex runtime homes and their `agent-hook`-owned provider
+hook ingress (through the `sync-runtime-surfaces.sh` delegation), pruning stale
+managed surfaces, and running doctor.
 
 ## Setup
 
@@ -187,12 +188,16 @@ After managed runtime surface changes land, use
 `scripts/sync-runtime-surfaces.sh` for the daily refresh path. It pulls the
 active checkout, renders and wires the per-product home prompts, renders Codex
 and Claude targets, installs the rendered surfaces into the runtime homes,
-registers/installs the local `codex-kit` and `claude-kit` plugin marketplaces
-from symlink-free state-home copies when the product CLIs are available, and
-runs the skill-surface doctor probes; it is dry-run by default and writes only
-with `--apply`. Keep
+installs the digest-pinned `agent-hook` policy bundle and activates the
+`agent-hook setup`-owned provider hook ingress (transactional cutover with
+rollback on failure), registers/installs the local `codex-kit` and `claude-kit`
+plugin marketplaces from symlink-free state-home copies when the product CLIs
+are available, and runs the skill-surface doctor probes; it is dry-run by
+default and writes only with `--apply`. Because the hook ingress is owned by
+`agent-hook setup`, `agent-runtime install` never writes hook registrations —
+verify hook health with `agent-hook doctor`. Keep
 `scripts/setup.sh` for first-time host bootstrap and CLI tool installation; it
-delegates the same plugin registry activation after bootstrap.
+delegates the same plugin registry and hook activation after bootstrap.
 
 Retired managed-surface cleanup has two separate sources of truth:
 `manifests/retired-skill-ids.json` owns the product-neutral ID boundary used by

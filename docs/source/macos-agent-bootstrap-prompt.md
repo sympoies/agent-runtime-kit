@@ -208,6 +208,19 @@ agent-runtime doctor \
   --class skill-surface \
   --format json
 
+# Verify the agent-hook control-plane installed correctly. Expect each product
+# to report status:"converged" and supported:true. Use agent-hook doctor here,
+# not "agent-session activity doctor" (that command is a main-agent-mode
+# readiness probe and can report configured:false on a healthy managed block).
+agent-hook doctor --format json
+
+# Verify the installed nils-cli surface satisfies the pinned version floor.
+agent-runtime doctor \
+  --source-root "$HOME/.config/agent-runtime-kit" \
+  --class version-alignment \
+  --pin "$HOME/.config/agent-runtime-kit/docs/source/nils-cli-pin.yaml" \
+  --format json
+
 if command -v claude >/dev/null 2>&1; then
   claude plugins list
   claude plugin details meta
@@ -257,6 +270,9 @@ Final report format:
 - zsh-kit smoke: pass/fail
 - Codex doctor: pass/fail
 - Claude doctor: pass/fail
+- Codex hooks (agent-hook doctor): converged/fail
+- Claude hooks (agent-hook doctor): converged/fail
+- nils-cli version alignment: pass/warn/fail
 - Codex plugins list: pass/fail/skipped
 - Claude plugins list: pass/fail/skipped
 - Codex prompt-input: pass/fail/skipped

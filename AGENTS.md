@@ -28,8 +28,10 @@
 
 ## Important Boundaries
 
-- Do not symlink or version the whole `~/.codex/config.toml`; the existing
-  Codex model syncs a managed hook block instead.
+- Do not symlink or version the whole `~/.codex/config.toml`; the managed
+  Codex block is synced separately and now carries no hook commands — provider
+  hook ingress is owned by `agent-hook setup` (run via
+  `scripts/sync-runtime-surfaces.sh`).
 - Do not track runtime state: auth, history, sessions, logs, caches, plugin
   install artifacts, local generated state, or secrets.
 - Use dry-run-first workflows for install/link/render/drift-audit changes.
