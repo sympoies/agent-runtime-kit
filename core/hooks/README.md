@@ -305,8 +305,8 @@ It resolves the selected remote's cached local default branch and blocks raw `gi
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also
 blocks mutating
-`semantic-commit commit`, `fixup`, and `squash` on the checked-out default
-branch. Ambiguous
+`semantic-commit commit`, `fixup`, and `squash` on the default branch of the
+repository that invocation actually commits in. Ambiguous
 pushes without an explicit refspec fail closed because Git configuration can
 retarget them. PreToolUse performs no live `ls-remote` or provider probe;
 implicit, all/mirror, delete, matching, wildcard, and missing-cache cases fail
@@ -315,7 +315,17 @@ closed, while live remote truth remains owned by the delivery CLI. It leaves exp
 repo push-default` invocation available. Exact authorized `semantic-commit
 local-default` is also admitted when expected branch/head and the outside-repo
 receipt destination are statically visible; ordinary default-branch commit
-forms remain blocked. Hook admission is intentionally independent of cached
+forms remain blocked. A `semantic-commit` target resolves from `--repo` or from
+a literal absolute `cd` in the same command, so a cross-repository invocation is
+classified against the repository it mutates rather than the tool workdir; a
+relative or expanded destination, a nested shell, and any command-local
+`GIT_*`/`HOME` override fail closed, and raw Git still fails closed after every
+shell-context change. A blocked verdict names the resolved repository, how it
+resolved, and the first failing precondition. When a `semantic-commit` target
+stays unresolvable, one command may state a reason inline as
+`AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason>`; that is handler admission, not
+a rule override, and it never reaches a proven default-branch target or a raw
+Git path. Hook admission is intentionally independent of cached
 upstream ancestry: `semantic-commit local-default` owns the aligned/ahead-only
 proof and rejects behind, diverged, or unknown relations. The hook is a
 guardrail rather than a shell sandbox; provider rules and the forge-cli

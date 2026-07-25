@@ -26,7 +26,8 @@ BLOCK_REASON_TEMPLATE = (
     "  rule: non-trivial commits need 1-2 bullets explaining why and scope\n"
     "  fix: add a body — `\\n\\n- <reason>` via --message/--message-file,\n"
     "       or pass `--body-bullet <reason>` (a --trailer does not count)\n"
-    "  ref: the rendered semantic-commit skill under the active runtime home\n"
+    "  ref: `semantic-commit commit --help`, and commit rules in\n"
+    "       `core/policies/git-delivery.md`\n"
     "  escape hatch: add `[no-body]` in the subject if this is truly trivial"
 )
 

@@ -75,12 +75,20 @@ AMBIGUOUS_REASON = f"{AMBIGUOUS_PREFIX} {BLOCK_REASON}"
 # only an unresolvable `semantic-commit` target, where the governed CLI still
 # re-verifies the worktree, branch, expected head, staging, and signing.
 WAIVER_ASSIGNMENT_NAME = "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER"
+# Must equal nils-cli's MIN_DELIVERY_WAIVER_LENGTH. A lower value here would
+# admit a delivery whose reason the receipt then refuses to record.
 MINIMUM_WAIVER_REASON_LENGTH = 12
+CONTROL_CHARACTERS = frozenset(
+    chr(codepoint)
+    for start, stop in ((0x00, 0x20), (0x7F, 0xA0))
+    for codepoint in range(start, stop)
+)
 WAIVER_HINT = (
     "When the target cannot be made resolvable, state a reason of at least "
-    f"{MINIMUM_WAIVER_REASON_LENGTH} characters on this one command as "
+    f"{MINIMUM_WAIVER_REASON_LENGTH} characters of text on this one command as "
     f"`{WAIVER_ASSIGNMENT_NAME}=<reason> semantic-commit ...`; an exported "
-    "variable is not accepted and the reason is recorded in the receipt."
+    "variable is not accepted, and the reason is recorded in the receipt as "
+    "`data.delivery_waiver`."
 )
 REPO_HINT = (
     "Pass `--repo <absolute path>` when the target repository is not the tool "
@@ -640,6 +648,27 @@ def literal_directory_target(simple_command: list[str]) -> str | None:
     return target
 
 
+def normalized_waiver_reason(value: str) -> str:
+    """Normalize a waiver reason the way the receipt writer measures it.
+
+    Admission and recording must agree on what counts as a stated reason. This
+    mirrors ``normalized_delivery_waiver`` in nils-cli's
+    ``local_default_receipt``: control characters become spaces and whitespace
+    runs collapse, so a reason cannot clear the minimum here through padding
+    and then be dropped from the receipt, leaving an admitted delivery with no
+    recorded reason. Keep both sides in step, including the minimum length.
+
+    ``CONTROL_CHARACTERS`` is Unicode category Cc, which is exactly what Rust's
+    ``char::is_control`` matches, so the two normalizations agree per codepoint.
+    """
+    return " ".join(
+        "".join(
+            " " if character in CONTROL_CHARACTERS else character
+            for character in value
+        ).split()
+    )
+
+
 def command_waiver_reason(simple_command: list[str]) -> str:
     """Return the waiver reason spelled on this command's own prefix."""
     for token in simple_command:
@@ -647,7 +676,7 @@ def command_waiver_reason(simple_command: list[str]) -> str:
             break
         name, _, value = token.partition("=")
         if name == WAIVER_ASSIGNMENT_NAME:
-            return value.strip()
+            return normalized_waiver_reason(value)
     return ""
 
 

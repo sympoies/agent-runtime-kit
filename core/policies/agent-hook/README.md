@@ -88,6 +88,18 @@ short-lived `agent-hook` recovery capability bound to the exact operation and
 state revision. The bearer remains private and is never stored in policy,
 provider configuration, output, or trace data.
 
+Admission is separate from override and recovery. What a handler accepts as
+input belongs to its own capability contract, so a handler may define a narrow
+admission path without weakening its `override_class` or its `recovery` class:
+the rule still runs, still fails closed by default, and config still cannot
+disable or downgrade it. Such a path is only legitimate when it admits a case
+the handler could not classify, never a proven violation; when a governed CLI
+independently enforces the real contract afterwards; and when it leaves durable
+evidence. `block-unsafe-default-delivery`'s one-shot stated-reason delivery
+waiver is the current example, and `core/policies/git-delivery.md` owns its
+exact scope. A repeated reason is a signal to fix the classification, not to
+keep admitting the case.
+
 ## Migration and rollback
 
 `scripts/sync-runtime-surfaces.sh` installs the bundle at

@@ -16612,6 +16612,47 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "could not be resolved safely")
 
+    def test_default_delivery_waiver_length_matches_what_the_receipt_records(
+        self,
+    ) -> None:
+        # Admission and recording must agree on what counts as a stated reason.
+        # The receipt writer collapses whitespace runs before measuring, so a
+        # reason that only clears the minimum through padding would otherwise be
+        # admitted here and then dropped from the receipt, leaving no evidence.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            receipts = root / "agent-out"
+            receipts.mkdir()
+            self._init_checkout_lease_repo(primary)
+            tail = (
+                "semantic-commit local-default --message 'fix: tiny repair' "
+                f"--expect-head {'0' * 40} --expected-branch main "
+                "--remote-mode local-only "
+                f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
+                "--automation --format json"
+            )
+            padded = "aaa   bbb   ccc"
+            self.assertGreaterEqual(len(padded), 12, "fixture must clear raw length")
+            self.assertLess(
+                len(" ".join(padded.split())), 12, "fixture must fail normalized"
+            )
+            for value, admitted in ((padded, False), ("authorized here", True)):
+                with self.subTest(value=value):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(
+                            "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                            f"{shlex.quote(value)} {tail}"
+                        ),
+                        cwd=primary,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if admitted:
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, "could not be resolved safely")
+
     def test_default_delivery_hook_refuses_a_waiver_outside_the_ambiguous_class(
         self,
     ) -> None:

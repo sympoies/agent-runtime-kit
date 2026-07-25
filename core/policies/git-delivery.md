@@ -88,10 +88,13 @@ The waiver is read only from that command's own assignment prefix, so it cannot
 outlive the invocation; an exported variable, a separate `export`, and an
 ambient environment value are all refused. It admits only the unresolvable
 class, only for `semantic-commit`, and only with a stated reason of at least 12
-characters. A proven default-branch target, every raw `git` path, and every
-force, mirror, delete, or all-refs push stay blocked, because no governed CLI
-re-verifies those downstream. The reason is recorded in the local-default
-receipt as evidence.
+characters measured the way the receipt measures it: control characters become
+spaces and whitespace runs collapse, so padding cannot clear the minimum. A
+proven default-branch target, every raw `git` path, and every force, mirror,
+delete, or all-refs push stay blocked, because no governed CLI re-verifies those
+downstream. The reason is recorded in the local-default receipt as
+`data.delivery_waiver`, and the guard and the receipt writer must keep the same
+minimum so an admitted delivery is never left without recorded evidence.
 
 This is an admission path inside the handler, not a rule override: the rule
 stays `override_class = "locked"`, fail-closed, and cannot be disabled or
