@@ -11,9 +11,9 @@ is `manifests/hook-rules.yaml`, stored as JSON-compatible YAML so the repository
 can validate it without an additional parser dependency. The inventory records
 every policy rule's behavior owner, recovery class, documentation, and test
 owner. It freezes all 68 legacy Codex and Claude registrations across 22
-shared handlers as the parity baseline, adds 18 typed coordination/liveness
+shared handlers as the parity baseline, adds 23 typed coordination/liveness
 rules, adds eight locked transaction rules, and adds one shared read-only
-capability shadow rule for 95 rules total. Each
+capability shadow rule for 100 rules total. Each
 migrated handler remains a distinct ordered rule so the cutover proves provider
 parity without changing grouped matchers or handler order.
 
