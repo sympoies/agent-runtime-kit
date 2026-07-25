@@ -100,7 +100,7 @@ LOCKED_CAPABILITIES = {
 
 COORDINATION_CAPABILITY_COUNTS = Counter(
     {
-        "agent-session.activity.v1": 8,
+        "agent-session.activity.v1": 9,
         "agent-session.semantic-conflict.v1": 6,
         "agent-session.owner-liveness.v1": 5,
         "agent-session.coordination.v1": 8,
@@ -133,6 +133,11 @@ TERMINAL_COORDINATION_GROUPS = {
     (
         "claude",
         "StopFailure",
+        "",
+    ),
+    (
+        "claude",
+        "Notification",
         "",
     ),
 }
@@ -252,6 +257,38 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         self.assertEqual(rule["timeout_posture"], "closed")
         self.assertEqual(rule["override_class"], "locked")
 
+    def test_claude_notification_activity_ingress_is_required(self) -> None:
+        matching = [
+            rule
+            for rule in load_inventory()["rules"]
+            if rule["id"] == "coord.claude.notification.activity"
+        ]
+        self.assertEqual(len(matching), 1)
+        rule = matching[0]
+        self.assertEqual(rule["products"], ["claude"])
+        self.assertEqual(rule["events"], ["Notification"])
+        self.assertIsNone(rule["matcher"])
+        self.assertEqual(
+            rule["capability"],
+            {
+                "id": "agent-session.activity.v1",
+                "reason_code": "agent-activity",
+            },
+        )
+        self.assertEqual(rule["mode"], "enforce")
+        self.assertEqual(rule["priority"], 10)
+        self.assertEqual(rule["failure_posture"], "closed")
+        self.assertEqual(rule["timeout_posture"], "warn")
+        self.assertEqual(rule["override_class"], "locked")
+        self.assertEqual(rule["state_owner"], "agent-session.coordination")
+        self.assertEqual(rule["transformation"], "activity")
+        self.assertEqual(rule["recovery"], "exact-capability-only")
+        self.assertEqual(
+            rule["test_owner"],
+            "tests/agent-hook/test_policy_contract.py::"
+            "test_claude_notification_activity_ingress_is_required",
+        )
+
     def test_inventory_dispositions_cover_every_legacy_handler(self) -> None:
         inventory = load_inventory()
         self.assertEqual(
@@ -271,7 +308,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
-        self.assertEqual(len(rules), 96)
+        self.assertEqual(len(rules), 97)
         ids = [rule["id"] for rule in rules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate inventory rule id")
         for rule in rules:
@@ -325,7 +362,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         coordination_rules = [
             rule for rule in added_rules if rule["id"] != READ_ONLY_SHADOW_RULE_ID
         ]
-        self.assertEqual(len(coordination_rules), 27)
+        self.assertEqual(len(coordination_rules), 28)
         self.assertEqual(
             Counter(rule["capability"]["id"] for rule in coordination_rules),
             COORDINATION_CAPABILITY_COUNTS,

@@ -1854,6 +1854,32 @@
       "legacy_handler": null
     },
     {
+      "id": "coord.claude.notification.activity",
+      "products": [
+        "claude"
+      ],
+      "events": [
+        "Notification"
+      ],
+      "matcher": null,
+      "capability": {
+        "id": "agent-session.activity.v1",
+        "reason_code": "agent-activity"
+      },
+      "mode": "enforce",
+      "priority": 10,
+      "failure_posture": "closed",
+      "timeout_posture": "warn",
+      "override_class": "locked",
+      "state_owner": "agent-session.coordination",
+      "transformation": "activity",
+      "recovery": "exact-capability-only",
+      "docs": "core/policies/session-coordination.md",
+      "test_owner": "tests/agent-hook/test_policy_contract.py::test_claude_notification_activity_ingress_is_required",
+      "disposition": "added-coordination",
+      "legacy_handler": null
+    },
+    {
       "id": "coord.activity.session-start",
       "products": [
         "codex",

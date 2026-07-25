@@ -1,6 +1,6 @@
 schema_version = "agent-hook.policy.v1"
 bundle_id = "runtime-kit"
-version = "2026.07.24.1"
+version = "2026.07.25.1"
 [[rules]]
 id = "runtime.shared.pre-tool-use.bash.read-only-shadow"
 products = ["codex", "claude"]
@@ -833,6 +833,17 @@ priority = 10
 mode = "enforce"
 failure_posture = "closed"
 timeout_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "coord.claude.notification.activity"
+products = ["claude"]
+events = ["Notification"]
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "warn"
 override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 

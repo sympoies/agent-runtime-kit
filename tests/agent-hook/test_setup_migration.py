@@ -563,6 +563,7 @@ remove_agent_hook_cutover codex
         self.assertEqual(len(owned), len(applied["owned_groups"]))
         self.assertEqual(commands.count("third-party-hook"), 1)
         self.assertIn("StopFailure", applied["owned_events"])
+        self.assertIn("Notification", applied["owned_events"])
         self.assertEqual(
             [
                 group
@@ -571,7 +572,16 @@ remove_agent_hook_cutover codex
             ],
             [{"event": "StopFailure"}],
         )
+        self.assertEqual(
+            [
+                group
+                for group in applied["owned_groups"]
+                if group["event"] == "Notification"
+            ],
+            [{"event": "Notification"}],
+        )
         self.assertEqual(len(settings["hooks"]["StopFailure"]), 1)
+        self.assertEqual(len(settings["hooks"]["Notification"]), 1)
         self.assert_doctor("claude")
 
         remove = self.setup_preview("claude", "--remove")
