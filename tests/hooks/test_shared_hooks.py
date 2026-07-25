@@ -16411,6 +16411,244 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "could not be resolved safely")
 
+    def test_default_delivery_hook_resolves_a_literal_cd_for_semantic_commit(
+        self,
+    ) -> None:
+        # `semantic-commit` re-verifies the worktree, branch, expected head, and
+        # signing itself, so the only thing this guard owes it is classification
+        # against the right repository. A literal absolute `cd` therefore
+        # resolves the target instead of failing closed. The same resolution
+        # closes the inverse hole: a default-branch commit staged behind a `cd`
+        # used to be judged against the feature-branch tool workdir and allowed.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            receipts = root / "agent-out"
+            receipts.mkdir()
+            self._init_checkout_lease_repo(primary)
+            feature = self._add_checkout_lease_worktree(primary, "feat/elsewhere")
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=primary,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            authored = (
+                f"cd {shlex.quote(str(primary))} && semantic-commit commit "
+                "--message 'fix: tiny repair'"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(authored),
+                cwd=feature,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "forge-cli repo push-default")
+
+            local_default_tail = (
+                "semantic-commit local-default --message 'fix: tiny repair' "
+                f"--expect-head {head} --expected-branch main "
+                "--remote-mode local-only "
+                f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
+                "--automation --format json"
+            )
+            governed = f"cd {shlex.quote(str(primary))} && {local_default_tail}"
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(governed),
+                cwd=feature,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # An expanded or relative destination is not a literal target, so it
+            # keeps the existing fail-closed verdict.
+            for command in (
+                f'cd "$TARGET" && {local_default_tail}',
+                f"cd {shlex.quote(primary.name)} && {local_default_tail}",
+                f"cd {shlex.quote(str(primary))}/.. && {local_default_tail}",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=root,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_fails_closed_on_semantic_commit_retargeting(
+        self,
+    ) -> None:
+        # Command-local Git context can move where `semantic-commit` actually
+        # commits, so the guard must not classify it against the tool workdir.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            feature = self._add_checkout_lease_worktree(primary, "feat/elsewhere")
+            alternate_home = root / "alternate-home"
+            alternate_home.mkdir()
+            for command in (
+                f"HOME={shlex.quote(str(alternate_home))} semantic-commit commit "
+                "--message 'fix: tiny repair'",
+                f"GIT_DIR={shlex.quote(str(primary / '.git'))} semantic-commit "
+                "commit --message 'fix: tiny repair'",
+                f"env -C {shlex.quote(str(primary))} semantic-commit commit "
+                "--message 'fix: tiny repair'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=feature,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_names_its_local_default_discriminator(
+        self,
+    ) -> None:
+        # An unresolvable verdict must name what it resolved and what failed, or
+        # the caller cannot tell a wrong repository from a wrong expected head.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            other = root / "other"
+            receipts = root / "agent-out"
+            receipts.mkdir()
+            self._init_checkout_lease_repo(primary)
+            self._init_checkout_lease_repo(other)
+            # Identical fixtures commit to the same object id in the same second,
+            # which would make the foreign head match and the shape valid.
+            (other / "OTHER.md").write_text("# other fixture\n", encoding="utf-8")
+            subprocess.run(["git", "add", "OTHER.md"], cwd=other, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "fixture: other head"],
+                cwd=other,
+                check=True,
+            )
+            foreign_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=other,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            mistargeted = (
+                "semantic-commit local-default --message 'fix: tiny repair' "
+                f"--expect-head {foreign_head} --expected-branch main "
+                "--remote-mode local-only "
+                f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
+                "--automation --format json"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(mistargeted),
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "could not be resolved safely")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertIn(str(primary.resolve()), reason)
+            self.assertIn("tool workdir", reason)
+            self.assertIn("--expect-head", reason)
+            self.assertIn(foreign_head[:12], reason)
+            self.assertIn("--repo", reason)
+
+    def test_default_delivery_hook_admits_a_one_shot_in_command_waiver(self) -> None:
+        # The waiver is read from the command's own assignment prefix, so it
+        # cannot outlive one invocation, and it must carry a stated reason.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            receipts = root / "agent-out"
+            receipts.mkdir()
+            self._init_checkout_lease_repo(primary)
+            foreign = "0" * 40
+            tail = (
+                "semantic-commit local-default --message 'fix: tiny repair' "
+                f"--expect-head {foreign} --expected-branch main "
+                "--remote-mode local-only "
+                f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
+                "--automation --format json"
+            )
+            reason = "maintainer authorized this cross-repo local completion"
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    f"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER={shlex.quote(reason)} "
+                    f"{tail}"
+                ),
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A separate assignment command, an ambient export, and a reason that
+            # states nothing all keep the unresolvable verdict.
+            for command in (
+                f"export AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER={shlex.quote(reason)}"
+                f" && {tail}",
+                f"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=1 {tail}",
+                f"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER='' {tail}",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=primary,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(tail),
+                cwd=primary,
+                env={"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER": reason},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_refuses_a_waiver_outside_the_ambiguous_class(
+        self,
+    ) -> None:
+        # A waiver only admits an invocation the guard could not classify. A
+        # proven default-branch target and every raw Git path stay blocked,
+        # because no governed CLI re-verifies those downstream.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            reason = "maintainer authorized this cross-repo local completion"
+            waiver = (
+                f"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER={shlex.quote(reason)} "
+            )
+            cases = (
+                (
+                    f"{waiver}semantic-commit commit --message 'fix: tiny repair'",
+                    "forge-cli repo push-default",
+                ),
+                (f"{waiver}git push", "could not be resolved safely"),
+                (
+                    f"{waiver}git push --force origin HEAD:main",
+                    "forge-cli repo push-default",
+                ),
+                (f"{waiver}git push --mirror origin", "forge-cli repo push-default"),
+                (f"{waiver}git reset --hard HEAD~1", "forge-cli repo push-default"),
+            )
+            for command, fragment in cases:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=primary,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
     def test_default_delivery_hook_blocks_raw_default_branch_rewrites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"

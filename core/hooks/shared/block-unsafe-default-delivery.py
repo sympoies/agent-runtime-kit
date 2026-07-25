@@ -10,11 +10,23 @@ paths that would otherwise bypass either contract.
 
 This is a mechanical guardrail, not a shell sandbox. Provider branch rules and
 the forge-cli expected-base/signature/read-back contract remain authoritative.
+
+A blocked verdict names what it resolved and what failed, because an agent that
+cannot see the discriminator cannot fix the invocation. ``semantic-commit`` is
+classified against the repository it actually commits in: ``--repo`` binds that
+target outright, and a literal absolute ``cd`` in the same command resolves it.
+Raw Git still fails closed after any shell-context change. Where the target
+remains unresolvable, one command may state a reason inline as
+``AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason> semantic-commit ...``; that
+admits only the unresolvable class, only for the governed CLI that re-verifies
+worktree, branch, expected head, staging, and signing itself, and only for the
+command it is written on. A proven default-branch target never waives.
 """
 
 from __future__ import annotations
 
 import fnmatch
+import functools
 import os
 import selectors
 import shlex
@@ -39,6 +51,7 @@ from hook_common import (
     invocation_is_unresolved_nested,
     invocation_tokens,
     is_assignment,
+    nested_shell_payload,
     opaque_invocation_candidates,
     read_payload,
     semantic_commit_invocation_effects,
@@ -55,9 +68,26 @@ BLOCK_REASON = (
     "completion was explicitly authorized instead, use the exact governed "
     "`semantic-commit local-default` receipt flow."
 )
-AMBIGUOUS_REASON = (
-    "Default-branch delivery target could not be resolved safely. " + BLOCK_REASON
+AMBIGUOUS_PREFIX = "Default-branch delivery target could not be resolved safely."
+AMBIGUOUS_REASON = f"{AMBIGUOUS_PREFIX} {BLOCK_REASON}"
+# A one-shot waiver is spelled on the command it admits, never exported, so it
+# cannot outlive that invocation and stays visible in the transcript. It admits
+# only an unresolvable `semantic-commit` target, where the governed CLI still
+# re-verifies the worktree, branch, expected head, staging, and signing.
+WAIVER_ASSIGNMENT_NAME = "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER"
+MINIMUM_WAIVER_REASON_LENGTH = 12
+WAIVER_HINT = (
+    "When the target cannot be made resolvable, state a reason of at least "
+    f"{MINIMUM_WAIVER_REASON_LENGTH} characters on this one command as "
+    f"`{WAIVER_ASSIGNMENT_NAME}=<reason> semantic-commit ...`; an exported "
+    "variable is not accepted and the reason is recorded in the receipt."
 )
+REPO_HINT = (
+    "Pass `--repo <absolute path>` when the target repository is not the tool "
+    "workdir; it binds the target without depending on shell state."
+)
+GOVERNED_CONTEXT_EXECUTABLES = frozenset({"git", "semantic-commit"})
+DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
 )
@@ -448,19 +478,27 @@ def config_environment_variables(arguments: list[str]) -> set[str]:
 def command_local_git_environment_is_safe(
     simple_command: list[str], invocation: list[str]
 ) -> bool:
-    """Reject command-local environment that can diverge from Git probes."""
-    if not invocation or PurePosixPath(invocation[0]).name != "git":
+    """Reject command-local environment that can diverge from Git probes.
+
+    ``semantic-commit`` is covered alongside ``git`` because the same overrides
+    move where its commit lands, which would make this guard classify a
+    different repository than the one the invocation mutates.
+    """
+    if not invocation:
+        return True
+    executable = PurePosixPath(invocation[0]).name
+    if executable not in GOVERNED_CONTEXT_EXECUTABLES:
         return True
     referenced = config_environment_variables(invocation[1:])
-    git_index = next(
+    command_index = next(
         (
             index
             for index, token in enumerate(simple_command)
-            if PurePosixPath(token).name == "git"
+            if PurePosixPath(token).name == executable
         ),
         len(simple_command),
     )
-    prefix = simple_command[:git_index]
+    prefix = simple_command[:command_index]
     env_index = next(
         (
             index
@@ -477,15 +515,15 @@ def command_local_git_environment_is_safe(
             or OPAQUE_NESTED_SHELL_COMMAND in normalized
         ):
             return False
-        normalized_git_index = next(
+        normalized_command_index = next(
             (
                 index
                 for index, token in enumerate(normalized)
-                if PurePosixPath(token).name == "git"
+                if PurePosixPath(token).name == executable
             ),
             len(normalized),
         )
-        prefix = [*simple_command[:env_index], *normalized[:normalized_git_index]]
+        prefix = [*simple_command[:env_index], *normalized[:normalized_command_index]]
 
     def sensitive(name: str) -> bool:
         return (
@@ -580,6 +618,50 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
             if not token.startswith("-")
         )
     return False
+
+
+def literal_directory_target(simple_command: list[str]) -> str | None:
+    """Return the literal absolute directory a plain ``cd`` moves to.
+
+    Only an unambiguous destination qualifies. A relative path depends on where
+    the sequence started, and expansion, globbing, or `~` hides the target, so
+    those keep the fail-closed verdict instead of resolving to a guess.
+    """
+    invocation = invocation_tokens(simple_command)
+    if len(invocation) != 2 or PurePosixPath(invocation[0]).name != "cd":
+        return None
+    if simple_command[: len(invocation)] != invocation:
+        return None
+    target = invocation[1]
+    if not target.startswith("/"):
+        return None
+    if any(character in target for character in DIRECTORY_EXPANSION_CHARACTERS):
+        return None
+    return target
+
+
+def command_waiver_reason(simple_command: list[str]) -> str:
+    """Return the waiver reason spelled on this command's own prefix."""
+    for token in simple_command:
+        if not is_assignment(token):
+            break
+        name, _, value = token.partition("=")
+        if name == WAIVER_ASSIGNMENT_NAME:
+            return value.strip()
+    return ""
+
+
+def waiver_admits(invocation: list[str], reason: str, waiver: str) -> bool:
+    """Whether a stated one-shot waiver may admit this blocked invocation."""
+    if len(waiver) < MINIMUM_WAIVER_REASON_LENGTH:
+        return False
+    if not reason.startswith(AMBIGUOUS_PREFIX):
+        return False
+    return bool(invocation) and PurePosixPath(invocation[0]).name == "semantic-commit"
+
+
+def unresolved(detail: str) -> str:
+    return f"{AMBIGUOUS_REASON} {detail}" if detail else AMBIGUOUS_REASON
 
 
 def resolve_git_alias(
@@ -707,32 +789,44 @@ def default_branch(
     return "" if cached_timeout else expected
 
 
-def semantic_commit_repo(arguments: list[str], base: Path) -> Path:
+def semantic_commit_repo(
+    arguments: list[str], base: Path, base_source: str
+) -> tuple[Path, str]:
+    """Return the repository this invocation commits in, and how it resolved."""
     _read_only, value = semantic_commit_invocation_state(arguments)
     if value:
         path = Path(value).expanduser()
-        return (path if path.is_absolute() else base / path).resolve(strict=False)
-    return base
+        resolved = (path if path.is_absolute() else base / path).resolve(strict=False)
+        return resolved, "`--repo`"
+    return base, base_source
 
 
-def semantic_commit_targets_default(
-    probe: GitProbe, arguments: list[str], base: Path
-) -> bool | None:
+def semantic_commit_block_reason(
+    probe: GitProbe, arguments: list[str], base: Path, base_source: str
+) -> str:
+    """Classify a governed ``semantic-commit`` invocation by its own repository."""
     authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
         arguments
     )
     if not arguments or not authors_commit:
-        return False
-    cwd = semantic_commit_repo(arguments, base)
+        return ""
+    cwd, source = semantic_commit_repo(arguments, base, base_source)
+    location = f"Resolved repository: {cwd} (from {source})."
     if arguments[0] == "local-default":
-        return False if valid_local_default_invocation(probe, arguments, cwd) else None
+        rejection = local_default_rejection(probe, arguments, cwd)
+        if not rejection:
+            return ""
+        return unresolved(f"{location} {rejection} {REPO_HINT} {WAIVER_HINT}")
     if arguments[0] not in {"commit", "fixup", "squash"}:
-        return False
+        return ""
     branch = current_branch(probe, cwd)
     expected = default_branch(probe, cwd)
     if not branch or not expected:
-        return None
-    return branch == expected
+        return unresolved(
+            f"{location} Its checked-out branch or cached default branch could "
+            f"not be read. {REPO_HINT}"
+        )
+    return BLOCK_REASON if branch == expected else ""
 
 
 def update_ref_target(arguments: list[str]) -> str | None:
@@ -816,35 +910,47 @@ def option_value(arguments: list[str], name: str) -> str:
     return ""
 
 
-def valid_local_default_invocation(
+def local_default_rejection(
     probe: GitProbe, arguments: list[str], cwd: Path
-) -> bool:
-    if any(
-        token in {"--amend", "--allow-empty", "--message-only", "--no-edit"}
-        for token in arguments
-    ):
-        return False
+) -> str:
+    """Return why this is not the exact governed local-default shape, else ""."""
+    unsupported = next(
+        (
+            token
+            for token in arguments
+            if token in {"--amend", "--allow-empty", "--message-only", "--no-edit"}
+        ),
+        "",
+    )
+    if unsupported:
+        return f"local-default does not support `{unsupported}`."
     expected_branch = option_value(arguments, "--expected-branch")
     expected_head = option_value(arguments, "--expect-head")
     receipt = option_value(arguments, "--receipt-out")
     remote_mode = option_value(arguments, "--remote-mode")
-    if (
-        not expected_branch
-        or len(expected_head) not in {40, 64}
-        or any(character not in "0123456789abcdef" for character in expected_head)
-        or (remote_mode and remote_mode != "local-only")
+    if not expected_branch:
+        return "It carries no `--expected-branch`."
+    if len(expected_head) not in {40, 64} or any(
+        character not in "0123456789abcdef" for character in expected_head
     ):
-        return False
+        return "Its `--expect-head` is not a full lowercase object id."
+    if remote_mode and remote_mode != "local-only":
+        return f"Its `--remote-mode {remote_mode}` is not `local-only`."
     receipt_path = Path(receipt).expanduser()
     if not receipt_path.is_absolute() or not receipt_path.parent.exists():
-        return False
+        return (
+            "Its `--receipt-out` is not an absolute path with an existing parent."
+        )
     try:
         repository = cwd.resolve(strict=True)
         receipt_parent = receipt_path.parent.resolve(strict=True)
     except OSError:
-        return False
+        return "The repository or the receipt directory could not be read."
     if receipt_parent == repository or repository in receipt_parent.parents:
-        return False
+        return (
+            "Its `--receipt-out` is inside the repository; allocate the receipt "
+            "outside it through `agent-out`."
+        )
     head = probe.run(repository, "rev-parse", "--verify", "HEAD")
     git_dir = probe.run(
         repository, "rev-parse", "--path-format=absolute", "--git-dir"
@@ -856,19 +962,29 @@ def valid_local_default_invocation(
         result is not None and result.returncode == 0
         for result in (head, git_dir, common_dir)
     ):
-        return False
+        return "The repository did not answer the required Git reads."
     assert head is not None and git_dir is not None and common_dir is not None
     try:
         primary = Path(git_dir.stdout.strip()).resolve(strict=True) == Path(
             common_dir.stdout.strip()
         ).resolve(strict=True)
     except OSError:
-        return False
-    return (
-        primary
-        and current_branch(probe, repository) == expected_branch
-        and head.stdout.strip() == expected_head
-    )
+        return "The repository's Git directories could not be compared."
+    if not primary:
+        return "The repository is a linked worktree, not the primary checkout."
+    branch = current_branch(probe, repository)
+    if branch != expected_branch:
+        return (
+            f"It is on branch `{branch or 'an unreadable branch'}`, not the "
+            f"`--expected-branch {expected_branch}`."
+        )
+    actual_head = head.stdout.strip()
+    if actual_head != expected_head:
+        return (
+            f"Its HEAD is {actual_head[:12]}, not the `--expect-head` "
+            f"{expected_head[:12]}."
+        )
+    return ""
 
 
 def normalized_branch(value: str, current: str) -> str:
@@ -1040,6 +1156,8 @@ def invocation_block_reason(
     base: Path,
     *,
     environment_safe: bool = True,
+    target_resolved: bool = True,
+    base_source: str = "the tool workdir",
 ) -> str:
     if not invocation:
         return ""
@@ -1047,8 +1165,12 @@ def invocation_block_reason(
     if executable == OPAQUE_NESTED_SHELL_COMMAND:
         return AMBIGUOUS_REASON
     if executable == "semantic-commit":
-        target = semantic_commit_targets_default(probe, invocation[1:], base)
-        return BLOCK_REASON if target is True else AMBIGUOUS_REASON if target is None else ""
+        if not target_resolved:
+            return unresolved(
+                "Command-local Git context can move where this commit lands, so "
+                f"its repository was not classified. {REPO_HINT}"
+            )
+        return semantic_commit_block_reason(probe, invocation[1:], base, base_source)
     if executable == "git":
         cwd, subcommand, action, config_arguments, context_valid = git_context(
             invocation[1:], base
@@ -1098,18 +1220,54 @@ def invocation_block_reason(
     return ""
 
 
+def candidate_block_reason(
+    probe: GitProbe,
+    simple_command: list[str],
+    cwd: Path,
+    candidate: list[str],
+    *,
+    shell_context_safe: bool,
+    directory_resolved: bool,
+    base_source: str,
+) -> str:
+    """Classify one invocation shape of a simple command in its own context."""
+    command_safe = command_local_git_environment_is_safe(simple_command, candidate)
+    return invocation_block_reason(
+        probe,
+        candidate,
+        cwd,
+        environment_safe=command_safe and shell_context_safe,
+        target_resolved=command_safe and (shell_context_safe or directory_resolved),
+        base_source=base_source,
+    )
+
+
 def command_block_reason(command: str, base: Path) -> str:
     probe = GitProbe()
     shell_context_safe = True
-    for simple_command in simple_commands_with_nested_shells(command):
+    simple_commands = simple_commands_with_nested_shells(command)
+    # A nested shell hides where its own `cd` stops applying, so a resolved
+    # directory is only trustworthy across a flat command sequence.
+    resolves_directories = not any(
+        nested_shell_payload(invocation_tokens(tokens)) for tokens in simple_commands
+    )
+    directory_resolved = True
+    cwd = base
+    base_source = "the tool workdir"
+    for simple_command in simple_commands:
         invocation = invocation_tokens(simple_command)
-        environment_safe = command_local_git_environment_is_safe(
-            simple_command, invocation
-        ) and shell_context_safe
-        reason = invocation_block_reason(
-            probe, invocation, base, environment_safe=environment_safe
+        waiver = command_waiver_reason(simple_command)
+        classify = functools.partial(
+            candidate_block_reason,
+            probe,
+            simple_command,
+            cwd,
+            shell_context_safe=shell_context_safe,
+            directory_resolved=directory_resolved,
+            base_source=base_source,
         )
-        if reason:
+        reason = classify(invocation)
+        if reason and not waiver_admits(invocation, reason, waiver):
             return reason
         if invocation_is_unresolved_nested(invocation):
             return AMBIGUOUS_REASON
@@ -1118,19 +1276,23 @@ def command_block_reason(command: str, base: Path) -> str:
         ):
             if invocation_is_unresolved_nested(candidate):
                 return AMBIGUOUS_REASON
-            candidate_environment_safe = command_local_git_environment_is_safe(
-                simple_command, candidate
-            ) and shell_context_safe
-            reason = invocation_block_reason(
-                probe,
-                candidate,
-                base,
-                environment_safe=candidate_environment_safe,
-            )
-            if reason:
+            reason = classify(candidate)
+            if reason and not waiver_admits(candidate, reason, waiver):
                 return reason
-        if shell_command_changes_git_context(simple_command):
-            shell_context_safe = False
+        if not shell_command_changes_git_context(simple_command):
+            continue
+        # Raw Git keeps failing closed after any context change. Only the
+        # governed CLI, which re-verifies its own repository, follows a literal
+        # destination this guard can name.
+        shell_context_safe = False
+        target = (
+            literal_directory_target(simple_command) if resolves_directories else None
+        )
+        if target is not None and Path(target).is_dir():
+            cwd = Path(target)
+            base_source = "a literal `cd` in the same command"
+            continue
+        directory_resolved = False
     return ""
 
 

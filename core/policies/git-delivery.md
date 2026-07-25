@@ -62,13 +62,49 @@ probe. Missing or ambiguous cache state fails closed; live truth belongs to
 `forge-cli`. Hermes has no hook runner; policy and the governed CLI
 contract remain authoritative there.
 
+### Naming the delivery target
+
+A `semantic-commit` invocation is classified against the repository it actually
+commits in, not the tool workdir. Bind a cross-repository target with
+`--repo <absolute path>`, which every mutating subcommand including
+`local-default` accepts. A literal absolute `cd` in the same command also
+resolves the target; a relative, expanded, globbed, or `~` destination, a
+nested shell, and any command-local `GIT_*`/`HOME` override do not, and neither
+does any shell-context change ahead of a raw `git` path. A blocked verdict
+names the resolved repository, how it resolved, and the first failing
+precondition, so the invocation can be corrected instead of retried blind.
+
+### One-shot delivery waiver
+
+When the target genuinely cannot be made resolvable, one command may state a
+reason inline:
+
+```
+AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER='<why this target is authorized>' \
+  semantic-commit local-default ...
+```
+
+The waiver is read only from that command's own assignment prefix, so it cannot
+outlive the invocation; an exported variable, a separate `export`, and an
+ambient environment value are all refused. It admits only the unresolvable
+class, only for `semantic-commit`, and only with a stated reason of at least 12
+characters. A proven default-branch target, every raw `git` path, and every
+force, mirror, delete, or all-refs push stay blocked, because no governed CLI
+re-verifies those downstream. The reason is recorded in the local-default
+receipt as evidence.
+
+This is an admission path inside the handler, not a rule override: the rule
+stays `override_class = "locked"`, fail-closed, and cannot be disabled or
+downgraded by configuration.
+
 ### Local-default completion
 
 Use `semantic-commit local-default` only after the current request explicitly
 authorizes this local outcome. Bind the invocation to the full current `HEAD`,
 the exact checked-out branch, and a new receipt path allocated outside the
 repository through `agent-out`. With configured remotes, include
-`--remote-mode local-only`; with none, omit it. The CLI requires the primary
+`--remote-mode local-only`; with none, omit it. When the target is not the tool
+workdir, add `--repo <absolute path>` rather than moving the shell. The CLI requires the primary
 worktree, an attached matching branch, staged-only changes, no Git operation,
 a cached upstream that is aligned, ahead-only, or absent, and usable signing.
 Behind, diverged, unresolved, or otherwise unknown cached ancestry fails
