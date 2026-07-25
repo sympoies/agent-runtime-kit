@@ -1180,6 +1180,55 @@ def path_within(path: str, root: str) -> bool:
         return False
 
 
+def release_package_root(executable: str) -> str | None:
+    """The versioned release package root of a governed CLI path, if any.
+
+    A Homebrew install version-pins each release under
+    ``<prefix>/Cellar/<package>/<version>/bin/<name>``. The package root
+    (``<prefix>/Cellar/<package>``) is the identity that survives an upgrade;
+    the full path is not.
+    """
+    resolved = os.path.realpath(executable)
+    bin_dir = os.path.dirname(resolved)
+    if os.path.basename(bin_dir) != "bin":
+        return None
+    version_dir = os.path.dirname(bin_dir)
+    package_root = os.path.dirname(version_dir)
+    if not os.path.basename(version_dir) or not os.path.basename(package_root):
+        return None
+    return package_root
+
+
+def same_governed_release(candidate: str, executable: str, repo_root: str) -> bool:
+    """Whether ``candidate`` is the active ``executable`` or a superseded sibling.
+
+    The trusted bootstrap prefix embeds the *resolved* agent-docs path, which is
+    version-pinned. A mid-session release upgrade repoints the stable
+    ``bin/agent-docs`` symlink, so a preparation command replayed from earlier in
+    the session still names the superseded release directory. That command is
+    the same governed CLI, and rejecting it makes every prepare variant report
+    ``agent-docs-bootstrap-shape-mismatch`` -- leaving the edit gate
+    unsatisfiable until the session restarts. It is therefore accepted when it
+    shares the active release's package root, which is exactly the sibling set
+    ``trusted_agent_docs_executable`` already admits. A repository-local shadow
+    or a different package is still never a bootstrap.
+    """
+    if not candidate or not os.path.isabs(candidate):
+        return False
+    active = os.path.realpath(executable)
+    resolved = os.path.realpath(candidate)
+    if resolved == active:
+        return True
+    if os.path.basename(resolved) != os.path.basename(active):
+        return False
+    if path_within(resolved, repo_root):
+        return False
+    package_root = release_package_root(candidate)
+    return package_root is not None and package_root == release_package_root(
+        executable
+    )
+
+
 def activation_base_args(
     *,
     repo_root: str,
@@ -1315,7 +1364,11 @@ def recoverable_prepare_parameters(
         product=product,
         subcommand="prepare",
     )
-    if command_words[: len(base)] != base:
+    if not command_words or not same_governed_release(
+        command_words[0], agent_docs_executable, repo_root
+    ):
+        return None
+    if command_words[1 : len(base)] != base[1:]:
         return None
 
     intents: list[str] = []
@@ -1390,7 +1443,9 @@ def bootstrap_activation_intents(
             product=product,
             subcommand=subcommand,
         )
-        if words[: len(base)] != base:
+        if not same_governed_release(words[0], agent_docs_executable, repo_root):
+            continue
+        if words[1 : len(base)] != base[1:]:
             continue
         tail = words[len(base) :]
         intents: list[str] = []
@@ -1415,7 +1470,10 @@ def bootstrap_activation_intents(
                 continue
         elif index != len(tail):
             continue
-        return words, intents, subcommand
+        # Canonicalize a superseded release path onto the release installed now,
+        # so the hook always probes the current binary even when the command was
+        # replayed from before a mid-session upgrade.
+        return [agent_docs_executable] + words[1:], intents, subcommand
     return None
 
 
@@ -1977,9 +2035,9 @@ def main() -> int:
             )
             mismatch = (
                 "This trusted agent-docs preparation did not match the exact "
-                "repository, session, product, state-home, phase, and JSON output "
-                "shape required by the bootstrap and is not treated as a trusted "
-                "bootstrap. "
+                "executable, repository, session, product, state-home, phase, and "
+                "JSON output shape required by the bootstrap and is not treated as "
+                "a trusted bootstrap. "
             )
             if mode == "enforce":
                 emit_block(

@@ -9912,6 +9912,110 @@ exit 0
                             )
                         )
 
+    def test_pre_edit_bootstrap_admits_prepare_from_superseded_release_path(
+        self,
+    ) -> None:
+        """A mid-session CLI upgrade must not strand the trusted bootstrap.
+
+        The bootstrap identity prefix embeds the *resolved* agent-docs path,
+        which a Homebrew install version-pins under
+        ``Cellar/nils-cli/<version>/bin``. When the release is upgraded
+        mid-session the stable ``bin/agent-docs`` symlink repoints, so a
+        preparation command replayed from earlier in the session still names the
+        superseded -- but equally governed -- sibling. Rejecting it reports
+        ``agent-docs-bootstrap-shape-mismatch`` for every prepare variant, and
+        the edit gate stays unsatisfiable until the session restarts. The parser
+        admits the sibling and canonicalizes it onto the active release, so the
+        hook always probes the binary that is installed now. A path outside the
+        shared package root, or inside the repository, is still not a bootstrap.
+        """
+        spec = importlib.util.spec_from_file_location(
+            "pre_edit_superseded_release_under_test",
+            HOOK_DIR / "pre-edit-intent-gate.py",
+        )
+        assert spec is not None and spec.loader is not None
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            cellar = root / "prefix" / "Cellar" / "nils-cli"
+            superseded_bin = cellar / "1.25.5" / "bin"
+            active_bin = cellar / "1.25.6" / "bin"
+            foreign_bin = root / "prefix" / "Cellar" / "other-cli" / "1.0.0" / "bin"
+            shadow_bin = repo / "vendor" / "bin"
+            for directory in (superseded_bin, active_bin, foreign_bin, shadow_bin):
+                directory.mkdir(parents=True)
+                executable = directory / "agent-docs"
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            stable_bin = root / "prefix" / "bin"
+            stable_bin.mkdir()
+            (stable_bin / "agent-docs").symlink_to(active_bin / "agent-docs")
+
+            repo_root = str(repo.resolve())
+            active = str((active_bin / "agent-docs").resolve())
+            env = {
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(stable_bin),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                "AGENT_RUNTIME_DOCS_HOME": repo_root,
+                "PATH": f"{stable_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                base = gate.activation_base_args(
+                    repo_root=repo_root,
+                    executable=active,
+                    current_session="mid-session-upgrade",
+                    product="claude",
+                    subcommand="prepare",
+                )
+                tail = [
+                    "--intent",
+                    "project-dev",
+                    "--phase",
+                    "edit",
+                    "--format",
+                    "json",
+                ]
+
+                def parse(executable: str):
+                    return gate.bootstrap_activation_intents(
+                        shlex.join([executable] + base[1:] + tail),
+                        current_session="mid-session-upgrade",
+                        product="claude",
+                        repo_root=repo_root,
+                        agent_docs_executable=active,
+                    )
+
+                # Sanity: the active release is the already-supported baseline.
+                self.assertIsNotNone(parse(active))
+
+                superseded = parse(str((superseded_bin / "agent-docs").resolve()))
+                self.assertIsNotNone(
+                    superseded,
+                    "a superseded release sibling must stay a trusted bootstrap",
+                )
+                assert superseded is not None
+                words, intents, subcommand = superseded
+                self.assertEqual(intents, ["project-dev"])
+                self.assertEqual(subcommand, "prepare")
+                self.assertEqual(
+                    words[0],
+                    active,
+                    "the bootstrap must run the release installed now",
+                )
+                self.assertEqual(words[1:], base[1:] + tail)
+
+                for label, path in (
+                    ("foreign package root", foreign_bin / "agent-docs"),
+                    ("repository shadow", shadow_bin / "agent-docs"),
+                ):
+                    with self.subTest(rejected=label):
+                        self.assertIsNone(parse(str(path.resolve())))
+
     def test_pre_edit_intent_gate_rejects_cross_repository_agent_run_workdir_once(
         self,
     ) -> None:
