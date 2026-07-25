@@ -578,8 +578,18 @@ remove_agent_hook_cutover codex
                 for group in applied["owned_groups"]
                 if group["event"] == "Notification"
             ],
-            [{"event": "Notification"}],
+            [{"event": "Notification", "matcher": "agent_needs_input|idle_prompt"}],
         )
+        self.assertIn("PermissionRequest", applied["owned_events"])
+        self.assertEqual(
+            [
+                group
+                for group in applied["owned_groups"]
+                if group["event"] == "PermissionRequest"
+            ],
+            [{"event": "PermissionRequest"}],
+        )
+        self.assertEqual(len(settings["hooks"]["PermissionRequest"]), 1)
         self.assertEqual(len(settings["hooks"]["StopFailure"]), 1)
         self.assertEqual(len(settings["hooks"]["Notification"]), 1)
         for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
