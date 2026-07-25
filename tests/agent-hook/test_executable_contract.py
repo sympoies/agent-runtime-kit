@@ -340,12 +340,12 @@ class AgentHookExecutableContractTests(unittest.TestCase):
     def test_policy_validates_and_inventory_is_complete(self) -> None:
         validated = self.json_result(self.run_hook("validate", "--format", "json"))
         self.assertEqual(validated["bundle_id"], "runtime-kit")
-        self.assertEqual(validated["rule_count"], 97)
+        self.assertEqual(validated["rule_count"], 99)
 
         inventory = self.json_result(self.run_hook("inventory", "--format", "json"))
         self.assertEqual(inventory["schema_version"], "agent-hook.inventory.v1")
-        self.assertEqual(len(inventory["rules"]), 97)
-        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 97)
+        self.assertEqual(len(inventory["rules"]), 99)
+        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 99)
 
     def test_grouped_matchers_select_exact_rules_in_global_shadow(self) -> None:
         fixture = json.loads(DISPATCH_CASES.read_text(encoding="utf-8"))

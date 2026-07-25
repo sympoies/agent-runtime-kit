@@ -100,7 +100,7 @@ LOCKED_CAPABILITIES = {
 
 COORDINATION_CAPABILITY_COUNTS = Counter(
     {
-        "agent-session.activity.v1": 9,
+        "agent-session.activity.v1": 11,
         "agent-session.semantic-conflict.v1": 6,
         "agent-session.owner-liveness.v1": 5,
         "agent-session.coordination.v1": 8,
@@ -139,6 +139,29 @@ TERMINAL_COORDINATION_GROUPS = {
         "claude",
         "Notification",
         "",
+    ),
+}
+
+# Exact Claude clarification correlation. The AskUserQuestion request and its
+# completion/failure clear carry the same `tool_use_id`, so answering a question
+# clears that attention instead of latching it until the turn ends. Without
+# these groups the only remaining ingress is the uncorrelated notification
+# latch, which no answer can clear.
+EXACT_ATTENTION_GROUPS = {
+    (
+        "claude",
+        "PreToolUse",
+        "AskUserQuestion",
+    ),
+    (
+        "claude",
+        "PostToolUse",
+        "AskUserQuestion",
+    ),
+    (
+        "claude",
+        "PostToolUseFailure",
+        "AskUserQuestion",
     ),
 }
 
@@ -289,6 +312,53 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             "test_claude_notification_activity_ingress_is_required",
         )
 
+    def test_claude_ask_user_question_activity_ingress_is_required(self) -> None:
+        rules = {
+            rule["id"]: rule
+            for rule in load_inventory()["rules"]
+            if rule["id"]
+            in {
+                "coord.claude.pre-tool-use.ask-user-question.activity",
+                "coord.claude.post-tool.ask-user-question.activity",
+            }
+        }
+        self.assertEqual(
+            set(rules),
+            {
+                "coord.claude.pre-tool-use.ask-user-question.activity",
+                "coord.claude.post-tool.ask-user-question.activity",
+            },
+        )
+        request = rules["coord.claude.pre-tool-use.ask-user-question.activity"]
+        clear = rules["coord.claude.post-tool.ask-user-question.activity"]
+        self.assertEqual(request["events"], ["PreToolUse"])
+        self.assertEqual(clear["events"], ["PostToolUse", "PostToolUseFailure"])
+        for rule in (request, clear):
+            with self.subTest(rule=rule["id"]):
+                self.assertEqual(rule["products"], ["claude"])
+                self.assertEqual(rule["matcher"], "AskUserQuestion")
+                self.assertEqual(
+                    rule["capability"],
+                    {
+                        "id": "agent-session.activity.v1",
+                        "reason_code": "agent-activity",
+                    },
+                )
+                self.assertEqual(rule["mode"], "enforce")
+                self.assertEqual(rule["priority"], 10)
+                self.assertEqual(rule["failure_posture"], "closed")
+                self.assertEqual(rule["override_class"], "locked")
+                self.assertEqual(rule["state_owner"], "agent-session.coordination")
+                self.assertEqual(rule["transformation"], "activity")
+                self.assertEqual(rule["recovery"], "exact-capability-only")
+                self.assertEqual(
+                    rule["test_owner"],
+                    "tests/agent-hook/test_policy_contract.py::"
+                    "test_claude_ask_user_question_activity_ingress_is_required",
+                )
+        self.assertEqual(request["timeout_posture"], "closed")
+        self.assertEqual(clear["timeout_posture"], "warn")
+
     def test_inventory_dispositions_cover_every_legacy_handler(self) -> None:
         inventory = load_inventory()
         self.assertEqual(
@@ -308,7 +378,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
-        self.assertEqual(len(rules), 97)
+        self.assertEqual(len(rules), 99)
         ids = [rule["id"] for rule in rules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate inventory rule id")
         for rule in rules:
@@ -362,7 +432,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         coordination_rules = [
             rule for rule in added_rules if rule["id"] != READ_ONLY_SHADOW_RULE_ID
         ]
-        self.assertEqual(len(coordination_rules), 28)
+        self.assertEqual(len(coordination_rules), 30)
         self.assertEqual(
             Counter(rule["capability"]["id"] for rule in coordination_rules),
             COORDINATION_CAPABILITY_COUNTS,
@@ -381,7 +451,10 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             (product, event, matcher)
             for product, event, matcher, _ in frozen_legacy_registrations()
         }
-        self.assertEqual(selected_groups, legacy_groups | TERMINAL_COORDINATION_GROUPS)
+        self.assertEqual(
+            selected_groups,
+            legacy_groups | TERMINAL_COORDINATION_GROUPS | EXACT_ATTENTION_GROUPS,
+        )
 
         for rule in rules:
             self.assertLessEqual(len(rule["id"]), 128, rule["id"])

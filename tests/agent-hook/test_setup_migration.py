@@ -582,6 +582,26 @@ remove_agent_hook_cutover codex
         )
         self.assertEqual(len(settings["hooks"]["StopFailure"]), 1)
         self.assertEqual(len(settings["hooks"]["Notification"]), 1)
+        for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+            with self.subTest(event=event):
+                self.assertIn(
+                    "AskUserQuestion",
+                    {
+                        group.get("matcher")
+                        for group in applied["owned_groups"]
+                        if group["event"] == event
+                    },
+                )
+                self.assertEqual(
+                    len(
+                        [
+                            group
+                            for group in settings["hooks"][event]
+                            if group.get("matcher") == "AskUserQuestion"
+                        ]
+                    ),
+                    1,
+                )
         self.assert_doctor("claude")
 
         remove = self.setup_preview("claude", "--remove")
