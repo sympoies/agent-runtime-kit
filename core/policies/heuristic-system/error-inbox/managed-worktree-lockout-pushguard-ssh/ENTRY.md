@@ -74,8 +74,42 @@ unowned changes exists (#646), covering staged raw-git deletions, not only
 via a cached-default fallback, tunable budget, or fast transport (#652); and
 (c) a sanctioned feature-branch push path exists for agents.
 
+### Re-triage 2026-07-26 — first-hand status per criterion
+
+Not promotable: (b) is met, (a) is met but inert by default, (c) is unmet.
+#646, #652 and #601 are all CLOSED, so issue state alone is misleading here.
+
+- **(a) partially effective.** `git-cli worktree adopt-dirty` / `dirty-snapshot` /
+  `revoke-dirty` are released verbs, and `checkout-lease-guard` implements the
+  bound adoption path. But that path is gated on
+  `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION=1` (`dirty_adoption_enabled()`), which is
+  **unset on this host** and is not set by the agent-hook config, the Claude
+  settings bundle, or the policy bundle. Until it is enabled, the deletions-first
+  lockout still has no in-place recovery and the "destroy the worktree" workaround
+  above remains the real path.
+- **(b) met, verified.** `block-unsafe-default-delivery` now carries
+  `cached_default_branch` / `resolve_default_branch`. Confirmed live on
+  2026-07-26: a bare fully-qualified feature refspec pushed successfully over the
+  same SSH remote that used to fail closed.
+- **(c) unmet, verified.** `forge-cli repo` still exposes only `push-default`, and
+  `git-cli` has no push group, so a raw `git push` is still the only feature-branch
+  route. #653 is still OPEN with no movement since 2026-07-17.
+
+A second, distinct push-guard false positive was found during the same 2026-07-26
+session and split out to its own case rather than folded in here: a compound
+`cd <worktree> && git push …` fails closed because shell control makes the refspec
+unparseable — see `push-guard-fails-closed-on-compound-command`. That is not the
+#652 timeout, and it is not (c).
+
 ## Next Action
 
-Fixes are tracked in #652, #646, #601. Until they land, follow the workaround
-above (edits-first, deletions+commit in one invocation; maintainer `!`-push when
-the default-delivery guard fails closed).
+Two independent unblockers, either of which narrows this entry:
+
+1. Decide whether `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` should default to on
+   (or be set in the shipped policy bundle). The #646 mechanism is inert without
+   it, so (a) currently buys nothing at runtime.
+2. Land a sanctioned feature-branch push verb for (c) — tracked in #653.
+
+Until then keep the workaround above, and prefer a single bare push command with a
+fully-qualified refspec (`git -C <path> push -u origin refs/heads/X:refs/heads/X`)
+over any `cd … && git push` form.
