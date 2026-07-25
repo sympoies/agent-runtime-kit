@@ -2,192 +2,123 @@
 
 ## Purpose
 
-Evidence commands are deterministic workflow primitives, not user outcomes.
-The parent intent or outcome workflow decides whether evidence is warranted,
-allocates one workflow-owned artifact root, invokes the primitive, verifies the
-record, and carries only the useful result into delivery or closeout.
+Evidence is conditional. It exists to make a material engineering or workflow
+claim durable and machine-verifiable, not to turn routine collaboration into a
+recording exercise. The parent outcome decides whether a record is warranted;
+the typed CLI owns schema, storage, and deterministic verification.
 
-Direct CLI calls remain supported for diagnostics. Normal collaboration should
-not require a user to select `test-first-evidence`, `docs-impact`,
-`review-evidence`, `skill-usage`, `web-evidence`, or `model-cross-check` as a
-separate task.
+Create retained evidence when an explicit request, repository/delivery gate,
+high-risk workflow, audit, cross-session handoff, deferred defect, or reusable
+operational lesson needs it. Do not create evidence merely because a command
+exists, a named skill ran, a session ended, or ordinary L0 work completed.
 
-## Ownership And Ordering
+Records live in one workflow-owned `agent-out` directory unless the active
+workflow declares another private artifact root. Never commit raw runtime
+evidence, credentials, transcripts, provider objects, or local receipts.
 
-| Need | Owner | Required ordering and completion boundary |
+## Ownership
+
+| Need | Judgment owner | Deterministic owner |
 | --- | --- | --- |
-| Test-first discipline | Implementation parent | Classify before production edits; record a failing test or explicit waiver; run `test-first-evidence check --phase pre-edit` for known changed paths when the repository declares `[path_classes]`; verify at delivery. |
-| Documentation impact | Implementation or delivery parent | After the complete change exists, run `docs-impact record` with `docs-updated`, `no-docs-needed`, or `pending`; `docs-impact verify` must pass against the current Git state before delivery. |
-| Review findings | Review parent | Create one `review-evidence` record only when retained findings or validation evidence are useful; reviewer observations remain inputs, not automatic decisions. |
-| Workflow usage | Outermost outcome workflow | Create at most one `skill-usage.record.v2` with `--owner-kind workflow` or `--owner-kind intent`; link verified child records instead of opening nested usage records for each primitive. |
-| Static HTTP capture | External-fact, browser-test, or validation parent | `web-evidence` supports an HTTP claim only; it never proves rendered JavaScript, visual state, or desktop interaction. |
-| Model cross-check | Parent that requested a checker | Provider calls happen outside the primitive; record both observations and verify once. Do not create a cross-check merely because the recorder exists. |
-| Session closeout | Outermost session workflow | Finalize the existing workflow record, preserve warranted follow-up, then archive/prune through the governed closeout path. Do not create a duplicate closeout-owned usage record. |
+| Test-first proof | Implementation parent | `test-first-evidence` |
+| Documentation disposition | Delivery parent when its gate requires one | `docs-impact` |
+| Retained review findings | Review parent | `review-evidence` |
+| Static HTTP claim | External-fact or browser parent | `web-evidence` |
+| Requested second-model comparison | Requesting parent | `model-cross-check` |
+| Workflow usage envelope | Outermost retained workflow | `skill-usage` |
+| Archive migration | Outermost workflow with durable records | `evidence migrate` |
 
-Allocate records through `agent-out` unless an active workflow already owns a
-project-defined artifact directory. Serialize writes to each record directory.
-Verify child records before linking them and never commit raw runtime evidence
-into a working repository.
+The parent judges relevance, semantic correctness, acceptable risk, and
+residual gaps. The CLI may reject incomplete or stale records but cannot decide
+whether a test proves the intended behavior, a waiver is honest, a finding is
+material, or retention is useful.
 
 ## Test-First Paths
 
-For testable production behavior, the implementation parent owns this durable
-engineering lifecycle even though the CLI record is an internal primitive:
+The engineering discipline applies whether or not a durable record is required:
 
-1. Classify bugs, features, parsers, state machines, APIs, workflows, and
-   user-visible behavior as testable by default.
-2. Declare the contract delta: retained behavior and invariants, changed or
-   removed behavior, and added behavior. Do not infer the contract only from
-   the implementation diff.
-3. Scan materially affected tests, fixtures, snapshots, mocks, contract
-   consumers, and higher-level journeys. Disposition each target as `keep`,
-   `update-spec`, `remove-superseded`, `add-missing`, or `refactor-only`, with
-   an invariant and rationale; group targets that share one decision.
-4. Choose the lowest stable behavioral boundary that directly proves the
-   contract. Unit/property, integration, contract, and E2E owners are all
-   valid; do not force a private implementation boundary.
-5. Capture meaningful red before production edits: command or scenario,
-   non-zero result, test identity, expected failure, and observed failure must
-   agree. Compilation, setup, environment, fixture, unrelated failure, and
-   retry-only green do not qualify.
-6. Implement narrowly, then add only distinct-risk partitions, boundaries,
-   integrations, or failure modes. Coverage percentage is diagnostic, not an
-   objective, and does not justify duplicate cases.
-7. Converge the suite on observable outcomes and deterministic, isolated
-   fixtures. Removed tests must retire the invariant or name the owner that
-   preserves every still-valid part.
-8. Validate by risk across the focused owner, affected suite, and shared
-   contract consumers; record each scope and declare residual gaps explicitly.
+1. **Declare the contract delta**: retained behavior, changed or removed
+   behavior, added behavior, and invariants.
+2. Identify materially affected tests, fixtures, snapshots, mocks, contract
+   consumers, and journeys. Keep, update, remove, add, or refactor each owner
+   according to the intended contract.
+3. Choose the lowest stable behavioral boundary. **Capture meaningful red**
+   before production edits when practical: the command or scenario, identity,
+   expected failure, and observed failure must agree with the missing behavior.
+   Setup, compilation, environment, unrelated, or retry-only failures do not
+   qualify.
+4. Implement narrowly and validate by risk across focused owners, affected
+   suites, contract consumers, and integration/manual boundaries as needed.
+   Coverage percentage is diagnostic, not an objective, and does not justify
+   duplicate cases.
+5. If meaningful red is not practical, state why and name substitute
+   validation. Deferred test debt also needs a durable owner and expiry/removal
+   condition.
 
-Flaky tests are defects. Quarantine is deferred debt only when it has a durable
-owner/follow-up, expiry or removal condition, and substitute validation.
-`non-testable` waivers explain why meaningful red cannot exist and name
-substitute validation; `deferred-debt` waivers additionally carry that durable
-follow-up and expiry. Neither waiver removes contract-delta, affected-test,
-final-validation, or residual-gap decisions.
+A durable `test-first-evidence.record.v2` is required only when an active gate
+or workflow says so. Initialize it before production edits, record affected
+test decisions plus meaningful red or a complete waiver, append scoped final
+validation, declare residual gaps, and run `verify`. Use
+`test-first-evidence --help` for exact syntax; do not copy a second command
+manual into prompt policy.
 
-For testable behavior, initialize the record before production edits and make
-the pre-edit decision explicit:
+Repositories may declare `[path_classes]` so `test-first-evidence check` can
+distinguish production, tests, docs, and generated paths. Unknown or overlapping
+classes fail closed when that record gate is active. Without a configured gate,
+path classification remains engineering judgment rather than invented
+language-specific policy.
 
-```bash
-test-first-evidence init --out "$EVIDENCE_DIR" \
-  --classification behavior-change --production-path src/example \
-  --retained-behavior "existing callers keep their result" \
-  --changed-behavior "invalid input returns a typed error" \
-  --invariant "valid input behavior is unchanged"
-test-first-evidence record-impact --out "$EVIDENCE_DIR" \
-  --target "tests::invalid_input" --disposition update-spec \
-  --protected-behavior "invalid-input contract" \
-  --reason "the old expectation represents the intentionally replaced spec" \
-  --validation-scope focused --validation-scope affected-suite
-test-first-evidence record-failing --out "$EVIDENCE_DIR" \
-  --command "cargo test invalid_input" --exit-code 101 \
-  --test-name "tests::invalid_input" \
-  --expected-failure "expected typed error, received old fallback" \
-  --observed-failure "assertion shows old fallback" \
-  --summary "new contract fails before production edit"
-test-first-evidence check --out "$EVIDENCE_DIR" --phase pre-edit \
-  --project-path . --path src/example --format json
+## Other Record Types
 
-# Edit production behavior only after the pre-edit check.
-test-first-evidence record-final --out "$EVIDENCE_DIR" \
-  --command "cargo test invalid_input" --status pass --scope focused
-test-first-evidence record-final --out "$EVIDENCE_DIR" \
-  --command "cargo test affected_module" --status pass --scope affected-suite
-test-first-evidence record-gap --out "$EVIDENCE_DIR" --none
-test-first-evidence verify --out "$EVIDENCE_DIR" --format json
-```
+- `docs-impact`: use only when an active delivery workflow requires a current
+  docs disposition. Record `docs-updated`, `no-docs-needed`, or `pending` after
+  the complete diff exists; a later Git change makes it stale.
+- `review-evidence`: retain findings or validation when another workflow,
+  reviewer handoff, or audit will consume them. Ordinary inline review can
+  report findings directly.
+- `web-evidence`: proves a bounded static HTTP claim only. It does not prove
+  rendered JavaScript, visual state, browser interaction, or desktop behavior.
+- `model-cross-check`: records a comparison the parent explicitly requested.
+  Provider calls happen outside the recorder.
+- `skill-usage`: create at most one envelope for the outer retained outcome.
+  Link verified child records instead of opening a usage record for every
+  primitive.
 
-Repeated failing and final-validation records append deterministically. A later
-attempt for the same command/scope supersedes the earlier attempt's effective
-status without deleting history; every other latest failure still blocks.
-The CLI can reject missing fields, unsafe removals or waivers, duplicate
-identities, unresolved latest failures, and v1 delivery. It cannot decide
-whether red agrees semantically, whether the owner boundary is right, or
-whether cases are redundant; those remain parent and testing-review judgments.
+Repeated attempts append history while the latest result for each identity
+controls readiness. Serialize writes to a record directory and verify a child
+before linking it.
 
-Docs-only and generated-only work may record an explicit waiver. An unavailable
-test harness may also use a waiver only when the parent states why no failing
-test is practical and names substitute validation. Unknown or overlapping path
-classes fail closed; a repository without `[path_classes]` reports
-`not-configured` and leaves judgment with the parent rather than inventing
-language-specific rules.
+## Closeout And Retention
 
-The observable enforcement points stay narrow:
+Closeout is event-driven:
 
-- Codex and Claude pre-edit hooks verify that `project-dev` is active for the
-  current session in every canonical direct-edit target repository. Shell
-  commands are verified against their working repository only; a pre-tool hook
-  cannot reliably observe destinations assembled by shell expansion. Therefore
-  cross-repository shell mutations must run with each target repository as CWD,
-  and hooks do not claim target-level authorization for dynamic shell paths.
-- `test-first-evidence check` verifies classified/pre-edit/delivery phases; the
-  parent invokes it because a hook cannot discover an arbitrary evidence
-  directory safely.
+- If no durable record, deferred defect, tracker, plan, or archive duty exists,
+  report the result and stop.
+- If local evidence remains useful only for the current task, retain or clean it
+  according to its owner; do not migrate it automatically.
+- If evidence must survive the session, review the exact candidates, run the
+  governed migration dry-run, apply only the approved set, then verify before
+  any source prune.
+- Route reusable runtime-kit workflow gaps to `heuristic-inbox`; route product,
+  test, or CI defects to their repository owner. Creating provider state still
+  requires the active tier and user authority.
 
-The hook layer is a mechanical workflow guardrail rather than a security
-sandbox. The agent product's launch environment, managed runtime home, and
-resolved executable `PATH` are trusted host inputs; a process that can replace
-those inputs can also replace the hook itself.
-- `forge-cli` enforces a complete test-first record at feature/bug PR creation
-  when the repository or user config enables that gate.
-- The finish-line hook enforces declared validation commands after code edits.
-- Hooks do not decide whether a test, docs update, review finding, web source,
-  or second model is semantically necessary.
+- Never create a duplicate closeout-owned usage record.
+- Retention excludes empty, transient, failed-setup, or unreviewed artifacts and
+  any artifact containing sensitive values.
 
-## Durable Delivery Records
+## Enforcement Boundary
 
-After the complete Git change exists, the implementation or delivery parent
-records one current docs disposition and verifies it immediately before PR
-delivery:
-
-```bash
-docs_dir="$(agent-out project --topic docs-impact --mkdir)"
-docs-impact record --out "$docs_dir" --repo . --base origin/main \
-  --disposition no-docs-needed --rationale "<grounded reason>"
-docs-impact verify --out "$docs_dir" --repo . --format json
-```
-
-Use `docs-updated` when the matching source docs changed and `pending` only as a
-non-terminal state. A later Git change makes the record stale and requires a
-new disposition; a scan result alone is not the human decision.
-
-When retained workflow evidence is warranted, the parent opens one v2 usage
-record and links already-verified child records:
-
-```bash
-usage_dir="$(agent-out project --topic skill-usage --mkdir)"
-skill-usage init --out "$usage_dir" --owner-kind workflow \
-  --owner-id "<parent-outcome>" --intent "<why it ran>" \
-  --user-request-summary "<concise request>"
-skill-usage link-record --out "$usage_dir" --type "<record-type>" \
-  --path "<verified-child-record>"
-skill-usage record-validation --out "$usage_dir" --command "<command>" \
-  --status pass --summary "<result>"
-skill-usage record-outcome --out "$usage_dir" --status pass \
-  --summary "<outcome>"
-skill-usage verify --out "$usage_dir" --format json
-```
-
-Use `--owner-kind intent` when no narrower outcome workflow owns the operation.
-Compatibility releases without v2 owners may write one v1 parent-skill record,
-but must not represent child evidence primitives as separate user outcomes.
-
-## Product Capability Ceiling
-
-Codex and Claude share the same runtime-kit hook decisions and nils-cli record
-verification. An explicitly recognized `agent-docs` version older than the
-durable-session floor keeps legacy compatibility behavior and does not claim
-activation was enforced; direct preflight remains the fallback. Missing
-binaries, crashes, malformed versions, and required-capability failures are not
-legacy signals and retain their configured failure posture. Executable
-timeouts use the rule's distinct `timeout_posture`: only trusted
-`local_reversible` work may pass an `effect_gated` timeout, with a redacted
-private incident, a bounded recurrence summary, and final-response reporting;
-external, destructive, sensitive, transaction, and unknown effects remain
-closed.
-
-Hermes receives shared policy and can run the same released CLI verification,
-but runtime-kit does not install an agent-docs hook runner into Hermes. A Hermes
-record therefore proves explicit CLI activation/verification only, never
-product-native hook invocation.
+- Codex and Claude hooks verify supported intent activation, checkout safety,
+  and declared finish-line validation. They cannot safely discover an arbitrary
+  evidence directory or judge semantic proof, so the parent invokes evidence
+  checks only when required.
+- `forge-cli` can require a complete v2 test-first record for feature/bug
+  delivery when repository or user configuration explicitly enables that gate.
+  The gate is otherwise off; see `git-delivery.md`.
+- Hook timeout/effect posture remains owned by the hook rule. Evidence never
+  converts an external, destructive, sensitive, transaction, or unknown effect
+  into an allowed one.
+- Hermes can run the same released record CLIs but has no runtime-kit
+  `agent-docs` hook runner. Its record proves explicit CLI verification, not a
+  product-native hook event.

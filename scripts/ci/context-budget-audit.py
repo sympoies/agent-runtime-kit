@@ -11,7 +11,7 @@ Surfaces and targets come from the issue's quantitative acceptance budgets
 (1 KiB = 1024 bytes):
 
   * rendered always-on home policy  (build/<product>/AGENT_HOME.md)  <= 4 KiB
-  * representative project-dev edit-phase required reading           <= 20 KiB
+  * resolved project-dev edit-phase required reading                 <= 20 KiB
   * startup memory context (header + profile)                        <= 1.25 KiB
   * new context on an unchanged repeat prompt                        == 0 bytes
 
@@ -50,7 +50,9 @@ python), matching scripts/ci/version-baseline-audit.py.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,6 +67,7 @@ KIB = 1024
 #   measure     how the actual size is obtained:
 #                 ("file", "<repo-relative path>")     -> size of one file
 #                 ("doc-set", ["<path>", ...])         -> sum of file sizes
+#                 ("agent-docs", intent, phase, product) -> resolved required set
 #                 ("pending", "<owner>")               -> not yet measured here
 #                 ("behavioral", "<covered_by>")       -> enforced elsewhere
 #   target      byte target (the budget)
@@ -81,68 +84,37 @@ BUDGETS = [
         "description": "Rendered Codex always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/codex/AGENT_HOME.md"),
         "target": 4 * KIB,
-        "override": {
-            "allow": 7168,
-            "reason": "Documented budget decision (#601 slice 3c): 4 KiB is the "
-                      "aspirational target; ~7 KiB is the irreducible always-on "
-                      "floor after the three-layer compaction (from 11,360 bytes). "
-                      "The remainder is safety and behavioral invariants "
-                      "(delivery gates, memory/consent boundaries, goal-wait, "
-                      "tier and intent routing, and the execution-capsule route); "
-                      "detailed procedure moved to "
-                      "core/policies/intent-cards.md and the runbooks this layer "
-                      "points to. Further reduction would compress "
-                      "safety-critical wording.",
-            "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
-        },
+        "override": None,
     },
     {
         "id": "rendered-agent-home.claude",
         "description": "Rendered Claude always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/claude/AGENT_HOME.md"),
         "target": 4 * KIB,
-        "override": {
-            "allow": 6656,
-            "reason": "Documented budget decision (#601 slice 3c): same "
-                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6.5 KiB "
-                      "irreducible always-on floor after compaction "
-                      "(from 10,612 bytes).",
-            "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
-        },
+        "override": None,
     },
     {
         "id": "rendered-agent-home.hermes",
         "description": "Rendered Hermes always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/hermes/AGENT_HOME.md"),
         "target": 4 * KIB,
-        "override": {
-            "allow": 6400,
-            "reason": "Documented budget decision (#601 slice 3c): same "
-                      "AGENT_HOME source as codex; 4 KiB aspirational, ~6.25 KiB "
-                      "irreducible always-on floor after compaction "
-                      "(from 9,963 bytes).",
-            "tracking": "graysurf/agent-runtime-kit#601 (documented budget decision)",
-        },
+        "override": None,
+    },
+    {
+        "id": "rendered-agent-home.neutral",
+        "description": "Rendered neutral always-on home policy (AGENT_HOME).",
+        "measure": ("file", "build/neutral/AGENT_HOME.md"),
+        "target": 4 * KIB,
+        "override": None,
     },
     {
         "id": "edit-phase-required-reading.project-dev",
         "description": (
-            "Home-scope project-dev policy docs this kit forces a consumer to "
-            "read before an edit (the inheritable required set). Phase-scoped by "
-            "#601 P1 slice 3d: the `edit` phase keeps the test-first and "
-            "edit-mechanics runbooks and excludes the delivery (git-delivery, "
-            "work-tier-levels) and review (code-review-delegation) runbooks. This "
-            "list MUST mirror the home-scoped (scope = \"home\") project-dev docs "
-            "tagged phase = \"edit\" (or left untagged) in AGENT_DOCS.toml."
+            "Actual required documents resolved by agent-docs for this kit's "
+            "project-dev edit phase, including applicable project and home scope."
         ),
-        "measure": ("doc-set", [
-            "core/policies/files-hooks-validation.md",
-            "core/policies/evidence-control-plane.md",
-        ]),
+        "measure": ("agent-docs", "project-dev", "edit", "codex"),
         "target": 20 * KIB,
-        # Override removed in #601 P1 slice 3d: with phase-scoped resolution the
-        # edit phase no longer inherits the delivery/review runbooks, so the
-        # measured set is back under the bare 20 KiB target (RED->GREEN).
         "override": None,
     },
     {
@@ -180,10 +152,11 @@ REQUIRED_MEASURED_IDS = frozenset({
     "rendered-agent-home.codex",
     "rendered-agent-home.claude",
     "rendered-agent-home.hermes",
+    "rendered-agent-home.neutral",
     "edit-phase-required-reading.project-dev",
 })
 
-_MEASURED_KINDS = ("file", "doc-set")
+_MEASURED_KINDS = ("file", "doc-set", "agent-docs")
 
 
 # --- measurement -------------------------------------------------------------
@@ -205,6 +178,47 @@ def measure_bytes(measure):
         rels = measure[1]
         total = sum(os.path.getsize(os.path.join(REPO_ROOT, rel)) for rel in rels)
         return total, "%d docs" % len(rels)
+    if kind == "agent-docs":
+        _, intent, phase, product = measure
+        command = [
+            "agent-docs",
+            "preflight",
+            "--intent",
+            intent,
+            "--phase",
+            phase,
+            "--product",
+            product,
+            "--docs-home",
+            REPO_ROOT,
+            "--project-path",
+            REPO_ROOT,
+            "--worktree-fallback",
+            "local-only",
+            "--format",
+            "json",
+        ]
+        result = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+        required = [item for item in payload["documents"] if item["required"]]
+        paths = [os.path.realpath(item["path"]) for item in required]
+        for path in paths:
+            if os.path.commonpath((REPO_ROOT, path)) != REPO_ROOT:
+                raise ValueError(
+                    "agent-docs resolved required path outside source root: %s"
+                    % path
+                )
+        total = sum(os.path.getsize(path) for path in paths)
+        return total, (
+            "agent-docs %s/%s: %d resolved required docs"
+            % (intent, phase, len(paths))
+        )
     if kind == "pending":
         return None, "measurement pending, owned by %s" % measure[1]
     if kind == "behavioral":

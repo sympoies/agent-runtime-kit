@@ -70,16 +70,21 @@ agent can verify and reuse.
 
 ## Session Closeout Procedure
 
-Session closeout is parent lifecycle policy, not a standalone user outcome.
-After the session goal is achieved, the parent performs this ordered procedure:
+Session closeout is conditional parent lifecycle policy, not a standalone user
+outcome. **Close out only when durable state exists**: retained evidence, a
+reusable workflow gap, a deferred defect, a tracker/plan duty, or an archive
+candidate. An ordinary successful session with none of these reports its result
+and stops.
 
-1. Enumerate and verify the session's skill-usage records.
-2. Classify failures and reusable gaps; invoke `heuristic-inbox` directly only
-   for a warranted curated case or operation record.
-3. Run the evidence-archive migration dry-run and apply only under the clean
-   conditions defined by the evidence-archive policy.
-4. After verified migration, run archived-only source-prune dry-run and apply
-   only when every candidate is expected.
+When closeout is warranted:
+
+1. Enumerate only records owned by the active outcome and verify candidates.
+2. Classify reusable gaps; invoke `heuristic-inbox` directly only for a
+   warranted curated case or operation record.
+3. If evidence must outlive the session, run the archive migration dry-run and
+   apply only the reviewed set allowed by the evidence-archive policy.
+4. Prune source evidence only after verified migration and an expected
+   archived-only dry-run.
 5. Report retained, archived, skipped, and blocked records without committing
    raw runtime evidence into the working repository.
 
@@ -93,10 +98,9 @@ Heuristic triage activates from one signal: a workflow result that failed or
 felt wrong. Whether a named skill was active only changes which deterministic
 record applies; it does not gate triage.
 
-- `skill-usage.record.v1` is the strict envelope for named-skill workflows.
-  Create it only when a named skill is invoked or selected and the workflow
-  performs edits, tool/API calls, validation, delivery, external lookup, or
-  durable artifact creation.
+- A `skill-usage` envelope is optional retained evidence for the outer workflow,
+  not an automatic consequence of naming a skill. Create at most one when an
+  audit, handoff, archive, or owning workflow needs durable usage proof.
 - `exit_code != 0`, stderr output, a single retry, or a corrected typo starts
   judgment, not persistence. Classify the case before writing durable
   artifacts.

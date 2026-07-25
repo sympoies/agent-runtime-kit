@@ -128,10 +128,10 @@ copyable prompt in
 
 ## Development workflow
 
-`agent-docs` is not a manual per-task step: required-doc and validation policy
-is declared in `AGENT_DOCS.toml`, home policy is auto-loaded, per-intent docs are
-hook-injected, and validation is enforced at the finish line. To inspect or
-audit what this repo requires from the repository root:
+Required reading and validation are declared in `AGENT_DOCS.toml`. The compact
+home policy is auto-loaded; phase-relevant intent docs are cued by hooks and
+validation is enforced at the finish line. Agents load only the active
+contract; humans can inspect or audit it from the repository root:
 
 ```bash
 agent-docs --docs-home "$PWD" --project-path "$PWD" \
@@ -140,9 +140,10 @@ agent-docs --docs-home "$PWD" --project-path "$PWD" \
   audit --target project --strict
 ```
 
-Documentation changes also follow
+Documentation placement changes can load
 [`docs/source/docs-placement-retention-policy-v1.md`](docs/source/docs-placement-retention-policy-v1.md),
-which is registered in `AGENT_DOCS.toml` as required `project-dev` context.
+which remains canonical but is optional `project-dev` context rather than
+required reading for every edit.
 
 The full local validation gate is:
 

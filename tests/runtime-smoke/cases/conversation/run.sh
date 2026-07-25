@@ -68,7 +68,7 @@ run_conversation_outcome_routing_probe() {
   local guided="$REPO_ROOT/core/skills/conversation/guided-feature-build/SKILL.md.tera"
   local protocol="$REPO_ROOT/core/skills/conversation/guided-feature-build/references/DELEGATION_PROTOCOL.md"
 
-  grep -Fq 'Natural-language collaboration is the default interface' "$home_policy"
+  grep -Fq 'Natural-language collaboration is the default.' "$home_policy"
   grep -Fq '## Outcome Routing' "$guided"
   grep -Fq 'Advice and explanation stay normal conversation behavior' "$guided"
   grep -Fq 'selects inline, orchestrated, or' "$guided"

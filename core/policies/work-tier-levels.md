@@ -2,26 +2,25 @@
 
 ## Purpose
 
-This policy defines how to size the *tracking and delivery machinery* a unit of
-work gets, and how the agent should triage that choice proactively. It exists to
-make one decision fast and consistent: **for any work request, pick the lowest
-applicable tier and use that tier's method — never run light work through a
-heavy tier.**
+This delivery-phase policy sizes durable tracking, not the agent's ability to
+plan. Pick the lowest tier that owns the state the work genuinely needs. Keep
+routine L0 classification internal; load and surface this ladder only when a
+follow-up, plan, dispatch, provider artifact, or ambiguous escalation is
+actually in play.
 
-It is declared as a `project-dev` document in `AGENT_DOCS.toml` (home scope),
-so the harness injects it through the hook preflight when implementation work
-starts. `AGENT_HOME.md` carries the always-on short directive; this file is the
-full ladder, judge, methods, and behavior contract.
+It is a `project-dev` delivery document in `AGENT_DOCS.toml`. `AGENT_HOME.md`
+carries only the routing invariant; this file owns the ladder and artifact
+boundaries.
 
 ## Principle
 
 Work has three independent axes. Do not collapse them:
 
-- **Delivery axis — PR by default.** Almost any code change lands as a PR
-  squash-merged into `main`. The PR is the durable record of *what changed and
-  why*. The exceptions are explicitly authorized L0 direct-main delivery and
-  local-default completion using the separate governed one-commit receipt paths
-  in `git-delivery.md`.
+- **Delivery axis — PR for requested provider delivery.** Once provider
+  delivery is explicitly requested or owned by an approved retained workflow,
+  a PR squash-merged into `main` is the default. The exceptions are explicitly
+  authorized L0 direct-main delivery and local-default completion using the
+  separate governed one-commit receipt paths in `git-delivery.md`.
 - **Tracking axis — the tier.** How much durable, cross-time tracking the
   problem or plan needs: none, a follow-up issue, or a plan tracking issue. This
   axis is what the tiers below measure.
@@ -39,7 +38,7 @@ is never a reason to escalate — *"state worth tracking"* is.
 
 | Tier | Name | Tracking artifact | Primary method |
 | --- | --- | --- | --- |
-| **L0** | Untracked delivery | None | `semantic-commit` → `deliver-pr` by default; governed direct-main or local-default only when explicitly authorized |
+| **L0** | Untracked delivery | None | Local `semantic-commit`; `deliver-pr`, direct-main, or local-default only with the matching explicit authority |
 | **L1** | Follow-up issue | One provider issue + comment timeline | `issue-follow-up` |
 | **L2** | Plan tracking issue | Plan bundle + issue + lifecycle | `deliver-plan-tracking-issue` |
 | **L3** | Dispatch plan | Shared dispatch issue + lanes | `deliver-dispatch-plan` |
@@ -54,14 +53,15 @@ one dispatch issue; the user decides whether the scale warrants running it.
 
 Several concepts ride alongside the ladder and must not be mistaken for tiers:
 
-- **PR = the default delivery path.** L1–L3 always deliver through PRs; L0 does
-  too unless the maintainer explicitly requests direct commit and push to the
-  default branch in the current task. Never infer that exception from change
-  size, urgency, or words such as "small" or "hotfix". The direct route is one
-  signed commit from a non-default managed worktree through `forge-cli repo
-  push-default`; its remote-SHA receipt replaces the PR record. For PR delivery,
-  keep the body grounded in the diff with at least `## Summary` + `## Test plan`,
-  produced by the active delivery skill / `agent-runtime pr-body render`.
+- **PR = the default provider delivery path, not default authority.** L1–L3
+  deliver through PRs after their retained workflow is approved. L0 uses a PR
+  only when provider delivery is explicitly requested. Never infer direct-main
+  authority from change size, urgency, or words such as "small" or "hotfix".
+  That route is one signed commit from a non-default managed worktree through
+  `forge-cli repo push-default`; its remote-SHA receipt replaces the PR record.
+  For PR delivery, keep the body grounded in the diff with at least
+  `## Summary` + `## Test plan`, produced by the active delivery skill /
+  `agent-runtime pr-body render`.
 - **Local-default = local completion, not delivery.** When the maintainer
   explicitly requests one local-only commit on the primary default checkout,
   `semantic-commit local-default` may create exactly one signed commit and an
@@ -144,8 +144,9 @@ already provides enough tracking, keep the lower tier and use
 
 ### L0 — Untracked delivery
 
-- Do the work, commit through the `semantic-commit` CLI, deliver through
-  `deliver-pr` (squash → `main`) by default.
+- Do the work and commit through `semantic-commit`. Use `deliver-pr` only when
+  provider delivery is explicitly requested; otherwise stop at the authorized
+  local outcome.
 - Let `deliver-pr` select quick or full pre-merge review from scope and risk;
   requesting quick review never bypasses automatic escalation.
 - Only when the maintainer explicitly authorizes direct commit and push to the
@@ -207,29 +208,17 @@ when it is executed, close its loop by hand: link it from the PR or issue, mark
 it done, and retire or promote it per its retention intent. Otherwise
 `docs/discussions/` fills with shipped-but-still-"to do" orphan source docs.
 
-## Agent Behavior: Proactive Triage
+## Agent Behavior
 
-At the start of a substantive work request — a code, docs, or config change, or
-a tracked task; not pure question-answering or open discussion — the agent
-should:
-
-1. **Classify.** Run the escalation judge and state the tier (L0–L3) in one line
-   with the trigger that set it (for example, "L1: needs root-cause
-   investigation before any fix").
-2. **Recommend the next step.** Name the concrete method for that tier (the
-   skill or command from Methods By Tier).
-3. **Surface at the escalation boundary.** When the tier is **L1+** (it
-   creates a durable provider artifact or commits to a heavier path) or the
-   classification is **ambiguous**, present the level and recommended next
-   step as a decision and wait for the user before creating the artifact. For
-   an **unambiguous L0**, say so and proceed — stopping to ask on trivial work
-   is itself over-tiering.
-4. **Re-triage on signal change.** If new evidence escalates the work mid-flight
-   (an L0 fix balloons into a multi-step effort), say so and re-surface the
-   decision.
-
-This behavior obeys the same principle it enforces: it adds ceremony only at the
-escalation boundary, never on routine L0 work.
+1. Classify ordinary same-session work internally as L0 and proceed without a
+   tier announcement, tracker proposal, or permission pause.
+2. When an L1+ trigger fires, explain the durable state that is needed, name the
+   lowest matching method, and obtain the required user decision before
+   creating provider or plan artifacts.
+3. If classification is materially ambiguous, recommend the lower-cost safe
+   default and ask only the decision that changes the artifact or authority.
+4. Re-triage when evidence changes. Escalation preserves completed work and
+   review depth; it does not retroactively make routine steps require ceremony.
 
 ## Examples
 
@@ -250,8 +239,8 @@ escalation boundary, never on routine L0 work.
 
 ## Relationship To Nearby Surfaces
 
-- `AGENT_HOME.md` carries the always-on short directive that triggers proactive
-  triage; this file is the full reference it points to.
+- `AGENT_HOME.md` keeps routine L0 internal and routes here only when durable
+  delivery state or a materially ambiguous escalation is in play.
 - `issue-follow-up`, `deliver-plan-tracking-issue`, `deliver-dispatch-plan`, and
   `discussion-to-implementation-doc` are the retained per-tier outcomes.
 - `deliver-pr` owns default provider PR/MR delivery, including create, repair,

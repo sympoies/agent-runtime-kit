@@ -61,6 +61,13 @@ the acceptance lane, and the current ship state.
   hermes`, then `sync-runtime-surfaces.sh --apply --product hermes` copies the
   rendered prompt to `~/.hermes/skills/development-policy/SKILL.md`. `SOUL.md`
   itself is the user's identity file and is never overwritten by the kit.
+- Conditional runbook resolution: the installed prompt uses
+  `$AGENT_DOCS_HOME` as the selected docs home and runs `agent-docs preflight
+  --intent <intent> --phase <phase> --docs-home "$AGENT_DOCS_HOME" --product
+  hermes --strict` to resolve declarations manually. The source
+  `core/policies/` tree is not copied into the Hermes skill; when the selected
+  docs home is unavailable, Hermes keeps the rendered invariants and does not
+  invent missing procedure.
 - Support today: **shipped**.
 
 ### 2. Project-scope prompt (`./AGENTS.md` / `.hermes.md`)

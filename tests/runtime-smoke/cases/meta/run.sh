@@ -84,23 +84,26 @@ run_home_prompt_render_probe() {
     "$codex_home" \
     "$claude_home" \
     "$hermes_home"; do
-    grep -Fq 'Put temp/debug artifacts in XDG state with `agent-out project`' "$home_policy"
-    grep -Fq 'never use repo `./agent-out`' "$home_policy"
-    grep -Fq 'cite the path.' "$home_policy"
-    grep -Fq 'Execution Capsule' "$home_policy"
-    grep -Fq '`core/policies/execution-capsules.md`' "$home_policy"
+    grep -Fq 'Do not infer authorization' "$home_policy"
+    grep -Fq 'meaningful regression failure' "$home_policy"
+    grep -Fq '`semantic-commit`' "$home_policy"
+    grep -Fq 'Preserve user work' "$home_policy"
   done
-  grep -Fq "or directory \`AGENTS.md\` / \`CLAUDE.md\` can override or extend it." "$neutral_home"
-  grep -q '## Code Review Delegation' "$codex_home"
-  grep -q '## Active Goal Waits' "$codex_home"
+  grep -Fq '`agent-out project --topic <topic> --mkdir`' \
+    "$REPO_ROOT/core/policies/files-hooks-validation.md"
+  grep -Fq '`core/policies/execution-capsules.md`' \
+    "$REPO_ROOT/core/policies/files-hooks-validation.md"
+  grep -Fq 'operator-authorized access' \
+    "$REPO_ROOT/core/policies/files-hooks-validation.md"
+  grep -Fq 'never waives repository rules' \
+    "$REPO_ROOT/core/policies/files-hooks-validation.md"
+  test -s "$REPO_ROOT/core/policies/execution-capsules.md"
+  grep -Fq "\`AGENTS.md\` / \`CLAUDE.md\` may extend or override it." "$neutral_home"
+  grep -Fq 'reviewer subagents' "$codex_home"
   grep -Fq '`request_user_input`' "$codex_home"
-  grep -Fq 'blocked-audit contract' "$codex_home"
-  grep -q '## Active Goal Waits' "$claude_home"
   grep -Fq '`AskUserQuestion`' "$claude_home"
-  grep -q '## Active Goal Waits' "$neutral_home"
-  grep -Fq 'blocking question tool' "$neutral_home"
-  grep -q '## Active Goal Waits' "$hermes_home"
-  grep -Fq 'blocking question tool' "$hermes_home"
+  grep -Fq 'harness question tool' "$neutral_home"
+  grep -Fq 'harness question tool' "$hermes_home"
   if grep -Fq '`AskUserQuestion`' "$codex_home"; then
     echo "runtime-smoke meta: Codex home prompt includes Claude question primitive" >&2
     return 1
@@ -109,15 +112,11 @@ run_home_prompt_render_probe() {
     echo "runtime-smoke meta: Claude home prompt includes Codex question primitive" >&2
     return 1
   fi
-  if grep -Fq 'blocked-audit contract' "$claude_home"; then
-    echo "runtime-smoke meta: Claude home prompt includes Codex goal-state fallback" >&2
-    return 1
-  fi
-  if grep -q '## Code Review Delegation' "$neutral_home"; then
+  if grep -Fq 'reviewer subagents' "$neutral_home"; then
     echo "runtime-smoke meta: neutral home prompt includes Codex-only delegation section" >&2
     return 1
   fi
-  if grep -q '## Code Review Delegation' "$claude_home"; then
+  if grep -Fq 'reviewer subagents' "$claude_home"; then
     echo "runtime-smoke meta: Claude home prompt includes Codex-only delegation section" >&2
     return 1
   fi
@@ -332,10 +331,11 @@ run_heuristic_session_closeout_probe() {
   test -f "$body"
   test -d "$shared_root/error-inbox"
   test -d "$shared_root/operation-records"
-  grep -q "After the session goal is achieved" "$body"
+  grep -q "Close out only when durable state exists" "$body"
+  grep -q "ordinary successful session" "$body"
   grep -q "invoke \`heuristic-inbox\` directly" "$body"
-  grep -q "evidence-archive migration dry-run" "$body"
-  grep -q "archived-only source-prune dry-run" "$body"
+  grep -q "archive migration dry-run" "$body"
+  grep -q "Prune source evidence only after verified migration" "$body"
   grep -q "Report retained, archived, skipped, and blocked records" "$body"
   {
     printf 'body=%s\n' "$body"

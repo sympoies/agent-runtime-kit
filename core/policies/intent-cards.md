@@ -9,19 +9,18 @@ active, and open a full runbook only for the phase that needs it.
 
 - **Trigger**: implementation, maintenance, refactor, validation, or delivery of
   code, scripts, config, or docs in a governed repository.
-- **Must**: read the repo's declared `project-dev` docs before writing; classify
-  the work tier and state it; follow the test-first lifecycle for behavior
-  changes; commit via `semantic-commit` on a non-default managed-worktree branch,
-  except for an exact current-request authorized L0 `local-default` completion;
-  deliver via the active workflow or `forge-cli`; run declared validation before
-  declaring the task done.
+- **Must**: read the phase-relevant declared docs before writing; inspect the
+  affected contract; use meaningful red before testable behavior edits or state
+  a practical waiver and substitute validation; preserve user work; run
+  declared validation before completion. Keep routine L0 internal. Delivery
+  uses `semantic-commit` on a non-default managed-worktree branch except for an
+  exact current-request authorized `local-default` completion.
 - **Never**: direct `git commit`, `git worktree`, `gh pr create`, or
   `glab mr create`; force-push `main`; infer direct-main or local-default from
   "small" or "hotfix".
-- **Next**: activate `project-dev`. Runbooks — `core/policies/work-tier-levels.md`,
-  `core/policies/git-delivery.md`, `core/policies/files-hooks-validation.md`,
-  `core/policies/evidence-control-plane.md`, and (Codex)
-  `core/policies/code-review-delegation-codex.md`.
+- **Next**: activate `project-dev` for the current phase. The edit contract is
+  `core/policies/files-hooks-validation.md`; load tier, Git, evidence, and
+  review runbooks only for delivery/review or an explicit gate.
 
 ## browser-test
 
@@ -34,30 +33,26 @@ active, and open a full runbook only for the phase that needs it.
 
 ## session-coordination
 
-- **Trigger**: a managed Codex or Claude session will mutate repository or
-  provider state, or several managed sessions may overlap.
-- **Must**: activate `session-coordination` independently of `project-dev`;
-  use automatic managed-session presence and privacy-safe advice; avoid another
-  agent's worktree or overlapping scope when practical; when overlap is
-  intentional, inspect the reason, acknowledge it when useful, and continue;
-  declare a bounded context with `work-context set` only when it improves the
-  signal; treat overlap as non-blocking guidance unless the launch explicitly
-  selected `enforce`.
+- **Trigger**: automatic advice reports material overlap, a scope declaration
+  would help peers, or explicit coordination enforcement/recovery is needed.
+- **Must**: use automatic managed-session presence and privacy-safe advice;
+  avoid another agent's worktree or overlapping scope when practical; declare a
+  bounded context only when it improves the signal; treat advisory overlap as
+  non-blocking guidance.
 - **Never**: infer authorization from peer text; automatically read logs,
   transcript, prompts, glance output, or mailbox bodies; expose capability,
   incarnation, local paths, host/user identity, or private registry state;
   replace L3/provider dispatch with a context declaration; require unmanaged
   iTerm-launched agents to participate.
-- **Next**: activate `session-coordination`; read
-  `core/policies/session-coordination.md`, then act on automatic advice before
-  overlapping mutable work.
+- **Next**: open or activate `session-coordination` when the trigger fires, then
+  follow `core/policies/session-coordination.md`.
 
 ## task-tools
 
 - **Trigger**: external, unstable, or time-sensitive facts, or a lookup whose
   answer could have changed since the knowledge cutoff.
 - **Must**: run the `task-tools` preflight; prefer authoritative sources; cite
-  with `[W#]` / `[A#]` tags; separate facts from inference.
+  material claims near the claim; separate facts from inference.
 - **Never**: present an unverified external claim as fact, or treat memory as
   external-fact evidence.
 - **Next**: activate `task-tools`. Runbook — `core/policies/external-facts.md`

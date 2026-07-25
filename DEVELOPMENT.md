@@ -2,11 +2,12 @@
 
 ## What This Document Is
 
-`DEVELOPMENT.md` is the required-reading maintenance and development guide for
-`agent-runtime-kit`: setup, edit preflight, build/render, validation, and the
-release boundaries. For repository orientation — what the repo owns, the runtime
-model, and the directory map — start at [`README.md`](README.md). This file
-covers how to work in the repo, not what it is.
+`DEVELOPMENT.md` is the canonical on-demand maintenance guide for
+`agent-runtime-kit`: setup, build/render, validation, and release boundaries.
+It is not forced into every edit preflight. For repository orientation — what
+the repo owns, the runtime model, and the directory map — start at
+[`README.md`](README.md). This file covers how to work in the repo, not what it
+is.
 
 This repository is the content source of truth for agent runtime surfaces:
 skills, plugin metadata, hooks, render templates, manifests, policy docs, and
@@ -42,10 +43,10 @@ plan-tooling --version
 ```
 
 Required-doc policy is data this repo declares in `AGENT_DOCS.toml`; the harness
-delivers it (home policy auto-loaded, per-intent docs hook-injected, and
-SessionStart strict preflight for each declared intent). CI/manual health checks
-still use `agent-docs audit` for install wiring, declared-doc validity, and
-catalog validity. To inspect what this repo requires, or to audit its health:
+loads the compact home policy and cues phase-relevant required docs. General
+orientation and specialized references remain optional until the task needs
+them. CI/manual health checks use `agent-docs audit` for install wiring,
+declared-doc validity, and catalog validity. To inspect the resolved contract:
 
 ```bash
 agent-docs preflight --docs-home "$PWD" --intent project-dev --strict
@@ -295,9 +296,10 @@ not duplicate the tree.
 ## Documentation Changes
 
 `AGENT_DOCS.toml` registers
-`docs/source/docs-placement-retention-policy-v1.md` as required `project-dev`
-context. Before adding or modifying `docs/**` or a repository-root `*.md` file,
-resolve the normal `agent-docs` preflight and follow that policy.
+`docs/source/docs-placement-retention-policy-v1.md` as optional canonical
+`project-dev` context. Read it when adding, promoting, moving, indexing, or
+cleaning durable docs; an ordinary edit to an existing document does not need
+to reload the placement manual.
 
 ## Helper And Script Boundary
 
@@ -428,6 +430,11 @@ That currently performs:
     `bash scripts/ci/product-leak-audit.sh` — broad-sentinel leakage audit over
     rendered/loaded product artifacts, with documented allowlist reasons in
     `scripts/ci/product-leak-allow.yaml`.
+16. `bash tests/memory-runtime/run.sh` — memory policy, retired-reference, and
+    product-routing acceptance.
+17. `python3 tests/ci/test_policy_simplification.py` plus the context-budget
+    audit self-test/check — rendered home prompts, resolved edit requirements,
+    intent routing, validation deduplication, and unchanged-prompt budgets.
 
 Position 1 retains the silent-drift protection while separating admission from
 reproducibility. As of nils-cli v1.25.0 the schema-v2 doctor owns stable-version

@@ -6,10 +6,10 @@ This policy defines where documentation belongs in `agent-runtime-kit`, how long
 it should be retained, and what contributors should read before adding or
 changing Markdown files.
 
-Before adding or modifying `docs/**` or a repository-root `*.md` file, read this
-policy. It is declared as a required `project-dev` document in `AGENT_DOCS.toml`,
-so the harness surfaces it through the hook-injected preflight; you can also
-inspect or audit it directly:
+Read this policy when adding, promoting, moving, indexing, or cleaning durable
+documentation, or when placement/retention is unclear. It is optional canonical
+`project-dev` context in `AGENT_DOCS.toml`; ordinary edits to an existing
+document do not force-load it. Inspect or audit it directly with:
 
 ```bash
 agent-docs --docs-home "$PWD" --project-path "$PWD" \
@@ -96,10 +96,9 @@ work unless the user explicitly asks for a cleanup pass.
 
 ## Agent-Docs Reminder
 
-`agent-docs` declares this policy as a required `project-dev` document, so the
-harness surfaces it through the hook-injected preflight. If a task adds or edits
-documentation, read this policy before choosing a path or creating a new
-Markdown file.
+`agent-docs` declares this policy as optional `project-dev` context. Load it
+before choosing a new docs path, promotion, index entry, or retention action;
+do not add it to every edit's required context.
 
 If the correct placement is unclear, document the assumption in the change
 summary rather than adding another top-level document.

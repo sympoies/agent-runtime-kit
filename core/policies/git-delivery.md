@@ -2,36 +2,38 @@
 
 ## Purpose
 
-This policy holds the detailed mechanics behind agent-owned Git work and how it
-reaches a provider: the commit body gate, managed worktree paths, branch
-naming, label selection, and PR/MR body format.
+This conditional delivery runbook owns agent-authored Git and provider state:
+commit signing, managed worktrees, default-branch exceptions, provider
+compare-and-swap, branch naming, cleanup, and PR/MR routing. Load it for the
+`project-dev` delivery phase, not for ordinary inspection or editing.
 
-It is declared as a `project-dev` document in `AGENT_DOCS.toml` (home scope),
-so the harness surfaces it through the hook preflight when implementation work
-starts. `AGENT_HOME.md` carries the always-on hard gates — use `semantic-commit`,
-use `git-cli worktree`, use `forge-cli` for provider records, keep signing on,
-and never force-push `main`. Those gates are also enforced mechanically by hooks,
-but hooks do not replace policy: this file is the intent and the procedural
-detail behind the one-line gates.
+`AGENT_HOME.md` carries the always-on safety boundary. Governed CLIs and hooks
+own exact command parsing and deterministic state checks; this file explains
+authorization, mode choice, and recovery. Prefer current CLI help over copying
+command syntax into other prompts.
 
 ## Delivery Mode Decision Matrix
 
 | Mode | Authorization | Authoring and delivery | Terminal evidence |
 | --- | --- | --- | --- |
-| PR (default) | Ordinary implementation request | Signed `semantic-commit` on a non-default managed-worktree branch, then the active `deliver-pr` path | PR/MR URL, delivered head, reviews/checks, and provider merge read-back |
+| PR (provider default) | Explicit current-task provider-delivery request, or an approved workflow that already owns PR/MR delivery | Signed `semantic-commit` on a non-default managed-worktree branch, then the active `deliver-pr` path | PR/MR URL, delivered head, reviews/checks, and provider merge read-back |
 | Direct-main (L0 exception) | The maintainer explicitly requests direct commit and push to the default branch in the current task | Exactly one signed `semantic-commit` on a non-default managed-worktree branch, then `forge-cli repo push-default --expected-base <full-sha> --reason-file <path>` | Structured receipt whose post-push `observed_remote_sha` equals the delivered head |
 | Local-default (L0 local completion) | The maintainer explicitly requests one local-only default-branch commit in the current task | Exact `semantic-commit local-default` in the clean primary checkout; no provider call | `cli.semantic-commit.local-default.v1` receipt with `provider_delivered=false` |
 
-Never infer direct-main authorization from a change being small, obvious,
+Implementation alone does not authorize provider mutation. Never infer
+direct-main authorization from a change being small, obvious,
 urgent, or described as a hotfix. The authorization expires with the current
 task. If the change grows beyond one commit, its expected base moves, signing
 cannot be verified, the checkout is dirty, or the delivery mode is uncertain,
-use a PR.
+retain the managed branch and request the needed delivery decision.
 
 `AGENT_RUNTIME_PROJECT_DEV_MODE` changes only workflow preparation guidance.
 Advisory or off project-dev mode does not relax this delivery matrix, commit
 signing, checkout ownership, branch, provider, or user-authorization controls;
 their independent hooks and governed CLIs continue to decide admission.
+Never enable `extensions.worktreeConfig` or set per-worktree author or signing
+configuration for tracked agent work. If signing fails, stop and report the
+failure; do not change identity or signing configuration to continue.
 
 Never infer local-default authorization from the same words. It permits one
 signed commit only, must finish in the current run, and is not provider
@@ -67,11 +69,12 @@ contract remain authoritative there.
 A `semantic-commit` invocation is classified against the repository it actually
 commits in, not the tool workdir. Bind a cross-repository target with
 `--repo <absolute path>`, which every mutating subcommand including
-`local-default` accepts. A literal absolute `cd` in the same command also
-resolves the target; a relative, expanded, globbed, or `~` destination, a
-nested shell, and any command-local `GIT_*`/`HOME` override do not, and neither
-does any shell-context change ahead of a raw `git` path. A blocked verdict
-names the resolved repository, how it resolved, and the first failing
+`local-default` accepts. A literal absolute `cd` may be classified so the guard
+can block the correct target, but shell retargeting is not an authorized route.
+A relative, expanded, globbed, or `~` destination, a nested shell, and any
+command-local `GIT_*`/`HOME` override do not resolve a governed target, and
+neither does any shell-context change ahead of a raw `git` path. A blocked
+verdict names the resolved repository, how it resolved, and the first failing
 precondition, so the invocation can be corrected instead of retried blind.
 
 ### One-shot delivery waiver

@@ -108,10 +108,17 @@ run_browser_routing_contract_probe() {
   local policy="$REPO_ROOT/core/policies/browser-test-routing.md"
   grep -q 'Static HTTP success must not be reported' "$policy"
   grep -q 'Rendered page state' "$policy"
+  grep -q '| Browser operator |' "$policy"
+  if grep -q 'Browser operator plus `browser-session`' "$policy"; then
+    return 1
+  fi
+  grep -q 'ordinary test output for a routine claim' "$policy"
+  grep -q 'owning gate requires a durable record' "$policy"
   grep -q 'Project Playwright/browser test harness' "$policy"
   grep -q 'macOS desktop Computer Use outcome' "$policy"
-  grep -q 'Hermes can read this policy' "$policy"
-  grep -q 'no runtime-kit hook or agent-docs injection path' "$policy"
+  grep -q 'Hermes resolves this policy from the selected docs home' "$policy"
+  grep -q 'no runtime-kit hook or automatic' "$policy"
+  grep -q 'agent-docs injection path' "$policy"
 }
 
 failures=0

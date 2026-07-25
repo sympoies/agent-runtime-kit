@@ -1,133 +1,102 @@
-# Files, Hooks, And Validation
+# Engineering Work Contract
 
 ## Purpose
 
-This policy holds the detailed mechanics for where agent output artifacts go,
-where hook source and managed config live, and how to run project validation
-commands.
+This is the compact required `project-dev` edit contract. It defines the
+engineering outcome an agent must prove while leaving routine planning, tool
+selection, and iteration strategy to the agent. Exact hook internals, evidence
+schemas, delivery state machines, and recovery commands belong to their owning
+runbooks and CLIs.
 
-It is declared as a `project-dev` document in `AGENT_DOCS.toml` (home scope),
-so the harness surfaces it through the hook preflight when implementation work
-starts. `AGENT_HOME.md` carries the always-on directives — follow the active
-project's conventions, keep debug artifacts out of `/tmp`, do not create durable
-discussion artifacts unless asked, hooks do not replace policy, and prefer
-project-defined validation. This file is the procedural detail behind them.
+## Before Editing
 
-## Output Artifacts
+- Read the closest repository instructions and only the intent documents
+  relevant to the work. Inspect the target plus material callers, loading paths,
+  tests, generated surfaces, and local conventions.
+- Preserve unrelated and pre-existing work. If a checkout is dirty, ownership
+  is unclear, or another session overlaps the same files, remain read-only until
+  isolation or explicit ownership is established.
+- State a concise contract delta for behavior changes: what stays true, what
+  changes or is removed, what is added, and which invariants must remain.
+  Refactors with no intended behavior delta say so.
 
-- For temporary/debug artifacts without a project-defined output path, create a
-  project run directory with `agent-out project --topic <topic> --mkdir`.
-- Debug/test artifacts without a project-defined path belong under the
-  runtime-kit state out tree
-  (`${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}/out/`),
-  not `/tmp`; reference that path in the reply.
-- Do not override established tool/workflow artifact contracts; use
-  `agent-out audit` before cleaning or enforcing the runtime-kit state out tree
-  (`${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/out/`).
-- Local-default commit receipts are private runtime evidence. Allocate them
-  outside the checkout through `agent-out`, never add them to a repository,
-  and retain them only while local completion or a separately authorized later
-  `push-default --local-default-receipt` reconciliation needs them.
-- The `agent-out` tree is scratch space, not a database. `skill-usage` records
-  are written there unconditionally (a useful breadcrumb even when no archive is
-  configured) and are **not** auto-reaped — they persist until manually cleaned
-  (`agent-out`) or migrated. Durable, queryable retention beyond a session is a
-  separate lane: migrate records into the agent-evidence-archive with the
-  direct `evidence migrate` CLI (clone path from
-  `$AGENT_EVIDENCE_ARCHIVE_HOME` / XDG; never committed into a working repo). See
-  `core/policies/evidence-archive/EVIDENCE_ARCHIVE.md`.
+## Proof Strategy
 
-## Sensitive Output Inspection
+- Choose the lowest stable boundary that proves the observable contract. Prefer
+  tests over implementation-shape assertions and avoid duplicate cases that
+  protect no distinct risk.
+- For testable behavior, normally capture a meaningful regression failure
+  before production edits. The failure must come from the intended missing or
+  changed behavior, not setup, compilation, environment, fixture, retry, or an
+  unrelated failure.
+- When meaningful red is impractical, record a concise reason and substitute
+  validation. This is expected for docs-only, generated-only, mechanical
+  refactors, or behavior with no stable local harness; it is not permission to
+  skip an available behavioral test.
+- A durable `test-first-evidence` record is conditional. Create and verify one
+  only when the repository, delivery gate, high-risk workflow, or user requires
+  retained proof. The engineering judgment above applies even when no record is
+  warranted; record mechanics live in `evidence-control-plane.md` and CLI help.
+- Flaky tests are defects. Quarantine needs an owner, expiry/removal condition,
+  and substitute validation.
 
-- When exploring container, stack, orchestrator, or provider API objects, never
-  print whole objects or env-like maps by default. Treat fields named `Env`,
-  `environment`, `secrets`, `config`, `auth`, `token`, `password`, or `key` as
-  potentially sensitive until proven otherwise.
-- Select only the safe-to-share fields needed for the task, or redact env-like
-  fields in the projection before output reaches the transcript. Prefer
-  presence/count/length checks over value output; if a specific value must be
-  inspected, read it by name and report only whether it exists or has the
-  expected shape.
-- If a sensitive value is printed into the session transcript, stop using that
-  value, state the leak plainly, and route credential rotation through the
-  appropriate credential owner rather than preserving the raw value in evidence,
-  summaries, issues, PRs, or memory.
+## Files And Sensitive Output
 
-## Hooks
+- Follow project conventions for durable files and generated output. Do not
+  create a discussion, plan, decision record, or broad index entry unless asked
+  or clearly reusable.
+- Put temporary/debug artifacts in a project-owned output path or an
+  `agent-out project --topic <topic> --mkdir` directory outside the repository.
+  Never commit runtime evidence, receipts, credentials, logs, or caches.
+- Inspect provider, container, stack, and environment objects with narrow field
+  projections. Treat auth, token, password, key, secret, config, and environment
+  fields as sensitive; prefer presence, count, length, or shape checks over
+  values. If a secret reaches the transcript, stop using it and route rotation
+  through its owner.
 
-- Hooks may enforce mechanical guardrails, but hooks do not replace policy.
-- Executable rules have an explicit `timeout_posture` separate from ordinary
-  capability failure. Each rule gets its own child deadline and later rules
-  still run. `closed` blocks; `warn` admits with a warning; `effect_gated`
-  admits only a trusted in-process `local_reversible` classification. A
-  completed block always dominates. Every allowed timeout writes a redacted
-  private incident under `${XDG_STATE_HOME:-$HOME/.local/state}/agent-hook/degraded/`;
-  a bounded privacy-safe fingerprint summary in the same directory aggregates
-  recurrence and terminal status. Continue eligible work and report the
-  incident ID in the final response.
-  Never treat the incident as a generic bypass for operations that are
-  external, destructive, credential-sensitive, transaction-sensitive, or unknown.
-- Shell inspection uses a shared tri-state effect contract: `read-only`,
-  `mutation`, or `unknown`. Read-only admission is exact and narrow: a pipeline
-  may contain pipe separators only, and every stage must match an audited
-  read-only argv shape. Redirection, command substitution, another shell
-  operator, an unsafe stage, or an untrusted executable leaves the effect
-  `unknown`; it does not prove that a mutation occurred.
-- `AGENT_RUNTIME_PROJECT_DEV_MODE` controls only the project-dev workflow gate:
-  `advisory` is the default, `enforce` is explicit fail-closed behavior, and
-  `off` bypasses this one check. Invalid values degrade to advisory with a stable
-  warning. Advisory attempts bounded exact target preparation when safe, but
-  missing/stale activation, capability, or workdir attestation never blocks the
-  repository command by itself. Enforce remains fail-closed for `unknown`; its
-  `project-dev-required` recovery means the shell shape was not proven
-  read-only, not that the hook observed a write. Exact trusted `agent-docs`
-  preparation for another declared intent is admitted without first preparing
-  `project-dev`; a near miss receives targeted trusted-command recovery. In
-  advisory mode that near miss is explicitly not treated as a trusted bootstrap
-  and executes normally; in enforce mode it is blocked before execution. Exact
-  help/version argv for the managed `agent-docs` and `forge-cli` release surface
-  is also read-only; a help flag embedded in an operational argv, a trailing
-  argument, a different PATH binary, or a repository-local shadow is not.
-- A successful explicitly submitted in-hook `session prepare` is a completed
-  state transition. Its
-  block result carries `[reason: prepared] [action: retry-original]`: retry the
-  original blocked command and do not run or modify the preparation command
-  again. Advisory auto-preparation instead allows the original command in the
-  same call and returns an exact, phase-qualified
-  `agent-docs preflight --intent project-dev` next action for reading the newly
-  prepared contract. A host-attested absolute workdir is the supported
-  cross-repository shell route. A ready target-rooted managed session may attest
-  its exact cwd through its private session record when a provider Bash envelope
-  omits cwd; session id, runtime incarnation, agent, owner/mode, and process cwd
-  must all match. A missing attestation tells the agent not to repeat unchanged
-  Bash and points to explicit Codex workdir, target-rooted session, or exact-path
-  edit recovery. An `agent-run exec --cwd` wrapper targeting
-  another repository or worktree remains unsupported until nils-cli provides
-  one typed command context shared by every guard; dynamic, duplicated, opaque,
-  relative, shadowed, and wrapped shapes use
-  `cross-repository-target-unsupported` plus the target-rooted worker fallback.
-- Hook source and managed config live under the active hook source checkout plus
-  the managed block in the tool's runtime config (Codex `config.toml`, Claude
-  `settings.json`).
-- Use the installed hook sync command to update the local runtime config; do not
-  track or symlink the whole runtime config file.
+## Hooks And Cross-Repository Work
+
+- Hooks enforce mechanical boundaries but do not grant authority or replace
+  judgment. Do not bypass a hook because its check seems redundant. A block
+  names the owning policy or recovery route; fix the precondition or report the
+  blocker.
+- Use the tool call's top-level working directory for ordinary mutation and
+  cross-repository staging. Stage each repository separately. A repo-scoped
+  `semantic-commit --repo` commit is the sole target-aware commit exception and
+  must be its command's sole mutation. Do not hide other cross-repository
+  mutation behind shell `cd`, raw `git -C`, dynamic paths, or a nested wrapper
+  when the host cannot attest the target.
+- Advisory preparation or coordination warnings do not deny work. Explicit
+  enforcement, checkout ownership, secrets, destructive actions, provider
+  mutations, and unknown-effect failures remain fail-closed according to their
+  owner.
+- When an authorized local operation cannot run in the current environment,
+  load `core/policies/execution-capsules.md` from the selected docs home and use
+  its private, supervised handoff. Host access is operator-authorized access
+  expansion only; it never waives repository rules, hooks, signing, or
+  concurrency guards.
+- Hook source, timeout/effect classification, setup, sync, and recovery details
+  live in `core/hooks/README.md`. Git and provider boundaries live in
+  `core/policies/git-delivery.md`.
 
 ## Parent Workflow Routing
 
 `agent-docs` preflight and `agent-out` allocation are parent workflow
-responsibilities, not user-selected outcomes. The active implementation or tool workflow resolves
-its declared intent documents before edits and allocates its own temporary
-artifacts when it needs them. Keep both CLIs directly callable for deterministic
-diagnostics, audits, and explicit cleanup planning.
+responsibilities, not user-selected outcomes. Keep both CLIs callable for
+diagnostics, explicit cleanup, and workflows that require retained artifacts.
 
-## Validation
+## Validation And Completion
 
-- Prefer project-defined validation commands. If none exist, run the smallest
-  meaningful checks and report what was or was not run.
-- When running project build, test, validation, or repository-owned script
-  commands, prefer `agent-run exec --cwd <repo> -- <command> ...` when available
-  so `.envrc` / `.env` handling is explicit in non-interactive agent sessions,
-  but only when `<repo>` is already the host-attested command repository. Do not
-  use the shell wrapper to hop from one repository/worktree to another; submit
-  a host-attested workdir or start the command from a managed session rooted at
-  that target. Do not run `direnv allow` automatically.
+- During iteration, run the smallest focused checks that answer the current
+  question. Expand by risk to affected suites, contract consumers, render/
+  generated checks, integration, or manual acceptance.
+- Before declaring completion, run every command in the active intent's
+  declared validation exactly once against the final change. A canonical gate
+  may already include focused suites; do not redeclare or rerun them unless the
+  final change invalidated their result.
+- Report the commands run, outcomes, and material residual gaps. An explicit
+  waiver states why a declared command could not run, what substitute evidence
+  exists, and whether the result remains incomplete.
+- If code changed after a successful gate, the result is stale. Rerun the
+  smallest affected checks and the canonical completion gate required by the
+  repository.

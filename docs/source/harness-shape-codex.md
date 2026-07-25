@@ -358,9 +358,10 @@ a uniform shape:
 
 ### 17. Work-tier delegation policy (`core/policies/work-tier-levels.md`)
 
-- Codex reads from: the required-doc injection path names the work-tier policy
-  for `project-dev`; that policy may select parallel or orchestrator execution
-  without exposing those execution modes as skills.
+- Codex reads from: delivery-phase `project-dev` resolution names the work-tier
+  policy only when durable tracking or delivery is in play. Routine L0
+  classification stays internal; the policy may select parallel or
+  orchestrator execution without exposing those execution modes as skills.
 - Source: `core/policies/work-tier-levels.md`, routed by
   `AGENT_DOCS.toml` and summarized by the rendered home policy.
 - Install mechanism: shared policy tree plus `agent-docs` intent resolution;

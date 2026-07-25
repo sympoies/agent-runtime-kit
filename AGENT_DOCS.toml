@@ -28,17 +28,16 @@
 # delivery CLIs (semantic-commit/forge-cli/git-cli) to `delivery`; `review` docs
 # are reached through explicit `--phase review` preflight, not the gate. Needs a
 # phase-capable agent-docs (the pinned surface); on an older CLI the gate falls
-# back to full project-dev. Keep the home-scoped `edit`/no-phase set in lock-step
-# with the edit-phase-required-reading budget in
-# scripts/ci/context-budget-audit.py.
+# back to full project-dev. `scripts/ci/context-budget-audit.py` resolves this
+# catalog through `agent-docs`; do not maintain a second hand-written mirror.
 [[document]]
 context = "project-dev"
 scope = "project"
 path = "DEVELOPMENT.md"
-required = true
+required = false
 when = "path-exists:Cargo.toml || path-exists:package.json || path-exists:src/** || path-exists:scripts/ci/all.sh"
 phase = ["edit", "delivery"]
-notes = "Local validation and CI gate procedure; required only for code repos (auto-skipped in a docs-only checkout)"
+notes = "Canonical repository orientation and contributor detail; read on demand when setup, CI structure, release boundaries, or unfamiliar repository conventions matter."
 
 [[document]]
 context = "project-dev"
@@ -47,7 +46,7 @@ path = "core/policies/work-tier-levels.md"
 required = true
 when = "always"
 phase = "delivery"
-notes = "Work-tier levels (L0-L3) and proactive triage: classify each work request into the lowest applicable tier, recommend the next step, and surface a decision at the L1+ escalation boundary. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
+notes = "Work-tier levels (L0-L3) for delivery-phase durable state: keep routine L0 internal and surface only L1+, provider delivery, or materially ambiguous escalation. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
 context = "project-dev"
@@ -65,7 +64,7 @@ path = "core/policies/files-hooks-validation.md"
 required = true
 when = "always"
 phase = ["edit", "delivery"]
-notes = "Detailed output-artifact, hook source/sync, and validation-command mechanics behind the AGENT_HOME.md directives: agent-out run dirs, the runtime-kit state out tree, hook config location and sync, and agent-run exec. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
+notes = "Compact engineering edit contract: inspection, user-work preservation, behavior delta, regression-first proof or waiver, artifact safety, cross-repo boundaries, and final validation."
 
 [[document]]
 context = "project-dev"
@@ -73,21 +72,21 @@ scope = "home"
 path = "core/policies/evidence-control-plane.md"
 required = true
 when = "always"
-phase = ["edit", "review", "delivery"]
-notes = "Parent-owned test-first, docs-impact, review, usage, web, model-check, and closeout evidence ordering; evidence primitives are not user-selected outcomes."
+phase = ["review", "delivery"]
+notes = "Conditional durable evidence ownership for review, delivery gates, audits, handoffs, and event-driven closeout; ordinary edits use the compact engineering contract."
 
 [[document]]
 context = "project-dev"
 scope = "project"
 path = "docs/source/docs-placement-retention-policy-v1.md"
-required = true
+required = false
 when = "always"
 phase = "edit"
-notes = "Docs placement and retention policy for docs/** and repository-root Markdown changes"
+notes = "Canonical docs placement and retention reference; read on demand when adding, promoting, moving, indexing, or cleaning durable documentation."
 
 # Optional (required = false): available and auditable, but not force-injected
 # into every project-dev preflight. Relevant only when doing coupled nils-cli
-# work; DEVELOPMENT.md (always injected for this code repo) links to it.
+# work; the canonical DEVELOPMENT.md links to it.
 [[document]]
 context = "project-dev"
 scope = "project"
@@ -129,28 +128,12 @@ when = "always"
 notes = "External, unstable, or time-sensitive claims: when to run the task-tools preflight, source tags, authoritative sourcing, and which evidence/reporting skills to prefer. Home-scoped so any task-tools work inherits it when this checkout is the docs home."
 
 [[document]]
-context = "task-tools"
-scope = "home"
-path = "core/policies/evidence-control-plane.md"
-required = true
-when = "always"
-notes = "External-fact parents own any web evidence or model cross-check records and link them into one outer workflow record."
-
-[[document]]
 context = "browser-test"
 scope = "home"
 path = "core/policies/browser-test-routing.md"
 required = true
 when = "always"
 notes = "Select static HTTP, rendered browser, Playwright, or desktop execution according to the claim and retain only matching evidence."
-
-[[document]]
-context = "browser-test"
-scope = "home"
-path = "core/policies/evidence-control-plane.md"
-required = true
-when = "always"
-notes = "Browser-test parents own browser-session, HTTP, canary, and linked workflow evidence without exposing recorder primitives as user outcomes."
 
 [[document]]
 context = "memory"
@@ -169,14 +152,6 @@ when = "always"
 notes = "Global work-authorization and collision-awareness boundary: advisory and unmanaged coordination need no claim and do not block work; overlap warnings guide worktree/scope choices, while explicit enforce owns claims, checkout leases, and recovery."
 
 [[document]]
-context = "session-coordination"
-scope = "home"
-path = "core/policies/evidence-control-plane.md"
-required = true
-when = "always"
-notes = "Coordination behavior changes retain parent-owned test-first, review, and closeout evidence."
-
-[[document]]
 context = "task-tools"
 scope = "home"
 path = "core/policies/cli-tools.md"
@@ -190,15 +165,9 @@ notes = "Optional cross-project CLI tool catalog and recommended defaults (searc
 # `marker` is missing/stale, and a waiver releases it.
 [[validation]]
 context = "project-dev"
-commands = ["bash scripts/ci/all.sh", "bash tests/hooks/run.sh"]
+commands = ["bash scripts/ci/all.sh"]
 marker = ".cache/agent-validation/project-dev.ok"
-description = "Run the kit CI gate stack and hook tests before declaring a project-dev task done."
-
-[[validation]]
-context = "session-coordination"
-commands = ["bash tests/hooks/run.sh"]
-marker = ".cache/agent-validation/session-coordination.ok"
-description = "Run the shared hook contract before declaring session-coordination behavior done."
+description = "Run the canonical kit gate stack once; it already includes hook, render, smoke, and context-budget coverage."
 
 # Project-owned classification consumed by nils-cli's phase-aware test-first
 # checks. Consuming repositories declare their own paths; unmatched files stay
