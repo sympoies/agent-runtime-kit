@@ -534,11 +534,17 @@ def reason(
         )
     return (
         f"Code was edited in {name} but its declared validation has "
-        f"not passed since the last edit. Run it before finishing:\n  {full}\n"
-        f"Outstanding: {missing}\n"
-        f"(Running it records {markers}, which releases this gate. To "
-        f"finish without validating, set AGENT_RUNTIME_VALIDATION_WAIVER=1 and "
-        f"state the waiver reason.){failure_guidance}"
+        "not passed since the last edit.\n"
+        f"Declared validation contract:\n  {full}\n"
+        f"Outstanding for this edit generation: {missing}\n"
+        "A successful creditable invocation records command outcomes in "
+        "validation state (session-scoped when the hook receives a session "
+        "identity). After all current outcomes are satisfied, Stop consolidates "
+        f"the contract into {markers}, removes completed session state when "
+        "present, and releases this gate.\n"
+        "Run the outstanding declared command shape before finishing. To finish "
+        "without validating, set AGENT_RUNTIME_VALIDATION_WAIVER=1 and state the "
+        f"waiver reason.{failure_guidance}"
     )
 
 

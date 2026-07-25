@@ -338,6 +338,17 @@ class SharedHookTests(unittest.TestCase):
     def assert_allowed(self, decision: dict[str, object] | None) -> None:
         self.assertIsNone(decision)
 
+    def assert_unprovable_validation_advisory(
+        self, decision: dict[str, object] | None
+    ) -> str:
+        self.assertIsNotNone(decision)
+        assert decision is not None
+        self.assertEqual(set(decision), {"systemMessage"})
+        message = str(decision.get("systemMessage", ""))
+        self.assertEqual(message.count("validation_outcome_unprovable"), 1)
+        self.assertIn("will not satisfy the finish-line gate", message)
+        return message
+
     def test_session_id_from_payload_prefers_managed_launch_identity(self) -> None:
         payload = {"session_id": "provider-session"}
         with mock.patch.dict(
@@ -2830,6 +2841,14 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
+            assert decision is not None
+            reason = str(decision.get("reason", ""))
+            self.assertIn("Declared validation contract:", reason)
+            self.assertIn("Outstanding for this edit generation:", reason)
+            self.assertIn("session-scoped", reason)
+            self.assertIn("Stop consolidates", reason)
+            self.assertIn("removes completed session state when present", reason)
+            self.assertNotIn("Running it records", reason)
 
             # Running the declared validation records the run.
             code, _, stderr = run_hook(
@@ -4750,7 +4769,7 @@ exit 64
             )
             for index, command in enumerate(ambiguous):
                 with self.subTest(command=command):
-                    code, rewrite, stderr = run_hook(
+                    code, advisory, stderr = run_hook(
                         "finish-line-record.py",
                         command_event_payload(
                             "PreToolUse", command, tool_use_id=f"ambiguous-{index}"
@@ -4759,7 +4778,7 @@ exit 64
                         env=base_env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assertIsNone(rewrite)
+                    self.assert_unprovable_validation_advisory(advisory)
 
             _, decision, _ = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
@@ -4768,6 +4787,108 @@ exit 64
             self.assertFalse(
                 list((repo / ".cache" / "agent-validation").glob("*.cmd*.ran"))
             )
+
+    def test_finish_line_unprovable_validation_emits_one_private_advisory(
+        self,
+    ) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            run_hook(
+                "finish-line-record.py",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                cwd=repo,
+                env=base_env,
+            )
+
+            commands = (
+                "TOOLCHAIN_SECRET=/private/runtime bash scripts/ci/all.sh",
+                "bash scripts/ci/all.sh; true",
+                "bash scripts/ci/all.sh || true",
+                "bash scripts/ci/all.sh | true",
+                "bash scripts/ci/all.sh & wait",
+                "(bash scripts/ci/all.sh)",
+                "prepare-runtime && bash scripts/ci/all.sh",
+            )
+            for index, command in enumerate(commands):
+                with self.subTest(command=command):
+                    code, advisory, stderr = run_hook(
+                        "finish-line-record.py",
+                        command_event_payload(
+                            "PreToolUse",
+                            command,
+                            tool_use_id=f"unprovable-advisory-{index}",
+                        ),
+                        cwd=repo,
+                        env=base_env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    message = self.assert_unprovable_validation_advisory(advisory)
+                    self.assertIn("repository-owned declared validation wrapper", message)
+                    self.assertNotIn(command, message)
+                    self.assertNotIn("TOOLCHAIN_SECRET", message)
+                    self.assertNotIn("/private/runtime", message)
+
+            state = repo / ".cache" / "agent-validation"
+            self.assertFalse(list(state.glob("*.pending.*.json")))
+            self.assertFalse(list(state.glob("*.cmd*.ran")))
+
+            unusable_state = repo / "unusable-runtime-state"
+            unusable_state.write_text("not a directory\n", encoding="utf-8")
+            code, advisory, stderr = run_hook(
+                "finish-line-record.py",
+                command_event_payload(
+                    "PreToolUse",
+                    "bash scripts/ci/all.sh; true",
+                    tool_use_id="unprovable-advisory-without-state-lock",
+                ),
+                cwd=repo,
+                env={
+                    **base_env,
+                    "AGENT_RUNTIME_STATE_HOME": str(unusable_state),
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(advisory)
+
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "scripts/ci/all.sh")
+
+    def test_finish_line_generated_wrapper_is_not_warned_or_nested(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            _, rewrite, _ = run_hook(
+                "finish-line-record.py",
+                command_event_payload(
+                    "PreToolUse",
+                    "bash scripts/ci/all.sh",
+                    tool_use_id="wrapper-origin",
+                ),
+                cwd=repo,
+                env=base_env,
+            )
+            assert rewrite is not None
+            hook_output = rewrite["hookSpecificOutput"]
+            assert isinstance(hook_output, dict)
+            updated_input = hook_output["updatedInput"]
+            assert isinstance(updated_input, dict)
+            wrapped = str(updated_input["command"])
+
+            code, decision, stderr = run_hook(
+                "finish-line-record.py",
+                command_event_payload(
+                    "PreToolUse", wrapped, tool_use_id="wrapper-replayed"
+                ),
+                cwd=repo,
+                env=base_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNone(decision)
 
     def test_finish_line_preserves_quoted_operator_provenance(self) -> None:
         self._require_agent_docs()
@@ -4783,7 +4904,7 @@ exit 64
                 env=base_env,
             )
 
-            code, rewrite, stderr = run_hook(
+            code, advisory, stderr = run_hook(
                 "finish-line-record.py",
                 command_event_payload(
                     "PreToolUse",
@@ -4794,7 +4915,7 @@ exit 64
                 env=base_env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assertIsNone(rewrite)
+            self.assert_unprovable_validation_advisory(advisory)
             _, decision, _ = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
             )
@@ -4805,7 +4926,7 @@ exit 64
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("printf %s '$(exit 17)'",))
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
-            code, rewrite, stderr = run_hook(
+            code, advisory, stderr = run_hook(
                 "finish-line-record.py",
                 command_event_payload(
                     "PreToolUse",
@@ -4816,7 +4937,7 @@ exit 64
                 env=base_env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assertIsNone(rewrite)
+            self.assert_unprovable_validation_advisory(advisory)
 
     def test_finish_line_allows_safe_quoted_validation_words(self) -> None:
         self._require_agent_docs()
@@ -4867,21 +4988,24 @@ exit 64
             "conditional": (
                 "'if' bash scripts/ci/all.sh; 'then' true; 'fi'",
                 "if bash scripts/ci/all.sh; then true; fi",
+                False,
             ),
             "time": (
                 "'time' bash scripts/ci/all.sh",
                 "time bash scripts/ci/all.sh",
+                True,
             ),
             "assignment": (
                 "'MODE=release' bash scripts/ci/all.sh",
                 "MODE=release bash scripts/ci/all.sh",
+                True,
             ),
         }
-        for name, (declared, actual) in cases.items():
+        for name, (declared, actual, matched) in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 repo = self._init_contract_repo(tmp, (declared,))
                 base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
-                code, rewrite, stderr = run_hook(
+                code, advisory, stderr = run_hook(
                     "finish-line-record.py",
                     command_event_payload(
                         "PreToolUse", actual, tool_use_id=f"syntax-word-{name}"
@@ -4890,7 +5014,10 @@ exit 64
                     env=base_env,
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assertIsNone(rewrite)
+                if matched:
+                    self.assert_unprovable_validation_advisory(advisory)
+                else:
+                    self.assertIsNone(advisory)
 
     def test_finish_line_quoted_append_assignment_cannot_credit_validation(
         self,
@@ -4923,7 +5050,7 @@ exit 64
                 cwd=repo,
                 env=base_env,
             )
-            _, rewrite, _ = run_hook(
+            _, advisory, _ = run_hook(
                 "finish-line-record.py",
                 command_event_payload(
                     "PreToolUse",
@@ -4933,20 +5060,7 @@ exit 64
                 cwd=repo,
                 env=base_env,
             )
-            if rewrite is not None:
-                output = rewrite["hookSpecificOutput"]
-                assert isinstance(output, dict)
-                updated_input = output["updatedInput"]
-                assert isinstance(updated_input, dict)
-                completed = subprocess.run(
-                    ["bash", "-lc", str(updated_input["command"])],
-                    cwd=repo,
-                    env={**os.environ, "PATH": path},
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                self.assertEqual(completed.returncode, 0)
+            self.assert_unprovable_validation_advisory(advisory)
             self.assertFalse((repo / "validation-ran").exists())
             _, decision, _ = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
@@ -4958,7 +5072,7 @@ exit 64
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
-            code, rewrite, stderr = run_hook(
+            code, advisory, stderr = run_hook(
                 "finish-line-record.py",
                 command_event_payload(
                     "PreToolUse",
@@ -4969,7 +5083,9 @@ exit 64
                 env=base_env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assertIsNone(rewrite)
+            message = self.assert_unprovable_validation_advisory(advisory)
+            self.assertNotIn("$HOME/example", message)
+            self.assertNotIn("rm -rf", message)
 
     def test_finish_line_risky_declared_control_flow_must_match_positionally(
         self,
@@ -4984,7 +5100,7 @@ exit 64
                 cwd=repo,
                 env=base_env,
             )
-            code, rewrite, stderr = run_hook(
+            code, advisory, stderr = run_hook(
                 "finish-line-record.py",
                 command_event_payload(
                     "PreToolUse",
@@ -4995,7 +5111,7 @@ exit 64
                 env=base_env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assertIsNone(rewrite)
+            self.assert_unprovable_validation_advisory(advisory)
 
     def test_finish_line_credits_success_preserving_validation_chain(self) -> None:
         self._require_agent_docs()

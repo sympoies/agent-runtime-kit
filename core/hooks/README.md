@@ -17,6 +17,16 @@ input rewrite also grants permission to the complete rewritten command. The
 authorization matcher retains operator and evaluation-sensitive quote syntax
 while normalizing harmless quoted words, so a quoted literal cannot be
 reinterpreted as live shell control flow.
+When a submitted command contains declared validation but unrelated setup or
+control flow makes the aggregate status unprovable, `PreToolUse` emits one
+fixed `validation_outcome_unprovable` advisory and runs the command unchanged.
+It does not register an outcome or echo the submitted command. Repositories
+whose validation requires a particular runtime, environment, or other setup
+should declare one repository-owned wrapper that performs and verifies that
+setup, runs the complete validation contract with failure-preserving
+semantics, and returns its aggregate status. Put toolchain selection inside
+that declared wrapper, never in an uncredited caller-side `eval`, `source`,
+environment preamble, directory change, or shell suffix.
 Attempts are ordered at PreToolUse creation, so a stale completion cannot
 overwrite a newer attempt; an outcome that cannot persist leaves its pending
 attempt blocking the gate. A bounded recovery descriptor travels with the

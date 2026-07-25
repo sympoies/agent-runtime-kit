@@ -82,6 +82,7 @@ PENDING_MAX_AGE_SECONDS = 24 * 60 * 60
 PENDING_MAX_RECORDS = 128
 TOMBSTONE_MAX_BYTES = 64 * 1024
 DIRTY_SNAPSHOT_MAX_BYTES = 64 * 1024
+UNPROVABLE_VALIDATION_REASON = "validation_outcome_unprovable"
 ValidationMatch = tuple[dict[str, str], int, str]
 SHELL_EVALUATION_SENSITIVE_CHARS = frozenset("$`*?[]{}~<>!#\\\n\r")
 SHELL_SYNTAX_WORDS = frozenset(
@@ -1450,6 +1451,20 @@ def emit_rewrite(payload: Mapping[str, Any], command: str) -> None:
     sys.stdout.write("\n")
 
 
+def emit_unprovable_validation_advisory() -> None:
+    """Explain non-credit without retaining or echoing submitted shell input."""
+    message = (
+        f"[reason: {UNPROVABLE_VALIDATION_REASON}] Declared validation was "
+        "detected, but this shell shape cannot prove its aggregate outcome. "
+        "The invocation will run unchanged and will not satisfy the finish-line "
+        "gate. Run the declared validation command shape exactly, or move "
+        "required toolchain or environment setup into a repository-owned "
+        "declared validation wrapper."
+    )
+    sys.stdout.write(json.dumps({"systemMessage": message}))
+    sys.stdout.write("\n")
+
+
 def main() -> int:
     if len(sys.argv) > 1:
         return record_outcome_cli(sys.argv)
@@ -1475,28 +1490,35 @@ def main() -> int:
         )
         if not matches:
             return ALLOW
-        try:
-            state_lock = acquire_validation_state_lock(repo_root)
-        except OSError:
-            emit_block(registration_block_reason())
-            return ALLOW
         if event == "PreToolUse":
-            if generated_wrapper_token(command) is None and outcome_status_is_provable(
-                command, matches
-            ):
-                token = outcome_token(payload, command)
-                pending, registration_failed = pending_records(
-                    repo_root, matches, token
-                )
-                if registration_failed:
-                    discard_registered_attempts(pending)
-                    emit_block(registration_block_reason())
-                    return ALLOW
-                if pending:
-                    emit_rewrite(payload, wrapped_command(command, token, pending))
+            if generated_wrapper_token(command) is not None:
+                return ALLOW
+            if not outcome_status_is_provable(command, matches):
+                emit_unprovable_validation_advisory()
+                return ALLOW
+            try:
+                state_lock = acquire_validation_state_lock(repo_root)
+            except OSError:
+                emit_block(registration_block_reason())
+                return ALLOW
+            token = outcome_token(payload, command)
+            pending, registration_failed = pending_records(
+                repo_root, matches, token
+            )
+            if registration_failed:
+                discard_registered_attempts(pending)
+                emit_block(registration_block_reason())
+                return ALLOW
+            if pending:
+                emit_rewrite(payload, wrapped_command(command, token, pending))
         elif not event:
             # Compatibility for older direct invocations and existing fixtures.
             # Product hook wiring always supplies an explicit event name.
+            try:
+                state_lock = acquire_validation_state_lock(repo_root)
+            except OSError:
+                emit_block(registration_block_reason())
+                return ALLOW
             for markers, index, _declared in matches:
                 touch_marker(command_ran_marker(markers, index))
     elif tool in EDIT_TOOLS:
