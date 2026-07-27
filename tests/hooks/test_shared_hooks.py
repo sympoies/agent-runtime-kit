@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import errno
 import hashlib
 import importlib.util
@@ -21269,6 +21270,108 @@ exit 66
                 self.assert_blocked(decision, fragment)
                 retained = json.loads(lease_file.read_text(encoding="utf-8"))
                 self.assertEqual(retained["session_key"], original_lease["session_key"])
+
+
+
+    def _load(self, module_name: str, filename: str):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(module_name, HOOK_DIR / filename)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    @contextlib.contextmanager
+    def _managed_cli_home_fixture(self):
+        """Temporary HOME holding a per-user managed CLI bin and a decoy bin.
+
+        Scoped per test rather than in setUp: this class has no setUp, and
+        adding one would retarget HOME for all of its other tests, which breaks
+        every fixture that shells out to git.
+        """
+        saved = {
+            key: os.environ.get(key)
+            for key in ("HOME", "PATH", "AGENT_RUNTIME_TRUSTED_CLI_ROOT", "AGENT_SESSION_BIN")
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home_bin = root / "home" / ".local" / "nils-cli" / "bin"
+            other_bin = root / "elsewhere" / "bin"
+            for directory in (home_bin, other_bin):
+                directory.mkdir(parents=True)
+                for tool in ("semantic-commit", "agent-docs", "agent-session"):
+                    binary = directory / tool
+                    binary.write_text("#!/bin/sh\nexit 0\n")
+                    binary.chmod(0o755)
+            os.environ["HOME"] = str(root / "home")
+            os.environ.pop("AGENT_RUNTIME_TRUSTED_CLI_ROOT", None)
+            os.environ.pop("AGENT_SESSION_BIN", None)
+            sys.path.insert(0, str(HOOK_DIR))
+            # Importing a hook would drop __pycache__ into core/hooks/shared,
+            # and the trusted materializer refuses any non-regular file there.
+            saved_bytecode = sys.dont_write_bytecode
+            sys.dont_write_bytecode = True
+            try:
+                yield home_bin, other_bin
+            finally:
+                sys.dont_write_bytecode = saved_bytecode
+                if sys.path and sys.path[0] == str(HOOK_DIR):
+                    sys.path.pop(0)
+                for key, value in saved.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+    def test_delivery_trusts_the_per_user_root_without_any_override(self) -> None:
+        with self._managed_cli_home_fixture() as (home_bin, _other_bin):
+            module = self._load("delivery_home_root", "block-unsafe-default-delivery.py")
+            os.environ["PATH"] = f"{home_bin}{os.pathsep}/usr/bin"
+            self.assertTrue(
+                module.trusted_managed_cli_invocation("semantic-commit", "semantic-commit")
+            )
+
+    def test_delivery_still_rejects_an_unrelated_directory(self) -> None:
+        with self._managed_cli_home_fixture() as (_home_bin, other_bin):
+            module = self._load("delivery_home_root_reject", "block-unsafe-default-delivery.py")
+            os.environ["PATH"] = f"{other_bin}{os.pathsep}/usr/bin"
+            self.assertFalse(
+                module.trusted_managed_cli_invocation("semantic-commit", "semantic-commit")
+            )
+
+    def test_coordination_guard_trusts_the_per_user_root(self) -> None:
+        with self._managed_cli_home_fixture() as (home_bin, other_bin):
+            module = self._load("coord_home_root", "session-coordination-guard.py")
+            os.environ["PATH"] = f"{home_bin}{os.pathsep}/usr/bin"
+            self.assertIsNotNone(module.resolved_trusted_cli("agent-session"))
+            os.environ["PATH"] = f"{other_bin}{os.pathsep}/usr/bin"
+            self.assertIsNone(module.resolved_trusted_cli("agent-session"))
+
+    def test_explicit_root_still_replaces_the_builtin_list(self) -> None:
+        """Setting an explicit root narrows trust to exactly that root.
+
+        Guards differ on this by design, not by accident: pre-edit-intent-gate
+        pairs the same early return with a repository-local executable check, so
+        falling through to the packaged prefixes would skip that check. The
+        per-user root is a built-in, so it needs no override to be trusted.
+        """
+        with self._managed_cli_home_fixture() as (home_bin, other_bin):
+            module = self._load("coord_home_root_replace", "session-coordination-guard.py")
+            os.environ["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(other_bin)
+            os.environ["PATH"] = f"{home_bin}{os.pathsep}/usr/bin"
+            self.assertIsNone(module.resolved_trusted_cli("agent-session"))
+            os.environ["PATH"] = f"{other_bin}{os.pathsep}/usr/bin"
+            self.assertIsNotNone(module.resolved_trusted_cli("agent-session"))
+
+    def test_hook_common_helper_matches_lexical_and_resolved_forms(self) -> None:
+        with self._managed_cli_home_fixture() as (home_bin, other_bin):
+            import hook_common
+
+            self.assertTrue(hook_common.is_managed_cli_home_bin(str(home_bin)))
+            self.assertFalse(hook_common.is_managed_cli_home_bin(str(other_bin)))
+            self.assertEqual(hook_common.managed_cli_home_bin(), str(home_bin))
 
 
 def _collect_test_names() -> list[str]:

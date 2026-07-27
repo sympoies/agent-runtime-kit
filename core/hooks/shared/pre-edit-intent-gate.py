@@ -53,6 +53,7 @@ from hook_common import (
     git_toplevel,
     invocation_is_opaque,
     invocation_tokens,
+    is_managed_cli_home_bin,
     is_git_recovery_argv,
     main_agent_preclaim_argv,
     normalized_main_agent_argv,
@@ -1506,9 +1507,13 @@ def trusted_agent_docs_executable(executable: str, repos: list[str]) -> bool:
             os.path.dirname(executable)
         ) == "bin":
             return True
-    return os.path.dirname(candidate) == "/usr/bin" and os.path.dirname(
+    if os.path.dirname(candidate) == "/usr/bin" and os.path.dirname(
         executable
-    ) == "/usr/bin"
+    ) == "/usr/bin":
+        return True
+    return is_managed_cli_home_bin(
+        os.path.dirname(candidate)
+    ) and is_managed_cli_home_bin(os.path.dirname(executable))
 
 
 def verify_intent(

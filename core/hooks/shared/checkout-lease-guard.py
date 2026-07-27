@@ -44,6 +44,7 @@ from hook_common import (
     invocation_command_position_is_dynamic,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    is_managed_cli_home_bin,
     invocation_without_redirections,
     is_assignment,
     is_git_recovery_argv,
@@ -1269,7 +1270,9 @@ def resolved_executable_matches(raw: str, name: str, *, managed_cli: bool = Fals
             return os.path.commonpath((resolved_invoked, cellar)) == cellar
         except ValueError:
             return False
-    return os.path.dirname(resolved_invoked) == "/usr/bin"
+    if os.path.dirname(resolved_invoked) == "/usr/bin":
+        return True
+    return is_managed_cli_home_bin(os.path.dirname(resolved_invoked))
 
 
 def invocation_environment_is_stable(tokens: list[str], executable: str) -> bool:

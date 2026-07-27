@@ -148,11 +148,15 @@ behavior; a missing, timed-out, crashed, malformed, or on-floor binary without
 the session surface fails closed. Before any probe, the hooks require the
 resolved `agent-docs` executable to live in a known managed CLI directory
 (`/opt/homebrew/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/usr/local/bin`,
-or `/usr/bin`); Homebrew links must resolve under that prefix's
-`Cellar/nils-cli` package. A custom installation requires an explicit
-launch-time
-`AGENT_RUNTIME_TRUSTED_CLI_ROOT`; repository-local candidates are always
-rejected. These hooks are mechanical guardrails, not a security sandbox: the
+`/usr/bin`, or the per-user `~/.local/nils-cli/bin` produced by
+`NILS_WRAPPER_INSTALL_PREFIX`); Homebrew links must resolve under that prefix's
+`Cellar/nils-cli` package, while `/usr/bin` and the per-user root hold regular
+files and so must resolve to themselves. The per-user root is owner-writable,
+but so is the Homebrew prefix on Linux hosts, so trusting it adds no weakness
+the packaged list did not already carry. Any other installation requires an
+explicit launch-time `AGENT_RUNTIME_TRUSTED_CLI_ROOT`, which narrows trust to
+exactly the roots it names in the gates that pair it with a repository-local
+executable check; repository-local candidates are always rejected. These hooks are mechanical guardrails, not a security sandbox: the
 product launch environment, managed runtime home, and an explicit trusted-root
 override remain host trust boundaries. Hermes has no runtime-kit hook runner.
 

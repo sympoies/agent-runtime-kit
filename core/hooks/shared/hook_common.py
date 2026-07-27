@@ -35,6 +35,29 @@ TERMINAL_OWNER_MARKER_NAMES = frozenset(
     {".terminal-codex", ".terminal-claude", ".terminal-shared"}
 )
 
+# The supported per-user managed CLI root (NILS_WRAPPER_INSTALL_PREFIX). It is
+# trusted next to the packaged prefixes rather than needing an explicit
+# override: on Linux hosts the Homebrew prefix is owner-writable too, so this
+# location is no weaker than what these hooks already accept. Binaries here are
+# regular files, so callers pair it with a lexical == resolved check, exactly as
+# they do for /usr/bin.
+MANAGED_CLI_HOME_BIN = os.path.join("~", ".local", "nils-cli", "bin")
+
+
+def managed_cli_home_bin() -> str:
+    return os.path.expanduser(MANAGED_CLI_HOME_BIN)
+
+
+def is_managed_cli_home_bin(directory: str) -> bool:
+    """Whether `directory` is the per-user managed CLI bin, lexical or resolved."""
+    home_bin = managed_cli_home_bin()
+    if directory == home_bin:
+        return True
+    try:
+        return os.path.realpath(directory) == os.path.realpath(home_bin)
+    except OSError:
+        return False
+
 
 def read_payload() -> dict[str, Any]:
     try:

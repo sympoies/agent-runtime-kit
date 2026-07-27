@@ -68,6 +68,12 @@ else:
             break
 if candidate_path.parent == pathlib.Path("/usr/bin") and candidate.parent == candidate_path.parent:
     trusted = True
+# Per-user managed install (NILS_WRAPPER_INSTALL_PREFIX). Regular files live
+# here, so it is paired with the same lexical == resolved check as /usr/bin.
+if candidate_path.parent == pathlib.Path("~/.local/nils-cli/bin").expanduser() and (
+    candidate.parent == candidate_path.parent
+):
+    trusted = True
 if trusted and candidate.is_file() and os.access(candidate, os.X_OK):
     print(candidate)
 PY

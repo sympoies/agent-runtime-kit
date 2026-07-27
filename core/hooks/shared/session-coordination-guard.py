@@ -43,6 +43,7 @@ from hook_common import (
     emit_block,
     invocation_is_opaque,
     invocation_tokens,
+    is_managed_cli_home_bin,
     main_agent_preclaim_argv,
     normalized_main_agent_argv,
     output_redirect_targets,
@@ -293,6 +294,8 @@ def resolved_trusted_cli(name: str) -> str | None:
             if resolved == lexical or os.path.commonpath((resolved, cellar)) == cellar:
                 return resolved
     if os.path.dirname(lexical) == "/usr/bin" and resolved == lexical:
+        return resolved
+    if is_managed_cli_home_bin(os.path.dirname(lexical)) and resolved == lexical:
         return resolved
     return None
 
@@ -761,7 +764,7 @@ def trusted_command(token: str, expected: str) -> bool:
     for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew"):
         if os.path.dirname(lexical) == os.path.join(prefix, "bin"):
             return True
-    return False
+    return is_managed_cli_home_bin(os.path.dirname(lexical))
 
 
 def git_read_only(args: list[str]) -> bool:

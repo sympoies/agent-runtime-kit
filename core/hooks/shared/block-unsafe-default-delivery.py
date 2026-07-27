@@ -52,6 +52,7 @@ from hook_common import (
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    is_managed_cli_home_bin,
     is_assignment,
     nested_shell_payload,
     opaque_invocation_candidates,
@@ -1351,6 +1352,8 @@ def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
     if lexical_dir in trusted_roots:
         return True
     if lexical_dir == "/usr/bin" and resolved == lexical:
+        return True
+    if is_managed_cli_home_bin(lexical_dir) and resolved == lexical:
         return True
     for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
         if os.path.dirname(lexical) != os.path.join(prefix, "bin"):
