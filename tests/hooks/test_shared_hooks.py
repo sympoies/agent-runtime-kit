@@ -11508,14 +11508,69 @@ exit 64
             self.assertEqual(len(targets["targets"]), 3)
             self.assertEqual(run.call_count, 2)
 
+    def test_session_coordination_shell_projection_is_checkout_bound(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_checkout_projection_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / "src").mkdir(parents=True)
+            subprocess.run(
+                ["git", "init", "--quiet", "--initial-branch", "main"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repository.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            payload = command_payload("touch src/generated.txt")
+            payload["cwd"] = str(repo)
+            operation, targets = guard.operation_targets(payload, "Bash")
+
+            self.assertEqual(operation, "shell")
+            self.assertEqual(
+                targets,
+                {
+                    "schema_version": "agent-session.operation-targets.v1",
+                    "targets": [
+                        {
+                            "kind": "repository",
+                            "repository": "example/repository",
+                            "value": ".",
+                        }
+                    ],
+                    "provider_refs": [],
+                    "checkouts": [
+                        {
+                            "repository": "example/repository",
+                            "path": str(repo.resolve()),
+                        }
+                    ],
+                },
+            )
+
     @unittest.skipUnless(
         os.environ.get("AGENT_SESSION_COUPLED_ACCEPTANCE") == "1",
         "requires a source-linked agent-session binary",
     )
     def test_session_coordination_source_linked_cross_product_acceptance(self) -> None:
-        agent_session = shutil.which("agent-session")
+        agent_session = os.environ.get("AGENT_SESSION_SOURCE_BIN")
         self.assertIsNotNone(agent_session)
         assert agent_session is not None
+        self.assertTrue(Path(agent_session).is_absolute())
+        self.assertTrue(os.access(agent_session, os.X_OK))
         version = subprocess.run(
             [agent_session, "--version"],
             capture_output=True,
@@ -11789,6 +11844,172 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assertNotEqual((claude or {}).get("decision"), "block")
             self.assertIn("possible overlap", str(claude).lower())
+
+            runtime_identity = {
+                "launch_id": "incarnation-alpha",
+                "session_id": "$94",
+                "pane_id": "%94",
+                "pane_pid": os.getpid(),
+                "process_group_id": os.getpgrp(),
+                "process_session_id": os.getsid(0),
+            }
+            alpha_record_path = sessions / "alpha" / "session.json"
+            alpha_record = json.loads(
+                alpha_record_path.read_text(encoding="utf-8")
+            )
+            alpha_record["coordination_mode"] = "enforce"
+            alpha_record["delete_tmux_identity"] = runtime_identity
+            alpha_record_path.write_text(
+                json.dumps(alpha_record) + "\n", encoding="utf-8"
+            )
+            alpha_record_path.chmod(0o600)
+            activity_path = sessions / "alpha" / "activity.json"
+            activity_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "agent-session.activity.v1",
+                        "runtime_id": "incarnation-alpha",
+                        "runtime_generation": 1,
+                        "state": {
+                            "schema_version": "agent-session.turn-state.v1",
+                            "phase": "working",
+                            "phase_changed_at": "2030-01-01T00:00:00Z",
+                            "revision": 1,
+                            "source": {
+                                "kind": "runtime",
+                                "provider": None,
+                                "confidence": "authoritative",
+                            },
+                            "current_turn": {
+                                "provider_turn_id": "turn-coupled-shell",
+                                "started_at": "2030-01-01T00:00:00Z",
+                            },
+                            "last_turn": None,
+                        },
+                        "pending_attention": [],
+                        "seen_event_count": 0,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            activity_path.chmod(0o600)
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["brokers"]["alpha"]["coordination_mode"] = "enforce"
+            registry_path.write_text(json.dumps(registry) + "\n", encoding="utf-8")
+            registry_path.chmod(0o600)
+            claim_file = root / "alpha-claim.json"
+            claim_file.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "agent-session.work-context-input.v1",
+                        "intent": "implementation",
+                        "tier": "L2",
+                        "repositories": ["example/repository"],
+                        "worktrees": [],
+                        "provider_refs": [],
+                        "plan_refs": [],
+                        "scopes": [
+                            {
+                                "kind": "path-prefix",
+                                "repository": "example/repository",
+                                "value": "src",
+                            }
+                        ],
+                        "summary": "coupled checkout shell acceptance",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            claim_file.chmod(0o600)
+            claimed = subprocess.run(
+                [
+                    agent_session,
+                    "--state-dir",
+                    str(state),
+                    "work-context",
+                    "claim",
+                    "--session",
+                    "alpha",
+                    "--file",
+                    str(claim_file),
+                    "--capability-file",
+                    str(capabilities["alpha"]),
+                    "--idempotency-key",
+                    "coupled-checkout-shell-claim-0001",
+                    "--format",
+                    "json",
+                ],
+                cwd=repo,
+                env=command_env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                claimed.returncode,
+                0,
+                f"source-linked claim failed: stdout={claimed.stdout} stderr={claimed.stderr}",
+            )
+            # nils-cli's own Main Agent bootstrap acceptance proves that only
+            # authenticated bootstrap can mint this private grant. This
+            # cross-product fixture injects the already-minted registry state
+            # so it can focus on the runtime hook -> source-linked admission
+            # and completion boundary.
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            alpha_claim = next(
+                claim
+                for claim in registry["claims"]
+                if claim["session_id"] == "alpha" and claim["state"] == "active"
+            )
+            alpha_claim["checkout_shell_grant"] = True
+            registry_path.write_text(
+                json.dumps(registry) + "\n", encoding="utf-8"
+            )
+            registry_path.chmod(0o600)
+
+            shell_payload = command_payload("touch src/generated.txt")
+            shell_payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-alpha",
+                    "tool_use_id": "coupled-checkout-shell",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            enforce_env = dict(
+                managed_env, AGENT_SESSION_COORDINATION_MODE="enforce"
+            )
+            code, shell_pre, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                shell_payload,
+                cwd=repo,
+                env=enforce_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertNotEqual((shell_pre or {}).get("decision"), "block")
+
+            shell_post = dict(shell_payload)
+            shell_post["hook_event_name"] = "PostToolUse"
+            shell_post["tool_response"] = {"exit_code": 0}
+            code, shell_complete, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                shell_post,
+                cwd=repo,
+                env=enforce_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(shell_complete)
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            alpha_operations = [
+                operation
+                for operation in registry["operations"]
+                if operation["session_id"] == "alpha"
+            ]
+            self.assertEqual(len(alpha_operations), 1)
+            self.assertEqual(alpha_operations[0]["operation"], "shell")
+            self.assertEqual(alpha_operations[0]["state"], "completed")
 
     def test_session_coordination_guard_admits_advises_and_completes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -12803,6 +13024,9 @@ exit 0
             repository_packet = repo / "orchestration-packet.json"
             repository_packet.write_text("{}\n", encoding="utf-8")
             repository_packet.chmod(0o600)
+            public_packet = private_dir / "public-orchestration-packet.json"
+            public_packet.write_text("{}\n", encoding="utf-8")
+            public_packet.chmod(0o644)
             capability_file = private_dir / "capability"
             capability_file.write_text("fixture\n", encoding="utf-8")
             capability_file.chmod(0o600)
@@ -12870,6 +13094,10 @@ exit 0
                 "main-agent worker wait assignment-1234 --until terminal "
                 "--format json",
             )
+            checkpoint = (
+                f"main-agent checkpoint --file {packet_file.resolve()} "
+                "--if-revision 1 --idempotency-key checkpoint-0001 --format json"
+            )
             allowed = (
                 "main-agent --version",
                 "main-agent self show --format json",
@@ -12890,6 +13118,7 @@ exit 0
                 rebind,
                 quick,
                 tiered_quick,
+                checkpoint,
             )
             for index, command in enumerate(allowed):
                 with self.subTest(allowed=command):
@@ -13016,10 +13245,29 @@ exit 0
                 "main-agent status --format json | cat",
                 f"main-agent status --format json > {root / 'status.json'}",
                 "sh -c 'main-agent status --format json'",
-                (
-                    f"main-agent checkpoint --file {packet_file.resolve()} "
-                    "--if-revision 1 --idempotency-key checkpoint-0001 --format json"
+                checkpoint.replace(
+                    str(packet_file.resolve()), "orchestration-packet.json"
                 ),
+                checkpoint.replace(
+                    str(packet_file.resolve()), str(repository_packet.resolve())
+                ),
+                checkpoint.replace(
+                    str(packet_file.resolve()), str(public_packet.resolve())
+                ),
+                checkpoint.replace("--if-revision 1", "--if-revision 01"),
+                checkpoint.replace("--if-revision 1", "--if-revision -1"),
+                checkpoint.replace(
+                    "--if-revision 1", "--if-revision 18446744073709551616"
+                ),
+                checkpoint.replace("--if-revision", "--revision"),
+                checkpoint.replace(
+                    "--if-revision 1 --idempotency-key checkpoint-0001",
+                    "--idempotency-key checkpoint-0001 --if-revision 1",
+                ),
+                checkpoint.replace("checkpoint-0001", "short"),
+                checkpoint.replace("checkpoint-0001", "'bad key!'"),
+                checkpoint.replace("--format json", "--format markdown"),
+                checkpoint + " extra",
                 (
                     f"main-agent worker start --assignment-file {packet_file.resolve()} "
                     "--if-run-revision 1 --idempotency-key worker-start-0001 "

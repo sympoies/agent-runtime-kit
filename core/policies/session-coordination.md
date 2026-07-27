@@ -61,9 +61,17 @@ consent, or formal L3/provider dispatch. Unmanaged sessions remain valid.
 
 - `--coordination-mode enforce` is opt-in. In that mode every recognized edit,
   shell mutation, or exact provider mutation requires an authenticated own raw
-  claim and an atomic `work-context admit` lease whose targets are a proven
-  subset of the claim. The physical checkout lease is enabled only in this
-  mode.
+  claim and an atomic `work-context admit` lease. Explicit path and provider
+  targets must be a proven subset of the claim. The physical checkout lease is
+  enabled only in this mode.
+- A recognized checkout-local shell mutation is projected as one repository
+  target plus the exact checkout binding. Only authenticated Main Agent worker
+  bootstrap can mint the active claim's private checkout-shell grant. That
+  grant plus the matching claim repository and worktree fingerprint may cover
+  the opaque target; generic claims cannot request or observe it. This is a
+  coordination permission for the isolated checkout, not a path sandbox or
+  user authorization. Explicit edits still require path-scope coverage, and
+  the manager must reject out-of-scope final diffs.
 - The shared shell effect classifier does not weaken strict admission:
   redirection, command substitution, unsafe pipeline stages, executable
   shadows, and all other unclassified shell shapes do not receive a read-only

@@ -57,8 +57,17 @@ Verified startup begins only after the candidate conflict check cleared or was
 retained as bounded evidence rather than silently treated as clear. Every
 mutating assignment names an isolated managed worktree, `enforce` coordination,
 a repository, and scopes that do not overlap the Main Agent claim or another
-worker. Main Agent Mode has no manual paste/Enter startup path. It invokes the
-released folded boundary:
+worker. Its packet worktree, `launch.cwd`, durable assignment worktree, and
+authenticated worker cwd must resolve to the same canonical checkout root
+before bootstrap can mint a shell grant. Keep those path scopes narrow. A checkout-local shell operation is
+admitted only through the private grant minted by authenticated worker
+bootstrap plus the claim's matching repository and worktree fingerprint. It
+does not require or create repository scope. The grant coordinates the
+isolated checkout; it is not a path sandbox, so acceptance must reject a final
+diff outside the declared paths. Explicit edit admission and shell retargeting
+to another checkout still fail closed.
+Main Agent Mode has no manual paste/Enter startup path. It invokes the released
+folded boundary:
 
 ```bash
 main-agent worker start --assignment-file <private-json> --await-ready 5m \
@@ -334,8 +343,11 @@ For each worker result, the main agent:
 
 Until the facade exposes a dedicated submit action, worker submission is a
 revision-fenced `main-agent checkpoint` packet with `state:"submitted"` and a
-bounded `result_summary`; do not invent `worker submit`. When review finds
-bounded defects, return the exact submitted assignment to its bound worker:
+bounded `result_summary`; do not invent `worker submit`. Its `--file` must be
+an absolute normalized `.json` path outside the governed checkout, a regular
+file owned by the current user, and mode `0600`; allocate it under a
+project-owned private state/output directory. When review finds bounded
+defects, return the exact submitted assignment to its bound worker:
 
 ```bash
 main-agent worker request-changes <assignment-id> \

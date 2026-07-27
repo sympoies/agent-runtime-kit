@@ -1,17 +1,17 @@
 # Main Agent Mode Blocker Inventory
 
-Status: open work queue
+Status: B1 repaired locally; B2 and B3 remain queued
 Date: 2026-07-27
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
 
 ## Purpose
 
-Main Agent Mode cannot currently complete a lane. This document is the ordered
-work queue to make it usable again, plus the E2E scope that is still unrun.
+Phase C found that Main Agent Mode could not complete a lane. This document is
+the ordered repair queue plus the E2E scope that remains to be rerun.
 
-Work the queue top-down: B1 is the only item that blocks all useful work, B2 and
-B3 decide whether a failed run can be recovered, and the F-items are friction
-that costs turns but does not stop delivery.
+B1 is repaired in the local nils-cli and agent-runtime-kit delivery branches.
+B2 and B3 decide whether a failed run can be recovered, and the F-items are
+friction that costs turns but does not stop delivery.
 
 Raw per-scenario evidence, rerun selectors, and receipts stay outside the
 repository beside the run:
@@ -45,9 +45,9 @@ supposed to use to report that it is stuck.
 
 ### B1 — A scoped claim and shell execution are mutually exclusive
 
-Severity: blocks all useful work. Not repaired.
-Area: `session-coordination-guard.py`, `coordination/context.rs`, Main Agent
-Mode skill.
+Severity: blocked all useful work. Repaired locally on 2026-07-28.
+Area: `session-coordination-guard.py`, `coordination/claims.rs`, Main Agent
+Mode skill and protocol.
 
 Observed with `scopes: ["src/sum.sh", "tests/case-sum.sh"]`. Everything after
 authoring was denied `uncovered-mutation-scope`:
@@ -65,7 +65,7 @@ authoring was denied `uncovered-mutation-scope`:
 The Codex lane hit the same wall from the other side,
 `[reason: shell-target-unresolved]`.
 
-The scope model leaves no working combination. In
+The original scope projection left no working combination. In
 `crates/agent-session/src/coordination/context.rs`:
 
 ```rust
@@ -89,23 +89,21 @@ worktree, and the claim already carries `worktrees` fingerprints that
 (`same-worktree`), never as a disambiguator. Two claims in different worktrees
 still collide on `overlapping-scope`.
 
-**Decision: add a `Checkout` scope kind.** A shell command genuinely cannot
-escape the checkout it runs in, so modelling that is the faithful fix rather
-than a relaxation. It also subsumes B4 — once a shell target is a checkout,
-`main-agent checkpoint` is just another command inside the lane's own checkout
-and the escape hatch opens by construction — and it restores same-repository
-parallel lanes, because two checkout scopes with different fingerprints do not
-overlap.
+The initial proposal below was to add a durable `Checkout` scope kind. The
+implementation investigation rejected that proposal: `Checkout × Path` still
+cannot prove path containment without threading checkout identity through
+every scope comparison; a new closed enum value would also make existing v1
+registries unreadable by the released binary.
 
-Rejected alternatives, for the record:
-
-- *Treat disjoint worktrees as non-conflicting in `scopes_overlap`.* Smaller,
-  but relaxes conflict detection globally rather than describing what a shell
-  command actually touches.
-- *Have packets declare repository scopes and accept serialization.* Doc-only,
-  but gives up same-repository parallel lanes.
-
-See "B1 Implementation Design" below.
+The final repair keeps the v1 scope grammar. The hook emits the existing exact
+shape `operation:"shell"` plus one repository-form target and one checkout
+binding. Authenticated Main Agent worker bootstrap now mints a private
+checkout-shell grant on the exact assignment-derived claim. During `admit`,
+nils-cli accepts the opaque target only when that grant is present, the claim
+names the repository, and its existing worktree fingerprint matches the
+binding. Generic claims cannot request or observe the grant. Explicit edits
+continue to use Path coverage, another checkout fails closed, and conflict
+evaluation remains based on the narrow declared paths plus worktree identity.
 
 Acceptance: a packet declaring only its own targets completes test-first,
 validation, one signed commit, and a `submitted` checkpoint without widening its
@@ -154,7 +152,7 @@ action needing no raw terminal command.
 
 ### B4 — Worker lifecycle commands are treated as repository mutations
 
-Severity: removes the escape hatch. Not repaired. Related to B1 and B3.
+Severity: removed the escape hatch. Repaired locally with B1 on 2026-07-28.
 Area: `session-coordination-guard.py`.
 
 `main-agent checkpoint` and the claim-release path change the orchestration
@@ -170,72 +168,73 @@ change in the same family as the `bootstrap` shape that is already allowed:
 - `agent-session work-context renew` / `release` (revision-fenced)
 - `agent-session work-context show` / `check` (read-only)
 
-Acceptance: a worker with any claim scope can always record a checkpoint and
-release its claim; untrusted and malformed shapes stay rejected.
+The projected `agent-session` lifecycle shapes were already exact-validated.
+B1 adds the missing private-file, revision-fenced checkpoint shape. Acceptance
+now proves a worker with any claim scope can record a checkpoint and release
+its claim while untrusted and malformed near misses remain rejected.
 
-## B1 Implementation Design
+## B1 Final Implementation
 
-Scope for the next session: **B1 only.** B2, B3, and B4 stay queued. B4 is
-expected to fall out of this change; confirm it rather than implement it.
+Scope remained B1. B2 and B3 stay queued. The checkpoint part of B4 was
+included because it is required by B1's submitted-lane acceptance; the existing
+exact `show`, `check`, `renew`, and `release` lifecycle projections remain
+unchanged.
 
-### Key feasibility fact
+### Contract
 
-`worktree_fingerprint(epoch, key, checkout)` is a keyed HMAC
-(`crates/nils-common/src/coordination_projection.rs`,
-`crates/agent-session/src/coordination/mod.rs`). The hook does not hold that key
-and must not. It does not need to: `OperationTargetsInput` already carries
-`checkouts: Vec<CheckoutBinding>` (repository + absolute path) alongside
-`targets`, and `validate_physical_targets` already correlates them. The hook
-sends the path; the CLI fingerprints it.
+`worktree_fingerprint(epoch, key, checkout)` remains a keyed HMAC owned by
+nils-cli. The runtime hook never receives the key and raw checkout paths never
+enter public output or the durable claim. `OperationTargetsInput` already
+carries the private checkout binding needed for admission.
 
-So the hook change is one line, and the work is in nils-cli.
+The special coverage rule is intentionally exact:
 
-### 1. Scope kind
+1. `operation` is `shell`;
+2. there is exactly one `repository` target with value `.`;
+3. there is exactly one checkout binding for that repository;
+4. authenticated Main Agent worker bootstrap minted the active claim's private
+   checkout-shell grant;
+5. before minting, the packet worktree, launch cwd, durable assignment
+   worktree, and authenticated session cwd resolved to one canonical checkout;
+6. the active claim names the repository; and
+7. nils-cli fingerprints the bound checkout and finds it in the claim's
+   existing `worktrees`.
 
-`crates/agent-session/src/coordination/context.rs`
+Only then may the repository-form shell target bypass ordinary `scope_covers`.
+Generic claim/set inputs have no field for the private grant, public
+work-context output removes it, and old records default it to absent. An
+ordinary enforce claim therefore cannot obtain the exception from its
+automatically attached worktree fingerprint.
+`validate_physical_targets` still proves the checkout origin. Explicit Path
+targets still require Path coverage. A missing binding, a second binding, a
+different checkout, a different repository, or any non-shell operation fails
+normal coverage.
 
-- Add `Checkout` to `ScopeKind` (line 21).
-- In `validate_and_canonicalize` (the `scope.value` match, around line 168),
-  canonicalize a checkout scope's value as a worktree fingerprint using the
-  existing `canonical_worktree` (line 618), which already enforces
-  `hmac-sha256:epoch:digest`.
+The grant is deliberately checkout-level coordination, not a filesystem
+sandbox or repository authorization. Path scopes remain the semantic lane and
+review boundary; Main Agent acceptance must reject an out-of-scope diff. An
+adversarial same-user process requires an OS security boundary outside this
+hook/coordination contract.
 
-Store the fingerprint rather than the path: claims already keep worktrees as
-fingerprints, so this reuses the existing validation and keeps absolute paths
-out of durable records.
+### Why there is no Checkout scope kind
 
-### 2. Comparison semantics
+The claim already records worktree identity independently of scopes. Reusing
+that identity at operation admission avoids a registry schema change and keeps
+the existing separation:
 
-`scopes_overlap` (line 382), after the existing repository equality check:
+- scopes declare semantic lane overlap;
+- worktrees identify physical checkout overlap; and
+- the private bootstrap grant plus operation binding prove which isolated
+  checkout may hold an opaque shell lease.
 
-| left \ right | Repository | Checkout | Path* |
-| --- | --- | --- | --- |
-| Repository | true | true | true |
-| Checkout | true | same fingerprint only | true |
-| Path* | true | true | existing rules |
+Adding `Checkout` to the closed v1 enum would have introduced mixed-version
+decode failure. It would also have required checkout identity on Path targets
+to define `Checkout × Path` coverage without either false conflict or unsafe
+widening. The admission-only rule needs neither change.
 
-Checkout versus Path stays `true`: a path scope carries no checkout binding, so
-it cannot be proven to sit outside the checkout. Conservative on purpose.
+### Runtime integration
 
-`scope_covers` (line 398):
-
-| claim \ target | Repository | Checkout | Path* |
-| --- | --- | --- | --- |
-| Repository | true | true | true |
-| Checkout | false | same fingerprint | same checkout only |
-| PathPrefix | false | false | existing rules |
-
-A Checkout claim covering a Path target needs the target's checkout binding, so
-`scope_covers` alone is not enough. Resolve each target to
-`(scope, checkout_fingerprint)` in `admit`
-(`crates/agent-session/src/coordination/claims.rs`, near
-`validate_physical_targets`, line 695) and pass the pair, rather than widening
-`scope_covers`'s signature everywhere.
-
-### 3. Hook change
-
-`core/hooks/shared/session-coordination-guard.py`, the shell branch that
-currently reads:
+The hook retains its existing shell projection:
 
 ```python
 operation = "shell"
@@ -243,48 +242,35 @@ targets.append({"kind": "repository", "repository": repository, "value": "."})
 checkouts.append({"repository": repository, "path": str(root)})
 ```
 
-Emit `"kind": "checkout"` and keep the checkout binding unchanged. Leave
-`value` as `"."`; `admit` substitutes the fingerprint of the matching checkout.
-Define that substitution explicitly — a checkout-kind target arriving with no
-matching binding must fail closed, not fall back to repository scope.
+The Main Agent Mode skill and protocol now say to keep assignment Path scopes
+narrow; workers do not add repository scope merely to run tests or delivery.
+The exact trusted, private-file, revision-fenced `main-agent checkpoint` shape
+is a control-plane operation and bypasses repository admission. Near-miss
+shapes remain denied.
 
-### 4. Assignment-derived claim
+### Validation
 
-`main-agent bootstrap` must add a Checkout scope for the lane's own worktree in
-addition to the packet's declared path scopes. Without it, packets still fail
-exactly as they do today. Path scopes keep their existing role: declaring lane
-non-overlap.
-
-Decide whether `worker start` should reject a mutating packet that declares
-only path scopes, or whether bootstrap always injects the checkout scope. The
-second is friendlier and keeps existing packets working.
-
-### 5. Compatibility
-
-`Scope` is `deny_unknown_fields` and `ScopeKind` is a closed enum, so a released
-binary reading a record containing `kind: "checkout"` fails to decode. Treat
-this as an orchestration-registry compatibility step and follow the v2 to v3
-precedent in `crates/agent-session/docs/runbooks/main-agent-orchestration.md`.
-This interacts with FUP-04.
-
-### 6. Validation
-
-- Unit: the `scopes_overlap` and `scope_covers` matrices above, in the existing
-  `mod tests` in `context.rs` (it already has a `scope()` helper).
-- Unit/integration: `admit` correlating a checkout target with its binding, and
-  failing closed when the binding is absent.
-- Integration: two lanes in one repository, different worktrees, both holding
-  checkout scopes, running concurrently without `overlapping-scope`.
-- Hook: `tests/hooks/test_shared_hooks.py` for the new target kind.
-- Gates: `bash scripts/ci/nils-cli-checks-entrypoint.sh --local-fast` and
+- nils-cli regression: a bootstrap-granted narrow Path claim plus its own
+  checkout-bound shell is admitted, while an ordinary claim is denied;
+- negative coverage: another checkout and an explicit out-of-scope edit are
+  denied `uncovered-mutation-scope`;
+- repository binding: a claim that does not name the checkout repository
+  cannot borrow its worktree fingerprint;
+- concurrency: two sessions in the same repository, distinct worktrees and
+  disjoint Path scopes, both hold active shell operation leases;
+- runtime hook: shell projection remains one repository target plus one exact
+  checkout binding;
+- lifecycle: only the exact private revision-fenced checkpoint shape bypasses
+  admission;
+- paired-change owner: build the nils-cli source checkout, then run
+  `AGENT_SESSION_SOURCE_BIN=<absolute-agent-session> bash
+  scripts/ci/session-coordination-coupled-acceptance.sh`;
+- gates: `bash scripts/ci/nils-cli-checks-entrypoint.sh --local-fast` and
   `bash scripts/ci/all.sh`.
 
-### 7. End-to-end acceptance
-
-Rerun the Phase C lane that failed. A worker whose packet declares only its two
-target files must complete: write the failing test, run it, implement, run
-`bash tests/run.sh`, create one signed commit, and record a `submitted`
-checkpoint — without widening its claim and without any raw terminal input.
+The full Phase C worker acceptance is rerun after the local binaries and runtime
+surfaces are deployed: test-first, implementation, validation, signed commit,
+and `submitted` checkpoint without claim widening or raw terminal input.
 
 ### Note for whoever picks up B3
 

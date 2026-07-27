@@ -13,7 +13,7 @@ Prereqs:
 
 - The user explicitly asks to enable or use Main Agent Mode for the bounded
   workflow. Ordinary implementation requests never activate this mode.
-- `agent-session >=1.25.10` is installed from a released surface.
+- `agent-session >=1.25.11` is installed from a released surface.
 - The trusted `main-agent` facade from the compatible nils-cli surface is
   executable. Until that surface is available, report Main Agent Mode as
   unavailable without repairing or restricting ordinary agent work.
@@ -51,7 +51,7 @@ Failure modes:
 
 - Activation was not explicit, or the requested scope/done criteria are not
   sufficiently bounded to delegate safely.
-- The installed `agent-session` is missing or older than `1.25.10`.
+- The installed `agent-session` is missing or older than `1.25.11`.
 - The trusted `main-agent` facade is absent, incompatible, untrusted, or cannot
   authenticate the current managed-session incarnation.
 - Doctor output is unhealthy, unsupported, unavailable, malformed, or reports
@@ -84,7 +84,7 @@ agent-session activity doctor --agent codex --format json
 ```
 
 
-Require `agent-session >=1.25.10`, a valid
+Require `agent-session >=1.25.11`, a valid
 `cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
 matching provider record, and `helper_executable:true`.
 Require `classification:"supported"`.
@@ -165,6 +165,11 @@ main-agent checkpoint --file <private-json> --if-revision <n> \
   --idempotency-key <unique-key> --format json
 ```
 
+The checkpoint file must be an absolute normalized `.json` path outside the
+governed checkout, a regular file owned by the current user, and mode `0600`.
+Allocate it under a project-owned private state/output directory; never place
+the packet in the repository.
+
 At safe turn or tool boundaries, give Main Agents and workers only a concise
 privacy-safe reminder that durable state is available through `main-agent
 rehydrate` or `main-agent self show`. Do not repeat the private task packet,
@@ -206,8 +211,17 @@ explicit reassignment under the recovery protocol.
    invariants, exclusions, base, isolated managed worktree, test-first and
    validation duties, delivery artifact duties, and the exact
    completion/blocker packet. The Main Agent claim must not overlap a worker
-   scope. The assignment relationship is routing metadata and transfers no
-   repository or provider authority. When a packet declares `depends_on`, every
+   scope. For a mutating worker, the packet `worktree`, `launch.cwd`, durable
+   assignment worktree, and authenticated worker cwd must resolve to the same
+   canonical checkout root before bootstrap can mint its shell grant. Keep
+   worker path scopes narrow; do not add repository scope merely so
+   the worker can run tests, validation, delivery, or checkpoint commands.
+   Authenticated worker bootstrap mints a private checkout-shell grant on the
+   exact assignment-derived claim; admission also requires the matching
+   repository and worktree fingerprint. This grant is checkout-level
+   coordination, not a path sandbox: reject final diffs outside the assigned
+   scopes. The assignment relationship is routing metadata and
+   transfers no repository or provider authority. When a packet declares `depends_on`, every
    named assignment must belong to the same run and already be `accepted` or
    `released` before launch. On `dependency-not-satisfied`, no dependent
    assignment was created: wait boundedly for each upstream assignment's

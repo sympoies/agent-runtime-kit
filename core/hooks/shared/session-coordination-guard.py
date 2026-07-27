@@ -969,6 +969,17 @@ def main_agent_bypass_invocation(
     words = normalized
     if main_agent_preclaim_argv(words):
         return True
+    if words[:3] == ["main-agent", "checkpoint", "--file"]:
+        repository = bounded_git_toplevel(str(base)) if base is not None else None
+        return (
+            len(words) == 10
+            and main_agent_private_packet(words[3], repository)
+            and words[4] == "--if-revision"
+            and lifecycle_revision(words[5])
+            and words[6] == "--idempotency-key"
+            and lifecycle_idempotency_key(words[7])
+            and words[8:] == ["--format", "json"]
+        )
     if words[:2] == ["main-agent", "quick"]:
         # quick acquires the work-context claim as its first durable act (like
         # init), so its exact pre-claim shape must be admitted here. --tier is
@@ -1663,6 +1674,10 @@ def operation_targets(
             if explicit_cross_repository(target_words, base, root):
                 return None, "cross-repository-shell-target"
             operation = "shell"
+            # `agent-session` binds this opaque repository-form target to the
+            # exact checkout below. A narrow Main Agent worker claim may cover
+            # it only through its private bootstrap grant and authenticated
+            # worktree fingerprint, without becoming a repository-wide claim.
             targets.append({"kind": "repository", "repository": repository, "value": "."})
             checkouts.append({"repository": repository, "path": str(root)})
     checkout_roots: dict[str, str] = {}
