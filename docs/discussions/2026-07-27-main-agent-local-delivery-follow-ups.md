@@ -149,6 +149,79 @@ Acceptance:
 - The failure state identifies the required compatible executable without
   mutating or losing the durable run.
 
+### FUP-05 — Repaired during the fresh-session E2E
+
+Priority: resolved locally, unpushed
+Area: `main-agent` supervision, `agent-hook` pre-claim allowlists, Main Agent
+Mode skill
+
+Three defects each independently prevented Main Agent Mode from completing, and
+were repaired during the Phase C run. They are recorded here because the
+commits are local-only.
+
+1. **Pre-claim startup failure was unrecoverable.** `provider_terminated` is
+   derived only from turn activity, so a provider that exits during startup
+   records no turn and `failed_preclaim` stayed false. `claim_renewal_required`
+   then outranked `pre_claim_failure`, `worker cancel` and `worker reassign`
+   both refused, and the only remaining recovery was Agent Console
+   `group-cleanup --force`, whose preview deletes the Main session itself.
+   Repaired in nils-cli local main `7b3aba77`.
+2. **Supervision reported a dead worker as healthy.** The classifier read
+   `preclaim_blocker`/`terminal_recovery_reconciled` but never the computed
+   pre-claim verdict, so it returned `healthy_progress` for a worker whose
+   runtime was gone. Same commit.
+3. **The pinned `main-agent bootstrap` was denied.** `worker start` writes the
+   worker prompt with an absolute `main-agent` path, but both pre-claim
+   allowlists compared argv against the bare name, so every managed worker had
+   its mandated first command blocked for lacking the claim only `bootstrap`
+   can create. Repaired in runtime-kit local main `0ca2819c`, together with a
+   product-aware readiness gate so a Claude worker can pass the documented
+   doctor check at all.
+
+Acceptance already met locally:
+
+- `worker supervise` returns `pre_claim_failure` with an executable
+  `distinct_assignment_replacement` action for a worker whose runtime is gone.
+- `worker reassign` recovers the lane without touching the run or Main session.
+- A fresh Codex worker and a fresh Claude worker both reach
+  `Assignment authenticated; worker bootstrap complete`.
+- nils-cli `--local-fast` is green (887/887, clippy clean); the runtime-kit
+  hooks suite shows no new failures against the pristine baseline.
+
+Remaining: push and open the provider records when provider delivery is
+authorized again.
+
+### FUP-06 — Fresh-session E2E improvement log
+
+Priority: medium
+Area: cross-cutting
+
+The full evidence, per-scenario verdicts, and rerun selectors live outside this
+repository beside the run:
+
+- `e2e-result-and-improvements.md` — Phase A/B, findings E2E-F01..F10
+- `phase-c-result-and-improvements.md` — Phase C/D, findings E2E-F11..F26
+
+The highest-value unresolved items:
+
+- Validate an assignment packet's `repository` identifier inside `worker start`
+  instead of failing at worker bootstrap after a full launch cycle (E2E-F24).
+- Report a distinct `prompt-not-present` transport result instead of
+  `submit-key-recovery-succeeded` when nothing reached the composer (E2E-F25).
+- Route an exhausted-readiness live worker to `reconcile-recovery`, and expose a
+  typed runtime-stop so its precondition can be met without raw `tmux
+  kill-session` (E2E-F26).
+- Give the pre-bootstrap window its own supervision state instead of
+  `claim_renewal_required` (E2E-F22).
+- Surface the failing field when an assignment packet is rejected; the serde
+  error is currently discarded and the message names nothing (E2E-F13).
+- Classify read-only `semantic-commit` probes before default-delivery argument
+  analysis, including composed and redirected forms (E2E-F18, extending
+  E2E-F02/F09).
+- Reconcile `agent-session activity doctor` with `agent-hook` ownership; it
+  reports `configured:false` while the compatibility probe reports
+  `configured:true` with `compatibility_owner:"agent-hook"` (E2E-F05).
+
 ## Follow-up Checkpoint Template
 
 ```markdown

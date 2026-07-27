@@ -107,10 +107,14 @@ against separate disposable repositories.
 
 ### E2E-B02 — `default-branch` dry-run is admitted
 
-- Run the exact supported `semantic-commit default-branch` dry-run with expected
-  branch, exact expected HEAD, local-only remote mode, and an outside-repo
-  receipt destination.
-- Require preview success and no mutation.
+- Run the exact supported `semantic-commit default-branch` dry-run as one bare
+  tool call with an absolute `--repo`, the exact `--expect-head`, `--dry-run`,
+  and a body-valid message. `--receipt-out` is forbidden with `--dry-run`, so
+  the dry-run names no receipt destination.
+- Require a `cli.semantic-commit.default-branch.preview.v1` envelope with
+  `ok:true`, `network_observed:false`, and no mutation.
+- Do not compose the call with `cd`, a pipe, or a redirect: the default-delivery
+  hook parses the surrounding shell text as CLI arguments and denies it.
 
 ### E2E-B03 — One signed local default-branch commit
 
