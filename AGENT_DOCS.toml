@@ -149,7 +149,7 @@ scope = "home"
 path = "core/policies/session-coordination.md"
 required = true
 when = "always"
-notes = "Global work-authorization and collision-awareness boundary: advisory and unmanaged coordination need no claim and do not block work; overlap warnings guide worktree/scope choices, while explicit enforce owns claims, checkout leases, and recovery."
+notes = "Global work-authorization, peer-delivery cooperation, and collision-awareness boundary: material peer requests require a bounded disposition; advisory and unmanaged coordination need no claim, while explicit enforce owns claims, checkout leases, and recovery."
 
 [[document]]
 context = "task-tools"

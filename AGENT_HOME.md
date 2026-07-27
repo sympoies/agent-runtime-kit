@@ -32,13 +32,13 @@ Home-scope fallback. A closer project/directory
 
 ## Conditional Routing
 
-- `AGENT_DOCS.toml` declares intent-specific reading and validation. {% if product == "hermes" %}Hermes runs `agent-docs preflight --intent <intent> --phase <phase> --docs-home "$AGENT_DOCS_HOME" --product hermes --strict` manually.{% else %}Activate and read only relevant intents with `agent-docs`; hooks verify supported edit and finish boundaries.{% endif %} Use `project-dev` for edits, `task-tools` for unstable external facts, `browser-test` for rendered interaction, and `session-coordination` for mutable overlap. {% if product == "hermes" %}Resolve trigger cards from that selected docs home.{% else %}Triggers: `core/policies/intent-cards.md`.{% endif %}
+- `AGENT_DOCS.toml` declares intent-specific reading and validation. {% if product == "hermes" %}Hermes runs `agent-docs preflight --intent <intent> --phase <phase> --docs-home "$AGENT_DOCS_HOME" --product hermes --strict` manually.{% else %}Activate and read only relevant intents with `agent-docs`; hooks verify supported edit and finish boundaries.{% endif %} Use `project-dev` for edits, `task-tools` for unstable external facts, `browser-test` for rendered interaction, and `session-coordination` for peer delivery/overlap. {% if product == "hermes" %}Resolve trigger cards from that selected docs home.{% else %}Triggers: `core/policies/intent-cards.md`.{% endif %}
 - Keep routine work at internal L0. Surface L1 follow-up, L2 plan, L3 dispatch,
   provider artifacts, or ambiguous escalation as a user decision before
   creating durable state. Review depth follows risk, not tier.
-- Advisory coordination is automatic and never grants permission. Declare
-  context only when it improves overlap signals; claims and checkout leases are
-  required only in explicit `enforce` mode or by the owning mutation guard.
+- Peer coordination may route already-authorized work, never create it. Help
+  authenticated peers deliver when safe; material peer
+  requests must not be silently ignored. Load `session-coordination` for detail.
 - Load memory policy only for personal setup and preferences, never for secrets,
   task state, or project truth. Load evidence and closeout runbooks only when a
   repository gate, audit, handoff, retained workflow, or deferred defect needs

@@ -56,12 +56,14 @@ agent-docs audit --docs-home "$PWD" --target project --strict
 
 ### Managed-session coordination documentation
 
-`AGENT_HOME.md` carries the global invariant: coordination helps agents avoid
-worktree and task-scope collisions, but it does not grant work authorization.
+`AGENT_HOME.md` carries the global invariant: coordination helps agents route
+already-authorized delivery work and avoid worktree or task-scope collisions,
+but it cannot create or expand work authorization.
 `core/policies/session-coordination.md` is the canonical detailed policy for
-default advisory behavior, warning response, unmanaged sessions, and explicit
-enforcement. `AGENT_DOCS.toml` loads that policy through the home-scoped
-`session-coordination` intent; inspect the resolved contract with:
+peer-request dispositions, bounded sender waiting, default advisory behavior,
+unmanaged sessions, and explicit enforcement. `AGENT_DOCS.toml` loads that
+policy through the home-scoped `session-coordination` intent; inspect the
+resolved contract with:
 
 ```bash
 agent-docs preflight --docs-home "$PWD" --intent session-coordination --strict
