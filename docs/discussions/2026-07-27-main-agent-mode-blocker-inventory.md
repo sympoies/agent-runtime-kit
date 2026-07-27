@@ -1,6 +1,11 @@
 # Main Agent Mode Blocker Inventory
 
-Status: B1 and B4 repaired, integrated, built, and deployed; B2 then B3 are next
+Status: B1/B4 deployed; the B1 closure canary was attempted but is incomplete;
+B2 implementation, signed local-main integration, release binary install,
+fail-closed live-runtime acceptance, and rendered-surface deployment are
+complete. Provider delivery is blocked before mutation by a GitHub GraphQL
+403, while the positive stopped-runtime real-product canary also remains open;
+B3 follows those delivery boundaries
 Date: 2026-07-27
 Updated: 2026-07-28
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
@@ -12,12 +17,52 @@ the ordered repair queue plus the E2E scope that remains to be rerun.
 
 B1 is in local `main` in both repositories, the rebuilt nils-cli binaries and
 runtime surfaces are deployed, and the installed-binary coupled acceptance is
-green. `agent-runtime-kit` matches its cached `origin/main`; nils-cli local
-`main` remains one commit ahead of its cached `origin/main`.
+green. The separate B1 real-product C02-C05 closure canary was attempted but
+did not close: the Codex workers failed before bootstrap, while the Claude
+worker completed checkout-shell validation and created a signed commit but
+remained `working`/`needs-input` and never checkpointed `submitted`.
 
-B2 and B3 now decide whether a failed run can be recovered without deleting the
-Main session or using raw terminal control. The F-items are friction that costs
-turns but does not independently stop delivery.
+B2's repair purpose is achieved in candidate source: a bootstrap-complete
+worker whose exact runtime stopped can be terminalized without deleting the
+Main session, losing its worktree/diff, sending input, or revoking unrelated
+coordination authority. The final signed, clean nils-cli candidate head is
+`99ba960e914e58f2813ca1864044aa858759080b`; its local-fast gate completed
+7,666 tests plus two doctests, and the release binary is installed. Its signed
+one-commit current-main integration head is
+`c64b52ee92bdd62b2f0c10786bbc6b1f87323561`; the final integration gate
+completed 7,669 tests plus two doctests, and the same tree is committed on
+local nils-cli `main` at `a3f9b2f3e7412cd47fae78ca95178f87e4f3675f`.
+The final
+signed, clean runtime-kit B2 implementation head is
+`d35f3960338bc4893dc0bb158e88c341cb15a44a`; this doc-only status closeout
+follows it. A signed one-commit integration candidate based on current
+runtime-kit `main` also passes full CI positions 1-17. Deterministic smoke
+passed 105 cases with one host-capability skip, shared hooks passed 349/349,
+and the final specialist review reported no findings.
+
+The runtime surfaces were deployed successfully, preview before apply, from
+the durable checkout
+`$HOME/.local/state/agent-runtime-kit/deploy-checkouts/agent-runtime-kit-b2-20260728`;
+doctor, prompt, and plugin checks are green. The installed live-runtime
+negative `reconcile-stopped` canary failed closed with assignment revision and
+state unchanged. The positive stopped-runtime real-product canary was not run:
+no stopped post-claim runtime currently exists, and B3's typed stop is not
+implemented. B2 field closure therefore remains unclaimed.
+
+Both direct-main candidates are ready, but the dry-run form of
+`forge-cli repo push-default` fails before mutation in both repositories
+because GitHub GraphQL returns HTTP 403
+(`The owner of this application has been marked as spammy`).
+Both candidates were instead committed through governed local-only
+default-branch completion: nils-cli at
+`a3f9b2f3e7412cd47fae78ca95178f87e4f3675f`, and runtime-kit in the commit
+containing this inventory. Both receipts record `provider_delivered=false`;
+remote default branches remain unchanged and nothing was pushed. Do not bypass
+the governed provider-delivery path with a raw Git push.
+
+B3 is still the next implementation gap. It decides how to stop a still-live
+pre-claim/readiness-failure runtime without raw terminal control. The F-items
+are friction that costs turns but does not independently stop delivery.
 
 Raw per-scenario evidence, rerun selectors, and receipts stay outside the
 repository beside the run:
@@ -27,40 +72,49 @@ repository beside the run:
 
 ## Continuation Order
 
-1. **Run one B1 closure canary on the deployed surface.** Repeat C02-C05 with
-   one narrow-scope Codex lane and one narrow-scope Claude lane. Each worker
-   must bootstrap, run a shell validation, create its signed candidate commit,
-   checkpoint `submitted`, receive one request-changes message, and resume in
-   the same session without claim widening. The portable installed-binary
-   acceptance is already green; this canary closes the real-product boundary.
-2. **Repair B2 before B3.** Add a post-claim stopped-runtime classification and
-   one Main-owned, revision-fenced terminalization action. It must prove the
-   exact worker incarnation is stopped, preserve its worktree and diff, reject
-   active or uncertain operations, reconcile or revoke only that worker's
-   claim, and leave the run and Main session intact. A live or unknown runtime
-   must fail closed.
-3. **Repair B3 after the failure-state split is explicit.** Give
+1. **Restore governed GitHub provider delivery.** Resolve the GitHub GraphQL
+   403, re-read both remote default heads, and use the local-only default-branch
+   receipts through the governed adoption path. If either expected base moved,
+   rebuild and revalidate that one-commit integration from the new base instead
+   of weakening compare-and-swap. After both remote read-backs match, refresh
+   the local upstream relation.
+2. **Complete the incomplete B1 closure canary.** Diagnose the pre-bootstrap
+   Codex failures and why the Claude lane remained `working`/`needs-input`
+   after checkout-shell validation and a signed commit. Repeat C02-C05 until
+   each lane bootstraps, validates, commits, checkpoints `submitted`, receives
+   one request-changes message, and resumes in the same session without claim
+   widening.
+3. **Complete the B2 positive canary with a natural or controlled stopped
+   fixture.** The installed nils-cli and deployed runtime-kit surfaces are
+   green, and the live-runtime negative canary is fail-closed. Run the positive
+   real-product canary only when an actually stopped post-claim runtime is
+   available. Do not collapse this into the still-live B3 stop path or claim
+   field closure from the negative result.
+4. **Repair B3 after the failure-state split is explicit.** Give
    `submit_recovery.state:"failed"` on a still-live worker its own
    classification. Add a typed exact-incarnation runtime-stop primitive that
    stops the runtime without deleting durable session state. After stopped
    proof, route a failed pre-claim worker through guarded cancel/retire/reassign;
    retain `reconcile-recovery` for an unknown `attempting` send.
-4. **Rerun C05-C09 and Phase D.** Require both the ordinary delivery path and
+5. **Rerun C05-C09 and Phase D.** Require both the ordinary delivery path and
    the B2/B3 failure paths to end with zero active/uncertain operations, no
    worker claim, fresh-list absence after retirement, and the Main session
    still present.
-5. **Then take the friction wave.** Fold F25 prompt-presence truth into B3;
+6. **Then take the friction wave.** Fold F25 prompt-presence truth into B3;
    address F22 while touching the pre-bootstrap classifier. Follow with
    F24/F13/F28/F27 input and guidance clarity. Keep F18/F05/F20 as the later
    ambient-tooling wave.
 
-B2 precedes B3 because it is the higher-severity uncloseable-run defect and
-establishes the missing distinction between post-claim failure and pre-claim
-failure. B3 may reuse its exact-runtime and quiescence proof helpers, but after
-the typed stop it should enter the existing pre-claim cancellation path rather
+B2 established the missing distinction between post-claim failure and
+pre-claim failure. The implementations are on both local default branches.
+First restore the governed GitHub provider-delivery path. Then close the
+incomplete B1 canary, run the B2 positive canary with a natural or controlled
+stopped fixture, and implement B3's typed stop. Follow with C05-C09 and Phase D.
+B3 may reuse B2's exact-runtime and quiescence proof helpers, but after the
+typed stop it should enter the existing pre-claim cancellation path rather
 than the B2 post-claim transition. Do not implement B3 by classifying a live
-exhausted worker as `pre_claim_failure`; `worker cancel` deliberately rejects a
-live worker.
+exhausted worker as `pre_claim_failure`; `worker cancel` deliberately rejects
+a live worker.
 
 ## How A Lane Dies Today
 
@@ -157,8 +211,10 @@ green. The real-product C02-C05 closure canary remains the next E2E action.
 
 ### B2 — A `working` lane whose runtime died cannot be terminalized
 
-Severity: a failed run can never be closed. Not repaired; next implementation
-priority.
+Severity: a failed run could never be closed. Repaired in signed nils-cli and
+runtime-kit local-main commits, release-installed and surface-deployed.
+Governed provider delivery is blocked before mutation; positive
+stopped-runtime real-product field closure also remains open.
 Area: `crates/agent-session/src/main_agent.rs`.
 
 After a worker dies past bootstrap, its assignment stays `working` with a claim
@@ -172,17 +228,112 @@ which deletes the Main session — the session that would have to run it.
 This is the direct generalization of the defect repaired in `7b3aba77`, which
 only covers `starting` and `blocked`.
 
-Current-main verification: `worker_failed_preclaim` accepts only
-`starting|blocked`; `worker cancel` repeats that state guard. A `working`
-assignment whose exact runtime is stopped therefore falls through without an
-eligible terminal mutation.
+The final implementation classifies a bootstrap-complete `working` assignment
+whose exact bound runtime is proven stopped as `post_claim_failure`.
+Supervision exposes
+`last_proven_safe_state.post_claim_terminalization_safe:true`,
+`automatic_retry_safe:false`, and
+`recovery_action.kind:"stopped_worker_terminalization"` through public
+schemas `main-agent.worker-diagnose-result.v2`,
+`main-agent.worker-supervise-result.v2`, and
+`main-agent.worker-recovery-action.v2`. Main supplies only a bounded reason and
+idempotency key to the returned revision-fenced action:
 
-Acceptance: bootstrap a worker through `working`, stop its exact runtime, and
-require a non-healthy post-claim classification plus an executable,
-idempotent, revision-fenced terminal action. It must preserve the worktree,
-reject active/uncertain operations, reconcile only the stopped worker's claim,
-leave the run and Main session intact, and make a later retire or distinct
-reassign possible.
+```bash
+main-agent worker reconcile-stopped <assignment-id> \
+  --if-revision <assignment-revision> \
+  --reason <bounded-terminalization-reason> \
+  --idempotency-key <unique-key> --format json
+```
+
+The `main-agent.worker-reconcile-stopped-result.v2` success proves
+`terminalized:true`, top-level `worker_claim_active_after:false`,
+`input_sent:false`, `worktree_preserved:true`, and stable observed-state proof:
+
+```text
+proof.worker_claim:{
+  active_disposition:"absent",
+  release_provenance:"not_attributed_to_attempt",
+  observed_at_stage1:<bool>
+}
+```
+
+There is no attempt-dependent `worker_claim_revoked` claim. The action fences
+the exact stopped worker session against resume, installs a session-only
+authority quarantine, preserves a frozen assignment schema v3, and leaves
+unrelated session, run, and coordination authority unchanged. CLI and HTTP
+resume are denied while quarantined; read-only observational coordination
+access does not renew generic claims or operations. It preserves the
+worktree/branch/diff/run/Main session and transitions
+`working → reconcile-stopped → cancelled → retire`.
+
+Reconciliation has two exact replay-safe stale-revision cases. The exact same
+request, original revision, and idempotency key may return an already committed
+v2 terminal receipt without repeating mutation. An exact interrupted-stage-1
+replay may continue only with matching strict progress and full revalidation;
+stage 2 accepts either the exact original controller claim or an explicit
+distinct successor bound to the same current run, Main session, and
+incarnation. An authorized retry rolls orphaned stage-1 progress forward
+rather than discarding the frozen assignment, weakening quarantine, or
+repeating committed effects. A new key, changed request, or replay with
+neither receipt fails closed. A distinct replacement remains possible after
+the cancelled read-back.
+
+The boundary fails closed for `worker-runtime-still-live`,
+`coordination-runtime-unverified`, `worker-not-quiescent`,
+`worker-incarnation-changed`, and `assignment-state-conflict`. Expired or
+released Main controller authority remains an ordinary claim-authorization
+failure. This classification never routes through ordinary cancel/reassign,
+raw tmux or terminal input, force group cleanup, or the future B3 stop
+primitive.
+
+Regression-first work caught the missing stopped-worker boundary, a null
+terminalized-assignment quarantine projection, and an expiry race where the
+generic lock path auto-renewed an expired controller claim. Subsequent
+red-to-green passes replaced attempt-dependent release attribution with stable
+observed-state v2 proof, made quarantine session-only, denied CLI/HTTP resume,
+kept observational access from renewing generic authority, admitted the exact
+original controller or a same-incarnation successor at stage 2, and rolled
+orphaned progress forward.
+
+Final nils-cli candidate validation is green:
+
+- the focused `reconcile-stopped` boundary: 5/5;
+- the existing exact B2 scenario: 1/1;
+- the typed progress parser: 1/1;
+- strict completion freshness: PASS (`required=49`, `snapshots=66`,
+  `failures=0`);
+- Bash and zsh syntax checks: PASS;
+- `bash scripts/ci/nils-cli-checks-entrypoint.sh --local-fast`: exit 0,
+  docs/fmt/clippy green, nextest 7,666/7,666 (one unrelated configured retry
+  and two known leaky classifications), and 2/2 doctests green.
+- current-main direct-main integration: 7,669/7,669 plus 2/2 doctests green;
+- canonical review: 2/2 green; full specialist and red-team closeout: green;
+- release install and installed binary checksum/version proof: green;
+- installed B1 coupled acceptance: green;
+- live-runtime negative `reconcile-stopped` canary: fail-closed with revision
+  and state unchanged.
+
+The runtime-kit consuming contract first failed its focused deterministic
+conversation smoke at 4/5, then passed at 5/5 after the v2 source, protocol,
+assertions, and Codex/Claude goldens converged. The first signed runtime-kit
+candidate is `8339fcb351b7a4d02df4292561b88b914be840f2`; final signed B2
+implementation head `d35f3960338bc4893dc0bb158e88c341cb15a44a`
+supersedes its v1 result wording, passes full CI positions 1-17, deterministic
+smoke 105 pass plus one host skip, and shared hooks 349/349. This doc-only
+status closeout follows that implementation head. Final specialist review
+reported no findings.
+Rendered surfaces were previewed and then applied successfully from the
+durable deploy checkout; doctor, prompt, and plugin checks are green.
+
+No positive stopped-runtime real-product canary ran because no stopped
+post-claim runtime is available and B3's typed stop is not implemented. The
+green negative canary proves only the fail-closed side, so field closure is not
+claimed. Signed one-commit current-main integration candidates exist for both
+repositories, and their exact trees are committed to both local default
+branches through governed local-only completion. Their provider-delivery
+preflights both stop before mutation on the same GitHub GraphQL HTTP 403, so
+remote default branches remain unchanged and nothing was pushed.
 
 ### B3 — An exhausted-readiness live worker has no recovery route
 
@@ -349,7 +500,19 @@ fact.
 
 ## Repaired In This Session
 
-Local `main` in both repositories; nils-cli is still unpushed.
+B1/B4 remain deployed. B2 nils-cli implementation is at signed, clean head
+`99ba960e914e58f2813ca1864044aa858759080b`, release-installed, and verified
+against the installed binary; its signed current-main integration head is
+`c64b52ee92bdd62b2f0c10786bbc6b1f87323561`, and the same tree is on local
+`main` at `a3f9b2f3e7412cd47fae78ca95178f87e4f3675f`. The runtime-kit v2
+contract's final signed, clean implementation head is
+`d35f3960338bc4893dc0bb158e88c341cb15a44a`; this doc-only status closeout
+follows it, and the commit containing this inventory is its signed local-main
+landing. Its rendered surfaces are deployed from the durable checkout and pass
+doctor, prompt, and plugin checks. Both governed provider-delivery preflights
+are blocked before mutation by the same GitHub GraphQL 403. Both local default
+branches are complete; remote default branches remain unchanged, and nothing
+was pushed.
 
 | Item | Commit | Defect |
 | --- | --- | --- |
@@ -359,6 +522,7 @@ Local `main` in both repositories; nils-cli is still unpushed.
 | A dead worker was reported healthy | nils-cli `7b3aba77` | The classifier read `preclaim_blocker`/`terminal_recovery_reconciled` but never the computed pre-claim verdict |
 | The pinned bootstrap command was denied | runtime-kit `0ca2819c` | `worker start` writes an absolute `main-agent` path into every worker prompt, but both pre-claim allowlists compared argv against the bare name |
 | No Claude worker could pass the readiness gate | runtime-kit `0ca2819c` | The gate required `classification:"supported"`; `agent-session` reports `partial` for Claude permanently |
+| A stopped post-claim worker could not be terminalized safely | nils-cli `99ba960e`; runtime-kit `d35f3960` | Exact stopped/quiescent proof now yields `post_claim_failure`; revision-fenced `reconcile-stopped` reports stable claim absence without attempt-dependent release attribution, quarantines only the exact worker session, preserves work/run/Main, and fails closed on live/unknown/non-quiescent or stale identity |
 
 The third item was a cross-repository regression: nils-cli started pinning the
 absolute path on 2026-07-25 (`3aa6aca4`) without updating the runtime-kit
@@ -385,8 +549,11 @@ that window had its mandated first command denied.
 Reached: C01 activation, C02 startup on both products, C03 supervision and
 claims, C04 authenticated mailbox.
 
-B1 no longer blocks these scenarios. They are unblocked but have not been
-rerun against the final deployed B1 commits:
+B1 no longer blocks these scenarios mechanically, but its C02-C05 closure
+canary is incomplete. Codex workers failed before bootstrap; the Claude worker
+validated checkout-shell access and created a signed commit, then remained
+`working`/`needs-input` without a `submitted` checkpoint. These later
+scenarios therefore remain open:
 
 - C05 request-changes and same-session resume
 - C06 dependency wait
@@ -395,10 +562,22 @@ rerun against the final deployed B1 commits:
 - C09 acceptance and retirement
 - Phase D parity beyond the two differences already recorded (F25, F29)
 
-Run C02-C05 first as the B1 closure canary. Implement and focused-test B2 and
-B3 next, then run C05-C09 and Phase D as the final recovery/parity gate. A B2
-or B3 failure should update this inventory with the exact typed classification
-and last proven safe state; it must not be worked around with raw tmux input or
+Complete C02-C05 first as the distinct B1 closure canary. B2 nils-cli is
+release-installed at the canonical head; checksum/version proof, the installed
+B1 coupled acceptance, and the live-runtime negative reconcile canary are
+green. Runtime-kit B2 implementation head
+`d35f3960338bc4893dc0bb158e88c341cb15a44a` passes full CI and its rendered
+surfaces are deployed from the durable checkout. Run the positive
+stopped-runtime real-product canary with a natural or controlled stopped
+fixture when one is available; it has not run, so B2 field closure is not
+claimed. Both prepared one-commit trees are now on their primary local default
+branches, and the exact runtime-kit local landing is deployed. Before provider
+delivery, restore governed GitHub access and revalidate the expected remote
+bases. Then implement B3's typed stop, followed by C05-C09 and Phase D as the
+final recovery/parity gate. Until the GitHub GraphQL 403 is resolved, remote
+default branches remain unchanged and nothing was pushed. A B2 or B3 failure
+should update this inventory with the exact typed classification and last
+proven safe state; it must not be worked around with raw tmux input or
 destructive Main-session cleanup.
 
 Phase A/B were completed in the earlier run and re-verified on a fresh fixture:
@@ -416,4 +595,6 @@ rejection, and hook denial of an ordinary default-branch commit all passed.
   `AssignmentInput` is `deny_unknown_fields`.
 - The run started in this session, `2dfae16e`, cannot be closed from inside its
   own Main session. The exact force-cleanup command is in
-  `phase-c-result-and-improvements.md`.
+  `phase-c-result-and-improvements.md`. This retained run predates the B2
+  candidate and has not been reconciled; candidate validation is not deployed
+  recovery evidence.

@@ -83,13 +83,119 @@ run_conversation_outcome_routing_probe() {
   rendered_contract_assert_reference conversation guided-feature-build references/DELEGATION_PROTOCOL.md
 }
 
+assert_main_agent_v2_recovery_contract() {
+  local contract_file="$1"
+  local required_inputs_count
+  local stale_schema
+
+  required_inputs_count="$(grep -Fc 'recovery_action.required_inputs:[' "$contract_file")"
+  if [ "$required_inputs_count" -ne 1 ]; then
+    return 1
+  fi
+  if ! grep -Fq 'recovery_action.required_inputs:["terminalization_reason","idempotency_key"]' "$contract_file"; then
+    return 1
+  fi
+  for stale_schema in \
+    main-agent.worker-diagnose-result.v1 \
+    main-agent.worker-supervise-result.v1 \
+    main-agent.worker-recovery-action.v1 \
+    main-agent.worker-reconcile-stopped-result.v1
+  do
+    if grep -Fq "$stale_schema" "$contract_file"; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+assert_completed_terminal_receipt_replay_fixture() {
+  local fixture="$1"
+
+  grep -Fxq 'replay_kind=completed_v2_terminal_receipt' "$fixture" &&
+    grep -Fxq 'same_request=true' "$fixture" &&
+    grep -Fxq 'same_original_revision=true' "$fixture" &&
+    grep -Fxq 'same_idempotency_key=true' "$fixture" &&
+    grep -Fxq 'result=committed' "$fixture" &&
+    grep -Fxq 'mutation_repeated=false' "$fixture"
+}
+
+assert_main_agent_replay_boundaries() {
+  local contract_file="$1"
+  local boundary
+
+  for boundary in \
+    'exact same request, original revision' \
+    'same idempotency key' \
+    'matching completed v2' \
+    'returns that committed result' \
+    'without repeating' \
+    'New key, changed request' \
+    'neither a matching completed v2' \
+    'terminal receipt nor a matching strict progress receipt fails closed.' \
+    'exact replay of an interrupted stage 1' \
+    'validating a matching strict progress receipt' \
+    'It must also' \
+    'cancelled assignment' \
+    'session-only quarantine' \
+    'exact worker' \
+    'stopped runtime' \
+    'operation quiescence' \
+    'current controller authority'
+  do
+    if ! grep -Fq "$boundary" "$contract_file"; then
+      return 1
+    fi
+  done
+  if grep -Fq 'sole stale-revision exception' "$contract_file"; then
+    return 1
+  fi
+  return 0
+}
+
 run_main_agent_mode_probe() {
   local source="$REPO_ROOT/core/skills/conversation/main-agent-mode/SKILL.md.tera"
   local protocol="$REPO_ROOT/core/skills/conversation/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
+  local stale_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-stale-v1.md"
+  local extra_input_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-extra-input.md"
+  local completed_receipt_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-completed-receipt-replay.txt"
+  local changed_request_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-completed-receipt-changed-request.txt"
   local product rendered golden rendered_protocol golden_protocol
 
   test -s "$source"
   test -s "$protocol"
+  printf '%s\n' \
+    'replay_kind=completed_v2_terminal_receipt' \
+    'same_request=true' \
+    'same_original_revision=true' \
+    'same_idempotency_key=true' \
+    'result=committed' \
+    'mutation_repeated=false' >"$completed_receipt_fixture"
+  assert_completed_terminal_receipt_replay_fixture "$completed_receipt_fixture"
+  printf '%s\n' \
+    'replay_kind=completed_v2_terminal_receipt' \
+    'same_request=false' \
+    'same_original_revision=true' \
+    'same_idempotency_key=true' \
+    'result=committed' \
+    'mutation_repeated=false' >"$changed_request_fixture"
+  if assert_completed_terminal_receipt_replay_fixture "$changed_request_fixture"; then
+    return 1
+  fi
+  printf '%s\n' \
+    'recovery_action.required_inputs:["terminalization_reason","idempotency_key"]' \
+    'main-agent.worker-diagnose-result.v1' >"$stale_fixture"
+  if assert_main_agent_v2_recovery_contract "$stale_fixture"; then
+    return 1
+  fi
+  printf '%s\n' \
+    'recovery_action.required_inputs:["terminalization_reason","idempotency_key"]' \
+    'recovery_action.required_inputs:["terminalization_reason","idempotency_key","operator_override"]' \
+    >"$extra_input_fixture"
+  if assert_main_agent_v2_recovery_contract "$extra_input_fixture"; then
+    return 1
+  fi
+  assert_main_agent_v2_recovery_contract "$source"
+  assert_main_agent_v2_recovery_contract "$protocol"
   grep -Fq '## Explicit Activation' "$source"
   grep -Fq 'agent-session activity doctor --agent codex --format json' "$source"
   grep -Fq 'agent-session activity doctor --agent claude --format json' "$source"
@@ -151,6 +257,65 @@ run_main_agent_mode_probe() {
   grep -Fq 'idle composer' "$protocol"
   grep -Fq 'stable dirty material plus stale provider progress is stalled' "$protocol"
   grep -Fq 'do not renew edit authority indefinitely' "$protocol"
+  grep -Fq 'classification: post_claim_failure' "$protocol"
+  grep -Fq 'last_proven_safe_state.post_claim_terminalization_safe: true' "$protocol"
+  grep -Fq 'automatic_retry_safe: false' "$protocol"
+  grep -Fq 'recovery_action.kind: stopped_worker_terminalization' "$protocol"
+  grep -Fq 'recovery_action.required_inputs:["terminalization_reason","idempotency_key"]' "$protocol"
+  grep -Fq 'main-agent worker reconcile-stopped <assignment-id>' "$protocol"
+  grep -Fq -- '--reason <bounded-terminalization-reason>' "$protocol"
+  grep -Fq '`main-agent.worker-diagnose-result.v2`' "$protocol"
+  grep -Fq '`main-agent.worker-supervise-result.v2`' "$protocol"
+  grep -Fq '`main-agent.worker-recovery-action.v2`' "$protocol"
+  grep -Fq 'main-agent.worker-reconcile-stopped-result.v2' "$protocol"
+  grep -Fq '`terminalized:true`' "$protocol"
+  grep -Fq '`worker_claim_active_after:false`' "$protocol"
+  grep -Fq 'active_disposition:"absent"' "$protocol"
+  grep -Fq 'release_provenance:"not_attributed_to_attempt"' "$protocol"
+  grep -Fq 'observed_at_stage1:<bool>' "$protocol"
+  grep -Fq '`input_sent:false`' "$protocol"
+  grep -Fq '`worktree_preserved:true`' "$protocol"
+  grep -Fq 'session-only authority quarantine' "$protocol"
+  grep -Fq 'frozen assignment schema v3' "$protocol"
+  grep -Fq 'CLI and HTTP resume are denied while quarantined' "$protocol"
+  grep -Fq 'observational coordination access does not renew generic claims or operations' "$protocol"
+  grep -Fq 'exact original controller' "$protocol"
+  grep -Fq 'explicit distinct successor' "$protocol"
+  grep -Fq 'same current run, Main session, and incarnation' "$protocol"
+  grep -Fq 'authorized retry rolls' "$protocol"
+  grep -Fq 'orphaned progress forward' "$protocol"
+  grep -Fq 'exact same request, original revision' "$protocol"
+  grep -Fq 'same idempotency key' "$protocol"
+  grep -Fq 'matching completed v2' "$protocol"
+  grep -Fq 'returns that committed result' "$protocol"
+  grep -Fq 'despite the now-stale' "$protocol"
+  grep -Fq 'without repeating' "$protocol"
+  grep -Fq 'New key, changed request' "$protocol"
+  grep -Fq 'neither a matching completed v2' "$protocol"
+  grep -Fq 'terminal receipt nor a matching strict progress receipt fails closed.' "$protocol"
+  grep -Fq 'must retain the original' "$protocol"
+  grep -Fq 'now-stale `--if-revision`' "$protocol"
+  grep -Fq 'validating a matching' "$protocol"
+  grep -Fq 'cancelled assignment' "$protocol"
+  grep -Fq 'current controller authority' "$protocol"
+  grep -Fq 'Refusal status alone does not report a safe state.' "$protocol"
+  grep -Fq 'fresh v2 `worker diagnose` or `worker supervise` projection' "$protocol"
+  grep -Fq 'unless an envelope explicitly exposes that proof' "$protocol"
+  if grep -Fq 'worker_claim_revoked' "$protocol"; then
+    return 1
+  fi
+  grep -Fq '`working` → `reconcile-stopped` → `cancelled` → `retire`' "$protocol"
+  grep -Fq 'fences the exact stopped worker session authority against resume' "$protocol"
+  grep -Fq 'Unrelated session, run, and coordination authority remains unchanged.' "$protocol"
+  grep -Fq 'preserves the worktree, branch, diff, durable run, and Main session' "$protocol"
+  grep -Fq 'A live or unknown runtime, or any active or uncertain operation, fails closed.' "$protocol"
+  grep -Fq '`worker-runtime-still-live`' "$protocol"
+  grep -Fq '`coordination-runtime-unverified`' "$protocol"
+  grep -Fq '`worker-not-quiescent`' "$protocol"
+  grep -Fq '`worker-incarnation-changed`' "$protocol"
+  grep -Fq '`assignment-state-conflict`' "$protocol"
+  grep -Fq 'retire the reconciled worker or create a distinct replacement assignment' "$protocol"
+  grep -Fq 'Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive' "$protocol"
   grep -Fq 'unchanged blocking fingerprint' "$protocol"
   grep -Fq 'preserve the full goal and unfinished checklist' "$protocol"
   grep -Fq 'account binding is verified before structured auto-resume is re-armed' "$protocol"
@@ -185,6 +350,64 @@ run_main_agent_mode_probe() {
   grep -Fq 'A submitted assignment with a released claim, clean worktree, terminated' "$source"
   grep -Fq 'do not renew mutation authority merely because supervision reports' "$source"
   grep -Fq '`claim_renewal_required`' "$source"
+  grep -Fq '`post_claim_failure`' "$source"
+  grep -Fq '`last_proven_safe_state.post_claim_terminalization_safe:true`' "$source"
+  grep -Fq '`automatic_retry_safe:false`' "$source"
+  grep -Fq '`recovery_action.kind:"stopped_worker_terminalization"`' "$source"
+  grep -Fq 'recovery_action.required_inputs:["terminalization_reason","idempotency_key"]' "$source"
+  grep -Fq 'main-agent worker reconcile-stopped <assignment-id>' "$source"
+  grep -Fq -- '--reason <bounded-terminalization-reason>' "$source"
+  grep -Fq '`main-agent.worker-diagnose-result.v2`' "$source"
+  grep -Fq '`main-agent.worker-supervise-result.v2`' "$source"
+  grep -Fq '`main-agent.worker-recovery-action.v2`' "$source"
+  grep -Fq '`main-agent.worker-reconcile-stopped-result.v2`' "$source"
+  grep -Fq '`terminalized:true`' "$source"
+  grep -Fq '`worker_claim_active_after:false`' "$source"
+  grep -Fq 'active_disposition:"absent"' "$source"
+  grep -Fq 'release_provenance:"not_attributed_to_attempt"' "$source"
+  grep -Fq 'observed_at_stage1:<bool>' "$source"
+  grep -Fq '`input_sent:false`' "$source"
+  grep -Fq '`worktree_preserved:true`' "$source"
+  grep -Fq 'session-only authority quarantine' "$source"
+  grep -Fq 'frozen assignment schema v3' "$source"
+  grep -Fq 'CLI and HTTP resume are denied while quarantined' "$source"
+  grep -Fq 'observational coordination access does not renew generic claims or operations' "$source"
+  grep -Fq 'exact original controller' "$source"
+  grep -Fq 'explicit distinct successor' "$source"
+  grep -Fq 'same current run, Main session, and incarnation' "$source"
+  grep -Fq 'authorized replay rolls' "$source"
+  grep -Fq 'orphaned progress forward' "$source"
+  grep -Fq 'exact same request, original revision' "$source"
+  grep -Fq 'same idempotency key' "$source"
+  grep -Fq 'matching completed v2' "$source"
+  grep -Fq 'returns that committed result' "$source"
+  grep -Fq 'despite the now-stale' "$source"
+  grep -Fq 'without repeating' "$source"
+  grep -Fq 'New key, changed request' "$source"
+  grep -Fq 'neither a matching completed v2' "$source"
+  grep -Fq 'terminal receipt nor a matching strict progress receipt fails closed.' "$source"
+  grep -Fq 'must retain the original' "$source"
+  grep -Fq 'now-stale `--if-revision`' "$source"
+  grep -Fq 'validating a matching' "$source"
+  grep -Fq 'cancelled assignment' "$source"
+  grep -Fq 'current controller authority' "$source"
+  grep -Fq 'Refusal status alone does not report a safe state.' "$source"
+  grep -Fq 'fresh v2 `worker diagnose` or `worker supervise` projection' "$source"
+  grep -Fq 'unless an envelope explicitly exposes that proof' "$source"
+  if grep -Fq 'worker_claim_revoked' "$source"; then
+    return 1
+  fi
+  grep -Fq '`worker-runtime-still-live`' "$source"
+  grep -Fq '`coordination-runtime-unverified`' "$source"
+  grep -Fq '`worker-not-quiescent`' "$source"
+  grep -Fq '`worker-incarnation-changed`' "$source"
+  grep -Fq '`assignment-state-conflict`' "$source"
+  grep -Fq 'fences the exact worker session authority against resume' "$source"
+  grep -Fq 'Unrelated session, run, and coordination authority remains unchanged.' "$source"
+  grep -Fq 'preserves its worktree, branch, diff, the durable run, and the Main session' "$source"
+  grep -Fq 'live or unknown runtime, or any active or uncertain operation' "$source"
+  grep -Fq 'retire that reconciled worker or create a distinct replacement assignment' "$source"
+  grep -Fq 'Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive' "$source"
   grep -Fq '## Terminal Worker Cleanup' "$protocol"
   grep -Fq 'durable operation state that no active or uncertain admitted mutation operation' "$protocol"
   grep -Fq 'After operation quiescence is proven, have the exact worker release its active' "$protocol"
@@ -218,6 +441,33 @@ run_main_agent_mode_probe() {
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'post-rebind assignment ownership'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'stable dirty material plus stale provider progress is stalled'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`claim_renewal_required`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`post_claim_failure`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`last_proven_safe_state.post_claim_terminalization_safe:true`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`automatic_retry_safe:false`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`recovery_action.kind:"stopped_worker_terminalization"`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`main-agent.worker-diagnose-result.v2`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`main-agent.worker-supervise-result.v2`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`main-agent.worker-recovery-action.v2`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent worker reconcile-stopped <assignment-id>'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '--reason <bounded-terminalization-reason>'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`main-agent.worker-reconcile-stopped-result.v2`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'recovery_action.required_inputs:["terminalization_reason","idempotency_key"]'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`worker_claim_active_after:false`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'active_disposition:"absent"'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'release_provenance:"not_attributed_to_attempt"'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'frozen assignment schema v3'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'CLI and HTTP resume are denied while quarantined'
+    rendered_contract_assert_product_omits conversation main-agent-mode "$product" 'worker_claim_revoked'
+    rendered_contract_assert_product_omits conversation main-agent-mode "$product" 'main-agent.worker-diagnose-result.v1'
+    rendered_contract_assert_product_omits conversation main-agent-mode "$product" 'main-agent.worker-supervise-result.v1'
+    rendered_contract_assert_product_omits conversation main-agent-mode "$product" 'main-agent.worker-recovery-action.v1'
+    rendered_contract_assert_product_omits conversation main-agent-mode "$product" 'main-agent.worker-reconcile-stopped-result.v1'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`input_sent:false`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`worktree_preserved:true`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'matching completed v2 terminal receipt'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'without repeating mutation'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'live or unknown runtime, or any active or uncertain operation'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use `/logout` or raw terminal input'
   done
 
@@ -228,9 +478,17 @@ run_main_agent_mode_probe() {
     golden_protocol="$REPO_ROOT/tests/golden/$product/plugins/conversation/skills/main-agent-mode/expected/references/MAIN_AGENT_MODE_PROTOCOL.md"
     test -s "$rendered"
     test -s "$golden"
+    assert_main_agent_v2_recovery_contract "$rendered"
+    assert_main_agent_v2_recovery_contract "$golden"
+    assert_main_agent_replay_boundaries "$rendered"
+    assert_main_agent_replay_boundaries "$golden"
     cmp -s "$rendered" "$golden"
     test -s "$rendered_protocol"
     test -s "$golden_protocol"
+    assert_main_agent_v2_recovery_contract "$rendered_protocol"
+    assert_main_agent_v2_recovery_contract "$golden_protocol"
+    assert_main_agent_replay_boundaries "$rendered_protocol"
+    assert_main_agent_replay_boundaries "$golden_protocol"
     cmp -s "$protocol" "$rendered_protocol"
     cmp -s "$protocol" "$golden_protocol"
   done
@@ -244,6 +502,6 @@ record_case "conversation.discussion-to-implementation-doc" "workflow skill sour
 record_case "conversation.guided-feature-build" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe guided-feature-build
 record_case "conversation.handoff-session-prompt" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe handoff-session-prompt
 record_case "conversation.outcome-routing" "normal conversation and guided build select advice, explanation, and delegation modes without child-skill selection" run_conversation_outcome_routing_probe
-record_case "conversation.main-agent-mode" "explicit opt-in main-agent ownership, verified worker startup, stop rules, and Codex/Claude-only renders are enforced" run_main_agent_mode_probe
+record_case "conversation.main-agent-mode" "explicit opt-in main-agent ownership, verified worker startup, post-claim terminalization, stop rules, and Codex/Claude-only renders are enforced" run_main_agent_mode_probe
 
 exit "$failures"

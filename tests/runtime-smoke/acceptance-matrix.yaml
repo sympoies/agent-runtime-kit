@@ -385,7 +385,7 @@ cases:
     mode: deterministic
     fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
     setup: render current Codex and Claude product surfaces
-    invocation: verify explicit activation, doctor and compatibility-preview gates, main/worker ownership, provisional folded start, bounded supervision and diagnosis, typed recovery, safe account handoff, submission/rejected-lane limits, stop rules, and the Hermes product ceiling
+    invocation: verify explicit activation, doctor and compatibility-preview gates, main/worker ownership, provisional folded start, bounded supervision and diagnosis, post-claim stopped-runtime terminalization, typed recovery, safe account handoff, submission/rejected-lane limits, stop rules, and the Hermes product ceiling
     expected_exit_code: 0
     expected_artifacts: Codex and Claude rendered skill and protocol files with no Hermes skill render
     cleanup: temp-output-only

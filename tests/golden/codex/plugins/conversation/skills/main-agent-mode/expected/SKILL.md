@@ -319,6 +319,71 @@ explicit reassignment under the recovery protocol.
    or attention-required, including capacity failures. Do not classify it as
    healthy progress, and do not renew edit authority indefinitely without new
    authoritative progress.
+   When supervision proves that an assignment completed authenticated
+   bootstrap into `working`, the exact bound worker runtime is stopped, the
+   worker session and incarnation are unchanged, and no admitted operation is
+   active or uncertain, require `classification:"post_claim_failure"`,
+   `last_proven_safe_state.post_claim_terminalization_safe:true`,
+   `automatic_retry_safe:false`, and
+   `recovery_action.kind:"stopped_worker_terminalization"`.
+   Require the public `main-agent.worker-diagnose-result.v2`,
+   `main-agent.worker-supervise-result.v2`, and
+   `main-agent.worker-recovery-action.v2` schemas; v1 projections are stale.
+   Require exactly
+   `recovery_action.required_inputs:["terminalization_reason","idempotency_key"]`;
+   a third input fails closed. Resolve both values through the declared Main
+   owner and use the returned `recovery_action.argv_template`.
+   A live or unknown runtime, or any active or uncertain operation must fail closed.
+   Run only the revision-fenced, idempotent typed action:
+
+   ```bash
+   main-agent worker reconcile-stopped <assignment-id> \
+     --if-revision <assignment-revision> \
+     --reason <bounded-terminalization-reason> \
+     --idempotency-key <unique-key> --format json
+   ```
+
+   Require a `main-agent.worker-reconcile-stopped-result.v2` result with
+   `terminalized:true`, top-level `worker_claim_active_after:false`,
+   `input_sent:false`, `worktree_preserved:true`, and
+   `proof.worker_claim:{active_disposition:"absent",release_provenance:"not_attributed_to_attempt",observed_at_stage1:<bool>}`.
+   Claim absence is stable observed truth; never attribute it to the current
+   attempt. The action transitions only that assignment from `working` to
+   `cancelled`.
+   It fences the exact worker session authority against resume.
+   It installs a session-only authority quarantine for that exact worker.
+   It preserves a frozen assignment schema v3 for that exact worker.
+   Unrelated session, run, and coordination authority remains unchanged.
+   CLI and HTTP resume are denied while quarantined.
+   Read-only observational coordination access does not renew generic claims or operations.
+   It preserves its worktree, branch, diff, the durable run, and the Main session.
+   Two exact replay-safe cases may cross a now-stale revision. First, the replay
+   must use the exact same request, original revision (`--if-revision`), and
+   same idempotency key. With a matching completed v2 terminal receipt, it
+   returns that committed result despite the now-stale revision. The return
+   occurs before revision checking and without repeating mutation.
+   Second, an exact replay of an interrupted stage 1 must retain the original
+   now-stale `--if-revision` and original key. It may finish stage 2 only after
+   validating a matching strict progress receipt. It must also validate the
+   cancelled assignment, session-only quarantine, exact worker identity,
+   stopped runtime, operation quiescence, and current controller authority.
+   That authority may be the exact original controller claim or an explicit distinct successor.
+   It must be bound to the same current run, Main session, and incarnation.
+   The authorized replay rolls orphaned progress forward.
+   New key, changed request, or a replay with neither a matching completed v2
+   terminal receipt nor a matching strict progress receipt fails closed.
+   Treat
+   `worker-runtime-still-live`, `coordination-runtime-unverified`,
+   `worker-not-quiescent`, `worker-incarnation-changed`, and
+   `assignment-state-conflict` as fail-closed refusal codes.
+   Refusal status alone does not report a safe state.
+   Require a fresh v2 `worker diagnose` or `worker supervise` projection before
+   continuing, unless an envelope explicitly exposes that proof.
+   Expired or released controller claim authority remains an ordinary
+   authorization failure.
+   After success, retire that reconciled worker or create a distinct replacement assignment.
+   Never use ordinary `cancel`, `reassign`, or force cleanup for this classification.
+   Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive for this B2 transition.
 9. Checkpoint material transitions. A pending mailbox notification is not
    readiness proof or consumption proof. Reconcile facade evidence first; only
    after exact worker, incarnation, and prompt identity are proven may the
@@ -358,9 +423,10 @@ explicit reassignment under the recovery protocol.
 12. Use revision-fenced typed macros for recovery: `self recover`, `worker
     start`, `worker supervise`, `guidance-reconcile`,
     `guidance-quarantine`, `account-handoff`, `account-handoff-cancel`,
-    `cancel`, `reassign`, `accept`, and `retire`. Account selection, exact
-    incumbent account binding, and structured auto-resume re-arm are separate
-    transitions; account binding is verified before structured auto-resume is re-armed.
+    `reconcile-stopped`, `cancel`, `reassign`, `accept`, and `retire`. Account
+    selection, exact incumbent account binding, and structured auto-resume
+    re-arm are separate transitions; account binding is verified before
+    structured auto-resume is re-armed.
     Never use `/logout` or raw terminal input to switch accounts.
     A capability gap on an unmanaged/raw worker requires the typed executable
     lifecycle fallback, not a daemon-only recovery claim.
@@ -371,7 +437,9 @@ explicit reassignment under the recovery protocol.
     physical cleanup failures in the maintenance projection rather than the live
     worker list. A stopped or rejected session whose assignment was never
     accepted is not directly deletable: preserve its work and use typed
-    cancel/reassign/group-cleanup recovery.
+    recovery for its proven classification. In particular,
+    `post_claim_failure` must pass through `reconcile-stopped` before retirement
+    or a distinct replacement.
 14. Checkpoint and close the run only when assignments are terminal or carry an
     explicit retained exception and the active tier's durable gates pass.
     Accept, merge, archive, and report only when provider delivery is available;

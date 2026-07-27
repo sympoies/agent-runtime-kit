@@ -239,6 +239,105 @@ or attention-required, not healthy progress. Apply the same rule to stale clean
 worktrees, capacity errors, and recovery deadlocks, and do not renew edit authority indefinitely
 without authoritative progress.
 
+## Post-Claim Stopped Runtime Reconciliation
+
+A bootstrap-complete worker is post-claim only when durable assignment evidence
+proves it reached `working`. If supervision also proves the exact bound worker
+runtime is stopped, the recorded session and incarnation are unchanged, and no
+admitted mutation operation is active or uncertain, require this public
+projection:
+
+- `classification: post_claim_failure`;
+- `last_proven_safe_state.post_claim_terminalization_safe: true`;
+- `automatic_retry_safe: false`;
+- `recovery_action.kind: stopped_worker_terminalization`.
+
+Consume only the public `main-agent.worker-diagnose-result.v2`,
+`main-agent.worker-supervise-result.v2`, and
+`main-agent.worker-recovery-action.v2` schemas. A v1 projection cannot prove
+the final observed-state or quarantine contract and must fail closed.
+
+That projection authorizes only the Main-owned, revision-fenced, idempotent
+macro. Require exactly
+`recovery_action.required_inputs:["terminalization_reason","idempotency_key"]`;
+a third input fails closed. Resolve both values through the declared Main owner
+and use the returned `recovery_action.argv_template`:
+
+```bash
+main-agent worker reconcile-stopped <assignment-id> \
+  --if-revision <assignment-revision> \
+  --reason <bounded-terminalization-reason> \
+  --idempotency-key <unique-key> --format json
+```
+
+The macro must return schema
+`main-agent.worker-reconcile-stopped-result.v2`. Continue only when its result
+reports `terminalized:true`, top-level `worker_claim_active_after:false`,
+`input_sent:false`, `worktree_preserved:true`, and this stable proof:
+
+```text
+proof.worker_claim:{
+  active_disposition:"absent",
+  release_provenance:"not_attributed_to_attempt",
+  observed_at_stage1:<bool>
+}
+```
+
+The result proves observed claim absence without claiming that the current
+attempt performed a release. The transition is
+`working` → `reconcile-stopped` → `cancelled` → `retire`: terminalization
+fences the exact stopped worker session authority against resume.
+It installs a session-only authority quarantine for the exact worker.
+It preserves a frozen assignment schema v3 for the exact worker.
+CLI and HTTP resume are denied while quarantined.
+Unrelated session, run, and coordination authority remains unchanged.
+Read-only observational coordination access does not renew generic claims or operations.
+It preserves the worktree, branch, diff, durable run, and Main session.
+It neither accepts the failed work nor authorizes a new writer.
+After the `cancelled` read-back, retire the reconciled worker or create a distinct replacement assignment.
+Apply the ordinary non-overlap and ownership gates to any replacement.
+
+A stopped-worker reconciliation has two exact replay-safe stale-revision cases.
+First, the replay must use the exact same request, original revision
+(`--if-revision`), and same idempotency key. With a matching completed v2
+terminal receipt, it returns that committed result despite the now-stale
+revision. The return occurs before revision checking and without repeating
+mutation.
+
+Second, an exact replay of an interrupted stage 1 must retain the original
+now-stale `--if-revision` and original idempotency key. That replay may finish
+stage 2 only after validating a matching strict progress receipt. It must also
+validate the cancelled assignment, session-only quarantine, exact worker
+identity, stopped runtime, operation quiescence,
+and current controller authority.
+Stage 2 accepts the exact original controller claim or an explicit distinct successor.
+That authority must be bound to the same current run, Main session, and incarnation.
+The authorized retry rolls orphaned progress forward instead of discarding
+the frozen assignment, weakening the quarantine, or repeating already
+committed effects.
+
+New key, changed request, or a replay with neither a matching completed v2
+terminal receipt nor a matching strict progress receipt fails closed.
+
+A live or unknown runtime, or any active or uncertain operation, fails closed.
+Treat `worker-runtime-still-live`, `coordination-runtime-unverified`,
+`worker-not-quiescent`, `worker-incarnation-changed`, and
+`assignment-state-conflict` as fail-closed refusal codes.
+Refusal status alone does not report a safe state.
+Require a fresh v2 `worker diagnose` or `worker supervise` projection before
+continuing, unless an envelope explicitly exposes that proof.
+Expired or released Main controller claim authority
+continues to use the existing coordination-authorization failure contract; do
+not reinterpret it as a post-claim terminalization result. Outside the two
+exact receipt-backed replays above, a stale revision, different incarnation,
+changed assignment state, or new operation evidence must not mutate anything.
+
+For `post_claim_failure`, do not call ordinary `cancel` or `reassign`, do not
+force-delete a session or group, and do not resume or send input to the stopped
+worker.
+Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive for this B2 transition.
+B3 owns the separate still-live pre-claim/readiness-failure stop problem.
+
 If `worker wait`, supervision, or another facade action returns
 `coordination-unauthorized`, diagnose the coordination boundary before choosing
 a recovery:
@@ -301,11 +400,11 @@ unchanged, and re-read every adopted assignment before continuing.
 Use macro-first recovery for `self recover`, `worker start`, `worker
 supervise`, `guidance-reconcile`, `guidance-quarantine`, `account-handoff`,
 `account-handoff-cancel`, `submit-recovery`, `reconcile-recovery`, `cancel`,
-`reassign`, `accept`, and `retire`. When a macro returns a partial or typed
-failure, continue only with the named primitive from `last_proven_safe_state`.
-Do not replay the entire macro, prompt, or terminal input. Edit-authority
-renewal belongs to the exact worker: ask it to renew its current claim and
-revision with its own capability file.
+`reconcile-stopped`, `reassign`, `accept`, and `retire`. When a macro returns a
+partial or typed failure, continue only with the named primitive from
+`last_proven_safe_state`. Do not replay the entire macro, prompt, or terminal
+input. Edit-authority renewal belongs to the exact worker: ask it to renew its
+current claim and revision with its own capability file.
 
 Guidance continuity retains message identity and unread state.
 `guidance-reconcile` forwards only eligible exact-controller guidance to a
@@ -415,8 +514,11 @@ A stopped or rejected session without an accepted assignment is not directly
 deletable through the accepted-worker path. Preserve its work and evidence.
 Use typed `cancel` for a proven failed pre-claim assignment, `reassign` only
 when supervision proves safe reassignment, and group cleanup after an accepted
-replacement. Never rewrite registry state or discard the retained lane merely
-to make it disappear.
+replacement. A `post_claim_failure` instead follows the exact
+`reconcile-stopped` transition above before retirement or a distinct
+replacement; never use cancel, reassign, or group cleanup to bypass that
+transition. Never rewrite registry state or discard the retained lane merely to
+make it disappear.
 
 If deletion fails or the fresh list still returns the session, retain the
 visible worker card and its structured error, and route the failed deletion
@@ -449,6 +551,8 @@ skill or runbook.
 | Submitted lane has no active claim | If the assignment is submitted, the worktree is clean, the provider turn is terminated, and no operation is active or uncertain, proceed with read-only review. Do not renew mutation authority solely to satisfy `claim_renewal_required`; require it only for a later authorized mutation. |
 | Work-context scope or worktree conflict | Stop the worker mutation. Narrow/reassign scope or allocate a clean isolated worktree; never acknowledge away a definite conflict as permission. |
 | Active or uncertain admitted mutation operation | Retain the exact worker owner/session. Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome. Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome. If proof is unavailable, report blocked and preserve the session and evidence. |
+| Bootstrap-complete exact worker runtime is stopped | Require `post_claim_failure`, `last_proven_safe_state.post_claim_terminalization_safe:true`, and `automatic_retry_safe:false`; run only revision-fenced `worker reconcile-stopped`, verify the typed terminalization result, then retire or create a distinct replacement. Preserve worktree/diff/run/Main and send no input. |
+| Post-claim worker runtime is live or unknown, or operation state is active or uncertain | Fail closed. Do not reconcile-stopped, cancel, reassign, retire, resume, send input, stop the runtime, or force group cleanup. Preserve the exact worker and typed refusal. |
 | Accepted terminal worker cleanup | Prove operation quiescence, release and verify the worker's active claim, delete the exact session through its owner, then require a fresh list result proving the exact session ID is absent. |
 | Worker deletion or list-absence failure | Retain the visible worker card and structured error, keep cleanup incomplete, and route the exact failed deletion through the session-management recovery owner. |
 | Missing diff, validation, run-state, PR, or completion evidence | Keep the lane incomplete and request the exact missing durable evidence from the same worker. |
