@@ -629,8 +629,6 @@ def git_cli_invocation_mutates(arguments: list[str]) -> bool:
 
 
 def semantic_commit_invocation_mutates(arguments: list[str]) -> bool:
-    if not arguments or arguments[0] not in {"commit", "fixup", "squash"}:
-        return False
     read_only, _repo = semantic_commit_invocation_state(arguments)
     return not read_only
 

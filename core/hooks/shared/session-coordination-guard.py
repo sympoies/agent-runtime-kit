@@ -43,9 +43,11 @@ from hook_common import (
     emit_block,
     invocation_is_opaque,
     invocation_tokens,
+    main_agent_preclaim_argv,
     output_redirect_targets,
     patch_text_candidates,
     read_payload,
+    semantic_commit_invocation_effects,
     simple_commands_with_nested_shells,
     tool_input_dict,
 )
@@ -387,9 +389,7 @@ def lifecycle_revision(value: str) -> bool:
 
 
 def lifecycle_idempotency_key(value: str) -> bool:
-    return 8 <= len(value) <= 128 and all(
-        character.isascii() and character.isprintable() for character in value
-    )
+    return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
 
 
 def lifecycle_duration(value: str, maximum_seconds: int) -> bool:
@@ -959,31 +959,8 @@ def main_agent_bypass_invocation(
         or os.path.realpath(candidate) != os.path.realpath(trusted)
     ):
         return False
-    if words == ["main-agent", "--version"]:
+    if main_agent_preclaim_argv(words):
         return True
-    if words in (
-        ["main-agent", "self", "show", "--format", "json"],
-        ["main-agent", "rehydrate", "--format", "json"],
-        ["main-agent", "rehydrate", "--format", "markdown"],
-        ["main-agent", "status", "--format", "json"],
-        ["main-agent", "worker", "list", "--format", "json"],
-    ):
-        return True
-    if words[:3] == ["main-agent", "worker", "show"]:
-        return (
-            len(words) == 6
-            and lifecycle_identifier(words[3])
-            and words[4:] == ["--format", "json"]
-        )
-    if words[:2] == ["main-agent", "rebind"]:
-        return (
-            len(words) == 8
-            and words[2] == "--if-revision"
-            and lifecycle_revision(words[3])
-            and words[4] == "--idempotency-key"
-            and lifecycle_idempotency_key(words[5])
-            and words[6:] == ["--format", "json"]
-        )
     if words[:2] == ["main-agent", "quick"]:
         # quick acquires the work-context claim as its first durable act (like
         # init), so its exact pre-claim shape must be admitted here. --tier is
@@ -1307,12 +1284,10 @@ def invocation_is_recognized_mutation(
     if name in {"gh", "forge-cli"}:
         return provider_mutates(invocation)
     if name == "semantic-commit":
-        return bool(arguments) and arguments[0] in {
-            "commit",
-            "fixup",
-            "squash",
-            "local-default",
-        }
+        _authors_commit, writes_files, _repo = semantic_commit_invocation_effects(
+            arguments
+        )
+        return writes_files
     return name == "git-cli" and len(arguments) >= 2 and (
         arguments[0], arguments[1]
     ) in {

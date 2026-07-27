@@ -488,7 +488,7 @@ def is_semantic_commit_commit(command: str) -> bool:
             authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
                 arguments
             )
-            if arguments and arguments[0] in {"commit", "local-default"} and authors_commit:
+            if arguments and arguments[0] in {"commit", "default-branch"} and authors_commit:
                 return True
     return False
 
@@ -496,15 +496,14 @@ def is_semantic_commit_commit(command: str) -> bool:
 SEMANTIC_COMMIT_VALUE_OPTIONS = frozenset(
     {
         "--body-bullet",
+        "--bullet",
         "--expect-head",
-        "--expected-branch",
         "--format",
         "--max-header-width",
         "--message",
         "--message-file",
         "--message-out",
         "--receipt-out",
-        "--remote-mode",
         "--repo",
         "--scope",
         "--subject",
@@ -532,7 +531,7 @@ def semantic_commit_invocation_effects(
         "commit",
         "fixup",
         "squash",
-        "local-default",
+        "default-branch",
     }:
         return False, False, ""
 
@@ -590,6 +589,114 @@ def semantic_commit_invocation_state(arguments: list[str]) -> tuple[bool, str]:
     """Return checkout-admission ``(read_only, repo)`` for an argv tail."""
     _authors_commit, writes_files, repo = semantic_commit_invocation_effects(arguments)
     return not writes_files, repo
+
+
+def main_agent_capability_recovery_argv(words: list[str]) -> bool:
+    """Recognize the finite Main Agent lane retained during capability failure."""
+
+    def revision(value: str) -> bool:
+        return (
+            re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is not None
+            and int(value) <= (2**64 - 1)
+        )
+
+    def idempotency_key(value: str) -> bool:
+        return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
+
+    if words == ["main-agent", "--version"]:
+        return True
+    if words in (
+        ["main-agent", "self", "show", "--format", "json"],
+        ["main-agent", "rehydrate", "--format", "json"],
+        ["main-agent", "rehydrate", "--format", "markdown"],
+        ["main-agent", "status", "--format", "json"],
+    ):
+        return True
+    if words[:3] == ["main-agent", "self", "recover"]:
+        return (
+            len(words) == 7
+            and words[3] == "--idempotency-key"
+            and idempotency_key(words[4])
+            and words[5:] == ["--format", "json"]
+        )
+    if words[:2] == ["main-agent", "rebind"]:
+        return (
+            len(words) == 8
+            and words[2] == "--if-revision"
+            and revision(words[3])
+            and words[4] == "--idempotency-key"
+            and idempotency_key(words[5])
+            and words[6:] == ["--format", "json"]
+        )
+    return False
+
+
+def main_agent_preclaim_argv(words: list[str]) -> bool:
+    """Recognize exact trusted Main Agent pre-claim shapes without private files."""
+
+    def identifier(value: str) -> bool:
+        return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is not None
+
+    def idempotency_key(value: str) -> bool:
+        return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
+
+    def wait_duration(value: str) -> bool:
+        multiplier = 1
+        if value[-1:] in {"s", "m", "h", "d"}:
+            multiplier = {
+                "s": 1,
+                "m": 60,
+                "h": 3600,
+                "d": 86400,
+            }[value[-1]]
+            value = value[:-1]
+        return value.isdigit() and 1 <= int(value) * multiplier <= 60
+
+    if main_agent_capability_recovery_argv(words):
+        return True
+    if words == ["main-agent", "worker", "list", "--format", "json"]:
+        return True
+    if words[:2] == ["main-agent", "bootstrap"]:
+        return (
+            len(words) == 6
+            and words[2] == "--idempotency-key"
+            and idempotency_key(words[3])
+            and words[4:] == ["--format", "json"]
+        )
+    if words[:3] in (
+        ["main-agent", "worker", "diagnose"],
+        ["main-agent", "worker", "supervise"],
+    ):
+        return (
+            len(words) == 6
+            and identifier(words[3])
+            and words[4:] == ["--format", "json"]
+        )
+    if words[:3] == ["main-agent", "worker", "wait"]:
+        if len(words) not in {8, 10}:
+            return False
+        if words[3] != "--any" and not identifier(words[3]):
+            return False
+        if words[4] != "--until" or words[5] not in {
+            "submitted",
+            "blocked",
+            "terminal",
+        }:
+            return False
+        if len(words) == 10:
+            return (
+                words[6] == "--timeout"
+                and wait_duration(words[7])
+                and words[8:] == ["--format", "json"]
+            )
+        return words[6:] == ["--format", "json"]
+    if words[:3] == ["main-agent", "worker", "show"]:
+        return (
+            len(words) == 6
+            and identifier(words[3])
+            and words[4:] == ["--format", "json"]
+        )
+    return False
 
 
 def extract_message(command: str) -> str | None:

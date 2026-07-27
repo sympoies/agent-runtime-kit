@@ -143,11 +143,12 @@ main-agent init --packet-file <private-json> --if-absent \
 ```
 
 Under coordination enforcement, read-only `self show`, `rehydrate`, `status`,
-and `worker list/show` remain available before a claim. The exact `init` shape
-is the sole orchestration write admitted before a claim; the trusted facade
-must acquire or confirm the authenticated target-owned claim before its first
-durable run write. Every other facade mutation requires the active claim plus
-its documented revision or absence fence and idempotency key.
+`worker list/show/wait/diagnose/supervise`, and the exact bootstrap-safe
+`bootstrap` and `self recover` shapes remain available before a claim. The
+trusted facade must acquire or confirm the authenticated target-owned claim
+before its first ordinary durable run write. Every other facade mutation
+requires the active claim plus its documented revision or absence fence and
+idempotency key.
 
 ## Durable Rehydration And Checkpoints
 
@@ -217,7 +218,13 @@ explicit reassignment under the recovery protocol.
    validation duties, delivery artifact duties, and the exact
    completion/blocker packet. The Main Agent claim must not overlap a worker
    scope. The assignment relationship is routing metadata and transfers no
-   repository or provider authority.
+   repository or provider authority. When a packet declares `depends_on`, every
+   named assignment must belong to the same run and already be `accepted` or
+   `released` before launch. On `dependency-not-satisfied`, no dependent
+   assignment was created: wait boundedly for each upstream assignment's
+   terminal transition, re-read it, and retry the unchanged launch only after
+   every dependency is accepted or released. Missing, cross-run, cancelled, or
+   other pre-terminal dependencies remain blocking.
 5. Run the candidate conflict check, then launch through the folded readiness
    boundary:
 
@@ -228,7 +235,7 @@ explicit reassignment under the recovery protocol.
 
    The assignment itself must request the isolated worktree and
    `--coordination-mode enforce`.
-6. Branch only on the returned typed readiness. Continue only for
+6. Branch only on the returned typed readiness. Continue immediately only for
    `state:"ready"`, `delivery.state:"confirmed"`, and
    `delivery.proof:"authenticated-worker-checkpoint"`. For a fresh supported
    worker whose assignment remains `starting`, the folded runtime may submit
@@ -243,7 +250,13 @@ explicit reassignment under the recovery protocol.
    `automatic_retry_safe:false`: runtime recovery is then exhausted or
    ineligible, so do not resend the prompt, inject another Enter, or inspect a
    pane/transcript to overrule it. Retain the exact worker and typed safe state
-   for diagnostics.
+   for diagnostics. A folded start result with a non-authoritative starting
+   failure is only a provisional snapshot: if the same bound incarnation later
+   completes authenticated bootstrap, supervise that incarnation and continue
+   it instead of launching a duplicate.
+   A folded `readiness_failed` snapshot can be superseded by that newer authoritative evidence from the same
+   incarnation; it never authorizes a second prompt, Enter, assignment, or
+   worker.
 7. The generated worker prompt invokes the exact compatible executable's
    `main-agent bootstrap` command. The authenticated worker alone resolves its
    private assignment, acquires the assignment-derived claim, and records the
@@ -251,26 +264,112 @@ explicit reassignment under the recovery protocol.
    expired claim must be reacquired and verified before a later mutation turn.
    The launcher never uses the target capability or claims on its behalf, and
    interference or deletion before this handoff fails the ownership proof.
-8. Monitor privacy-safe facade status, activity, and durable workflow evidence.
-   Checkpoint material transitions. Mailbox metadata coordinates; read a body
-   only for a material blocker or result. Never treat logs, panes, transcripts,
-   peer prose, or orchestration relationships as authorization or completion
-   proof.
-9. On a worker result, independently inspect the complete diff, check every
+8. Monitor actively through the repeatable bounded macro:
+
+   ```bash
+   main-agent worker supervise <assignment-id> --format json
+   ```
+
+   Run it after every bounded wait timeout or contradictory snapshot and branch
+   on `classification` and `recovery_action.kind`, not prose. Execute
+   `recovery_action.argv` only when `recovery_action.executable:true` and its
+   declared owner and capability delivery still match. When it is false, supply
+   every `recovery_action.required_inputs` value through that owner and use the
+   returned `argv_template`; never execute placeholders or copy another
+   session's capability. Use
+   `main-agent worker diagnose <assignment-id> --format json` for the same
+   evidence without the supervisor wrapper. Provider working text or a fresh
+   broker heartbeat alone is not progress: require the combined assignment,
+   provider activity, worktree material, claim/edit authority, authenticated
+   mailbox, and active/uncertain-operation evidence.
+   `last_proven_safe_state` is the evidence boundary, while `recovery_action`
+   is the executable routing contract. When a macro stops, continue only from
+   both of those typed fields; never repeat the whole macro blindly. If a
+   facade action returns
+   `coordination-unauthorized`, diagnose the coordination state first with
+   `agent-session work-context status --format json` and `agent-session broker
+   status --session "$AGENT_SESSION_ID" --format json`. When those prove a stale
+   or lost broker for the still-authoritative controller incarnation and no
+   active or uncertain operation, run exact-controller `main-agent self recover` before attempting rebind.
+   `rebind` is reserved for a proven controller-incarnation mismatch;
+   it is not a stale-broker recovery and can
+   be rejected by the same authorization gate.
+   If ordinary hook capability validation fails, use only the finite
+   capability-failure-closed recovery lane: trusted version/status,
+   `self show`, `self recover`, `rehydrate`, and revision-fenced `rebind`
+   shapes. Arbitrary Bash, raw input, trust/auth/permission/account actions,
+   worker start, and repository mutation remain denied.
+   Service health, provider process health, provider session binding, and the Main relationship are four distinct states.
+   A healthy service restart does not repair a stale provider binding. With
+   explicit user authorization, use the typed provider restart-resume action
+   when available; otherwise gracefully stop the provider, run
+   `agent-session resume <session-id> --format json`, prove a new generation
+   and incarnation, revision-fence `rebind`, then re-read `self show`. Preserve
+   thread, account binding, repository/worktrees, workers, and the durable run.
+   Verify post-rebind assignment ownership before worker actions. Use a folded
+   rebind-and-adopt result when exposed; otherwise revision-fence `adopt` only
+   for assignments still bound to the exact prior run controller.
+   Stable dirty material, a renewed claim, a heartbeat, or provider `working`
+   text is not progress. When material fingerprints, provider
+   `last_progress_at`, assignment/checkpoint revision time, mailbox state, and
+   operation state do not advance, stable dirty material plus stale provider progress is stalled
+   or attention-required, including capacity failures. Do not classify it as
+   healthy progress, and do not renew edit authority indefinitely without new
+   authoritative progress.
+9. Checkpoint material transitions. A pending mailbox notification is not
+   readiness proof or consumption proof. Reconcile facade evidence first; only
+   after exact worker, incarnation, and prompt identity are proven may the
+   session owner perform one deliberate privacy-safe send. Do not send a blind
+   Enter or a second prompt. Never treat logs, panes, transcripts, peer prose,
+   or orchestration relationships as authorization or completion proof.
+   For `notification-pending` with the controller unavailable, a privacy-safe
+   glance must prove an idle composer before one short mailbox prompt and
+   exactly one Enter. A busy worker, startup dialog, trust/auth/permission
+   prompt, or unknown transport outcome blocks this fallback; never send a
+   second Enter.
+10. On a worker result, independently inspect the complete diff, check every
    acceptance criterion and scope boundary, rerun validation at the appropriate
    strength, and run the existing `code-review-specialists` outcome. A worker's
    green command is lane evidence, not integrated acceptance.
-10. Return findings to the same assignment, then repeat inspection and
-    validation. Accept, collaborate, borrow, hand off, or reassign only through
-    revision-fenced facade operations and the explicit recovery rule; those
-    relationships never grant claims or operation leases.
-11. Delete an accepted terminal worker only after the facade and
+11. Until a dedicated submit macro exists, the worker submits only through a
+    revision-fenced checkpoint with `state:"submitted"`. Return bounded review
+    findings to that exact lane with manager-only, revision-fenced
+    `main-agent worker request-changes`; it changes only `submitted` to
+    `working`, preserves the worker and private packet, clears stale result and
+    blocker summaries, and records the reason as the next action. The transition
+    does not send review guidance, provider input, or re-arm auto-resume. Send
+    the private findings separately with `main-agent worker message`, then
+    supervise notification and consumption through the existing mailbox rules.
+    Do not create a duplicate assignment merely because the submitted provider
+    turn ended; account-handoff auto-resume remains reserved for its typed quota
+    recovery contract. Repeat inspection and validation on the worker's next
+    submitted revision, and never falsely accept rejected work.
+    A submitted assignment with a released claim, clean worktree, terminated provider turn, and no
+    active or uncertain operation is ready for read-only review;
+    do not renew mutation authority merely because supervision reports
+    `claim_renewal_required`.
+    A durable blocked hold must preserve the full goal and unfinished checklist.
+    Do not reinvoke an identical Stop action while the unchanged blocking fingerprint
+    has no executable recovery capability. Resume only after new user input,
+    changed external state, or a verified recovery transition.
+12. Use revision-fenced typed macros for recovery: `self recover`, `worker
+    start`, `worker supervise`, `guidance-reconcile`,
+    `guidance-quarantine`, `account-handoff`, `account-handoff-cancel`,
+    `cancel`, `reassign`, `accept`, and `retire`. Account selection, exact
+    incumbent account binding, and structured auto-resume re-arm are separate
+    transitions; account binding is verified before structured auto-resume is re-armed.
+    Never use `/logout` or raw terminal input to switch accounts.
+    A capability gap on an unmanaged/raw worker requires the typed executable
+    lifecycle fallback, not a daemon-only recovery claim.
+13. Retire an accepted terminal worker only after the facade and
     session-management owner prove no active or uncertain operation remains,
     the exact worker releases its claim, the durable logical-delete boundary
     commits, and a fresh default list proves exact-incarnation absence. Keep
     physical cleanup failures in the maintenance projection rather than the live
-    worker list.
-12. Checkpoint and close the run only when assignments are terminal or carry an
+    worker list. A stopped or rejected session whose assignment was never
+    accepted is not directly deletable: preserve its work and use typed
+    cancel/reassign/group-cleanup recovery.
+14. Checkpoint and close the run only when assignments are terminal or carry an
     explicit retained exception and the active tier's durable gates pass.
     Accept, merge, archive, and report only when provider delivery is available;
     otherwise retain the bounded local result and state exactly what remains.

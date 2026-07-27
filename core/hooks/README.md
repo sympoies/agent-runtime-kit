@@ -189,7 +189,8 @@ participates only for conservative high-confidence mutations, including known
 nested shell / `agent-run exec` forms and managed worktree removal, so read-only
 recovery remains available. In particular, `semantic-commit` help and dry-run
 forms do not acquire a writer lease unless the command includes the
-file-writing `--message-out` option. Managed worktree slugs resolve through the
+file-writing `--message-out` option; a mutating `default-branch` invocation is
+classified as a checkout writer too. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
 mutation with exactly one removal target. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
@@ -323,21 +324,29 @@ implicit, all/mirror, delete, matching, wildcard, and missing-cache cases fail
 closed, while live remote truth remains owned by the delivery CLI. It leaves explicit feature-branch pushes,
 `git push --dry-run`, semantic-commit help/dry-run, and the governed `forge-cli
 repo push-default` invocation available. Exact authorized `semantic-commit
-local-default` is also admitted when expected branch/head and the outside-repo
-receipt destination are statically visible; ordinary default-branch commit
-forms remain blocked. A `semantic-commit` target resolves from `--repo` or from
-a literal absolute `cd` in the same command, so a cross-repository invocation is
-classified against the repository it mutates rather than the tool workdir; a
-relative or expanded destination, a nested shell, and any command-local
-`GIT_*`/`HOME` override fail closed, and raw Git still fails closed after every
-shell-context change. A blocked verdict names the resolved repository, how it
-resolved, and the first failing precondition. When a `semantic-commit` target
-stays unresolvable, one command may state a reason inline as
+default-branch` preview and mutation forms are admitted only through the active
+trusted managed CLI with a full expected HEAD, explicit absolute repository,
+primary checkout, authoritative
+remote-free or aligned cached-default identity, and correct receipt behavior:
+preview uses `--dry-run` without a receipt, while mutation requires a new
+outside-repository receipt. The removed `local-default` spelling and ordinary
+default-branch commit forms remain blocked. A `semantic-commit` target resolves
+from explicit `--repo`, so a cross-repository invocation is classified against
+the repository it mutates rather than the tool workdir. A bare authoring
+invocation after any earlier shell command fails closed because PATH, hashes,
+aliases, functions, or shell command tables may have changed; compound routes
+must be split into a separate tool call with the target checkout as its
+top-level workdir. Relative or expanded destinations,
+nested shells, and command-local `GIT_*`/`HOME` overrides also fail closed, and
+raw Git still fails closed after every shell-context change. A
+blocked verdict names the resolved repository, how it resolved, and the first
+failing precondition. When a `semantic-commit` target stays unresolvable, one
+command may state a reason inline as
 `AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason>`; that is handler admission, not
 a rule override, and it never reaches a proven default-branch target or a raw
 Git path. Hook admission is intentionally independent of cached
-upstream ancestry: `semantic-commit local-default` owns the aligned/ahead-only
-proof and rejects behind, diverged, or unknown relations. The hook is a
+upstream ancestry: `semantic-commit default-branch` owns the full transaction
+proof and rejects already-ahead, behind, diverged, or unknown relations. The hook is a
 guardrail rather than a shell sandbox; provider rules and the forge-cli
 expected-base, one-signed-commit, verified-fast-forward, exact-old-object
 compare-and-swap, and post-push read-back contract are authoritative. The

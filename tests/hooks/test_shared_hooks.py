@@ -985,6 +985,56 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "missing a body")
 
+    def test_default_branch_route_keeps_commit_content_gates(self) -> None:
+        bodyless = (
+            "semantic-commit default-branch "
+            "--message 'fix(agent): tighten hook parser'"
+        )
+        code, decision, stderr = run_hook(
+            "semantic-commit-body-gate.py",
+            command_payload(bodyless),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "missing a body")
+
+        claude_trailer = (
+            "semantic-commit default-branch --message "
+            "'fix: thing\n\n- why\n\n"
+            "Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>'"
+        )
+        code, decision, stderr = run_hook(
+            "block-claude-coauthor-trailer.py",
+            command_payload(claude_trailer),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
+
+        for suffix in ("--dry-run", "--help"):
+            with self.subTest(read_only=suffix):
+                for hook in (
+                    "semantic-commit-body-gate.py",
+                    "block-claude-coauthor-trailer.py",
+                ):
+                    code, decision, stderr = run_hook(
+                        hook,
+                        command_payload(f"{claude_trailer} {suffix}"),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+        removed = bodyless.replace("default-branch", "local-default", 1)
+        for hook in (
+            "semantic-commit-body-gate.py",
+            "block-claude-coauthor-trailer.py",
+        ):
+            with self.subTest(removed_local_default=hook):
+                code, decision, stderr = run_hook(
+                    hook,
+                    command_payload(removed),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
     def test_blocks_nontrivial_body_gate_via_structured_subject_without_bullet(self) -> None:
         # Bypass repro: a non-trivial commit carried via structured
         # --type/--scope/--subject with no --body-bullet had no --message body
@@ -9661,6 +9711,27 @@ exit 0
                 f"main-agent quick --assignment-file {packet_file.resolve()} "
                 "--tier L1 --idempotency-key readiness-quick-0002 --format json"
             )
+            bootstrap = (
+                "main-agent bootstrap --idempotency-key "
+                "readiness-bootstrap-0001 --format json"
+            )
+            self_recover = (
+                "main-agent self recover --idempotency-key "
+                "readiness-recover-0001 --format json"
+            )
+            worker_wait = (
+                "main-agent worker wait assignment-1234 --until submitted "
+                "--timeout 30s --format json"
+            )
+            worker_wait_variants = (
+                "main-agent worker wait --any --until terminal --format json",
+                "main-agent worker wait assignment-1234 --until blocked "
+                "--timeout 1s --format json",
+                "main-agent worker wait --any --until submitted "
+                "--timeout 60s --format json",
+                "main-agent worker wait assignment-1234 --until terminal "
+                "--format json",
+            )
             allowed = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
@@ -9677,6 +9748,12 @@ exit 0
                 "main-agent status --format json",
                 "main-agent worker list --format json",
                 "main-agent worker show assignment-1234 --format json",
+                worker_wait,
+                *worker_wait_variants,
+                "main-agent worker diagnose assignment-1234 --format json",
+                "main-agent worker supervise assignment-1234 --format json",
+                bootstrap,
+                self_recover,
                 init,
                 revision_fenced_init,
                 rebind,
@@ -9726,6 +9803,17 @@ exit 0
                 "agent-session --help",
                 "main-agent --help",
                 "main-agent status --format json extra",
+                bootstrap.replace("readiness-bootstrap-0001", "short"),
+                bootstrap.replace("--format json", "--format markdown"),
+                bootstrap.replace(
+                    "readiness-bootstrap-0001", "'bad key!'"
+                ),
+                self_recover.replace("--idempotency-key", "--key"),
+                worker_wait.replace("--until submitted", "--until working"),
+                worker_wait.replace("--timeout 30s", "--timeout 0s"),
+                worker_wait.replace("--timeout 30s", "--timeout 61s"),
+                "main-agent worker diagnose ../foreign --format json",
+                "main-agent worker supervise assignment-1234 --format json extra",
                 "main-agent checkpoint --file packet.json --if-revision 1 --idempotency-key checkpoint-0001 --format json",
                 init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
                 init.replace(" --if-absent", ""),
@@ -9925,6 +10013,61 @@ exit 0
             self.assert_blocked(decision, "project-dev")
             assert decision is not None
             self.assertNotIn("Route 1", str(decision.get("reason", "")))
+
+    def test_main_agent_capability_failure_recovery_argv_is_finite(self) -> None:
+        allowed = (
+            ["main-agent", "--version"],
+            ["main-agent", "self", "show", "--format", "json"],
+            [
+                "main-agent",
+                "self",
+                "recover",
+                "--idempotency-key",
+                "recovery-key-0001",
+                "--format",
+                "json",
+            ],
+            ["main-agent", "rehydrate", "--format", "json"],
+            ["main-agent", "status", "--format", "json"],
+            [
+                "main-agent",
+                "rebind",
+                "--if-revision",
+                "10",
+                "--idempotency-key",
+                "recovery-key-0002",
+                "--format",
+                "json",
+            ],
+        )
+        blocked = (
+            ["pwd"],
+            ["main-agent", "--help"],
+            ["main-agent", "self", "show", "--format", "json", "extra"],
+            [
+                "main-agent",
+                "self",
+                "recover",
+                "--idempotency-key",
+                "short",
+                "--format",
+                "json",
+            ],
+            ["main-agent", "worker", "start", "--help"],
+            ["main-agent", "account-handoff", "--help"],
+            ["agent-session", "send", "worker", "--key", "enter"],
+            ["git", "add", "."],
+        )
+        for words in allowed:
+            with self.subTest(allowed=words):
+                self.assertTrue(
+                    hook_common.main_agent_capability_recovery_argv(list(words))
+                )
+        for words in blocked:
+            with self.subTest(blocked=words):
+                self.assertFalse(
+                    hook_common.main_agent_capability_recovery_argv(list(words))
+                )
 
     def test_pre_edit_trusted_release_companions_require_lexical_and_resolved_siblings(
         self,
@@ -12688,6 +12831,27 @@ exit 0
                 f"main-agent quick --assignment-file {packet_file.resolve()} "
                 "--tier L1 --idempotency-key main-agent-quick-0002 --format json"
             )
+            bootstrap = (
+                "main-agent bootstrap --idempotency-key "
+                "main-agent-bootstrap-0001 --format json"
+            )
+            self_recover = (
+                "main-agent self recover --idempotency-key "
+                "main-agent-recover-0001 --format json"
+            )
+            worker_wait = (
+                "main-agent worker wait assignment-1234 --until submitted "
+                "--timeout 30s --format json"
+            )
+            worker_wait_variants = (
+                "main-agent worker wait --any --until terminal --format json",
+                "main-agent worker wait assignment-1234 --until blocked "
+                "--timeout 1s --format json",
+                "main-agent worker wait --any --until submitted "
+                "--timeout 60s --format json",
+                "main-agent worker wait assignment-1234 --until terminal "
+                "--format json",
+            )
             allowed = (
                 "main-agent --version",
                 "main-agent self show --format json",
@@ -12696,6 +12860,12 @@ exit 0
                 "main-agent status --format json",
                 "main-agent worker list --format json",
                 "main-agent worker show assignment-1234 --format json",
+                worker_wait,
+                *worker_wait_variants,
+                "main-agent worker diagnose assignment-1234 --format json",
+                "main-agent worker supervise assignment-1234 --format json",
+                bootstrap,
+                self_recover,
                 init,
                 revision_fenced_init,
                 rebind,
@@ -12777,6 +12947,17 @@ exit 0
                 "main-agent rehydrate --format yaml",
                 "main-agent worker show ../foreign --format json",
                 "main-agent worker list --format json extra",
+                bootstrap.replace("main-agent-bootstrap-0001", "short"),
+                bootstrap.replace("--format json", "--format markdown"),
+                bootstrap.replace(
+                    "main-agent-bootstrap-0001", "'bad key!'"
+                ),
+                self_recover.replace("--idempotency-key", "--key"),
+                worker_wait.replace("--until submitted", "--until working"),
+                worker_wait.replace("--timeout 30s", "--timeout 0s"),
+                worker_wait.replace("--timeout 30s", "--timeout 61s"),
+                "main-agent worker diagnose ../foreign --format json",
+                "main-agent worker supervise assignment-1234 --format json extra",
                 init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
                 init.replace(str(packet_file.resolve()), str(repository_packet.resolve())),
                 init.replace(" --if-absent", ""),
@@ -16080,7 +16261,7 @@ exit 65
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "could not be resolved safely")
+                    self.assert_blocked(decision, "Do not author or push")
 
     def test_default_delivery_hook_fails_closed_on_repository_retargeting(
         self,
@@ -16386,7 +16567,7 @@ exit 65
                 cwd=repo,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "could not be resolved safely")
+            self.assert_blocked(decision, "Do not author or push")
 
     def test_default_delivery_hook_uses_only_cached_head_for_push_classification(
         self,
@@ -16570,7 +16751,7 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
 
-    def test_default_delivery_hook_allows_exact_local_default_shape_when_ahead(
+    def test_default_delivery_hook_rejects_removed_local_default_shape_when_ahead(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -16596,6 +16777,17 @@ exit 65
                 capture_output=True,
             ).stdout.strip()
             self.assertEqual(cached_gap, "1", "fixture must be ahead-only")
+            subprocess.run(
+                ["git", "branch", "--set-upstream-to", "origin/main", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            (repo / "README.md").write_text(
+                "# lease fixture\n\nlocal-only commit\n\nnext change\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
             head = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 cwd=repo,
@@ -16616,7 +16808,21 @@ exit 65
                 cwd=repo,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "semantic-commit default-branch")
+
+            replacement = (
+                "semantic-commit default-branch --message 'fix: tiny repair' "
+                f"--expect-head {head} --repo {shlex.quote(str(repo.resolve()))} "
+                f"--receipt-out {shlex.quote(str(receipts / 'replacement.json'))} "
+                "--automation --format json"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(replacement),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "not aligned")
 
             invalid = (
                 "semantic-commit local-default --message 'fix: tiny repair' "
@@ -16629,17 +16835,583 @@ exit 65
                 cwd=repo,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "could not be resolved safely")
+            self.assert_blocked(decision, "semantic-commit default-branch")
 
-    def test_default_delivery_hook_resolves_a_literal_cd_for_semantic_commit(
+    def test_default_delivery_hook_admits_only_exact_default_branch_shape(
         self,
     ) -> None:
-        # `semantic-commit` re-verifies the worktree, branch, expected head, and
-        # signing itself, so the only thing this guard owes it is classification
-        # against the right repository. A literal absolute `cd` therefore
-        # resolves the target instead of failing closed. The same resolution
-        # closes the inverse hole: a default-branch commit staged behind a `cd`
-        # used to be judged against the feature-branch tool workdir and allowed.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            receipts = root / "agent-out"
+            receipts.mkdir()
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "branch", "--set-upstream-to", "origin/main", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            (repo / "README.md").write_text(
+                "# lease fixture\n\ndefault-branch change\n", encoding="utf-8"
+            )
+            subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            exact = (
+                "semantic-commit default-branch --message 'fix: tiny repair' "
+                f"--expect-head {head} --repo {shlex.quote(str(repo.resolve()))} "
+                f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
+                "--automation --format json"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(exact),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            shadow_dir = root / "shadow-bin"
+            shadow_dir.mkdir()
+            shadow = shadow_dir / "semantic-commit"
+            shadow.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shadow.chmod(0o755)
+            for command, env in (
+                (exact.replace("semantic-commit", str(shadow), 1), None),
+                (
+                    exact,
+                    {
+                        "PATH": (
+                            f"{shadow_dir}{os.pathsep}"
+                            f"{os.environ.get('PATH', '')}"
+                        )
+                    },
+                ),
+            ):
+                with self.subTest(untrusted_semantic_commit=command, env=env):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "untrusted `semantic-commit`")
+
+            waiver = "maintainer authorized an otherwise unresolved repository"
+            for command in (
+                f"PATH={shlex.quote(str(shadow_dir))} {exact}",
+                f"env PATH={shlex.quote(str(shadow_dir))} {exact}",
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} "
+                f"PATH={shlex.quote(str(shadow_dir))} {exact}",
+            ):
+                with self.subTest(command_local_path=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "command-local `PATH`")
+
+            hidden = (
+                f"env PATH={shlex.quote(str(shadow_dir))} {exact}"
+            )
+            wrapped = (
+                f"nice {hidden}",
+                f"timeout 5 {hidden}",
+                f"nohup {hidden}",
+                f"stdbuf -oL {hidden}",
+                f"builtin exec {exact}",
+                f"builtin command {exact}",
+                f"set -A path {shlex.quote(str(shadow_dir))}; "
+                f"builtin exec {exact}",
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} nice {hidden}",
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} builtin command {exact}",
+            )
+            for command in wrapped:
+                with self.subTest(process_wrapper=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "behind a process wrapper")
+
+            retarget_file = root / "retarget.sh"
+            retarget_file.write_text(
+                f"PATH={shadow_dir}\n", encoding="utf-8"
+            )
+            persistent_retargeting = (
+                f"export PATH={shlex.quote(str(shadow_dir))} && {exact}",
+                f"PATH={shlex.quote(str(shadow_dir))}; {exact}",
+                f"unset PATH && {exact}",
+                f"hash -p {shlex.quote(str(shadow))} semantic-commit && {exact}",
+                f"alias semantic-commit={shlex.quote(str(shadow))} && {exact}",
+                f"source {shlex.quote(str(retarget_file))} && {exact}",
+                f"path={shlex.quote(str(shadow_dir))}; {exact}",
+                f"export path={shlex.quote(str(shadow_dir))} && {exact}",
+                f"typeset path={shlex.quote(str(shadow_dir))} && {exact}",
+                f"path[1]={shlex.quote(str(shadow_dir))}; {exact}",
+                "commands[semantic-commit]="
+                f"{shlex.quote(str(shadow))}; {exact}",
+                f"set -A path {shlex.quote(str(shadow_dir))}; {exact}",
+                f"true && {exact}",
+                f"export PATH={shlex.quote(str(shadow_dir))} && "
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} {exact}",
+                f"path={shlex.quote(str(shadow_dir))}; "
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} {exact}",
+                f"path[1]={shlex.quote(str(shadow_dir))}; "
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} {exact}",
+                "commands[semantic-commit]="
+                f"{shlex.quote(str(shadow))}; "
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} {exact}",
+                f"true && AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                f"{shlex.quote(waiver)} {exact}",
+            )
+            for command in persistent_retargeting:
+                with self.subTest(persistent_retargeting=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision,
+                        (
+                            "untrusted `semantic-commit`"
+                            if command.startswith("commands[")
+                            else "changed executable resolution"
+                        ),
+                    )
+
+            trusted_semantic_commit = shutil.which("semantic-commit")
+            self.assertIsNotNone(trusted_semantic_commit)
+            absolute = exact.replace(
+                "semantic-commit", str(trusted_semantic_commit), 1
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    f"export PATH={shlex.quote(str(shadow_dir))} && {absolute}"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "changed executable resolution")
+
+            dynamic = (
+                exact.replace("semantic-commit", "$sc", 1),
+                exact.replace("semantic-commit", '"$sc"', 1),
+            )
+            for tail in dynamic:
+                commands = (
+                    f"sc=semantic-commit; "
+                    f"export PATH={shlex.quote(str(shadow_dir))}; {tail}",
+                    f"sc=semantic-commit; "
+                    f"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                    f"{shlex.quote(waiver)} {tail}",
+                    tail,
+                )
+                for command in commands:
+                    with self.subTest(dynamic_command=command):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command),
+                            cwd=repo,
+                            env={"sc": "semantic-commit"},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(
+                            decision, "could not be resolved safely"
+                        )
+
+            fully_dynamic = (
+                exact.replace("semantic-commit", "$sc", 1).replace(
+                    "default-branch", "$mode", 1
+                ),
+                exact.replace("semantic-commit", '"$sc"', 1).replace(
+                    "default-branch", '"$mode"', 1
+                ),
+            )
+            for tail in fully_dynamic:
+                for command in (
+                    f"sc=semantic-commit; mode=default-branch; {tail}",
+                    "sc=semantic-commit; mode=default-branch; "
+                    "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                    f"{shlex.quote(waiver)} {tail}",
+                    tail,
+                ):
+                    with self.subTest(fully_dynamic=command):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command),
+                            cwd=repo,
+                            env={
+                                "sc": "semantic-commit",
+                                "mode": "default-branch",
+                            },
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(
+                            decision, "could not be resolved safely"
+                        )
+
+            preview = exact.replace(
+                f"--receipt-out {receipts / 'receipt.json'} ",
+                "--dry-run ",
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(preview),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            deprecated = exact.replace("default-branch", "local-default", 1)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(deprecated),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "forge-cli repo push-default")
+
+            malformed = (
+                exact.replace(f"--expect-head {head} ", ""),
+                exact.replace(f"--receipt-out {receipts / 'receipt.json'} ", ""),
+                exact.replace("--automation", "--dry-run --automation"),
+                exact.replace(str(repo.resolve()), "repo", 1),
+                exact.replace(
+                    f"--expect-head {head}",
+                    f"--expect-head {head} --expect-head {head}",
+                ),
+                exact.replace("--automation", "--remote-mode local-only --automation"),
+                exact.replace("--automation", "--type fix --automation"),
+                exact.replace("--automation", "--scope hooks --automation"),
+                exact.replace(
+                    "--automation", "--subject 'tiny repair' --automation"
+                ),
+                exact.replace(
+                    "--automation", "--body-bullet 'why' --automation"
+                ),
+            )
+            for command in malformed:
+                with self.subTest(malformed=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "semantic-commit default-branch")
+
+    def test_default_delivery_hook_owns_default_branch_state_invariants(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipts = root / "agent-out"
+            receipts.mkdir()
+
+            def command(repo: Path, receipt: Path) -> str:
+                head = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    text=True,
+                    capture_output=True,
+                ).stdout.strip()
+                return (
+                    "semantic-commit default-branch "
+                    "--message 'fix: tiny repair' "
+                    f"--expect-head {head} "
+                    f"--repo {shlex.quote(str(repo.resolve()))} "
+                    f"--receipt-out {shlex.quote(str(receipt))} "
+                    "--automation --format json"
+                )
+
+            def prepare(name: str, *, remote: bool = True) -> Path:
+                repo = root / name
+                self._init_checkout_lease_repo(repo)
+                if remote:
+                    subprocess.run(
+                        [
+                            "git",
+                            "branch",
+                            "--set-upstream-to",
+                            "origin/main",
+                            "main",
+                        ],
+                        cwd=repo,
+                        check=True,
+                        capture_output=True,
+                    )
+                else:
+                    subprocess.run(
+                        ["git", "remote", "remove", "origin"],
+                        cwd=repo,
+                        check=True,
+                    )
+                (repo / "README.md").write_text(
+                    "# lease fixture\n\ndefault-branch change\n",
+                    encoding="utf-8",
+                )
+                subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+                return repo
+
+            remote_free = prepare("remote-free", remote=False)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    command(remote_free, receipts / "remote-free.json")
+                ),
+                cwd=remote_free,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            cases: list[tuple[Path, Path, str]] = []
+
+            no_staged = root / "no-staged"
+            self._init_checkout_lease_repo(no_staged)
+            subprocess.run(
+                [
+                    "git",
+                    "branch",
+                    "--set-upstream-to",
+                    "origin/main",
+                    "main",
+                ],
+                cwd=no_staged,
+                check=True,
+                capture_output=True,
+            )
+            cases.append(
+                (no_staged, receipts / "no-staged.json", "no staged changes")
+            )
+
+            untracked = prepare("untracked")
+            (untracked / "untracked.txt").write_text(
+                "untracked\n", encoding="utf-8"
+            )
+            cases.append(
+                (
+                    untracked,
+                    receipts / "untracked.json",
+                    "unstaged or untracked",
+                )
+            )
+
+            existing_receipt_repo = prepare("existing-receipt")
+            existing_receipt = receipts / "existing.json"
+            existing_receipt.write_text("{}\n", encoding="utf-8")
+            cases.append(
+                (
+                    existing_receipt_repo,
+                    existing_receipt,
+                    "does not name a new file",
+                )
+            )
+
+            symlink_receipt_repo = prepare("symlink-receipt")
+            real_receipt_dir = root / "real-receipts"
+            real_receipt_dir.mkdir()
+            symlink_receipt_dir = root / "receipt-link"
+            symlink_receipt_dir.symlink_to(real_receipt_dir, target_is_directory=True)
+            cases.append(
+                (
+                    symlink_receipt_repo,
+                    symlink_receipt_dir / "receipt.json",
+                    "parent is a symlink",
+                )
+            )
+
+            operation = prepare("operation")
+            operation_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=operation,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            (operation / ".git" / "MERGE_HEAD").write_text(
+                f"{operation_head}\n", encoding="utf-8"
+            )
+            cases.append(
+                (
+                    operation,
+                    receipts / "operation.json",
+                    "Git operation in progress",
+                )
+            )
+
+            wrong_default = prepare("wrong-default")
+            subprocess.run(
+                [
+                    "git",
+                    "symbolic-ref",
+                    "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/not-main",
+                ],
+                cwd=wrong_default,
+                check=True,
+            )
+            cases.append(
+                (
+                    wrong_default,
+                    receipts / "wrong-default.json",
+                    "authoritative cached default branch",
+                )
+            )
+
+            ahead = prepare("ahead")
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "ahead fixture"],
+                cwd=ahead,
+                check=True,
+            )
+            (ahead / "README.md").write_text(
+                "# lease fixture\n\nahead change\n", encoding="utf-8"
+            )
+            subprocess.run(["git", "add", "README.md"], cwd=ahead, check=True)
+            cases.append(
+                (
+                    ahead,
+                    receipts / "ahead.json",
+                    "not aligned with the cached default-branch upstream",
+                )
+            )
+
+            stale_remote_free = prepare("stale-remote-free", remote=False)
+            subprocess.run(
+                ["git", "config", "branch.main.remote", "origin"],
+                cwd=stale_remote_free,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "branch.main.merge", "refs/heads/main"],
+                cwd=stale_remote_free,
+                check=True,
+            )
+            cases.append(
+                (
+                    stale_remote_free,
+                    receipts / "stale-remote-free.json",
+                    "stale upstream metadata",
+                )
+            )
+
+            detached = prepare("detached")
+            subprocess.run(
+                ["git", "checkout", "--detach", "-q"],
+                cwd=detached,
+                check=True,
+            )
+            cases.append(
+                (
+                    detached,
+                    receipts / "detached.json",
+                    "no attached branch",
+                )
+            )
+
+            unknown_remote = prepare("unknown-remote")
+            subprocess.run(
+                ["git", "config", "branch.main.remote", "ghost"],
+                cwd=unknown_remote,
+                check=True,
+            )
+            cases.append(
+                (
+                    unknown_remote,
+                    receipts / "unknown-remote.json",
+                    "configured upstream remote is not authoritative",
+                )
+            )
+
+            mismatched_merge = prepare("mismatched-merge")
+            subprocess.run(
+                [
+                    "git",
+                    "config",
+                    "branch.main.merge",
+                    "refs/heads/not-main",
+                ],
+                cwd=mismatched_merge,
+                check=True,
+            )
+            cases.append(
+                (
+                    mismatched_merge,
+                    receipts / "mismatched-merge.json",
+                    "upstream branch does not match",
+                )
+            )
+
+            missing_upstream = prepare("missing-upstream")
+            subprocess.run(
+                ["git", "update-ref", "-d", "refs/remotes/origin/main"],
+                cwd=missing_upstream,
+                check=True,
+            )
+            cases.append(
+                (
+                    missing_upstream,
+                    receipts / "missing-upstream.json",
+                    "cached ref is not authoritative",
+                )
+            )
+
+            primary = prepare("linked-primary")
+            linked = self._add_checkout_lease_worktree(
+                primary, "feature/linked-default"
+            )
+            (linked / "README.md").write_text(
+                "# lease fixture\n\nlinked change\n", encoding="utf-8"
+            )
+            subprocess.run(["git", "add", "README.md"], cwd=linked, check=True)
+            cases.append(
+                (
+                    linked,
+                    receipts / "linked.json",
+                    "linked worktree, not the primary checkout",
+                )
+            )
+
+            for repo, receipt, reason in cases:
+                with self.subTest(repo=repo.name, reason=reason):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command(repo, receipt)),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, reason)
+
+    def test_default_delivery_hook_fails_closed_after_literal_cd_for_bare_commit(
+        self,
+    ) -> None:
+        # Any preceding shell command can retarget a later bare executable
+        # through shell-specific state. Even a literal absolute `cd` therefore
+        # fails closed; callers must use a separate command tool call with the
+        # target checkout as its top-level workdir.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "repo"
@@ -16664,7 +17436,7 @@ exit 65
                 cwd=feature,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "forge-cli repo push-default")
+            self.assert_blocked(decision, "changed executable resolution")
 
             local_default_tail = (
                 "semantic-commit local-default --message 'fix: tiny repair' "
@@ -16680,10 +17452,10 @@ exit 65
                 cwd=feature,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "changed executable resolution")
 
-            # An expanded or relative destination is not a literal target, so it
-            # keeps the existing fail-closed verdict.
+            # Dynamic, relative, and normalized destinations all remain
+            # compound bare-command forms and therefore fail closed alike.
             for command in (
                 f'cd "$TARGET" && {local_default_tail}',
                 f"cd {shlex.quote(primary.name)} && {local_default_tail}",
@@ -16696,7 +17468,9 @@ exit 65
                         cwd=root,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "could not be resolved safely")
+                    self.assert_blocked(
+                        decision, "changed executable resolution"
+                    )
 
     def test_default_delivery_hook_fails_closed_on_semantic_commit_retargeting(
         self,
@@ -16727,7 +17501,7 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "could not be resolved safely")
 
-    def test_default_delivery_hook_names_its_local_default_discriminator(
+    def test_default_delivery_hook_names_its_default_branch_discriminator(
         self,
     ) -> None:
         # An unresolvable verdict must name what it resolved and what failed, or
@@ -16739,6 +17513,12 @@ exit 65
             receipts = root / "agent-out"
             receipts.mkdir()
             self._init_checkout_lease_repo(primary)
+            subprocess.run(
+                ["git", "branch", "--set-upstream-to", "origin/main", "main"],
+                cwd=primary,
+                check=True,
+                capture_output=True,
+            )
             self._init_checkout_lease_repo(other)
             # Identical fixtures commit to the same object id in the same second,
             # which would make the foreign head match and the shape valid.
@@ -16757,9 +17537,9 @@ exit 65
                 capture_output=True,
             ).stdout.strip()
             mistargeted = (
-                "semantic-commit local-default --message 'fix: tiny repair' "
-                f"--expect-head {foreign_head} --expected-branch main "
-                "--remote-mode local-only "
+                "semantic-commit default-branch --message 'fix: tiny repair' "
+                f"--expect-head {foreign_head} "
+                f"--repo {shlex.quote(str(primary.resolve()))} "
                 f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
                 "--automation --format json"
             )
@@ -16769,7 +17549,7 @@ exit 65
                 cwd=primary,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "could not be resolved safely")
+            self.assert_blocked(decision, "semantic-commit default-branch")
             reason = str((decision or {}).get("reason", ""))
             self.assertIn(str(primary.resolve()), reason)
             self.assertIn("tool workdir", reason)
@@ -16777,7 +17557,9 @@ exit 65
             self.assertIn(foreign_head[:12], reason)
             self.assertIn("--repo", reason)
 
-    def test_default_delivery_hook_admits_a_one_shot_in_command_waiver(self) -> None:
+    def test_default_delivery_hook_refuses_waiver_for_known_identity_mismatch(
+        self,
+    ) -> None:
         # The waiver is read from the command's own assignment prefix, so it
         # cannot outlive one invocation, and it must carry a stated reason.
         with tempfile.TemporaryDirectory() as tmp:
@@ -16788,9 +17570,9 @@ exit 65
             self._init_checkout_lease_repo(primary)
             foreign = "0" * 40
             tail = (
-                "semantic-commit local-default --message 'fix: tiny repair' "
-                f"--expect-head {foreign} --expected-branch main "
-                "--remote-mode local-only "
+                "semantic-commit default-branch --message 'fix: tiny repair' "
+                f"--expect-head {foreign} "
+                f"--repo {shlex.quote(str(primary.resolve()))} "
                 f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
                 "--automation --format json"
             )
@@ -16804,7 +17586,7 @@ exit 65
                 cwd=primary,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "semantic-commit default-branch")
 
             # A separate assignment command, an ambient export, and a reason that
             # states nothing all keep the unresolvable verdict.
@@ -16821,7 +17603,14 @@ exit 65
                         cwd=primary,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "could not be resolved safely")
+                    self.assert_blocked(
+                        decision,
+                        (
+                            "changed executable resolution"
+                            if command.startswith("export ")
+                            else "Do not author or push"
+                        ),
+                    )
 
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
@@ -16830,7 +17619,7 @@ exit 65
                 env={"AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER": reason},
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "could not be resolved safely")
+            self.assert_blocked(decision, "Do not author or push")
 
     def test_default_delivery_waiver_length_matches_what_the_receipt_records(
         self,
@@ -16845,10 +17634,13 @@ exit 65
             receipts = root / "agent-out"
             receipts.mkdir()
             self._init_checkout_lease_repo(primary)
+            alternate_home = root / "alternate-home"
+            alternate_home.mkdir()
             tail = (
-                "semantic-commit local-default --message 'fix: tiny repair' "
-                f"--expect-head {'0' * 40} --expected-branch main "
-                "--remote-mode local-only "
+                f"HOME={shlex.quote(str(alternate_home))} "
+                "semantic-commit default-branch --message 'fix: tiny repair' "
+                f"--expect-head {'0' * 40} "
+                f"--repo {shlex.quote(str(primary.resolve()))} "
                 f"--receipt-out {shlex.quote(str(receipts / 'receipt.json'))} "
                 "--automation --format json"
             )
@@ -17012,6 +17804,8 @@ exit 65
                 "semantic-commit commit --help",
                 "semantic-commit commit --dry-run --message 'fix: inspect only'",
                 "semantic-commit commit --validate-only --message 'fix: inspect only'",
+                "semantic-commit default-branch --dry-run "
+                "--message 'fix: inspect only'",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_enforced_hook(
@@ -17048,6 +17842,8 @@ exit 65
                 "semantic-commit commit --message-file --dry-run",
                 "semantic-commit fixup HEAD~1",
                 "semantic-commit squash HEAD~1",
+                "semantic-commit default-branch --message 'fix: inspect only' "
+                "--bullet --dry-run",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_enforced_hook(

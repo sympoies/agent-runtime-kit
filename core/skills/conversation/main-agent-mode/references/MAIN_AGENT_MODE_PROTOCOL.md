@@ -113,6 +113,52 @@ Use `main-agent self show` or `rehydrate` as read-only diagnostics only after a
 typed failure; then fix the reported identity, claim-conflict, packet, or
 provider cause through its owning workflow.
 
+## Dependency-Gated Launch
+
+An assignment packet may declare same-run dependency IDs in `depends_on`.
+`worker start` checks the live registry before creating or launching the
+dependent. Only `accepted` or `released` satisfies a dependency. A
+`submitted`, `working`, `blocked`, `starting`, `cancelled`, missing, or
+cross-run dependency returns `dependency-not-satisfied` with bounded
+`blocked_on` entries, and no dependent assignment is created.
+
+Wait boundedly for each declared upstream assignment:
+
+```bash
+main-agent worker wait <dependency-id> --until terminal --timeout 60s \
+  --format json
+```
+
+Then re-read the exact dependency. A terminal wait may return `cancelled`,
+which still does not satisfy the edge. Retry the unchanged dependent launch
+only after every dependency is `accepted` or `released`. If a dependency ID or
+packet must change, use a new idempotency key for that changed request. Never
+launch speculative downstream work or treat `submitted` as dependency
+acceptance.
+
+The folded start result is a provisional snapshot, not a permanent verdict on
+the bound worker. In particular, `worker-activity-not-authoritative-starting`
+is a non-authoritative starting failure. If the same session incarnation later
+authenticates, acquires its assignment claim, and checkpoints `working`, do not
+create a duplicate assignment or worker. Run `worker supervise` on that exact
+incarnation and continue from the newer durable evidence.
+A folded `readiness_failed` snapshot can be superseded by that newer authoritative
+evidence from the same incarnation; it never authorizes a second prompt, Enter,
+assignment, or worker.
+
+An authenticated mailbox notification is a delivery optimization, not proof
+that a prompt was consumed or bootstrap completed. A pending mailbox notification is not readiness proof.
+Inspect the facade's assignment, worker,
+and notification evidence first. Only when the exact worker incarnation and
+the one intended prompt are proven may the session-management owner perform a
+deliberate privacy-safe session send. Do not resend the prompt, send a second
+Enter, or infer consumption from notification metadata.
+For `notification-pending` with the controller unavailable, prove through a
+privacy-safe glance that the exact worker is at an idle composer before sending
+one short mailbox prompt and exactly one Enter. A busy worker, startup dialog,
+trust/auth/permission prompt, or unknown transport outcome blocks this fallback.
+Never send a second Enter.
+
 On mismatch, truncation, interference, missing readiness, a not-ready typed
 result, or bounded-check exhaustion, stop with the exact status `session
 created, prompt delivery unverified`, retain the session for bounded recovery,
@@ -136,6 +182,140 @@ already-completed upgrade leaves the helper unavailable. That recovery owner
 does not own nils-cli updates or ordinary startup dialogs. The doctor
 compatibility preview remains non-mutating and never authorizes repair.
 
+Use these deterministic startup branches:
+
+| Snapshot | Required route |
+| --- | --- |
+| CLI update offered or required | Do not apply automatically. Keep the installed executable and route the upgrade decision to its owner. |
+| MCP initialization in progress | Continue bounded waiting, then supervise; a timeout or provider prose is not failure or progress proof by itself. |
+| MCP initialization failure | Preserve the worker and route the typed MCP failure; never disable or repair integrations implicitly. |
+| MCP authentication required | Stop for the authentication owner; never submit credentials or accept a browser/device flow automatically. |
+| Repository trust prompt | Stop for explicit trust authority; never accept it automatically. |
+| Provider authentication prompt | Stop for the account owner; never infer the intended account. |
+| Tool permission prompt | Stop for the permission owner; never approve it automatically. |
+| Ordinary provider prompt submission | Let folded `worker start` own its one bounded submission and recovery attempt. Do not send a blind Enter. |
+| Pre-claim bootstrap failure | Run `worker supervise`; cancel/reassign only when `reassignment_safe:true` and preserve the failed worker otherwise. |
+| Controller unavailable or broker stale | Diagnose coordination status, then use exact-controller `self recover` for a stale/lost broker before rebind. Reserve rebind for a proven controller-incarnation mismatch; do not copy capabilities or take over the worker claim. |
+| Active or uncertain admitted operation | Preserve the exact worker and reconcile that operation. Never cancel, retire, release, or reassign it. |
+
+## Active Supervision And Typed Recovery
+
+After launch, every bounded `worker wait` timeout and every contradictory
+snapshot must lead to active diagnosis:
+
+```bash
+main-agent worker supervise <assignment-id> --format json
+main-agent worker diagnose <assignment-id> --format json
+```
+
+`worker supervise` is the repeatable macro-first path. Branch on its typed
+`classification` and `recovery_action.kind`, never on provider prose.
+`recovery_action.executable:true` means its exact `argv` can run only through
+the declared `owner` and `capability_delivery`. When executable is false,
+resolve every `recovery_action.required_inputs` value through that owner and
+use the returned `argv_template`; do not execute placeholders, copy a private
+capability, or substitute raw terminal input. `last_proven_safe_state` remains
+the evidence boundary for the action. `worker diagnose` exposes the same
+privacy-safe evidence without the supervisor wrapper. A provider `working`
+string or fresh broker heartbeat alone is not material progress. Evaluate the
+assignment revision/state, provider activity, worktree material fingerprint
+and age, current claim/edit authority, authenticated mailbox state, and active
+or uncertain operations together.
+An active or renewed claim, dirty worktree, recent terminal heartbeat, or
+provider `working` text is never progress by itself. Compare material
+fingerprint change time, provider `last_progress_at`, assignment revision and
+checkpoint time, mailbox state, operation state, and attention/capacity
+classification. When they do not advance, stable dirty material plus stale provider progress is stalled
+or attention-required, not healthy progress. Apply the same rule to stale clean
+worktrees, capacity errors, and recovery deadlocks, and do not renew edit authority indefinitely
+without authoritative progress.
+
+If `worker wait`, supervision, or another facade action returns
+`coordination-unauthorized`, diagnose the coordination boundary before choosing
+a recovery:
+
+```bash
+agent-session work-context status --format json
+agent-session broker status --session "$AGENT_SESSION_ID" --format json
+```
+
+When those observations prove a stale or lost broker for the still-authoritative
+controller incarnation, the active claim is retained, and no operation is active
+or uncertain, run exact-controller `main-agent self recover` before attempting rebind:
+
+```bash
+main-agent self recover --idempotency-key <unique-key> --format json
+```
+
+Require an authoritative recovery result and re-read `self show` before
+resuming wait or supervision.
+`rebind` is reserved for a proven controller-incarnation mismatch;
+it is not a stale-broker recovery and can be
+rejected by the same authorization gate. Never copy a capability, clear an
+operation fence, change accounts, resume or replace a provider, resend a
+prompt, or inject Enter as part of broker recovery.
+
+The capability-failure-closed recovery lane is finite and independent of
+ordinary hook capability validation. It admits only the trusted exact
+version/status, `self show`, `self recover`, `rehydrate`, and revision-fenced
+`rebind` shapes mirrored by both shared hooks and the binary argv contract.
+Arbitrary Bash, raw terminal input, worker start, trust, authentication,
+permission, account, and repository mutations remain denied. If even an exact
+recovery shape cannot execute, enter the durable blocked hold below rather than
+repeating Stop or broadening the lane.
+
+Service health, provider process health, provider session binding, and the Main relationship are four distinct states.
+A successful Agent Console/service restart does not prove the existing provider
+process or session binding recovered. For a proven provider-session mismatch,
+require explicit user authorization before interrupting the provider. Prefer the
+typed provider restart-resume action when the compatible facade exposes it.
+Otherwise use the executable lifecycle fallback:
+
+1. Gracefully stop the exact provider process.
+2. Run `agent-session resume <session-id> --format json`.
+3. Prove the same durable session at a new generation and incarnation.
+4. Run revision-fenced `main-agent rebind`.
+5. Re-read `main-agent self show --format json`.
+
+Preserve the provider thread, exact account binding, repository/worktrees,
+workers, and durable run. Never use logout, account switching, blind Enter, raw
+input, or worker replacement for this recovery.
+
+After rebind, verify post-rebind assignment ownership before any worker
+message, diagnosis, supervision, or mutation. Prefer an atomic replay-safe
+rebind-and-adopt result when exposed. Otherwise, after rebind restores ordinary
+authority, use revision-fenced `main-agent adopt <assignment-id>` only for each
+assignment whose primary manager is still the exact prior controller of this
+run. Leave unrelated, orphaned, borrowed, and collaborator relationships
+unchanged, and re-read every adopted assignment before continuing.
+
+Use macro-first recovery for `self recover`, `worker start`, `worker
+supervise`, `guidance-reconcile`, `guidance-quarantine`, `account-handoff`,
+`account-handoff-cancel`, `submit-recovery`, `reconcile-recovery`, `cancel`,
+`reassign`, `accept`, and `retire`. When a macro returns a partial or typed
+failure, continue only with the named primitive from `last_proven_safe_state`.
+Do not replay the entire macro, prompt, or terminal input. Edit-authority
+renewal belongs to the exact worker: ask it to renew its current claim and
+revision with its own capability file.
+
+Guidance continuity retains message identity and unread state.
+`guidance-reconcile` forwards only eligible exact-controller guidance to a
+retained previous worker; `guidance-quarantine` quarantines only orphaned stale
+incarnation records when no previous worker exists. Neither action proves
+consumption or permits reading message bodies automatically.
+
+Account selection, exact incumbent account binding, and auto-resume re-arm are
+three distinct durable transitions. `account-handoff` requires explicit
+`--account`, current revision, `--authorize-account-change`, a managed worker
+advertising the required capability, authoritative broker and claim, and
+operation quiescence. The account binding is verified before structured auto-resume is re-armed.
+`account-handoff-cancel` handles only the exact
+queued/failed reservation under the same authority checks. Never use `/logout` or raw terminal input
+as the normal account switch, and never choose an account
+implicitly. If a raw or unmanaged worker lacks managed account handoff, surface
+`account_handoff_capability_gap` and follow the executable lifecycle fallback;
+do not describe it as recoverable through a daemon-only path.
+
 ## Main-Agent Acceptance Loop
 
 For each worker result, the main agent:
@@ -151,6 +331,47 @@ For each worker result, the main agent:
 5. Returns actionable findings to the same worker/lane, then repeats diff,
    validation, and review checks on the revised head.
 6. Accepts and advances provider lifecycle only when all durable gates pass.
+
+Until the facade exposes a dedicated submit action, worker submission is a
+revision-fenced `main-agent checkpoint` packet with `state:"submitted"` and a
+bounded `result_summary`; do not invent `worker submit`. When review finds
+bounded defects, return the exact submitted assignment to its bound worker:
+
+```bash
+main-agent worker request-changes <assignment-id> \
+  --if-revision <assignment-revision> \
+  --reason "<bounded-review-reason>" \
+  --idempotency-key <unique-key> --format json
+```
+
+This manager-only transition is revision-fenced and changes only `submitted` to `working`.
+It preserves the bound worker and private packet, clears stale result and
+blocker summaries, and records the review reason as the next action. It does not send review guidance, provider input, or re-arm auto-resume.
+Write the actionable findings to a private body file and send them separately:
+
+```bash
+main-agent worker message <assignment-id> --body-file <private-text> \
+  --idempotency-key <unique-key> --format json
+```
+
+The mailbox notification is still not consumption proof. Supervise the exact
+worker and follow the one-send notification fallback only when its existing
+idle-composer preconditions are proven. Do not send another Enter, create a
+duplicate lane because the submitted provider turn ended, or repurpose
+account-handoff auto-resume; that structured re-arm remains limited to its
+typed quota-recovery transition. Re-run the complete acceptance loop on the
+worker's next submitted revision. Rejection is never acceptance.
+A submitted assignment with a released claim, clean worktree, terminated
+provider turn, and no active or uncertain operation is ready for read-only
+review; do not renew mutation authority merely because supervision reports
+`claim_renewal_required`. A later repair still requires a new or renewed claim
+owned by the exact authorized worker.
+
+A durable blocked terminal/hold state must preserve the full goal and unfinished checklist.
+When an unchanged blocking fingerprint has no executable recovery capability,
+do not reinvoke the same Stop action. Resume only after new user input, changed
+external state, or a verified recovery transition; retain the complete
+unfinished checklist and do not claim completion.
 
 The mechanical evidence gather — full-diff extraction, focused and
 affected-suite validation, and the code-review-specialist passes — is read-only
@@ -177,6 +398,13 @@ verify the release. The session-management owner may then delete the exact
 managed session. Cleanup is complete only when a fresh privacy-safe `list`
 result proves the exact session ID is absent; a delete response, UI action, or
 missing process alone is not list-absence proof.
+
+A stopped or rejected session without an accepted assignment is not directly
+deletable through the accepted-worker path. Preserve its work and evidence.
+Use typed `cancel` for a proven failed pre-claim assignment, `reassign` only
+when supervision proves safe reassignment, and group cleanup after an accepted
+replacement. Never rewrite registry state or discard the retained lane merely
+to make it disappear.
 
 If deletion fails or the fresh list still returns the session, retain the
 visible worker card and its structured error, and route the failed deletion
@@ -206,6 +434,7 @@ skill or runbook.
 | Fresh-list identity, incarnation, cwd, or mode mismatch | Do not send the task. Retain the new session and report that managed ownership proof failed. |
 | Interference or deletion before target claim handoff | Treat ownership proof as failed. Do not recreate, resend, or transfer the target capability; retain durable evidence for explicit recovery. |
 | Target claim missing, released, or expired | Stop mutation. The target worker must use its authenticated bootstrap/recovery path and acquire and verify a new active claim before another mutation turn. |
+| Submitted lane has no active claim | If the assignment is submitted, the worktree is clean, the provider turn is terminated, and no operation is active or uncertain, proceed with read-only review. Do not renew mutation authority solely to satisfy `claim_renewal_required`; require it only for a later authorized mutation. |
 | Work-context scope or worktree conflict | Stop the worker mutation. Narrow/reassign scope or allocate a clean isolated worktree; never acknowledge away a definite conflict as permission. |
 | Active or uncertain admitted mutation operation | Retain the exact worker owner/session. Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome. Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome. If proof is unavailable, report blocked and preserve the session and evidence. |
 | Accepted terminal worker cleanup | Prove operation quiescence, release and verify the worker's active claim, delete the exact session through its owner, then require a fresh list result proving the exact session ID is absent. |

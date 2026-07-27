@@ -57,8 +57,8 @@ Home-scope fallback. A closer project/directory
   commit/worktree/PR creation paths that bypass these owners.
 - Author tracked commits in a non-default managed worktree. The only local
   default-branch exception is exact current-request approval for one
-  `semantic-commit local-default` commit and outside-repo receipt. Never
+  `semantic-commit default-branch` commit and outside-repo receipt. Never
   force-push a default branch, enable `extensions.worktreeConfig`, set
   per-worktree author or signing configuration, disable signing, or continue
   when signing fails. Delivery authority is explicit. Load `core/policies/git-delivery.md` for exact commit,
-  worktree, PR/MR, direct-main, local-default, and cleanup rules.
+  worktree, PR/MR, direct-main, default-branch, and cleanup rules.

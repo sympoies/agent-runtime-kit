@@ -54,6 +54,7 @@ from hook_common import (
     invocation_is_opaque,
     invocation_tokens,
     is_git_recovery_argv,
+    main_agent_preclaim_argv,
     patch_text_candidates,
     read_payload,
     session_id_from_payload,
@@ -875,10 +876,6 @@ def companion_versions_match(first: str, second: str) -> bool:
     return first_version is not None and first_version == second_version
 
 
-def lifecycle_identifier(value: str) -> bool:
-    return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is not None
-
-
 def lifecycle_revision(value: str) -> bool:
     if re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None:
         return False
@@ -886,9 +883,7 @@ def lifecycle_revision(value: str) -> bool:
 
 
 def lifecycle_idempotency_key(value: str) -> bool:
-    return 8 <= len(value) <= 128 and all(
-        character.isascii() and character.isprintable() for character in value
-    )
+    return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
 
 
 def main_agent_readiness_invocation(
@@ -924,31 +919,8 @@ def main_agent_readiness_invocation(
             or not trusted_private_input_file(capability_file, repositories)
         ):
             return False
-        if words == ["main-agent", "--version"]:
+        if main_agent_preclaim_argv(words):
             return True
-        if words in (
-            ["main-agent", "self", "show", "--format", "json"],
-            ["main-agent", "rehydrate", "--format", "json"],
-            ["main-agent", "rehydrate", "--format", "markdown"],
-            ["main-agent", "status", "--format", "json"],
-            ["main-agent", "worker", "list", "--format", "json"],
-        ):
-            return True
-        if words[:3] == ["main-agent", "worker", "show"]:
-            return (
-                len(words) == 6
-                and lifecycle_identifier(words[3])
-                and words[4:] == ["--format", "json"]
-            )
-        if words[:2] == ["main-agent", "rebind"]:
-            return (
-                len(words) == 8
-                and words[2] == "--if-revision"
-                and lifecycle_revision(words[3])
-                and words[4] == "--idempotency-key"
-                and lifecycle_idempotency_key(words[5])
-                and words[6:] == ["--format", "json"]
-            )
         if words[:2] == ["main-agent", "quick"]:
             # quick acquires the work-context claim as its first durable act
             # (like init), so its exact pre-claim shape is admitted here. --tier

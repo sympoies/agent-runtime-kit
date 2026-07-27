@@ -4,7 +4,7 @@
 PR delivery remains the default. A maintainer-authorized L0 direct-main change
 is authored as one signed commit on a non-default managed worktree and is
 delivered through ``forge-cli repo push-default``. A separately authorized L0
-local-default task may use ``semantic-commit local-default`` to author one
+default-branch task may use ``semantic-commit default-branch`` to author one
 signed local-only commit in the primary checkout. This hook blocks raw shell
 paths that would otherwise bypass either contract.
 
@@ -14,8 +14,10 @@ the forge-cli expected-base/signature/read-back contract remain authoritative.
 A blocked verdict names what it resolved and what failed, because an agent that
 cannot see the discriminator cannot fix the invocation. ``semantic-commit`` is
 classified against the repository it actually commits in: ``--repo`` binds that
-target outright, and a literal absolute ``cd`` in the same command resolves it.
-Raw Git still fails closed after any shell-context change. Where the target
+target outright. A bare authoring invocation after any earlier shell command
+fails closed because executable resolution may have changed; use a separate
+tool call with the target checkout as its top-level workdir. Raw Git still fails closed after
+any shell-context change. Where the target
 remains unresolvable, one command may state a reason inline as
 ``AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason> semantic-commit ...``; that
 admits only the unresolvable class, only for the governed CLI that re-verifies
@@ -26,10 +28,10 @@ command it is written on. A proven default-branch target never waives.
 from __future__ import annotations
 
 import fnmatch
-import functools
 import os
 import selectors
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -64,9 +66,9 @@ BLOCK_REASON = (
     "shell path. PR delivery is the default. When the maintainer explicitly "
     "authorized direct-main delivery in the current task, author one signed "
     "commit in a non-default managed worktree and use `forge-cli repo "
-    "push-default` with the expected base and reason file. When local-default "
+    "push-default` with the expected base and reason file. When default-branch "
     "completion was explicitly authorized instead, use the exact governed "
-    "`semantic-commit local-default` receipt flow."
+    "`semantic-commit default-branch` receipt flow."
 )
 AMBIGUOUS_PREFIX = "Default-branch delivery target could not be resolved safely."
 AMBIGUOUS_REASON = f"{AMBIGUOUS_PREFIX} {BLOCK_REASON}"
@@ -573,6 +575,90 @@ def command_local_git_environment_is_safe(
     return True
 
 
+def command_local_path_override(
+    simple_command: list[str], invocation: list[str]
+) -> bool:
+    """Detect executable retargeting that must never receive a waiver."""
+    if not invocation:
+        return False
+    executable = PurePosixPath(invocation[0]).name
+    command_index = next(
+        (
+            index
+            for index, token in enumerate(simple_command)
+            if PurePosixPath(token).name == executable
+        ),
+        len(simple_command),
+    )
+    prefix = simple_command[:command_index]
+    env_index = next(
+        (
+            index
+            for index, token in enumerate(prefix)
+            if PurePosixPath(token).name == "env"
+        ),
+        -1,
+    )
+    if env_index >= 0:
+        normalized = env_split_expanded_tokens(simple_command, env_index + 1)
+        normalized_command_index = next(
+            (
+                index
+                for index, token in enumerate(normalized)
+                if PurePosixPath(token).name == executable
+            ),
+            len(normalized),
+        )
+        prefix = [
+            *simple_command[:env_index],
+            *normalized[:normalized_command_index],
+        ]
+    return any(
+        is_assignment(token) and token.split("=", 1)[0] == "PATH"
+        for token in prefix
+    )
+
+
+def process_wrapper_hides_governed_invocation(
+    simple_command: list[str], invocation: list[str]
+) -> bool:
+    """Fail closed when a process wrapper hides a governed authoring argv."""
+    if not invocation or PurePosixPath(invocation[0]).name == "semantic-commit":
+        return False
+    for index, token in enumerate(simple_command[:-1]):
+        if PurePosixPath(token).name != "semantic-commit":
+            continue
+        if simple_command[index + 1] in {
+            "commit",
+            "default-branch",
+            "fixup",
+            "local-default",
+            "squash",
+        }:
+            return True
+    return False
+
+
+def executable_resolution_rejection(
+    invocation: list[str], context_safe: bool
+) -> str:
+    """Reject a bare governed authoring CLI after shell resolution changed."""
+    if context_safe or not invocation:
+        return ""
+    if (
+        PurePosixPath(invocation[0]).name == "semantic-commit"
+        and len(invocation) > 1
+        and invocation[1]
+        in {"commit", "default-branch", "fixup", "local-default", "squash"}
+    ):
+        return (
+            "Blocked `semantic-commit` after an earlier shell command could "
+            "have changed executable resolution. Use a separate tool call "
+            "with the target checkout as its top-level workdir."
+        )
+    return ""
+
+
 def shell_command_changes_git_context(simple_command: list[str]) -> bool:
     """Whether this command can alter later Git cwd/config interpretation."""
     invocation = invocation_tokens(simple_command)
@@ -653,7 +739,7 @@ def normalized_waiver_reason(value: str) -> str:
 
     Admission and recording must agree on what counts as a stated reason. This
     mirrors ``normalized_delivery_waiver`` in nils-cli's
-    ``local_default_receipt``: control characters become spaces and whitespace
+    ``default_branch_receipt``: control characters become spaces and whitespace
     runs collapse, so a reason cannot clear the minimum here through padding
     and then be dropped from the receipt, leaving an admitted delivery with no
     recorded reason. Keep both sides in step, including the minimum length.
@@ -834,6 +920,15 @@ def semantic_commit_block_reason(
     probe: GitProbe, arguments: list[str], base: Path, base_source: str
 ) -> str:
     """Classify a governed ``semantic-commit`` invocation by its own repository."""
+    if arguments and arguments[0] == "local-default":
+        return BLOCK_REASON
+    if arguments and arguments[0] == "default-branch":
+        cwd, source = semantic_commit_repo(arguments, base, base_source)
+        location = f"Resolved repository: {cwd} (from {source})."
+        rejection = default_branch_rejection(probe, arguments, cwd)
+        if not rejection:
+            return ""
+        return f"{location} {rejection} {BLOCK_REASON} {REPO_HINT}"
     authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
         arguments
     )
@@ -841,11 +936,6 @@ def semantic_commit_block_reason(
         return ""
     cwd, source = semantic_commit_repo(arguments, base, base_source)
     location = f"Resolved repository: {cwd} (from {source})."
-    if arguments[0] == "local-default":
-        rejection = local_default_rejection(probe, arguments, cwd)
-        if not rejection:
-            return ""
-        return unresolved(f"{location} {rejection} {REPO_HINT} {WAIVER_HINT}")
     if arguments[0] not in {"commit", "fixup", "squash"}:
         return ""
     branch = current_branch(probe, cwd)
@@ -930,52 +1020,162 @@ def git_default_branch_rewrite_targets_default(
     return target == expected
 
 
-def option_value(arguments: list[str], name: str) -> str:
-    for index, token in enumerate(arguments):
-        if token == name and index + 1 < len(arguments):
-            return arguments[index + 1]
-        if token.startswith(f"{name}="):
-            return token.split("=", 1)[1]
-    return ""
-
-
-def local_default_rejection(
+def default_branch_rejection(
     probe: GitProbe, arguments: list[str], cwd: Path
 ) -> str:
-    """Return why this is not the exact governed local-default shape, else ""."""
-    unsupported = next(
-        (
-            token
-            for token in arguments
-            if token in {"--amend", "--allow-empty", "--message-only", "--no-edit"}
-        ),
-        "",
-    )
-    if unsupported:
-        return f"local-default does not support `{unsupported}`."
-    expected_branch = option_value(arguments, "--expected-branch")
-    expected_head = option_value(arguments, "--expect-head")
-    receipt = option_value(arguments, "--receipt-out")
-    remote_mode = option_value(arguments, "--remote-mode")
-    if not expected_branch:
-        return "It carries no `--expected-branch`."
+    """Return why this is not the exact governed default-branch shape, else ""."""
+    value_options = {
+        "-m",
+        "--message",
+        "-F",
+        "--message-file",
+        "--expect-head",
+        "--receipt-out",
+        "--repo",
+        "--format",
+        "--type",
+        "--scope",
+        "--subject",
+        "--body-bullet",
+        "--bullet",
+        "--trailer",
+        "--max-header-width",
+    }
+    flag_options = {
+        "--json",
+        "--dry-run",
+        "--automation",
+        "--non-interactive",
+        "--signoff",
+        "--auto-fix",
+    }
+    unsupported = {
+        "--amend",
+        "--allow-empty",
+        "--message-only",
+        "--no-edit",
+        "--message-out",
+        "--no-progress",
+        "--quiet",
+        "--expected-branch",
+        "--remote-mode",
+    }
+    values: dict[str, list[str]] = {}
+    flags: set[str] = set()
+    index = 1
+    while index < len(arguments):
+        token = arguments[index]
+        if token in {"-h", "--help"}:
+            return ""
+        if token in unsupported:
+            return f"default-branch does not support `{token}`."
+        if token in flag_options:
+            canonical = "--automation" if token == "--non-interactive" else token
+            if canonical in flags and canonical not in {"--dry-run"}:
+                return f"`{canonical}` is duplicated."
+            flags.add(canonical)
+            index += 1
+            continue
+        if token in value_options:
+            if index + 1 >= len(arguments):
+                return f"`{token}` has no value."
+            canonical = {
+                "-m": "--message",
+                "-F": "--message-file",
+                "--bullet": "--body-bullet",
+            }.get(token, token)
+            values.setdefault(canonical, []).append(arguments[index + 1])
+            index += 2
+            continue
+        return f"`{token}` is not a supported default-branch argument."
+
+    for singleton in (
+        "--message",
+        "--message-file",
+        "--expect-head",
+        "--receipt-out",
+        "--repo",
+        "--format",
+        "--type",
+        "--scope",
+        "--subject",
+        "--max-header-width",
+    ):
+        if len(values.get(singleton, [])) > 1:
+            return f"`{singleton}` is duplicated."
+    if values.get("--message") and values.get("--message-file"):
+        return "`--message` and `--message-file` are mutually exclusive."
+    if (
+        values.get("--message") or values.get("--message-file")
+    ) and any(
+        values.get(option)
+        for option in (
+            "--type",
+            "--scope",
+            "--subject",
+            "--body-bullet",
+        )
+    ):
+        return (
+            "A complete `--message` or `--message-file` cannot be combined "
+            "with structured message fields."
+        )
+    if "--json" in flags and values.get("--format"):
+        return "`--json` and `--format` are duplicate output formats."
+    output_format = values.get("--format", ["text"])[0]
+    if output_format not in {"text", "json"}:
+        return f"`--format {output_format}` is not supported."
+
+    expected_head = values.get("--expect-head", [""])[0]
     if len(expected_head) not in {40, 64} or any(
         character not in "0123456789abcdef" for character in expected_head
     ):
         return "Its `--expect-head` is not a full lowercase object id."
-    if remote_mode and remote_mode != "local-only":
-        return f"Its `--remote-mode {remote_mode}` is not `local-only`."
-    receipt_path = Path(receipt).expanduser()
-    if not receipt_path.is_absolute() or not receipt_path.parent.exists():
+
+    repo = values.get("--repo", [""])[0]
+    if not repo:
+        return "It carries no explicit `--repo`."
+    repo_path = Path(repo).expanduser()
+    if not repo_path.is_absolute():
+        return "Its `--repo` is not an absolute path."
+    try:
+        if repo_path.resolve(strict=True) != cwd.resolve(strict=True):
+            return "Its explicit `--repo` did not resolve to the classified repository."
+    except OSError:
+        return "Its explicit `--repo` could not be resolved."
+
+    dry_run = "--dry-run" in flags
+    receipt = values.get("--receipt-out", [""])[0]
+    if dry_run and receipt:
+        return "`--receipt-out` is not accepted with `--dry-run`."
+    if dry_run:
+        receipt_path = None
+    elif not receipt:
+        return "It carries no mutation `--receipt-out`."
+    else:
+        receipt_path = Path(receipt).expanduser()
+    if receipt_path is not None and (
+        not receipt_path.is_absolute() or not receipt_path.parent.exists()
+    ):
         return (
             "Its `--receipt-out` is not an absolute path with an existing parent."
         )
+    if receipt_path is not None and receipt_path.exists():
+        return "Its `--receipt-out` does not name a new file."
+    if receipt_path is not None and receipt_path.parent.is_symlink():
+        return "Its `--receipt-out` parent is a symlink."
     try:
         repository = cwd.resolve(strict=True)
-        receipt_parent = receipt_path.parent.resolve(strict=True)
+        receipt_parent = (
+            receipt_path.parent.resolve(strict=True)
+            if receipt_path is not None
+            else None
+        )
     except OSError:
         return "The repository or the receipt directory could not be read."
-    if receipt_parent == repository or repository in receipt_parent.parents:
+    if receipt_parent is not None and (
+        receipt_parent == repository or repository in receipt_parent.parents
+    ):
         return (
             "Its `--receipt-out` is inside the repository; allocate the receipt "
             "outside it through `agent-out`."
@@ -994,26 +1194,175 @@ def local_default_rejection(
         return "The repository did not answer the required Git reads."
     assert head is not None and git_dir is not None and common_dir is not None
     try:
-        primary = Path(git_dir.stdout.strip()).resolve(strict=True) == Path(
-            common_dir.stdout.strip()
-        ).resolve(strict=True)
+        git_directory = Path(git_dir.stdout.strip()).resolve(strict=True)
+        common_directory = Path(common_dir.stdout.strip()).resolve(strict=True)
+        primary = git_directory == common_directory
     except OSError:
         return "The repository's Git directories could not be compared."
     if not primary:
         return "The repository is a linked worktree, not the primary checkout."
     branch = current_branch(probe, repository)
-    if branch != expected_branch:
-        return (
-            f"It is on branch `{branch or 'an unreadable branch'}`, not the "
-            f"`--expected-branch {expected_branch}`."
-        )
+    if not branch:
+        return "The repository has no attached branch."
     actual_head = head.stdout.strip()
     if actual_head != expected_head:
         return (
             f"Its HEAD is {actual_head[:12]}, not the `--expect-head` "
             f"{expected_head[:12]}."
         )
+    staged = probe.run(
+        repository,
+        "diff",
+        "--cached",
+        "--name-only",
+        "-z",
+        "--diff-filter=ACDMRTUXB",
+    )
+    if (
+        staged is None
+        or staged.returncode != 0
+        or not any(path for path in staged.stdout.split("\0") if path)
+    ):
+        return "The repository has no staged changes."
+    status = probe.run(repository, "status", "--porcelain", "--untracked-files=all")
+    if status is None or status.returncode != 0:
+        return "The repository status could not be read."
+    if any(
+        line.startswith("??")
+        or (len(line) > 1 and line[1] != " ")
+        for line in status.stdout.splitlines()
+    ):
+        return "The repository has unstaged or untracked changes."
+    for marker in (
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "BISECT_LOG",
+        "rebase-merge",
+        "rebase-apply",
+    ):
+        if (git_directory / marker).exists():
+            return f"The repository has a Git operation in progress ({marker})."
+    remotes = probe.run(repository, "remote")
+    if remotes is None or remotes.returncode != 0:
+        return "The repository's configured remotes could not be read."
+    configured = [line for line in remotes.stdout.splitlines() if line.strip()]
+    branch_remote = probe.run(
+        repository, "config", "--get", f"branch.{branch}.remote"
+    )
+    branch_merge = probe.run(
+        repository, "config", "--get", f"branch.{branch}.merge"
+    )
+    remote_value = (
+        branch_remote.stdout.strip()
+        if branch_remote is not None and branch_remote.returncode == 0
+        else ""
+    )
+    merge_value = (
+        branch_merge.stdout.strip()
+        if branch_merge is not None and branch_merge.returncode == 0
+        else ""
+    )
+    if not configured:
+        if remote_value or merge_value:
+            return "Remote-free default identity has stale upstream metadata."
+        return ""
+    if remote_value not in configured or remote_value == ".":
+        return "Its configured upstream remote is not authoritative."
+    if merge_value != f"refs/heads/{branch}":
+        return "Its configured upstream branch does not match the checked-out branch."
+    upstream = probe.run(
+        repository,
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+    )
+    expected_upstream = f"{remote_value}/{branch}"
+    if (
+        upstream is None
+        or upstream.returncode != 0
+        or upstream.stdout.strip() != expected_upstream
+    ):
+        return "Its configured upstream cached ref is not authoritative."
+    cached_default = probe.run(
+        repository,
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        f"refs/remotes/{remote_value}/HEAD",
+    )
+    if (
+        cached_default is None
+        or cached_default.returncode != 0
+        or cached_default.stdout.strip() != expected_upstream
+    ):
+        return "Its checked-out branch is not the authoritative cached default branch."
+    upstream_head = probe.run(
+        repository, "rev-parse", "--verify", "@{upstream}^{commit}"
+    )
+    if (
+        upstream_head is None
+        or upstream_head.returncode != 0
+        or upstream_head.stdout.strip() != actual_head
+    ):
+        return "Its current HEAD is not aligned with the cached default-branch upstream."
     return ""
+
+
+def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
+    """Require an exact invocation of the active trusted managed CLI."""
+    candidate = shutil.which(name)
+    if not candidate or not os.path.isabs(candidate):
+        return False
+    if raw == name:
+        invoked = candidate
+    elif os.path.isabs(raw):
+        invoked = raw
+    else:
+        return False
+    try:
+        lexical = os.path.abspath(candidate)
+        resolved = os.path.realpath(candidate)
+        if os.path.realpath(invoked) != resolved:
+            return False
+    except OSError:
+        return False
+    if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+        return False
+
+    trusted_roots = {
+        os.path.realpath(item)
+        for item in os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "").split(
+            os.pathsep
+        )
+        if item.strip()
+    }
+    session_bin = os.environ.get("AGENT_SESSION_BIN", "").strip()
+    if (
+        session_bin
+        and os.path.isabs(session_bin)
+        and os.path.basename(session_bin) == "agent-session"
+        and os.path.isfile(os.path.realpath(session_bin))
+        and os.access(os.path.realpath(session_bin), os.X_OK)
+    ):
+        trusted_roots.add(os.path.realpath(os.path.dirname(session_bin)))
+    lexical_dir = os.path.realpath(os.path.dirname(lexical))
+    if lexical_dir in trusted_roots:
+        return True
+    if lexical_dir == "/usr/bin" and resolved == lexical:
+        return True
+    for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
+        if os.path.dirname(lexical) != os.path.join(prefix, "bin"):
+            continue
+        cellar = os.path.join(prefix, "Cellar", "nils-cli")
+        try:
+            return resolved == lexical or os.path.commonpath(
+                (resolved, cellar)
+            ) == cellar
+        except ValueError:
+            return False
+    return False
 
 
 def normalized_branch(value: str, current: str) -> str:
@@ -1194,6 +1543,14 @@ def invocation_block_reason(
     if executable == OPAQUE_NESTED_SHELL_COMMAND:
         return AMBIGUOUS_REASON
     if executable == "semantic-commit":
+        if not trusted_managed_cli_invocation(
+            invocation[0], "semantic-commit"
+        ):
+            return (
+                "Blocked an untrusted `semantic-commit` executable. Invoke the "
+                "active managed CLI by its exact command name or trusted absolute "
+                "path."
+            )
         if not target_resolved:
             return unresolved(
                 "Command-local Git context can move where this commit lands, so "
@@ -1260,6 +1617,12 @@ def candidate_block_reason(
     base_source: str,
 ) -> str:
     """Classify one invocation shape of a simple command in its own context."""
+    if command_local_path_override(simple_command, candidate):
+        return (
+            "Blocked a command-local `PATH` override around a governed "
+            "executable. Invoke the active managed CLI without executable "
+            "retargeting."
+        )
     command_safe = command_local_git_environment_is_safe(simple_command, candidate)
     return invocation_block_reason(
         probe,
@@ -1274,6 +1637,7 @@ def candidate_block_reason(
 def command_block_reason(command: str, base: Path) -> str:
     probe = GitProbe()
     shell_context_safe = True
+    executable_resolution_safe = True
     simple_commands = simple_commands_with_nested_shells(command)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
@@ -1286,15 +1650,29 @@ def command_block_reason(command: str, base: Path) -> str:
     for simple_command in simple_commands:
         invocation = invocation_tokens(simple_command)
         waiver = command_waiver_reason(simple_command)
-        classify = functools.partial(
-            candidate_block_reason,
-            probe,
-            simple_command,
-            cwd,
-            shell_context_safe=shell_context_safe,
-            directory_resolved=directory_resolved,
-            base_source=base_source,
-        )
+        if invocation and invocation[0] == OPAQUE_WRAPPER_COMMAND:
+            return AMBIGUOUS_REASON
+        if process_wrapper_hides_governed_invocation(
+            simple_command, invocation
+        ):
+            return (
+                "Blocked a governed `semantic-commit` authoring invocation "
+                "behind a process wrapper. Invoke the active managed CLI "
+                "directly so its executable and argv can be verified."
+            )
+        def classify(candidate: list[str]) -> str:
+            return executable_resolution_rejection(
+                candidate, executable_resolution_safe
+            ) or candidate_block_reason(
+                probe,
+                simple_command,
+                cwd,
+                candidate,
+                shell_context_safe=shell_context_safe,
+                directory_resolved=directory_resolved,
+                base_source=base_source,
+            )
+
         reason = classify(invocation)
         if reason and not waiver_admits(invocation, reason, waiver):
             return reason
@@ -1308,6 +1686,11 @@ def command_block_reason(command: str, base: Path) -> str:
             reason = classify(candidate)
             if reason and not waiver_admits(candidate, reason, waiver):
                 return reason
+        # A preceding shell command can alter PATH, zsh/bash command tables,
+        # aliases, functions, hashes, or sourced state in ways this hook cannot
+        # prove exhaustively. No later authoring invocation retains executable
+        # identity; use a separate tool call with an attested top-level workdir.
+        executable_resolution_safe = False
         if not shell_command_changes_git_context(simple_command):
             continue
         # Raw Git keeps failing closed after any context change. Only the

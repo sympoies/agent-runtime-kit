@@ -228,6 +228,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         self.env = {
             **os.environ,
             "HOME": str(self.home),
+            "CODEX_HOME": str(self.home / ".codex"),
             "XDG_CONFIG_HOME": str(self.config_home),
             "XDG_DATA_HOME": str(self.data_home),
             "XDG_STATE_HOME": str(self.state_home),

@@ -30,7 +30,7 @@ Prereqs:
   (404, offline, renamed org).
 - The PROBE and the rescue **mutate branches** (rebase, commit). They are
   governed: commits go through `semantic-commit`; landing on the default branch
-  goes through `semantic-commit local-default`. This skill never runs a raw
+  goes through `semantic-commit default-branch`. This skill never runs a raw
   `git commit`/`git merge` on the default branch (see *Hook & tooling
   constraints*).
 
@@ -124,11 +124,10 @@ base is far behind its upstream.
 When the user has asked to clean up, prune every `safe-merged` /
 `safe-superseded` record without per-item confirmation, against the reported
 `path`, deleting the branch from that record's `repo_root` (rows may come from
-different repos under `--all-managed`). `git-cli worktree remove` resolves the
-repo from the current directory, so `cd` into `repo_root` first:
+different repos under `--all-managed`). Run each mutation with the command
+tool's top-level workdir set to the record's `repo_root`:
 
 ```bash
-cd <repo_root>
 git-cli worktree remove <path> --format json
 git branch -d <branch>   # use -D if it is merged only to the LOCAL default
 ```
@@ -144,10 +143,10 @@ First guarantee **zero-loss**: if the worktree has uncommitted work (a
 rescuing), commit it onto its own branch with `semantic-commit` — never
 discard. This decouples "rescue" from "landing".
 
-Then, inside the worktree, rebase the branch onto the base:
+Then, with the command tool's top-level workdir set to the worktree, rebase the
+branch onto the base:
 
 ```bash
-cd <worktree_path>
 GIT_EDITOR=true git rebase <base>
 ```
 
@@ -179,9 +178,19 @@ Pick the delivery mode from the environment, not by habit:
   the local default branch through the governed path — **not** a raw
   `git merge`/`git branch -f`:
 
+  Materialize and stage only the proven feature-branch patch in the clean
+  primary checkout through the ordinary project-dev mutation boundary. Then
+  bind the explicit repository and current full `HEAD`, validate the exact
+  preflight without a receipt, and run the authorized mutation with a new
+  outside-repository receipt:
+
   ```bash
-  cd <repo_root>          # on the default branch, clean tree
-  semantic-commit local-default   # bare invocation; see constraints below
+  semantic-commit default-branch --repo <absolute-repo-root> \
+    --expect-head <full-current-head> --dry-run --automation --format json \
+    --message <message>
+  semantic-commit default-branch --repo <absolute-repo-root> \
+    --expect-head <full-current-head> --receipt-out <outside-repo-receipt> \
+    --automation --format json --message <message>
   ```
 
   If `base_freshness` shows the local base is far behind its upstream, prefer
@@ -189,8 +198,9 @@ Pick the delivery mode from the environment, not by habit:
   cannot run from the agent shell (hook-blocked), emit a copy-paste script for
   the user's own terminal instead.
 
-After landing or pruning, remove the worktree (`cd <repo_root>; git-cli worktree
-remove <path>`). Keep the branch for genuine work that has not yet landed;
+After landing or pruning, remove the worktree by running `git-cli worktree
+remove <path>` with the tool workdir set to `<repo_root>`. Keep the branch for
+genuine work that has not yet landed;
 delete it once its work is in the base.
 
 ### 5. Stop at the human gate
@@ -198,7 +208,7 @@ delete it once its work is in the base.
 Never remove a `primary`, never *discard* a `dirty` worktree (commit-to-branch
 first), never remove rows from repos with scan `errors`. Land on the default
 branch only with the applicable authorization (PR confirmation for PR mode;
-current-request maintainer approval for local-default delivery). Ask the user
+current-request maintainer approval for default-branch completion). Ask the user
 on any semantic conflict, and never treat a related commit as proof of
 supersession — the PROBE is the proof.
 
@@ -209,7 +219,7 @@ supersession — the PROBE is the proof.
   itself.
 - **local-main mode.** PRs are unavailable (forge outage, offline, or the user
   explicitly wants local-only commits). Rescue lands on the local default
-  branch through `semantic-commit local-default`, which requires
+  branch through `semantic-commit default-branch`, which requires
   current-request maintainer approval for default-branch delivery. This mode
   relies on the PROBE having made the branch ff-ready first, and honors the
   `base_freshness` stale-base guard.
@@ -220,19 +230,21 @@ supersession — the PROBE is the proof.
   the default branch — and even a read-only inspection that references it in a
   delivery-shaped command. A `git rebase <base>` on a *feature* branch is not
   blocked. So the rescue path rebases (feature branch) and lands via
-  `semantic-commit local-default`; it never raw-merges the default branch.
+  `semantic-commit default-branch`; it never raw-merges the default branch.
 - **`git-cli worktree remove` handles dirty worktrees** (it snapshots them). Do
   **not** `git reset --hard` / `git clean` a worktree before removing it — those
   trip the delivery guard and are unnecessary.
-- **`git-cli` resolves the repo from the current directory.** `cd` into the
-  repo (or one of its worktrees) before `git-cli worktree remove`; from a
-  foreign cwd it fails with "not in a git repository".
+- **`git-cli` resolves the repo from the tool workdir.** Set the command tool's
+  top-level workdir to the repo (or one of its worktrees) before
+  `git-cli worktree remove`; do not retarget with shell `cd`.
 - **`git branch -d` checks the upstream**, so a branch merged only to the
   *local* default refuses to delete. Use `-D` after confirming it is merged to
   `HEAD`.
-- **`semantic-commit local-default`** needs a bare invocation (a `cd`/pipe in
-  the same command trips the guard) and a clean tree (untracked files block it);
-  it has no `--repo`, so set the current directory to the repo first.
+- **`semantic-commit default-branch`** requires explicit opt-in, an absolute
+  `--repo`, full `--expect-head`, the clean primary default checkout with
+  staged-only changes, and authoritative remote-free or aligned cached-default
+  identity. `--dry-run` forbids a receipt; mutation requires a new absolute
+  outside-repository `--receipt-out`. Compound/nested shell forms fail closed.
 
 ## Boundary
 
@@ -252,6 +264,6 @@ never guesses a semantic conflict.
 - `deliver-pr` — owns the provider lifecycle for a genuine `rescue-candidate`
   in PR mode. Triage never merges.
 - `semantic-commit` — governed commits for the rescue path, including
-  `local-default` for local-main mode.
+  `default-branch` for local-main mode.
 - `sync-runtime-surfaces` — its apply path refuses linked-worktree source
   roots; this skill is the companion that cleans those worktrees up.

@@ -122,6 +122,43 @@ run_main_agent_mode_probe() {
   grep -Fq 'keypress and never sends it itself.' "$protocol"
   grep -Fq 'automatic_retry_safe: false' "$protocol"
   grep -Fq 'main-agent bootstrap' "$protocol"
+  grep -Fq 'main-agent worker supervise <assignment-id> --format json' "$source"
+  grep -Fq 'main-agent worker diagnose <assignment-id> --format json' "$protocol"
+  grep -Fq '`recovery_action.kind`' "$protocol"
+  grep -Fq '`recovery_action.executable:true`' "$protocol"
+  grep -Fq '`recovery_action.required_inputs`' "$protocol"
+  grep -Fq '`dependency-not-satisfied`' "$protocol"
+  grep -Fq 'worker wait <dependency-id> --until terminal --timeout 60s' "$protocol"
+  grep -Fq 'Only `accepted` or `released` satisfies a dependency.' "$protocol"
+  grep -Fq 'main-agent worker request-changes <assignment-id>' "$protocol"
+  grep -Fq 'changes only `submitted` to `working`' "$protocol"
+  grep -Fq 'does not send review guidance, provider input, or re-arm auto-resume' "$protocol"
+  grep -Fq 'main-agent worker message <assignment-id>' "$protocol"
+  grep -Fq 'agent-session broker status --session "$AGENT_SESSION_ID" --format json' "$protocol"
+  grep -Fq 'capability-failure-closed recovery lane' "$protocol"
+  grep -Fq 'Service health, provider process health, provider session binding, and the Main relationship are four distinct states.' "$protocol"
+  grep -Fq 'agent-session resume <session-id> --format json' "$protocol"
+  grep -Fq 'post-rebind assignment ownership' "$protocol"
+  grep -Fq 'run exact-controller `main-agent self recover` before attempting rebind' "$protocol"
+  grep -Fq '`rebind` is reserved for a proven controller-incarnation mismatch' "$protocol"
+  grep -Fq 'it is not a stale-broker recovery' "$protocol"
+  grep -Fq 'classification' "$protocol"
+  grep -Fq 'last_proven_safe_state' "$protocol"
+  grep -Fq 'non-authoritative starting failure' "$protocol"
+  grep -Fq 'A folded `readiness_failed` snapshot can be superseded' "$protocol"
+  grep -Fq 'pending mailbox notification is not readiness proof' "$protocol"
+  grep -Fq 'notification-pending' "$protocol"
+  grep -Fq 'idle composer' "$protocol"
+  grep -Fq 'stable dirty material plus stale provider progress is stalled' "$protocol"
+  grep -Fq 'do not renew edit authority indefinitely' "$protocol"
+  grep -Fq 'unchanged blocking fingerprint' "$protocol"
+  grep -Fq 'preserve the full goal and unfinished checklist' "$protocol"
+  grep -Fq 'account binding is verified before structured auto-resume is re-armed' "$protocol"
+  grep -Fq 'Never use `/logout` or raw terminal input' "$protocol"
+  grep -Fq 'Do not send a blind Enter' "$protocol"
+  if grep -Fq 'No public review/revise action exists.' "$protocol"; then
+    return 1
+  fi
   grep -Fq 'as read-only diagnostics only after a' "$protocol"
   grep -Fq 'typed failure; then fix' "$protocol"
   grep -Fq 'Do not resend the prompt or inject another Enter' "$protocol"
@@ -141,10 +178,13 @@ run_main_agent_mode_probe() {
   grep -Fq 'Do not retry the mutation, clear/release its claim, delete/reassign the worker, or guess the outcome.' "$protocol"
   grep -Fq 'Use only hook-retained private authenticated operation material to complete/reconcile a known terminal outcome.' "$protocol"
   grep -Fq 'If proof is unavailable, report blocked and preserve the session and evidence.' "$protocol"
-  grep -Fq 'Delete an accepted terminal worker only after the facade and' "$source"
+  grep -Fq 'Retire an accepted terminal worker only after the facade and' "$source"
   grep -Fq 'session-management owner prove no active or uncertain operation remains,' "$source"
   grep -Fq 'the durable logical-delete boundary' "$source"
   grep -Fq 'physical cleanup failures in the maintenance projection rather than the live' "$source"
+  grep -Fq 'A submitted assignment with a released claim, clean worktree, terminated' "$source"
+  grep -Fq 'do not renew mutation authority merely because supervision reports' "$source"
+  grep -Fq '`claim_renewal_required`' "$source"
   grep -Fq '## Terminal Worker Cleanup' "$protocol"
   grep -Fq 'durable operation state that no active or uncertain admitted mutation operation' "$protocol"
   grep -Fq 'After operation quiescence is proven, have the exact worker release its active' "$protocol"
@@ -165,6 +205,21 @@ run_main_agent_mode_probe() {
   rendered_contract_assert_product_contains conversation main-agent-mode claude 'agent-session activity setup --agent claude --repair --dry-run --format json'
   rendered_contract_assert_product_omits conversation main-agent-mode claude 'Codex'
   rendered_contract_assert_product_omits conversation main-agent-mode claude '--agent codex'
+  for product in codex claude; do
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent worker supervise <assignment-id> --format json'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`recovery_action.kind`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`dependency-not-satisfied`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`main-agent worker request-changes`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'does not send review guidance, provider input, or re-arm auto-resume'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'state:"submitted"'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent self recover` before attempting rebind'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`rebind` is reserved for a proven controller-incarnation mismatch'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'capability-failure-closed recovery lane'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'post-rebind assignment ownership'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'stable dirty material plus stale provider progress is stalled'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`claim_renewal_required`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use `/logout` or raw terminal input'
+  done
 
   for product in codex claude; do
     rendered="$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md"
