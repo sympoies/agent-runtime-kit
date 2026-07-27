@@ -44,6 +44,7 @@ from hook_common import (
     invocation_is_opaque,
     invocation_tokens,
     main_agent_preclaim_argv,
+    normalized_main_agent_argv,
     output_redirect_targets,
     patch_text_candidates,
     read_payload,
@@ -949,7 +950,8 @@ def main_agent_bypass_invocation(
     words: list[str], agent_session_executable: str, base: Path | None
 ) -> bool:
     """Validate one finite trusted pre-claim Main Agent command."""
-    if words[:1] != ["main-agent"]:
+    normalized = normalized_main_agent_argv(words)
+    if normalized is None:
         return False
     candidate = shutil.which(words[0])
     trusted = trusted_main_agent_sibling(agent_session_executable)
@@ -959,6 +961,9 @@ def main_agent_bypass_invocation(
         or os.path.realpath(candidate) != os.path.realpath(trusted)
     ):
         return False
+    # Shape checks below compare against the bare name; the pinned absolute
+    # path has already been resolved and matched against the trusted sibling.
+    words = normalized
     if main_agent_preclaim_argv(words):
         return True
     if words[:2] == ["main-agent", "quick"]:

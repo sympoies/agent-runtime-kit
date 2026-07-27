@@ -12835,6 +12835,14 @@ exit 0
                 "main-agent bootstrap --idempotency-key "
                 "main-agent-bootstrap-0001 --format json"
             )
+            # `main-agent worker start` writes the worker prompt with an
+            # absolute path so the worker pins the exact launching build. If
+            # that spelling is not admitted, no managed worker can ever run its
+            # mandated first command and the whole run stalls before bootstrap.
+            pinned_bootstrap = (
+                f"{main_agent.resolve()} bootstrap --idempotency-key "
+                "main-agent-bootstrap-0002 --format json"
+            )
             self_recover = (
                 "main-agent self recover --idempotency-key "
                 "main-agent-recover-0001 --format json"
@@ -12865,6 +12873,7 @@ exit 0
                 "main-agent worker diagnose assignment-1234 --format json",
                 "main-agent worker supervise assignment-1234 --format json",
                 bootstrap,
+                pinned_bootstrap,
                 self_recover,
                 init,
                 revision_fenced_init,
@@ -12988,6 +12997,12 @@ exit 0
                 ),
                 revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
                 f"{shadow_main_agent} status --format json",
+                # An untrusted absolute build and a relative spelling must stay
+                # rejected even though the pinned trusted path is admitted.
+                f"{shadow_main_agent} bootstrap --idempotency-key "
+                "main-agent-bootstrap-0003 --format json",
+                "./main-agent bootstrap --idempotency-key "
+                "main-agent-bootstrap-0004 --format json",
                 "main-agent status --format json | cat",
                 f"main-agent status --format json > {root / 'status.json'}",
                 "sh -c 'main-agent status --format json'",

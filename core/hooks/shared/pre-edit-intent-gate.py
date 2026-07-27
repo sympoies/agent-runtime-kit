@@ -55,6 +55,7 @@ from hook_common import (
     invocation_tokens,
     is_git_recovery_argv,
     main_agent_preclaim_argv,
+    normalized_main_agent_argv,
     patch_text_candidates,
     read_payload,
     session_id_from_payload,
@@ -897,7 +898,12 @@ def main_agent_readiness_invocation(
     if not words:
         return False
 
-    if words[0] == "main-agent":
+    # `main-agent worker start` writes the worker prompt with an absolute
+    # `main-agent` path so the worker pins the exact launching build. Recognise
+    # that spelling here too, then require it to resolve to the same trusted
+    # companion before comparing shapes against the bare name.
+    normalized = normalized_main_agent_argv(words)
+    if normalized is not None:
         main_agent = trusted_release_companion(
             "main-agent",
             agent_docs_executable=agent_docs_executable,
@@ -919,6 +925,11 @@ def main_agent_readiness_invocation(
             or not trusted_private_input_file(capability_file, repositories)
         ):
             return False
+        if words[0] != "main-agent" and os.path.realpath(
+            words[0]
+        ) != os.path.realpath(main_agent):
+            return False
+        words = normalized
         if main_agent_preclaim_argv(words):
             return True
         if words[:2] == ["main-agent", "quick"]:

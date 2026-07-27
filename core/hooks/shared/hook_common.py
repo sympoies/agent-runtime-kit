@@ -631,6 +631,25 @@ def main_agent_capability_recovery_argv(words: list[str]) -> bool:
     return False
 
 
+def normalized_main_agent_argv(words: list[str]) -> list[str] | None:
+    """Rewrite a pinned absolute ``main-agent`` argv[0] to its bare name.
+
+    Returns ``None`` when argv[0] is not a usable ``main-agent`` spelling. A
+    relative path containing a separator stays rejected: only a bare name or an
+    absolute path may be trust-resolved by the caller.
+    """
+    if not words:
+        return None
+    executable = words[0]
+    if os.path.basename(executable) != "main-agent":
+        return None
+    if "/" in executable and not os.path.isabs(executable):
+        return None
+    if executable == "main-agent":
+        return words
+    return ["main-agent", *words[1:]]
+
+
 def main_agent_preclaim_argv(words: list[str]) -> bool:
     """Recognize exact trusted Main Agent pre-claim shapes without private files."""
 
@@ -651,6 +670,14 @@ def main_agent_preclaim_argv(words: list[str]) -> bool:
             }[value[-1]]
             value = value[:-1]
         return value.isdigit() and 1 <= int(value) * multiplier <= 60
+
+    # `main-agent worker start` writes the worker prompt with an absolute
+    # `main-agent` path so the worker pins the exact launching build. Compare
+    # shapes against the bare name so that pinned form is recognised; callers
+    # still resolve and trust-check the real executable separately.
+    words = normalized_main_agent_argv(words)
+    if words is None:
+        return False
 
     if main_agent_capability_recovery_argv(words):
         return True

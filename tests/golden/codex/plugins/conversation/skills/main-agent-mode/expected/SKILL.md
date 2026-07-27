@@ -86,10 +86,12 @@ agent-session activity doctor --agent codex --format json
 
 Require `agent-session >=1.25.10`, a valid
 `cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
-matching provider record, `classification:"supported"`, and
-`helper_executable:true`. A configured provider must otherwise be healthy for
-the selected runtime. Missing fields, extra provider ambiguity, stale or
-unparseable output, timeouts, or nonzero exit stop activation.
+matching provider record, and `helper_executable:true`.
+Require `classification:"supported"`.
+Treat `"unavailable"` and `"unverified"` as a stop. A configured provider must
+otherwise be healthy for the selected runtime. Missing fields, extra provider
+ambiguity, stale or unparseable output, timeouts, or nonzero exit stop
+activation.
 
 When doctor reports `configured:false`, use only the product's literal
 non-mutating compatibility probe; never use a shell provider variable in these
