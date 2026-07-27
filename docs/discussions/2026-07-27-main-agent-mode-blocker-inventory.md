@@ -89,27 +89,27 @@ worktree, and the claim already carries `worktrees` fingerprints that
 (`same-worktree`), never as a disambiguator. Two claims in different worktrees
 still collide on `overlapping-scope`.
 
-Candidate fixes, in the order they were judged:
+**Decision: add a `Checkout` scope kind.** A shell command genuinely cannot
+escape the checkout it runs in, so modelling that is the faithful fix rather
+than a relaxation. It also subsumes B4 — once a shell target is a checkout,
+`main-agent checkpoint` is just another command inside the lane's own checkout
+and the escape hatch opens by construction — and it restores same-repository
+parallel lanes, because two checkout scopes with different fingerprints do not
+overlap.
 
-1. **Different worktrees do not conflict.** In `scopes_overlap`, when both sides
-   carry comparable worktree fingerprints and they are disjoint, do not report
-   `overlapping-scope`. Lanes then declare repository scopes and rely on
-   worktree isolation. Smallest change, reuses data already present. Caveat:
-   worktrees of one repository share `.git`, so refs and config are still
-   shared; per-lane branches make this safe in practice but it is not absolute
-   isolation.
-2. **Add a `Checkout` scope kind.** Downgrade the guard's shell target from
-   repository to checkout and teach `context.rs` to compare it. Most faithful —
-   a shell command genuinely cannot escape its checkout — but it touches the
-   schema, both comparison functions, and both test suites.
-3. **Accept serialization.** Change only the skill: packets declare repository
-   scopes, lanes stay isolated by worktree, and one repository runs one lane at
-   a time. Safest and fastest, but gives up same-repository parallel lanes.
+Rejected alternatives, for the record:
+
+- *Treat disjoint worktrees as non-conflicting in `scopes_overlap`.* Smaller,
+  but relaxes conflict detection globally rather than describing what a shell
+  command actually touches.
+- *Have packets declare repository scopes and accept serialization.* Doc-only,
+  but gives up same-repository parallel lanes.
+
+See "B1 Implementation Design" below.
 
 Acceptance: a packet declaring only its own targets completes test-first,
 validation, one signed commit, and a `submitted` checkpoint without widening its
-claim; and two lanes in one repository still run concurrently unless option 3 is
-chosen deliberately.
+claim, and two lanes in one repository run concurrently.
 
 ### B2 — A `working` lane whose runtime died cannot be terminalized
 
@@ -172,6 +172,128 @@ change in the same family as the `bootstrap` shape that is already allowed:
 
 Acceptance: a worker with any claim scope can always record a checkpoint and
 release its claim; untrusted and malformed shapes stay rejected.
+
+## B1 Implementation Design
+
+Scope for the next session: **B1 only.** B2, B3, and B4 stay queued. B4 is
+expected to fall out of this change; confirm it rather than implement it.
+
+### Key feasibility fact
+
+`worktree_fingerprint(epoch, key, checkout)` is a keyed HMAC
+(`crates/nils-common/src/coordination_projection.rs`,
+`crates/agent-session/src/coordination/mod.rs`). The hook does not hold that key
+and must not. It does not need to: `OperationTargetsInput` already carries
+`checkouts: Vec<CheckoutBinding>` (repository + absolute path) alongside
+`targets`, and `validate_physical_targets` already correlates them. The hook
+sends the path; the CLI fingerprints it.
+
+So the hook change is one line, and the work is in nils-cli.
+
+### 1. Scope kind
+
+`crates/agent-session/src/coordination/context.rs`
+
+- Add `Checkout` to `ScopeKind` (line 21).
+- In `validate_and_canonicalize` (the `scope.value` match, around line 168),
+  canonicalize a checkout scope's value as a worktree fingerprint using the
+  existing `canonical_worktree` (line 618), which already enforces
+  `hmac-sha256:epoch:digest`.
+
+Store the fingerprint rather than the path: claims already keep worktrees as
+fingerprints, so this reuses the existing validation and keeps absolute paths
+out of durable records.
+
+### 2. Comparison semantics
+
+`scopes_overlap` (line 382), after the existing repository equality check:
+
+| left \ right | Repository | Checkout | Path* |
+| --- | --- | --- | --- |
+| Repository | true | true | true |
+| Checkout | true | same fingerprint only | true |
+| Path* | true | true | existing rules |
+
+Checkout versus Path stays `true`: a path scope carries no checkout binding, so
+it cannot be proven to sit outside the checkout. Conservative on purpose.
+
+`scope_covers` (line 398):
+
+| claim \ target | Repository | Checkout | Path* |
+| --- | --- | --- | --- |
+| Repository | true | true | true |
+| Checkout | false | same fingerprint | same checkout only |
+| PathPrefix | false | false | existing rules |
+
+A Checkout claim covering a Path target needs the target's checkout binding, so
+`scope_covers` alone is not enough. Resolve each target to
+`(scope, checkout_fingerprint)` in `admit`
+(`crates/agent-session/src/coordination/claims.rs`, near
+`validate_physical_targets`, line 695) and pass the pair, rather than widening
+`scope_covers`'s signature everywhere.
+
+### 3. Hook change
+
+`core/hooks/shared/session-coordination-guard.py`, the shell branch that
+currently reads:
+
+```python
+operation = "shell"
+targets.append({"kind": "repository", "repository": repository, "value": "."})
+checkouts.append({"repository": repository, "path": str(root)})
+```
+
+Emit `"kind": "checkout"` and keep the checkout binding unchanged. Leave
+`value` as `"."`; `admit` substitutes the fingerprint of the matching checkout.
+Define that substitution explicitly — a checkout-kind target arriving with no
+matching binding must fail closed, not fall back to repository scope.
+
+### 4. Assignment-derived claim
+
+`main-agent bootstrap` must add a Checkout scope for the lane's own worktree in
+addition to the packet's declared path scopes. Without it, packets still fail
+exactly as they do today. Path scopes keep their existing role: declaring lane
+non-overlap.
+
+Decide whether `worker start` should reject a mutating packet that declares
+only path scopes, or whether bootstrap always injects the checkout scope. The
+second is friendlier and keeps existing packets working.
+
+### 5. Compatibility
+
+`Scope` is `deny_unknown_fields` and `ScopeKind` is a closed enum, so a released
+binary reading a record containing `kind: "checkout"` fails to decode. Treat
+this as an orchestration-registry compatibility step and follow the v2 to v3
+precedent in `crates/agent-session/docs/runbooks/main-agent-orchestration.md`.
+This interacts with FUP-04.
+
+### 6. Validation
+
+- Unit: the `scopes_overlap` and `scope_covers` matrices above, in the existing
+  `mod tests` in `context.rs` (it already has a `scope()` helper).
+- Unit/integration: `admit` correlating a checkout target with its binding, and
+  failing closed when the binding is absent.
+- Integration: two lanes in one repository, different worktrees, both holding
+  checkout scopes, running concurrently without `overlapping-scope`.
+- Hook: `tests/hooks/test_shared_hooks.py` for the new target kind.
+- Gates: `bash scripts/ci/nils-cli-checks-entrypoint.sh --local-fast` and
+  `bash scripts/ci/all.sh`.
+
+### 7. End-to-end acceptance
+
+Rerun the Phase C lane that failed. A worker whose packet declares only its two
+target files must complete: write the failing test, run it, implement, run
+`bash tests/run.sh`, create one signed commit, and record a `submitted`
+checkpoint — without widening its claim and without any raw terminal input.
+
+### Note for whoever picks up B3
+
+A partial fix was prototyped and deliberately reverted this session: adding
+`submit_recovery_exhausted` to `worker_failed_preclaim` made the classification
+`pre_claim_failure`, but its next action (`cancel`) still fails for a live
+worker, so it would have shipped an unexecutable instruction. B3 needs its own
+classification plus a typed runtime-stop, not an extension of the pre-claim
+fact.
 
 ## Repaired In This Session
 
