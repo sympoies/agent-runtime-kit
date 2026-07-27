@@ -156,6 +156,29 @@ skills:
       agent-run: ">=0.20.0"
     state_out_mode: runtime
 
+  - id: meta.execution-capsule
+    domain: meta
+    source: core/skills/meta/execution-capsule
+    invocation:
+      role: workflow
+      intents: [project-dev]
+      example_request: "Package this authorized local operation as a reusable script with direct and codex-cli-supervised commands"
+      admission_rationale: "A reviewable reusable execution handoff is a direct user-requested artifact, not an execution-mode toggle."
+    exposure:
+      profile: default
+    products:
+      codex:
+        name: execution-capsule
+        render_to: plugins/meta/skills/execution-capsule/SKILL.md
+      claude:
+        name: execution-capsule
+        render_to: plugins/meta/skills/execution-capsule/SKILL.md
+      hermes:
+        render_to: plugins/meta/skills/execution-capsule/SKILL.md
+    required_clis:
+      agent-out: ">=1.19.2"
+    state_out_mode: runtime
+
   - id: meta.create-skill
     domain: meta
     source: core/skills/meta/create-skill

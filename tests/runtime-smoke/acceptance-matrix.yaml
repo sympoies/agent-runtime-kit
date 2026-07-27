@@ -209,6 +209,19 @@ cases:
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
+  - id: meta.execution-capsule.shared-cli.deterministic
+    product: shared-cli
+    domain: meta
+    skill_id: meta.execution-capsule
+    mode: deterministic
+    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
+    setup: render current product surfaces
+    invocation: verify the reusable direct and codex-cli-supervised execution capsule workflow
+    expected_exit_code: 0
+    expected_artifacts: Codex Claude and Hermes rendered skill files with direct supervised and host-access boundaries
+    cleanup: temp-output-only
+    expected_disposition: pass
+    skip_policy: none
   - id: meta.release.shared-cli.project-local
     product: shared-cli
     domain: meta

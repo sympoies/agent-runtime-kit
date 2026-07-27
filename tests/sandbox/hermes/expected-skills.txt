@@ -13,6 +13,7 @@ meta.bootstrap
 meta.create-project-skill
 meta.create-skill
 meta.deploy
+meta.execution-capsule
 meta.nils-cli-bump
 meta.release
 meta.remove-project-skill

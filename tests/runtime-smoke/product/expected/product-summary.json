@@ -9,8 +9,8 @@
   },
   "results": [
     {"id":"product.codex.probe","product":"codex","status":"pass","skill_count":1,"note":"isolation=supported via CODEX_HOME and ephemeral exec; prompt execution is outside product mode"},
-    {"id":"product.codex.install","product":"codex","status":"pass","skill_count":28,"note":"installed current skills and verified receipt in temp product live_home"},
+    {"id":"product.codex.install","product":"codex","status":"pass","skill_count":29,"note":"installed current skills and verified receipt in temp product live_home"},
     {"id":"product.claude.probe","product":"claude","status":"pass","skill_count":1,"note":"isolation=supported via CLAUDE_CONFIG_DIR and bare print; prompt execution is outside product mode"},
-    {"id":"product.claude.install","product":"claude","status":"pass","skill_count":28,"note":"installed current skills and verified receipt in temp product live_home"}
+    {"id":"product.claude.install","product":"claude","status":"pass","skill_count":29,"note":"installed current skills and verified receipt in temp product live_home"}
   ]
 }

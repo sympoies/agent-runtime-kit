@@ -248,7 +248,7 @@ assert report["product"] == product, (product, report.get("product"))
 skills = report["skills"]
 manifest = Path(sys.argv[3]).read_text()
 active_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", manifest, re.M)
-assert len(active_ids) == 28, (product, len(active_ids))
+assert len(active_ids) == 29, (product, len(active_ids))
 pending_ids = set(
     re.findall(r"^    - ([a-z0-9.-]+)$", manifest.split("skills:", 1)[0], re.M)
 )

@@ -26,6 +26,7 @@ plugins:
     contained_skills:
       - meta.bootstrap
       - meta.deploy
+      - meta.execution-capsule
       - meta.create-skill
       - meta.create-project-skill
       - meta.remove-skill

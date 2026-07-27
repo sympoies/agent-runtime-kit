@@ -3362,6 +3362,47 @@ run_repo_docs_boundary_probe() {
   rendered_contract_assert_all_contain meta repo-docs-boundary 'core/policies/external-facts.md'
 }
 
+run_execution_capsule_probe() {
+  local source="$REPO_ROOT/core/skills/meta/execution-capsule/SKILL.md.tera"
+
+  test -s "$source"
+  grep -Fq 'name: execution-capsule' "$source"
+  grep -Fq 'core/policies/execution-capsules.md' "$source"
+  grep -Fq 'bash <capsule>/run.sh' "$source"
+  grep -Fq 'codex-cli agent run --capsule <capsule>' "$source"
+  grep -Fq -- '--allow-host-access' "$source"
+  grep -Fq 'must not infer authorization' "$source"
+  grep -Fq 'workspace capsule must be outside the canonical `cwd`' "$source"
+  grep -Fq 'every canonical allowed path must remain under that `cwd`' "$source"
+  grep -Fq 'supervised execution is unavailable' "$source"
+  grep -Fq '`codex-cli agent run --help`' "$source"
+  grep -Fq 'exposes `--capsule`' "$source"
+  grep -Fq 'do not substitute a raw `codex` invocation' "$source"
+  grep -Fq 'directory and script mode `0700`, JSON mode `0600`' "$source"
+  grep -Fq 'type, ownership, digest, paths, and absence of sensitive values' "$source"
+  grep -Fq 'Do not run `run.sh` directly as the agent' "$source"
+  grep -Fq 'only when the user also asked for supervised' "$source"
+  grep -Fq 'for the operator instead of self-launching it' "$source"
+
+  rendered_contract_assert_skill meta execution-capsule
+  rendered_contract_assert_all_contain meta execution-capsule 'core/policies/execution-capsules.md'
+  rendered_contract_assert_all_contain meta execution-capsule 'bash <capsule>/run.sh'
+  rendered_contract_assert_all_contain meta execution-capsule 'codex-cli agent run --capsule <capsule>'
+  rendered_contract_assert_all_contain meta execution-capsule '--allow-host-access'
+  rendered_contract_assert_all_contain meta execution-capsule 'must not infer authorization'
+  rendered_contract_assert_all_contain meta execution-capsule 'workspace capsule must be outside the canonical `cwd`'
+  rendered_contract_assert_all_contain meta execution-capsule 'every canonical allowed path must remain under that `cwd`'
+  rendered_contract_assert_all_contain meta execution-capsule 'supervised execution is unavailable'
+  rendered_contract_assert_all_contain meta execution-capsule '`codex-cli agent run --help`'
+  rendered_contract_assert_all_contain meta execution-capsule 'exposes `--capsule`'
+  rendered_contract_assert_all_contain meta execution-capsule 'do not substitute a raw `codex` invocation'
+  rendered_contract_assert_all_contain meta execution-capsule 'directory and script mode `0700`, JSON mode `0600`'
+  rendered_contract_assert_all_contain meta execution-capsule 'type, ownership, digest, paths, and absence of sensitive values'
+  rendered_contract_assert_all_contain meta execution-capsule 'Do not run `run.sh` directly as the agent'
+  rendered_contract_assert_all_contain meta execution-capsule 'only when the user also asked for supervised'
+  rendered_contract_assert_all_contain meta execution-capsule 'for the operator instead of self-launching it'
+}
+
 failures=0
 record_case "meta.outcome-routing.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
 record_case "meta.home-prompt-render" "home prompt render isolates Codex-only delegation and product sentinel text" run_home_prompt_render_probe
@@ -3369,6 +3410,7 @@ record_case "meta.outcome-routing.agent-out" "agent-out allocated a temp project
 record_case "meta.outcome-routing.scope-lock" "scope lock create and validate passed in temp git workspace" run_agent_scope_lock_probe
 record_case "meta.bootstrap" "project-local bootstrap shim executed fixture script" run_project_local_shim_probe bootstrap
 record_case "meta.deploy" "project-local deploy shim executed fixture script" run_project_local_shim_probe deploy
+record_case "meta.execution-capsule" "execution capsule workflow rendered with direct supervised and host-access boundaries" run_execution_capsule_probe
 record_case "meta.outcome-routing.heuristic-inbox" "heuristic inbox shared-root list and strict verification passed" run_heuristic_inbox_probe
 record_case "meta.outcome-routing.session-closeout" "session closeout contract preserves retained heuristic records on main" run_heuristic_session_closeout_probe
 record_case "meta.create-skill" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
