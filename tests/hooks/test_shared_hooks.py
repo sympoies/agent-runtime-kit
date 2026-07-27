@@ -152,8 +152,17 @@ AMBIENT_GATE_ENVS = (
 )
 
 
-def scrub_ambient_gate_envs(full_env: dict[str, str]) -> None:
-    for name in AMBIENT_GATE_ENVS:
+# Operator-facing trust overrides. Kept apart from AMBIENT_GATE_ENVS because
+# that tuple mirrors a specific hook's env list; this one does not. A developer
+# on a split nils-cli install legitimately exports the trusted CLI root, but
+# prepare_trusted_test_agent_docs cannot tell that inherited value apart from a
+# fixture-supplied one and skips installing the per-fixture trusted root, so
+# every fixture's temporary agent-docs fails closed as untrusted.
+AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT",)
+
+
+def scrub_ambient_envs(full_env: dict[str, str]) -> None:
+    for name in AMBIENT_GATE_ENVS + AMBIENT_TRUST_ENVS:
         full_env.pop(name, None)
 
 
@@ -169,7 +178,7 @@ def run_hook(
     # Tests model an unmanaged launch unless the fixture explicitly supplies a
     # managed session identity. Do not inherit the runner's managed identity.
     full_env.pop("AGENT_SESSION_ID", None)
-    scrub_ambient_gate_envs(full_env)
+    scrub_ambient_envs(full_env)
     full_env["PYTHONPATH"] = str(HOOK_DIR)
     if dont_write_bytecode:
         full_env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -261,7 +270,7 @@ def run_shell_hook(
     """Run a shell (bash) shared hook; mirrors run_hook for `.sh` hooks."""
     full_env = dict(os.environ)
     full_env.pop("AGENT_SESSION_ID", None)
-    scrub_ambient_gate_envs(full_env)
+    scrub_ambient_envs(full_env)
     if env:
         full_env.update(env)
     trusted = prepare_trusted_test_agent_docs(full_env, cwd)
@@ -13432,6 +13441,78 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "project-dev")
+
+    def test_run_hook_ignores_ambient_trusted_cli_root(self) -> None:
+        """A host-exported trust root must not reach a hook subprocess.
+
+        `AGENT_RUNTIME_TRUSTED_CLI_ROOT` is an operator-facing override, so a
+        developer on a split nils-cli install legitimately exports it.
+        `prepare_trusted_test_agent_docs` cannot tell that inherited value apart
+        from a fixture-supplied one, so it used to skip installing the
+        per-fixture trusted root and 41 pre-edit-intent-gate / preflight-cue /
+        session-start-healthcheck tests failed closed on
+        `agent-docs-command-untrusted`. The scrub must drop the ambient value
+        while an explicit per-fixture root still wins.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "runtime-bin"
+            bin_dir.mkdir()
+            unrelated_bin = root / "unrelated-bin"
+            unrelated_bin.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
+  exit 1
+fi
+exit 64
+""",
+            )
+            agent_docs = str((bin_dir / "agent-docs").resolve())
+            command = (
+                f"{shlex.quote(agent_docs)} "
+                f"--docs-home {shlex.quote(str(repo.resolve()))} "
+                f"--project-path {shlex.quote(str(repo.resolve()))} "
+                "preflight --intent memory"
+            )
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            ambient = {"AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(unrelated_bin)}
+
+            with mock.patch.dict(os.environ, ambient, clear=False):
+                payload = command_payload(command)
+                payload["session_id"] = "ambient-trust-root"
+                code, decision, stderr = run_hook(
+                    "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+                # The scrub must not swallow a root the fixture asked for: the
+                # same read-only command stays blocked when the test itself
+                # points the trust root somewhere the fake does not live.
+                payload = command_payload(command)
+                payload["session_id"] = "ambient-trust-root"
+                code, decision, stderr = run_hook(
+                    "pre-edit-intent-gate.py",
+                    payload,
+                    cwd=repo,
+                    env={**env, "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(unrelated_bin)},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "agent-docs-command-untrusted")
 
     def test_pre_edit_intent_gate_blocks_unquoted_glob_executable_substitution(
         self,
