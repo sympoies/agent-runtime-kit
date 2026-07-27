@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+# This runner imports source hooks as modules. Disable bytecode before adding
+# their directory to sys.path so direct and focused invocations cannot pollute
+# the trusted handler source with __pycache__.
+sys.dont_write_bytecode = True
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK_DIR = REPO_ROOT / "core" / "hooks" / "shared"
@@ -21778,6 +21783,11 @@ if __name__ == "__main__":
         _tests_idx = sys.argv.index("--tests")
         _selected = [name for name in sys.argv[_tests_idx + 1].split(",") if name]
         sys.exit(0 if _run_selected_tests(_selected, verbosity=1) else 1)
+
+    # Explicit unittest selectors and flags are a focused, serial invocation.
+    # The no-argument route retains the faster parallel default.
+    if len(sys.argv) > 1:
+        unittest.main(verbosity=2)
 
     _jobs_env = os.environ.get("HOOKS_TEST_JOBS")
     _jobs = int(_jobs_env) if _jobs_env else _default_jobs()
