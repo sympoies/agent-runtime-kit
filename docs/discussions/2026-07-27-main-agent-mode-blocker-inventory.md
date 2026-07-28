@@ -17,12 +17,16 @@ ran and passed, but it does NOT establish B2 field closure: the fixture's clean
 provider exit released the claim and tore down the broker before the action
 ran, so B2's defining condition — a dead worker still holding a claim alive on
 TTL — was never reproduced. B2 field closure remains UNCLAIMED. B3's typed
-exact-incarnation stop is the next implementation item because the existing
-cooperative exit cannot exercise its own exhausted-readiness case; it must not
-be counted as B2 terminalization evidence. GitHub provider delivery remains
-spam-blocked; this session is authorized to use governed local-main delivery
-instead. Open work: B3 implementation, B5-B8 field validation, the independent
-B2 live-claim and ambiguous-stop field cases, then C06/C07, the residual C08
+exact-incarnation stop now has candidate-source implementation closure at
+signed nils-cli commit `453b52c982d6160fcc93dce1b674e470bb612094`,
+with its focused regression suite, full local-fast gate, and final specialist
+review green. It is not integrated to local `main`, installed, deployed, or
+field-closed. The existing cooperative exit still cannot exercise B3's own
+exhausted-readiness case, and B3 must not be counted as B2 terminalization
+evidence. GitHub provider delivery remains spam-blocked; this session is
+authorized to use governed local-main delivery instead. Open work: governed
+B3 integration and deployment, B5-B8 field validation, the independent B2
+live-claim and ambiguous-stop field cases, then C06/C07, the residual C08
 recovery classifications, and the remaining Phase D parity items.
 Date: 2026-07-27
 Updated: 2026-07-28
@@ -118,14 +122,14 @@ established here; treat the alignment as observed external state, not as this
 delivery's provider evidence. Do not bypass the governed provider-delivery
 path with a raw Git push.
 
-B3 is still the next implementation gap. It decides how to stop a still-live
-pre-claim/readiness-failure runtime without raw terminal control. Its original
-blocking justification is weaker now that a controlled stop of an idle worker
-is demonstrably reachable through the provider's own exit path, but that route
-needs a cooperative, idle provider; B3's own scenario is an exhausted-readiness
-worker that is still live and cannot be driven, and that still has no typed
-stop. The F-items are friction that costs turns but does not independently stop
-delivery.
+B3's candidate-source implementation gap is closed. The new Main-owned command
+stops a still-live pre-claim/readiness-failure runtime without raw terminal
+control while preserving its durable session state. Integration, release
+installation, deployment, and real-product field validation remain open. The
+cooperative provider-exit fixture remains insufficient for both B3 and B2:
+B3's own scenario is an exhausted-readiness worker that cannot be driven, while
+B2 requires a stopped post-claim worker whose claim remains alive on TTL. The
+F-items are friction that costs turns but does not independently stop delivery.
 
 Raw per-scenario evidence, rerun selectors, and receipts stay outside the
 repository beside the run:
@@ -143,13 +147,19 @@ repository beside the run:
    receipts; never weaken hooks or leases. A repository already ahead by one
    governed default-branch commit must first regain an aligned state before a
    second default-branch delivery.
-2. **Implement B3's typed stop before the next B2 attempt.** Add a typed
-   exact-incarnation runtime-stop primitive that stops an exhausted-readiness
-   runtime without deleting durable session state. After stopped proof, route
-   a failed pre-claim worker through guarded cancel/retire/reassign; retain
-   `reconcile-recovery` for an unknown `attempting` send. This closes B3's own
-   fixture and recovery gap. It does not authorize raw terminal control, and a
-   B3 stop must not be counted as B2 terminalization proof.
+2. **Integrate and deploy B3's completed typed-stop candidate before the next
+   B2 attempt.** Candidate commit
+   `453b52c982d6160fcc93dce1b674e470bb612094` adds the typed,
+   exact-incarnation `main-agent worker stop-runtime` primitive for an
+   exhausted-readiness runtime without deleting durable session state. It
+   revision-fences and idempotently seals the exact runtime stop, denies
+   conflicting resume/claim/bootstrap paths, and supports guarded successor
+   replay after controller loss. The existing pre-claim cancellation path
+   remains the terminalization route after stopped proof, and
+   `reconcile-recovery` remains the route for an unknown `attempting` send.
+   The candidate is reviewed and validated but is not yet on local `main` or
+   deployed. It does not authorize raw terminal control, and a B3 stop must
+   not be counted as B2 terminalization proof.
 3. **Field-validate the repaired B1 canary root causes.** B5-B8 are signed on
    local `main` and deployed, but their field closures remain separate. Run a
    fresh unattended lane with the exact absolute `agent-session` lifecycle
@@ -198,16 +208,17 @@ repository beside the run:
 
 B2 established the missing distinction between post-claim failure and
 pre-claim failure, and its implementation closure holds; its field closure does
-not, because the one positive run never reproduced a live claim. The
+not, because the one positive run never reproduced a live claim. The B2
 implementations are on both local default branches. B5-B8 are now repaired and
-deployed. Next implement B3's typed stop, field-validate B5-B8, close B2 only
+deployed. B3 has candidate-source implementation closure but is not integrated
+or deployed. Next integrate and deploy B3, field-validate B5-B8, close B2 only
 against an independently stopped live-claim fixture, then finish C06/C07 and
 Phase D.
-B3 may reuse B2's exact-runtime and quiescence proof helpers, but after the
-typed stop it should enter the existing pre-claim cancellation path rather
-than the B2 post-claim transition. Do not implement B3 by classifying a live
-exhausted worker as `pre_claim_failure`; `worker cancel` deliberately rejects
-a live worker.
+The completed B3 candidate reuses B2's exact-runtime and quiescence proof
+helpers, then enters the existing pre-claim cancellation path after the typed
+stop rather than the B2 post-claim transition. It deliberately does not
+classify a live exhausted worker as `pre_claim_failure`, because `worker
+cancel` rejects a live worker.
 
 ## How A Lane Died Before The B1 Repair
 
@@ -770,9 +781,12 @@ not established here.
 
 ### B3 — An exhausted-readiness live worker has no recovery route
 
-Severity: recovery requires stepping outside the CLI. Not repaired; it is the
-next implementation item in the Continuation Order. B5-B8 field validation is
-still open but does not gate this implementation.
+Severity: recovery previously required stepping outside the CLI.
+Candidate-source implementation closure is complete at signed nils-cli commit
+`453b52c982d6160fcc93dce1b674e470bb612094`. Local-main integration,
+release installation, runtime deployment, and real-product field closure are
+NOT complete. B5-B8 field validation remains the next field step after B3 is
+integrated and deployed.
 Area: `main_agent.rs` supervision, `session-coordination-guard.py` allowlist,
 `agent-session` command surface.
 
@@ -784,11 +798,12 @@ now admitted by the B4 repair, so allowlisting is no longer this blocker's root
 cause. Renewal is simply the wrong recovery for terminal prompt-delivery
 failure.
 
-The documented `main-agent worker reconcile-recovery` path accepts only an
-unknown `attempting` recovery and requires the runtime to already be stopped.
-`agent-session` exposes no typed stop-only command: `delete` kills the runtime
-and removes session state. A terminal `failed` recovery with a live worker
-therefore still requires raw `tmux kill-session`, and even then needs a guarded
+Before the candidate repair, the documented
+`main-agent worker reconcile-recovery` path accepted only an unknown
+`attempting` recovery and required the runtime to already be stopped.
+`agent-session` exposed no typed stop-only command: `delete` killed the runtime
+and removed session state. A terminal `failed` recovery with a live worker
+therefore required raw `tmux kill-session`, and even then needed a guarded
 classification/cancellation path rather than `reconcile-recovery`.
 
 The 2026-07-28 B2 positive canary showed that an *idle, cooperative* provider
@@ -807,6 +822,34 @@ revision-fenced, and is followed by a non-healthy stopped-runtime
 classification plus guarded terminalization. An unknown `attempting` send
 continues to use `reconcile-recovery`; a terminal `failed` send never resends
 the prompt or injects another Enter.
+
+Candidate result: `main-agent worker stop-runtime ASSIGNMENT
+--worker-incarnation ... --if-revision ... --idempotency-key ...` now implements
+that contract for an exhausted-readiness pre-claim worker. It requires the
+durable `worker-checkpoint-timeout` proof, an exact live runtime, and no worker
+claim, operation, submit recovery still `attempting` or `sent`, or account
+handoff. It persists a session-owned runtime-stop fence before reserving the
+assignment, blocks conflicting CLI/HTTP/maintenance resume plus
+broker/claim/bootstrap/checkpoint paths, and stops the exact runtime without
+provider input or durable-session deletion. Exact replay survives a crash after
+the authority seal or process stop; a live successor Main can adopt the
+immutable replay identity only after the prior controller becomes unavailable,
+including repeated successor loss.
+The v2 diagnose/supervise response shapes remain unchanged; v3 adds
+`readiness_stop_required`, `readiness_stop_in_progress`, and the
+account-handoff discriminator.
+
+Regression evidence was captured before production edits as an unknown-command
+failure. The final focused runtime-stop integration suite passed 10/10, v2/v3
+contract and relevant unit coverage passed, and
+`bash scripts/ci/nils-cli-checks-entrypoint.sh --local-fast` passed with 940
+tests plus the documentation checks. API-contract, testing, security,
+maintainability, and red-team specialist reviews all reported no findings after
+the repair rounds.
+
+This is implementation evidence only. No installed-binary real-product B3
+canary has run, and the command is intentionally pre-claim: it cannot satisfy
+B2's required `proof.worker_claim.observed_at_stage1:true` post-claim evidence.
 
 ### B4 — Worker lifecycle commands are treated as repository mutations
 
@@ -935,14 +978,15 @@ C02-C05 closure canary has since run and closed. Full fresh-session Phase C
 acceptance is still incomplete: C06, C07, and the residual C08 recovery
 classifications remain, per the Continuation Order above.
 
-### Note for whoever picks up B3
+### Historical B3 design constraint
 
 A partial fix was prototyped and deliberately reverted this session: adding
 `submit_recovery_exhausted` to `worker_failed_preclaim` made the classification
 `pre_claim_failure`, but its next action (`cancel`) still fails for a live
-worker, so it would have shipped an unexecutable instruction. B3 needs its own
-classification plus a typed runtime-stop, not an extension of the pre-claim
-fact.
+worker, so it would have shipped an unexecutable instruction. This rejection
+is why the completed B3 candidate introduces dedicated readiness-stop
+classifications plus the typed runtime-stop rather than extending the
+pre-claim fact.
 
 ## Repair Log
 
@@ -1112,10 +1156,11 @@ and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: implement B3's typed exact-incarnation stop, field-validate B5-B8 without
-their legacy workarounds, then close B2 only against an independently
-stopped worker whose claim is still active on TTL. Follow with C06/C07 and
-Phase D as the final parity gate. Before provider delivery, restore governed GitHub access and
+Next: integrate, install, and deploy B3's typed exact-incarnation stop;
+field-validate B5-B8 without their legacy workarounds; then close B2 only
+against an independently stopped worker whose claim is still active on TTL.
+Follow with C06/C07 and Phase D as the final parity gate. Before provider
+delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
