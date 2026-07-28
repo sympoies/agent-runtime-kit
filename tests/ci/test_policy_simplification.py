@@ -83,6 +83,25 @@ class PolicySimplificationContractTests(unittest.TestCase):
             EDIT_DOC_BUDGET_BYTES,
         )
 
+    def test_edit_contract_maintains_affected_test_owners(self) -> None:
+        edit_contract = " ".join(
+            read("core/policies/files-hooks-validation.md").split()
+        )
+
+        self.assertIn(
+            "Treat materially affected tests as part of the change",
+            edit_contract,
+        )
+        self.assertIn(
+            "add or update the lowest stable behavioral owner",
+            edit_contract,
+        )
+        self.assertIn(
+            "merge, refactor, or remove affected cases that no longer protect "
+            "a distinct still-valid risk",
+            edit_contract,
+        )
+
     def test_delivery_phase_retains_the_governed_runbooks(self) -> None:
         required = required_relative_paths(preflight("project-dev", phase="delivery"))
 

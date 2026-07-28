@@ -22,9 +22,10 @@ runbooks and CLIs.
 
 ## Proof Strategy
 
-- Choose the lowest stable boundary that proves the observable contract. Prefer
-  tests over implementation-shape assertions and avoid duplicate cases that
-  protect no distinct risk.
+- Treat materially affected tests as part of the change: add or update the
+  lowest stable behavioral owner, and merge, refactor, or remove affected cases
+  that no longer protect a distinct still-valid risk. Prefer observable
+  assertions over implementation shape.
 - For testable behavior, normally capture a meaningful regression failure
   before production edits. The failure must come from the intended missing or
   changed behavior, not setup, compilation, environment, fixture, retry, or an
