@@ -1,30 +1,29 @@
 # Main Agent Mode Blocker Inventory
 
-Status: B1/B4 deployed, and their real-product C02-C05 closure canary is now
-closed on both providers — but only with four manual workarounds, filed here as
-new blockers B5-B8. B5 now has implementation closure in source: every finite
-projected lifecycle and mailbox shape accepts the exact trusted absolute
-`agent-session` path while relative and shadow spellings remain denied. Its
-deployed real-product release/retire canary is still pending. B6 now has
-implementation closure in a regression-first paired nils-cli/runtime-kit
-candidate: the
-runtime issues one session/incarnation-bound mode-`0600` checkpoint file, and
-the coordination hook admits only that exact path through ordinary `Write` or
-canonical `printf` redirection. Provider-aware surface compatibility and an
-exact-incarnation readiness gate prevent mixed deployments and pre-B6 sessions
-from reaching claim acquisition. B6 delivery, deployment, and real-product
-field closure are not yet claimed. B2 implementation, signed local-main
-integration, release binary install, and rendered-surface deployment are
-complete. A positive stopped-runtime canary ran and passed, but it does NOT
-establish B2 field closure: the fixture's clean provider exit released the
-claim and tore down the broker before the action ran, so B2's defining
-condition — a dead worker still holding a claim alive on TTL — was never
-reproduced. B2 field closure remains UNCLAIMED. GitHub provider delivery is
+Status: B1/B4 are deployed and their real-product C02-C05 closure canary is
+closed on both providers, but it needed four manual workarounds, filed as
+B5-B8. All four now have implementation closure and are deployed locally.
+B5 admits the exact trusted absolute `agent-session` lifecycle and mailbox
+shapes. B6 issues and admits one exact session/incarnation-bound private
+checkpoint file. B7 validates an exact canonical Codex trust root and pins the
+verified Codex configuration through launch and replay. B8 validates and
+canonicalizes `launch.cwd` before assignment, receipt, or session side effects.
+Their real-product field closures remain unclaimed until a fresh unattended
+lane proves the repaired paths without the legacy workarounds.
+
+B2 implementation, signed local-main integration, release binary install, and
+rendered-surface deployment are complete. A positive stopped-runtime canary
+ran and passed, but it does NOT establish B2 field closure: the fixture's clean
+provider exit released the claim and tore down the broker before the action
+ran, so B2's defining condition — a dead worker still holding a claim alive on
+TTL — was never reproduced. B2 field closure remains UNCLAIMED. B3's typed
+exact-incarnation stop is the next implementation item because the existing
+cooperative exit cannot exercise its own exhausted-readiness case; it must not
+be counted as B2 terminalization evidence. GitHub provider delivery remains
 spam-blocked; this session is authorized to use governed local-main delivery
-instead. Open work: B5 field validation, B6 delivery/deployment and field
-validation, B7-B8 implementation and field validation, the
-unexercised B2 live-claim branch, then B3, then C06/C07, the residual C08
-recovery classifications, and the remaining Phase D parity items
+instead. Open work: B3 implementation, B5-B8 field validation, the independent
+B2 live-claim and ambiguous-stop field cases, then C06/C07, the residual C08
+recovery classifications, and the remaining Phase D parity items.
 Date: 2026-07-27
 Updated: 2026-07-28
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
@@ -38,10 +37,10 @@ B1 is in local `main` in both repositories, the rebuilt nils-cli binaries and
 runtime surfaces are deployed, and the installed-binary coupled acceptance is
 green. The separate B1 real-product C02-C05 closure canary has now closed on
 both providers. Reaching that closure required working around four distinct
-root causes by hand, filed below as blockers B5-B8. B5 is deployed; B6 has
-implementation closure in its paired candidate but remains undelivered,
-undeployed, and field-unvalidated. B7-B8 remain
-unrepaired. None of them was a defect in the B1 scope/admission design itself.
+root causes by hand, filed below as blockers B5-B8. B5-B8 now have signed
+local-main implementation closure and are deployed; field validation remains
+separate and pending. None of them was a defect in the B1 scope/admission
+design itself.
 Both lanes bootstrapped, ran
 checkout-bound shell validation under a narrow claim, created signed commits,
 checkpointed `submitted`, took one revision-fenced `request-changes` plus a
@@ -144,29 +143,33 @@ repository beside the run:
    receipts; never weaken hooks or leases. A repository already ahead by one
    governed default-branch commit must first regain an aligned state before a
    second default-branch delivery.
-2. **Repair the four B1 canary root causes.** The canary closed, but each
-   closure step required a manual workaround that an unattended worker cannot
-   discover. In severity order: the `agent-session` lifecycle bare-name
-   deadlock (B5, implementation repaired; field validation pending), the
-   unwritable out-of-checkout checkpoint file (B6, implementation closure in
-   its paired candidate; delivery/deployment and field validation pending), the
-   Codex untrusted-repository bootstrap death (B7), and `worker start`
-   persisting an assignment before validating its cwd (B8). B5 and B6 each
-   independently prevented an unattended lane from ever terminating cleanly;
-   B5's field closure and B6's deployment/field closures remain separate.
-3. **Close B2 in the field.** Re-run the positive canary against a stopped
+2. **Implement B3's typed stop before the next B2 attempt.** Add a typed
+   exact-incarnation runtime-stop primitive that stops an exhausted-readiness
+   runtime without deleting durable session state. After stopped proof, route
+   a failed pre-claim worker through guarded cancel/retire/reassign; retain
+   `reconcile-recovery` for an unknown `attempting` send. This closes B3's own
+   fixture and recovery gap. It does not authorize raw terminal control, and a
+   B3 stop must not be counted as B2 terminalization proof.
+3. **Field-validate the repaired B1 canary root causes.** B5-B8 are signed on
+   local `main` and deployed, but their field closures remain separate. Run a
+   fresh unattended lane with the exact absolute `agent-session` lifecycle
+   shape, an ordinary checkpoint `Write` or canonical `printf`, a pre-trusted
+   exact Codex root, and no cwd prevalidation workaround. Separately prove an
+   exact untrusted Codex root fails `provider-trust-required` before assignment
+   or session side effects. For B8, prove a missing cwd fails
+   `assignment-launch-cwd-unavailable` with no assignment or session, then
+   create the managed worktree and successfully retry the same assignment id.
+4. **Close B2 in the field.** Re-run the positive canary against an
+   independently stopped
    worker whose assignment-derived claim is still active on TTL, and require
    `proof.worker_claim.observed_at_stage1:true` plus a post-action read proving
    the claim gone. Separately, supervise a lane whose provider process is dead
    but whose tmux session still exists, and require a non-`healthy_progress`
-   classification. Until both run, B2 field closure stays unclaimed. This
-   likely needs B3's typed stop, since a cooperative exit cannot leave the
-   claim behind.
-4. **Repair B3 after the failure-state split is explicit.** Add a typed
-   exact-incarnation runtime-stop primitive that stops the runtime without
-   deleting durable session state. After stopped proof, route a failed
-   pre-claim worker through guarded cancel/retire/reassign; retain
-   `reconcile-recovery` for an unknown `attempting` send.
+   classification. Until both run, B2 field closure stays unclaimed. A
+   cooperative provider exit is insufficient because it releases the claim;
+   B3 may supply reusable proof machinery but not the stopped post-claim
+   evidence itself.
+
    Do **not** key the new classification on `submit_recovery.state:"failed"`
    alone. The 2026-07-28 canary observed a fully healthy lane — `running`,
    `healthy_progress`, `failed_preclaim:false`, which went on to bootstrap,
@@ -196,9 +199,9 @@ repository beside the run:
 B2 established the missing distinction between post-claim failure and
 pre-claim failure, and its implementation closure holds; its field closure does
 not, because the one positive run never reproduced a live claim. The
-implementations are on both local default branches. First restore the governed
-GitHub provider-delivery path, then repair the four B1 canary root causes, then
-close B2 in the field, then implement B3's typed stop, then finish C06/C07 and
+implementations are on both local default branches. B5-B8 are now repaired and
+deployed. Next implement B3's typed stop, field-validate B5-B8, close B2 only
+against an independently stopped live-claim fixture, then finish C06/C07 and
 Phase D.
 B3 may reuse B2's exact-runtime and quiescence proof helpers, but after the
 typed stop it should enter the existing pre-claim cancellation path rather
@@ -308,14 +311,13 @@ validation, and `semantic-commit` from a narrow two-path claim, and neither
 lane ever needed repository scope.
 
 **B1 closure canary root causes.** The canary closed, but only after four
-separate obstacles were worked around by hand. B5 is deployed; B6 has
-implementation closure in its paired candidate. Both still need field
-validation, while B6 also needs delivery and deployment. B7-B8 remain
-unrepaired. None is a defect in B1's scope projection
-or admission rule; all
-four are in the surrounding worker lifecycle, and each is filed as its own
-blocker below. B5 and B6 independently made an *unattended* lane unable to
-finish; field closure is still required before the end-to-end promise is safe.
+separate obstacles were worked around by hand. B5-B8 are now implemented,
+signed on local `main`, release-installed or surface-deployed as applicable,
+and deterministically validated. None is a defect in B1's scope projection or
+admission rule; all four are in the surrounding worker lifecycle, and each is
+filed as its own blocker below. Real-product field validation remains open.
+B5 and B6 independently made an *unattended* lane unable to finish, so
+deployment alone does not close the end-to-end promise.
 
 ### B5 — A worker cannot release its own claim unless it uses the bare name
 
@@ -391,9 +393,10 @@ case is F31 and must be closed separately; landing B5 does not resolve it.
 
 ### B6 — The mandated out-of-checkout checkpoint file is nearly unwritable
 
-Severity: a worker cannot report `submitted` or `blocked` without the manual
-argv workaround. Implementation repaired in a regression-first paired
-candidate; delivery, deployment, and real-product field closure remain open.
+Severity: a worker could not report `submitted` or `blocked` without the manual
+argv workaround. Implementation repaired, signed on both local default
+branches, release-installed, and surface-deployed. Real-product field closure
+remains open.
 Area: the checkpoint file contract, `canonical_target_path`, and `SHELL_CONTROL`.
 
 The checkpoint contract requires an absolute mode-0600 `.json` file outside the
@@ -459,16 +462,24 @@ deterministic conversation product-isolation smoke are green. API-contract,
 maintainability, testing, and adversarial specialist review are closed with no
 remaining findings after the provider-aware and per-incarnation corrections.
 
-Implementation closure does not imply deployment or field closure. B6 still
-requires signed delivery of both paired commits, rebuilt nils-cli plus synced
-runtime surfaces, and a real-product worker that writes and submits through an
-ordinary `Write` or canonical `printf` route with no `perl` workaround. It
-does not close F30's independent prompt-versus-packet contradiction.
+The paired local-main deliveries are nils-cli
+`3106e9598195fdba77772804aeeed59854651aa6` and runtime-kit
+`63861ecaed56c0ccbaf4a8dc7b96ec30a34a2427`. The rebuilt runtime first exposed
+`v1.25.9-79-g3106e959`; the later B7/B8 rebuild contains the same B6 tree and
+advances the installed binaries to `v1.25.9-80-g391d3d4b`. Synced
+Codex/Claude/Hermes surfaces pass skill-surface and installed-runtime doctor,
+hook convergence, plugin registry, and Codex prompt-input verification.
+
+Implementation and deployment closure do not imply field closure. B6 still
+requires a real-product worker that writes and submits through an ordinary
+`Write` or canonical `printf` route with no `perl` workaround. It does not
+close F30's independent prompt-versus-packet contradiction.
 
 ### B7 — A Codex worker dies at startup in an untrusted repository root
 
-Severity: no Codex lane can bootstrap in a new repository. Worked around, not
-repaired.
+Severity: no Codex lane could bootstrap in a new repository. Implementation
+repaired, signed on nils-cli local `main`, release-installed, and awaiting
+real-product field closure.
 Area: managed worker launch and Codex project trust.
 
 Every managed worker worktree belongs to a repository root Codex has never
@@ -487,9 +498,22 @@ Acceptance: managed Codex worker launch either establishes repository trust as
 part of the launch contract or fails with an explicit
 `provider-trust-required` classification instead of a silent startup death.
 
+Implementation closure is fail-closed rather than implicit trust mutation.
+Fresh launch canonicalizes the exact cwd and the active Codex configuration
+root before durable assignment or session side effects, then requires an exact
+`trust_level = "trusted"` project entry. Parent-only trust is insufficient.
+Missing trust returns `provider-trust-required`; malformed, oversized, symlink,
+FIFO, or otherwise unverifiable configuration returns
+`provider-trust-unverified`. The verified canonical configuration directory is
+persisted in the pending receipt and session runtime, inherited by the actual
+Codex child, and retained through replay even if the caller's `CODEX_HOME`
+symlink is retargeted.
+
 ### B8 — `worker start` persists an assignment before validating its cwd
 
-Severity: costs a launch and blocks retry of the same id. Not repaired.
+Severity: cost a launch and blocked retry of the same id. Implementation
+repaired, signed on nils-cli local `main`, release-installed, and awaiting
+real-product field closure.
 Area: `main-agent worker start`.
 
 `worker start` writes the durable assignment record, then fails
@@ -503,6 +527,27 @@ exist, created with `git-cli worktree add`.
 
 Acceptance: the cwd precondition is validated before the durable assignment
 record is written, so a failed launch leaves no orphan.
+
+Implementation closure canonicalizes and validates an existing directory
+before assignment, pending-receipt, or session mutation. Symlinked checkouts
+launch from their canonical target. A missing or invalid root fails
+`assignment-launch-cwd-unavailable` and remains resumable in batch mode; exact
+parent replay launches only repaired lanes. The same change adds a durable
+controller-bound worker-start operation fence from final authority validation
+through worker attachment, so claim release or replacement cannot create an
+unowned child in the remaining check/create/attach window. Crash replay adopts
+the same deterministic child and fence instead of duplicating launch.
+
+B7/B8 share nils-cli local-main commit
+`391d3d4bd69f54010304e4a7ef0907a409a0ce85`. The exact candidate tree passed
+the complete 201-case agent-session integration suite, all focused worker-start
+and trust/fence regressions, clippy with warnings denied, and the full
+workspace local-fast gate: 7,684/7,684 tests plus all doctests. Security,
+API-contract, performance, maintainability, testing, and adversarial review
+closed with no findings. The signed local-main tree matches the reviewed
+managed candidate exactly; its outside-repository receipt records
+`provider_delivered:false`. Installed `main-agent` and `agent-session` now
+report `v1.25.9-80-g391d3d4b`, and the runtime surfaces are converged.
 
 ### B2 — A `working` lane whose runtime died cannot be terminalized
 
@@ -725,8 +770,9 @@ not established here.
 
 ### B3 — An exhausted-readiness live worker has no recovery route
 
-Severity: recovery requires stepping outside the CLI. Not repaired; queued
-after B5/B6 field validation and B7-B8 per the Continuation Order.
+Severity: recovery requires stepping outside the CLI. Not repaired; it is the
+next implementation item in the Continuation Order. B5-B8 field validation is
+still open but does not gate this implementation.
 Area: `main_agent.rs` supervision, `session-coordination-guard.py` allowlist,
 `agent-session` command surface.
 
@@ -748,11 +794,11 @@ classification/cancellation path rather than `reconcile-recovery`.
 The 2026-07-28 B2 positive canary showed that an *idle, cooperative* provider
 can be stopped through its own clean exit path, delivered by the released
 `agent-session send` API, leaving durable state and the incarnation intact.
-That is a legitimate fixture route and it removed B2's field-closure blocker,
-but it is not a substitute for B3: it needs a provider that is idle and still
-responsive to its own exit command. B3's subject is a worker that is live,
-non-responsive, and cannot be driven, which is exactly the case that route
-cannot reach.
+That is a legitimate claim-absent stopped-runtime fixture route, but it did not
+remove or satisfy B2's live-claim field-closure requirement and is not a
+substitute for B3: it needs a provider that is idle and still responsive to its
+own exit command. B3's subject is a worker that is live, non-responsive, and
+cannot be driven, which is exactly the case that route cannot reach.
 
 Acceptance: an exhausted-readiness live worker returns an executable,
 Main-owned typed stop action needing no raw terminal command. The stop is bound
@@ -917,8 +963,50 @@ realpath-equivalent absolute symlink alias, a symlink-plus-dot-segment alias,
 and a relative symlink spelling. Focused coverage is green; the final
 shared-hook suite records 349 pass and one host-capability skip across 350
 cases.
-Deployment and the real-product release/retire canary remain open, so this is
-implementation closure only.
+The repaired surface is on runtime-kit local `main` and deployed. The
+real-product release/retire canary remains open, so field closure is not
+claimed.
+
+### B6 delivery and deployment closure, 2026-07-28
+
+The paired checkpoint contract is now on local `main`: nils-cli `3106e959`
+issues the exact private per-incarnation file and runtime-kit `63861eca`
+admits only that reconstructed file through the bounded natural write shapes.
+Both commits are signed and have outside-repository receipts. The nils binary
+was rebuilt, all three runtime products were resynced from the durable
+runtime-kit checkout, and their doctor/plugin/prompt gates passed. This closes
+implementation and deployment only. No real-product worker has yet submitted
+through ordinary `Write` or canonical `printf` without the legacy `perl`
+workaround, so B6 field closure remains unclaimed.
+
+### B7/B8 implementation and deployment closure, 2026-07-28
+
+Nils-cli local `main` `391d3d4b` validates canonical launch cwd and exact Codex
+project trust before durable side effects, pins the verified configuration
+root through child launch and replay, and fences controller authority through
+durable worker attachment. Its signed managed candidate and signed local-main
+commit have the same tree. Focused regressions, the 201-case agent-session
+integration suite, clippy with warnings denied, 7,684/7,684 workspace tests,
+all doctests, and the selected specialist review set are green. Rebuilt
+`main-agent` and `agent-session` report `v1.25.9-80-g391d3d4b`; runtime surface
+sync and all post-install checks are green.
+
+The first activation probe against the already-running Main Codex session
+correctly failed `runtime-checkpoint-unavailable`, proving that a pre-B6
+incarnation cannot cross the new readiness gate. A graceful `/quit` sent while
+that same provider turn was active did not stop it before the bounded wait, so
+the following `resume` was a live-session no-op and readiness remained false.
+At the safe turn boundary the old session then stopped, and the recovered fresh
+Codex session `20260728-161027-codex` passed
+`main-agent self readiness`: `ready:true`, a new session incarnation, and an
+absolute runtime-issued checkpoint file. This closes the B6 restart-readiness
+probe only. It is not a B7/B8 worker field canary. B7 field closure requires a
+trusted exact root to bootstrap without a trust dialog plus an untrusted exact
+root returning `provider-trust-required` before durable launch side effects.
+B8 field closure requires a missing cwd to return
+`assignment-launch-cwd-unavailable`, pre/post reads proving the assignment and
+session absent, and a successful same-id retry after creating the managed
+worktree. B7 and B8 remain unclaimed until those distinct cases run.
 
 ### B1/B4 and B2 delivery, 2026-07-27 to 2026-07-28
 
@@ -980,7 +1068,7 @@ their declared scopes.
 | F25 | A fresh Claude worker launched with an empty composer; the runtime still reported `submit-key-recovery-succeeded`. Transient — a relaunch delivered normally, and Codex delivered first time | Verify the composer holds the prompt before reporting success; report `prompt-not-present` otherwise |
 | F27 | In a checkout with no git remote, repository identity cannot resolve, and every scoped write plus the blocked-checkpoint escape hatch is denied with a generic identity error | Detect a remote-less checkout at claim or bootstrap time and fail with that specific cause |
 | F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>`. Still open: the 2026-07-28 closure canary tried to fix this by naming commands in the packet, but the named mailbox shapes were themselves wrong (missing `--session`, positional id for `show`), so a hand-written command list is not a reliable fix | Generate the exact commands from the CLI surface rather than hand-writing them into prompts or notifications |
-| F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6 has implementation closure for the runtime-issued out-of-checkout checkpoint, with deployment and field validation pending |
+| F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6 is implemented and deployed for the runtime-issued out-of-checkout checkpoint, with real-product field validation pending |
 | F30 | The runtime-generated worker prompt tells the worker to release its claim, while an assignment packet that needs the `request-changes` resume path tells it to hold the claim. A Claude worker correctly surfaced the contradiction as a question and blocked on it; an unattended worker stalls there. This is the likely cause of the earlier `working`/`needs-input` stall | Make the generated prompt defer to the packet, or state the release step as post-acceptance only |
 | F31 | A worker returned to `working` by `request-changes` must hold its claim for the resume path, but retirement requires the claim released, and no Main-owned typed action can revoke it. When the worker is quota-exhausted or otherwise unable to act, the accepted lane cannot be retired. Shares B5's symptom but not its cause: B5 is a cooperative worker using the wrong argv form, F31 is a worker that cannot act at all | Give the Main Agent a typed post-acceptance claim-revocation action for its own exact worker |
 | F32 | `main-agent checkpoint` rejected a worker packet with `invalid-checkpoint: coordination input is invalid` and named no field, the same discarded-serde-error shape as F13 | Surface the field path in checkpoint validation too |
@@ -1007,7 +1095,8 @@ Still open:
 - C08 for the B2 live-claim case, for dead-worker detection under an ambiguous
   stop, and for the remaining recovery classifications including B3's live
   worker
-- C09 unattended, once B5 is deployed and removes the hand-supplied release argv
+- C09 unattended, once B5 field validation proves the worker's pinned absolute
+  lifecycle command releases and retires without the bare-name workaround
 - Phase D parity beyond the differences recorded as F25, F29, and now F30-F34
 
 C06 and C07 were not reached because both provider accounts hit their usage
@@ -1023,9 +1112,10 @@ and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: field-validate B5, deliver/deploy/field-validate B6, repair B7-B8, close B2
-in the field against a live claim, then B3's typed stop, then C06/C07 and Phase D
-as the final parity gate. Before provider delivery, restore governed GitHub access and
+Next: implement B3's typed exact-incarnation stop, field-validate B5-B8 without
+their legacy workarounds, then close B2 only against an independently
+stopped worker whose claim is still active on TTL. Follow with C06/C07 and
+Phase D as the final parity gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
@@ -1048,20 +1138,22 @@ rejection, and hook denial of an ordinary default-branch commit all passed.
 - `exclusions` and `invariants` belong inside the free-form `task` object;
   `AssignmentInput` is `deny_unknown_fields`.
 - `main-agent worker start` does not create the managed worktree. Create it
-  first with `git-cli worktree add <slug> --from <base> --kind chore`, or the
-  launch fails `cwd-unavailable` after already persisting the assignment (B8).
-- A Codex lane needs its repository root trusted before launch, or it dies at
-  startup with no bootstrap (B7).
-- Until the B6 repair is deployed and field-validated, retain the exact legacy
-  workaround: the only admitted way for a worker to create its out-of-checkout
-  checkpoint file is a simple-argv command carrying the JSON in single quotes,
-  for example
+  first with `git-cli worktree add <slug> --from <base> --kind chore`. The
+  repaired launch now fails `assignment-launch-cwd-unavailable` before
+  persisting an assignment when the directory is missing (B8).
+- A Codex lane still requires explicit trust for its exact canonical repository
+  root. The repaired launch never mutates trust: absent trust fails
+  `provider-trust-required`, and unverifiable configuration fails
+  `provider-trust-unverified`, both before durable launch side effects (B7).
+- Do not use the legacy B6 `perl` workaround during field validation; an
+  ordinary `Write` or canonical `printf` must succeed against the
+  runtime-issued checkpoint path. The exact historical pre-deployment
+  workaround is retained only for interpreting older runs:
   `perl -e 'open(my $fh, ">", $ARGV[0]) or die; print $fh $ARGV[1], "\n"; close $fh or die; chmod 0600, $ARGV[0] or die;' <path> '<json>'`.
-- Until the B5 repair is deployed and field-validated, a worker must invoke the
-  projected lifecycle shapes as
-  the bare name `agent-session`, with the literal quoted `"$AGENT_SESSION_ID"`
-  and `"$AGENT_SESSION_CAPABILITY_FILE"`; an absolute path deadlocks the
-  release. The exact admitted release invocation is:
+- Do not use the B5 bare-name workaround during field validation; the worker
+  must invoke its runtime-pinned absolute `agent-session` lifecycle command.
+  The exact historical bare-name release invocation is retained for older
+  run interpretation:
   `agent-session work-context release --session "$AGENT_SESSION_ID" --claim <claim-id> --if-revision <n> --capability-file "$AGENT_SESSION_CAPABILITY_FILE" --idempotency-key <key> --format json`
   Supplying only the *description* of this shape is not enough: the canary's
   Claude lane was told the bare name was required and still composed a
