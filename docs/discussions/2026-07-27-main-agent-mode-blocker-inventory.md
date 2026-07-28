@@ -5,10 +5,14 @@ closed on both providers — but only with four manual workarounds, filed here a
 new blockers B5-B8; B5 and B6 each still prevent an unattended lane from
 finishing, so they lead the queue. B2 implementation, signed local-main
 integration, release binary install, and rendered-surface deployment are
-complete, and the positive stopped-runtime real-product canary has now PASSED,
-so B2 field closure is claimed. Provider delivery remains blocked before
-mutation by a GitHub GraphQL 403. Open work: B5-B8, then B3, then C06/C07, the
-residual C08 recovery classifications, and the remaining Phase D parity items
+complete. A positive stopped-runtime canary ran and passed, but it does NOT
+establish B2 field closure: the fixture's clean provider exit released the
+claim and tore down the broker before the action ran, so B2's defining
+condition — a dead worker still holding a claim alive on TTL — was never
+reproduced. B2 field closure remains UNCLAIMED. Provider delivery remains
+blocked before mutation by a GitHub GraphQL 403. Open work: B5-B8, the
+unexercised B2 live-claim branch, then B3, then C06/C07, the residual C08
+recovery classifications, and the remaining Phase D parity items
 Date: 2026-07-27
 Updated: 2026-07-28
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
@@ -21,9 +25,9 @@ the ordered repair queue plus the E2E scope that remains to be rerun.
 B1 is in local `main` in both repositories, the rebuilt nils-cli binaries and
 runtime surfaces are deployed, and the installed-binary coupled acceptance is
 green. The separate B1 real-product C02-C05 closure canary has now closed on
-both providers. Reaching that closure required removing four distinct root
-causes, filed below as blockers B5-B8; none of them was a defect in the B1
-scope/admission design itself. Both lanes bootstrapped, ran
+both providers. Reaching that closure required working around four distinct
+root causes by hand, filed below as blockers B5-B8 and all still unrepaired;
+none of them was a defect in the B1 scope/admission design itself. Both lanes bootstrapped, ran
 checkout-bound shell validation under a narrow claim, created signed commits,
 checkpointed `submitted`, took one revision-fenced `request-changes` plus a
 private mailbox message, resumed in the same session without widening the
@@ -56,18 +60,33 @@ negative `reconcile-stopped` canary failed closed with assignment revision and
 state unchanged, and that negative result was re-verified against a fresh live
 lane on 2026-07-28.
 
-The positive stopped-runtime real-product canary has now run and passed, so
-**B2 field closure is claimed**. The fixture was obtained without any
-prohibited technique: an ordinary lane was launched, bootstrapped to `working`,
-submitted, returned to `working` by a normal typed `request-changes`, and then
-its runtime was stopped through the provider's own clean exit path delivered by
-the released `agent-session send` API while the worker was idle with zero
-admitted operations. No raw tmux control, no signal or kill, no
-`agent-session delete`, no force group cleanup, and no controller impersonation
-were used. The durable session record survived with the same incarnation and
-`resumable: true`, and the worktree kept its uncommitted work. Full evidence,
-including the verified safety envelope and both replay-safety cases, is in the
-run directory named below.
+A positive stopped-runtime canary has now run and passed, but it does **not**
+establish B2 field closure, and field closure remains unclaimed.
+
+The fixture was obtained without any prohibited technique: an ordinary lane was
+launched, bootstrapped to `working`, submitted, returned to `working` by a
+normal typed `request-changes`, and then its runtime was stopped by sending the
+provider's own exit command (`/quit`) through the released `agent-session send`
+API while the worker was idle with zero admitted operations. No raw tmux
+control, no signal or kill, no `agent-session delete`, no force group cleanup,
+and no controller impersonation were used. The durable session record survived
+with the same incarnation and `resumable: true`, and the worktree kept its
+uncommitted work.
+
+That clean exit is exactly why the run is not field closure. A graceful
+provider shutdown also tears down the coordination broker and releases the
+claim. B2's defining condition is the opposite — "its assignment stays
+`working` with a claim alive on TTL" — and that condition was absent: the
+post-stop projection recorded `claim_active:false`, `claim_id:null`,
+`broker_authoritative:false`, and the action's own
+`proof.worker_claim.observed_at_stage1:false`. The claim-revocation branch that
+makes B2 a blocker was therefore never exercised against a real product. What
+the run does establish is narrower but still real: the terminalization path is
+correct on an already-quiescent, claim-absent stopped worker, and the
+fail-closed side is correct against a live one.
+
+See "What the positive canary did and did not prove" under B2 for the exact
+split, and the run directory named below for raw evidence.
 
 Both direct-main candidates are ready, but the dry-run form of
 `forge-cli repo push-default` fails before mutation in both repositories
@@ -117,30 +136,51 @@ repository beside the run:
    Codex untrusted-repository bootstrap death (B7), and `worker start`
    persisting an assignment before validating its cwd (B8). B5 and B6 each
    independently prevent an unattended lane from ever terminating cleanly.
-3. **Repair B3 after the failure-state split is explicit.** Give
-   `submit_recovery.state:"failed"` on a still-live worker its own
-   classification. Add a typed exact-incarnation runtime-stop primitive that
-   stops the runtime without deleting durable session state. After stopped
-   proof, route a failed pre-claim worker through guarded cancel/retire/reassign;
-   retain `reconcile-recovery` for an unknown `attempting` send.
-4. **Run C06, C07, and the remaining Phase D parity items.** C02-C05 and C09
-   are now closed on both providers, and C08's recovery boundary is closed for
-   the B2 post-claim path on a single Codex fixture lane. C06 dependency wait
-   and C07 account-next / unsupported-account behaviour were not reached
-   because both provider accounts hit their usage ceilings during the closure
-   session.
-5. **Then take the friction wave.** Fold F25 prompt-presence truth into B3;
+3. **Close B2 in the field.** Re-run the positive canary against a stopped
+   worker whose assignment-derived claim is still active on TTL, and require
+   `proof.worker_claim.observed_at_stage1:true` plus a post-action read proving
+   the claim gone. Separately, supervise a lane whose provider process is dead
+   but whose tmux session still exists, and require a non-`healthy_progress`
+   classification. Until both run, B2 field closure stays unclaimed. This
+   likely needs B3's typed stop, since a cooperative exit cannot leave the
+   claim behind.
+4. **Repair B3 after the failure-state split is explicit.** Add a typed
+   exact-incarnation runtime-stop primitive that stops the runtime without
+   deleting durable session state. After stopped proof, route a failed
+   pre-claim worker through guarded cancel/retire/reassign; retain
+   `reconcile-recovery` for an unknown `attempting` send.
+   Do **not** key the new classification on `submit_recovery.state:"failed"`
+   alone. The 2026-07-28 canary observed a fully healthy lane — `running`,
+   `healthy_progress`, `failed_preclaim:false`, which went on to bootstrap,
+   commit, submit, and take a `request-changes` — carrying
+   `submit_recovery.state:"failed"` with
+   `result:"worker-activity-not-authoritative-starting"` from a recovery
+   attempt nine seconds after session creation. That field is not a
+   discriminator. Pair it with F25's composer-presence check or with proven
+   absence of subsequent assignment and worktree progress.
+5. **Run C06, C07, and the remaining Phase D parity items.** C02-C05 are closed
+   on both providers, and C09 is closed on both but only with hand-supplied
+   release argv pending B5. C08's recovery boundary is only partly closed: the
+   B2 post-claim path ran on a single Codex fixture lane, and only in its
+   claim-absent form. C06 dependency wait and C07 account-next /
+   unsupported-account behaviour were not reached because both provider
+   accounts hit their usage ceilings during the closure session.
+6. **Then take the friction wave.** Fold F25 prompt-presence truth into B3;
    address F22 and F33 together while touching the supervision and
-   pre-bootstrap classifier. Take F30 and F31 with B5's claim-release repair,
-   since all three decide who may end a lane's claim. Take F32 with F13, since
-   both are the same discarded-serde-error shape. Follow with F24/F28/F27 input
-   and guidance clarity. Keep F18/F05/F20 as the later ambient-tooling wave.
+   pre-bootstrap classifier. Take F30, F31, and F34 with B5's claim-release
+   repair, since all four decide who may end a lane's claim or its operation.
+   Take F32 with F13, since both are the same discarded-serde-error shape.
+   Follow with F24/F28/F27 input and guidance clarity; F28 in particular is not
+   closed, because the closure canary's own packets shipped wrong mailbox argv.
+   Keep F18/F05/F20 as the later ambient-tooling wave.
 
 B2 established the missing distinction between post-claim failure and
-pre-claim failure, and its field closure is now proven. The implementations are
-on both local default branches. First restore the governed GitHub
-provider-delivery path, then repair the four B1 canary root causes, then
-implement B3's typed stop, then finish C06/C07 and Phase D.
+pre-claim failure, and its implementation closure holds; its field closure does
+not, because the one positive run never reproduced a live claim. The
+implementations are on both local default branches. First restore the governed
+GitHub provider-delivery path, then repair the four B1 canary root causes, then
+close B2 in the field, then implement B3's typed stop, then finish C06/C07 and
+Phase D.
 B3 may reuse B2's exact-runtime and quiescence proof helpers, but after the
 typed stop it should enter the existing pre-claim cancellation path rather
 than the B2 post-claim transition. Do not implement B3 by classifying a live
@@ -249,7 +289,8 @@ validation, and `semantic-commit` from a narrow two-path claim, and neither
 lane ever needed repository scope.
 
 **B1 closure canary root causes.** The canary closed, but only after four
-separate obstacles were removed. None is a defect in B1's scope projection or
+separate obstacles were worked around by hand; all four remain unrepaired in
+the product. None is a defect in B1's scope projection or
 admission rule; all four are in the surrounding worker lifecycle, and each is
 filed as its own blocker (B5-B8) below. Two of them (B5, B6) independently make
 an *unattended* lane unable to finish, so B1's end-to-end promise is not yet
@@ -275,9 +316,23 @@ work-context release -> operation-in-progress
 The blocking operation is the release command itself. The worker can therefore
 never release, its claim is renewed indefinitely by the broker heartbeat, and
 `worker retire` fails `worker-not-quiescent` forever. In the canary this
-deadlocked an already-accepted lane until the exact bare-name shape recorded in
-the Reproduction Notes was
-supplied by hand; both lanes then released immediately.
+deadlocked both accepted lanes until the exact bare-name shape recorded in the
+Reproduction Notes was supplied by hand.
+
+The two lanes are not equally strong evidence, and the difference matters. The
+Codex lane is direct proof: it was given the exact shape, ran it, and its own
+output showed `work-context release ... ok:true` followed by "Claim released
+successfully". The Claude lane took three messages. Told only *that* the bare
+name was required, it still composed a near-miss
+(`work-context release --claim <id> --if-revision 1`, with no `--session`,
+`--capability-file`, `--idempotency-key`, or `--format json`) and was refused
+`operation-in-progress` twice. It released only after the complete invocation
+was supplied verbatim. Because its runtime was alive and the broker was still
+renewing, the claim could not have lapsed on its own at that point, so the
+release is attributable to the exact shape rather than to TTL expiry.
+
+That lane also reported, correctly, that it had no self-service recovery: see
+F34.
 
 This is the same defect class already repaired for `main-agent` in runtime-kit
 `0ca2819c`, where `worker start` writes an absolute path into the worker prompt
@@ -364,8 +419,9 @@ record is written, so a failed launch leaves no orphan.
 
 Severity: a failed run could never be closed. Repaired in signed nils-cli and
 runtime-kit local-main commits, release-installed and surface-deployed.
-Implementation closure and real-product field closure are both achieved;
-governed provider delivery remains blocked before mutation.
+Implementation closure is achieved; real-product field closure is NOT, because
+the one positive canary never reproduced a live claim. Governed provider
+delivery remains blocked before mutation.
 Area: `crates/agent-session/src/main_agent.rs`.
 
 After a worker dies past bootstrap, its assignment stays `working` with a claim
@@ -477,12 +533,39 @@ reported no findings.
 Rendered surfaces were previewed and then applied successfully from the
 durable deploy checkout; doctor, prompt, and plugin checks are green.
 
-#### Field closure evidence (2026-07-28)
+#### What the positive canary did and did not prove (2026-07-28)
 
-The positive stopped-runtime real-product canary has now run against the
-installed 1.25.11 binary and the deployed surfaces, so **B2 field closure is
-claimed**. Lane `b2-positive-fixture-20260728`, worker incarnation
+A positive stopped-runtime canary ran against the installed 1.25.11 binary and
+the deployed surfaces. **B2 field closure is not claimed.** Lane
+`b2-positive-fixture-20260728`, worker incarnation
 `b9c9d33e-6108-44b6-9ee2-6fdc3b9f7898`.
+
+The fixture's clean provider exit made B2's most important branches vacuous:
+
+| Branch | Status |
+| --- | --- |
+| Terminalize a stopped, quiescent, claim-absent worker | proven in the field |
+| Fail closed against a live runtime | proven in the field |
+| Terminalize a stopped worker whose claim is **still active on TTL** (`observed_at_stage1:true`) | NOT exercised — the defining B2 case |
+| Detect a dead worker whose stop signal is ambiguous (process dead, tmux alive) | NOT exercised — the original B2 misreport |
+| Interrupted stage-1 replay rollforward | NOT exercised |
+| Stage-2 admission of a distinct successor controller | NOT exercised (`controller_authorization.mode:"original"`, successor == original) |
+| Expired-claim non-renewal under the generic lock path | NOT exercisable — no claim was present |
+| HTTP resume denial under quarantine | NOT exercised; only the CLI path was |
+
+Two consequences deserve emphasis. First, `worker_claim_active_after:false`
+proves nothing here about the action's effect, because the claim was already
+absent before stage 1; the v2 contract is deliberately honest about this by
+reporting `release_provenance:"not_attributed_to_attempt"`. Second, the
+classification flipped to `post_claim_failure` only because the clean exit made
+`worker.status` unambiguously `stopped` — the same projection still carried
+`progress.provider_active:true` and `activity.phase:"working"`. A hostile stop
+that leaves tmux alive would reproduce the original `healthy_progress`
+misreport, which is precisely the defect B2 exists to fix.
+
+Closing B2 in the field requires a stopped worker whose assignment-derived
+claim is still active on TTL, with `observed_at_stage1:true` and a post-action
+read proving the claim gone.
 
 The negative side was re-verified first on the same live lane: exit
 `worker-runtime-still-live` with assignment state and revision unchanged.
@@ -504,22 +587,44 @@ The typed action returned `main-agent.worker-reconcile-stopped-result.v2` with
 release_provenance:"not_attributed_to_attempt", observed_at_stage1:false}`.
 The assignment moved `working -> cancelled` at revision 7.
 
-Verified safety envelope: the worktree, branch, and uncommitted diff survived;
-the durable run and the Main session survived; CLI resume was denied
-`worker-quarantined`; the quarantine is session-only and identity-bound (one
-`authority-quarantine.json` across six sessions, carrying the exact incarnation
-and runtime identity digest); unrelated sessions were untouched; read-only
-broker observation did not renew any claim; and no input was sent.
+Safety envelope, with each row's actual evidence strength:
 
-Verified replay safety: an exact replay with the same now-stale revision, same
-reason, and same idempotency key returned the committed v2 receipt without
-re-mutating (revision stayed 7), while a changed request with a new idempotency
-key on the stale revision failed closed `orchestration-revision-conflict`. The
-reconciled worker was then retired, deleted, and proven absent from a fresh
+| Property | Strength |
+| --- | --- |
+| Worktree, branch, and uncommitted diff survived | captured in the run directory |
+| Durable run and Main session survived | captured in the run directory |
+| Unrelated sessions still running | captured, but this is a liveness observation over n=2 sessions on one machine, not an authority check; their claims and operations were not read before and after |
+| Read-only broker observation did not renew a claim | captured, but vacuous: there was no claim present to renew |
+| No input sent by the action (`input_sent:false`) | in the result JSON |
+| CLI resume denied `worker-quarantined` | observed live during the run; the raw output was NOT captured, and the session has since been deleted, so it is narrative-only in the retained record |
+| Quarantine session-only and identity-bound | observed live as a single `authority-quarantine.json` carrying the exact incarnation and runtime identity digest; the file was NOT copied into the run directory and is gone with the deleted session, so it is narrative-only |
+
+The terminalized assignment projects `worker_quarantine: null`. That is not the
+previously repaired null-projection defect resurfacing: the quarantine is
+deliberately session-scoped, so the assignment record carries null by design
+while the session carries the record. Enforcement was confirmed behaviourally
+by the denied resume.
+
+Replay safety, two of at least four documented paths:
+
+| Case | Result |
+| --- | --- |
+| Exact replay: same stale revision, same reason, same idempotency key | returned the committed v2 receipt, revision still 7, no re-mutation |
+| Changed request: new idempotency key on the stale revision | failed closed `orchestration-revision-conflict` |
+| Interrupted stage-1 replay rollforward | not exercised |
+| Stage-2 distinct-successor controller admission | not exercised |
+
+The reconciled worker was then retired, deleted, and proven absent from a fresh
 session list.
 
-The fixture was produced without any prohibited technique; see the run
-directory for the exact method and its justification.
+The fixture method, stated here so the repo record is self-contained: the
+provider's own exit command was delivered with `agent-session send` to an idle
+worker holding zero admitted operations. **That route is fixture construction
+only.** It is untyped provider input — not revision-fenced, not
+incarnation-bound, carries no idempotency key, and nothing enforces quiescence
+at send time. It must never be used as a recovery action, must never substitute
+for the B2 transition it was used to set up, and does not satisfy B3's typed
+stop acceptance.
 
 Signed one-commit current-main integration candidates exist for both
 repositories, and their exact trees are committed to both local default
@@ -595,7 +700,8 @@ its claim while untrusted and malformed near misses remain rejected.
 ## B1 Final Implementation
 
 Recorded for the 2026-07-27 B1 delivery session; B2 and B3 were queued at that
-time. B2 has since reached field closure. Scope remained B1. The checkpoint part of B4 was
+time. B2 has since reached implementation closure, but not field closure.
+Scope remained B1. The checkpoint part of B4 was
 included because it is required by B1's submitted-lane acceptance; the existing
 exact `show`, `check`, `renew`, and `release` lifecycle projections remain
 unchanged.
@@ -752,7 +858,7 @@ the installed 1.25.11 binary and the already-deployed surfaces:
 | B1 C02-C05 closure, Claude lane | closed — released at revision 10, absent from a fresh list |
 | B1 C02-C05 closure, Codex lane | closed — released at revision 10, absent from a fresh list |
 | B2 live-runtime negative reconcile | fail-closed `worker-runtime-still-live`, state and revision unchanged |
-| B2 positive stopped-runtime reconcile | passed with the full v2 proof, safety envelope, and both replay cases |
+| B2 positive stopped-runtime reconcile | passed on a claim-absent stopped worker, with the v2 proof fields and two of at least four replay paths; does NOT establish field closure |
 
 Run `5f959c6d-e71d-4951-bf8e-059a50c1cdc1`, closed at revision 3. Lane commits
 in the disposable fixture `graysurf/main-agent-b1-canary`: Claude `eb4f4cec`
@@ -767,12 +873,13 @@ their declared scopes.
 | F24 | A packet whose `repository` is a path instead of `owner/name` is accepted by `worker start` and only fails at bootstrap, costing a launch, a readiness wait, and a reassign | Validate the identifier inside `worker start` before creating a session |
 | F25 | A fresh Claude worker launched with an empty composer; the runtime still reported `submit-key-recovery-succeeded`. Transient — a relaunch delivered normally, and Codex delivered first time | Verify the composer holds the prompt before reporting success; report `prompt-not-present` otherwise |
 | F27 | In a checkout with no git remote, repository identity cannot resolve, and every scoped write plus the blocked-checkpoint escape hatch is denied with a generic identity error | Detect a remote-less checkout at claim or bootstrap time and fail with that specific cause |
-| F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>` | Name the exact commands in the worker prompt or the notification |
+| F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>`. Still open: the 2026-07-28 closure canary tried to fix this by naming commands in the packet, but the named mailbox shapes were themselves wrong (missing `--session`, positional id for `show`), so a hand-written command list is not a reliable fix | Generate the exact commands from the CLI surface rather than hand-writing them into prompts or notifications |
 | F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; the out-of-checkout mirror is now B6 |
 | F30 | The runtime-generated worker prompt tells the worker to release its claim, while an assignment packet that needs the `request-changes` resume path tells it to hold the claim. A Claude worker correctly surfaced the contradiction as a question and blocked on it; an unattended worker stalls there. This is the likely cause of the earlier `working`/`needs-input` stall | Make the generated prompt defer to the packet, or state the release step as post-acceptance only |
 | F31 | A worker returned to `working` by `request-changes` must hold its claim for the resume path, but retirement requires the claim released, and no Main-owned typed action can revoke it. When the worker is quota-exhausted or otherwise unable to act, the accepted lane cannot be retired. Shares B5's symptom but not its cause: B5 is a cooperative worker using the wrong argv form, F31 is a worker that cannot act at all | Give the Main Agent a typed post-acceptance claim-revocation action for its own exact worker |
 | F32 | `main-agent checkpoint` rejected a worker packet with `invalid-checkpoint: coordination input is invalid` and named no field, the same discarded-serde-error shape as F13 | Surface the field path in checkpoint validation too |
 | F33 | Codex reported "Selected model is at capacity" mid-lane and its turn ended without progress, yet supervision still classified `healthy_progress` | Treat a provider capacity failure as attention-required, per the documented capacity rule |
+| F34 | A worker cannot clear a dangling operation lease on its own claim. `work-context complete` requires `--lease` plus `--execution-token-file`, and `work-context reconcile` requires `--lease` plus `--proof-file`; both the lease id and the execution token are minted by the hook layer at implicit admit time and never handed to the worker. The only correct worker behaviour left is to report and wait — the canary's Claude lane did exactly that, and explicitly refused to scavenge capability material out of `coordination/registry.json` to satisfy the guard checking it | Either return the lease id and execution token to the worker that owns the operation, or give the Main Agent a typed action to complete/reconcile a dangling lease on its own worker's claim |
 | F13 | `worker start` rejects a packet with `invalid-assignment-packet: coordination input is invalid` and names no field; the serde error is discarded. The skill also names `exclusions` and `invariants`, which are not top-level schema fields | Surface the field path; align the skill with the schema |
 | F18 | Read-only `semantic-commit` probes are denied when composed — `cd X && semantic-commit …`, or a trailing `2>&1` parsed as a CLI argument | Classify read-only subcommands and redirections before default-delivery analysis |
 | F05 | `agent-session activity doctor` reports `configured:false` while the compatibility probe reports `configured:true` with `compatibility_owner:"agent-hook"` | Reconcile the doctor with agent-hook ownership |
@@ -781,31 +888,37 @@ their declared scopes.
 ## E2E Continuation Scope
 
 Closed on both products: C01 activation, C02 startup, C03 supervision and
-claims, C04 authenticated mailbox, C05 request-changes and same-session resume,
-C09 acceptance and retirement. C08's recovery boundary is closed for the B2
-post-claim path specifically, through the passing positive canary on a single
-Codex fixture lane; the Claude equivalent of that recovery path was not run.
+claims, C04 authenticated mailbox, C05 request-changes and same-session resume.
+C09 acceptance and retirement is closed on both products but only with
+hand-supplied release argv; it does not yet pass unattended, pending B5.
+C08's recovery boundary is only partly closed: the B2 post-claim path ran on a
+single Codex fixture lane and only in its claim-absent form.
 
 Still open:
 
 - C06 dependency wait
 - C07 account-next (Codex) and unsupported-account behaviour (Claude)
-- C08 for the remaining recovery classifications, notably B3's live worker
-- Phase D parity beyond the differences recorded as F25, F29, and now F30-F33
+- C08 for the B2 live-claim case, for dead-worker detection under an ambiguous
+  stop, and for the remaining recovery classifications including B3's live
+  worker
+- C09 unattended, once B5 removes the hand-supplied release argv
+- Phase D parity beyond the differences recorded as F25, F29, and now F30-F34
 
 C06 and C07 were not reached because both provider accounts hit their usage
 ceilings during the closure session, not because of any product defect.
 
 B2 nils-cli is release-installed at the canonical head; checksum/version proof,
 the installed B1 coupled acceptance, the live-runtime negative reconcile canary,
-and now the positive stopped-runtime canary are all green. Runtime-kit B2
+and the claim-absent positive stopped-runtime canary are all green, but the
+live-claim positive case that would close B2 in the field has not run.
+Runtime-kit B2
 implementation head `d35f3960338bc4893dc0bb158e88c341cb15a44a` passes full CI
 and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: repair B5-B8, then B3's typed stop, then C06/C07 and Phase D as the final
-parity gate. Before provider delivery, restore governed GitHub access and
+Next: repair B5-B8, close B2 in the field against a live claim, then B3's typed
+stop, then C06/C07 and Phase D as the final parity gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
@@ -841,6 +954,18 @@ rejection, and hook denial of an ordinary default-branch commit all passed.
   and `"$AGENT_SESSION_CAPABILITY_FILE"`; an absolute path deadlocks the
   release. The exact admitted release invocation is:
   `agent-session work-context release --session "$AGENT_SESSION_ID" --claim <claim-id> --if-revision <n> --capability-file "$AGENT_SESSION_CAPABILITY_FILE" --idempotency-key <key> --format json`
+  Supplying only the *description* of this shape is not enough: the canary's
+  Claude lane was told the bare name was required and still composed a
+  near-miss. Send the complete invocation verbatim.
+- The mailbox commands all require `--session`, and `show`/`ack` take
+  `--message` rather than a positional id. The closure canary's own assignment
+  packets shipped the wrong shapes here, which is the same F28 failure the
+  packets were meant to fix. The correct forms are:
+  - `agent-session message inbox --session <session-id> --state unread --limit <n> --format json`
+  - `agent-session message show --session <session-id> --message <message-id> --format json`
+  - `agent-session message ack --session <session-id> --message <message-id> --if-revision <n> --idempotency-key <key> --format json`
+  Reading a message advances its revision, so re-read the inbox before `ack`
+  or the compare-and-swap fails `message-revision-conflict`.
 - The earlier retained run `2dfae16e` is now `closed` in the registry, as is
   the closure-canary run `5f959c6d`. Two `submitted` assignments from
   2026-07-23 remain orphaned in runs `706def5a` and `cf750754`; their worker
