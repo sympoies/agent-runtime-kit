@@ -33,18 +33,29 @@ lifecycle, workers release after successful task checkpoints, and a
 request-changes worker re-bootstraps for the current revision before mutating.
 Historical persisted-start replay remains compatible with the immediately
 prior generated prompt. F30 field closure is not claimed until a fresh
-unattended lane completes. The original worker is deliberately preserved:
-F31 still leaves Main without a typed way to revoke the exact accepted
-worker's claim when the worker cannot act.
+unattended lane completes.
+
+F31 now has implementation, signed local-main integration, release
+installation, and real-product field closure at nils-cli local `main`
+`7857fe76c992bad6c4ec0a6f6154362f6e5c1e31`. The typed
+`main-agent worker revoke-claim` action accepted only the exact revision- and
+incarnation-fenced, authoritative-idle live worker with an active
+assignment-derived claim and no active or uncertain operations. It sent no
+provider input, changed the assignment from `working` to `cancelled`, removed
+only that claim and broker authority, quarantined resume authority, and
+preserved the durable session plus the dirty worktree with the same status
+digest. A fresh post-action read proved the claim absent; the other preserved
+worker's claim remained active. This closes F31, not B2: the F31 worker
+remained live, while B2 requires an independently stopped worker whose claim
+is still active on TTL before terminalization.
 
 GitHub provider delivery remains spam-blocked; this session is authorized to
 use governed local-main delivery instead. Open work: a fresh B5/B6 unattended
-field lane using the deployed F30 repair, F31's typed Main-owned
-post-acceptance claim revocation, the independent B2 live-claim and
+field lane using the deployed F30 repair, the independent B2 live-claim and
 ambiguous-stop field cases, then C06/C07, the residual C08 recovery
 classifications, and the remaining Phase D parity items.
 Date: 2026-07-27
-Updated: 2026-07-28
+Updated: 2026-07-29
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
 
 ## Purpose
@@ -146,9 +157,9 @@ insufficient for both B3 and B2:
 B3's own scenario is an exhausted-readiness worker that cannot be driven, while
 B2 requires a stopped post-claim worker whose claim remains alive on TTL.
 F-items normally record friction rather than blocker closure, but F30 proved an
-independent unattended-lane blocker and F31 currently prevents safe retirement
-of the preserved worker; their promotion in the Continuation Order is
-intentional.
+independent unattended-lane blocker and F31 prevented safe retirement of the
+preserved worker until its typed field closure on 2026-07-29; their promotion
+in the Continuation Order is intentional.
 
 Raw per-scenario evidence, rerun selectors, and receipts stay outside the
 repository beside the run:
@@ -160,6 +171,10 @@ repository beside the run:
 - `$AGENT_HOME/out/projects/graysurf__agent-runtime-kit/20260728-193740-b5-b8-field-canary/result-and-improvements.md`
   — B7/B8 field closure, the failed B5/B6 unattended attempt, the authorized
   manual-recovery boundary, and the preserved F31-stuck lane
+- `$AGENT_HOME/out/projects/graysurf__agent-runtime-kit/20260729-040232-f31-field-closure-f30/`
+  — F31 pre-action supervision, typed revocation result, and post-action read
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-040002-f31-local-main-delivery/default-branch-receipt.json`
+  — signed governed nils-cli local-main delivery receipt
 
 ## Continuation Order
 
@@ -194,16 +209,20 @@ repository beside the run:
    `agent-session` lifecycle shape, and an ordinary checkpoint `Write` or
    canonical `printf`. Require task checkpoint, claim release, acceptance,
    retirement, and fresh-list absence without provider input or legacy argv
-   workarounds. Preserve the stuck original lane until F31 provides a typed
-   exact-worker revocation path.
-4. **Repair F31's typed exact-worker claim revocation.** The preserved original
-   lane proves the gap without any manufactured failure: an accepted worker
-   still holds its live claim but cannot complete the checkpoint/release path,
-   and Main has no revision-fenced, incarnation-bound, idempotent action that
-   can revoke only that claim. Add the Main-owned action, retain the worker's
-   worktree and durable session, and prove unrelated claims and authority stay
-   untouched. Do not use provider input, raw terminal control, delete, or force
-   cleanup as the fixture or recovery.
+   workarounds. F31 safely fenced the stuck original lane; start a distinct
+   clean assignment and never reuse its retired prompt or dirty worktree.
+4. **Keep F31's typed exact-worker claim revocation deployed and closed.**
+   Signed nils-cli local-main commit
+   `7857fe76c992bad6c4ec0a6f6154362f6e5c1e31` adds the revision-fenced,
+   incarnation-bound, idempotent Main-owned action. Its 2026-07-29
+   real-product run started from an authoritative-idle live worker whose
+   assignment-derived claim was active and operations were quiescent. The
+   action removed only that claim, quarantined exact-session resume authority,
+   preserved the durable session and unchanged dirty worktree, and sent no
+   provider input. A fresh read proved `claim_active:false`, while the other
+   live worker retained its claim. F31 implementation and field closure are
+   complete; this evidence must not be counted as B2 because the worker stayed
+   live.
 5. **Close B2 in the field.** Re-run the positive canary against an
    independently stopped
    worker whose assignment-derived claim is still active on TTL, and require
@@ -235,8 +254,8 @@ repository beside the run:
 7. **Then take the remaining friction wave.** Fold F25 prompt-presence truth into B3;
    address F22 and F33 together while touching the supervision and
    pre-bootstrap classifier. F30 is implemented and deployed but still needs
-   the fresh unattended field proof in step 3. F31 is promoted to step 4
-   because it blocks safe retirement of the preserved lane. Take F34 as the
+   the fresh unattended field proof in step 3. F31 remains recorded at step 4
+   as closed field evidence. Take F34 as the
    remaining operation-ownership work; B5's source repair does not close it.
    Take F32 with F13, since both are the same discarded-serde-error shape.
    Follow with F24/F28/F27 input and guidance clarity; F28 in particular is not
@@ -249,9 +268,9 @@ not, because the one positive run never reproduced a live claim. The B2
 implementations are on both local default branches. B5-B8 are repaired and
 deployed; B7/B8 field closure is complete while B5/B6 remains open. B3 is
 integrated and deployed but not field-closed. F30 is implemented and deployed
-but not field-closed. Next rerun B5/B6 unattended under F30, repair F31's
-typed exact-worker revocation, close B2 only against an independently stopped
-live-claim fixture, then finish C06/C07 and Phase D.
+but not field-closed. F31 is implemented, integrated, installed, and
+field-closed. Next rerun B5/B6 unattended under F30, close B2 only against an
+independently stopped live-claim fixture, then finish C06/C07 and Phase D.
 The completed B3 candidate reuses B2's exact-runtime and quiescence proof
 helpers, then enters the existing pre-claim cancellation path after the typed
 stop rather than the B2 post-claim transition. It deliberately does not
@@ -439,8 +458,9 @@ without supplying a bare-name workaround.
 B5 covers only a *cooperative* worker that is able to run a command but is
 using the wrong argv form. It does not cover a worker that cannot act at all —
 quota-exhausted, wedged, or unresponsive — which still leaves an accepted lane
-unretirable because no Main-owned action can revoke that claim. That residual
-case is F31 and must be closed separately; landing B5 does not resolve it.
+unretirable before the Main-owned F31 action can revoke that claim. That
+residual case was closed separately on 2026-07-29; landing B5 did not resolve
+it.
 
 ### B6 — The mandated out-of-checkout checkpoint file is nearly unwritable
 
@@ -1067,7 +1087,9 @@ still emitted no checkpoint. Because the lane required provider input, it
 cannot be unattended evidence; because it never checkpointed, it exercised
 neither B6's natural write nor B5's pinned absolute release. B5/B6 field
 closure remains unclaimed. The worker, claim, session, and worktree remain
-preserved because F31 leaves no safe typed Main-owned revocation action.
+preserved in the retained 2026-07-28 evidence. F31 later supplied and
+field-validated the safe typed Main-owned revocation action on a distinct
+preserved lane.
 
 ### F30 implementation and deployment closure, 2026-07-28
 
@@ -1218,7 +1240,7 @@ their declared scopes.
 | F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>`. Still open: the 2026-07-28 closure canary tried to fix this by naming commands in the packet, but the named mailbox shapes were themselves wrong (missing `--session`, positional id for `show`), so a hand-written command list is not a reliable fix | Generate the exact commands from the CLI surface rather than hand-writing them into prompts or notifications |
 | F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6 is implemented and deployed for the runtime-issued out-of-checkout checkpoint, with real-product field validation pending |
 | F30 | Resolved in implementation and deployed at nils-cli `46c00f18`; field proof remains pending. Free-form task text no longer owns claim lifecycle. The generated orchestration prompt requires release after each successful task checkpoint and current-revision re-bootstrap after authenticated `request-changes`; replay accepts the immediately prior persisted prompt | Run a fresh unattended B5/B6 lane and require checkpoint, release, acceptance, retirement, and absence without provider input |
-| F31 | A worker returned to `working` by `request-changes` must hold its claim for the resume path, but retirement requires the claim released, and no Main-owned typed action can revoke it. When the worker is quota-exhausted or otherwise unable to act, the accepted lane cannot be retired. Shares B5's symptom but not its cause: B5 is a cooperative worker using the wrong argv form, F31 is a worker that cannot act at all | Give the Main Agent a typed post-acceptance claim-revocation action for its own exact worker |
+| F31 | Closed in implementation and the field at nils-cli local `main` `7857fe76`. A typed v4 supervision action revoked only the exact authoritative-idle live worker's assignment-derived claim under revision, incarnation, runtime, activity, broker, and quiescence fences. The action sent no provider input, preserved the durable session and unchanged dirty worktree, quarantined resume, and left another worker's claim active | Keep the installed primitive deployed; do not count its live-worker evidence as B2 stopped-worker field closure |
 | F32 | `main-agent checkpoint` rejected a worker packet with `invalid-checkpoint: coordination input is invalid` and named no field, the same discarded-serde-error shape as F13 | Surface the field path in checkpoint validation too |
 | F33 | Codex reported "Selected model is at capacity" mid-lane and its turn ended without progress, yet supervision still classified `healthy_progress` | Treat a provider capacity failure as attention-required, per the documented capacity rule |
 | F34 | A worker cannot clear a dangling operation lease on its own claim. `work-context complete` requires `--lease` plus `--execution-token-file`, and `work-context reconcile` requires `--lease` plus `--proof-file`; both the lease id and the execution token are minted by the hook layer at implicit admit time and never handed to the worker. The only correct worker behaviour left is to report and wait — the canary's Claude lane did exactly that, and explicitly refused to scavenge capability material out of `coordination/registry.json` to satisfy the guard checking it | Either return the lease id and execution token to the worker that owns the operation, or give the Main Agent a typed action to complete/reconcile a dangling lease on its own worker's claim |
@@ -1261,9 +1283,9 @@ one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
 Next: run a fresh unattended B5/B6 lane under the installed F30 repair, using
-no legacy workarounds or provider input; repair F31's typed exact-worker claim
-revocation; then close B2 only against an independently stopped worker whose
-claim is still active on TTL. B3 is integrated and installed, while its own
+no legacy workarounds or provider input; then close B2 only against an
+independently stopped worker whose claim is still active on TTL. F31 is
+field-closed, and B3 is integrated and installed, while its own
 exhausted-readiness field case remains open. B7/B8 field closure is complete.
 Follow with C06/C07 and Phase D as the final parity gate. Before provider
 delivery, restore governed GitHub access and
