@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -9757,6 +9758,11 @@ exit 0
                 literal_claim,
                 revision_fenced_claim,
                 "main-agent --version",
+                "main-agent capabilities --provider codex --format json",
+                "main-agent capabilities --provider claude --format json",
+                "main-agent self readiness --format json",
+                f"{main_agent.resolve()} capabilities --provider codex --format json",
+                f"{main_agent.resolve()} self readiness --format json",
                 "main-agent self show --format json",
                 "main-agent rehydrate --format json",
                 "main-agent rehydrate --format markdown",
@@ -9817,6 +9823,12 @@ exit 0
             blocked = (
                 "agent-session --help",
                 "main-agent --help",
+                "main-agent capabilities --format json",
+                "main-agent capabilities --format markdown",
+                "main-agent capabilities --provider hermes --format json",
+                "main-agent capabilities --format json --provider codex",
+                "main-agent self readiness --format markdown",
+                "main-agent capabilities --format json extra",
                 "main-agent status --format json extra",
                 bootstrap.replace("readiness-bootstrap-0001", "short"),
                 bootstrap.replace("--format json", "--format markdown"),
@@ -10032,6 +10044,23 @@ exit 0
     def test_main_agent_capability_failure_recovery_argv_is_finite(self) -> None:
         allowed = (
             ["main-agent", "--version"],
+            [
+                "main-agent",
+                "capabilities",
+                "--provider",
+                "codex",
+                "--format",
+                "json",
+            ],
+            [
+                "main-agent",
+                "capabilities",
+                "--provider",
+                "claude",
+                "--format",
+                "json",
+            ],
+            ["main-agent", "self", "readiness", "--format", "json"],
             ["main-agent", "self", "show", "--format", "json"],
             [
                 "main-agent",
@@ -10058,6 +10087,26 @@ exit 0
         blocked = (
             ["pwd"],
             ["main-agent", "--help"],
+            ["main-agent", "capabilities", "--format", "json"],
+            ["main-agent", "capabilities", "--format", "markdown"],
+            [
+                "main-agent",
+                "capabilities",
+                "--provider",
+                "hermes",
+                "--format",
+                "json",
+            ],
+            [
+                "main-agent",
+                "capabilities",
+                "--format",
+                "json",
+                "--provider",
+                "codex",
+            ],
+            ["main-agent", "capabilities", "--format", "json", "extra"],
+            ["main-agent", "self", "readiness", "--format", "markdown"],
             ["main-agent", "self", "show", "--format", "json", "extra"],
             [
                 "main-agent",
@@ -12658,6 +12707,348 @@ exit 64
             self.assertIsNone(operation)
             self.assertEqual(reason, "provider-pr-unresolved")
 
+    def test_session_coordination_guard_admits_private_checkpoint_creation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repo.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "capability"
+            capability.write_text("secret\n", encoding="utf-8")
+            capability.chmod(0o600)
+            state_dir = root / "session-state"
+            session_dir = state_dir / "sessions" / "managed-session"
+            checkpoint_dir = session_dir / "coordination"
+            checkpoint_dir.mkdir(parents=True)
+            session_dir.chmod(0o700)
+            checkpoint_dir.chmod(0o700)
+            runtime_id = "worker-incarnation-one"
+            checkpoint = checkpoint_dir / (
+                "main-agent-checkpoint-"
+                f"{hashlib.sha256(runtime_id.encode()).hexdigest()}.json"
+            )
+            checkpoint.write_text("", encoding="utf-8")
+            checkpoint.chmod(0o600)
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(state_dir),
+                "AGENT_SESSION_RUNTIME_ID": runtime_id,
+                "AGENT_SESSION_CHECKPOINT_FILE": str(checkpoint),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            checkpoint_body = json.dumps(
+                {
+                    "schema_version": "main-agent.checkpoint-input.v1",
+                    "summary": "implementation complete",
+                    "next_action": "await review",
+                    "state": "submitted",
+                    "result_summary": "focused validation passed",
+                }
+            ) + "\n"
+
+            def invoke(
+                payload: dict[str, Any], env_override: dict[str, str] | None = None
+            ) -> tuple[int, dict[str, object] | None, str]:
+                payload.update(
+                    {
+                        "cwd": str(repo),
+                        "session_id": "product-session",
+                        "tool_use_id": "private-checkpoint",
+                        "hook_event_name": "PreToolUse",
+                    }
+                )
+                return run_enforced_hook(
+                    "session-coordination-guard.py",
+                    payload,
+                    cwd=repo,
+                    env=env_override or env,
+                )
+
+            cases = (
+                (
+                    "write",
+                    write_payload(str(checkpoint), checkpoint_body),
+                ),
+                (
+                    "redirect",
+                    command_payload(
+                        "printf '%s\\n' "
+                        f"{shlex.quote(checkpoint_body.rstrip())} > "
+                        f"{shlex.quote(str(checkpoint))}"
+                    ),
+                ),
+            )
+            for name, payload in cases:
+                with self.subTest(route=name):
+                    code, decision, stderr = invoke(payload)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+                    self.assertTrue(checkpoint.is_file())
+                    self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
+                    if name == "write":
+                        checkpoint.write_text(checkpoint_body, encoding="utf-8")
+                    else:
+                        subprocess.run(
+                            ["bash", "-c", payload["tool_input"]["command"]],
+                            cwd=repo,
+                            check=True,
+                        )
+                    self.assertEqual(
+                        json.loads(checkpoint.read_text(encoding="utf-8")),
+                        json.loads(checkpoint_body),
+                    )
+                    self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
+
+            legacy_checkpoint = (
+                root
+                / "agent-home"
+                / "out"
+                / "projects"
+                / "example__repo"
+                / "run-1"
+                / "checkpoint.json"
+            )
+            legacy_checkpoint.parent.mkdir(parents=True)
+            alternate_checkpoint = checkpoint_dir / "alternate.json"
+            expansion_body = json.dumps(
+                {
+                    "schema_version": "main-agent.checkpoint-input.v1",
+                    "summary": f"$(touch {root / 'expansion-ran'})",
+                    "next_action": "await review",
+                }
+            )
+            double_quoted_body = expansion_body.replace("\\", "\\\\").replace(
+                '"', '\\"'
+            )
+            rejected = (
+                (
+                    "legacy-project-output",
+                    write_payload(str(legacy_checkpoint), checkpoint_body),
+                    env,
+                ),
+                (
+                    "alternate-target",
+                    write_payload(str(alternate_checkpoint), checkpoint_body),
+                    env,
+                ),
+                (
+                    "scalar-json",
+                    write_payload(str(checkpoint), "[]\n"),
+                    env,
+                ),
+                (
+                    "oversized",
+                    write_payload(
+                        str(checkpoint),
+                        json.dumps({"summary": "x" * (64 * 1024)}),
+                    ),
+                    env,
+                ),
+                (
+                    "compound-command",
+                    command_payload(
+                        "printf '%s\\n' "
+                        f"{shlex.quote(checkpoint_body.rstrip())} > "
+                        f"{shlex.quote(str(checkpoint))} && touch escaped"
+                    ),
+                    env,
+                ),
+                (
+                    "double-quoted-expansion",
+                    command_payload(
+                        f"""printf '%s\\n' "{double_quoted_body}" > {checkpoint}"""
+                    ),
+                    env,
+                ),
+                (
+                    "backtick-expansion",
+                    command_payload(
+                        f"""printf '%s\\n' "{{\\"summary\\":\\"`touch {root / 'backtick-ran'}`\\"}}" > {checkpoint}"""
+                    ),
+                    env,
+                ),
+                (
+                    "parameter-expansion",
+                    command_payload(
+                        f"""printf '%s\\n' "{{\\"summary\\":\\"$HOME\\"}}" > {checkpoint}"""
+                    ),
+                    env,
+                ),
+                (
+                    "runtime-mismatch",
+                    write_payload(str(checkpoint), checkpoint_body),
+                    {**env, "AGENT_SESSION_RUNTIME_ID": "other-incarnation"},
+                ),
+                (
+                    "issued-path-mismatch",
+                    write_payload(str(checkpoint), checkpoint_body),
+                    {**env, "AGENT_SESSION_CHECKPOINT_FILE": str(alternate_checkpoint)},
+                ),
+            )
+            for name, payload, case_env in rejected:
+                with self.subTest(rejected=name):
+                    code, decision, stderr = invoke(payload, case_env)
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    assert decision is not None
+                    self.assertEqual(decision.get("decision"), "block")
+            self.assertFalse((root / "expansion-ran").exists())
+            self.assertFalse((root / "backtick-ran").exists())
+
+            state_link = root / "linked-session-state"
+            state_link.symlink_to(state_dir, target_is_directory=True)
+            linked_checkpoint = (
+                state_link
+                / "sessions"
+                / "managed-session"
+                / "coordination"
+                / checkpoint.name
+            )
+            linked_env = {
+                **env,
+                "AGENT_SESSION_STATE_DIR": str(state_link),
+                "AGENT_SESSION_CHECKPOINT_FILE": str(linked_checkpoint),
+            }
+            code, decision, stderr = invoke(
+                write_payload(str(linked_checkpoint), checkpoint_body),
+                linked_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            checkpoint.chmod(0o644)
+            code, decision, stderr = invoke(
+                write_payload(str(checkpoint), checkpoint_body)
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual((decision or {}).get("decision"), "block")
+            checkpoint.chmod(0o600)
+
+            hardlink_source = checkpoint_dir / "hardlink-source.json"
+            hardlink_source.write_text(checkpoint_body, encoding="utf-8")
+            hardlink_source.chmod(0o600)
+            checkpoint.unlink()
+            checkpoint.hardlink_to(hardlink_source)
+            code, decision, stderr = invoke(
+                write_payload(str(checkpoint), checkpoint_body)
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual((decision or {}).get("decision"), "block")
+            checkpoint.unlink()
+            checkpoint.write_text("", encoding="utf-8")
+            checkpoint.chmod(0o600)
+
+            symlink_source = checkpoint_dir / "symlink-source.json"
+            symlink_source.write_text("", encoding="utf-8")
+            symlink_source.chmod(0o600)
+            checkpoint.unlink()
+            checkpoint.symlink_to(symlink_source)
+            code, decision, stderr = invoke(
+                write_payload(str(checkpoint), checkpoint_body)
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual((decision or {}).get("decision"), "block")
+            checkpoint.unlink()
+            checkpoint.write_text("", encoding="utf-8")
+            checkpoint.chmod(0o600)
+
+            checkpoint_dir.chmod(0o755)
+            code, decision, stderr = invoke(
+                write_payload(str(checkpoint), checkpoint_body)
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual((decision or {}).get("decision"), "block")
+
+    def test_session_coordination_checkpoint_probe_skips_non_candidates(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_checkpoint_probe_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"AGENT_SESSION_CHECKPOINT_FILE": "/private/checkpoint.json"},
+                clear=False,
+            ),
+            mock.patch.object(guard, "runtime_checkpoint_path") as trusted_path,
+        ):
+            cases = (
+                ("Edit", {"tool_name": "Edit", "tool_input": {}}),
+                (
+                    "Write",
+                    write_payload("/private/ordinary.json", '{"ordinary":true}'),
+                ),
+                ("Bash", command_payload("git status --short")),
+            )
+            for tool, payload in cases:
+                with self.subTest(tool=tool):
+                    self.assertIsNone(guard.runtime_checkpoint_write(payload, tool))
+            trusted_path.assert_not_called()
+
+    def test_session_coordination_handler_advertises_checkpoint_capability(
+        self,
+    ) -> None:
+        completed = subprocess.run(
+            [
+                str(HOOK_DIR / "session-coordination-guard.py"),
+                "--capabilities",
+                "--format",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "schema_version": "runtime-kit.handler-capabilities.v1",
+                "capabilities": {
+                    "runtime_checkpoint_write": (
+                        "runtime-kit.checkpoint-write-admission.v1"
+                    )
+                },
+            },
+        )
+
     def test_coordination_capability_is_locked_after_ordinary_rules(self) -> None:
         for product in ("codex", "claude"):
             transactions = inventory_rules(
@@ -13139,6 +13530,11 @@ exit 0
             )
             allowed = (
                 "main-agent --version",
+                "main-agent capabilities --provider codex --format json",
+                "main-agent capabilities --provider claude --format json",
+                f"{main_agent.resolve()} capabilities --provider codex --format json",
+                "main-agent self readiness --format json",
+                f"{main_agent.resolve()} self readiness --format json",
                 "main-agent self show --format json",
                 "main-agent rehydrate --format json",
                 "main-agent rehydrate --format markdown",
@@ -13229,6 +13625,12 @@ exit 0
 
             blocked = (
                 "main-agent --version extra",
+                "main-agent capabilities --format json",
+                "main-agent capabilities --format markdown",
+                "main-agent capabilities --provider hermes --format json",
+                "main-agent capabilities --format json --provider codex",
+                "main-agent self readiness --format markdown",
+                "main-agent capabilities --format json extra",
                 "main-agent self show --format markdown",
                 "main-agent self show --format json extra",
                 "main-agent rehydrate --format yaml",

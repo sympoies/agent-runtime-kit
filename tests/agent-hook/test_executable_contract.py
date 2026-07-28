@@ -8,6 +8,7 @@ import hmac
 import json
 import math
 import os
+import shlex
 import shutil
 import stat
 import statistics
@@ -376,7 +377,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                         payload=payload,
                     )
                 )
-                self.assertEqual(decision["action"], "allow")
+                self.assertEqual(decision["action"], "allow", decision)
                 self.assertEqual(len(decision["shadow"]), case["shadow_rule_count"])
 
         unmatched = self.json_result(
@@ -706,6 +707,124 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
         )
         self.assertEqual(missing["action"], "block")
         self.assertIn("capability-failure-closed", missing["reasons"][0]["code"])
+
+    def test_runtime_checkpoint_write_reaches_real_product_dispatchers(self) -> None:
+        self.env["AGENT_SESSION_COORDINATION_MODE"] = "enforce"
+        self.env["AGENT_SESSION_ID"] = "fixture-current"
+        self.env["AGENT_SESSION_RUNTIME_ID"] = "incarnation-current"
+        session_dir = self.session_state / "sessions" / "fixture-current"
+        coordination_dir = session_dir / "coordination"
+        coordination_dir.mkdir(mode=0o700)
+        session_dir.chmod(0o700)
+        capability = coordination_dir / "capability"
+        capability.write_text("private-capability\n", encoding="utf-8")
+        capability.chmod(0o600)
+        checkpoint = coordination_dir / (
+            "main-agent-checkpoint-"
+            f"{hashlib.sha256(b'incarnation-current').hexdigest()}.json"
+        )
+        checkpoint.write_text("", encoding="utf-8")
+        checkpoint.chmod(0o600)
+        self.env["AGENT_SESSION_CAPABILITY_FILE"] = str(capability)
+        self.env["AGENT_SESSION_CHECKPOINT_FILE"] = str(checkpoint)
+        activity_bin = self.root / "agent-session-activity-fixture"
+        activity_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        activity_bin.chmod(0o700)
+        self.env["AGENT_SESSION_BIN"] = str(activity_bin)
+        self.write_coordination_registry(peer_fresh=False, same_reference=False)
+        registry_path = self.session_state / "coordination/registry.json"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["brokers"].pop("fixture-peer")
+        registry["claims"] = [
+            claim
+            for claim in registry["claims"]
+            if claim["session_id"] == "fixture-current"
+        ]
+        registry_path.write_text(
+            json.dumps(registry, indent=2) + "\n", encoding="utf-8"
+        )
+        body = json.dumps(
+            {
+                "schema_version": "main-agent.checkpoint-input.v1",
+                "summary": "aggregate dispatch passed",
+                "next_action": "submit",
+                "state": "submitted",
+            }
+        )
+
+        for product, matcher, tool_input in (
+            (
+                "codex",
+                "Bash",
+                {
+                    "command": (
+                        "printf '%s\\n' "
+                        f"{shlex.quote(body)} > {shlex.quote(str(checkpoint))}"
+                    )
+                },
+            ),
+            (
+                "claude",
+                "Write",
+                {"file_path": str(checkpoint), "content": body + "\n"},
+            ),
+        ):
+            with self.subTest(product=product):
+                hook_root = (
+                    Path(self.env["CODEX_HOME"]) / "hooks"
+                    if product == "codex"
+                    else self.home / ".claude/hooks"
+                )
+                shutil.copytree(
+                    REPO_ROOT / "core/hooks/shared",
+                    hook_root,
+                    dirs_exist_ok=True,
+                )
+                self.write_config(POLICY)
+                payload = {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": matcher,
+                    "tool_use_id": f"checkpoint-{product}",
+                    "cwd": str(REPO_ROOT),
+                    "tool_input": tool_input,
+                }
+                decision = self.json_result(
+                    self.run_hook(
+                        "dispatch",
+                        "--product",
+                        product,
+                        "--format",
+                        "json",
+                        payload=payload,
+                    )
+                )
+                self.assertEqual(decision["action"], "allow", decision)
+                if matcher == "Bash":
+                    subprocess.run(
+                        ["bash", "-c", tool_input["command"]],
+                        cwd=REPO_ROOT,
+                        env=self.env,
+                        check=True,
+                    )
+                else:
+                    checkpoint.write_text(tool_input["content"], encoding="utf-8")
+                self.assertEqual(json.loads(checkpoint.read_text()), json.loads(body))
+                self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
+                post = self.json_result(
+                    self.run_hook(
+                        "dispatch",
+                        "--product",
+                        product,
+                        "--format",
+                        "json",
+                        payload={
+                            **payload,
+                            "hook_event_name": "PostToolUse",
+                            "tool_response": {"ok": True},
+                        },
+                    )
+                )
+                self.assertEqual(post["action"], "allow")
 
     def test_owner_liveness_is_conservative_and_uses_five_minute_legacy_ttl(self) -> None:
         self.env["AGENT_SESSION_COORDINATION_MODE"] = "enforce"

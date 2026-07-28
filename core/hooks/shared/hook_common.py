@@ -629,6 +629,23 @@ def main_agent_capability_recovery_argv(words: list[str]) -> bool:
     if words == ["main-agent", "--version"]:
         return True
     if words in (
+        [
+            "main-agent",
+            "capabilities",
+            "--provider",
+            "codex",
+            "--format",
+            "json",
+        ],
+        [
+            "main-agent",
+            "capabilities",
+            "--provider",
+            "claude",
+            "--format",
+            "json",
+        ],
+        ["main-agent", "self", "readiness", "--format", "json"],
         ["main-agent", "self", "show", "--format", "json"],
         ["main-agent", "rehydrate", "--format", "json"],
         ["main-agent", "rehydrate", "--format", "markdown"],

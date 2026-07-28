@@ -5,17 +5,24 @@ closed on both providers — but only with four manual workarounds, filed here a
 new blockers B5-B8. B5 now has implementation closure in source: every finite
 projected lifecycle and mailbox shape accepts the exact trusted absolute
 `agent-session` path while relative and shadow spellings remain denied. Its
-deployed real-product release/retire canary is still pending. B6 still
-independently prevents an unattended lane from finishing, so it leads the
-remaining repair queue. B2 implementation, signed local-main
+deployed real-product release/retire canary is still pending. B6 now has
+implementation closure in a regression-first paired nils-cli/runtime-kit
+candidate: the
+runtime issues one session/incarnation-bound mode-`0600` checkpoint file, and
+the coordination hook admits only that exact path through ordinary `Write` or
+canonical `printf` redirection. Provider-aware surface compatibility and an
+exact-incarnation readiness gate prevent mixed deployments and pre-B6 sessions
+from reaching claim acquisition. B6 delivery, deployment, and real-product
+field closure are not yet claimed. B2 implementation, signed local-main
 integration, release binary install, and rendered-surface deployment are
 complete. A positive stopped-runtime canary ran and passed, but it does NOT
 establish B2 field closure: the fixture's clean provider exit released the
 claim and tore down the broker before the action ran, so B2's defining
 condition — a dead worker still holding a claim alive on TTL — was never
-reproduced. B2 field closure remains UNCLAIMED. Provider delivery remains
-blocked before mutation by a GitHub GraphQL 403. Open work: B5 field validation,
-B6-B8 implementation and field validation, the
+reproduced. B2 field closure remains UNCLAIMED. GitHub provider delivery is
+spam-blocked; this session is authorized to use governed local-main delivery
+instead. Open work: B5 field validation, B6 delivery/deployment and field
+validation, B7-B8 implementation and field validation, the
 unexercised B2 live-claim branch, then B3, then C06/C07, the residual C08
 recovery classifications, and the remaining Phase D parity items
 Date: 2026-07-27
@@ -31,8 +38,9 @@ B1 is in local `main` in both repositories, the rebuilt nils-cli binaries and
 runtime surfaces are deployed, and the installed-binary coupled acceptance is
 green. The separate B1 real-product C02-C05 closure canary has now closed on
 both providers. Reaching that closure required working around four distinct
-root causes by hand, filed below as blockers B5-B8. B5 is repaired in source
-but not yet deployed or re-exercised in a real-product lane; B6-B8 remain
+root causes by hand, filed below as blockers B5-B8. B5 is deployed; B6 has
+implementation closure in its paired candidate but remains undelivered,
+undeployed, and field-unvalidated. B7-B8 remain
 unrepaired. None of them was a defect in the B1 scope/admission design itself.
 Both lanes bootstrapped, ran
 checkout-bound shell validation under a narrow claim, created signed commits,
@@ -130,21 +138,22 @@ repository beside the run:
 
 ## Continuation Order
 
-1. **Restore governed GitHub provider delivery.** Resolve the GitHub GraphQL
-   403, re-read both remote default heads, and use the local-only default-branch
-   receipts through the governed adoption path. If either expected base moved,
-   rebuild and revalidate that one-commit integration from the new base instead
-   of weakening compare-and-swap. After both remote read-backs match, refresh
-   the local upstream relation.
+1. **Keep delivery governed while provider delivery is unavailable.** GitHub
+   delivery is spam-blocked for this session. Use the user's authorized
+   local-main path, signed commits, compare-and-swap, and outside-repository
+   receipts; never weaken hooks or leases. A repository already ahead by one
+   governed default-branch commit must first regain an aligned state before a
+   second default-branch delivery.
 2. **Repair the four B1 canary root causes.** The canary closed, but each
    closure step required a manual workaround that an unattended worker cannot
    discover. In severity order: the `agent-session` lifecycle bare-name
    deadlock (B5, implementation repaired; field validation pending), the
-   unwritable out-of-checkout checkpoint file (B6), the
+   unwritable out-of-checkout checkpoint file (B6, implementation closure in
+   its paired candidate; delivery/deployment and field validation pending), the
    Codex untrusted-repository bootstrap death (B7), and `worker start`
-   persisting an assignment before validating its cwd (B8). Before B5's source
-   repair, B5 and B6 each independently prevented an unattended lane from ever
-   terminating cleanly; B6 still does.
+   persisting an assignment before validating its cwd (B8). B5 and B6 each
+   independently prevented an unattended lane from ever terminating cleanly;
+   B5's field closure and B6's deployment/field closures remain separate.
 3. **Close B2 in the field.** Re-run the positive canary against a stopped
    worker whose assignment-derived claim is still active on TTL, and require
    `proof.worker_claim.observed_at_stage1:true` plus a post-action read proving
@@ -169,7 +178,7 @@ repository beside the run:
    absence of subsequent assignment and worktree progress.
 5. **Run C06, C07, and the remaining Phase D parity items.** C02-C05 are closed
    on both providers, and C09 is closed on both but only with hand-supplied
-   release argv pending B5 deployment and field validation. C08's recovery
+   release argv pending B5 field validation. C08's recovery
    boundary is only partly closed: the
    B2 post-claim path ran on a single Codex fixture lane, and only in its
    claim-absent form. C06 dependency wait and C07 account-next /
@@ -299,12 +308,14 @@ validation, and `semantic-commit` from a narrow two-path claim, and neither
 lane ever needed repository scope.
 
 **B1 closure canary root causes.** The canary closed, but only after four
-separate obstacles were worked around by hand. B5 now has implementation
-closure but still needs deployment and field validation; B6-B8 remain
-unrepaired. None is a defect in B1's scope projection or admission rule; all
+separate obstacles were worked around by hand. B5 is deployed; B6 has
+implementation closure in its paired candidate. Both still need field
+validation, while B6 also needs delivery and deployment. B7-B8 remain
+unrepaired. None is a defect in B1's scope projection
+or admission rule; all
 four are in the surrounding worker lifecycle, and each is filed as its own
-blocker below. Before B5's repair, B5 and B6 independently made an *unattended*
-lane unable to finish; B6 still does, so B1's end-to-end promise remains unsafe.
+blocker below. B5 and B6 independently made an *unattended* lane unable to
+finish; field closure is still required before the end-to-end promise is safe.
 
 ### B5 — A worker cannot release its own claim unless it uses the bare name
 
@@ -380,8 +391,9 @@ case is F31 and must be closed separately; landing B5 does not resolve it.
 
 ### B6 — The mandated out-of-checkout checkpoint file is nearly unwritable
 
-Severity: a worker cannot report `submitted` or `blocked`. Not repaired;
-second in the Continuation Order.
+Severity: a worker cannot report `submitted` or `blocked` without the manual
+argv workaround. Implementation repaired in a regression-first paired
+candidate; delivery, deployment, and real-product field closure remain open.
 Area: the checkpoint file contract, `canonical_target_path`, and `SHELL_CONTROL`.
 
 The checkpoint contract requires an absolute mode-0600 `.json` file outside the
@@ -404,6 +416,54 @@ prompt-versus-packet contradiction strands a lane at the same point, and the
 Acceptance: a worker can create its private checkpoint file through an ordinary
 edit tool or an ordinary shell redirection, without discovering an arg-form
 trick.
+
+The candidate is deliberately narrow and paired across repositories. On
+managed start/resume, nils-cli pre-creates one empty regular mode-`0600` file
+under the exact session's mode-`0700` coordination directory. Its filename is
+bound to the SHA-256 digest of the runtime incarnation, its path is projected
+as `AGENT_SESSION_CHECKPOINT_FILE`, and authenticated worker bootstrap returns
+the same private `checkpoint_file`. A successor incarnation removes the prior
+file.
+
+The runtime-kit coordination hook independently reconstructs that path from
+`AGENT_SESSION_STATE_DIR`, `AGENT_SESSION_ID`, and
+`AGENT_SESSION_RUNTIME_ID`; it does not trust an arbitrary project-output
+path. It requires the issued path to match byte-for-byte, verifies the private
+session/coordination directories and single-link owner-only regular file, and
+admits only a bounded JSON object through one ordinary `Write` or one
+byte-canonical `printf '%s\n' '<json>' > <path>` command. The canonical raw
+shell comparison rejects command substitution, parameter/backtick expansion,
+compound commands, and alternate redirections without duplicating the
+facade's closed checkpoint schema.
+
+Compatibility is paired but provider-specific. `main-agent capabilities
+--provider <codex|claude> --format json` requires the selected provider's
+locked inventory rules, converged doctor record, and installed handler
+self-probe; an absent other provider does not cause a false failure. The
+separate authenticated `main-agent self readiness` proves the current
+incarnation received the exact runtime path and still owns the trusted file.
+`init`, `rebind`, and worker `bootstrap` enforce the same readiness before
+claim acquisition or orchestration mutation. A pre-B6 session therefore fails
+closed with `runtime-checkpoint-unavailable` and a typed resume/restart action,
+rather than acquiring a claim and failing only at its final write.
+
+Regression coverage first failed the natural runtime env/file projection,
+bootstrap result, resume cleanup, provider-aware capability contract,
+per-incarnation readiness, finite pre-claim command admission, handler
+self-probe, and symlinked supported state-root case. Runtime-kit also retained
+the observed `target-boundary-unavailable` and `shell-target-unresolved`
+failures before its production edits. Focused nils-cli unit/integration tests,
+the complete agent-session integration suite, the complete shared-hook suite,
+the aggregate Codex/Claude dispatcher test, completion freshness, and the
+deterministic conversation product-isolation smoke are green. API-contract,
+maintainability, testing, and adversarial specialist review are closed with no
+remaining findings after the provider-aware and per-incarnation corrections.
+
+Implementation closure does not imply deployment or field closure. B6 still
+requires signed delivery of both paired commits, rebuilt nils-cli plus synced
+runtime surfaces, and a real-product worker that writes and submits through an
+ordinary `Write` or canonical `printf` route with no `perl` workaround. It
+does not close F30's independent prompt-versus-packet contradiction.
 
 ### B7 — A Codex worker dies at startup in an untrusted repository root
 
@@ -666,7 +726,7 @@ not established here.
 ### B3 — An exhausted-readiness live worker has no recovery route
 
 Severity: recovery requires stepping outside the CLI. Not repaired; queued
-after B5 field validation and B6-B8 per the Continuation Order.
+after B5/B6 field validation and B7-B8 per the Continuation Order.
 Area: `main_agent.rs` supervision, `session-coordination-guard.py` allowlist,
 `agent-session` command surface.
 
@@ -920,7 +980,7 @@ their declared scopes.
 | F25 | A fresh Claude worker launched with an empty composer; the runtime still reported `submit-key-recovery-succeeded`. Transient — a relaunch delivered normally, and Codex delivered first time | Verify the composer holds the prompt before reporting success; report `prompt-not-present` otherwise |
 | F27 | In a checkout with no git remote, repository identity cannot resolve, and every scoped write plus the blocked-checkpoint escape hatch is denied with a generic identity error | Detect a remote-less checkout at claim or bootstrap time and fail with that specific cause |
 | F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>`. Still open: the 2026-07-28 closure canary tried to fix this by naming commands in the packet, but the named mailbox shapes were themselves wrong (missing `--session`, positional id for `show`), so a hand-written command list is not a reliable fix | Generate the exact commands from the CLI surface rather than hand-writing them into prompts or notifications |
-| F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; the out-of-checkout mirror is now B6 |
+| F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6 has implementation closure for the runtime-issued out-of-checkout checkpoint, with deployment and field validation pending |
 | F30 | The runtime-generated worker prompt tells the worker to release its claim, while an assignment packet that needs the `request-changes` resume path tells it to hold the claim. A Claude worker correctly surfaced the contradiction as a question and blocked on it; an unattended worker stalls there. This is the likely cause of the earlier `working`/`needs-input` stall | Make the generated prompt defer to the packet, or state the release step as post-acceptance only |
 | F31 | A worker returned to `working` by `request-changes` must hold its claim for the resume path, but retirement requires the claim released, and no Main-owned typed action can revoke it. When the worker is quota-exhausted or otherwise unable to act, the accepted lane cannot be retired. Shares B5's symptom but not its cause: B5 is a cooperative worker using the wrong argv form, F31 is a worker that cannot act at all | Give the Main Agent a typed post-acceptance claim-revocation action for its own exact worker |
 | F32 | `main-agent checkpoint` rejected a worker packet with `invalid-checkpoint: coordination input is invalid` and named no field, the same discarded-serde-error shape as F13 | Surface the field path in checkpoint validation too |
@@ -963,9 +1023,9 @@ and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: deploy and field-validate B5, repair B6-B8, close B2 in the field against
-a live claim, then B3's typed stop, then C06/C07 and Phase D as the final parity
-gate. Before provider delivery, restore governed GitHub access and
+Next: field-validate B5, deliver/deploy/field-validate B6, repair B7-B8, close B2
+in the field against a live claim, then B3's typed stop, then C06/C07 and Phase D
+as the final parity gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
@@ -992,9 +1052,10 @@ rejection, and hook denial of an ordinary default-branch commit all passed.
   launch fails `cwd-unavailable` after already persisting the assignment (B8).
 - A Codex lane needs its repository root trusted before launch, or it dies at
   startup with no bootstrap (B7).
-- Until B6 is repaired, the only admitted way for a worker to create its
-  out-of-checkout checkpoint file is a simple-argv command carrying the JSON in
-  single quotes, for example
+- Until the B6 repair is deployed and field-validated, retain the exact legacy
+  workaround: the only admitted way for a worker to create its out-of-checkout
+  checkpoint file is a simple-argv command carrying the JSON in single quotes,
+  for example
   `perl -e 'open(my $fh, ">", $ARGV[0]) or die; print $fh $ARGV[1], "\n"; close $fh or die; chmod 0600, $ARGV[0] or die;' <path> '<json>'`.
 - Until the B5 repair is deployed and field-validated, a worker must invoke the
   projected lifecycle shapes as

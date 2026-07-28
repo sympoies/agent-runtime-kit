@@ -63,6 +63,7 @@ TIMEOUT_SECONDS = 6.0
 HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
 MAX_PENDING_RECORDS = 32
+MAX_CHECKPOINT_BYTES = 64 * 1024
 SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~\n\r")
 READ_ONLY_GIT = frozenset(
     {
@@ -1516,6 +1517,154 @@ def canonical_target_path(
     return target, {"repository": repository, "path": str(root)}
 
 
+def runtime_checkpoint_path() -> Path | None:
+    state_dir = os.environ.get("AGENT_SESSION_STATE_DIR", "").strip()
+    session_id = os.environ.get("AGENT_SESSION_ID", "").strip()
+    runtime_id = os.environ.get("AGENT_SESSION_RUNTIME_ID", "").strip()
+    issued_path = os.environ.get("AGENT_SESSION_CHECKPOINT_FILE", "").strip()
+    if (
+        not state_dir
+        or not os.path.isabs(state_dir)
+        or os.path.normpath(state_dir) != state_dir
+        or not issued_path
+        or not os.path.isabs(issued_path)
+        or os.path.normpath(issued_path) != issued_path
+        or not session_id
+        or session_id in {".", ".."}
+        or "/" in session_id
+        or "\x00" in session_id
+        or len(session_id.encode("utf-8")) > 255
+        or not runtime_id
+        or runtime_id in {".", ".."}
+        or "/" in runtime_id
+        or "\x00" in runtime_id
+        or len(runtime_id.encode("utf-8")) > 255
+    ):
+        return None
+    digest = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
+    expected = (
+        Path(state_dir)
+        / "sessions"
+        / session_id
+        / "coordination"
+        / f"main-agent-checkpoint-{digest}.json"
+    )
+    if issued_path != str(expected):
+        return None
+    try:
+        state_path = Path(state_dir)
+        state_metadata = state_path.lstat()
+        if stat.S_ISLNK(state_metadata.st_mode):
+            if state_metadata.st_uid != os.getuid():
+                return None
+            resolved_state = state_path.resolve(strict=True)
+            state_metadata = resolved_state.lstat()
+        else:
+            resolved_state = state_path
+        if (
+            not stat.S_ISDIR(state_metadata.st_mode)
+            or stat.S_ISLNK(state_metadata.st_mode)
+            or state_metadata.st_uid != os.getuid()
+            or state_metadata.st_mode & 0o022
+        ):
+            return None
+        sessions_metadata = (state_path / "sessions").lstat()
+        if (
+            not stat.S_ISDIR(sessions_metadata.st_mode)
+            or stat.S_ISLNK(sessions_metadata.st_mode)
+            or sessions_metadata.st_uid != os.getuid()
+            or sessions_metadata.st_mode & 0o022
+        ):
+            return None
+        for directory in (expected.parent.parent, expected.parent):
+            metadata = directory.lstat()
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or stat.S_ISLNK(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+            ):
+                return None
+        metadata = expected.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            return None
+        canonical_expected = (
+            resolved_state
+            / "sessions"
+            / session_id
+            / "coordination"
+            / expected.name
+        )
+        if expected.resolve(strict=True) != canonical_expected.resolve(strict=True):
+            return None
+    except OSError:
+        return None
+    return expected
+
+
+def checkpoint_json_object(raw: str) -> bool:
+    if len(raw) > MAX_CHECKPOINT_BYTES or len(raw.encode("utf-8")) > MAX_CHECKPOINT_BYTES:
+        return False
+    try:
+        return isinstance(json.loads(raw), dict)
+    except json.JSONDecodeError:
+        return False
+
+
+def runtime_checkpoint_write(
+    payload: Mapping[str, Any], tool: str
+) -> Path | None:
+    if tool not in {"Write", "Bash"}:
+        return None
+    tool_input = tool_input_dict(payload)
+    if tool == "Write":
+        raw_path = tool_input.get("file_path")
+        content = tool_input.get("content")
+        if (
+            raw_path != os.environ.get("AGENT_SESSION_CHECKPOINT_FILE", "").strip()
+            or not isinstance(content, str)
+            or not checkpoint_json_object(content)
+        ):
+            return None
+    else:
+        command = command_from(payload)
+        limit = MAX_CHECKPOINT_BYTES + 4_096
+        if (
+            not command.startswith("printf ")
+            or len(command) > limit
+            or len(command.encode("utf-8")) > limit
+        ):
+            return None
+        try:
+            tokens = shlex.split(command, posix=True)
+        except ValueError:
+            return None
+        if (
+            len(tokens) != 5
+            or tokens[0] != "printf"
+            or tokens[1] != r"%s\n"
+            or tokens[3] != ">"
+            or tokens[4]
+            != os.environ.get("AGENT_SESSION_CHECKPOINT_FILE", "").strip()
+            or not checkpoint_json_object(tokens[2])
+        ):
+            return None
+        canonical = (
+            f"printf {shlex.quote(tokens[1])} {shlex.quote(tokens[2])} "
+            f"> {shlex.quote(tokens[4])}"
+        )
+        if command != canonical:
+            return None
+    checkpoint = runtime_checkpoint_path()
+    return checkpoint
+
+
 def normalized_repository(raw: str) -> str | None:
     value = raw.strip().removesuffix(".git").strip("/").lower()
     if value.startswith(("http://", "https://")):
@@ -2567,6 +2716,21 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
 
 def main() -> int:
     global HOOK_DEADLINE
+    if sys.argv[1:] == ["--capabilities", "--format", "json"]:
+        print(
+            json.dumps(
+                {
+                    "schema_version": "runtime-kit.handler-capabilities.v1",
+                    "capabilities": {
+                        "runtime_checkpoint_write": (
+                            "runtime-kit.checkpoint-write-admission.v1"
+                        )
+                    },
+                },
+                separators=(",", ":"),
+            )
+        )
+        return 0
     HOOK_DEADLINE = time.monotonic() + HOOK_BUDGET_SECONDS
     payload = read_payload()
     event = hook_event(payload)
@@ -2625,6 +2789,8 @@ def main() -> int:
             )
         if event == "Stop":
             return stop_audit(None, managed_session, product)
+        return ALLOW
+    if runtime_checkpoint_write(payload, tool) is not None:
         return ALLOW
     executable = resolved_agent_session()
     if executable is None or (

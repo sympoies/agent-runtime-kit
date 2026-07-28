@@ -266,6 +266,13 @@ bodies, or private registry paths. The physical checkout lease above shares the
 same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
 runner.
 
+The same guard accepts `--capabilities --format json` as a side-effect-free
+self-probe and advertises `runtime-kit.checkpoint-write-admission.v1`. Main
+Agent compatibility requires that response from both installed product-home
+copies, converged `agent-hook doctor` records, and policy bundle
+`2026.07.28.1` or newer. This binds readiness to the deployed handlers rather
+than policy metadata alone.
+
 Executable runtime rules use independent child deadlines and an explicit
 `timeout_posture`. A timeout no longer erases completed outcomes or skips later
 mandatory rules. Allowed `warn` or `effect_gated` timeouts create mode-0600,

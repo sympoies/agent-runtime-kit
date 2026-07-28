@@ -15,8 +15,10 @@ Prereqs:
   workflow. Ordinary implementation requests never activate this mode.
 - `agent-session >=1.25.11` is installed from a released surface.
 - The trusted `main-agent` facade from the compatible nils-cli surface is
-  executable. Until that surface is available, report Main Agent Mode as
-  unavailable without repairing or restricting ordinary agent work.
+  executable and advertises the exact runtime-checkpoint capability below.
+  The semantic-version floor alone is not sufficient. Until that surface is
+  available, report Main Agent Mode as unavailable without repairing or
+  restricting ordinary agent work.
 - A supported worker provider and executable provider helper pass the doctor
   gate below before mode activation or worker launch.
 - The active project intent, work-tier, test-first, validation, review, and
@@ -52,8 +54,9 @@ Failure modes:
 - Activation was not explicit, or the requested scope/done criteria are not
   sufficiently bounded to delegate safely.
 - The installed `agent-session` is missing or older than `1.25.11`.
-- The trusted `main-agent` facade is absent, incompatible, untrusted, or cannot
-  authenticate the current managed-session incarnation.
+- The trusted `main-agent` facade is absent, incompatible, untrusted, does not
+  advertise `main-agent.runtime-checkpoint-file.v1`, or cannot authenticate the
+  current managed-session incarnation.
 - Doctor output is unhealthy, unsupported, unavailable, malformed, or reports
   a missing provider helper.
 - The bounded compatibility preview is not converged, would change state, or
@@ -80,11 +83,40 @@ For a Claude worker, run these literal commands:
 
 ```bash
 agent-session --version
+main-agent capabilities --provider claude --format json
+main-agent self readiness --format json
 agent-session activity doctor --agent claude --format json
 ```
 
 
 Require `agent-session >=1.25.11`, a valid
+`cli.main-agent.capabilities.v1` envelope with `ok:true`, whose
+`data.schema_version` is `main-agent.capabilities.v1` and whose
+`data.capabilities.runtime_checkpoint_file` is exactly
+`"main-agent.runtime-checkpoint-file.v1"`, whose
+`data.capabilities.runtime_hook_checkpoint_write` is exactly
+`"runtime-kit.checkpoint-write-admission.v1"`, and whose
+`data.provider` matches the selected worker provider, and whose
+`data.compatible` is `true`. This provider-aware probe reads the deployed `agent-hook`
+inventory, requiring bundle version `2026.07.28.1` or newer plus the locked
+coordination rules for the selected provider. It also requires that provider's
+converged `agent-hook doctor` record and executes its installed
+`session-coordination-guard.py` capability self-probe, so a stale or missing
+selected-provider handler fails closed without coupling activation to another
+provider installation. It therefore rejects either mixed deployment (new CLI
+with old policy/handler surfaces, or old CLI with the new runtime surfaces).
+
+Require `main-agent self readiness` to return a valid
+`cli.main-agent.self-readiness.v1` envelope with `ok:true`, whose
+`data.schema_version` is `main-agent.runtime-readiness.v1`, whose `data.ready`
+is `true`, and whose `data.checkpoint_file` is an absolute path. This
+per-incarnation gate proves the current managed session received the exact
+runtime-issued environment path and still owns a private regular checkpoint
+file. `runtime-checkpoint-unavailable` stops activation; resume or restart the
+managed session after the compatible surfaces are deployed. Do not run `init`
+or any Main Agent mutation from that incarnation.
+
+Also require a valid
 `cli.agent-session.activity-doctor.v1` envelope with `ok:true`, exactly one
 matching provider record, and `helper_executable:true`.
 Require `classification` to be `"supported"` or `"partial"`. Claude reports
@@ -167,10 +199,13 @@ main-agent checkpoint --file <private-json> --if-revision <n> \
   --idempotency-key <unique-key> --format json
 ```
 
-The checkpoint file must be an absolute normalized `.json` path outside the
-governed checkout, a regular file owned by the current user, and mode `0600`.
-Allocate it under a project-owned private state/output directory; never place
-the packet in the repository.
+For a managed worker, use only the exact `checkpoint_file` returned by its
+authenticated `main-agent bootstrap`; the runtime pre-creates that
+session/incarnation-bound file outside the checkout at mode `0600`. Write the
+bounded JSON object there, then pass the same literal path to `--file`. For the
+Main Agent's own checkpoint, use its runtime-issued
+`AGENT_SESSION_CHECKPOINT_FILE`. Never allocate an arbitrary worker checkpoint
+path under the repository or a project output tree.
 
 At safe turn or tool boundaries, give Main Agents and workers only a concise
 privacy-safe reminder that durable state is available through `main-agent

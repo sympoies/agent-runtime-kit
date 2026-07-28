@@ -1,6 +1,6 @@
 schema_version = "agent-hook.policy.v1"
 bundle_id = "runtime-kit"
-version = "2026.07.25.3"
+version = "2026.07.28.1"
 [[rules]]
 id = "runtime.shared.pre-tool-use.bash.read-only-shadow"
 products = ["codex", "claude"]

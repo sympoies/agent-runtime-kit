@@ -105,7 +105,26 @@ The generated prompt invokes the exact compatible `main-agent` executable's
 `main-agent bootstrap` command with a deterministic idempotency key. The target
 worker then runs its own authenticated self-check as part of bootstrap,
 resolves only its private assignment packet, acquires the assignment-derived
-claim, and records the revision-fenced `working` checkpoint. The launcher never
+claim, records the revision-fenced `working` checkpoint, and receives the
+literal runtime-issued `checkpoint_file`. The prompt requires that exact file
+as the only later checkpoint JSON write target and then invokes
+`main-agent checkpoint --file` with the current revision and a stable
+idempotency key. Activation must first verify the selected provider with
+`main-agent capabilities --provider <codex|claude> --format json`, which advertises
+both `main-agent.runtime-checkpoint-file.v1` and
+`runtime-kit.checkpoint-write-admission.v1`, with `compatible:true`; the latter
+is derived from deployed `agent-hook` bundle `2026.07.28.1` or newer and its
+locked `agent-session.coordination.v1` rules for that provider. That bundle is
+the first whose paired handler admits checkpoint writes. The probe additionally
+requires the selected provider's converged doctor record and exact installed
+handler to advertise `runtime-kit.handler-capabilities.v1`; policy metadata
+alone is insufficient, while an uninstalled other provider does not block the
+selected one. Activation then requires `main-agent self readiness --format
+json` to prove this exact current session incarnation received its
+runtime-issued environment path and still has the trusted private checkpoint
+file. `runtime-checkpoint-unavailable` requires a managed resume or restart
+after deployment and forbids `init` or mutation from the stale incarnation.
+The `>=1.25.11` packaging floor alone does not prove this paired API. The launcher never
 performs this target-owned step, never uses the target capability or claims on
 the target's behalf, and interference or deletion before that handoff is a
 failed ownership proof, not a recovery shortcut. A released or expired claim
@@ -443,10 +462,12 @@ For each worker result, the main agent:
 Until the facade exposes a dedicated submit action, worker submission is a
 revision-fenced `main-agent checkpoint` packet with `state:"submitted"` and a
 bounded `result_summary`; do not invent `worker submit`. Its `--file` must be
-an absolute normalized `.json` path outside the governed checkout, a regular
-file owned by the current user, and mode `0600`; allocate it under a
-project-owned private state/output directory. When review finds bounded
-defects, return the exact submitted assignment to its bound worker:
+the exact `checkpoint_file` returned by the worker's authenticated
+`main-agent bootstrap`. The runtime pre-creates this private mode-0600 path and
+binds it to the current session incarnation. Write the bounded object there and
+pass the same literal path to `--file`; do not allocate a project-output
+substitute. When review finds bounded defects, return the exact submitted
+assignment to its bound worker:
 
 ```bash
 main-agent worker request-changes <assignment-id> \

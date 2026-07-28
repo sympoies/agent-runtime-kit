@@ -419,11 +419,15 @@ run_main_agent_mode_probe() {
   grep -Fq 'through the session-management recovery owner' "$protocol"
 
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'For a Codex worker, run these literal commands:'
+  rendered_contract_assert_product_contains conversation main-agent-mode codex 'main-agent capabilities --provider codex --format json'
+  rendered_contract_assert_product_contains conversation main-agent-mode codex 'main-agent self readiness --format json'
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'agent-session activity doctor --agent codex --format json'
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'agent-session activity setup --agent codex --repair --dry-run --format json'
   rendered_contract_assert_product_omits conversation main-agent-mode codex 'Claude'
   rendered_contract_assert_product_omits conversation main-agent-mode codex '--agent claude'
   rendered_contract_assert_product_contains conversation main-agent-mode claude 'For a Claude worker, run these literal commands:'
+  rendered_contract_assert_product_contains conversation main-agent-mode claude 'main-agent capabilities --provider claude --format json'
+  rendered_contract_assert_product_contains conversation main-agent-mode claude 'main-agent self readiness --format json'
   rendered_contract_assert_product_contains conversation main-agent-mode claude 'agent-session activity doctor --agent claude --format json'
   rendered_contract_assert_product_contains conversation main-agent-mode claude 'agent-session activity setup --agent claude --repair --dry-run --format json'
   rendered_contract_assert_product_omits conversation main-agent-mode claude 'Codex'
