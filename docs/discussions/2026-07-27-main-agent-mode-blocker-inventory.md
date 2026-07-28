@@ -57,8 +57,13 @@ Both candidates were instead committed through governed local-only
 default-branch completion: nils-cli at
 `a3f9b2f3e7412cd47fae78ca95178f87e4f3675f`, and runtime-kit in the commit
 containing this inventory. Both receipts record `provider_delivered=false`;
-remote default branches remain unchanged and nothing was pushed. Do not bypass
-the governed provider-delivery path with a raw Git push.
+this workflow did not push. After those local receipts were written, both
+`origin/main` refs were independently observed at the same commits as their
+local `main` branches, with reflogs recording `update by push`. That later
+remote update was not initiated by this workflow and its provenance is not
+established here; treat the alignment as observed external state, not as this
+delivery's provider evidence. Do not bypass the governed provider-delivery
+path with a raw Git push.
 
 B3 is still the next implementation gap. It decides how to stop a still-live
 pre-claim/readiness-failure runtime without raw terminal control. The F-items
@@ -332,8 +337,10 @@ green negative canary proves only the fail-closed side, so field closure is not
 claimed. Signed one-commit current-main integration candidates exist for both
 repositories, and their exact trees are committed to both local default
 branches through governed local-only completion. Their provider-delivery
-preflights both stop before mutation on the same GitHub GraphQL HTTP 403, so
-remote default branches remain unchanged and nothing was pushed.
+preflights both stop before mutation on the same GitHub GraphQL HTTP 403. This
+workflow did not push; both remote default refs were only later observed
+aligned with the local commits through an external update whose provenance is
+not established here.
 
 ### B3 — An exhausted-readiness live worker has no recovery route
 
@@ -511,8 +518,9 @@ follows it, and the commit containing this inventory is its signed local-main
 landing. Its rendered surfaces are deployed from the durable checkout and pass
 doctor, prompt, and plugin checks. Both governed provider-delivery preflights
 are blocked before mutation by the same GitHub GraphQL 403. Both local default
-branches are complete; remote default branches remain unchanged, and nothing
-was pushed.
+branches are complete. This workflow did not push; both `origin/main` refs
+were later observed aligned with the local commits through an external update
+whose provenance is not established here.
 
 | Item | Commit | Defect |
 | --- | --- | --- |
@@ -574,11 +582,13 @@ claimed. Both prepared one-commit trees are now on their primary local default
 branches, and the exact runtime-kit local landing is deployed. Before provider
 delivery, restore governed GitHub access and revalidate the expected remote
 bases. Then implement B3's typed stop, followed by C05-C09 and Phase D as the
-final recovery/parity gate. Until the GitHub GraphQL 403 is resolved, remote
-default branches remain unchanged and nothing was pushed. A B2 or B3 failure
-should update this inventory with the exact typed classification and last
-proven safe state; it must not be worked around with raw tmux input or
-destructive Main-session cleanup.
+final recovery/parity gate. The GitHub GraphQL 403 still blocks governed
+provider delivery from this workflow. Both remote default refs were later
+observed aligned with the local commits through an external update whose
+provenance is not established here; revalidate before any future provider
+action. A B2 or B3 failure should update this inventory with the exact typed
+classification and last proven safe state; it must not be worked around with
+raw tmux input or destructive Main-session cleanup.
 
 Phase A/B were completed in the earlier run and re-verified on a fresh fixture:
 the governed `default-branch` dry-run, one signed commit, stale `--expect-head`
