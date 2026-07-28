@@ -2,15 +2,20 @@
 
 Status: B1/B4 deployed, and their real-product C02-C05 closure canary is now
 closed on both providers — but only with four manual workarounds, filed here as
-new blockers B5-B8; B5 and B6 each still prevent an unattended lane from
-finishing, so they lead the queue. B2 implementation, signed local-main
+new blockers B5-B8. B5 now has implementation closure in source: every finite
+projected lifecycle and mailbox shape accepts the exact trusted absolute
+`agent-session` path while relative and shadow spellings remain denied. Its
+deployed real-product release/retire canary is still pending. B6 still
+independently prevents an unattended lane from finishing, so it leads the
+remaining repair queue. B2 implementation, signed local-main
 integration, release binary install, and rendered-surface deployment are
 complete. A positive stopped-runtime canary ran and passed, but it does NOT
 establish B2 field closure: the fixture's clean provider exit released the
 claim and tore down the broker before the action ran, so B2's defining
 condition — a dead worker still holding a claim alive on TTL — was never
 reproduced. B2 field closure remains UNCLAIMED. Provider delivery remains
-blocked before mutation by a GitHub GraphQL 403. Open work: B5-B8, the
+blocked before mutation by a GitHub GraphQL 403. Open work: B5 field validation,
+B6-B8 implementation and field validation, the
 unexercised B2 live-claim branch, then B3, then C06/C07, the residual C08
 recovery classifications, and the remaining Phase D parity items
 Date: 2026-07-27
@@ -26,8 +31,10 @@ B1 is in local `main` in both repositories, the rebuilt nils-cli binaries and
 runtime surfaces are deployed, and the installed-binary coupled acceptance is
 green. The separate B1 real-product C02-C05 closure canary has now closed on
 both providers. Reaching that closure required working around four distinct
-root causes by hand, filed below as blockers B5-B8 and all still unrepaired;
-none of them was a defect in the B1 scope/admission design itself. Both lanes bootstrapped, ran
+root causes by hand, filed below as blockers B5-B8. B5 is repaired in source
+but not yet deployed or re-exercised in a real-product lane; B6-B8 remain
+unrepaired. None of them was a defect in the B1 scope/admission design itself.
+Both lanes bootstrapped, ran
 checkout-bound shell validation under a narrow claim, created signed commits,
 checkpointed `submitted`, took one revision-fenced `request-changes` plus a
 private mailbox message, resumed in the same session without widening the
@@ -132,10 +139,12 @@ repository beside the run:
 2. **Repair the four B1 canary root causes.** The canary closed, but each
    closure step required a manual workaround that an unattended worker cannot
    discover. In severity order: the `agent-session` lifecycle bare-name
-   deadlock (B5), the unwritable out-of-checkout checkpoint file (B6), the
+   deadlock (B5, implementation repaired; field validation pending), the
+   unwritable out-of-checkout checkpoint file (B6), the
    Codex untrusted-repository bootstrap death (B7), and `worker start`
-   persisting an assignment before validating its cwd (B8). B5 and B6 each
-   independently prevent an unattended lane from ever terminating cleanly.
+   persisting an assignment before validating its cwd (B8). Before B5's source
+   repair, B5 and B6 each independently prevented an unattended lane from ever
+   terminating cleanly; B6 still does.
 3. **Close B2 in the field.** Re-run the positive canary against a stopped
    worker whose assignment-derived claim is still active on TTL, and require
    `proof.worker_claim.observed_at_stage1:true` plus a post-action read proving
@@ -160,15 +169,16 @@ repository beside the run:
    absence of subsequent assignment and worktree progress.
 5. **Run C06, C07, and the remaining Phase D parity items.** C02-C05 are closed
    on both providers, and C09 is closed on both but only with hand-supplied
-   release argv pending B5. C08's recovery boundary is only partly closed: the
+   release argv pending B5 deployment and field validation. C08's recovery
+   boundary is only partly closed: the
    B2 post-claim path ran on a single Codex fixture lane, and only in its
    claim-absent form. C06 dependency wait and C07 account-next /
    unsupported-account behaviour were not reached because both provider
    accounts hit their usage ceilings during the closure session.
 6. **Then take the friction wave.** Fold F25 prompt-presence truth into B3;
    address F22 and F33 together while touching the supervision and
-   pre-bootstrap classifier. Take F30, F31, and F34 with B5's claim-release
-   repair, since all four decide who may end a lane's claim or its operation.
+   pre-bootstrap classifier. Take F30, F31, and F34 as the remaining
+   claim/operation ownership work; B5's source repair does not close them.
    Take F32 with F13, since both are the same discarded-serde-error shape.
    Follow with F24/F28/F27 input and guidance clarity; F28 in particular is not
    closed, because the closure canary's own packets shipped wrong mailbox argv.
@@ -289,24 +299,24 @@ validation, and `semantic-commit` from a narrow two-path claim, and neither
 lane ever needed repository scope.
 
 **B1 closure canary root causes.** The canary closed, but only after four
-separate obstacles were worked around by hand; all four remain unrepaired in
-the product. None is a defect in B1's scope projection or
-admission rule; all four are in the surrounding worker lifecycle, and each is
-filed as its own blocker (B5-B8) below. Two of them (B5, B6) independently make
-an *unattended* lane unable to finish, so B1's end-to-end promise is not yet
-safe without them.
+separate obstacles were worked around by hand. B5 now has implementation
+closure but still needs deployment and field validation; B6-B8 remain
+unrepaired. None is a defect in B1's scope projection or admission rule; all
+four are in the surrounding worker lifecycle, and each is filed as its own
+blocker below. Before B5's repair, B5 and B6 independently made an *unattended*
+lane unable to finish; B6 still does, so B1's end-to-end promise remains unsafe.
 
 ### B5 — A worker cannot release its own claim unless it uses the bare name
 
-Severity: an accepted lane can never be retired. Not repaired; first in the
-Continuation Order.
+Severity: an accepted lane can never be retired. Implementation repaired on
+2026-07-28; deployed real-product field validation remains open.
 Area: `core/hooks/shared/session-coordination-guard.py`
 (`projected_lifecycle_invocation`).
 
-`projected_lifecycle_invocation` requires `words[:1] == ["agent-session"]`. A
-worker that invokes the identical projected shape by absolute path misses the
-admission bypass, is admitted as an ordinary shell mutation, and the CLI then
-refuses its own release:
+Before the repair, `projected_lifecycle_invocation` required
+`words[:1] == ["agent-session"]`. A worker invoking the identical projected
+shape by absolute path missed the admission bypass, was admitted as an ordinary
+shell mutation, and the CLI then refused its own release:
 
 ```text
 work-context release -> operation-in-progress
@@ -337,11 +347,30 @@ F34.
 This is the same defect class already repaired for `main-agent` in runtime-kit
 `0ca2819c`, where `worker start` writes an absolute path into the worker prompt
 while the allowlist compares the bare name. The `agent-session` lifecycle
-allowlist still carries it.
+allowlist carried the surviving sibling until this B5 repair.
 
 Acceptance: a worker invoking any projected lifecycle shape by absolute path is
 admitted exactly as the bare-name form, and a lane that holds its claim through
 `request-changes` can still release and retire without hand-supplied argv.
+
+Implementation closure is captured at the hook boundary. Regression-first
+coverage made all 16 existing projected lifecycle and mailbox shapes fail
+`shell-target-unresolved` when their trusted fixture executable was spelled by
+absolute path. The repair normalizes only a bare name or absolute path whose
+basename is `agent-session` for finite-shape comparison; the caller still
+requires an absolute spelling to lexically equal the exact trusted resolved
+executable. Bare-name PATH resolution retains its existing trust check. All 16
+trusted absolute forms and their bare-name controls now pass, while a relative
+`./agent-session` resolving to that same executable, an absolute same-name
+shadow, a realpath-equivalent absolute symlink alias, a symlink-plus-dot-segment
+alias, dynamic variables, shell wrappers, redirects, and every existing near
+miss remain denied. The final shared-hook suite runs 350 cases: 349 pass and
+one host-capability case skips.
+
+Field closure is deliberately separate: deploy the repaired surface, run a
+lane through `request-changes`, and prove that its own pinned absolute
+`agent-session work-context release ...` succeeds followed by ordinary retire,
+without supplying a bare-name workaround.
 
 B5 covers only a *cooperative* worker that is able to run a command but is
 using the wrong argv form. It does not cover a worker that cannot act at all —
@@ -637,7 +666,7 @@ not established here.
 ### B3 — An exhausted-readiness live worker has no recovery route
 
 Severity: recovery requires stepping outside the CLI. Not repaired; queued
-after B5-B8 per the Continuation Order.
+after B5 field validation and B6-B8 per the Continuation Order.
 Area: `main_agent.rs` supervision, `session-coordination-guard.py` allowlist,
 `agent-session` command surface.
 
@@ -814,6 +843,23 @@ fact.
 Entries are dated. "This session" in any older paragraph below refers to the
 2026-07-27 B1/B2 delivery session, not the latest entry.
 
+### B5 implementation closure, 2026-07-28
+
+The coordination guard now normalizes a pinned absolute `agent-session`
+executable only for the existing finite lifecycle/mailbox shape comparison.
+Trust remains bound to the original argv: an absolute form must lexically equal
+the exact trusted resolved executable before bypassing admission, so an
+arbitrary realpath-equivalent symlink cannot introduce a check/use race.
+Regression-first
+coverage exercises all 16 projected shapes in bare and trusted-absolute forms
+and retains explicit rejection for an absolute same-name shadow, a
+realpath-equivalent absolute symlink alias, a symlink-plus-dot-segment alias,
+and a relative symlink spelling. Focused coverage is green; the final
+shared-hook suite records 349 pass and one host-capability skip across 350
+cases.
+Deployment and the real-product release/retire canary remain open, so this is
+implementation closure only.
+
 ### B1/B4 and B2 delivery, 2026-07-27 to 2026-07-28
 
 B1/B4 remain deployed. B2 nils-cli implementation is at signed, clean head
@@ -901,7 +947,7 @@ Still open:
 - C08 for the B2 live-claim case, for dead-worker detection under an ambiguous
   stop, and for the remaining recovery classifications including B3's live
   worker
-- C09 unattended, once B5 removes the hand-supplied release argv
+- C09 unattended, once B5 is deployed and removes the hand-supplied release argv
 - Phase D parity beyond the differences recorded as F25, F29, and now F30-F34
 
 C06 and C07 were not reached because both provider accounts hit their usage
@@ -917,8 +963,9 @@ and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: repair B5-B8, close B2 in the field against a live claim, then B3's typed
-stop, then C06/C07 and Phase D as the final parity gate. Before provider delivery, restore governed GitHub access and
+Next: deploy and field-validate B5, repair B6-B8, close B2 in the field against
+a live claim, then B3's typed stop, then C06/C07 and Phase D as the final parity
+gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
@@ -949,7 +996,8 @@ rejection, and hook denial of an ordinary default-branch commit all passed.
   out-of-checkout checkpoint file is a simple-argv command carrying the JSON in
   single quotes, for example
   `perl -e 'open(my $fh, ">", $ARGV[0]) or die; print $fh $ARGV[1], "\n"; close $fh or die; chmod 0600, $ARGV[0] or die;' <path> '<json>'`.
-- Until B5 is repaired, a worker must invoke the projected lifecycle shapes as
+- Until the B5 repair is deployed and field-validated, a worker must invoke the
+  projected lifecycle shapes as
   the bare name `agent-session`, with the literal quoted `"$AGENT_SESSION_ID"`
   and `"$AGENT_SESSION_CAPABILITY_FILE"`; an absolute path deadlocks the
   release. The exact admitted release invocation is:

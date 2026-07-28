@@ -654,23 +654,30 @@ def main_agent_capability_recovery_argv(words: list[str]) -> bool:
     return False
 
 
-def normalized_main_agent_argv(words: list[str]) -> list[str] | None:
-    """Rewrite a pinned absolute ``main-agent`` argv[0] to its bare name.
+def normalized_cli_argv(
+    words: list[str], executable_name: str
+) -> list[str] | None:
+    """Rewrite one named pinned absolute CLI argv[0] to its bare name.
 
-    Returns ``None`` when argv[0] is not a usable ``main-agent`` spelling. A
-    relative path containing a separator stays rejected: only a bare name or an
-    absolute path may be trust-resolved by the caller.
+    Returns ``None`` when argv[0] is not a usable spelling of the requested
+    executable. A relative path containing a separator stays rejected: only a
+    bare name or an absolute path may be trust-resolved by the caller.
     """
     if not words:
         return None
     executable = words[0]
-    if os.path.basename(executable) != "main-agent":
+    if os.path.basename(executable) != executable_name:
         return None
     if "/" in executable and not os.path.isabs(executable):
         return None
-    if executable == "main-agent":
+    if executable == executable_name:
         return words
-    return ["main-agent", *words[1:]]
+    return [executable_name, *words[1:]]
+
+
+def normalized_main_agent_argv(words: list[str]) -> list[str] | None:
+    """Rewrite a pinned absolute ``main-agent`` argv[0] to its bare name."""
+    return normalized_cli_argv(words, "main-agent")
 
 
 def main_agent_preclaim_argv(words: list[str]) -> bool:

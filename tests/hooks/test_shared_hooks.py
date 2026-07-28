@@ -10084,6 +10084,40 @@ exit 0
                     hook_common.main_agent_capability_recovery_argv(list(words))
                 )
 
+    def test_normalized_cli_argv_accepts_only_bare_or_absolute_named_cli(
+        self,
+    ) -> None:
+        for executable_name in ("main-agent", "agent-session"):
+            with self.subTest(executable_name=executable_name, spelling="bare"):
+                words = [executable_name, "status"]
+                self.assertIs(
+                    hook_common.normalized_cli_argv(words, executable_name),
+                    words,
+                )
+            with self.subTest(executable_name=executable_name, spelling="absolute"):
+                self.assertEqual(
+                    hook_common.normalized_cli_argv(
+                        [f"/trusted/bin/{executable_name}", "status"],
+                        executable_name,
+                    ),
+                    [executable_name, "status"],
+                )
+            for spelling in (
+                f"./{executable_name}",
+                f"relative/{executable_name}",
+                f"/trusted/bin/foreign-{executable_name}",
+            ):
+                with self.subTest(
+                    executable_name=executable_name,
+                    spelling=spelling,
+                ):
+                    self.assertIsNone(
+                        hook_common.normalized_cli_argv(
+                            [spelling, "status"],
+                            executable_name,
+                        )
+                    )
+
     def test_pre_edit_trusted_release_companions_require_lexical_and_resolved_siblings(
         self,
     ) -> None:
@@ -13344,6 +13378,33 @@ exit 64
                 encoding="utf-8",
             )
             agent_session.chmod(0o755)
+            shadow_dir = root / "shadow"
+            shadow_dir.mkdir()
+            shadow_agent_session = shadow_dir / "agent-session"
+            shadow_agent_session.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            shadow_agent_session.chmod(0o755)
+            alias_dir = root / "alias"
+            alias_dir.mkdir()
+            alias_agent_session = alias_dir / "agent-session"
+            alias_agent_session.symlink_to(agent_session)
+            attacker_dir = root / "attacker"
+            attacker_child = attacker_dir / "child"
+            attacker_bin = attacker_dir / "bin"
+            attacker_child.mkdir(parents=True)
+            attacker_bin.mkdir()
+            attacker_agent_session = attacker_bin / "agent-session"
+            attacker_agent_session.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            attacker_agent_session.chmod(0o755)
+            dot_segment_alias = root / "dot-segment-alias"
+            dot_segment_alias.symlink_to(attacker_child, target_is_directory=True)
+            relative_agent_session = repo / "agent-session"
+            relative_agent_session.symlink_to(agent_session)
 
             capability_file = root / "capability"
             capability_file.write_text("fixture\n", encoding="utf-8")
@@ -13463,29 +13524,39 @@ exit 64
                 '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json'
             )
 
-            for index, command in enumerate(
-                (
-                    projected_check,
-                    projected_show,
-                    projected_status,
-                    projected_renew,
-                    projected_release,
-                    projected_admit,
-                    projected_complete,
-                    projected_reconcile,
-                    projected_send,
-                    projected_send.replace(
-                        " --reply-to message-1234 --expires-in 15m", ""
-                    ),
-                    projected_inbox,
-                    projected_inbox.replace(
-                        " --state unread --cursor cursor-1234 --limit 50", ""
-                    ),
-                    projected_message_show,
-                    projected_ack,
-                    projected_reply,
-                    projected_wait,
+            bare_projected_commands = (
+                projected_check,
+                projected_show,
+                projected_status,
+                projected_renew,
+                projected_release,
+                projected_admit,
+                projected_complete,
+                projected_reconcile,
+                projected_send,
+                projected_send.replace(
+                    " --reply-to message-1234 --expires-in 15m", ""
+                ),
+                projected_inbox,
+                projected_inbox.replace(
+                    " --state unread --cursor cursor-1234 --limit 50", ""
+                ),
+                projected_message_show,
+                projected_ack,
+                projected_reply,
+                projected_wait,
+            )
+            pinned_projected_commands = tuple(
+                command.replace(
+                    "agent-session",
+                    str(agent_session.resolve()),
+                    1,
                 )
+                for command in bare_projected_commands
+            )
+
+            for index, command in enumerate(
+                (*bare_projected_commands, *pinned_projected_commands)
             ):
                 with self.subTest(allowed=command):
                     payload = command_payload(command)
@@ -13574,6 +13645,22 @@ exit 64
                     '--session "$AGENT_SESSION_ID" --session "$AGENT_SESSION_ID"',
                 ),
                 projected_send.replace("agent-session", "foreign-agent-session", 1),
+                projected_release.replace(
+                    "agent-session",
+                    str(shadow_agent_session.resolve()),
+                    1,
+                ),
+                projected_release.replace(
+                    "agent-session",
+                    str(alias_agent_session),
+                    1,
+                ),
+                projected_release.replace(
+                    "agent-session",
+                    f"{dot_segment_alias}/../bin/agent-session",
+                    1,
+                ),
+                projected_release.replace("agent-session", "./agent-session", 1),
                 f"sh -c '{projected_show}'",
                 projected_show + " | cat",
                 projected_show + f" > {root / 'status.json'}",

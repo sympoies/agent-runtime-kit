@@ -45,6 +45,7 @@ from hook_common import (
     invocation_tokens,
     is_managed_cli_home_bin,
     main_agent_preclaim_argv,
+    normalized_cli_argv,
     normalized_main_agent_argv,
     output_redirect_targets,
     patch_text_candidates,
@@ -437,8 +438,12 @@ def projected_lifecycle_invocation(
     repository: str | None,
 ) -> bool:
     """Validate one finite authenticated lifecycle or mailbox command."""
-    if words[:1] != ["agent-session"] or words[-2:] != ["--format", "json"]:
+    normalized = normalized_cli_argv(words, "agent-session")
+    if normalized is None or normalized[-2:] != ["--format", "json"]:
         return False
+    # Shape checks below compare against the bare name. The caller separately
+    # resolves argv[0] and requires it to match the trusted agent-session.
+    words = normalized
 
     capability = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
     if not capability or not lifecycle_private_file(capability, repository):
@@ -1365,9 +1370,15 @@ def command_bypasses_admission(
         )
     lifecycle_words = literal_projected_lifecycle_words(command, base)
     if lifecycle_words is not None:
-        candidate = shutil.which(lifecycle_words[0])
-        return bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
-            agent_session_executable
+        executable = lifecycle_words[0]
+        if os.path.isabs(executable):
+            return executable == agent_session_executable
+        candidate = shutil.which(executable)
+        return (
+            executable == "agent-session"
+            and bool(candidate)
+            and os.path.realpath(candidate)
+            == os.path.realpath(agent_session_executable)
         )
     if re.search(r"(?<![A-Za-z0-9_.-])main-agent(?:\s|$)", command):
         words = simple_words(command)
