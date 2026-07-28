@@ -38,6 +38,16 @@ record_case() {
   results_record_case "$@"
 }
 
+stop_web_evidence_server() {
+  local server_pid="$1"
+  kill "$server_pid" >/dev/null 2>&1 || true
+  wait "$server_pid" 2>/dev/null || true
+  if kill -0 "$server_pid" 2>/dev/null; then
+    echo "runtime-smoke evidence: local web server survived cleanup: $server_pid" >&2
+    return 1
+  fi
+}
+
 run_web_evidence_probe() {
   local root="$EVIDENCE_ARTIFACTS_DIR/web-root"
   local out_dir="$EVIDENCE_ARTIFACTS_DIR/web-evidence"
@@ -45,7 +55,7 @@ run_web_evidence_probe() {
   local port_file="$EVIDENCE_ARTIFACTS_DIR/web-server.port"
   local server_out="$EVIDENCE_ARTIFACTS_DIR/web-server.stdout.txt"
   local server_err="$EVIDENCE_ARTIFACTS_DIR/web-server.stderr.txt"
-  local server_pid port attempt
+  local server_pid="" port attempt capture_status
   require_evidence_bin web-evidence || return 1
   require_evidence_bin python3 || return 1
   mkdir -p "$root" "$out_dir"
@@ -79,13 +89,12 @@ PY
     sleep 0.1
   done
   if [ ! -s "$port_file" ]; then
-    kill "$server_pid" >/dev/null 2>&1 || true
-    wait "$server_pid" 2>/dev/null || true
+    stop_web_evidence_server "$server_pid" || true
     echo "runtime-smoke evidence: local web server did not publish a port" >&2
     return 1
   fi
   port="$(cat "$port_file")"
-  (
+  if (
     cd "$EVIDENCE_WORKSPACE"
     web-evidence capture "http://127.0.0.1:$port/index.txt" \
       --out "$out_dir" \
@@ -94,14 +103,51 @@ PY
       --timeout-seconds 3 \
       --max-body-bytes 1024 \
       --body-preview-bytes 128
-  ) >"$out_json" 2>&1
-  kill "$server_pid" >/dev/null 2>&1 || true
-  wait "$server_pid" 2>/dev/null || true
+  ) >"$out_json" 2>&1; then
+    capture_status=0
+  else
+    capture_status=$?
+  fi
+  stop_web_evidence_server "$server_pid" || return 1
+  if [ "$capture_status" -ne 0 ]; then
+    return "$capture_status"
+  fi
   grep -q '"schema_version": "cli.web-evidence.capture.v1"' "$out_json"
   grep -q '"ok": true' "$out_json"
   grep -q '"status_code": 200' "$out_json"
   test -s "$out_dir/summary.json"
   test -s "$out_dir/body-preview.redacted.txt"
+}
+
+run_web_evidence_cleanup_probe() {
+  local cleanup_artifacts="$EVIDENCE_ARTIFACTS_DIR/web-cleanup-failure"
+  local EVIDENCE_ARTIFACTS_DIR="$cleanup_artifacts"
+  local port_file="$cleanup_artifacts/web-server.port"
+  local leaked_pid=""
+  local status
+
+  web-evidence() {
+    return 23
+  }
+
+  set +e
+  (
+    set -e
+    run_web_evidence_probe
+  )
+  status=$?
+  set -e
+
+  leaked_pid="$(
+    ps -eo pid=,comm=,args= |
+      awk -v port_file="$port_file" '$2 == "python3" && index($0, port_file) { print $1; exit }'
+  )"
+  if [ -n "$leaked_pid" ]; then
+    kill "$leaked_pid" >/dev/null 2>&1 || true
+    echo "runtime-smoke evidence: failed web capture leaked local server pid $leaked_pid" >&2
+    return 1
+  fi
+  test "$status" -eq 23
 }
 
 run_test_first_evidence_probe() {
@@ -737,6 +783,7 @@ run_model_cross_check_probe() {
 }
 
 failures=0
+record_case "evidence.selective-control-plane.web-cleanup" "failed web-evidence capture stopped its loopback fixture" run_web_evidence_cleanup_probe
 record_case "evidence.selective-control-plane.web" "web-evidence captured local loopback HTTP fixture" run_web_evidence_probe
 record_case "evidence.selective-control-plane.test-first" "durable test-first v2 lifecycle, structural failures, and v1 diagnostics verified" run_test_first_evidence_probe
 record_case "evidence.selective-control-plane.review" "review evidence finding and validation verified" run_review_evidence_probe
