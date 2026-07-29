@@ -14,16 +14,24 @@ closure remains unclaimed: the first repaired-path lane required two
 Main-authorized provider-input recovery turns and still produced no checkpoint,
 so it is neither unattended evidence nor proof of the release/checkpoint paths.
 
-B2 implementation, signed local-main integration, release binary install, and
-rendered-surface deployment are complete. A positive stopped-runtime canary
-ran and passed, but it does NOT establish B2 field closure: the fixture's clean
-provider exit released the claim and tore down the broker before the action
-ran, so B2's defining condition — a dead worker still holding a claim alive on
-TTL — was never reproduced. B2 field closure remains UNCLAIMED. B3's typed
-exact-incarnation stop now has implementation, signed local-main integration,
-release installation, and runtime deployment closure at nils-cli local `main`
-`452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`; its real-product field case
-remains open and B3 must not be counted as B2 terminalization evidence.
+B2's original reconcile implementation, signed local-main integration,
+release binary install, and rendered-surface deployment are complete. Its
+defining live-claim branch is now closed in the field: an exact
+revision/incarnation-fenced `stop-claimed-runtime` action independently stopped
+the bootstrap-complete worker without provider input, left the same
+assignment-derived claim active on TTL, and the following
+`reconcile-stopped` observed that claim at stage 1 and removed it. A fresh
+post-action read proved the exact worker stopped and claim absent. Full B2
+field closure remains separate and UNCLAIMED only for the still-unexercised
+ambiguous-stop classifier case (provider process dead while tmux remains
+live). The new post-claim stop-only implementation is signed at nils-cli
+candidate `94719ffc00af5a6b81574c07df672120c60687e3`, release-installed, and
+fully validated, but is not yet integrated to nils-cli local `main`: that
+branch was already one governed commit ahead of `origin/main`, so the next
+default-branch delivery correctly failed closed. B3's distinct pre-claim typed
+exact-incarnation stop remains integrated and deployed at nils-cli local
+`main` `452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`; its exhausted-readiness
+real-product field case remains open and must not be counted as B2 evidence.
 
 The failed B5/B6 field lane exposed F30 as an independent unattended-lane
 blocker. F30 now has implementation, signed local-main integration, and release
@@ -50,10 +58,11 @@ remained live, while B2 requires an independently stopped worker whose claim
 is still active on TTL before terminalization.
 
 GitHub provider delivery remains spam-blocked; this session is authorized to
-use governed local-main delivery instead. Open work: a fresh B5/B6 unattended
-field lane using the deployed F30 repair, the independent B2 live-claim and
-ambiguous-stop field cases, then C06/C07, the residual C08 recovery
-classifications, and the remaining Phase D parity items.
+use governed local-main delivery instead. Open work: restore nils-cli's aligned
+default-branch delivery state and land the signed post-claim stop-only
+candidate; run a fresh B5/B6 unattended field lane using the deployed F30
+repair; exercise B2's remaining ambiguous-stop classifier; then C06/C07, the
+residual C08 recovery classifications, and the remaining Phase D parity items.
 Date: 2026-07-27
 Updated: 2026-07-29
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
@@ -104,8 +113,10 @@ negative `reconcile-stopped` canary failed closed with assignment revision and
 state unchanged, and that negative result was re-verified against a fresh live
 lane on 2026-07-28.
 
-A positive stopped-runtime canary has now run and passed, but it does **not**
-establish B2 field closure, and field closure remains unclaimed.
+The 2026-07-28 positive stopped-runtime canary passed, but it did **not**
+establish B2 live-claim field closure. The later 2026-07-29 typed-stop canary
+does close that defining branch; the paragraphs immediately below retain the
+earlier run's narrower evidence and explain why it did not count.
 
 The fixture was obtained without any prohibited technique: an ordinary lane was
 launched, bootstrapped to `working`, submitted, returned to `working` by a
@@ -153,7 +164,7 @@ runtime deployment gaps are closed. The new Main-owned command
 stops a still-live pre-claim/readiness-failure runtime without raw terminal
 control while preserving its durable session state. Real-product B3 field
 validation remains open. The cooperative provider-exit fixture remains
-insufficient for both B3 and B2:
+insufficient for both B3 and B2's live-claim branch:
 B3's own scenario is an exhausted-readiness worker that cannot be driven, while
 B2 requires a stopped post-claim worker whose claim remains alive on TTL.
 F-items normally record friction rather than blocker closure, but F30 proved an
@@ -175,6 +186,9 @@ repository beside the run:
   — F31 pre-action supervision, typed revocation result, and post-action read
 - `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-040002-f31-local-main-delivery/default-branch-receipt.json`
   — signed governed nils-cli local-main delivery receipt
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-042606-b2-postclaim-stop-action/`
+  — regression evidence, signed candidate receipt, specialist review, exact
+  typed-stop result, live-claim reconcile result, and post-action supervision
 
 ## Continuation Order
 
@@ -223,16 +237,23 @@ repository beside the run:
    live worker retained its claim. F31 implementation and field closure are
    complete; this evidence must not be counted as B2 because the worker stayed
    live.
-5. **Close B2 in the field.** Re-run the positive canary against an
-   independently stopped
-   worker whose assignment-derived claim is still active on TTL, and require
-   `proof.worker_claim.observed_at_stage1:true` plus a post-action read proving
-   the claim gone. Separately, supervise a lane whose provider process is dead
-   but whose tmux session still exists, and require a non-`healthy_progress`
-   classification. Until both run, B2 field closure stays unclaimed. A
-   cooperative provider exit is insufficient because it releases the claim;
-   B3 may supply reusable proof machinery but not the stopped post-claim
-   evidence itself.
+5. **Finish B2's remaining field boundary.** The defining live-claim
+   reconciliation branch is closed. On 2026-07-29 the typed, exact
+   revision/incarnation-fenced `stop-claimed-runtime` action stopped worker
+   incarnation `a87597f0-fa6d-4de8-888d-1db883ddb1bf` at assignment revision
+   4 without provider input and returned `worker_claim_active_after:true`.
+   `reconcile-stopped` then returned
+   `proof.worker_claim.observed_at_stage1:true`,
+   `worker_claim_active_after:false`, and revision 5 `cancelled`; a fresh
+   supervision read reported the exact worker `stopped` and
+   `claim_active:false`. No session deletion occurred before evidence capture.
+   Separately, still supervise a lane whose provider process is dead but whose
+   tmux session exists, and require a non-`healthy_progress` classification.
+   Until that classifier case runs, full B2 field closure stays unclaimed.
+   The earlier cooperative provider exit remains insufficient because it
+   released the claim before stage 1. B3's pre-claim stop remains a distinct
+   repair; the new post-claim stop-only action is B2 fixture and recovery
+   machinery.
 
    Do **not** key the new classification on `submit_recovery.state:"failed"`
    alone. The 2026-07-28 canary observed a fully healthy lane — `running`,
@@ -247,10 +268,12 @@ repository beside the run:
    on both providers, and C09 is closed on both but only with hand-supplied
    release argv pending B5 field validation. C08's recovery
    boundary is only partly closed: the
-   B2 post-claim path ran on a single Codex fixture lane, and only in its
-   claim-absent form. C06 dependency wait and C07 account-next /
-   unsupported-account behaviour were not reached because both provider
-   accounts hit their usage ceilings during the closure session.
+   B2 post-claim path ran on a single Codex fixture lane in both claim-absent
+   and defining claim-active-at-stage-1 forms. The ambiguous
+   process-dead/tmux-live classifier and other recovery classifications remain.
+   C06 dependency wait and C07 account-next / unsupported-account behaviour
+   were not reached because both provider accounts hit their usage ceilings
+   during the closure session.
 7. **Then take the remaining friction wave.** Fold F25 prompt-presence truth into B3;
    address F22 and F33 together while touching the supervision and
    pre-bootstrap classifier. F30 is implemented and deployed but still needs
@@ -263,14 +286,18 @@ repository beside the run:
    Keep F18/F05/F20 as the later ambient-tooling wave.
 
 B2 established the missing distinction between post-claim failure and
-pre-claim failure, and its implementation closure holds; its field closure does
-not, because the one positive run never reproduced a live claim. The B2
-implementations are on both local default branches. B5-B8 are repaired and
-deployed; B7/B8 field closure is complete while B5/B6 remains open. B3 is
+pre-claim failure. Its original reconcile implementation closure holds, and
+its defining independently-stopped live-claim field branch is now closed.
+Full field closure remains open only for the separate ambiguous-stop
+classification. The original B2 implementations are on both local default
+branches; the signed post-claim stop-only candidate is installed and field
+proven but still awaits nils-cli local-main integration. B5-B8 are repaired
+and deployed; B7/B8 field closure is complete while B5/B6 remains open. B3 is
 integrated and deployed but not field-closed. F30 is implemented and deployed
 but not field-closed. F31 is implemented, integrated, installed, and
-field-closed. Next rerun B5/B6 unattended under F30, close B2 only against an
-independently stopped live-claim fixture, then finish C06/C07 and Phase D.
+field-closed. Next restore nils-cli delivery alignment, field-validate B5/B6
+unattended under F30, exercise B2's ambiguous-stop classifier, then finish
+C06/C07 and Phase D.
 The completed B3 candidate reuses B2's exact-runtime and quiescence proof
 helpers, then enters the existing pre-claim cancellation path after the typed
 stop rather than the B2 post-claim transition. It deliberately does not
@@ -639,9 +666,13 @@ field closure.
 
 Severity: a failed run could never be closed. Repaired in signed nils-cli and
 runtime-kit local-main commits, release-installed and surface-deployed.
-Implementation closure is achieved; real-product field closure is NOT, because
-the one positive canary never reproduced a live claim. Governed provider
-delivery remains blocked before mutation.
+Original reconcile implementation closure is achieved. The defining
+real-product live-claim reconciliation branch is closed on 2026-07-29; full
+field closure is NOT yet claimed because the process-dead/tmux-live ambiguous
+classifier case remains unexercised. The signed post-claim stop-only candidate
+used to construct the exact live-claim state is release-installed but still
+awaits governed local-main integration. Governed provider delivery remains
+blocked before mutation.
 Area: `crates/agent-session/src/main_agent.rs`.
 
 After a worker dies past bootstrap, its assignment stays `working` with a claim
@@ -783,9 +814,96 @@ classification flipped to `post_claim_failure` only because the clean exit made
 that leaves tmux alive would reproduce the original `healthy_progress`
 misreport, which is precisely the defect B2 exists to fix.
 
-Closing B2 in the field requires a stopped worker whose assignment-derived
-claim is still active on TTL, with `observed_at_stage1:true` and a post-action
-read proving the claim gone.
+Closing B2's defining live-claim branch requires a stopped worker whose
+assignment-derived claim is still active on TTL, with
+`observed_at_stage1:true` and a post-action read proving the claim gone. Full
+field closure additionally requires a non-`healthy_progress` classification
+for the process-dead/tmux-live ambiguous-stop case.
+
+#### Defining live-claim branch closed (2026-07-29)
+
+The new Main-owned command
+
+```bash
+main-agent worker stop-claimed-runtime <assignment-id> \
+  --worker-incarnation <exact-incarnation> \
+  --if-revision <assignment-revision> \
+  --idempotency-key <unique-key> --format json
+```
+
+is a stop-only action for the post-claim case. It fences assignment revision,
+worker incarnation, controller authority, active assignment-derived claim,
+claim TTL, authoritative-idle activity, exact runtime identity, broker
+authority, work context, and operation quiescence. It persists replay-safe
+claim-mutation state before stopping the exact runtime, sends no provider
+input, does not delete the durable session, and deliberately preserves the
+same worker claim for `reconcile-stopped`. Original-controller and guarded
+same-incarnation successor replay are covered in integration tests.
+
+Regression-first work caught controller-TTL reservation, successor adoption
+and partial-replay conflicts, and a pre-claim marker-first compatibility
+regression before the final production tree. The final combined-tree gate
+passed documentation, format, clippy, and 7,733/7,733 tests. Focused claimed
+stop coverage passed 15/15, the CLI contract passed 4/4, and projection tests
+passed 2/2. API-contract, security, performance, data-migration, testing, and
+red-team reviews closed cleanly. Two low maintainability notes remain: the
+principal acceptance test is broad, and the transaction function still
+contains a large implicit state machine.
+
+The signed nils-cli candidate is
+`94719ffc00af5a6b81574c07df672120c60687e3`. Installed
+`main-agent` and `agent-session` report
+`v1.25.9-85-g94719ffc`. The candidate is not yet on nils-cli local `main`:
+local `main` was already one governed commit ahead of `origin/main`, and the
+next default-branch integration correctly failed closed. No hook, signing,
+lease, or delivery guard was bypassed.
+
+The live field sequence used assignment
+`b5-b8-field-codex-20260728`, exact worker incarnation
+`a87597f0-fa6d-4de8-888d-1db883ddb1bf`, and revision 4. Pre-action supervision
+proved the worker authoritative-idle, runtime running, broker authoritative,
+operations zero, and claim
+`87822363-ebbd-4a8e-b4af-0e4327644a62` active on TTL. The typed stop returned
+`runtime_stopped:true`, `worker_claim_active_after:true`, and
+`input_sent:false`, with the assignment still revision 4 `working`.
+
+The first reconcile admission failed closed after the new coordination schema
+made the still-running older broker non-authoritative. The authorized typed
+`main-agent self recover` adopted the unchanged Main runtime with the same
+session incarnation, retained its active controller claim, sent no prompt or
+input, and restored authoritative broker proof. Retrying the identical
+reconcile request and idempotency key then returned:
+
+```text
+terminalized:true
+assignment: revision 5, state:"cancelled"
+worker_claim_active_after:false
+input_sent:false
+worktree_preserved:true
+proof.worker_runtime:"stopped"
+proof.worker_claim:{
+  active_disposition:"absent",
+  release_provenance:"not_attributed_to_attempt",
+  observed_at_stage1:true
+}
+```
+
+A separate post-action `worker supervise` read proved the same worker
+`status:"stopped"` and coordination `claim_active:false`, with the dirty
+worktree still preserved. Raw stop, reconcile, and post-action JSON were
+written to the run directory before any session deletion. This closes the
+defining B2 live-claim field branch without raw tmux input, arbitrary kill,
+provider exit input, session deletion, force cleanup, or prior-controller
+impersonation.
+
+Full B2 field closure remains unclaimed under this inventory's stricter
+two-part rule until the separate process-dead/tmux-live case produces a
+non-`healthy_progress` supervision classification.
+
+#### Historical claim-absent canary evidence (2026-07-28)
+
+The following results belong to the earlier cooperative-exit fixture and must
+not be read as contradictory evidence for the 2026-07-29 live-claim run above.
 
 The negative side was re-verified first on the same live lane: exit
 `worker-runtime-still-live` with assignment state and revision unchanged.
@@ -1070,6 +1188,28 @@ pre-claim fact.
 Entries are dated. "This session" in any older paragraph below refers to the
 2026-07-27 B1/B2 delivery session, not the latest entry.
 
+### B2 defining live-claim branch closure, 2026-07-29
+
+Signed nils-cli candidate `94719ffc` adds the revision/incarnation-fenced
+post-claim `stop-claimed-runtime` action. It stops only the exact
+authoritative-idle, quiescent worker runtime, sends no provider input, retains
+the durable session and dirty worktree, and preserves the still-active claim
+for B2 reconciliation. Regression-first focused coverage and the final
+7,733-test combined-tree gate are green; the installed binaries identify that
+candidate. The candidate remains on its managed branch because nils-cli local
+`main` was already one governed commit ahead of `origin/main`; no delivery
+guard was bypassed.
+
+The field action left the assignment revision 4 `working` and its exact claim
+active on TTL. After typed same-incarnation Main self-recovery restored broker
+authority, `reconcile-stopped` returned revision 5 `cancelled`,
+`proof.worker_claim.observed_at_stage1:true`,
+`worker_claim_active_after:false`, `input_sent:false`, and
+`worktree_preserved:true`. A fresh supervision read independently proved
+worker `stopped` and claim absent. This closes the defining B2 live-claim
+branch. Full B2 field closure remains open only for the separately required
+process-dead/tmux-live classifier canary.
+
 ### B7/B8 field closure and B5/B6 non-closure, 2026-07-28
 
 The exact B8 missing cwd failed
@@ -1223,6 +1363,7 @@ the installed 1.25.11 binary and the already-deployed surfaces:
 | B1 C02-C05 closure, Codex lane | closed — released at revision 10, absent from a fresh list |
 | B2 live-runtime negative reconcile | fail-closed `worker-runtime-still-live`, state and revision unchanged |
 | B2 positive stopped-runtime reconcile | passed on a claim-absent stopped worker, with the v2 proof fields and two of at least four replay paths; does NOT establish field closure |
+| B2 post-claim stop plus live-claim reconcile (2026-07-29) | defining branch closed — typed exact-runtime stop retained the active TTL claim; reconcile observed it at stage 1, removed it, and a fresh read proved claim absent |
 
 Run `5f959c6d-e71d-4951-bf8e-059a50c1cdc1`, closed at revision 3. Lane commits
 in the disposable fixture `graysurf/main-agent-b1-canary`: Claude `eb4f4cec`
@@ -1255,16 +1396,18 @@ Closed on both products: C01 activation, C02 startup, C03 supervision and
 claims, C04 authenticated mailbox, C05 request-changes and same-session resume.
 C09 acceptance and retirement is closed on both products but only with
 hand-supplied release argv; it does not yet pass unattended, pending B5.
-C08's recovery boundary is only partly closed: the B2 post-claim path ran on a
-single Codex fixture lane and only in its claim-absent form.
+C08's recovery boundary is only partly closed: the B2 post-claim path has now
+run on a single Codex fixture lane in both claim-absent and defining
+claim-active-at-stage-1 forms, but the ambiguous process-dead/tmux-live
+classifier and other recovery classes remain.
 
 Still open:
 
 - C06 dependency wait
 - C07 account-next (Codex) and unsupported-account behaviour (Claude)
-- C08 for the B2 live-claim case, for dead-worker detection under an ambiguous
-  stop, and for the remaining recovery classifications including B3's live
-  worker
+- C08 for dead-worker detection under an ambiguous stop and the remaining
+  recovery classifications including B3's live worker; the B2 live-claim
+  reconciliation case is closed
 - C09 unattended, once B5 field validation proves the worker's pinned absolute
   lifecycle command releases and retires without the bare-name workaround
 - Phase D parity beyond the differences recorded as F25, F29, and now F30-F34
@@ -1272,23 +1415,26 @@ Still open:
 C06 and C07 were not reached because both provider accounts hit their usage
 ceilings during the closure session, not because of any product defect.
 
-B2 nils-cli is release-installed at the canonical head; checksum/version proof,
-the installed B1 coupled acceptance, the live-runtime negative reconcile canary,
-and the claim-absent positive stopped-runtime canary are all green, but the
-live-claim positive case that would close B2 in the field has not run.
+B2 reconcile is release-installed at its canonical local-main head;
+checksum/version proof, the installed B1 coupled acceptance, the live-runtime
+negative reconcile canary, and both claim-absent and claim-active positive
+stopped-runtime canaries are green. The signed post-claim stop-only candidate
+used for the defining live-claim case is installed but still awaits nils-cli
+local-main integration. The ambiguous process-dead/tmux-live classifier
+remains the only B2 field condition open under this inventory.
 Runtime-kit B2
 implementation head `d35f3960338bc4893dc0bb158e88c341cb15a44a` passes full CI
 and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: run a fresh unattended B5/B6 lane under the installed F30 repair, using
-no legacy workarounds or provider input; then close B2 only against an
-independently stopped worker whose claim is still active on TTL. F31 is
-field-closed, and B3 is integrated and installed, while its own
-exhausted-readiness field case remains open. B7/B8 field closure is complete.
-Follow with C06/C07 and Phase D as the final parity gate. Before provider
-delivery, restore governed GitHub access and
+Next: restore nils-cli default-branch alignment and land the signed post-claim
+stop-only candidate; run a fresh unattended B5/B6 lane under the installed F30
+repair with no legacy workarounds or provider input; then exercise B2's
+remaining ambiguous-stop classifier. F31 is field-closed, and B3 is integrated
+and installed, while its own exhausted-readiness field case remains open.
+B7/B8 field closure is complete. Follow with C06/C07 and Phase D as the final
+parity gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
