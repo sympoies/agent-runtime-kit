@@ -155,6 +155,7 @@ assert_main_agent_replay_boundaries() {
 run_main_agent_mode_probe() {
   local source="$REPO_ROOT/core/skills/conversation/main-agent-mode/SKILL.md.tera"
   local protocol="$REPO_ROOT/core/skills/conversation/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
+  local closeout_design="$REPO_ROOT/docs/discussions/2026-07-29-main-agent-closeout-macro.md"
   local stale_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-stale-v1.md"
   local extra_input_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-extra-input.md"
   local completed_receipt_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-completed-receipt-replay.txt"
@@ -417,6 +418,45 @@ run_main_agent_mode_probe() {
   grep -Fq 'visible worker card and its structured error' "$protocol"
   grep -Fq 'and route the failed deletion' "$protocol"
   grep -Fq 'through the session-management recovery owner' "$protocol"
+  grep -Fq '## Run Closeout And Handoff' "$source"
+  grep -Fq 'Persist the final bounded checkpoint' "$source"
+  grep -Fq 'main-agent worker retire <assignment-id>' "$source"
+  grep -Fq "session-management owner's privacy-safe list" "$source"
+  grep -Fq 'main-agent close --if-revision <run-revision>' "$source"
+  grep -Fq 'agent-session work-context status --format json' "$source"
+  grep -Fq '<runtime-issued-absolute-agent-session> work-context release' "$source"
+  grep -Fq 'proven to be the one retained for this run' "$source"
+  grep -Fq 'proven unrelated' "$source"
+  grep -Fq 'ambiguous provenance' "$source"
+  grep -Fq 'fresh read proving the run-owned claim absent' "$source"
+  grep -Fq 'either no active claim or a separately proven unrelated successor claim' "$source"
+  grep -Fq 'Keep the Main provider session live' "$source"
+  grep -Fq '## Run Closeout And Handoff' "$protocol"
+  grep -Fq 'persist the final bounded' "$protocol"
+  grep -Fq 'checkpoint, and inspect every assignment' "$protocol"
+  grep -Fq 'cleanup-pending workers' "$protocol"
+  grep -Fq 'main-agent worker retire <assignment-id>' "$protocol"
+  grep -Fq 'main-agent worker list --format json' "$protocol"
+  grep -Fq 'main-agent close --if-revision <run-revision>' "$protocol"
+  grep -Fq 'agent-session work-context status --format json' "$protocol"
+  grep -Fq '<runtime-issued-absolute-agent-session> work-context release' "$protocol"
+  grep -Fq 'to belong to this exact run' "$protocol"
+  grep -Fq 'Preserve an unrelated claim' "$protocol"
+  grep -Fq 'provenance is ambiguous' "$protocol"
+  grep -Fq 'fresh work-context read proving the run-owned claim absent' "$protocol"
+  grep -Fq 'either shows no active claim or shows a separately proven' "$protocol"
+  grep -Fq 'Keep the Main provider session live' "$protocol"
+  grep -Fq 'durable controller-claim binding created at' "$closeout_design"
+  grep -Fq 'Context equality alone never establishes claim ownership.' "$closeout_design"
+  grep -Fq '"completed_stage": "run-close"' "$closeout_design"
+  grep -Fq '"run_owned_claim_absent": null' "$closeout_design"
+  grep -Fq 'Bind its request digest to the original expected run revision' "$closeout_design"
+  grep -Fq 'matching progress receipt attests them' "$closeout_design"
+  grep -Fq 'original now-stale revision returns or resumes' "$closeout_design"
+  grep -Fq 'receipt, or external drift fails closed' "$closeout_design"
+  grep -Fq 'Failure preserves every resource not already changed by a committed stage' "$closeout_design"
+  grep -Fq 'preserved and reported, the run-owned claim is recorded absent' "$closeout_design"
+  grep -Fq 'controller-claim provenance is ambiguous or cannot be proven' "$closeout_design"
 
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'For a Codex worker, run these literal commands:'
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'main-agent capabilities --provider codex --format json'
@@ -473,6 +513,19 @@ run_main_agent_mode_probe() {
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'live or unknown runtime, or any active or uncertain operation'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use `/logout` or raw terminal input'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '## Run Closeout And Handoff'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Persist the final bounded checkpoint'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent worker retire <assignment-id>'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" "session-management owner's privacy-safe list"
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent close --if-revision <run-revision>'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'agent-session work-context status --format json'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '<runtime-issued-absolute-agent-session> work-context release'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'proven to be the one retained for this run'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'proven unrelated'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'ambiguous provenance'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'fresh read proving the run-owned claim absent'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'either no active claim or a separately proven unrelated successor claim'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Keep the Main provider session live'
   done
 
   for product in codex claude; do

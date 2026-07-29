@@ -557,6 +557,84 @@ owner; a folded success never substitutes for a proof the main agent has not
 seen. The concrete command and typed-result vocabulary belong to that workflow's
 skill or runbook.
 
+## Run Closeout And Handoff
+
+Run closeout is a Main-owned lifecycle transition after assignment acceptance or
+typed terminalization. A final chat response, committed repository state, or
+closed provider record is not durable orchestration closeout.
+
+Before closing the run, rehydrate or read status, persist the final bounded
+checkpoint, and inspect every assignment. No assignment may remain
+`starting`, `working`, `blocked`, or `submitted` without an explicit retained
+exception that the run close contract accepts. Use each assignment's typed
+classification and recovery path; never collapse pre-claim cancellation,
+post-claim stopped reconciliation, accepted-worker release, or uncertain
+operation recovery into generic deletion.
+
+Retire every cleanup-eligible assignment through the folded worker action:
+
+```bash
+main-agent worker retire <assignment-id> \
+  --if-revision <assignment-revision> \
+  --idempotency-key <unique-key> --format json
+```
+
+The result must prove operation quiescence, claim disposition, logical deletion,
+and fresh-list absence. After all eligible workers are retired, a fresh
+`main-agent worker list --format json` plus the session-management owner's
+privacy-safe list must show no live or cleanup-pending workers for the run.
+Preserve retained worktrees and evidence. If cleanup remains pending, keep the
+run open or retain the exact exception allowed by the run contract; never close
+merely to hide the worker card.
+
+Close the durable run with its current revision:
+
+```bash
+main-agent close --if-revision <run-revision> \
+  --idempotency-key <unique-key> --format json
+```
+
+Require a fresh `main-agent status --format json` read to report the exact run
+closed. Run closure and generic session coordination are distinct ownership
+surfaces, so also inspect:
+
+```bash
+agent-session work-context status --format json
+```
+
+A closed run does not prove its controller work-context claim absent. Release
+the controller claim only when the active claim identity and context are proven
+to belong to this exact run. Use the runtime-issued absolute lifecycle
+executable and exact authenticated session-management shape:
+
+```bash
+<runtime-issued-absolute-agent-session> work-context release \
+  --session "$AGENT_SESSION_ID" --claim <claim-id> \
+  --if-revision <claim-revision> \
+  --capability-file "$AGENT_SESSION_CAPABILITY_FILE" \
+  --idempotency-key <unique-key> --format json
+```
+
+Then require a fresh work-context read proving the run-owned claim absent. A
+valid read-back either shows no active claim or shows a separately proven
+unrelated active claim. Preserve an unrelated claim, record the run-owned claim
+absent, and allow closeout to complete. If provenance is ambiguous, preserve
+the active claim and report closeout incomplete rather than releasing another
+workflow's authority.
+
+Keep the Main provider session live until the user-facing result or handoff
+prompt is delivered.
+The session hosting the current response cannot be deleted first and still
+complete that response. Physical stop or deletion of the Main provider session
+is a later session-owner action after delivery; it is not implied by run close
+or controller-claim release.
+
+The released surface currently exposes folded worker retirement and run close
+as separate actions. Until one revision-fenced, idempotent run-wide closeout
+macro owns the ordered stages and read-backs, the Main Agent must execute this
+sequence explicitly and must not report Main Agent Mode closed from
+`main-agent close` alone.
+
 ## Stop And Recovery Matrix
 
 | Condition | Required stop/recovery |

@@ -482,6 +482,61 @@ explicit reassignment under the recovery protocol.
     Accept, merge, archive, and report only when provider delivery is available;
     otherwise retain the bounded local result and state exactly what remains.
 
+## Run Closeout And Handoff
+
+The Main Agent owns run closeout; a user-facing result does not by itself close
+the durable run or release its coordination authority. Before ending or handing
+off a Main Agent Mode workflow:
+
+1. Persist the final bounded checkpoint, then reconcile every assignment through
+   its typed terminal path. Invoke the folded worker action for each eligible
+   worker:
+
+   ```bash
+   main-agent worker retire <assignment-id> \
+     --if-revision <assignment-revision> \
+     --idempotency-key <unique-key> --format json
+   ```
+
+   Require a fresh `main-agent worker list --format json` plus the
+   session-management owner's privacy-safe list to prove the exact worker
+   sessions absent. Preserve worktrees and retained exceptions unless their
+   owning workflow separately authorizes cleanup.
+2. Close the terminal run through the revision-fenced action:
+
+   ```bash
+   main-agent close --if-revision <run-revision> \
+     --idempotency-key <unique-key> --format json
+   ```
+
+3. Re-read both `main-agent status --format json` and
+   `agent-session work-context status --format json`. A closed run is not proof
+   that the generic controller work-context claim is released. When the current
+   active claim is proven to be the one retained for this run, use the
+   runtime-issued absolute lifecycle executable and exact authenticated shape:
+
+   ```bash
+   <runtime-issued-absolute-agent-session> work-context release \
+     --session "$AGENT_SESSION_ID" --claim <claim-id> \
+     --if-revision <claim-revision> \
+     --capability-file "$AGENT_SESSION_CAPABILITY_FILE" \
+     --idempotency-key <unique-key> --format json
+   ```
+
+   Require a fresh read proving the run-owned claim absent. That proof may show
+   either no active claim or a separately proven unrelated successor claim.
+   Preserve the unrelated claim; ambiguous provenance leaves closeout
+   incomplete and must be reported instead of releasing it.
+4. Keep the Main provider session live until the user-facing result or handoff
+   prompt is delivered.
+   Physical provider-session stop or deletion is a later session-owner action;
+   the Main Agent must not terminate the transport that still owes the user its
+   final response.
+
+Until a run-wide folded closeout action exists, these typed stages and their
+read-backs are required rather than treating `main-agent close` alone as
+complete cleanup.
+
 ## Boundary
 
 - This skill exists only on supported managed runtimes with the required hook
