@@ -9,10 +9,10 @@ checkpoint file. B7 validates an exact canonical Codex trust root and pins the
 verified Codex configuration through launch and replay. B8 validates and
 canonicalizes `launch.cwd` before assignment, receipt, or session side effects.
 The exact missing-cwd and untrusted-root negatives plus the repaired same-id
-retry and trusted-root startup now close B7/B8 in the field. B5/B6 field
-closure remains unclaimed: the first repaired-path lane required two
-Main-authorized provider-input recovery turns and still produced no checkpoint,
-so it is neither unattended evidence nor proof of the release/checkpoint paths.
+retry and trusted-root startup close B7/B8 in the field. The fresh v5 Codex
+lane now also closes B5/B6 in the field without provider input: it wrote an
+authenticated `submitted` checkpoint through the ordinary issued-file path and
+released its assignment-derived claim through the pinned absolute lifecycle.
 
 B2's original reconcile implementation, signed local-main integration,
 release binary install, and rendered-surface deployment are complete. Its
@@ -44,8 +44,37 @@ installation closure at nils-cli local `main`
 lifecycle, workers release after successful task checkpoints, and a
 request-changes worker re-bootstraps for the current revision before mutating.
 Historical persisted-start replay remains compatible with the immediately
-prior generated prompt. F30 field closure is not claimed until a fresh
-unattended lane completes.
+prior generated prompt. F30 field closure remains unclaimed until the
+preserved v5 unattended lane completes after F37.
+
+F25 and F36 now have regression-backed implementation, signed governed
+local-main integration, release installation, and real-product field closure
+at nils-cli commit
+`82ca3422eb7eca0dd38437a821726d77244a9ef9`. F25 holds a definitive
+submit-key recovery failure pending until authenticated bootstrap,
+authoritative turn end, or the original deadline, and reconciles the final
+receipt under the registry lock. F36 validates, descriptor-pins, and safely
+tightens only the owned state root, `session-locks`, and `sessions` ancestors
+to `0700`; unsafe symlinks, ownership, type, or replacement fail with typed
+causes without recursively mutating session contents.
+
+The one fresh v5 Codex lane exercised both repairs together. Its submit-key
+recovery reported failure, but authenticated bootstrap arrived inside the
+original deadline and `worker start --await-ready` returned `ready` with the
+durable recovery state `checkpoint_confirmed`. The root, both lifecycle
+ancestors, session leaf, and coordination directory were `0700`, and the
+issued checkpoint was `0600`. The worker changed only its two scoped fixture
+files, passed its test, wrote an authenticated `submitted` checkpoint through
+the ordinary supported path, and released the claim. This closes F25, F36,
+B5, and B6 in the field.
+
+The same lane exposed F37 after authenticated `request-changes`: the
+assignment moved to revision 6 `working` and one private review message was
+queued, but the provider turn had authoritatively ended, worker auto-resume was
+unsupported, and the guidance remained unread. A bounded typed wait timed out
+without current-revision re-bootstrap or mutation. No provider input, prompt
+resend, or terminal transport was used. F30 remains field-open behind this
+independent unattended request-changes wake/re-entry gap.
 
 F31 now has implementation, signed local-main integration, release
 installation, and real-product field closure at nils-cli local `main`
@@ -61,12 +90,13 @@ worker's claim remained active. This closes F31, not B2: the F31 worker
 remained live, while B2 requires an independently stopped worker whose claim
 is still active on TTL before terminalization.
 
-GitHub provider delivery remains spam-blocked; this session is authorized to
-use governed local-main delivery instead. Open work: investigate the repeated
-Codex checkpoint-timeout/readiness obstruction before another B5/B6 attempt;
-then run the unattended field lane using the deployed F30 repair, exercise
-B2's remaining ambiguous-stop classifier, run C06/C07, and finish the residual
-C08 recovery classifications plus Phase D parity items.
+Governed local-main delivery remains authorized when its compare-and-swap
+fence permits it; hooks, signing, and outside-repository receipts remain
+mandatory. Open work: repair F37's exact-worker unattended request-changes
+re-entry boundary and resume or otherwise safely close the preserved v5 lane
+without launching a second worker. Only after F30 is field-closed may the queue
+advance to B2's remaining ambiguous-stop classifier, C06/C07, and the residual
+C08 plus Phase D parity items.
 Date: 2026-07-27
 Updated: 2026-07-29
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
@@ -81,9 +111,8 @@ runtime surfaces are deployed, and the installed-binary coupled acceptance is
 green. The separate B1 real-product C02-C05 closure canary has now closed on
 both providers. Reaching that closure required working around four distinct
 root causes by hand, filed below as blockers B5-B8. B5-B8 now have signed
-local-main implementation closure and are deployed. B7/B8 field validation is
-closed; B5/B6 field validation remains separate and pending. None of them was
-a defect in the B1 scope/admission design itself.
+local-main implementation closure and are deployed. B5-B8 field validation is
+closed. None of them was a defect in the B1 scope/admission design itself.
 Both lanes bootstrapped, ran
 checkout-bound shell validation under a narrow claim, created signed commits,
 checkpointed `submitted`, took one revision-fenced `request-changes` plus a
@@ -198,6 +227,21 @@ repository beside the run:
 - `$AGENT_HOME/out/projects/graysurf__agent-runtime-kit/20260729-095000-b5-b6-f30-field-v2/`
   — two fresh B5/B6 launch attempts blocked before bootstrap, plus the complete
   B3 typed stop/cancel/retire evidence and fresh-list absence
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-115832-codex-readiness-prompt-truth/`
+  — regression-first typed prompt/composer repair, focused validation,
+  specialist-review disposition, signed local-main receipt, and the unrelated
+  full-gate baseline failure
+- `$AGENT_HOME/out/projects/graysurf__agent-runtime-kit/20260729-124736-b5-b6-f30-field-v4/`
+  — exact prompt/composer launch truth, the authenticated late bootstrap,
+  F36 checkpoint-admission failure, typed claim revocation and retirement,
+  closed run, released controller claim, and fresh-list absence
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-132453-f25-f36-readiness-state-ancestors/`
+  — F25/F36 regression-first evidence, focused and repository validation,
+  specialist-review disposition, signed delivery receipt, and install result
+- `$AGENT_HOME/out/projects/graysurf__agent-runtime-kit/20260729-150532-b5-b6-f30-field-v5/`
+  — the single fresh unattended Codex lane: repaired readiness and ancestor
+  proof, authenticated checkpoint, pinned absolute release, request-changes
+  transition, and preserved F37 unread-guidance state
 
 ## Continuation Order
 
@@ -230,27 +274,39 @@ repository beside the run:
    implementation, deployment, and real-product field closure are complete.
    It does not authorize raw terminal control, and this pre-claim evidence
    must not be counted as B2 terminalization proof.
-3. **Resolve the repeated Codex readiness obstruction, then field-validate
-   B5/B6 through a fresh unattended lane using the deployed F30 repair.**
-   B7/B8 field closure is complete: the exact untrusted root and
-   missing-cwd cases failed before durable side effects, and the trusted-root
-   and same-id retry paths started successfully. The first B5/B6 repaired-path
-   lane cannot count: it needed two explicitly authorized provider-input
-   recovery turns and still emitted no checkpoint. Start a distinct lane with
-   an explicitly trusted exact Codex root, the pinned absolute
-   `agent-session` lifecycle shape, and an ordinary checkpoint `Write` or
-   canonical `printf`. Require task checkpoint, claim release, acceptance,
-   retirement, and fresh-list absence without provider input or legacy argv
-   workarounds. F31 safely fenced the stuck original lane; start a distinct
-   clean assignment and never reuse its retired prompt or dirty worktree.
-   Two later fresh assignments on an explicitly trusted, clean worktree each
-   launched a live Codex session but timed out before bootstrap with
-   `delivery.state:"unverified"`, `proof:"worker-checkpoint-timeout"`, no
-   claim, no worktree changes, and no quota/capacity evidence. Their typed B3
-   recovery closed safely, but neither exercised B5, B6, or F30. Do not make a
-   third blind launch. First capture prompt/composer presence or another typed
-   launch discriminator and determine whether this is F25 or a distinct
-   readiness defect; then retry one fresh lane without provider input.
+3. **Finish the preserved v5 unattended request-changes cycle after repairing
+   F37; do not launch a second worker.**
+   B7/B8 field closure is complete. The v4 lane proved exact prompt presence
+   and composer transition, then isolated F25's late-bootstrap terminal-verdict
+   race and F36's inherited-`0775` ancestor defect. Both repairs are now
+   regression-backed, signed at nils-cli local-main `82ca3422`, installed, and
+   field-closed. The one distinct v5 Codex start observed submit-key recovery
+   failure but returned `ready` after the same worker authenticated inside the
+   original deadline. Its state root, `session-locks`, `sessions`, leaf, and
+   coordination directory were `0700`; the issued checkpoint was `0600`.
+
+   The authenticated v5 worker changed only `src/field-f30.sh` and
+   `tests/field-f30.sh`, passed `bash tests/field-f30.sh`, checkpointed
+   `submitted` through the ordinary issued-file path, and released its claim
+   through the pinned absolute lifecycle. F25, F36, B5, and B6 therefore have
+   implementation, deployment, and real-product field closure.
+
+   F30 is not yet field-closed. Authenticated `request-changes` moved the same
+   assignment to revision 6 `working`, and one private review message was sent
+   exactly once. The provider turn was already authoritatively terminated,
+   worker auto-resume was unsupported, the guidance remained
+   `queued_unread`, and a bounded 60-second typed wait timed out. Supervision
+   correctly refused to let the Main Agent copy the worker capability or renew
+   for it. This is F37: no typed unattended transition currently wakes the
+   exact idle worker so it can consume guidance and run current-revision
+   re-bootstrap.
+
+   Preserve run `5233cc92-c501-4ce1-8402-7b6e40317238`, assignment
+   `b5-b6-f30-codex-v5-20260729-150532`, its unread guidance, and its exact
+   two-file worktree. Do not send provider input or launch another worker.
+   Repair F37 with revision/incarnation, idle-composer, one-send, and replay
+   fences, then require current-revision re-bootstrap, bounded revision,
+   resubmission, release, acceptance, retirement, and fresh-list absence.
 4. **Keep F31's typed exact-worker claim revocation deployed and closed.**
    Signed nils-cli local-main commit
    `7857fe76c992bad6c4ec0a6f6154362f6e5c1e31` adds the revision-fenced,
@@ -292,7 +348,7 @@ repository beside the run:
    absence of subsequent assignment and worktree progress.
 6. **Run C06, C07, and the remaining Phase D parity items.** C02-C05 are closed
    on both providers, and C09 is closed on both but only with hand-supplied
-   release argv pending B5 field validation. C08's recovery
+   release argv; full unattended C09 is pending F37/F30. C08's recovery
    boundary is only partly closed: the
    B2 post-claim path ran on a single Codex fixture lane in both claim-absent
    and defining claim-active-at-stage-1 forms. The ambiguous
@@ -300,12 +356,12 @@ repository beside the run:
    C06 dependency wait and C07 account-next / unsupported-account behaviour
    were not reached because both provider accounts hit their usage ceilings
    during the closure session.
-7. **Then take the remaining friction wave.** F25 prompt-presence truth is now
-   pulled forward into step 3 because it independently blocked two fresh
-   B5/B6 attempts; B3's typed recovery is field-closed. Address F22 and F33
+7. **Then take the remaining friction wave.** F25 prompt-presence truth and
+   late-bootstrap reconciliation are closed in step 3; B3's typed recovery is
+   field-closed. Address F22 and F33
    together while touching the supervision and
    pre-bootstrap classifier. F30 is implemented and deployed but still needs
-   the fresh unattended field proof in step 3. F31 remains recorded at step 4
+   the preserved v5 field proof after F37 in step 3. F31 remains recorded at step 4
    as closed field evidence. Take F34 as the
    remaining operation-ownership work; B5's source repair does not close it.
    Take F32 with F13, since both are the same discarded-serde-error shape.
@@ -319,13 +375,14 @@ its defining independently-stopped live-claim field branch is now closed.
 Full field closure remains open only for the separate ambiguous-stop
 classification. The original B2 implementations are on both local default
 branches; the signed post-claim stop-only repair is integrated to nils-cli
-local `main`, installed, and field-proven. B5-B8 are repaired and deployed;
-B7/B8 field closure is complete while B5/B6 remains open. B3 is implemented,
-integrated, deployed, and field-closed. F30 is implemented and deployed but
-not field-closed. F31 is implemented, integrated, installed, and field-closed.
-Next diagnose the repeated Codex checkpoint-timeout without provider input,
-then field-validate B5/B6 unattended under F30, exercise B2's ambiguous-stop
-classifier, and finish C06/C07 plus Phase D.
+local `main`, installed, and field-proven. B5-B8 are repaired, deployed, and
+field-closed. B3 is implemented, integrated, deployed, and field-closed. F25
+and F36 are implemented, integrated, installed, and field-closed. F30 is
+implemented and deployed but not field-closed because F37 prevents the same
+idle worker from beginning its authenticated request-changes turn. F31 is
+implemented, integrated, installed, and field-closed. Finish F37 and the
+preserved v5 F30 cycle before exercising B2's ambiguous-stop classifier or
+continuing to C06/C07 and Phase D.
 The completed B3 candidate reuses B2's exact-runtime and quiescence proof
 helpers, then enters the existing pre-claim cancellation path after the typed
 stop rather than the B2 post-claim transition. It deliberately does not
@@ -438,16 +495,14 @@ separate obstacles were worked around by hand. B5-B8 are now implemented,
 signed on local `main`, release-installed or surface-deployed as applicable,
 and deterministically validated. None is a defect in B1's scope projection or
 admission rule; all four are in the surrounding worker lifecycle, and each is
-filed as its own blocker below. B7/B8 real-product field validation is closed;
-B5/B6 remains open. B5 and B6 independently made an *unattended* lane unable
-to finish, so deployment alone does not close the end-to-end promise.
+filed as its own blocker below. B5-B8 real-product field validation is now
+closed. F30's complete unattended request-changes cycle remains separate.
 
 ### B5 — A worker cannot release its own claim unless it uses the bare name
 
-Severity: an accepted lane can never be retired. Implementation repaired and
-deployed on 2026-07-28; real-product field validation remains open after the
-first repaired-path lane failed to produce a checkpoint and required manual
-provider-input recovery.
+Severity: an accepted lane could never be retired. Implementation repaired and
+deployed on 2026-07-28; the pinned absolute release boundary is field-closed by
+the unattended v5 Codex lane on 2026-07-29.
 Area: `core/hooks/shared/session-coordination-guard.py`
 (`projected_lifecycle_invocation`).
 
@@ -505,10 +560,13 @@ alias, dynamic variables, shell wrappers, redirects, and every existing near
 miss remain denied. The final shared-hook suite runs 350 cases: 349 pass and
 one host-capability case skips.
 
-Field closure is deliberately separate: deploy the repaired surface, run a
-lane through `request-changes`, and prove that its own pinned absolute
-`agent-session work-context release ...` succeeds followed by ordinary retire,
-without supplying a bare-name workaround.
+The v5 lane supplies the separate field proof. Its authenticated initial
+checkpoint reached `submitted`; the worker then executed the runtime-generated
+pinned absolute `agent-session work-context release ...` lifecycle without a
+bare-name workaround or provider input. Typed supervision observed the
+assignment-derived claim absent with no active or uncertain operation. This
+closes B5's real-product release boundary. Final post-request-changes release
+and retirement remain part of F30's still-open end-to-end cycle.
 
 B5 covers only a *cooperative* worker that is able to run a command but is
 using the wrong argv form. It does not cover a worker that cannot act at all —
@@ -521,8 +579,8 @@ it.
 
 Severity: a worker could not report `submitted` or `blocked` without the manual
 argv workaround. Implementation repaired, signed on both local default
-branches, release-installed, and surface-deployed. Real-product field closure
-remains open.
+branches, release-installed, surface-deployed, and field-closed by the
+unattended v5 Codex lane on 2026-07-29.
 Area: the checkpoint file contract, `canonical_target_path`, and `SHELL_CONTROL`.
 
 The checkpoint contract requires an absolute mode-0600 `.json` file outside the
@@ -596,14 +654,13 @@ advances the installed binaries to `v1.25.9-80-g391d3d4b`. Synced
 Codex/Claude/Hermes surfaces pass skill-surface and installed-runtime doctor,
 hook convergence, plugin registry, and Codex prompt-input verification.
 
-Implementation and deployment closure do not imply field closure. B6 still
-requires a real-product worker that writes and submits through an ordinary
-`Write` or canonical `printf` route with no `perl` workaround. The first
-repaired-path field lane never emitted a checkpoint even after two authorized
-provider-input recovery turns; that lane therefore cannot close B6. F30's
-independent prompt-versus-packet contradiction is implemented and deployed,
-but must be proved by a fresh unattended lane rather than retroactively
-credited to the manually recovered lane.
+The v5 Codex worker supplies the missing real-product proof. With the repaired
+F36 ancestors at `0700`, its ordinary supported write populated the exact
+mode-`0600` issued checkpoint file with an authenticated `submitted` packet;
+the packet records the two scoped files and passing
+`bash tests/field-f30.sh`. No `perl` workaround or provider input was used.
+B6 implementation, deployment, and field closure are complete. F30's later
+request-changes/re-bootstrap cycle remains independently open behind F37.
 
 ### B7 — A Codex worker dies at startup in an untrusted repository root
 
@@ -1007,8 +1064,8 @@ Candidate-source implementation closure is complete at signed nils-cli commit
 `453b52c982d6160fcc93dce1b674e470bb612094`. Local-main integration,
 release installation, and runtime deployment are complete at signed local-main
 commit `452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`; real-product field closure is
-complete on 2026-07-29. B5/B6 field validation under the F30 repair remains
-blocked before bootstrap by a separate repeated Codex readiness obstruction.
+complete on 2026-07-29. The later F25/F36 repair and v5 lane close B5/B6
+without altering this B3 evidence.
 Area: `main_agent.rs` supervision, `session-coordination-guard.py` allowlist,
 `agent-session` command surface.
 
@@ -1253,6 +1310,101 @@ pre-claim fact.
 Entries are dated. "This session" in any older paragraph below refers to the
 2026-07-27 B1/B2 delivery session, not the latest entry.
 
+### F25/F36 repair and v5 unattended field boundary, 2026-07-29
+
+Signed nils-cli candidate `d74733072a1d0122f40eeaff3e94e4659af24282`
+and governed local-main commit
+`82ca3422eb7eca0dd38437a821726d77244a9ef9` repair F25 and F36.
+F25 retains a definitive submit-key recovery failure as pending until the
+same worker produces an authenticated checkpoint, its turn authoritatively
+ends, or the original readiness deadline expires. Final receipt
+reconciliation runs under the registry lock, so a late authenticated
+checkpoint inside that deadline wins without a contradictory terminal return.
+F36 safely hardens only the owned state root, `session-locks`, and `sessions`
+ancestors to `0700`, then pins retained descriptors for session creation and
+initial writes. Symlinked, foreign-owned, non-directory, unavailable, or
+replaced ancestors fail early with typed causes; existing session contents are
+not recursively mutated.
+
+Focused F25 and F36 suites each passed 24 cases. All-target/all-feature clippy
+with warnings denied, formatting, diff checks, and strict agent-docs passed.
+The full repository gate was invoked once and stopped on the clean-baseline
+publish-order failure that places `nils-claude-cli` before `nils-scrub`.
+The later local-fast invocation exposed one repair-owned duplicated
+`coordination/coordination` adapter path; that defect was corrected and its
+two exact notification regressions, broker-recovery regression, and complete
+24-case start suite passed. The full gate was not replayed. Security,
+performance, API-contract, testing, maintainability, and adversarial
+specialist review closed with no remaining findings.
+
+The rebuilt installed binaries report
+`1.25.11 (v1.25.9-87-g82ca3422)`. Installed Codex, Claude, and Hermes doctors
+passed 84, 85, and 72 checks respectively; Codex/Claude hook doctors
+converged.
+
+Exactly one fresh unattended Codex lane then proved both repairs. Although
+submit-key recovery failed, the authenticated bootstrap arrived inside the
+original deadline and `worker start --await-ready` returned `ready`, with
+durable recovery state `checkpoint_confirmed`. The state root,
+`session-locks`, `sessions`, session leaf, and coordination directory were
+`0700`; the checkpoint was `0600`. The worker changed exactly its two scoped
+files, passed its focused test, checkpointed `submitted` through the ordinary
+path, and released its claim through the pinned absolute lifecycle. This
+closes F25, F36, B5, and B6 in the field.
+
+After revision-fenced `request-changes`, the same assignment reached revision
+6 `working` and one authenticated private guidance message was queued. Its
+provider turn had authoritatively ended, worker auto-resume was unsupported,
+and the message remained unread. A bounded typed wait timed out without
+re-bootstrap or mutation. This isolates F37; the worker, run, unread guidance,
+and two-file worktree remain preserved, and F30 field closure remains
+unclaimed.
+
+### Typed readiness truth and F36 field obstruction, 2026-07-29
+
+The regression-backed nils-cli repair at signed local-main commit
+`47671bfd5f50a3e3f617588904634d88dccbdbe0` distinguishes exact prompt
+presence, composer transition, observation unavailability, bootstrap failure,
+and checkpoint timeout on terminal readiness paths. Focused worker-start and
+classifier coverage, security cases for the private prompt file, bounded
+observation tests, formatting, and clippy are green. The final specialist
+review reported no remaining actionable findings. The repository's full gate
+was invoked once and stopped on the pre-existing clean-main failure
+`publish-order places nils-claude-cli (#22) before dependency nils-scrub
+(#32)`; the same selector fails on the clean baseline and the repair touches
+only agent-session source, tests, and documentation. The installed
+`main-agent`, `agent-session`, and `agent-hook` report
+`1.25.11 (v1.25.9-86-g47671bfd)`.
+
+The single fresh v4 Codex lane returned terminal
+`readiness_recovery_failed`, but its typed observation proved the exact
+generated prompt was present in the bound provider transcript and the composer
+changed after paste. No prompt was resent and no provider input was supplied.
+Typed supervision then observed the same worker at authenticated `working`
+with an active assignment claim and advancing worktree progress. This is a
+late-bootstrap verdict race: prompt delivery and bootstrap both succeeded
+after the start command had already declared a terminal readiness failure.
+
+The worker created only `src/field-f30.sh` and `tests/field-f30.sh`; its
+assigned shell test passed. Both supported checkpoint writes were denied
+because `$AGENT_SESSION_STATE_DIR` and its `sessions` ancestor were owner-owned
+but mode `0775`. The issued checkpoint and leaf session/coordination
+directories satisfied their `0600`/`0700` contracts. Nils-cli's session
+creation uses `create_dir_all` for the two ancestors and applies `0700` only to
+the leaf, so a `0002` caller umask produces the incompatible ancestor mode.
+This new source boundary is F36.
+
+Because no authenticated `submitted` checkpoint existed, the worker correctly
+did not release its claim and F30 request-changes was not reached. After the
+authoritative turn ended, typed supervision returned
+`idle_claim_revocation_required`. The projected exact-worker action revoked
+only that claim with `input_sent:false`, preserved the session and dirty
+worktree, and cancelled the assignment. Typed retirement deleted the worker
+with no pending cleanup; fresh list evidence proved it absent. Run
+`87eca616-329d-4882-8be8-d542756213ba` closed at revision 2 and its controller
+claim was separately released. This is a valid unattended field result, but
+it is a blocked result, not B5/B6/F30 closure.
+
 ### B3 field closure and repeated B5/B6 readiness obstruction, 2026-07-29
 
 Two distinct fresh assignments used an explicitly authorized trusted Codex
@@ -1317,7 +1469,8 @@ Main-session recovery authority, consumed bounded authenticated guidance, and
 still emitted no checkpoint. Because the lane required provider input, it
 cannot be unattended evidence; because it never checkpointed, it exercised
 neither B6's natural write nor B5's pinned absolute release. B5/B6 field
-closure remains unclaimed. The worker, claim, session, and worktree remain
+closure remained unclaimed at this point; v5 closes it later. The worker,
+claim, session, and worktree remain
 preserved in the retained 2026-07-28 evidence. F31 later supplied and
 field-validated the safe typed Main-owned revocation action on a distinct
 preserved lane.
@@ -1345,9 +1498,12 @@ candidate and signed governed local-main commit have the same tree; the
 outside-repository receipt records no provider delivery. Rebuilt
 `main-agent` and `agent-session` report `v1.25.9-82-g46c00f18`.
 
-This is implementation, integration, and deployment closure only. A fresh
-unattended B5/B6 lane must field-validate F30; the manually recovered prior
-lane cannot be reclassified after the fact.
+This remains implementation, integration, and deployment closure only. The
+fresh v5 lane reached authenticated request-changes, but F37 prevented a new
+unattended provider turn before current-revision re-bootstrap. Preserve that
+lane and finish its re-bootstrap, bounded mutation, resubmission, release,
+acceptance, and retirement after F37; the manually recovered prior lane cannot
+be reclassified after the fact.
 
 ### B5 implementation closure, 2026-07-28
 
@@ -1456,7 +1612,8 @@ the installed 1.25.11 binary and the already-deployed surfaces:
 | B2 positive stopped-runtime reconcile | passed on a claim-absent stopped worker, with the v2 proof fields and two of at least four replay paths; does NOT establish field closure |
 | B2 post-claim stop plus live-claim reconcile (2026-07-29) | defining branch closed — typed exact-runtime stop retained the active TTL claim; reconcile observed it at stage 1, removed it, and a fresh read proved claim absent |
 | B3 exhausted-readiness typed stop (2026-07-29) | closed twice — both live exact-incarnation workers stopped without provider input, cancelled, retired, and were proven absent; the first post-stop supervision explicitly classified `pre_claim_failure` |
-| B5/B6 unattended retry (2026-07-29) | not exercised — two fresh trusted Codex workers exhausted checkpoint readiness before bootstrap, claim, task checkpoint, or worktree change |
+| B5/B6 unattended retries (2026-07-29) | closed by v5 — repaired readiness returned `ready`, repaired ancestors were `0700`, the ordinary issued-file checkpoint reached authenticated `submitted`, and the pinned absolute lifecycle left the claim absent without provider input |
+| F30 request-changes cycle (2026-07-29) | still open — v5 reached authenticated revision-6 `request-changes`, but the terminated provider turn did not restart; exact private guidance remained unread and no current-revision re-bootstrap or mutation occurred (F37) |
 
 Run `5f959c6d-e71d-4951-bf8e-059a50c1cdc1`, closed at revision 3. Lane commits
 in the disposable fixture `graysurf/main-agent-b1-canary`: Claude `eb4f4cec`
@@ -1469,16 +1626,18 @@ their declared scopes.
 | --- | --- | --- |
 | F22 | A worker between launch and bootstrap is classified `claim_renewal_required`, telling the manager to renew a claim that never existed | Give the pre-bootstrap window its own state |
 | F24 | A packet whose `repository` is a path instead of `owner/name` is accepted by `worker start` and only fails at bootstrap, costing a launch, a readiness wait, and a reassign | Validate the identifier inside `worker start` before creating a session |
-| F25 | Still open and now independently blocks B5/B6 field validation. The original fresh Claude worker launched with an empty composer while reporting `submit-key-recovery-succeeded`. On 2026-07-29 two distinct fresh, trusted Codex workers each remained live but exhausted `worker-checkpoint-timeout` before bootstrap with delivery unverified, no claim, no worktree progress, and no quota/capacity evidence. Prompt absence was not directly observed in the Codex cases, so it remains a hypothesis rather than the recorded root cause | Capture typed prompt/composer-presence truth before another launch retry; report `prompt-not-present` or another exact discriminator instead of treating transport recovery as delivery proof |
+| F25 | Closed in implementation, deployment, and the field at nils-cli `82ca3422`. The v5 submit-key recovery failed, but the same worker authenticated inside the original deadline; `worker start` returned `ready` and durable recovery became `checkpoint_confirmed` rather than returning a contradictory terminal verdict | Keep the pending-verdict reconciliation and exact prompt/composer truth covered; do not regress to prompt-absence inference |
 | F27 | In a checkout with no git remote, repository identity cannot resolve, and every scoped write plus the blocked-checkpoint escape hatch is denied with a generic identity error | Detect a remote-less checkout at claim or bootstrap time and fail with that specific cause |
 | F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>`. Still open: the 2026-07-28 closure canary tried to fix this by naming commands in the packet, but the named mailbox shapes were themselves wrong (missing `--session`, positional id for `show`), so a hand-written command list is not a reliable fix | Generate the exact commands from the CLI surface rather than hand-writing them into prompts or notifications |
-| F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6 is implemented and deployed for the runtime-issued out-of-checkout checkpoint, with real-product field validation pending |
-| F30 | Resolved in implementation and deployed at nils-cli `46c00f18`; field proof remains pending. Free-form task text no longer owns claim lifecycle. The generated orchestration prompt requires release after each successful task checkpoint and current-revision re-bootstrap after authenticated `request-changes`; replay accepts the immediately prior persisted prompt | Run a fresh unattended B5/B6 lane and require checkpoint, release, acceptance, retirement, and absence without provider input |
+| F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6's runtime-issued out-of-checkout checkpoint is implemented, deployed, and field-closed by the v5 Codex ordinary write |
+| F30 | Resolved in implementation and deployed at nils-cli `46c00f18`; field proof remains pending. V5 proved the initial authenticated checkpoint and release, then reached revision-6 request-changes, but F37 prevented a new provider turn before current-revision re-bootstrap | After F37, finish the preserved v5 lane: current-revision re-bootstrap, claim, bounded mutation, resubmission, release, acceptance, retirement, and fresh-list absence without provider input |
 | F31 | Closed in implementation and the field at nils-cli local `main` `7857fe76`. A typed v4 supervision action revoked only the exact authoritative-idle live worker's assignment-derived claim under revision, incarnation, runtime, activity, broker, and quiescence fences. The action sent no provider input, preserved the durable session and unchanged dirty worktree, quarantined resume, and left another worker's claim active | Keep the installed primitive deployed; do not count its live-worker evidence as B2 stopped-worker field closure |
 | F32 | `main-agent checkpoint` rejected a worker packet with `invalid-checkpoint: coordination input is invalid` and named no field, the same discarded-serde-error shape as F13 | Surface the field path in checkpoint validation too |
 | F33 | Codex reported "Selected model is at capacity" mid-lane and its turn ended without progress, yet supervision still classified `healthy_progress` | Treat a provider capacity failure as attention-required, per the documented capacity rule |
 | F34 | A worker cannot clear a dangling operation lease on its own claim. `work-context complete` requires `--lease` plus `--execution-token-file`, and `work-context reconcile` requires `--lease` plus `--proof-file`; both the lease id and the execution token are minted by the hook layer at implicit admit time and never handed to the worker. The only correct worker behaviour left is to report and wait — the canary's Claude lane did exactly that, and explicitly refused to scavenge capability material out of `coordination/registry.json` to satisfy the guard checking it | Either return the lease id and execution token to the worker that owns the operation, or give the Main Agent a typed action to complete/reconcile a dangling lease on its own worker's claim |
 | F35 | Main Agent Mode has folded worker retirement and revision-fenced run close, but no run-wide closeout macro. A real closeout left two cancelled sessions `cleanup_pending`, and `main-agent close` left the controller work-context claim active until separately released and read back | Keep the explicit skill closeout sequence deployed now; later implement the revision-fenced, idempotent `main-agent closeout` contract captured in `docs/discussions/2026-07-29-main-agent-closeout-macro.md` |
+| F36 | Closed in implementation, deployment, and the field at nils-cli `82ca3422`. Session start validates, safely tightens, and descriptor-pins only the owned state root, `session-locks`, and `sessions` ancestors; unsafe ownership, type, symlink, unavailability, or replacement fails typed. V5 proved all ancestors `0700` and an ordinary authenticated checkpoint write | Keep the no-follow, ownership, replacement, and non-recursive mutation regressions; retain platform coverage for the descriptor-backed path |
+| F37 | After authenticated revision-6 `request-changes`, the exact v5 Codex provider turn was authoritatively terminated, worker auto-resume was unsupported, and one authenticated private message remained `queued_unread`. A 60-second typed wait timed out; supervision could only tell the worker to renew its own claim, but no worker turn existed to consume that instruction | Add a revision/incarnation-fenced unattended request-changes wake/re-entry transition for the exact idle worker. It must preserve one-send notification semantics, avoid raw Enter/prompt resend/account-handoff reuse, and prove guidance consumption plus current-revision re-bootstrap before mutation |
 | F13 | `worker start` rejects a packet with `invalid-assignment-packet: coordination input is invalid` and names no field; the serde error is discarded. The skill also names `exclusions` and `invariants`, which are not top-level schema fields | Surface the field path; align the skill with the schema |
 | F18 | Read-only `semantic-commit` probes are denied when composed — `cd X && semantic-commit …`, or a trailing `2>&1` parsed as a CLI argument | Classify read-only subcommands and redirections before default-delivery analysis |
 | F05 | `agent-session activity doctor` reports `configured:false` while the compatibility probe reports `configured:true` with `compatibility_owner:"agent-hook"` | Reconcile the doctor with agent-hook ownership |
@@ -1489,7 +1648,8 @@ their declared scopes.
 Closed on both products: C01 activation, C02 startup, C03 supervision and
 claims, C04 authenticated mailbox, C05 request-changes and same-session resume.
 C09 acceptance and retirement is closed on both products but only with
-hand-supplied release argv; it does not yet pass unattended, pending B5.
+hand-supplied release argv. B5's pinned absolute release boundary is now
+field-closed in v5, but full unattended C09 remains pending F37/F30 completion.
 C08's recovery boundary is only partly closed: the B2 post-claim path has now
 run on a single Codex fixture lane in both claim-absent and defining
 claim-active-at-stage-1 forms, but the ambiguous process-dead/tmux-live
@@ -1502,9 +1662,9 @@ Still open:
 - C08 for dead-worker detection under an ambiguous stop and the remaining
   recovery classifications; B2 live-claim reconciliation and B3's
   exhausted-readiness live-worker recovery are closed
-- C09 unattended, once B5 field validation proves the worker's pinned absolute
-  lifecycle command releases and retires without the bare-name workaround
-- Phase D parity beyond the differences recorded as F25, F29, and now F30-F34
+- C09 unattended, once F37 permits the preserved v5 worker to finish F30,
+  release, accept, retire, and disappear without provider input
+- Phase D parity beyond the differences recorded as F29-F34 and F37
 
 C06 and C07 were not reached because both provider accounts hit their usage
 ceilings during the closure session, not because of any product defect.
@@ -1522,12 +1682,16 @@ and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: add typed prompt/composer-presence truth or another exact launch
-discriminator before one more B5/B6 attempt; do not make a third blind launch.
-Then run the unattended lane under F30 with no legacy workarounds or provider
-input and exercise B2's remaining ambiguous-stop classifier. F31 and B3 are
-field-closed; B7/B8 field closure is complete. Follow with C06/C07 and Phase D
-as the final parity gate. Before provider delivery, restore governed GitHub access and
+Next: repair F37's exact-worker unattended request-changes re-entry boundary,
+then finish the preserved v5 lane without provider input or a second worker.
+F25 and F36 are repaired, installed, and field-closed. B5 and B6 are
+field-closed by v5's authenticated ordinary checkpoint and pinned absolute
+release. F30 remains open until that same worker consumes guidance,
+re-bootstraps at revision 6, makes the bounded revision, resubmits, releases,
+is accepted and retired, and disappears from a fresh list. Only then exercise
+B2's remaining ambiguous-stop classifier. F31 and B3 are field-closed; B7/B8
+field closure is complete. Follow with C06/C07 and Phase D as the final parity
+gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
