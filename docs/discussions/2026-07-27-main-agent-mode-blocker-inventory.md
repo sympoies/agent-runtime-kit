@@ -25,13 +25,17 @@ post-action read proved the exact worker stopped and claim absent. Full B2
 field closure remains separate and UNCLAIMED only for the still-unexercised
 ambiguous-stop classifier case (provider process dead while tmux remains
 live). The new post-claim stop-only implementation is signed at nils-cli
-candidate `94719ffc00af5a6b81574c07df672120c60687e3`, release-installed, and
-fully validated, but is not yet integrated to nils-cli local `main`: that
-branch was already one governed commit ahead of `origin/main`, so the next
-default-branch delivery correctly failed closed. B3's distinct pre-claim typed
+candidate `94719ffc00af5a6b81574c07df672120c60687e3`, integrated to local
+`main` at signed commit `2f440ecc392bbcf376ada245f2c73818a9fe742d`,
+release-installed, and fully validated. B3's distinct pre-claim typed
 exact-incarnation stop remains integrated and deployed at nils-cli local
-`main` `452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`; its exhausted-readiness
-real-product field case remains open and must not be counted as B2 evidence.
+`main` `452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`, and its
+exhausted-readiness real-product field case is now closed. Two fresh trusted
+Codex starts independently exhausted the bounded checkpoint wait; both
+projected `readiness_stop_required`, stopped through the exact typed action
+without provider input, cancelled, retired, and disappeared from fresh session
+lists. Post-stop supervision explicitly classified the first worker
+`pre_claim_failure`. This B3 evidence must not be counted as B2 evidence.
 
 The failed B5/B6 field lane exposed F30 as an independent unattended-lane
 blocker. F30 now has implementation, signed local-main integration, and release
@@ -58,11 +62,11 @@ remained live, while B2 requires an independently stopped worker whose claim
 is still active on TTL before terminalization.
 
 GitHub provider delivery remains spam-blocked; this session is authorized to
-use governed local-main delivery instead. Open work: restore nils-cli's aligned
-default-branch delivery state and land the signed post-claim stop-only
-candidate; run a fresh B5/B6 unattended field lane using the deployed F30
-repair; exercise B2's remaining ambiguous-stop classifier; then C06/C07, the
-residual C08 recovery classifications, and the remaining Phase D parity items.
+use governed local-main delivery instead. Open work: investigate the repeated
+Codex checkpoint-timeout/readiness obstruction before another B5/B6 attempt;
+then run the unattended field lane using the deployed F30 repair, exercise
+B2's remaining ambiguous-stop classifier, run C06/C07, and finish the residual
+C08 recovery classifications plus Phase D parity items.
 Date: 2026-07-27
 Updated: 2026-07-29
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
@@ -163,7 +167,9 @@ B3's implementation, local-main integration, release installation, and
 runtime deployment gaps are closed. The new Main-owned command
 stops a still-live pre-claim/readiness-failure runtime without raw terminal
 control while preserving its durable session state. Real-product B3 field
-validation remains open. The cooperative provider-exit fixture remains
+validation is closed on 2026-07-29 by two independent fresh Codex workers that
+exhausted the checkpoint wait and completed typed stop, guarded cancellation,
+and typed retirement without provider input. The cooperative provider-exit fixture remains
 insufficient for both B3 and B2's live-claim branch:
 B3's own scenario is an exhausted-readiness worker that cannot be driven, while
 B2 requires a stopped post-claim worker whose claim remains alive on TTL.
@@ -189,6 +195,9 @@ repository beside the run:
 - `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-042606-b2-postclaim-stop-action/`
   — regression evidence, signed candidate receipt, specialist review, exact
   typed-stop result, live-claim reconcile result, and post-action supervision
+- `$AGENT_HOME/out/projects/graysurf__agent-runtime-kit/20260729-095000-b5-b6-f30-field-v2/`
+  — two fresh B5/B6 launch attempts blocked before bootstrap, plus the complete
+  B3 typed stop/cancel/retire evidence and fresh-list absence
 
 ## Continuation Order
 
@@ -198,8 +207,8 @@ repository beside the run:
    receipts; never weaken hooks or leases. A repository already ahead by one
    governed default-branch commit must first regain an aligned state before a
    second default-branch delivery.
-2. **Keep B3's completed typed-stop repair deployed, but keep field closure
-   separate from B2.** Candidate commit
+2. **Keep B3's completed typed-stop repair deployed and field-closed, but keep
+   its evidence separate from B2.** Candidate commit
    `453b52c982d6160fcc93dce1b674e470bb612094` adds the typed,
    exact-incarnation `main-agent worker stop-runtime` primitive for an
    exhausted-readiness runtime without deleting durable session state. It
@@ -210,11 +219,20 @@ repository beside the run:
    `reconcile-recovery` remains the route for an unknown `attempting` send.
    It is integrated at signed nils-cli local-main commit
    `452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`, release-installed, and
-   deployed. It does not authorize raw terminal control, and a B3 stop must
-   not be counted as B2 terminalization proof. Its exhausted-readiness
-   real-product field case remains open.
-3. **Field-validate B5/B6 through a fresh unattended lane using the deployed
-   F30 repair.** B7/B8 field closure is complete: the exact untrusted root and
+   deployed. On 2026-07-29 two fresh, trusted Codex workers independently
+   exhausted the bounded checkpoint wait while live and claim-absent.
+   Supervision returned executable `readiness_stop_required` with exact
+   incarnation and revision 3. Both typed stops returned
+   `runtime_stopped:true`, `input_sent:false`,
+   `session_state_preserved:true`, and `worktree_preserved:true`; post-stop
+   proof classified `pre_claim_failure`, guarded cancellation succeeded, typed
+   retirement deleted each session, and fresh lists proved both absent. B3
+   implementation, deployment, and real-product field closure are complete.
+   It does not authorize raw terminal control, and this pre-claim evidence
+   must not be counted as B2 terminalization proof.
+3. **Resolve the repeated Codex readiness obstruction, then field-validate
+   B5/B6 through a fresh unattended lane using the deployed F30 repair.**
+   B7/B8 field closure is complete: the exact untrusted root and
    missing-cwd cases failed before durable side effects, and the trusted-root
    and same-id retry paths started successfully. The first B5/B6 repaired-path
    lane cannot count: it needed two explicitly authorized provider-input
@@ -225,6 +243,14 @@ repository beside the run:
    retirement, and fresh-list absence without provider input or legacy argv
    workarounds. F31 safely fenced the stuck original lane; start a distinct
    clean assignment and never reuse its retired prompt or dirty worktree.
+   Two later fresh assignments on an explicitly trusted, clean worktree each
+   launched a live Codex session but timed out before bootstrap with
+   `delivery.state:"unverified"`, `proof:"worker-checkpoint-timeout"`, no
+   claim, no worktree changes, and no quota/capacity evidence. Their typed B3
+   recovery closed safely, but neither exercised B5, B6, or F30. Do not make a
+   third blind launch. First capture prompt/composer presence or another typed
+   launch discriminator and determine whether this is F25 or a distinct
+   readiness defect; then retry one fresh lane without provider input.
 4. **Keep F31's typed exact-worker claim revocation deployed and closed.**
    Signed nils-cli local-main commit
    `7857fe76c992bad6c4ec0a6f6154362f6e5c1e31` adds the revision-fenced,
@@ -274,8 +300,10 @@ repository beside the run:
    C06 dependency wait and C07 account-next / unsupported-account behaviour
    were not reached because both provider accounts hit their usage ceilings
    during the closure session.
-7. **Then take the remaining friction wave.** Fold F25 prompt-presence truth into B3;
-   address F22 and F33 together while touching the supervision and
+7. **Then take the remaining friction wave.** F25 prompt-presence truth is now
+   pulled forward into step 3 because it independently blocked two fresh
+   B5/B6 attempts; B3's typed recovery is field-closed. Address F22 and F33
+   together while touching the supervision and
    pre-bootstrap classifier. F30 is implemented and deployed but still needs
    the fresh unattended field proof in step 3. F31 remains recorded at step 4
    as closed field evidence. Take F34 as the
@@ -290,14 +318,14 @@ pre-claim failure. Its original reconcile implementation closure holds, and
 its defining independently-stopped live-claim field branch is now closed.
 Full field closure remains open only for the separate ambiguous-stop
 classification. The original B2 implementations are on both local default
-branches; the signed post-claim stop-only candidate is installed and field
-proven but still awaits nils-cli local-main integration. B5-B8 are repaired
-and deployed; B7/B8 field closure is complete while B5/B6 remains open. B3 is
-integrated and deployed but not field-closed. F30 is implemented and deployed
-but not field-closed. F31 is implemented, integrated, installed, and
-field-closed. Next restore nils-cli delivery alignment, field-validate B5/B6
-unattended under F30, exercise B2's ambiguous-stop classifier, then finish
-C06/C07 and Phase D.
+branches; the signed post-claim stop-only repair is integrated to nils-cli
+local `main`, installed, and field-proven. B5-B8 are repaired and deployed;
+B7/B8 field closure is complete while B5/B6 remains open. B3 is implemented,
+integrated, deployed, and field-closed. F30 is implemented and deployed but
+not field-closed. F31 is implemented, integrated, installed, and field-closed.
+Next diagnose the repeated Codex checkpoint-timeout without provider input,
+then field-validate B5/B6 unattended under F30, exercise B2's ambiguous-stop
+classifier, and finish C06/C07 plus Phase D.
 The completed B3 candidate reuses B2's exact-runtime and quiescence proof
 helpers, then enters the existing pre-claim cancellation path after the typed
 stop rather than the B2 post-claim transition. It deliberately does not
@@ -853,10 +881,10 @@ contains a large implicit state machine.
 The signed nils-cli candidate is
 `94719ffc00af5a6b81574c07df672120c60687e3`. Installed
 `main-agent` and `agent-session` report
-`v1.25.9-85-g94719ffc`. The candidate is not yet on nils-cli local `main`:
-local `main` was already one governed commit ahead of `origin/main`, and the
-next default-branch integration correctly failed closed. No hook, signing,
-lease, or delivery guard was bypassed.
+`v1.25.9-85-g2f440ecc`. The candidate tree is integrated at signed nils-cli
+local-main commit `2f440ecc392bbcf376ada245f2c73818a9fe742d`; its
+outside-repository receipt records verified-good signing and no provider
+delivery. No hook, signing, lease, or delivery guard was bypassed.
 
 The live field sequence used assignment
 `b5-b8-field-codex-20260728`, exact worker incarnation
@@ -979,8 +1007,8 @@ Candidate-source implementation closure is complete at signed nils-cli commit
 `453b52c982d6160fcc93dce1b674e470bb612094`. Local-main integration,
 release installation, and runtime deployment are complete at signed local-main
 commit `452f3ccbe9bd270e5792a8e1c63f6b2fe5ebb731`; real-product field closure is
-NOT complete. B5/B6 field validation under the F30 repair remains the next
-field step.
+complete on 2026-07-29. B5/B6 field validation under the F30 repair remains
+blocked before bootstrap by a separate repeated Codex readiness obstruction.
 Area: `main_agent.rs` supervision, `session-coordination-guard.py` allowlist,
 `agent-session` command surface.
 
@@ -1041,10 +1069,47 @@ tests plus the documentation checks. API-contract, testing, security,
 maintainability, and red-team specialist reviews all reported no findings after
 the repair rounds.
 
-This is implementation, integration, installation, and deployment evidence
-only. No installed-binary real-product B3 canary has run, and the command is
-intentionally pre-claim: it cannot satisfy B2's required
-`proof.worker_claim.observed_at_stage1:true` post-claim evidence.
+#### Real-product field closure (2026-07-29)
+
+Two fresh assignments on the exact user-authorized trusted Codex root
+independently exhausted `worker start --await-ready 5m`. Each result preserved
+a live, exact-incarnation worker in `starting`, reported
+`delivery.state:"unverified"`, `proof:"worker-checkpoint-timeout"`,
+runtime-owned submit-key recovery exhausted once, and
+`automatic_retry_safe:false`. Neither worker acquired a claim, changed the
+clean worktree, or produced quota/capacity evidence.
+
+For both workers, v3 supervision returned
+`classification:"readiness_stop_required"` and an executable
+`exact_worker_runtime_stop` argv bound to assignment revision 3 and the exact
+worker incarnation. Executing that argv returned:
+
+```text
+runtime_stopped:true
+input_sent:false
+session_state_preserved:true
+worktree_preserved:true
+proof.readiness:"worker-checkpoint-timeout"
+proof.worker_runtime:"stopped"
+proof.worker_claim_active_before:false
+proof.operation_quiescent:true
+```
+
+Post-stop supervision on the first worker returned
+`classification:"pre_claim_failure"`, `worker.status:"stopped"`,
+`failed_preclaim:true`, and `cancel_then_reassign_safe:true`. The guarded
+revision-3 cancel moved each assignment to revision 4 `cancelled` with claim
+absent and operations quiescent. Typed retire then returned `retired:true`,
+`deleted:true`, and `cleanup_pending:false`; a fresh session-list read proved
+both worker sessions absent and the shared worktree remained clean. No prompt
+was resent, no manual Enter or provider input was sent, and no raw tmux,
+signal, direct session deletion, or force cleanup was used.
+
+This satisfies B3's exact acceptance and closes its real-product field case.
+The command is intentionally pre-claim, so this evidence cannot satisfy B2's
+required `proof.worker_claim.observed_at_stage1:true` post-claim evidence.
+The repeated launch timeout prevented either assignment from exercising B5,
+B6, or F30 and is recorded separately under F25/readiness.
 
 ### B4 — Worker lifecycle commands are treated as repository mutations
 
@@ -1188,6 +1253,30 @@ pre-claim fact.
 Entries are dated. "This session" in any older paragraph below refers to the
 2026-07-27 B1/B2 delivery session, not the latest entry.
 
+### B3 field closure and repeated B5/B6 readiness obstruction, 2026-07-29
+
+Two distinct fresh assignments used an explicitly authorized trusted Codex
+root and a clean worktree. Both live workers exhausted the five-minute
+checkpoint wait before bootstrap with unverified delivery, no claim, no
+worktree changes, no quota/capacity evidence, and runtime-owned submit-key
+recovery already exhausted. No provider recovery input was supplied.
+
+Each supervision projected the executable exact-incarnation, revision-3
+`stop-runtime` action. Both typed stops preserved session state and the
+worktree, sent no provider input, and proved stopped runtime plus quiescent
+claim-absent coordination. Guarded cancel and typed retire succeeded; fresh
+session-list reads proved both workers absent and the worktree clean. The
+first post-stop supervision explicitly returned `pre_claim_failure` with the
+worker stopped. This closes B3 implementation, deployment, and real-product
+field acceptance.
+
+Neither attempt reached bootstrap or a task checkpoint, so neither exercised
+B5's pinned absolute lifecycle release, B6's ordinary checkpoint write, or
+F30's orchestration-owned claim lifecycle. The identical outcome across fresh
+sessions is a repeatable readiness obstruction. It is routed to F25
+prompt/composer-presence investigation without claiming prompt absence as the
+root cause; a third blind launch is not warranted.
+
 ### B2 defining live-claim branch closure, 2026-07-29
 
 Signed nils-cli candidate `94719ffc` adds the revision/incarnation-fenced
@@ -1195,10 +1284,12 @@ post-claim `stop-claimed-runtime` action. It stops only the exact
 authoritative-idle, quiescent worker runtime, sends no provider input, retains
 the durable session and dirty worktree, and preserves the still-active claim
 for B2 reconciliation. Regression-first focused coverage and the final
-7,733-test combined-tree gate are green; the installed binaries identify that
-candidate. The candidate remains on its managed branch because nils-cli local
-`main` was already one governed commit ahead of `origin/main`; no delivery
-guard was bypassed.
+7,733-test combined-tree gate are green. The candidate initially remained on
+its managed branch because nils-cli local `main` was already one governed
+commit ahead of `origin/main`; after external alignment restored the allowed
+delivery state, its identical tree landed at signed local-main commit
+`2f440ecc392bbcf376ada245f2c73818a9fe742d` and the installed binaries were
+rebuilt from that commit. No delivery guard was bypassed.
 
 The field action left the assignment revision 4 `working` and its exact claim
 active on TTL. After typed same-incarnation Main self-recovery restored broker
@@ -1364,6 +1455,8 @@ the installed 1.25.11 binary and the already-deployed surfaces:
 | B2 live-runtime negative reconcile | fail-closed `worker-runtime-still-live`, state and revision unchanged |
 | B2 positive stopped-runtime reconcile | passed on a claim-absent stopped worker, with the v2 proof fields and two of at least four replay paths; does NOT establish field closure |
 | B2 post-claim stop plus live-claim reconcile (2026-07-29) | defining branch closed — typed exact-runtime stop retained the active TTL claim; reconcile observed it at stage 1, removed it, and a fresh read proved claim absent |
+| B3 exhausted-readiness typed stop (2026-07-29) | closed twice — both live exact-incarnation workers stopped without provider input, cancelled, retired, and were proven absent; the first post-stop supervision explicitly classified `pre_claim_failure` |
+| B5/B6 unattended retry (2026-07-29) | not exercised — two fresh trusted Codex workers exhausted checkpoint readiness before bootstrap, claim, task checkpoint, or worktree change |
 
 Run `5f959c6d-e71d-4951-bf8e-059a50c1cdc1`, closed at revision 3. Lane commits
 in the disposable fixture `graysurf/main-agent-b1-canary`: Claude `eb4f4cec`
@@ -1376,7 +1469,7 @@ their declared scopes.
 | --- | --- | --- |
 | F22 | A worker between launch and bootstrap is classified `claim_renewal_required`, telling the manager to renew a claim that never existed | Give the pre-bootstrap window its own state |
 | F24 | A packet whose `repository` is a path instead of `owner/name` is accepted by `worker start` and only fails at bootstrap, costing a launch, a readiness wait, and a reassign | Validate the identifier inside `worker start` before creating a session |
-| F25 | A fresh Claude worker launched with an empty composer; the runtime still reported `submit-key-recovery-succeeded`. Transient — a relaunch delivered normally, and Codex delivered first time | Verify the composer holds the prompt before reporting success; report `prompt-not-present` otherwise |
+| F25 | Still open and now independently blocks B5/B6 field validation. The original fresh Claude worker launched with an empty composer while reporting `submit-key-recovery-succeeded`. On 2026-07-29 two distinct fresh, trusted Codex workers each remained live but exhausted `worker-checkpoint-timeout` before bootstrap with delivery unverified, no claim, no worktree progress, and no quota/capacity evidence. Prompt absence was not directly observed in the Codex cases, so it remains a hypothesis rather than the recorded root cause | Capture typed prompt/composer-presence truth before another launch retry; report `prompt-not-present` or another exact discriminator instead of treating transport recovery as delivery proof |
 | F27 | In a checkout with no git remote, repository identity cannot resolve, and every scoped write plus the blocked-checkpoint escape hatch is denied with a generic identity error | Detect a remote-less checkout at claim or bootstrap time and fail with that specific cause |
 | F28 | A worker told it had mailbox mail did not know the consumption command and searched the web for it. It also invented `main-agent checkpoint --revision --state --blocker-summary`; the real shape needs `--file <json>`. Still open: the 2026-07-28 closure canary tried to fix this by naming commands in the packet, but the named mailbox shapes were themselves wrong (missing `--session`, positional id for `show`), so a hand-written command list is not a reliable fix | Generate the exact commands from the CLI surface rather than hand-writing them into prompts or notifications |
 | F29 | With identical packets, Claude's writes were admitted and Codex's were denied `shell-target-unresolved`, because Claude edits through a file-target tool and Codex writes through shell | Resolved by B1 for in-checkout targets; B6 is implemented and deployed for the runtime-issued out-of-checkout checkpoint, with real-product field validation pending |
@@ -1406,8 +1499,8 @@ Still open:
 - C06 dependency wait
 - C07 account-next (Codex) and unsupported-account behaviour (Claude)
 - C08 for dead-worker detection under an ambiguous stop and the remaining
-  recovery classifications including B3's live worker; the B2 live-claim
-  reconciliation case is closed
+  recovery classifications; B2 live-claim reconciliation and B3's
+  exhausted-readiness live-worker recovery are closed
 - C09 unattended, once B5 field validation proves the worker's pinned absolute
   lifecycle command releases and retires without the bare-name workaround
 - Phase D parity beyond the differences recorded as F25, F29, and now F30-F34
@@ -1418,9 +1511,9 @@ ceilings during the closure session, not because of any product defect.
 B2 reconcile is release-installed at its canonical local-main head;
 checksum/version proof, the installed B1 coupled acceptance, the live-runtime
 negative reconcile canary, and both claim-absent and claim-active positive
-stopped-runtime canaries are green. The signed post-claim stop-only candidate
-used for the defining live-claim case is installed but still awaits nils-cli
-local-main integration. The ambiguous process-dead/tmux-live classifier
+stopped-runtime canaries are green. The signed post-claim stop-only repair used
+for the defining live-claim case is on nils-cli local `main` `2f440ecc`,
+installed, and deployed. The ambiguous process-dead/tmux-live classifier
 remains the only B2 field condition open under this inventory.
 Runtime-kit B2
 implementation head `d35f3960338bc4893dc0bb158e88c341cb15a44a` passes full CI
@@ -1428,13 +1521,12 @@ and its rendered surfaces are deployed from the durable checkout. Both prepared
 one-commit trees are on their primary local default branches, and the exact
 runtime-kit local landing is deployed.
 
-Next: restore nils-cli default-branch alignment and land the signed post-claim
-stop-only candidate; run a fresh unattended B5/B6 lane under the installed F30
-repair with no legacy workarounds or provider input; then exercise B2's
-remaining ambiguous-stop classifier. F31 is field-closed, and B3 is integrated
-and installed, while its own exhausted-readiness field case remains open.
-B7/B8 field closure is complete. Follow with C06/C07 and Phase D as the final
-parity gate. Before provider delivery, restore governed GitHub access and
+Next: add typed prompt/composer-presence truth or another exact launch
+discriminator before one more B5/B6 attempt; do not make a third blind launch.
+Then run the unattended lane under F30 with no legacy workarounds or provider
+input and exercise B2's remaining ambiguous-stop classifier. F31 and B3 are
+field-closed; B7/B8 field closure is complete. Follow with C06/C07 and Phase D
+as the final parity gate. Before provider delivery, restore governed GitHub access and
 revalidate the expected remote bases. The GitHub GraphQL 403 still blocks
 governed provider delivery. Both remote default refs were later observed
 aligned with the local commits through an external update whose provenance is
