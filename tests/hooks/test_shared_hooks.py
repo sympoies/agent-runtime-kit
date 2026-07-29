@@ -12121,7 +12121,7 @@ printf '%s\\n' "$*" >> {shlex.quote(str(call_log))}
 if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
 if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
 if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\\n' '{{"schema_version":"cli.agent-session.work-context-show.v1","ok":true,"data":{{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-session.work-context-show.v1","ok":true,"data":{{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}}}'
   exit 0
 fi
 if [[ "$*" == *"work-context check"* ]]; then
@@ -12254,7 +12254,7 @@ if [[ "$*" == *"work-context show"* && "${COORD_SCENARIO:-}" == 'stale' ]]; then
   exit 1
 fi
 if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","session_id":"private-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}'
   exit 0
 fi
 if [[ "$*" == *"work-context check"* ]]; then
@@ -12442,7 +12442,7 @@ set -euo pipefail
 if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
 if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
 if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}}}'
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}}}'
   exit 0
 fi
 if [[ "$*" == *"work-context check"* ]]; then
@@ -12546,6 +12546,334 @@ exit 64
             self.assertEqual(list(namespace.glob("*.json")), [])
             self.assertEqual(list(namespace.glob("*.token")), [])
             self.assertEqual(list(namespace.glob("*.outcome")), [])
+
+    def test_session_coordination_stop_retires_exact_externally_reconciled_operation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            (repo / "src").mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repo.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            reconciled = root / "operator-reconciled"
+            calls = root / "agent-session-calls"
+            capability = root / "capability"
+            state_dir = root / "session-state"
+            claim_id = "11111111-1111-4111-8111-111111111111"
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.25.11'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* || "$*" == *"broker status"* ]]; then
+  [[ " $* " == *" --state-dir {shlex.quote(str(state_dir))} "* ]] || exit 65
+  [[ " $* " == *" --session managed-session "* ]] || exit 66
+  [[ " $* " == *" --capability-file {shlex.quote(str(capability))} "* ]] || exit 67
+  printf '%s\\n' "$*" >> {shlex.quote(str(calls))}
+fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"{claim_id}","revision":3,"state":"active"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context check"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.conflict-evaluation.v1","classification":"clear","complete":true,"reasons":[],"peers":[]}}}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context admit"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","claim_id":"{claim_id}","claim_revision":3,"revision":1,"state":"active"}}}}'
+  exit 0
+fi
+if [[ "$*" == *"broker status"* ]]; then
+  active=1
+  [[ -f {shlex.quote(str(reconciled))} ]] && active=0
+  printf '{{"ok":true,"data":{{"schema_version":"agent-session.coordination-broker.v1","session_id":"managed-session","state":"ready","generation":1,"capability_available":true,"heartbeat_fresh":true,"claim":{{"claim_id":"{claim_id}","revision":3,"state":"active"}},"operation":{{"active":%s,"uncertain":0}}}}}}\\n' "$active"
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability.write_text("secret\n", encoding="utf-8")
+            capability.chmod(0o600)
+            runtime_state = root / "runtime-state"
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(runtime_state),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(state_dir),
+                "AGENT_SESSION_COORDINATION_MODE": "enforce",
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            for index in range(40):
+                pre = write_payload("src/lib.rs", "fn main() {}\n")
+                pre.update(
+                    {
+                        "session_id": "product-session",
+                        "tool_use_id": f"externally-reconciled-tool-{index}",
+                        "hook_event_name": "PreToolUse",
+                    }
+                )
+                code, decision, stderr = run_enforced_hook(
+                    "session-coordination-guard.py", pre, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+            calls.write_text("", encoding="utf-8")
+            stop = {
+                "hook_event_name": "Stop",
+                "session_id": "product-session",
+            }
+            code, pending, stderr = run_enforced_hook(
+                "session-coordination-guard.py", stop, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("does not release or guess", str(pending))
+            self.assertEqual(
+                calls.read_text(encoding="utf-8").count("broker status"), 1
+            )
+            self.assertNotIn("work-context show", calls.read_text(encoding="utf-8"))
+
+            reconciled.touch()
+            code, reconciled_stop, stderr = run_enforced_hook(
+                "session-coordination-guard.py", stop, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(reconciled_stop)
+            call_text = calls.read_text(encoding="utf-8")
+            self.assertEqual(call_text.count("broker status"), 2)
+            self.assertEqual(call_text.count("work-context show"), 1)
+            namespace = runtime_state / "session-coordination" / hashlib.sha256(
+                b"managed-session"
+            ).hexdigest()
+            self.assertEqual(list(namespace.glob("*.json")), [])
+            self.assertEqual(list(namespace.glob("*.token")), [])
+            self.assertEqual(list(namespace.glob("*.outcome")), [])
+
+    def test_externally_reconciled_operation_fails_closed_on_evidence_drift(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_reconcile_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        status = {
+            "schema_version": "agent-session.coordination-broker.v1",
+            "session_id": "managed-session",
+            "state": "ready",
+            "generation": 1,
+            "capability_available": True,
+            "heartbeat_fresh": True,
+            "claim": {
+                "claim_id": "11111111-1111-4111-8111-111111111111",
+                "revision": 3,
+                "state": "active",
+            },
+            "operation": {"active": 0, "uncertain": 0},
+        }
+        context = {
+            "schema_version": "agent-session.work-context.v1",
+            "session_id": "managed-session",
+            "session_incarnation": "incarnation-1",
+            "claim_id": "11111111-1111-4111-8111-111111111111",
+            "revision": 3,
+            "state": "active",
+        }
+
+        def result(data: dict[str, Any], returncode: int = 0) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                ["agent-session"],
+                returncode,
+                stdout=json.dumps({"ok": returncode == 0, "data": data}),
+                stderr="",
+            )
+
+        record = {
+            "schema_version": "agent-runtime-kit.session-coordination-operation.v1",
+            "phase": "active",
+            "session": "managed-session",
+            "capability_file": "/private/capability",
+            "state_dir": "/private/state",
+            "claim_id": "11111111-1111-4111-8111-111111111111",
+            "lease_id": "lease-1",
+            "session_incarnation": "incarnation-1",
+        }
+        broker_cases = {
+            "broker-schema": dict(status, schema_version="unsupported"),
+            "broker-session": dict(status, session_id="replacement-session"),
+            "broker-state": dict(status, state="starting"),
+            "capability-unavailable": dict(status, capability_available=False),
+            "stale-heartbeat": dict(status, heartbeat_fresh=False),
+            "missing-heartbeat": {
+                key: value for key, value in status.items() if key != "heartbeat_fresh"
+            },
+            "claim-inactive": dict(
+                status,
+                claim={
+                    "claim_id": record["claim_id"],
+                    "revision": 3,
+                    "state": "released",
+                },
+            ),
+            "boolean-claim-revision": dict(
+                status,
+                claim={
+                    "claim_id": record["claim_id"],
+                    "revision": False,
+                    "state": "active",
+                },
+            ),
+            "active-operation": dict(
+                status, operation={"active": 1, "uncertain": 0}
+            ),
+            "uncertain-operation": dict(
+                status, operation={"active": 0, "uncertain": 1}
+            ),
+            "boolean-active": dict(
+                status, operation={"active": False, "uncertain": 0}
+            ),
+            "boolean-uncertain": dict(
+                status, operation={"active": 0, "uncertain": False}
+            ),
+        }
+        context_cases = {
+            "context-schema": dict(context, schema_version="unsupported"),
+            "context-session": dict(context, session_id="replacement-session"),
+            "context-claim": dict(
+                context, claim_id="22222222-2222-4222-8222-222222222222"
+            ),
+            "context-revision": dict(context, revision=4),
+            "boolean-context-revision": dict(context, revision=False),
+            "context-state": dict(context, state="released"),
+            "empty-incarnation": dict(context, session_incarnation=""),
+        }
+        for name, status_case in broker_cases.items():
+            with self.subTest(name=name):
+                with mock.patch.object(
+                    guard,
+                    "run_cli",
+                    return_value=result(status_case),
+                ) as run:
+                    self.assertIsNone(
+                        guard.external_reconciliation_evidence(
+                            "/trusted/agent-session", record
+                        )
+                    )
+                self.assertEqual(run.call_count, 1)
+        for name, context_case in context_cases.items():
+            with self.subTest(name=name):
+                with mock.patch.object(
+                    guard,
+                    "run_cli",
+                    side_effect=[result(status), result(context_case)],
+                ) as run:
+                    self.assertIsNone(
+                        guard.external_reconciliation_evidence(
+                            "/trusted/agent-session", record
+                        )
+                    )
+                self.assertEqual(run.call_count, 2)
+        with self.subTest(name="broker-command-failure"):
+            with mock.patch.object(
+                guard,
+                "run_cli",
+                return_value=result({}, returncode=1),
+            ):
+                self.assertIsNone(
+                    guard.external_reconciliation_evidence(
+                        "/trusted/agent-session", record
+                    )
+                )
+        with self.subTest(name="context-command-failure"):
+            with mock.patch.object(
+                guard,
+                "run_cli",
+                side_effect=[result(status), result({}, returncode=1)],
+            ):
+                self.assertIsNone(
+                    guard.external_reconciliation_evidence(
+                        "/trusted/agent-session", record
+                    )
+                )
+
+        evidence = {
+            "key": (
+                record["session"],
+                record["capability_file"],
+                record["state_dir"],
+            ),
+            "claim_id": record["claim_id"],
+            "session_incarnation": "incarnation-1",
+        }
+        self.assertTrue(
+            guard.record_matches_external_reconciliation(record, evidence)
+        )
+        self.assertIsNone(
+            guard.external_reconciliation_key(dict(record, phase="admitting"))
+        )
+        self.assertFalse(
+            guard.record_matches_external_reconciliation(
+                dict(record, session_incarnation="incarnation-2"), evidence
+            )
+        )
+        rotated_evidence = dict(
+            evidence,
+            claim_id="22222222-2222-4222-8222-222222222222",
+        )
+        self.assertTrue(
+            guard.record_matches_external_reconciliation(record, rotated_evidence)
+        )
+        legacy = dict(record)
+        legacy.pop("session_incarnation")
+        self.assertTrue(
+            guard.record_matches_external_reconciliation(legacy, evidence)
+        )
+        self.assertFalse(
+            guard.record_matches_external_reconciliation(legacy, rotated_evidence)
+        )
+        self.assertFalse(
+            guard.record_matches_external_reconciliation(
+                dict(legacy, claim_id="non-uuid-legacy-claim"), evidence
+            )
+        )
+
+    def test_session_coordination_malformed_version_degrades_safely(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_version_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        malformed = subprocess.CompletedProcess(
+            ["agent-session", "--version"],
+            0,
+            stdout="unknown build\n",
+            stderr="",
+        )
+        with mock.patch.object(guard, "run_cli", return_value=malformed):
+            self.assertFalse(
+                guard.coordination_capability("/trusted/agent-session", "enforce")
+            )
 
     def test_session_coordination_guard_unmanaged_and_read_only_degrade_safely(
         self,
@@ -12735,7 +13063,7 @@ set -euo pipefail
 if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
 if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
 if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}'
   exit 0
 fi
 exit 64
@@ -13768,7 +14096,7 @@ set -euo pipefail
 if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
 if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
 if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}'
   exit 0
 fi
 if [[ "$*" == *"work-context check"* ]]; then

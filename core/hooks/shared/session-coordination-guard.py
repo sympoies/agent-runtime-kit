@@ -63,6 +63,9 @@ TIMEOUT_SECONDS = 6.0
 HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
 MAX_PENDING_RECORDS = 32
+MAX_STOP_RECONCILIATION_RECORDS = 128
+MAX_STOP_RECONCILIATION_GROUPS = 2
+STOP_RECONCILIATION_TIMEOUT_SECONDS = 1.0
 MAX_CHECKPOINT_BYTES = 64 * 1024
 SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~\n\r")
 READ_ONLY_GIT = frozenset(
@@ -245,8 +248,10 @@ def parse_version(text: str) -> tuple[int, int, int] | None:
     return major, minor, patch
 
 
-def run_cli(args: list[str]) -> subprocess.CompletedProcess[str] | None:
-    timeout = TIMEOUT_SECONDS
+def run_cli(
+    args: list[str], *, timeout_seconds: float = TIMEOUT_SECONDS
+) -> subprocess.CompletedProcess[str] | None:
+    timeout = timeout_seconds
     if HOOK_DEADLINE is not None:
         timeout = min(timeout, HOOK_DEADLINE - time.monotonic())
         if timeout <= 0:
@@ -2185,6 +2190,9 @@ def _pre_tool_locked(
         return ALLOW
     if (
         context.get("schema_version") != "agent-session.work-context.v1"
+        or context.get("session_id") != managed_session
+        or not isinstance(context.get("session_incarnation"), str)
+        or not context.get("session_incarnation")
         or context.get("state") != "active"
         or not isinstance(context.get("claim_id"), str)
         or not isinstance(context.get("revision"), int)
@@ -2255,6 +2263,7 @@ def _pre_tool_locked(
         "state_dir": state_dir,
         "claim_id": context["claim_id"],
         "claim_revision": context["revision"],
+        "session_incarnation": context["session_incarnation"],
         "operation": operation,
         "token_file": str(token_path),
         "targets_file": str(targets_path),
@@ -2586,6 +2595,201 @@ def complete_record(executable: str, path: Path, record: dict[str, Any]) -> bool
     return retire_record(path, record)
 
 
+def external_reconciliation_key(
+    record: Mapping[str, Any],
+) -> tuple[str, str, str] | None:
+    required_strings = (
+        "session",
+        "capability_file",
+        "state_dir",
+        "claim_id",
+    )
+    if (
+        record.get("schema_version")
+        != "agent-runtime-kit.session-coordination-operation.v1"
+        or record.get("phase") != "active"
+        or any(
+            not isinstance(record.get(key), str) or not record.get(key)
+            for key in required_strings
+        )
+        or (
+            not isinstance(record.get("lease_id"), str)
+            or not record.get("lease_id")
+        )
+    ):
+        return None
+    return (
+        record["session"],
+        record["capability_file"],
+        record["state_dir"],
+    )
+
+
+def exact_integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def external_reconciliation_evidence(
+    executable: str, record: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    key = external_reconciliation_key(record)
+    if key is None:
+        return None
+    session, capability_file, state_dir = key
+    status = run_cli(
+        common_cli_args(executable, state_dir)
+        + [
+            "broker",
+            "status",
+            "--session",
+            session,
+            "--capability-file",
+            capability_file,
+            "--format",
+            "json",
+        ],
+        timeout_seconds=STOP_RECONCILIATION_TIMEOUT_SECONDS,
+    )
+    status_data = result_data(json_body(status))
+    if (
+        status is None
+        or status.returncode != 0
+        or not status_data
+        or status_data.get("schema_version")
+        != "agent-session.coordination-broker.v1"
+        or status_data.get("session_id") != session
+        or status_data.get("state") != "ready"
+        or status_data.get("capability_available") is not True
+        or status_data.get("heartbeat_fresh") is not True
+    ):
+        return None
+    claim = status_data.get("claim")
+    operation = status_data.get("operation")
+    if (
+        not isinstance(claim, Mapping)
+        or not isinstance(claim.get("claim_id"), str)
+        or not claim.get("claim_id")
+        or not exact_integer(claim.get("revision"))
+        or claim.get("state") != "active"
+        or not isinstance(operation, Mapping)
+        or not exact_integer(operation.get("active"))
+        or not exact_integer(operation.get("uncertain"))
+        or operation.get("active") != 0
+        or operation.get("uncertain") != 0
+    ):
+        return None
+    context = run_cli(
+        common_cli_args(executable, state_dir)
+        + [
+            "work-context",
+            "show",
+            "--session",
+            session,
+            "--capability-file",
+            capability_file,
+            "--format",
+            "json",
+        ],
+        timeout_seconds=STOP_RECONCILIATION_TIMEOUT_SECONDS,
+    )
+    context_data = result_data(json_body(context))
+    if (
+        context is None
+        or context.returncode != 0
+        or not context_data
+        or context_data.get("schema_version") != "agent-session.work-context.v1"
+        or context_data.get("session_id") != session
+        or context_data.get("claim_id") != claim.get("claim_id")
+        or not exact_integer(context_data.get("revision"))
+        or context_data.get("revision") != claim.get("revision")
+        or context_data.get("state") != "active"
+        or not isinstance(context_data.get("session_incarnation"), str)
+        or not context_data.get("session_incarnation")
+    ):
+        return None
+    return {
+        "key": key,
+        "claim_id": claim["claim_id"],
+        "session_incarnation": context_data["session_incarnation"],
+    }
+
+
+def record_matches_external_reconciliation(
+    record: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> bool:
+    if external_reconciliation_key(record) != evidence.get("key"):
+        return False
+    current_incarnation = evidence.get("session_incarnation")
+    if not isinstance(current_incarnation, str) or not current_incarnation:
+        return False
+    admitted_incarnation = record.get("session_incarnation")
+    if admitted_incarnation is not None:
+        # nils-cli refuses claim rotation while any operation is nonterminal.
+        # The exact incarnation plus the fresh zero-operation snapshot therefore
+        # remains authoritative after a terminal claim is released/replaced.
+        return admitted_incarnation == current_incarnation
+    # Before this field was persisted, a claim UUID was the durable principal
+    # identity. Claims are freshly generated and never migrate across session
+    # incarnations; requiring the same active UUID from both authenticated
+    # snapshots preserves the incarnation fence for legacy records.
+    try:
+        return (
+            str(uuid.UUID(record["claim_id"])) == record["claim_id"]
+            and evidence.get("claim_id") == record["claim_id"]
+        )
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def retire_externally_reconciled_records(
+    executable: str, records: list[Path]
+) -> set[Path]:
+    groups: dict[
+        tuple[str, str, str], list[tuple[Path, dict[str, Any]]]
+    ] = {}
+    for path in records[:MAX_STOP_RECONCILIATION_RECORDS]:
+        descriptor = acquire_operation_lock(path)
+        if descriptor is None:
+            continue
+        try:
+            record = read_record(path)
+        finally:
+            release_operation_lock(descriptor)
+        key = external_reconciliation_key(record)
+        if key is None:
+            continue
+        groups.setdefault(key, []).append((path, record))
+    if not groups:
+        return set()
+    retired: set[Path] = set()
+    ordered_groups = sorted(
+        groups.values(),
+        key=lambda snapshots: (
+            -len(snapshots),
+            external_reconciliation_key(snapshots[0][1]),
+        ),
+    )
+    for snapshots in ordered_groups[:MAX_STOP_RECONCILIATION_GROUPS]:
+        evidence = external_reconciliation_evidence(executable, snapshots[0][1])
+        if evidence is None:
+            continue
+        for path, snapshot in snapshots:
+            descriptor = acquire_operation_lock(path)
+            if descriptor is None:
+                continue
+            try:
+                current = read_record(path)
+                if (
+                    current == snapshot
+                    and record_matches_external_reconciliation(current, evidence)
+                    and retire_record(path, current)
+                ):
+                    retired.add(path)
+            finally:
+                release_operation_lock(descriptor)
+    return retired
+
+
 def _post_tool_locked(
     payload: Mapping[str, Any],
     *,
@@ -2685,6 +2889,10 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
             path.name,
         )
     )
+    if executable is not None:
+        retired = retire_externally_reconciled_records(executable, records)
+        if retired:
+            records = [path for path in records if path not in retired]
     pending = len(records) > MAX_PENDING_RECORDS
     for path in records[:MAX_PENDING_RECORDS]:
         descriptor = acquire_operation_lock(path)
