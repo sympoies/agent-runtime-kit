@@ -419,37 +419,26 @@ run_main_agent_mode_probe() {
   grep -Fq 'and route the failed deletion' "$protocol"
   grep -Fq 'through the session-management recovery owner' "$protocol"
   grep -Fq '## Run Closeout And Handoff' "$source"
-  grep -Fq 'Persist the final bounded checkpoint' "$source"
-  grep -Fq 'main-agent worker retire <assignment-id>' "$source"
-  grep -Fq "session-management owner's privacy-safe list" "$source"
-  grep -Fq 'main-agent close --if-revision <run-revision>' "$source"
-  grep -Fq 'agent-session work-context status --format json' "$source"
-  grep -Fq '<runtime-issued-absolute-agent-session> work-context release' "$source"
-  grep -Fq 'proven to be the one retained for this run' "$source"
-  grep -Fq 'proven unrelated' "$source"
-  grep -Fq 'ambiguous provenance' "$source"
-  grep -Fq 'fresh read proving the run-owned claim absent' "$source"
-  grep -Fq 'either no active claim or a separately proven unrelated successor claim' "$source"
+  grep -Fq 'main-agent.run-wide-closeout.v1' "$source"
+  grep -Fq 'main-agent closeout' "$source"
+  grep -Fq '`handoff_ready:false` is a resumable partial result' "$source"
+  grep -Fq '`controller-claim-provenance-required`' "$source"
+  grep -Fq '`progress_receipt.completed_stages`' "$source"
   grep -Fq 'Keep the Main provider session live' "$source"
   grep -Fq '## Run Closeout And Handoff' "$protocol"
-  grep -Fq 'persist the final bounded' "$protocol"
-  grep -Fq 'checkpoint, and inspect every assignment' "$protocol"
-  grep -Fq 'cleanup-pending workers' "$protocol"
-  grep -Fq 'main-agent worker retire <assignment-id>' "$protocol"
-  grep -Fq 'main-agent worker list --format json' "$protocol"
-  grep -Fq 'main-agent close --if-revision <run-revision>' "$protocol"
-  grep -Fq 'agent-session work-context status --format json' "$protocol"
-  grep -Fq '<runtime-issued-absolute-agent-session> work-context release' "$protocol"
-  grep -Fq 'to belong to this exact run' "$protocol"
-  grep -Fq 'Preserve an unrelated claim' "$protocol"
-  grep -Fq 'provenance is ambiguous' "$protocol"
-  grep -Fq 'fresh work-context read proving the run-owned claim absent' "$protocol"
-  grep -Fq 'either shows no active claim or shows a separately proven' "$protocol"
+  grep -Fq 'prepare the private final' "$protocol"
+  grep -Fq 'main-agent closeout' "$protocol"
+  grep -Fq '`handoff_ready:true`' "$protocol"
+  grep -Fq '`handoff_ready:false` is resumable progress' "$protocol"
+  grep -Fq '`progress_receipt.completed_stages`' "$protocol"
+  grep -Fq '`controller-claim-provenance-required`' "$protocol"
+  grep -Fq 'preserves an unrelated successor claim' "$protocol"
   grep -Fq 'Keep the Main provider session live' "$protocol"
   grep -Fq 'durable controller-claim binding created at' "$closeout_design"
   grep -Fq 'Context equality alone never establishes claim ownership.' "$closeout_design"
-  grep -Fq '"completed_stage": "run-close"' "$closeout_design"
-  grep -Fq '"run_owned_claim_absent": null' "$closeout_design"
+  grep -Fq '"completed_stages": [' "$closeout_design"
+  grep -Fq '"run_owned_claim_absent": true' "$closeout_design"
+  grep -Fq '"handoff_ready": false' "$closeout_design"
   grep -Fq 'Bind its request digest to the original expected run revision' "$closeout_design"
   grep -Fq 'matching progress receipt attests them' "$closeout_design"
   grep -Fq 'original now-stale revision returns or resumes' "$closeout_design"
@@ -514,17 +503,14 @@ run_main_agent_mode_probe() {
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use raw tmux, terminal input, group cleanup, or a B3 runtime-stop primitive'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Never use `/logout` or raw terminal input'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" '## Run Closeout And Handoff'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Persist the final bounded checkpoint'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent worker retire <assignment-id>'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" "session-management owner's privacy-safe list"
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent close --if-revision <run-revision>'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'agent-session work-context status --format json'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '<runtime-issued-absolute-agent-session> work-context release'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'proven to be the one retained for this run'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'proven unrelated'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'ambiguous provenance'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'fresh read proving the run-owned claim absent'
-    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'either no active claim or a separately proven unrelated successor claim'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent.run-wide-closeout.v1'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent closeout'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`handoff_ready:true`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`handoff_ready:false` is a resumable partial result'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`progress_receipt.completed_stages`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`controller-claim-provenance-required`'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'original run revision, request, and parent idempotency key'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'diagnostic and intentional recovery primitives'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'Keep the Main provider session live'
   done
 
@@ -559,6 +545,6 @@ record_case "conversation.discussion-to-implementation-doc" "workflow skill sour
 record_case "conversation.guided-feature-build" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe guided-feature-build
 record_case "conversation.handoff-session-prompt" "workflow skill source and rendered surfaces exist for both products" run_conversation_skill_probe handoff-session-prompt
 record_case "conversation.outcome-routing" "normal conversation and guided build select advice, explanation, and delegation modes without child-skill selection" run_conversation_outcome_routing_probe
-record_case "conversation.main-agent-mode" "explicit opt-in main-agent ownership, verified worker startup, post-claim terminalization, stop rules, and Codex/Claude-only renders are enforced" run_main_agent_mode_probe
+record_case "conversation.main-agent-mode" "explicit opt-in ownership, verified startup, post-claim terminalization, macro-first closeout, and Codex/Claude-only renders are enforced" run_main_agent_mode_probe
 
 exit "$failures"

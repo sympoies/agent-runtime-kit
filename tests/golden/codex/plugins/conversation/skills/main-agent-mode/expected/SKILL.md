@@ -13,9 +13,10 @@ Prereqs:
 
 - The user explicitly asks to enable or use Main Agent Mode for the bounded
   workflow. Ordinary implementation requests never activate this mode.
-- `agent-session >=1.25.11` is installed from a released surface.
+- `agent-session >=1.25.11` is installed from a trusted compatible surface.
 - The trusted `main-agent` facade from the compatible nils-cli surface is
-  executable and advertises the exact runtime-checkpoint capability below.
+  executable and advertises the exact runtime-checkpoint and run-wide closeout
+  capabilities below.
   The semantic-version floor alone is not sufficient. Until that surface is
   available, report Main Agent Mode as unavailable without repairing or
   restricting ordinary agent work.
@@ -31,7 +32,7 @@ Inputs:
 - The accepted request, done criteria, constraints, repository, base ref, and
   work tier.
 - The literal worker provider name, `codex` or `claude`, chosen from the
-  providers reported as supported by the released `agent-session` doctor.
+  providers reported as supported by the installed `agent-session` doctor.
 - Existing plan, issue, run-state, PR, and worktree references when the tier
   already owns them.
 - One private mode-0600 objective packet for a new run, or an authenticated
@@ -55,8 +56,9 @@ Failure modes:
   sufficiently bounded to delegate safely.
 - The installed `agent-session` is missing or older than `1.25.11`.
 - The trusted `main-agent` facade is absent, incompatible, untrusted, does not
-  advertise `main-agent.runtime-checkpoint-file.v1`, or cannot authenticate the
-  current managed-session incarnation.
+  advertise `main-agent.runtime-checkpoint-file.v1` and
+  `main-agent.run-wide-closeout.v1`, or cannot authenticate the current
+  managed-session incarnation.
 - Doctor output is unhealthy, unsupported, unavailable, malformed, or reports
   a missing provider helper.
 - The bounded compatibility preview is not converged, would change state, or
@@ -76,7 +78,7 @@ any new worker launch.
 
 ## Entrypoint
 
-Run the released version and doctor checks before activating the mode or
+Run the installed version and doctor checks before activating the mode or
 launching any worker:
 
 For a Codex worker, run these literal commands:
@@ -96,6 +98,8 @@ Require `agent-session >=1.25.11`, a valid
 `"main-agent.runtime-checkpoint-file.v1"`, whose
 `data.capabilities.runtime_hook_checkpoint_write` is exactly
 `"runtime-kit.checkpoint-write-admission.v1"`, and whose
+`data.capabilities.run_wide_closeout` is exactly
+`"main-agent.run-wide-closeout.v1"`, and whose
 `data.provider` matches the selected worker provider, and whose
 `data.compatible` is `true`. This provider-aware probe reads the deployed `agent-hook`
 inventory, requiring bundle version `2026.07.28.1` or newer plus the locked
@@ -486,63 +490,53 @@ The Main Agent owns run closeout; a user-facing result does not by itself close
 the durable run or release its coordination authority. Before ending or handing
 off a Main Agent Mode workflow:
 
-1. Persist the final bounded checkpoint, then reconcile every assignment through
-   its typed terminal path. Invoke the folded worker action for each eligible
-   worker:
+1. Reconcile any worker that still needs an explicit typed recovery decision.
+   When the run is terminal-ready, retain its current revision, write one
+   private final checkpoint file, choose one stable parent idempotency key, and
+   invoke the run-wide macro:
 
    ```bash
-   main-agent worker retire <assignment-id> \
-     --if-revision <assignment-revision> \
-     --idempotency-key <unique-key> --format json
+   main-agent closeout \
+     --if-run-revision <initial-run-revision> \
+     --checkpoint-file <private-final-checkpoint-json> \
+     --idempotency-key <stable-closeout-key> \
+     --format json
    ```
 
-   Require a fresh `main-agent worker list --format json` plus the
-   session-management owner's privacy-safe list to prove the exact worker
-   sessions absent. Preserve worktrees and retained exceptions unless their
-   owning workflow separately authorizes cleanup.
-2. Close the terminal run through the revision-fenced action:
-
-   ```bash
-   main-agent close --if-revision <run-revision> \
-     --idempotency-key <unique-key> --format json
-   ```
-
-3. Re-read both `main-agent status --format json` and
-   `agent-session work-context status --format json`. A closed run is not proof
-   that the generic controller work-context claim is released. When the current
-   active claim is proven to be the one retained for this run, use the
-   runtime-issued absolute lifecycle executable and exact authenticated shape:
-
-   ```bash
-   <runtime-issued-absolute-agent-session> work-context release \
-     --session "$AGENT_SESSION_ID" --claim <claim-id> \
-     --if-revision <claim-revision> \
-     --capability-file "$AGENT_SESSION_CAPABILITY_FILE" \
-     --idempotency-key <unique-key> --format json
-   ```
-
-   Require a fresh read proving the run-owned claim absent. That proof may show
-   either no active claim or a separately proven unrelated successor claim.
-   Preserve the unrelated claim; ambiguous provenance leaves closeout
-   incomplete and must be reported instead of releasing it.
+2. Require `main-agent.closeout-result.v1` with `handoff_ready:true`,
+   `run_closed:true`, `workers_absent:true`, `cleanup_pending:false`,
+   `provider_session_preserved:true`, an empty `retained_exceptions`, and
+   `controller_claim.run_owned_claim_absent:true`. Retain
+   `expected_run_revision`, `checkpoint_revision`, `final_run_revision`,
+   `worker_dispositions`, and `progress_receipt.completed_stages` as the
+   bounded closeout proof.
+3. `handoff_ready:false` is a resumable partial result, not permission to
+   improvise cleanup. Inspect only its typed `retained_exceptions`,
+   `cleanup_pending`, worker dispositions, controller-claim disposition, and
+   completed stages. Resolve the named worker, operation, or maintenance
+   condition through its owner, then replay the identical checkpoint content,
+   original run revision, request, and parent idempotency key. Do not choose a
+   new key after a stage commits. A pre-provenance run that returns
+   `controller-claim-provenance-required` remains incomplete; never infer claim
+   ownership from matching context.
 4. Keep the Main provider session live until the user-facing result or handoff
    prompt is delivered.
    Physical provider-session stop or deletion is a later session-owner action;
    the Main Agent must not terminate the transport that still owes the user its
    final response.
 
-Until a run-wide folded closeout action exists, these typed stages and their
-read-backs are required rather than treating `main-agent close` alone as
-complete cleanup.
+`worker retire`, `main-agent close`, and `work-context release` remain
+diagnostic and intentional recovery primitives. They are not the normal
+closeout path and must not replace exact replay of an admitted closeout macro.
 
 ## Boundary
 
 - This skill exists only on supported managed runtimes with the required hook
   runner and enforced interactive-session and acceptance boundary; unsupported
   runtimes have no managed Main Agent Mode surface.
-- It consumes released deterministic `agent-session` primitives and existing
+- It consumes compatible deterministic `agent-session` primitives and existing
   tier/review/delivery outcomes. It adds no runtime graph, provider-specific
-  orchestration engine, or new nils-cli command.
+  orchestration engine, or provider transport command.
 - Concrete provider transport mechanics remain runtime-owned. Main Agent Mode
   consumes only `worker start --await-ready` and its typed authenticated
   checkpoint proof, including the bounded `submit_key_recovery` result; it never

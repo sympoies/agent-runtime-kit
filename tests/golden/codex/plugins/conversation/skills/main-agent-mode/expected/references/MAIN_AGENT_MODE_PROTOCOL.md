@@ -66,7 +66,7 @@ does not require or create repository scope. The grant coordinates the
 isolated checkout; it is not a path sandbox, so acceptance must reject a final
 diff outside the declared paths. Explicit edit admission and shell retargeting
 to another checkout still fail closed.
-Main Agent Mode has no manual paste/Enter startup path. It invokes the released
+Main Agent Mode has no manual paste/Enter startup path. It invokes the compatible
 folded boundary:
 
 ```bash
@@ -112,7 +112,8 @@ as the only later checkpoint JSON write target and then invokes
 idempotency key. Activation must first verify the selected provider with
 `main-agent capabilities --provider <codex|claude> --format json`, which advertises
 both `main-agent.runtime-checkpoint-file.v1` and
-`runtime-kit.checkpoint-write-admission.v1`, with `compatible:true`; the latter
+`runtime-kit.checkpoint-write-admission.v1`, plus
+`main-agent.run-wide-closeout.v1`, with `compatible:true`; the hook capability
 is derived from deployed `agent-hook` bundle `2026.07.28.1` or newer and its
 locked `agent-session.coordination.v1` rules for that provider. That bundle is
 the first whose paired handler admits checkpoint writes. The probe additionally
@@ -563,64 +564,45 @@ Run closeout is a Main-owned lifecycle transition after assignment acceptance or
 typed terminalization. A final chat response, committed repository state, or
 closed provider record is not durable orchestration closeout.
 
-Before closing the run, rehydrate or read status, persist the final bounded
-checkpoint, and inspect every assignment. No assignment may remain
+Before closing the run, rehydrate or read status, prepare the private final
+bounded checkpoint, and inspect every assignment. No assignment may remain
 `starting`, `working`, `blocked`, or `submitted` without an explicit retained
 exception that the run close contract accepts. Use each assignment's typed
 classification and recovery path; never collapse pre-claim cancellation,
 post-claim stopped reconciliation, accepted-worker release, or uncertain
 operation recovery into generic deletion.
 
-Retire every cleanup-eligible assignment through the folded worker action:
+After resolving any assignment that needs an explicit recovery decision, invoke
+the run-wide closeout macro with the run revision observed before its first
+stage:
 
 ```bash
-main-agent worker retire <assignment-id> \
-  --if-revision <assignment-revision> \
-  --idempotency-key <unique-key> --format json
+main-agent closeout \
+  --if-run-revision <initial-run-revision> \
+  --checkpoint-file <private-final-checkpoint-json> \
+  --idempotency-key <stable-closeout-key> \
+  --format json
 ```
 
-The result must prove operation quiescence, claim disposition, logical deletion,
-and fresh-list absence. After all eligible workers are retired, a fresh
-`main-agent worker list --format json` plus the session-management owner's
-privacy-safe list must show no live or cleanup-pending workers for the run.
-Preserve retained worktrees and evidence. If cleanup remains pending, keep the
-run open or retain the exact exception allowed by the run contract; never close
-merely to hide the worker card.
+Require a `main-agent.closeout-result.v1` projection with
+`handoff_ready:true`, `run_closed:true`, `workers_absent:true`,
+`cleanup_pending:false`, `provider_session_preserved:true`, no retained
+exceptions, and `controller_claim.run_owned_claim_absent:true`. Preserve its
+expected, checkpoint, and final run revisions, worker dispositions, claim
+disposition, and completed-stage receipt as the bounded proof. The macro owns
+the ordered checkpoint, terminal-worker retirement, active-operation fence,
+run close, release of only the durably bound run-owned controller claim, and
+final read-back. It preserves an unrelated successor claim rather than
+releasing it.
 
-Close the durable run with its current revision:
-
-```bash
-main-agent close --if-revision <run-revision> \
-  --idempotency-key <unique-key> --format json
-```
-
-Require a fresh `main-agent status --format json` read to report the exact run
-closed. Run closure and generic session coordination are distinct ownership
-surfaces, so also inspect:
-
-```bash
-agent-session work-context status --format json
-```
-
-A closed run does not prove its controller work-context claim absent. Release
-the controller claim only when the active claim identity and context are proven
-to belong to this exact run. Use the runtime-issued absolute lifecycle
-executable and exact authenticated session-management shape:
-
-```bash
-<runtime-issued-absolute-agent-session> work-context release \
-  --session "$AGENT_SESSION_ID" --claim <claim-id> \
-  --if-revision <claim-revision> \
-  --capability-file "$AGENT_SESSION_CAPABILITY_FILE" \
-  --idempotency-key <unique-key> --format json
-```
-
-Then require a fresh work-context read proving the run-owned claim absent. A
-valid read-back either shows no active claim or shows a separately proven
-unrelated active claim. Preserve an unrelated claim, record the run-owned claim
-absent, and allow closeout to complete. If provenance is ambiguous, preserve
-the active claim and report closeout incomplete rather than releasing another
-workflow's authority.
+`handoff_ready:false` is resumable progress. Inspect the typed retained
+exceptions, cleanup flag, worker and controller-claim dispositions, and
+`progress_receipt.completed_stages`. Resolve only the named condition through
+its owner, then replay the identical checkpoint content, original expected run
+revision, request, and parent idempotency key. Do not mint a new key after a
+stage commits. Missing authenticated controller-claim provenance fails closed
+with `controller-claim-provenance-required`; context equality is never an
+ownership substitute.
 
 Keep the Main provider session live until the user-facing result or handoff
 prompt is delivered.
@@ -629,11 +611,9 @@ complete that response. Physical stop or deletion of the Main provider session
 is a later session-owner action after delivery; it is not implied by run close
 or controller-claim release.
 
-The released surface currently exposes folded worker retirement and run close
-as separate actions. Until one revision-fenced, idempotent run-wide closeout
-macro owns the ordered stages and read-backs, the Main Agent must execute this
-sequence explicitly and must not report Main Agent Mode closed from
-`main-agent close` alone.
+Folded worker retirement, run close, and work-context release remain diagnostic
+and intentional recovery primitives. They are not the normal closeout path and
+must not replace an exact replay of an admitted closeout macro.
 
 ## Stop And Recovery Matrix
 

@@ -2,11 +2,15 @@
 
 ## Status
 
-- Lifecycle: implementation-readiness source
-- Scope: future `nils-cli` orchestration primitive plus the consuming
+- Lifecycle: implemented design record
+- Scope: `nils-cli` orchestration primitive plus the consuming
   `conversation:main-agent-mode` contract
-- Current behavior: explicit typed closeout sequence remains required
-- Delivery target: not scheduled by this document
+- Current behavior: capability-gated `main-agent closeout` is the normal path;
+  the explicit primitives remain diagnostic and intentional recovery actions
+- Local implementation: nils-cli local `main` `9ebbc922` and installed
+  `main-agent 1.25.11 (v1.25.9-94-g9ebbc922)` on 2026-07-31
+- Runtime-kit adoption: this change deploys the consuming Codex and Claude
+  surfaces locally; no public nils-cli release or provider PR is claimed
 
 ## Problem
 
@@ -19,10 +23,11 @@ Main Agent Mode has high-level primitives for individual lifecycle stages:
 - `agent-session work-context release` releases a generic session coordination
   claim.
 
-There is no run-wide action that owns the complete closeout transaction. The
-Main Agent must currently discover and execute the stages separately, preserve
-idempotency keys and revisions per stage, and synthesize several read-backs
-before it can truthfully report Main Agent Mode closed.
+Before the 2026-07-31 implementation there was no run-wide action that owned
+the complete closeout transaction. The Main Agent had to discover and execute
+the stages separately, preserve idempotency keys and revisions per stage, and
+synthesize several read-backs before it could truthfully report Main Agent Mode
+closed.
 
 The 2026-07-29 B2/B3/B5/B6 closeout exposed the practical gap:
 
@@ -38,9 +43,9 @@ necessary proof. The defect is orchestration ergonomics and ownership
 composition: the safe pieces exist, but no single macro owns their ordering,
 replay, aggregate result, or incomplete-stage projection.
 
-## Current Required Sequence
+## Prior Explicit Sequence
 
-Until a folded macro is released, the Main Agent Mode skill owns this sequence:
+This was the required fallback before the folded macro was adopted:
 
 1. rehydrate or read the exact run and persist a final bounded checkpoint;
 2. inspect every assignment and follow its typed terminalization path;
@@ -58,9 +63,9 @@ Until a folded macro is released, the Main Agent Mode skill owns this sequence:
 Run close, controller-claim release, and physical provider-session deletion are
 three different lifecycle transitions. None implies another.
 
-## Desired Interface
+## Implemented Interface
 
-Add a facade-owned macro with a shape equivalent to:
+The facade-owned macro is:
 
 ```bash
 main-agent closeout \
@@ -70,10 +75,9 @@ main-agent closeout \
   --format json
 ```
 
-The exact final CLI spelling remains an implementation decision, but the
-contract must remain revision-fenced, authenticated, idempotent, and
-macro-first. It must not expose force cleanup, raw session input, claim
-impersonation, or an option that weakens operation-quiescence checks.
+The contract is revision-fenced, authenticated, idempotent, and macro-first.
+It exposes no force cleanup, raw session input, claim impersonation, or option
+that weakens operation-quiescence checks.
 
 ## Required Stages
 
@@ -145,92 +149,84 @@ impersonation, or an option that weakens operation-quiescence checks.
 - Preserve the Main provider session. The macro must not terminate the
   conversation transport that still owes the user its final response.
 
-## Proposed Result Contract
+## Implemented Result Contract
 
-The public result should expose bounded proof, not private capabilities or raw
-session material. A successful projection needs fields equivalent to:
+The public result exposes bounded proof, not private capabilities or raw
+session material. A successful projection has this shape:
 
 ```json
 {
   "schema_version": "main-agent.closeout-result.v1",
   "run_id": "<bounded-id>",
   "expected_run_revision": 3,
-  "checkpoint_run_revision": 4,
+  "checkpoint_revision": 4,
   "final_run_revision": 7,
-  "progress_receipt_id": "<bounded-id>",
+  "progress_receipt": {
+    "schema_version": "main-agent.closeout-progress-receipt.v1",
+    "completed_stages": [
+      "checkpoint",
+      "workers",
+      "run_close",
+      "claim_release",
+      "readback"
+    ]
+  },
   "run_closed": true,
-  "checkpoint_committed": true,
-  "workers": [
+  "worker_dispositions": [
     {
       "assignment_id": "assignment-a",
-      "session_id": "session-a",
-      "incarnation_id": "incarnation-a",
-      "disposition": "retired",
-      "absence_observed": true
-    },
-    {
-      "assignment_id": "assignment-b",
-      "session_id": "session-b",
-      "incarnation_id": "incarnation-b",
-      "disposition": "retired",
-      "absence_observed": true
+      "released": true,
+      "deleted": true,
+      "cleanup_pending": false,
+      "retired": true
     }
   ],
   "workers_absent": true,
-  "cleanup_pending": [],
+  "cleanup_pending": false,
   "retained_exceptions": [],
   "controller_claim": {
-    "bound_claim": {
-      "claim_id": "claim-a",
-      "controller_incarnation_id": "controller-incarnation-a",
-      "acquisition_revision": 1
-    },
-    "observed_before": {
-      "claim_id": "claim-a",
-      "revision": 2,
-      "relation": "run-owned"
-    },
+    "bound": true,
+    "claim_id": "claim-a",
     "disposition": "released",
     "run_owned_claim_absent": true,
-    "active_after": null
+    "active_after": false
   },
   "provider_session_preserved": true,
   "handoff_ready": true
 }
 ```
 
-Worker identity fields are bounded public projections, not private runtime
-material. Each worker outcome binds retirement and fresh-list absence to the
-same assignment, session, and incarnation. The three revision fields
-distinguish the caller's fence, the committed checkpoint, and the final
-read-back instead of overloading one number.
+Each worker disposition is the bounded folded-retirement result. The three
+revision fields distinguish the caller's fence, the committed checkpoint, and
+the final read-back instead of overloading one number.
 
 An incomplete result must retain the same progress-receipt and per-worker
 shapes, plus fields equivalent to:
 
 ```json
 {
-  "completed_stage": "run-close",
-  "run_closed": true,
-  "workers_absent": true,
-  "mutation_state": "quiescent",
-  "controller_claim": {
-    "disposition": "preserved-ambiguous",
-    "run_owned_claim_absent": null,
-    "active_after": {
-      "claim_id": "claim-b",
-      "revision": 1,
-      "relation": "ambiguous"
+  "schema_version": "main-agent.closeout-result.v1",
+  "run_closed": false,
+  "workers_absent": false,
+  "cleanup_pending": false,
+  "retained_exceptions": [
+    {
+      "assignment_id": "assignment-b",
+      "state": "working",
+      "reason": "assignment-not-retireable"
     }
+  ],
+  "controller_claim": {
+    "disposition": "pending",
+    "run_owned_claim_absent": false,
+    "active_after": true
   },
-  "error": {
-    "code": "controller-claim-provenance-ambiguous",
-    "retryable": false
+  "progress_receipt": {
+    "schema_version": "main-agent.closeout-progress-receipt.v1",
+    "completed_stages": ["checkpoint"]
   },
-  "recovery": {
-    "action": "inspect-controller-claim",
-    "same_idempotency_key_required": true
-  }
+  "provider_session_preserved": true,
+  "handoff_ready": false
 }
 ```
 
@@ -292,8 +288,9 @@ prior-controller impersonation.
 1. A run whose workers are already retired closes in one idempotent macro call,
    releases its run-owned controller claim, preserves the Main provider session,
    and returns complete read-back proof.
-2. A run with multiple terminal `cleanup_pending` workers retires each exact
-   worker, proves fresh-list absence, closes, and releases its controller claim.
+2. A terminal worker whose logical deletion leaves `cleanup_pending` returns a
+   partial result; exact replay re-observes the retained tombstone and advances
+   only after maintenance clears it.
 3. An active or uncertain worker operation stops before retirement and returns
    the existing typed recovery action without closing the run.
 4. A worker-retirement partial failure is replay-safe and cannot hide the worker
@@ -310,34 +307,36 @@ prior-controller impersonation.
    receipt, or external drift fails closed.
 8. The Main provider session remains live until a separate session-owner action
    occurs after the user-facing handoff.
-9. Codex and Claude rendered Main Agent Mode surfaces carry the explicit manual
-   closeout sequence until the macro is released and adopted.
+9. Codex and Claude rendered Main Agent Mode surfaces require the exact
+   closeout capability, prefer the macro, and retain primitives only for
+   diagnosis or intentional recovery.
 
 ## Validation plan
 
-- Add nils-cli unit and integration coverage for every stage, partial-progress
-  receipt, exact replay, changed-request rejection, claim-provenance branch,
+- Nils-cli integration coverage exercises complete closeout and exact replay,
+  nonterminal-worker resume, cleanup-tombstone resume, active-operation
+  blocking, unrelated-successor preservation, missing-provenance rejection,
   and provider-session preservation.
-- Add CLI contract coverage for the public schema and exit codes.
-- Exercise a real-product run with at least two terminal workers and a live
-  Main controller claim.
-- Capture the run-close read-back, claim-disposition read-back, and fresh
-  worker-list absence before ending the Main provider session.
-- Keep runtime-kit deterministic conversation smoke assertions for the manual
-  closeout reminder; update them only when the folded macro replaces that
-  sequence.
+- CLI contract coverage asserts the public command and capability.
+- The canonical nils-cli `--local-fast` gate passed with all 7,816 nextest
+  cases, doctests, clippy, fmt, docs, and hygiene checks.
+- A real-product multi-worker closeout remains useful residual field evidence;
+  it is not required to prove the local command and consumer deployment.
+- Runtime-kit deterministic conversation smoke asserts macro-first closeout,
+  partial exact replay, capability admission, and provider-session preservation.
 
 ## Rollout
 
-1. Land regression-first nils-cli implementation and schema documentation.
-2. Release and install the compatible nils-cli surface.
-3. Update `conversation:main-agent-mode` to prefer the folded macro and retain
-   the explicit fallback only for older supported surfaces if compatibility
-   policy requires it.
-4. Render and deploy Codex and Claude runtime surfaces.
-5. Run the multi-worker real-product closeout acceptance case.
-6. Mark F35 implementation, deployment, and field closure independently in the
-   canonical blocker inventory.
+1. Nils-cli implementation and schema documentation landed on local `main`.
+2. The compatible nils-cli surface was installed locally; public release was
+   intentionally skipped because provider delivery was unavailable.
+3. `conversation:main-agent-mode` now requires the capability and prefers the
+   folded macro; primitives are recovery-only.
+4. Render and deploy Codex and Claude runtime surfaces locally.
+5. Retain the multi-worker real-product closeout as optional residual field
+   evidence.
+6. Record F35 implementation, local deployment, and installed acceptance in the
+   canonical blocker inventory without claiming a public release.
 
 ## Non-goals
 
