@@ -126,6 +126,25 @@ worker's claim remained active. This closes F31, not B2: the F31 worker
 remained live, while B2 requires an independently stopped worker whose claim
 is still active on TTL before terminalization.
 
+F38 and F39 were repaired after the closed v5 cycle while preparing B2's final
+field boundary. F38 now selects one exact active run and current worker
+incarnation before continuity mutations, serializes rebind, init, admission,
+claim renewal, and rollback under typed authority locks, and preserves exact
+receipt replay across historical records. Its focused regression suite,
+clippy, formatting, specialist review, and red-team follow-up are green. The
+signed governed local-main integration is nils-cli
+`02ac792bb10c0b4d921141869831ec3223f08988`; combined F38/F39
+`agent-session` and `main-agent` binaries are installed from that tree.
+
+F39 closes the repeated Stop-hook self-deadlock without weakening ordinary
+admission. Only an activity-capability failure on terminal `Stop` degrades to
+typed `activity-stop-reconciliation-required`; prompt and tool events remain
+fail-closed, and coordination transaction authority remains independent. The
+repair is signed and integrated on nils-cli local `main`
+`949b92c188ca8b74f70d1259eb8825ec1b1ce3c2`; the installed `agent-hook`
+reports `v1.25.9-93-g4a282e1f`, and Codex plus Claude doctors are converged.
+No repeated unchanged Stop fingerprint has recurred in the repaired session.
+
 Governed local-main delivery remains authorized when its compare-and-swap
 fence permits it; hooks, signing, and outside-repository receipts remain
 mandatory. Step 3 is now field-closed. The next authoritative incomplete item
@@ -133,7 +152,7 @@ is B2's process-dead/tmux-live ambiguous-stop classifier, followed by C06/C07
 and the residual C08 plus Phase D parity items. Full B2 closure remains
 unclaimed until that classifier produces a non-`healthy_progress` result.
 Date: 2026-07-27
-Updated: 2026-07-29
+Updated: 2026-07-30
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
 
 ## Purpose
@@ -282,6 +301,14 @@ repository beside the run:
 - `$AGENT_HOME/out/projects/sympoies__nils-cli/20260729-f37-request-changes-reentry-review/`
   — F37 regressions, focused/full validation, specialist-review disposition,
   governed delivery receipts, and the compatibility follow-up receipt
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260730-131419-f39-stop-activity-failure/`
+  — F39 regressions, installed-product Stop-versus-PreToolUse proof,
+  specialist-review disposition, and signed delivery receipt
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260730-160200-f38-active-run-selection-final/`
+  — F38 focused validation, specialist-review disposition, installed versions,
+  doctors, and signed candidate receipt
+- `$AGENT_HOME/out/projects/sympoies__nils-cli/20260730-163500-f38-local-main-integration/`
+  — governed signed local-main integration receipt for combined F38/F39 source
 
 ## Continuation Order
 
@@ -374,6 +401,9 @@ repository beside the run:
    `worker_claim_active_after:false`, and revision 5 `cancelled`; a fresh
    supervision read reported the exact worker `stopped` and
    `claim_active:false`. No session deletion occurred before evidence capture.
+   F38 and F39 are regression-backed, reviewed, integrated, and installed
+   prerequisites: active continuity selection is exact, and an activity child
+   failure on terminal Stop no longer creates an infinite provider-hook loop.
    Separately, still supervise a lane whose provider process is dead but whose
    tmux session exists, and require a non-`healthy_progress` classification.
    Until that classifier case runs, full B2 field closure stays unclaimed.
@@ -391,6 +421,14 @@ repository beside the run:
    attempt nine seconds after session creation. That field is not a
    discriminator. Pair it with F25's composer-presence check or with proven
    absence of subsequent assignment and worktree progress.
+
+   Do not manufacture this final condition by raw tmux control, arbitrary
+   process termination, provider exit input, session deletion, runtime-state
+   rewriting, or a test-only fake. The current typed runtime-stop actions
+   terminate the tmux session and therefore cannot deterministically produce
+   process-dead/tmux-live evidence. Until a natural hostile stop is retained or
+   a separately reviewed typed canary contract exists, preserve B2 as
+   field-open rather than repeating the already-closed live-claim lane.
 6. **Run C06, C07, and the remaining Phase D parity items.** C02-C05 are closed
    on both providers. C09 is closed on both with hand-supplied release argv,
    and the v5 Codex lane now also closes its full unattended path through
@@ -426,8 +464,11 @@ field-closed. B3 is implemented, integrated, deployed, and field-closed. F25
 and F36 are implemented, integrated, installed, and field-closed. F30 and F37
 are implemented, integrated, installed, specialist-reviewed, and field-closed
 by the same v5 worker. F31 is implemented, integrated, installed, and
-field-closed. B2's ambiguous-stop classifier is now the next incomplete item
-before C06/C07 and Phase D.
+field-closed. F38 and F39 are implemented, reviewed, integrated, and installed;
+F39's installed-product Stop failure contract is field-proven. B2's
+ambiguous-stop classifier remains the next incomplete item before C06/C07 and
+Phase D, but its hostile state must not be synthesized through a prohibited
+stop mechanism.
 The completed B3 candidate reuses B2's exact-runtime and quiescence proof
 helpers, then enters the existing pre-claim cancellation path after the typed
 stop rather than the B2 post-claim transition. It deliberately does not
@@ -1688,6 +1729,8 @@ their declared scopes.
 | F35 | Main Agent Mode has folded worker retirement and revision-fenced run close, but no run-wide closeout macro. A real closeout left two cancelled sessions `cleanup_pending`, and `main-agent close` left the controller work-context claim active until separately released and read back | Keep the explicit skill closeout sequence deployed now; later implement the revision-fenced, idempotent `main-agent closeout` contract captured in `docs/discussions/2026-07-29-main-agent-closeout-macro.md` |
 | F36 | Closed in implementation, deployment, and the field at nils-cli `82ca3422`. Session start validates, safely tightens, and descriptor-pins only the owned state root, `session-locks`, and `sessions` ancestors; unsafe ownership, type, symlink, unavailability, or replacement fails typed. V5 proved all ancestors `0700` and an ordinary authenticated checkpoint write | Keep the no-follow, ownership, replacement, and non-recursive mutation regressions; retain platform coverage for the descriptor-backed path |
 | F37 | Closed in implementation, deployment, specialist review, and the field at nils-cli local `main` `1a3315df`. Typed `worker reenter` fences the exact revision, incarnation, notification generation, authoritative idle composer, live detached runtime, broker, claim, and operations; it creates no message or assignment prompt. A narrow receipt-bound pre-upgrade backfill fails closed on missing, corrupt, foreign, stale, or ambiguous evidence. The same v5 worker consumed guidance and re-bootstrapped before mutation without provider input | Keep exact-generation one-send, crash replay, app-server/terminal quiescence, and retained-receipt compatibility regressions; never generalize the backfill into mutable assignment-schema authority |
+| F38 | Closed in implementation, specialist review, governed local-main integration, and installed deployment at nils-cli `02ac792b`. Exact active-run/current-worker selection and authority-locked rebind, init, admission, renewal, replay, and rollback remove historical-shadowing and split-transaction races | Keep the 18 focused continuity and ambiguous-stop regressions, exact receipt binding, expiry fencing, and direct-claim serialization green |
+| F39 | Closed in implementation, governed local-main integration, installed deployment, and installed-product field contract at nils-cli `949b92c1` / installed `agent-hook` `4a282e1f`. Activity failure on terminal Stop degrades to one typed warning while nonterminal admission remains fail-closed and coordination remains authoritative | Retain one natural end-to-end provider-runner termination as optional residual evidence; never recreate it by corrupting a live session or disabling hooks |
 | F13 | `worker start` rejects a packet with `invalid-assignment-packet: coordination input is invalid` and names no field; the serde error is discarded. The skill also names `exclusions` and `invariants`, which are not top-level schema fields | Surface the field path; align the skill with the schema |
 | F18 | Read-only `semantic-commit` probes are denied when composed — `cd X && semantic-commit …`, or a trailing `2>&1` parsed as a CLI argument | Classify read-only subcommands and redirections before default-delivery analysis |
 | F05 | `agent-session activity doctor` reports `configured:false` while the compatibility probe reports `configured:true` with `compatibility_owner:"agent-hook"` | Reconcile the doctor with agent-hook ownership |
