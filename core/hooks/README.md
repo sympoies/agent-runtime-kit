@@ -255,9 +255,17 @@ in a mode-0600 hashed session namespace across timeouts for exact duplicate/Stop
 replay rather than being guessed or released. Same-call Pre/Post/Stop activity
 is serialized by a stable local lock. `agent-hook` evaluates every ordinary
 rule first and invokes the locked `agent-session.coordination.v1` capability
-only after an aggregate allow, so neither provider can admit a tool denied by
-another prerequisite. The guard applies one 50-second global subprocess budget
-inside the setup-owned dispatcher timeout. In advisory mode,
+only after an aggregate allow, except for the narrowly typed worker-bootstrap
+transition. When an exact literal trusted same-release `main-agent bootstrap
+--idempotency-key <key> --format json` request is blocked solely by
+`owner-active-foreign`, the guard emits a versioned authorization marker only
+after validating enforce-mode metadata, the private capability, and the
+coordination surface. Only that strict marker supersedes the owner-liveness
+block; generic or malformed output, unavailable coordination, shell
+composition, transforms, and any other block fail closed. Thus neither
+provider can admit a tool denied by another prerequisite. The guard applies one
+50-second global subprocess budget inside the setup-owned dispatcher timeout.
+In advisory mode,
 older/missing coordination surfaces remain usable with bounded degraded
 guidance; in enforce mode they retain accurate no-enforcement guidance. Hook
 output never includes

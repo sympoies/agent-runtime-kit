@@ -205,6 +205,12 @@ ADVISORY_CLASSIFICATIONS = frozenset(
     {"potential_conflict", "unknown", "no_known_conflict"}
 )
 COORDINATION_MODES = frozenset({"advisory", "enforce", "off"})
+TYPED_BOOTSTRAP_AUTHORIZATION = {
+    "schema_version": (
+        "runtime-kit.session-coordination-bootstrap-authorization.v1"
+    ),
+    "authorization": "typed-main-agent-bootstrap-authorized",
+}
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -1400,6 +1406,36 @@ def command_bypasses_admission(
     return effect.kind == SHELL_EFFECT_READ_ONLY
 
 
+def authenticated_main_agent_bootstrap(
+    command: str, agent_session_executable: str, base: Path
+) -> bool:
+    """Recognize the exact trusted bootstrap that may supersede foreign-owner liveness."""
+    words = simple_words(command)
+    if (
+        not words
+        or not main_agent_bypass_invocation(
+            words, agent_session_executable, base
+        )
+    ):
+        return False
+    normalized = normalized_main_agent_argv(words)
+    return bool(
+        normalized
+        and normalized[:2] == ["main-agent", "bootstrap"]
+        and len(normalized) == 6
+        and normalized[2] == "--idempotency-key"
+        and lifecycle_idempotency_key(normalized[3])
+        and normalized[4:] == ["--format", "json"]
+    )
+
+
+def emit_typed_bootstrap_authorization() -> None:
+    sys.stdout.write(
+        json.dumps(TYPED_BOOTSTRAP_AUTHORIZATION, separators=(",", ":"))
+    )
+    sys.stdout.write("\n")
+
+
 def literal_lifecycle_near_miss(command: str) -> bool:
     """Detect raw owner-selecting control-plane commands that missed validation."""
     words = simple_words(command)
@@ -2313,10 +2349,14 @@ def pre_tool(
     product: str,
 ) -> int:
     tool = tool_name(payload)
-    if tool in COMMAND_TOOLS and command_bypasses_admission(
-        command_from(payload), executable, effective_workdir(payload).resolve()
-    ):
-        return ALLOW
+    if tool in COMMAND_TOOLS:
+        command = command_from(payload)
+        base = effective_workdir(payload).resolve()
+        if authenticated_main_agent_bootstrap(command, executable, base):
+            emit_typed_bootstrap_authorization()
+            return ALLOW
+        if command_bypasses_admission(command, executable, base):
+            return ALLOW
     call_id = tool_use_id(payload)
     if not call_id:
         return _pre_tool_locked(

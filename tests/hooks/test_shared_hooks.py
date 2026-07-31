@@ -13883,6 +13883,12 @@ exit 0
                 tiered_quick,
                 checkpoint,
             )
+            typed_bootstrap_authorization = {
+                "schema_version": (
+                    "runtime-kit.session-coordination-bootstrap-authorization.v1"
+                ),
+                "authorization": "typed-main-agent-bootstrap-authorized",
+            }
             for index, command in enumerate(allowed):
                 with self.subTest(allowed=command):
                     payload = command_payload(command)
@@ -13901,7 +13907,27 @@ exit 0
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    if command in (bootstrap, pinned_bootstrap):
+                        self.assertEqual(decision, typed_bootstrap_authorization)
+                    else:
+                        self.assert_allowed(decision)
+
+            capability_file.chmod(0o644)
+            payload = command_payload(pinned_bootstrap)
+            payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-session",
+                    "tool_use_id": "main-agent-bootstrap-invalid-capability",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertNotEqual(decision, typed_bootstrap_authorization)
+            capability_file.chmod(0o600)
 
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
@@ -13949,6 +13975,20 @@ exit 0
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "active work-context claim")
+            payload = command_payload(pinned_bootstrap)
+            payload.update(
+                {
+                    "cwd": str(repo),
+                    "session_id": "product-session",
+                    "tool_use_id": "main-agent-bootstrap-version-mismatch",
+                    "hook_event_name": "PreToolUse",
+                }
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertNotEqual(decision, typed_bootstrap_authorization)
             main_agent.write_text(main_agent_script, encoding="utf-8")
 
             blocked = (
@@ -14011,6 +14051,10 @@ exit 0
                 "main-agent-bootstrap-0003 --format json",
                 "./main-agent bootstrap --idempotency-key "
                 "main-agent-bootstrap-0004 --format json",
+                "/tmp/$(touch>/tmp/owner-bypass)/main-agent bootstrap "
+                "--idempotency-key main-agent-bootstrap-0005 --format json",
+                "/${ATTACKER_BIN}/main-agent bootstrap --idempotency-key "
+                "main-agent-bootstrap-0006 --format json",
                 "main-agent status --format json | cat",
                 f"main-agent status --format json > {root / 'status.json'}",
                 "sh -c 'main-agent status --format json'",

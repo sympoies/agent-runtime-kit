@@ -51,13 +51,20 @@ Priority ranges are local to a product/event/matcher group:
 - `900`: locked `agent-session.coordination.v1` transaction lifecycle,
   after every ordinary rule in the selected group.
 
-On `PreToolUse`, a blocking aggregate decision performs no coordination
-admission. An allowed aggregate performs exactly one `admit`. Terminal
-`PostToolUse`, `PostToolUseFailure`, and `Stop` events complete or
-reconcile through the same typed capability after aggregation. The provider
-never schedules coordination as a sibling hook. Coordination mode `off`
-disables only that lifecycle/collision layer; unrelated privacy, validation,
-checkout, and delivery rules remain active.
+On `PreToolUse`, a blocking aggregate decision normally performs no
+coordination admission. The sole exception is an exact, literal, trusted
+same-release `main-agent bootstrap --idempotency-key <key> --format json`
+request whose only block is `owner-active-foreign`: the guard may return the
+versioned typed-bootstrap authorization marker after its capability, mode, and
+executable checks pass. Only that strict marker supersedes the owner-liveness
+block; generic or malformed output, unavailable coordination, shell
+composition, transforms, and every other block fail closed. An allowed
+aggregate performs exactly one `admit`. Terminal `PostToolUse`,
+`PostToolUseFailure`, and `Stop` events complete or reconcile through the same
+typed capability after aggregation. The provider never schedules coordination
+as a sibling hook. Coordination mode `off` disables only that
+lifecycle/collision layer; unrelated privacy, validation, checkout, and
+delivery rules remain active.
 
 Only a definite conflict derived from an owner/mode-validated coordination
 registry and fresh current broker/work context blocks semantic admission. A
