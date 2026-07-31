@@ -148,14 +148,58 @@ repair is signed and integrated on nils-cli local `main`
 reports `v1.25.9-93-g4a282e1f`, and Codex plus Claude doctors are converged.
 No repeated unchanged Stop fingerprint has recurred in the repaired session.
 
-Governed local-main delivery remains authorized when its compare-and-swap
-fence permits it; hooks, signing, and outside-repository receipts remain
-mandatory. Step 3 and B2 are field-closed. The next authoritative incomplete
-items are C06/C07, the remaining C08 recovery classifications, and Phase D
-parity.
+The historical governed local-main authorization was exercised for B2; it is
+not standing authority for another delivery. Any later delivery needs a new
+explicit user selection and must retain compare-and-swap, hooks, signing, and
+outside-repository receipts. Step 3 and B2 are field-closed. The next
+authoritative incomplete items are C06/C07, the remaining C08 recovery
+classifications, and Phase D parity.
 Date: 2026-07-27
-Updated: 2026-07-31
+Updated: 2026-08-01
 Source: Phase C of `2026-07-27-main-agent-fresh-session-e2e-plan.md`
+
+## Post-landing closeout, 2026-08-01
+
+B2 remains closed. Its reviewed trees are now represented on the two local
+default branches by signed squash landing commits:
+
+- agent-runtime-kit `8b27d215c766dd13f39db67f8b0f3db5854f103b`
+  (`fix(main-agent): close B2 field boundary`), whose complete positions 1-17
+  gate passed on the landed tree;
+- nils-cli `7d0b63192eb856ec99f23eb0bacbaae005bc472e`
+  (`fix(agent-session): close B2 recovery boundary`), whose landing validation
+  passed formatting, clippy, and all 7,873 functional tests, but whose first
+  enclosing local-fast run remained red because the final private-`TMPDIR`
+  probe found one late `.tmp.../state` directory.
+
+Both outside-repository `semantic-commit default-branch` receipts report a
+verified-good signature, `provider_delivery_attempted:false`, and
+`provider_delivered:false`. They also record the historical local completion
+boundary: cached upstream was aligned before each commit and ahead by one
+afterward, with no network observation or provider mutation. Fresh cached and
+live reads on 2026-08-01 instead found each `origin/main` at its corresponding
+landing head (`0 behind / 0 ahead`). That later alignment was not performed by
+this closeout and does not retroactively convert either local-only receipt into
+provider-delivery evidence.
+
+The nils residue did not reproduce in 20 focused runs of
+`group_cleanup_success_replay_finishes_all_daemon_registry_evictions`, one
+complete 1,107-test `nils-agent-session` probe, or three complete 7,873-test
+workspace probes. Every probe finished with an empty private `TMPDIR` except
+for the explicitly allowed bounded `git-cli-test-worker.<euid>` cache. The
+narrowest proven boundary is therefore an intermittent full-suite test
+teardown/concurrency race; there is no evidence of a B2 product-lifecycle
+regression and no established cause that justifies a speculative code change.
+The final landed-diff rerun forced the canonical local-fast gate with
+`--base HEAD^`; formatting, clippy, 7,873/7,873 tests, two doctests, and its
+final tempdir probe all passed. This later green result bounds but does not
+erase the first run's unexplained residue.
+
+The installed field identities remain distinct and authoritative for what was
+actually exercised: nils-cli `cbb31799` for the final provider-stop field
+build, nils-cli `d9ec40a0` for the paired bootstrap marker/hook boundary, and
+runtime-kit `828beef5` for authenticated typed bootstrap authorization. The
+squash landing heads do not replace those field-build identities.
 
 ## Purpose
 
@@ -176,18 +220,20 @@ private mailbox message, resumed in the same session without widening the
 claim, resubmitted, and were accepted, released, deleted, and proven absent
 from a fresh session list.
 
-B2's repair purpose is achieved in candidate source: a bootstrap-complete
+The following paragraphs retain the historical B2 implementation lineage; the
+current default-branch identities are the 2026-08-01 squash landing heads
+recorded above. B2's repair purpose was first achieved in candidate source: a
+bootstrap-complete
 worker whose exact runtime stopped can be terminalized without deleting the
 Main session, losing its worktree/diff, sending input, or revoking unrelated
 coordination authority. The final signed, clean nils-cli candidate head is
 `99ba960e914e58f2813ca1864044aa858759080b`; its local-fast gate completed
 7,666 tests plus two doctests, and the release binary is installed. Its signed
-one-commit current-main integration head is
+historical one-commit current-main integration head was
 `c64b52ee92bdd62b2f0c10786bbc6b1f87323561`; the final integration gate
 completed 7,669 tests plus two doctests, and the same tree is committed on
 local nils-cli `main` at `a3f9b2f3e7412cd47fae78ca95178f87e4f3675f`.
-The final
-signed, clean runtime-kit B2 implementation head is
+The historical final signed, clean runtime-kit B2 topic implementation head is
 `d35f3960338bc4893dc0bb158e88c341cb15a44a`; this doc-only status closeout
 follows it. A signed one-commit integration candidate based on current
 runtime-kit `main` also passes full CI positions 1-17. Deterministic smoke
@@ -317,12 +363,12 @@ repository beside the run:
 
 ## Continuation Order
 
-1. **Keep delivery governed while provider delivery is unavailable.** GitHub
-   delivery is spam-blocked for this session. Use the user's authorized
-   local-main path, signed commits, compare-and-swap, and outside-repository
-   receipts; never weaken hooks or leases. A repository already ahead by one
-   governed default-branch commit must first regain an aligned state before a
-   second default-branch delivery.
+1. **Keep delivery governed.** The two B2 receipts remain local-only and report
+   no provider delivery. On 2026-08-01 both cached and live upstream refs were
+   externally aligned with the squash landing heads, but that observation is
+   not this workflow's delivery evidence and grants no new delivery authority.
+   Prepare later changes in a managed non-default worktree unless the user
+   explicitly selects a current delivery mode; never weaken hooks or leases.
 2. **Keep B3's completed typed-stop repair deployed and field-closed, but keep
    its evidence separate from B2.** Candidate commit
    `453b52c982d6160fcc93dce1b674e470bb612094` adds the typed,
@@ -941,11 +987,11 @@ Final nils-cli candidate validation is green:
 The runtime-kit consuming contract first failed its focused deterministic
 conversation smoke at 4/5, then passed at 5/5 after the v2 source, protocol,
 assertions, and Codex/Claude goldens converged. The first signed runtime-kit
-candidate is `8339fcb351b7a4d02df4292561b88b914be840f2`; final signed B2
-implementation head `d35f3960338bc4893dc0bb158e88c341cb15a44a`
+candidate is `8339fcb351b7a4d02df4292561b88b914be840f2`; the historical final signed B2
+topic head `d35f3960338bc4893dc0bb158e88c341cb15a44a`
 supersedes its v1 result wording, passes full CI positions 1-17, deterministic
 smoke 105 pass plus one host skip, and shared hooks 349/349. This doc-only
-status closeout follows that implementation head. Final specialist review
+status closeout followed that topic head. Final specialist review
 reported no findings.
 Rendered surfaces were previewed and then applied successfully from the
 durable deploy checkout; doctor, prompt, and plugin checks are green.
@@ -1693,12 +1739,13 @@ field-closure entry above; both are now closed.
 
 ### B1/B4 and B2 delivery, 2026-07-27 to 2026-07-28
 
-B1/B4 remain deployed. B2 nils-cli implementation is at signed, clean head
+B1/B4 remain deployed. At this historical delivery point, B2 nils-cli
+implementation was at signed, clean head
 `99ba960e914e58f2813ca1864044aa858759080b`, release-installed, and verified
-against the installed binary; its signed current-main integration head is
-`c64b52ee92bdd62b2f0c10786bbc6b1f87323561`, and the same tree is on local
+against the installed binary; its signed current-main integration head was
+`c64b52ee92bdd62b2f0c10786bbc6b1f87323561`, and the same tree was on local
 `main` at `a3f9b2f3e7412cd47fae78ca95178f87e4f3675f`. The runtime-kit v2
-contract's final signed, clean implementation head is
+contract's historical final signed, clean topic head is
 `d35f3960338bc4893dc0bb158e88c341cb15a44a`; this doc-only status closeout
 follows it, and the commit containing this inventory is its signed local-main
 landing. Its rendered surfaces are deployed from the durable checkout and pass
@@ -1783,15 +1830,50 @@ C08's B2 recovery boundary is closed in claim-absent,
 claim-active-at-stage-1, and process-dead/tmux-live forms. Other recovery
 classes remain.
 
-Still open:
+Current execution matrix:
 
-- C06 dependency wait
-- C07 account-next (Codex) and unsupported-account behaviour (Claude)
-- C08 for the remaining recovery classifications; B2 dead-worker detection,
-  live-claim reconciliation, and B3's exhausted-readiness live-worker recovery
-  are closed
-- Phase D parity beyond the remaining differences recorded as F29-F34; F37 is
-  closed
+| Area | Status | Remaining acceptance | Execution boundary |
+| --- | --- | --- | --- |
+| C06 dependency wait | field-open; the dependency gate has deterministic integration coverage | Prove an intentional dependency wait, authenticated dependency delivery, and same-session continuation on both products | Previously provider-capacity blocked; do not launch a canary merely to probe capacity |
+| C07 account behavior | field-open | Codex: typed account-next binding and same-worker continuation without logout. Claude: clear unsupported behavior without damaging recovery | Requires explicit account/provider authority and available capacity |
+| residual C08 recovery | partly closed | Exercise the residual classifications enumerated below without reusing B2/B3 evidence | Local deterministic coverage may proceed; provider restart/resume canaries require explicit authority |
+| Phase D parity | open | Repeat applicable A/B/C behavior on native Claude and disposition the remaining F-items | Prefer non-provider source/test work while provider capacity is unknown |
+
+Residual C08 is now explicit. Closed and not to be rerun: B2 claim-absent
+stopped terminalization, B2 active-claim-at-stage-1 terminalization, B2's
+canary-authorized provider-process-stopped/tmux-wrapper-live release, B3's
+exhausted-readiness pre-claim stop, and F31's authoritative-idle live-worker
+claim revocation. Still requiring acceptance evidence:
+
+- stale/lost controller broker recovery through exact-controller `self
+  recover`, distinct from provider-session rebinding;
+- provider-session or controller-incarnation mismatch through graceful
+  stop/resume, revision-fenced `rebind`, and post-rebind ownership proof;
+- generic `process_runtime_stopped_wrapper_live_contradiction` without canary
+  authority, which must remain non-executable until identity evidence is
+  reconciled;
+- active or uncertain operation ownership (`uncertain_mutation`), including
+  the F34 capability handoff needed to complete or reconcile the exact lease;
+- missing, corrupt, or identity-mismatched worker evidence
+  (`worker_unreachable` / `evidence_unavailable`) without inferring safe
+  reassignment; and
+- the pre-bootstrap/safe-reassignment boundary after F22 is corrected, without
+  prompt replay or a second concurrent writer.
+
+Phase D / F29-F34 disposition:
+
+| Item | Status | Next action |
+| --- | --- | --- |
+| F29 | closed by B1/B6 | Retain cross-product file-write and issued-checkpoint coverage |
+| F30 | field-closed with F37 | No rerun unless the generated re-bootstrap/release contract changes |
+| F31 | field-closed | Keep its live-worker evidence separate from B2 stopped-worker evidence |
+| F32 | open | Pair with F13 and surface the rejected field path instead of discarding serde detail |
+| F33 | open | Pair with F22 so provider capacity and pre-bootstrap states become typed attention-required states rather than `healthy_progress` / `claim_renewal_required` |
+| F34 | open | Give the exact operation owner a typed completion/reconciliation capability without registry scavenging |
+
+After F22/F33, take F34, then F32/F13, then the F24/F28/F27 input and
+guidance wave. F29-F31 and F37 are closed and must not be reopened by that
+sequence.
 
 C06 and C07 were not reached because both provider accounts hit their usage
 ceilings during the closure session, not because of any product defect.
@@ -1803,13 +1885,18 @@ canaries, and the signed process-dead/tmux-live canary are green. The signed
 post-claim stop-only repair is on nils-cli local `main` `2f440ecc`; the final
 field build is signed at `cbb31799`, with paired runtime-kit authorization at
 `828beef5`. B2 is fully closed under this inventory.
-Runtime-kit B2
-implementation head `d35f3960338bc4893dc0bb158e88c341cb15a44a` passes full CI
-and its rendered surfaces are deployed from the durable checkout. Both prepared
-one-commit trees are on their primary local default branches, and the exact
-runtime-kit local landing is deployed.
+Historical runtime-kit B2 topic head
+`d35f3960338bc4893dc0bb158e88c341cb15a44a` passed full CI and its rendered
+surfaces were deployed from the durable checkout. The current squash landing
+heads are runtime-kit `8b27d215c766dd13f39db67f8b0f3db5854f103b`
+and nils-cli `7d0b63192eb856ec99f23eb0bacbaae005bc472e`; their local-only
+receipts remain distinct from both the externally aligned upstream refs and
+the retained installed field builds.
 
-Next: run C06/C07, the remaining C08 recovery classifications, and Phase D.
+Next authoritative field order remains C06, C07, residual C08, then Phase D.
+Until provider capacity and canary authority are affirmatively available, the
+next executable non-provider item is the paired F22/F33 classifier repair with
+regression-first coverage; it does not require reopening B2.
 F25, F36, B5, B6, F30, and F37 are repaired, installed, and field-closed by
 the single v5 lane; it
 completed current-revision re-bootstrap, bounded mutation, resubmission,
