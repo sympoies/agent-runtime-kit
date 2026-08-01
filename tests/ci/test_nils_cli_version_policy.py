@@ -7,6 +7,7 @@ import re
 import json
 import hashlib
 import os
+import platform
 import subprocess
 import tarfile
 import tempfile
@@ -431,7 +432,18 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                 encoding="utf-8",
             )
             agent_runtime.chmod(0o755)
-            archive = root / "nils-cli-v1.25.0-x86_64-unknown-linux-gnu.tar.gz"
+            # The helper auto-picks the asset by uname, so the fixture must
+            # advertise a name matching the host running the gate; a fixed
+            # Linux-only name failed this test (and the pre-push gate) on
+            # macOS while passing in Linux CI.
+            machine = platform.machine().lower()
+            arch = "aarch64" if machine in {"arm64", "aarch64"} else "x86_64"
+            host_triple = (
+                f"{arch}-apple-darwin"
+                if platform.system() == "Darwin"
+                else f"{arch}-unknown-linux-gnu"
+            )
+            archive = root / f"nils-cli-v1.25.0-{host_triple}.tar.gz"
             with tarfile.open(archive, "w:gz") as bundle:
                 bundle.add(agent_runtime, arcname="bin/agent-runtime")
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
