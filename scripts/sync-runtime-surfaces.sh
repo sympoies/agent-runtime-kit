@@ -69,7 +69,8 @@ Options:
   --source-root PATH
       Use a specific agent-runtime-kit checkout. Defaults to this script's
       repository root. For --apply, this must be a durable primary checkout;
-      linked git worktrees and Codex transient worktrees are refused.
+      linked git worktrees, Codex transient worktrees, and sources inside
+      AGENT_HOME are refused.
   --owned-source-root PATH
       Explicitly trust one prior agent-runtime-kit source root when pruning
       stale managed links after a checkout relocation. Repeatable. The path
@@ -329,6 +330,25 @@ source_root_is_codex_transient_worktree() {
   return 1
 }
 
+source_root_is_agent_runtime_state() {
+  local source_physical
+  local agent_home
+  local agent_home_physical
+
+  source_physical="$(cd "$SOURCE_ROOT" && pwd -P)"
+  agent_home="${AGENT_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}"
+  [ -d "$agent_home" ] || return 1
+  agent_home_physical="$(cd "$agent_home" && pwd -P)"
+
+  case "$source_physical" in
+    "$agent_home_physical" | "$agent_home_physical"/*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 validate_live_sync_source_root() {
   if [ "$APPLY" = "0" ]; then
     return 0
@@ -337,6 +357,12 @@ validate_live_sync_source_root() {
   if source_root_is_linked_worktree; then
     err "refusing live sync from a git worktree: $SOURCE_ROOT"
     err "sync-runtime-surfaces --apply installs runtime-home symlinks; run it from a durable primary checkout or pass --source-root to one."
+    exit 2
+  fi
+
+  if source_root_is_agent_runtime_state; then
+    err "refusing live sync from agent runtime state: $SOURCE_ROOT"
+    err "sync-runtime-surfaces --apply installs persistent runtime-home symlinks; use a durable primary checkout outside AGENT_HOME."
     exit 2
   fi
 

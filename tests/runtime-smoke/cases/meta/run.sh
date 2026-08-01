@@ -1158,7 +1158,10 @@ run_sync_runtime_surfaces_no_prune_probe() {
 
 run_sync_runtime_surfaces_worktree_guard_probe() {
   local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.worktree-guard.txt"
+  local state_out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.agent-home-guard.txt"
   local worktree_root="$TMP_ROOT/workspaces/sync-runtime-surfaces-linked-worktree"
+  local agent_home="$TMP_ROOT/sync-runtime-surfaces-agent-home"
+  local state_checkout="$agent_home/source-checkouts/runtime-kit"
   local status
 
   rm -rf "$worktree_root"
@@ -1178,6 +1181,24 @@ run_sync_runtime_surfaces_worktree_guard_probe() {
   [ "$status" -ne 0 ]
   grep -q "refusing live sync from a git worktree" "$out"
   grep -q "durable primary checkout" "$out"
+
+  mkdir -p "$(dirname "$state_checkout")"
+  git init -q "$state_checkout"
+  set +e
+  (
+    export AGENT_HOME="$agent_home"
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$state_checkout"
+    APPLY=1
+    validate_live_sync_source_root
+  ) >"$state_out" 2>&1
+  status=$?
+  set -e
+
+  [ "$status" -ne 0 ]
+  grep -q "refusing live sync from agent runtime state" "$state_out"
+  grep -q "durable primary checkout outside AGENT_HOME" "$state_out"
 }
 
 run_sync_runtime_surfaces_prune_fixture_probe() {
@@ -3435,7 +3456,7 @@ record_case "meta.setup" "setup dry-run renders codex and claude before install 
 record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
 record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply rewires managed home prompt symlinks" run_sync_runtime_surfaces_home_prompt_apply_probe
 record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
-record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktree source roots" run_sync_runtime_surfaces_worktree_guard_probe
+record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktrees and AGENT_HOME runtime-state source roots" run_sync_runtime_surfaces_worktree_guard_probe
 record_case "meta.sync-runtime-surfaces.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
 record_case "meta.sync-runtime-surfaces.prior-owned-root" "sync-runtime-surfaces forwards an explicitly authorized prior source root to prune-stale" run_sync_runtime_surfaces_prior_owned_root_probe
 record_case "meta.sync-runtime-surfaces.hermes-legacy" "sync-runtime-surfaces quarantines owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe

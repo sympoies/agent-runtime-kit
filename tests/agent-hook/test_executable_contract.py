@@ -296,6 +296,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         *args: str,
         payload: dict[str, Any] | None = None,
         check: bool = True,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         command = [
             str(self.binary),
@@ -310,7 +311,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             input=None if payload is None else json.dumps(payload),
             text=True,
             capture_output=True,
-            env=self.env,
+            env=self.env if env is None else env,
             cwd=REPO_ROOT,
             check=False,
         )
@@ -840,6 +841,17 @@ mode = "enforce"
 failure_posture = "closed"
 override_class = "locked"
 capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+
+[[rules]]
+id = "fixture.coordination"
+products = ["codex", "claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 40
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.coordination.v1", reason_code = "coordination" }
 """
         )
         checkout = self.root / "checkout"
@@ -895,6 +907,77 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
             )
         )
         self.assertEqual(unknown["action"], "block")
+
+    def test_unmanaged_shells_bypass_foreign_owner_for_codex_and_claude(self) -> None:
+        self.write_policy(
+            """
+[[rules]]
+id = "fixture.semantic-conflict"
+products = ["codex", "claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 20
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
+
+[[rules]]
+id = "fixture.owner-liveness"
+products = ["codex", "claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 30
+mode = "enforce"
+failure_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-writer-liveness", legacy_ttl_seconds = 300 }
+"""
+        )
+        checkout = self.root / "unmanaged-checkout"
+        checkout.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet", str(checkout)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        default_session_state = self.state_home / "agent-session"
+        self.write_owner_registry(
+            checkout,
+            broker_state="active",
+            state_root=default_session_state,
+        )
+        unmanaged_env = {
+            name: value
+            for name, value in self.env.items()
+            if not name.startswith("AGENT_SESSION_")
+        }
+        unmanaged_env["AGENT_SESSION_BIN"] = "/nonexistent/agent-session"
+
+        for product in ("codex", "claude"):
+            with self.subTest(product=product):
+                decision = self.json_result(
+                    self.run_hook(
+                        "dispatch",
+                        "--product",
+                        product,
+                        "--format",
+                        "json",
+                        payload={
+                            "hook_event_name": "PreToolUse",
+                            "tool_name": "Bash",
+                            "cwd": str(checkout),
+                            "tool_input": {"command": "pwd"},
+                        },
+                        env=unmanaged_env,
+                    )
+                )
+                self.assertEqual(decision["action"], "allow")
+                self.assertEqual(
+                    [reason["code"] for reason in decision["reasons"]],
+                    ["coordination-unmanaged", "coordination-unmanaged"],
+                )
 
     def test_shadow_trace_latency_budget(self) -> None:
         payload = {
@@ -1084,7 +1167,14 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
         target.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
         target.chmod(0o600)
 
-    def write_owner_registry(self, checkout: Path, *, broker_state: str) -> None:
+    def write_owner_registry(
+        self,
+        checkout: Path,
+        *,
+        broker_state: str,
+        state_root: Path | None = None,
+    ) -> None:
+        state_root = self.session_state if state_root is None else state_root
         now = datetime.now(UTC)
         now_epoch = int(now.timestamp())
         expires = now + timedelta(minutes=5)
@@ -1106,7 +1196,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
                 "runtime_identity_digest": sha256_bytes(b"peer-runtime"),
             }
             heartbeat_path = (
-                self.session_state
+                state_root
                 / "sessions/fixture-peer/coordination/heartbeat"
             )
             heartbeat_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -1146,7 +1236,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
             "receipts": {},
             "notifications": {},
         }
-        target = self.session_state / "coordination/registry.json"
+        target = state_root / "coordination/registry.json"
         target.parent.mkdir(mode=0o700, exist_ok=True)
         target.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
         target.chmod(0o600)

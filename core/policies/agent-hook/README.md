@@ -75,6 +75,13 @@ orphaned, and unknown state stays visible and conservative. The bounded
 five-minute legacy liveness TTL is compatibility evidence only and never the
 primary ownership decision.
 
+Those built-in coordination classifications are scoped to managed launches.
+A terminal process with no `AGENT_SESSION_*` identity metadata receives the
+stable `coordination-unmanaged` allow result from both semantic-conflict and
+owner-liveness without loading the registry or invoking the coordination
+transaction, even when the checkout has a live managed owner. Partial managed
+identity remains conservative and does not receive this bypass.
+
 The lower-level checkout lease and existing privacy, transaction, validation,
 and scope guards remain independent authorities. The coordination capabilities
 classify ownership before those handlers run; they do not weaken or replace a
@@ -122,6 +129,11 @@ one owned dispatcher group for every event/matcher combination. Rollback uses
 the remove operation's own reviewed digest and removes only exact owned
 ingress. Hermes shares the policy/config surface but truthfully remains an
 unsupported native hook runner.
+
+Live apply must run from a durable primary checkout. The sync refuses linked
+worktrees, Codex transient worktrees, and every source root inside
+`AGENT_HOME`; persistent runtime-home links must never target disposable
+runtime state such as `source-checkouts/`.
 
 ## Performance budget
 
