@@ -126,7 +126,7 @@ def _iter_strings(value: Any) -> Iterable[str]:
         for nested in value.values():
             yield from _iter_strings(nested)
         return
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         for nested in value:
             yield from _iter_strings(nested)
 

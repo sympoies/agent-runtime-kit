@@ -1462,7 +1462,7 @@ def nested_paths(value: Any) -> Iterable[str]:
                     yield nested
             else:
                 yield from nested_paths(nested)
-    elif isinstance(value, list | tuple):
+    elif isinstance(value, (list, tuple)):
         for nested in value:
             yield from nested_paths(nested)
 

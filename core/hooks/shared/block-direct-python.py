@@ -27,6 +27,7 @@ from hook_common import (
     normalize_command_separators,
     opaque_invocation_has_unresolved_nested,
     read_payload,
+    strip_heredoc_bodies,
 )
 
 BYPASS_ENV_NAMES = (
@@ -97,6 +98,10 @@ def find_python_manager(start: Path) -> PythonManager | None:
 
 
 def shell_tokens(command: str) -> list[str]:
+    # Inert here-doc bodies (quoted delimiter, not shell-executed) are data,
+    # not commands; without this strip a body line such as `env python3 ...`
+    # inside a commit-message heredoc reads as a direct invocation.
+    command = strip_heredoc_bodies(command, inert_only=True)
     # Treat unquoted newlines as command separators so a blocked command on a
     # later physical line (after a `cd` or other preamble) cannot slip past the
     # guard. See hook_common.normalize_command_separators.

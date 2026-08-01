@@ -433,7 +433,7 @@ def iter_text_values(value: Any) -> Iterable[str]:
         for nested in value.values():
             yield from iter_text_values(nested)
         return
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         for nested in value:
             yield from iter_text_values(nested)
 
@@ -2252,35 +2252,54 @@ def _heredoc_delimiters_on_line(line: str) -> list[tuple[str, bool, bool, bool, 
     return result
 
 
-def strip_heredoc_bodies(command: str) -> str:
+def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
     """Drop here-doc body (and closing-delimiter) lines from ``command``.
 
     A here-doc body is data fed to a command, not executed by the shell, so its
-    lines must not be parsed as commands. This is used only by the validation
-    matcher: erring toward dropping a line is safe there (it can only fail to
-    credit a validation, never wrongly credit or unblock one). It is deliberately
-    NOT applied to the block-direct guards, whose bias toward blocking ambiguous
-    input is intentional.
+    lines must not be parsed as commands. Full stripping is used by the
+    validation matcher: erring toward dropping a line is safe there (it can only
+    fail to credit a validation, never wrongly credit or unblock one).
+
+    ``inert_only=True`` drops only the bodies that bash treats as pure data with
+    no expansion at all: a QUOTED delimiter (``<<'EOF'``) on a command that is
+    not a shell executor. Prose in such a body cannot smuggle a command, so
+    classifying its lines as commands is a category error, not conservatism —
+    it made guards block commit-message and document heredocs whose text merely
+    mentioned command-like words. Unquoted-delimiter bodies still expand
+    ``$(...)`` and backticks, so they stay visible to the guards, preserving
+    the intentional bias toward blocking genuinely ambiguous input; shell
+    executor bodies (``bash <<EOF``) remain visible as script text in both
+    modes. ``simple_commands`` applies the inert strip unconditionally.
     """
     if "<<" not in command:
         return command
     lines = command.split("\n")
-    pending: list[tuple[str, bool, bool, list[str]]] = []
+    pending: list[tuple[str, bool, bool, bool, list[str]]] = []
     kept: list[str] = []
     logical_scan_parts: list[str] = []
     logical_raw_lines: list[str] = []
+
+    def close_body(preserve_body: bool, delimiter_quoted: bool, body: list[str]) -> None:
+        if preserve_body:
+            if body:
+                kept.append(
+                    strip_heredoc_bodies("\n".join(body), inert_only=inert_only)
+                )
+            return
+        if inert_only and not delimiter_quoted:
+            # Expandable body: keep it visible to the guards verbatim.
+            kept.extend(body)
+
     for raw in lines:
         line = raw.rstrip("\r")
         if pending:
-            delimiter, strip_tabs, preserve_body, body = pending[0]
+            delimiter, strip_tabs, preserve_body, delimiter_quoted, body = pending[0]
             candidate = line.lstrip("\t") if strip_tabs else line
             if candidate == delimiter:
-                if preserve_body and body:
-                    kept.append(strip_heredoc_bodies("\n".join(body)))
+                close_body(preserve_body, delimiter_quoted, body)
                 pending.pop(0)  # closing delimiter line: drop it
-            elif preserve_body:
+            else:
                 body.append(raw)
-            # inert body line (or the closer): dropped either way
             continue
 
         logical_raw_lines.append(raw)
@@ -2294,23 +2313,28 @@ def strip_heredoc_bodies(command: str) -> str:
             delimiter,
             strip_tabs,
             preserve_body,
-            _delimiter_quoted,
+            delimiter_quoted,
             _op_start,
         ) in _heredoc_delimiters_on_line(logical_line):
-            pending.append((delimiter, strip_tabs, preserve_body, []))
+            pending.append((delimiter, strip_tabs, preserve_body, delimiter_quoted, []))
         kept.extend(logical_raw_lines)
         logical_scan_parts = []
         logical_raw_lines = []
     kept.extend(logical_raw_lines)
-    for _delimiter, _strip_tabs, preserve_body, body in pending:
-        if preserve_body and body:
-            kept.append(strip_heredoc_bodies("\n".join(body)))
+    for _delimiter, _strip_tabs, preserve_body, delimiter_quoted, body in pending:
+        close_body(preserve_body, delimiter_quoted, body)
     return "\n".join(kept)
 
 
 def simple_commands(command: str, *, strip_heredocs: bool = False) -> list[list[str]]:
+    # Inert here-doc bodies (quoted delimiter, not shell-executed) are pure
+    # data by shell semantics and must never be classified as commands;
+    # `strip_heredocs=True` additionally drops expandable bodies for callers
+    # that only credit, never block (see strip_heredoc_bodies).
     if strip_heredocs:
         command = strip_heredoc_bodies(command)
+    else:
+        command = strip_heredoc_bodies(command, inert_only=True)
     commands: list[list[str]] = []
     current: list[str] = []
     for token in shell_tokens(normalize_command_separators(command)):

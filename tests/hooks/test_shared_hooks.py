@@ -472,6 +472,52 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "uv run --locked python")
 
+    def test_block_hooks_ignore_inert_heredoc_prose(self) -> None:
+        # A quoted-delimiter here-doc body is data with no expansion at all;
+        # prose that merely mentions command-like words must not trip the
+        # command classifiers (it blocked commit-message heredocs in practice).
+        inert_prose = (
+            "cat > /tmp/notes.txt <<'EOF'\n"
+            "- a bare `env python3` resolved to the Apple CLT interpreter; the\n"
+            "  dispatcher then reported capability-failure-closed and denied\n"
+            "  all mutations, e.g. git commit -m test never ran.\n"
+            "EOF\n"
+            "echo done"
+        )
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(inert_prose)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "uv.lock").write_text("# fixture\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                "block-direct-python.py",
+                command_payload(inert_prose, workdir=str(repo)),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+        # The conservative bias is preserved where real ambiguity exists: a
+        # shell-executor body is script text, and an unquoted delimiter still
+        # expands, so both stay visible to the guards.
+        executor = "bash <<'EOF'\ngit commit -m test\nEOF"
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(executor)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "semantic-commit")
+
+        expandable = "cat <<EOF\ngit commit -m test\nEOF"
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(expandable)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "semantic-commit")
+
     def test_block_hooks_fail_closed_on_opaque_wrapper_candidates(self) -> None:
         cases = (
             (

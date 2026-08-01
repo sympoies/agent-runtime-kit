@@ -237,7 +237,7 @@ def nested_edit_paths(value: Any) -> Iterable[str]:
                     yield nested
             else:
                 yield from nested_edit_paths(nested)
-    elif isinstance(value, list | tuple):
+    elif isinstance(value, (list, tuple)):
         for nested in value:
             yield from nested_edit_paths(nested)
 
@@ -1927,7 +1927,7 @@ def new_lease(
         return refreshed
 
     acquired_at = previous.get("acquired_at") if previous else now
-    if not isinstance(acquired_at, int | float):
+    if not isinstance(acquired_at, (int, float)):
         acquired_at = now
     return {
         "schema": LEASE_V1_SCHEMA,
