@@ -12,6 +12,66 @@ own exact command parsing and deterministic state checks; this file explains
 authorization, mode choice, and recovery. Prefer current CLI help over copying
 command syntax into other prompts.
 
+## Git Mutation Ownership
+
+Every Git mutation an agent performs has one owner. Reach for the owner first;
+raw `git` for these operations is what the delivery guard is built to distrust,
+because a raw invocation cannot prove what it will touch.
+
+| Mutation | Owner |
+| --- | --- |
+| Commit | `semantic-commit commit` (`fixup`, `squash`) |
+| Managed worktree add/remove | `git-cli worktree` |
+| Publish a branch | `git-cli push` |
+| Adopt the remote's default branch locally | `git-cli sync-default` |
+| PR/MR record, review, merge | `forge-cli pr` |
+| One local-only default-branch commit | `semantic-commit default-branch` |
+| Publish the default branch | `forge-cli repo push-default` |
+
+Raw `git` remains the right tool for reads, for staging, and for anything with
+no owner above. The guard only classifies commands that could move the default
+branch.
+
+## Default-branch Fast-forward Sync
+
+Advancing the local default branch onto a commit that is **already on its
+remote** is admitted. It authors no commit, changes no content, publishes
+nothing, and `git reset --hard @{1}` reverses it, so it is not "authoring an
+agent change on the default branch" under any reading — and local `main` sitting
+one commit behind after a merge is the routine state.
+
+`git-cli sync-default` is the owner. The raw equivalents are admitted only in
+their provably fast-forward form, because `--ff-only` is what makes "authors no
+commit" provable rather than predicted:
+
+- `git merge --ff-only <remote>/<branch>`, where the target resolves to a
+  remote-tracking ref. Fast-forwarding onto a *local* branch is refused: that
+  would deliver unpublished work onto the default branch without review.
+- `git pull --ff-only [<remote> [<branch>]]`. Git re-checks fast-forwardness
+  after fetching, so a remote that moved cannot turn it into a merge commit.
+
+Everything else on the default branch is refused, including a bare `git pull`,
+which can author a merge commit.
+
+## Reading A Delivery Refusal
+
+Every refusal leads with one of two markers, and they mean different things:
+
+- `[default-delivery: blocked]` — the command was classified and is forbidden.
+  Change what you are doing, not how you spell it.
+- `[default-delivery: unverified]` — the command could not be classified, so it
+  failed closed. Restating it more explicitly usually resolves it; the message
+  names the condition that could not be resolved.
+
+The most common `unverified` cause is a shell-context change: a `cd`, `pushd`,
+`source`, or Git environment assignment earlier in the same command line makes
+the Git context unverifiable for everything after it. Run the Git command on its
+own with an explicit repository — `git -C /absolute/path …` — or in a separate
+tool call.
+
+Each refusal names the governed surface for the operation actually attempted,
+not the policy in general.
+
 ## Delivery Mode Decision Matrix
 
 | Mode | Authorization | Authoring and delivery | Terminal evidence |
@@ -58,7 +118,10 @@ exposes no force, delete, retry, or direct merge option. Raw
 are blocked by hook
 on supported Codex/Claude hosts, including Git's wildcard and matching-branch
 refspec forms. Explicit feature-branch refspecs and documented read-only
-help/dry-run forms remain available. The PreToolUse hook uses cached local
+help/dry-run forms remain available. Raw `cherry-pick`, `merge`, `pull`,
+`reset`, and `update-ref` on the checked-out default branch are classified by
+effect: only a provable fast-forward onto already-published history is admitted
+(see "Default-branch Fast-forward Sync"), and everything else fails closed. The PreToolUse hook uses cached local
 default-branch metadata only and performs no `ls-remote` or other network
 probe. Missing or ambiguous cache state fails closed; live truth belongs to
 `forge-cli`. Hermes has no hook runner; policy and the governed CLI

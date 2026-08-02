@@ -11,8 +11,19 @@ paths that would otherwise bypass either contract.
 This is a mechanical guardrail, not a shell sandbox. Provider branch rules and
 the forge-cli expected-base/signature/read-back contract remain authoritative.
 
+Default-branch ``merge`` and ``pull`` are classified by effect, not by which
+branch is checked out. A provable fast-forward onto already-published history
+authors no commit, changes no content, publishes nothing, and is reversible with
+``git reset --hard @{1}``, so it is admitted; ``pull`` is in the analyzed set for
+the same reason, because leaving the strictly broader command unexamined while
+blocking ``merge`` admitted the one shape that can author a merge commit here.
+
 A blocked verdict names what it resolved and what failed, because an agent that
-cannot see the discriminator cannot fix the invocation. ``semantic-commit`` is
+cannot see the discriminator cannot fix the invocation. Every reason leads with
+``[default-delivery: blocked]`` for a proven violation or
+``[default-delivery: unverified]`` for one that could not be classified — only
+the second is worth restating — and names the governed surface for the operation
+that was actually attempted. ``semantic-commit`` is
 classified against the repository it actually commits in: ``--repo`` binds that
 target outright. A bare authoring invocation after any earlier shell command
 fails closed because executable resolution may have changed; use a separate
@@ -62,7 +73,13 @@ from hook_common import (
     simple_commands_with_nested_shells,
 )
 
-BLOCK_REASON = (
+# A refusal is only actionable if the caller can tell "this is forbidden" from
+# "restate this so it can be checked", because only the second is worth retrying
+# with a different command shape. These markers lead every reason so that
+# distinction survives truncation and is greppable.
+MARK_BLOCKED = "[default-delivery: blocked]"
+MARK_UNVERIFIED = "[default-delivery: unverified]"
+POLICY = (
     "Do not author or push an agent change on the default branch through a raw "
     "shell path. PR delivery is the default. When the maintainer explicitly "
     "authorized direct-main delivery in the current task, author one signed "
@@ -71,8 +88,36 @@ BLOCK_REASON = (
     "completion was explicitly authorized instead, use the exact governed "
     "`semantic-commit default-branch` receipt flow."
 )
-AMBIGUOUS_PREFIX = "Default-branch delivery target could not be resolved safely."
-AMBIGUOUS_REASON = f"{AMBIGUOUS_PREFIX} {BLOCK_REASON}"
+BLOCK_REASON = f"{MARK_BLOCKED} {POLICY}"
+AMBIGUOUS_PREFIX = (
+    f"{MARK_UNVERIFIED} Default-branch delivery target could not be resolved safely."
+)
+AMBIGUOUS_REASON = f"{AMBIGUOUS_PREFIX} {POLICY}"
+# Remedies name the governed surface for the operation that was actually
+# attempted. Offering `forge-cli repo push-default` for a feature-branch push is
+# a non-substitute: it publishes the default branch, which is not what was asked.
+REMEDY_FEATURE_PUSH = (
+    "To publish a branch, use `git-cli push`: it pins the destination to "
+    "`refs/heads/<branch>:refs/heads/<branch>`, so `push.default`, "
+    "`remote.pushDefault`, and configured push refspecs cannot move it, and it "
+    "refuses the default branch. Example: `git-cli push --format json`. A raw "
+    "push is classifiable only when it spells the destination out, as in "
+    "`git push origin feat/topic:feat/topic`. Publishing the default branch "
+    "itself is `forge-cli repo push-default`, never a raw push."
+)
+REMEDY_SYNC_DEFAULT = (
+    "To advance the local default branch onto a commit already on its remote, "
+    "use `git-cli sync-default`. Example: `git-cli sync-default --format json`. "
+    "The raw equivalents are admitted only in their provably fast-forward form: "
+    "`git merge --ff-only <remote>/<branch>` onto a remote-tracking ref, or "
+    "`git pull --ff-only`."
+)
+REMEDY_SHELL_CONTEXT = (
+    "A `cd`, `pushd`, `source`, or Git environment assignment earlier in this "
+    "command line moves the Git context, so nothing after it can be classified. "
+    "Run the Git command on its own with an explicit repository. Example: "
+    "`git -C /absolute/path push origin feat/topic`."
+)
 # A one-shot waiver is spelled on the command it admits, never exported, so it
 # cannot outlive that invocation and stays visible in the transcript. It admits
 # only an unresolvable `semantic-commit` target, where the governed CLI still
@@ -218,10 +263,32 @@ GIT_PROBE_TIMEOUT_SECONDS = 4.0
 GIT_PROBE_OUTPUT_LIMIT_BYTES = 1024 * 1024
 GIT_PROBE_STATUS_TIMEOUT = "timeout"
 GIT_DEFAULT_BRANCH_REWRITE_COMMANDS = frozenset(
-    {"cherry-pick", "merge", "reset", "update-ref"}
+    # `pull` is classified rather than skipped. Leaving the strictly broader
+    # command unexamined while blocking `merge` admitted the more dangerous
+    # shape: a bare `git pull` on the default branch can author a merge commit,
+    # which is exactly what this guard exists to prevent.
+    {"cherry-pick", "merge", "pull", "reset", "update-ref"}
 )
 GIT_EXPLICIT_RECOVERY_OPTIONS = frozenset(
     {"--abort", "--continue", "--quit", "--skip"}
+)
+# Options that cannot turn a fast-forward into an authored commit. Anything
+# outside these keeps the fail-closed verdict rather than being reasoned about.
+GIT_MERGE_FAST_FORWARD_OPTIONS = frozenset(
+    {
+        "--ff-only",
+        "--quiet",
+        "-q",
+        "--verbose",
+        "-v",
+        "--progress",
+        "--no-progress",
+        "--stat",
+        "--no-stat",
+    }
+)
+GIT_PULL_FAST_FORWARD_OPTIONS = GIT_MERGE_FAST_FORWARD_OPTIONS | frozenset(
+    {"--no-rebase"}
 )
 
 
@@ -579,10 +646,21 @@ def command_local_git_environment_is_safe(
 def command_local_path_override(
     simple_command: list[str], invocation: list[str]
 ) -> bool:
-    """Detect executable retargeting that must never receive a waiver."""
+    """Detect executable retargeting that must never receive a waiver.
+
+    Scoped to the governed executables this hook classifies. This rule exists to
+    stop `git` or `semantic-commit` being swapped for something else; applying it
+    to every command blocked ordinary tooling — `PATH=... cargo test` — with a
+    message claiming a governed executable was involved, while the strictly
+    broader `export PATH=...; cargo test` passed. A nested governed invocation is
+    still caught, because opaque candidates are classified against this same
+    simple command.
+    """
     if not invocation:
         return False
     executable = PurePosixPath(invocation[0]).name
+    if executable not in GOVERNED_CONTEXT_EXECUTABLES:
+        return False
     command_index = next(
         (
             index
@@ -973,6 +1051,70 @@ def update_ref_target(arguments: list[str]) -> str | None:
     return None
 
 
+def resolves_to_remote_tracking_ref(
+    probe: GitProbe,
+    cwd: Path,
+    config_arguments: list[str],
+    target: str,
+) -> bool:
+    """Whether ``target`` names a remote-tracking ref, i.e. published history."""
+    result = probe.run(
+        cwd,
+        *config_arguments,
+        "rev-parse",
+        "--symbolic-full-name",
+        "--verify",
+        "--quiet",
+        target,
+    )
+    if result is None or result.returncode != 0:
+        return False
+    return result.stdout.strip().startswith("refs/remotes/")
+
+
+def fast_forwards_published_work(
+    probe: GitProbe,
+    subcommand: str,
+    arguments: list[str],
+    cwd: Path,
+    config_arguments: list[str],
+) -> bool:
+    """Whether this ``merge``/``pull`` provably only adopts published history.
+
+    ``--ff-only`` is what makes "authors no commit" provable rather than
+    predicted: Git either fast-forwards or fails, and it re-checks that after
+    ``pull`` fetches, so a remote that moved cannot turn this into a merge
+    commit. ``merge`` additionally requires a remote-tracking target, because
+    fast-forwarding the default branch onto a local branch would deliver
+    unpublished work onto it without review. ``pull`` takes its source from a
+    remote by construction.
+    """
+    allowed = (
+        GIT_PULL_FAST_FORWARD_OPTIONS
+        if subcommand == "pull"
+        else GIT_MERGE_FAST_FORWARD_OPTIONS
+    )
+    positionals: list[str] = []
+    for token in arguments:
+        if token == "--":
+            return False
+        if token.startswith("-") and token != "-":
+            if token not in allowed:
+                return False
+            continue
+        positionals.append(token)
+    if "--ff-only" not in arguments:
+        return False
+    if subcommand == "pull":
+        # `<remote>`, `<remote> <branch>`, or neither.
+        return len(positionals) <= 2
+    if len(positionals) != 1:
+        return False
+    return resolves_to_remote_tracking_ref(
+        probe, cwd, config_arguments, positionals[0]
+    )
+
+
 def git_default_branch_rewrite_targets_default(
     probe: GitProbe,
     subcommand: str,
@@ -1001,7 +1143,18 @@ def git_default_branch_rewrite_targets_default(
     if subcommand != "update-ref":
         if not current:
             return None
-        return current == expected
+        if current != expected:
+            return False
+        # Classify by effect, not by which branch is checked out. Adopting a
+        # commit that is already published authors nothing, changes no content,
+        # publishes nothing, and is reversible with `git reset --hard @{1}`, so
+        # it is not "authoring an agent change on the default branch" under any
+        # reading — and it is the routine post-merge state.
+        if subcommand in {"merge", "pull"} and fast_forwards_published_work(
+            probe, subcommand, arguments, cwd, config_arguments
+        ):
+            return False
+        return True
 
     target = update_ref_target(arguments)
     if target is None:
@@ -1531,6 +1684,43 @@ def push_targets_default(
     return None
 
 
+def rewrite_verdict_reason(subcommand: str, target: bool | None) -> str:
+    """Name what a default-branch rewrite verdict resolved, and its remedy."""
+    if target is False:
+        return ""
+    # `merge` and `pull` on the default branch are almost always an attempt to
+    # sync it, so name the surface that does exactly that. The general policy
+    # stays, because the command really would move the default branch.
+    remedy = f"{POLICY} {REMEDY_SYNC_DEFAULT}" if subcommand in {
+        "merge",
+        "pull",
+    } else POLICY
+    if target is True:
+        return (
+            f"{MARK_BLOCKED} `git {subcommand}` would move the checked-out "
+            f"default branch. {remedy}"
+        )
+    return (
+        f"{AMBIGUOUS_PREFIX} `git {subcommand}` was not classified: the default "
+        f"branch or the checked-out branch could not be read. {remedy}"
+    )
+
+
+def push_verdict_reason(target: bool | None) -> str:
+    """Name what a push verdict resolved, with a remedy for that push."""
+    if target is False:
+        return ""
+    if target is True:
+        return (
+            f"{MARK_BLOCKED} This push resolves to the remote's default branch. "
+            f"{POLICY}"
+        )
+    return (
+        f"{AMBIGUOUS_PREFIX} The destination branch of this push could not be "
+        f"resolved from its arguments and configuration. {REMEDY_FEATURE_PUSH}"
+    )
+
+
 def invocation_block_reason(
     probe: GitProbe,
     invocation: list[str],
@@ -1539,12 +1729,19 @@ def invocation_block_reason(
     environment_safe: bool = True,
     target_resolved: bool = True,
     base_source: str = "the tool workdir",
+    context_note: str = "",
 ) -> str:
+    def unclassifiable(detail: str) -> str:
+        """An unverified verdict, preferring the concrete tripped condition."""
+        return f"{AMBIGUOUS_PREFIX} {context_note or detail}"
+
     if not invocation:
         return ""
     executable = PurePosixPath(invocation[0]).name
     if executable == OPAQUE_NESTED_SHELL_COMMAND:
-        return AMBIGUOUS_REASON
+        return unclassifiable(
+            "A nested shell hides the command that would run. " + POLICY
+        )
     if executable == "semantic-commit":
         if not trusted_managed_cli_invocation(
             invocation[0], "semantic-commit"
@@ -1567,45 +1764,50 @@ def invocation_block_reason(
         if subcommand != "push" and subcommand in probe.builtin_commands(cwd):
             if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
                 if not environment_safe or not context_valid:
-                    return AMBIGUOUS_REASON
-                target = git_default_branch_rewrite_targets_default(
-                    probe, subcommand, action, cwd, config_arguments
-                )
-                return (
-                    BLOCK_REASON
-                    if target is True
-                    else AMBIGUOUS_REASON
-                    if target is None
-                    else ""
+                    return unclassifiable(
+                        f"Command-local Git context can move where `git "
+                        f"{subcommand}` applies. {POLICY}"
+                    )
+                return rewrite_verdict_reason(
+                    subcommand,
+                    git_default_branch_rewrite_targets_default(
+                        probe, subcommand, action, cwd, config_arguments
+                    ),
                 )
             return ""
         if subcommand == "push" and push_shape(action)[0]:
             return ""
         if not environment_safe or not context_valid:
-            return AMBIGUOUS_REASON
+            return unclassifiable(
+                f"Command-local Git context can move where `git {subcommand}` "
+                f"applies. {POLICY}"
+            )
         resolved = resolve_git_alias(
             probe, cwd, subcommand, action, config_arguments
         )
         if resolved is None:
-            return AMBIGUOUS_REASON
+            return unclassifiable(
+                f"The Git alias `{subcommand}` could not be expanded to a "
+                f"classifiable command. {POLICY}"
+            )
         subcommand, action = resolved
         if subcommand != "push":
             if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
-                target = git_default_branch_rewrite_targets_default(
-                    probe, subcommand, action, cwd, config_arguments
-                )
-                return (
-                    BLOCK_REASON
-                    if target is True
-                    else AMBIGUOUS_REASON
-                    if target is None
-                    else ""
+                return rewrite_verdict_reason(
+                    subcommand,
+                    git_default_branch_rewrite_targets_default(
+                        probe, subcommand, action, cwd, config_arguments
+                    ),
                 )
             return ""
         if push_shape(action)[0]:
             return ""
-        target = push_targets_default(probe, action, cwd, config_arguments)
-        return BLOCK_REASON if target is True else AMBIGUOUS_REASON if target is None else ""
+        reason = push_verdict_reason(
+            push_targets_default(probe, action, cwd, config_arguments)
+        )
+        if reason.startswith(AMBIGUOUS_PREFIX) and context_note:
+            return f"{AMBIGUOUS_PREFIX} {context_note}"
+        return reason
     return ""
 
 
@@ -1634,6 +1836,9 @@ def candidate_block_reason(
         environment_safe=command_safe and shell_context_safe,
         target_resolved=command_safe and (shell_context_safe or directory_resolved),
         base_source=base_source,
+        # When an earlier command moved the shell context, that — not the Git
+        # command itself — is the discriminator, so it is what the message names.
+        context_note="" if shell_context_safe else REMEDY_SHELL_CONTEXT,
     )
 
 
