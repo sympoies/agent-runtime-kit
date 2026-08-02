@@ -33,6 +33,63 @@ For L2/L3, the main agent does not implement or repair production or test code.
 Its repository writes are limited to the parent workflow's orchestration,
 plan/run-state, evidence, review, and provider lifecycle surfaces.
 
+The Main controller uses `advisory`; every isolated implementation worker uses `enforce`.
+Immediately before every `main-agent init` branch, run `agent-session list
+--format json` and require `cli.agent-session.list.v1` to bind the exact
+controller session ID, incarnation, and canonical cwd; its `coordination_mode`
+field is identity context only and cannot distinguish requested or configured
+mode from a fresh runtime observation. Initialization additionally requires the
+trusted session-management owner to advertise
+`session-management.controller-mode-observation.v1` and execute its
+owner-supplied non-mutating invocation, returning authenticated
+`session-management.controller-mode-observation-result.v1` with the same
+session ID, incarnation, canonical cwd, `mode_source:"runtime-observed"`,
+`fresh:true`, and `observed_mode:"advisory"`. A missing capability, wrong cwd,
+unbound or stale identity, `mode_source:"requested"` or
+`mode_source:"configured"`, or observed `enforce`, `off`, or unknown mode fails
+closed before `main-agent init`. A controller observed in `enforce`, `off`, or
+an unknown mode fails the pre-init gate. Before closing it, the session owner must prove the exact controller
+session and incarnation, broker
+zero active and zero uncertain operations, no unfinished typed lifecycle
+transition, and no unique unpreserved material. Authenticated claim inventory
+must also prove that every claim bound to that exact controller session and
+incarnation is absent or explicitly transferred/released through its typed
+owner, including any unrelated successor claim. Unknown inventory or any
+surviving claim retains the controller and fails closed. Only then close that exact
+session through its owner, require fresh-list absence, remove its clean
+controller worktree with `git-cli` when it has no retained purpose, and restart
+once in `advisory` before attempting `init`. Missing or ambiguous proof retains
+the session and worktree and fails closed; never create durable run state from
+the wrong mode and repair it afterward.
+
+A failed controller startup before `main-agent init` may be deleted and
+restarted once with a compact prompt that points to the private full packet
+only when no run claim or assignment exists, the broker proves zero active and
+zero uncertain operations, no unfinished typed lifecycle transition exists,
+no unique unpreserved worktree material exists, and authenticated claim
+inventory proves every claim bound to the exact controller session and
+incarnation is absent or explicitly transferred/released. This is a controller
+pre-init recovery, never a worker-start recovery. The owner must fresh-list
+verify exact-session absence before the restart; any failed proof preserves the
+session and fails closed.
+Every pre-init close-and-restart branch, including a wrong-mode branch, must use
+this restart-once boundary. It requires the trusted released
+session-management owner to advertise
+`session-management.failed-controller-restart.v1`, execute its owner-supplied
+invocation, and return authenticated
+`session-management.failed-controller-restart-result.v1`. The immutable request
+digest and durable consumed/idempotency marker bind the restart owner, failed
+controller session ID and incarnation, canonical cwd and controller worktree,
+requested `advisory` mode, compact prompt and private-packet reference digest,
+and authenticated claim-inventory projection. The marker is consumed before
+the first destructive stage. Any changed request field is rejected before
+deletion or restart.
+Identical replay returns the same receipt without repeating deletion or
+restart; partial progress resumes only the recorded remaining stage. An
+ambiguous restart outcome retains the exact session and fails closed rather
+than issuing another start. If that owner primitive is absent, retain the exact
+session and fail closed.
+
 ## Worker Packet And Boundary
 
 Every packet names the objective and done criteria, exact owned paths or task
@@ -66,8 +123,8 @@ does not require or create repository scope. The grant coordinates the
 isolated checkout; it is not a path sandbox, so acceptance must reject a final
 diff outside the declared paths. Explicit edit admission and shell retargeting
 to another checkout still fail closed.
-Main Agent Mode has no manual paste/Enter startup path. It invokes the compatible
-folded boundary:
+Main Agent Mode has no Main-agent-owned manual paste/Enter startup path. After
+the candidate conflict check, prefer the folded readiness boundary:
 
 ```bash
 main-agent worker start --assignment-file <private-json> --await-ready 5m \
@@ -78,8 +135,15 @@ The runtime creates and binds the interactive worker, transports one generated
 prompt, and waits for a newer authenticated worker checkpoint. If a fresh
 supported worker remains `starting`, the runtime may send exactly one recovery
 Enter within the original `--await-ready` deadline. Before sending it, the
-runtime rechecks that the same session incarnation is still live and serializes
-the input through the session lifecycle guard. It never resends the prompt,
+runtime rechecks that the same session incarnation is still live. Before input,
+a privacy-safe observation must prove the exact already-delivered prompt at an
+idle composer, the broker must prove zero active and zero uncertain operations,
+and the observation must classify the surface as an ordinary provider composer
+rather than a trust, authentication, account, permission, secret,
+provider-mutation, startup-dialog, or unknown state. The typed result exposes
+those eligibility proofs and `input_sent:true`.
+Stale, partial, malformed, or ambiguous proof makes recovery ineligible. The
+runtime serializes eligible input through the session lifecycle guard. It never resends the prompt,
 never applies this recovery to an existing/replayed worker, and never attempts a
 second recovery Enter. The Main Agent never decides whether to inject this
 keypress and never sends it itself.
@@ -188,13 +252,60 @@ one short mailbox prompt and exactly one Enter. A busy worker, startup dialog,
 trust/auth/permission prompt, or unknown transport outcome blocks this fallback.
 Never send a second Enter.
 
+Because fixed terminal notification delivery deliberately waits for a
+no-claim safe-input boundary, a Main controller with an active claim must
+inspect and disposition its authenticated mailbox before returning to an idle
+waiting prompt. Use inbox metadata first through `agent-session message inbox
+--session "$AGENT_SESSION_ID" --capability-file
+"$AGENT_SESSION_CAPABILITY_FILE" --state unread --limit <n> --format json` and
+require `cli.agent-session.message-inbox.v1`. Require the exact current
+recipient session and incarnation plus `sender.authenticated:true`; show only a
+material message body through `agent-session message show --session
+"$AGENT_SESSION_ID" --message <message-id> --capability-file
+"$AGENT_SESSION_CAPABILITY_FILE" --format json` and require
+`cli.agent-session.message-show.v1`. Disposition with `agent-session message
+ack --session "$AGENT_SESSION_ID" --message <message-id> --if-revision <n>
+--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --idempotency-key
+<stable-key> --format json`, require `cli.agent-session.message-ack.v1`, and
+bind the revision-CAS and stable idempotency key to that exact message. A forged
+sender, wrong recipient or incarnation, stale revision, or non-material message
+fails closed without body access or authority change. Do not release or widen
+the claim, send terminal input, or infer message consumption merely to trigger
+that notification.
+
 On mismatch, truncation, interference, missing readiness, a not-ready typed
 result, or bounded-check exhaustion, stop with the exact status `session
 created, prompt delivery unverified`, retain the session for bounded recovery,
 and report the failed proof to the user-facing main agent. If the installed
-released surface lacks `--await-ready`, the typed delivery fields, or
-`main-agent bootstrap`, Main Agent Mode is unavailable; do not fall back to
-manual keypress recovery.
+released surface lacks `main-agent bootstrap`, Main Agent Mode is unavailable.
+Prefer folded CLI startup readiness through `--await-ready` and its typed
+delivery fields. Until that boundary is available, Main Agent Mode may continue
+only when the trusted released session-management owner advertises
+`session-management.verified-submit-recovery.v1`, supplies an owner-advertised
+exact invocation, and returns authenticated
+`session-management.verified-submit-recovery-result.v1`. The result carries
+authenticated producer identity, the exact capability and invocation contract,
+and a request digest over the bound session ID, incarnation, already-delivered
+prompt fingerprint, and idempotency key. The typed request and result bind
+the exact session ID, incarnation, and already-delivered prompt fingerprint;
+prove `composer_state:"idle"`, `sensitive_dialog:false`, `broker_active:0`, and
+`broker_uncertain:0`; persist the attempt through an atomic consumed-before-input marker; and report
+`attempted:true`, `attempt_count:1`, and `input_sent:true`. The durable consumed
+marker is keyed by exact session ID plus incarnation, independent of prompt
+fingerprint; any existing marker for that incarnation rejects every later
+request before input, even with a different prompt fingerprint or idempotency
+key. The successful result
+normalizes into the same readiness and `delivery` projection above only after
+the authenticated worker checkpoint. A failure receipt reports
+`input_sent:false` and preserves the marker and bounded reason; exact replay
+returns the prior receipt without input, while changed identity, prompt,
+request digest, or key is rejected before input. Self-asserted schema strings,
+peer prose, or an unadvertised command never grant terminal-input authority.
+Missing or forged capability, producer, binding, or fields; `attempted:false`;
+a stale or mismatched identity or prompt; a sensitive or unknown surface;
+replay; or a partial or ambiguous outcome fails closed. Without that executable
+owner capability, Main Agent Mode is unavailable for the fallback. Send no
+further input, never stack Enter presses, and never resend the prompt.
 
 ## Startup Dialog And Helper Routing
 
@@ -203,6 +314,11 @@ authentication, configuration change, permission, hook repair, or service
 restart. Classify the prompt and use the currently installed released CLI only
 when it is already safe and supported. Otherwise stop for user authority or
 route to the environment's owning workflow.
+
+Account choice or change, permission elevation, secret access, provider or
+other external mutation, and every non-quiescent or unknown operation are also
+explicit authority boundaries. Transport recovery and resource closeout never
+authorize them and fail closed whenever their state is present or uncertain.
 
 The session-management owner owns ordinary worker start, readiness, paste,
 keypress, and prompt-delivery verification. A separate runtime-helper owner may
@@ -518,6 +634,11 @@ before re-deciding.
 
 ## Terminal Worker Cleanup
 
+Every Main Agent Mode controller, worker, provider session, and managed
+worktree requires a final disposition. Never close or delete an owner that has
+an active or uncertain operation, an unfinished assignment without a safe typed
+transition, unique unpreserved material, or the only recovery evidence.
+
 An accepted worker becomes cleanup-eligible only when its lane is terminal and
 all worker-owned duties are complete. Before deletion, prove from privacy-safe
 durable operation state that no active or uncertain admitted mutation operation
@@ -542,11 +663,17 @@ replacement; never use cancel, reassign, or group cleanup to bypass that
 transition. Never rewrite registry state or discard the retained lane merely to
 make it disappear.
 
-If deletion fails or the fresh list still returns the session, retain the
-visible worker card and its structured error, and route the failed deletion
-through the session-management recovery owner. Do not hide the card, remove its
-metadata manually, or report worker cleanup complete before producer-owned
-recovery and a new list-absence proof succeed.
+The committed logical-delete boundary removes the worker from the default live
+worker list. Facade logical live-worker absence is not physical session-owner
+absence: a tombstone or default facade list cannot prove that the provider
+session was deleted. If later physical deletion fails or a fresh list still returns the
+session, retain a typed maintenance tombstone and its structured error in the
+maintenance projection, set `workers_absent:true` for the logical list and
+`cleanup_pending:true`, and route the failed deletion through the
+session-management recovery owner. Identical replay returns that same
+tombstone. Do not restore a live worker card, remove metadata manually, or
+report physical cleanup complete before producer-owned recovery and a new
+list-absence proof succeed.
 
 Where the session-management workflow provides a folded retire step, invoke it
 and branch on its typed result instead of hand-running these stages. The folded
@@ -572,6 +699,45 @@ classification and recovery path; never collapse pre-claim cancellation,
 post-claim stopped reconciliation, accepted-worker release, or uncertain
 operation recovery into generic deletion.
 
+A zero-assignment pre-launch-blocked run may checkpoint a zero-assignment blocker
+and use run-wide closeout once it is terminal-ready. The checkpoint preserves
+the original objective and blocker and never claims the product objective was
+completed. For a post-init controller-mode mismatch, never widen the Main
+claim into worker scopes or stack terminal input. Checkpoint the blocker and
+use typed closeout when admitted. If closeout is not admitted, preserve broker
+zero active/zero uncertain state until claim expiry permits authenticated
+mailbox wakeup, then resume only through the typed owner path.
+
+A post-init wrong-mode incident with one or more assignments is different:
+freeze every new launch and Main-owned mutation, preserve every worker, claim,
+worktree, and unique material, and reconcile active or uncertain operations
+only through their exact owners. Never use zero-assignment closeout for a
+nonzero run. Assignments in `starting`, `working`, `submitted`, and `accepted`
+remain in their current typed lifecycle until a trusted owner recovery proves
+the exact safe transition. Recovery requires the released facade to advertise
+`main-agent.nonzero-wrong-mode-recovery.v1` with its exact owner-supplied
+invocation and return authenticated
+`main-agent.nonzero-wrong-mode-recovery-result.v1`. Its revision-CAS request
+binds the controller session and incarnation, canonical cwd, run ID and
+revision, immutable assignment ID/revision/state snapshot, broker
+active/uncertain projection, request digest, and idempotency key. The result
+binds the same digest and records one typed-owner receipt per assignment:
+`starting` may move only through worker-start reconciliation, `working` only
+through worker checkpoint/supervision, `submitted` only through manager review,
+and `accepted` is preserved unchanged. It also returns the durable post-recovery
+run revision and authenticated read-back. Before the first assignment mutation,
+the owner durably consumes a progress marker keyed by the full request digest,
+original run and assignment revisions, and idempotency key. Its authenticated
+progress receipt records completed assignment stages and their typed-owner
+receipts. Identical replay accepts that receipt across the now-stale original
+revisions and resumes only uncommitted stages; changed run, assignment snapshot,
+controller identity, digest, or key is rejected before mutation. A partial
+result preserves its committed stages, freezes every remaining stage, and
+requires authenticated read-back reconciliation; an ambiguous stage is never
+repeated until its exact typed owner proves whether it committed. When this
+executable typed owner recovery is unavailable, retain the run unchanged and
+fail closed.
+
 After resolving any assignment that needs an explicit recovery decision, invoke
 the run-wide closeout macro with the run revision observed before its first
 stage:
@@ -593,7 +759,8 @@ disposition, and completed-stage receipt as the bounded proof. The macro owns
 the ordered checkpoint, terminal-worker retirement, active-operation fence,
 run close, release of only the durably bound run-owned controller claim, and
 final read-back. It preserves an unrelated successor claim rather than
-releasing it.
+releasing it. Here `cleanup_pending:false` covers only run and worker cleanup;
+controller cleanup remains the separate retained disposition below.
 
 `handoff_ready:false` is resumable progress. Inspect the typed retained
 exceptions, cleanup flag, worker and controller-claim dispositions, and
@@ -610,6 +777,46 @@ The session hosting the current response cannot be deleted first and still
 complete that response. Physical stop or deletion of the Main provider session
 is a later session-owner action after delivery; it is not implied by run close
 or controller-claim release.
+Because the response-hosting turn has no post-delivery callback, its final
+response must explicitly hand off the retained disposition `controller cleanup
+pending` to an already-authenticated session-management owner and must not claim
+that physical cleanup ran. The trusted released session-management owner must
+advertise `session-management.controller-cleanup-handoff.v1` and exact persist
+and consume invocations. The persist request writes authenticated, run-bound,
+replay-safe `main-agent.controller-cleanup-handoff.v1` state and binds the
+producer and recipient-owner identities, run ID and revision, controller
+session and incarnation, canonical controller worktree, remaining cleanup
+stages, request digest, and idempotency key. It returns authenticated
+`session-management.controller-cleanup-handoff-result.v1` with the same digest,
+persisted revision, bounded cleanup status, and opaque handoff reference.
+Identical persist replay returns the same receipt; altered identity, worktree,
+run revision, cleanup stages, digest, recipient, or key fails closed. The later
+owner passes that opaque reference, matching run/controller bindings, persisted
+revision, and a consume idempotency key to the exact consume invocation. That
+owner atomically consumes the handoff reference before the first destructive
+stage and returns an authenticated progress receipt containing the request
+digest, consume key, original persisted revision, and completed stages.
+Identical consume replay returns that receipt and resumes only uncommitted
+stages. An interrupted consume after session deletion reconciles exact-session
+absence through fresh authenticated identity/list evidence and never repeats
+deletion; changed reference, identity, revision, digest, or consume key fails
+before mutation. Cleanup requires authenticated result read-back with matching
+run/controller bindings and revision. Public final prose exposes only bounded cleanup status and opaque
+handoff reference, never a private path or unauthenticated deletion
+instruction. In a later authenticated owner turn, after result delivery, that owner must
+prove broker zero active and zero uncertain operations, no unfinished typed
+lifecycle transition, no unique unpreserved material, and authenticated claim
+inventory proving every claim bound to the exact controller session and
+incarnation is absent or explicitly transferred/released, including any
+unrelated successor claim preserved by closeout; delete the
+exact controller session; require a fresh default list to prove exact-session
+absence; and remove its clean controller worktree through `git-cli` when no
+retained purpose remains. That later owner records the ordinary durable broker,
+exact-session deletion, fresh-list, and worktree evidence owned by the
+session-management lifecycle. Until a subsequent authenticated read-back proves
+every stage, lifecycle cleanup is pending and no owner may claim physical
+closeout complete. Missing or ambiguous proof retains the session/worktree and
+records the failed stage without repeating deletion.
 
 Folded worker retirement, run close, and work-context release remain diagnostic
 and intentional recovery primitives. They are not the normal closeout path and
@@ -624,6 +831,9 @@ must not replace an exact replay of an admitted closeout macro.
 | Trust/readiness/startup dialog | Do not treat the dialog as ready and do not accept it automatically. Classify and route it or stop for user authority. |
 | `readiness_failed`, prompt mismatch, truncation, interference, or no authenticated checkpoint | Treat runtime-owned single-Enter recovery as exhausted or ineligible. Do not resend the prompt or inject another Enter. Preserve `automatic_retry_safe: false`, report `session created, prompt delivery unverified`, and retain the exact worker plus bounded recovery evidence. |
 | Candidate conflict before start | Do not start the worker. Narrow the packet or allocate a non-conflicting worktree, then repeat the candidate check. |
+| Pre-init Main controller mode is not observed `advisory` | Do not call `init`. Prove exact controller session/incarnation, broker zero active/zero uncertain, no unfinished typed transition, and no unique material; otherwise retain it and fail closed. Then close through its owner, prove fresh-list absence, remove its clean no-purpose worktree through `git-cli`, and restart once in `advisory`. |
+| Post-init Main controller mode mismatch with zero assignments | Do not widen the claim or send terminal input. Checkpoint the blocker, use typed closeout when admitted, or preserve broker zero/zero until claim expiry permits authenticated mailbox wakeup. |
+| Post-init Main controller mode mismatch with one or more assignments | Freeze launches and Main-owned mutation. Preserve every assignment, worker, claim, worktree, and unique material; reconcile active/uncertain operations only through exact owners. Never use zero-assignment closeout. If typed owner recovery is unavailable, retain the nonzero run unchanged. |
 | Fresh-list identity, incarnation, cwd, or mode mismatch | Do not send the task. Retain the new session and report that managed ownership proof failed. |
 | Interference or deletion before target claim handoff | Treat ownership proof as failed. Do not recreate, resend, or transfer the target capability; retain durable evidence for explicit recovery. |
 | Target claim missing, released, or expired | Stop mutation. The target worker must use its authenticated bootstrap/recovery path and acquire and verify a new active claim before another mutation turn. |
@@ -633,7 +843,8 @@ must not replace an exact replay of an admitted closeout macro.
 | Bootstrap-complete exact worker runtime is stopped | Require `post_claim_failure`, `last_proven_safe_state.post_claim_terminalization_safe:true`, and `automatic_retry_safe:false`; run only revision-fenced `worker reconcile-stopped`, verify the typed terminalization result, then retire or create a distinct replacement. Preserve worktree/diff/run/Main and send no input. |
 | Post-claim worker runtime is live or unknown, or operation state is active or uncertain | Fail closed. Do not reconcile-stopped, cancel, reassign, retire, resume, send input, stop the runtime, or force group cleanup. Preserve the exact worker and typed refusal. |
 | Accepted terminal worker cleanup | Prove operation quiescence, release and verify the worker's active claim, delete the exact session through its owner, then require a fresh list result proving the exact session ID is absent. |
-| Worker deletion or list-absence failure | Retain the visible worker card and structured error, keep cleanup incomplete, and route the exact failed deletion through the session-management recovery owner. |
+| Pre-init controller startup failed before `main-agent init` | This controller-only recovery requires no run claim or assignment, broker zero active/zero uncertain, no unfinished typed lifecycle transition, no unique unpreserved material, and authenticated claim inventory proving all exact-session/incarnation claims absent or transferred/released. Only the authenticated typed restart-once owner primitive may consume the full immutable request digest before deletion, fresh-list-verify absence, and restart with the bound canonical cwd/worktree, advisory mode, and compact private-packet pointer digest. Identical replay returns its receipt; changed, partial, or ambiguous progress never repeats deletion or restart. Any missing primitive or proof preserves the session. |
+| Worker deletion or list-absence failure after logical delete | Keep the worker absent from the default live list, retain its typed maintenance tombstone and structured error with `workers_absent:true` and `cleanup_pending:true`, and route the exact failed physical deletion through the session-management recovery owner. |
 | Missing diff, validation, run-state, PR, or completion evidence | Keep the lane incomplete and request the exact missing durable evidence from the same worker. |
 | Worker loss or unavailable session | Inspect durable worktree/branch/diff/run-state evidence without reading logs or transcripts. Resume the same owner only when identity and state are proven; otherwise reassign explicitly. |
 | Scope drift | Stop acceptance, preserve the diff, and return the out-of-scope work to the same lane for removal or obtain an explicit user-approved scope change before a new packet. |

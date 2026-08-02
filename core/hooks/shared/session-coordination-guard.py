@@ -15,6 +15,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -65,8 +66,25 @@ HOOK_DEADLINE: float | None = None
 MAX_PENDING_RECORDS = 32
 MAX_STOP_RECONCILIATION_RECORDS = 128
 MAX_STOP_RECONCILIATION_GROUPS = 2
+MAX_STOP_ADMISSION_PROOF_PREPARATIONS = 16
+MAX_STOP_RECONCILIATION_ROUND = 2**31 - 1
+MAX_STOP_RECONCILIATION_CURSOR_GROUPS = 256
+STOP_RECONCILIATION_CURSOR_SCHEMA = (
+    "agent-runtime-kit.session-coordination-proof-cursor.v1"
+)
+ADMISSION_RECORD_PERSISTENCE_FAILURE = "admission-record-persistence-failed"
+RECONCILIATION_CURSOR_FAILURE_MESSAGE = (
+    "Session coordination exact-proof recovery remains pending because its "
+    "private scheduling cursor could not be safely initialized or repaired."
+)
 STOP_RECONCILIATION_TIMEOUT_SECONDS = 1.0
 MAX_CHECKPOINT_BYTES = 64 * 1024
+NONTERMINAL_OPERATION_STATES = frozenset(
+    {"active", "completing", "reconcile_pending"}
+)
+TERMINAL_OPERATION_STATES = frozenset(
+    {"completed", "failed", "abandoned", "expired"}
+)
 SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~\n\r")
 READ_ONLY_GIT = frozenset(
     {
@@ -2146,6 +2164,314 @@ def release_operation_lock(descriptor: int | None) -> None:
         os.close(descriptor)
 
 
+def bounded_rotated_window(
+    values: list[Any],
+    round_index: int,
+    limit: int,
+    *,
+    stride: int | None = None,
+) -> list[Any]:
+    if not values or limit < 1:
+        return []
+    if len(values) <= limit:
+        return list(values)
+    step = limit if stride is None else stride
+    start = (round_index * step) % len(values)
+    end = min(start + limit, len(values))
+    window = values[start:end]
+    remaining = limit - len(window)
+    if remaining:
+        window.extend(values[:remaining])
+    return window
+
+
+def rotation_cycle_length(
+    value_count: int, limit: int, *, stride: int | None = None
+) -> int:
+    if value_count <= limit:
+        return 1
+    step = limit if stride is None else stride
+    return value_count // math.gcd(value_count, step)
+
+
+def safe_reconciliation_cursor_metadata(metadata: os.stat_result) -> bool:
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_uid == os.geteuid()
+        and metadata.st_nlink == 1
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+    )
+
+
+def load_reconciliation_cursor(
+    path: Path,
+) -> tuple[bool, dict[str, Any] | None]:
+    descriptor: int | None = None
+    try:
+        if not hasattr(os, "O_NOFOLLOW"):
+            return False, None
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        metadata = os.fstat(descriptor)
+        if not safe_reconciliation_cursor_metadata(metadata):
+            return False, None
+        if metadata.st_size > 64 * 1024:
+            return True, None
+        remaining = 64 * 1024 + 1
+        chunks: list[bytes] = []
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        if len(raw) > 64 * 1024:
+            return True, None
+        cursor = json.loads(raw.decode("utf-8"))
+    except OSError:
+        return False, None
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return True, None
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+    if (
+        not isinstance(cursor, Mapping)
+        or set(cursor) != {"schema_version", "round", "groups"}
+        or cursor.get("schema_version") != STOP_RECONCILIATION_CURSOR_SCHEMA
+        or not exact_integer(cursor.get("round"))
+        or not 0 <= cursor["round"] <= MAX_STOP_RECONCILIATION_ROUND
+        or not isinstance(cursor.get("groups"), Mapping)
+        or len(cursor["groups"]) > MAX_STOP_RECONCILIATION_CURSOR_GROUPS
+    ):
+        return True, None
+    for group_digest, group in cursor["groups"].items():
+        if (
+            not isinstance(group_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", group_digest) is None
+            or not isinstance(group, Mapping)
+            or set(group)
+            != {"wait", "visits", "last_epoch", "last_wait_epoch", "last_seen"}
+            or any(
+                not exact_integer(group.get(field))
+                or not 0 <= group[field] <= MAX_STOP_RECONCILIATION_ROUND
+                for field in ("wait", "last_epoch", "last_seen")
+            )
+            or not exact_integer(group.get("visits"))
+            or not 0 <= group["visits"] < MAX_STOP_RECONCILIATION_ROUND
+            or not exact_integer(group.get("last_wait_epoch"))
+            or not -1 <= group["last_wait_epoch"] <= MAX_STOP_RECONCILIATION_ROUND
+        ):
+            return True, None
+    return (
+        True,
+        {
+            "schema_version": STOP_RECONCILIATION_CURSOR_SCHEMA,
+            "round": cursor["round"],
+            "groups": {
+                key: dict(value) for key, value in cursor["groups"].items()
+            },
+        },
+    )
+
+
+def read_reconciliation_cursor(path: Path) -> dict[str, Any] | None:
+    _safe, cursor = load_reconciliation_cursor(path)
+    return cursor
+
+
+def next_reconciliation_round(records: list[Path]) -> int | None:
+    if not records:
+        return None
+    parent = records[0].parent
+    if any(path.parent != parent for path in records):
+        return None
+    cursor_path = parent / ".broker-proof-cursor"
+    descriptor = acquire_operation_lock(cursor_path)
+    if descriptor is None:
+        return None
+    try:
+        current_round = 0
+        groups: dict[str, Any] = {}
+        try:
+            cursor_path.lstat()
+        except FileNotFoundError:
+            cursor_exists = False
+        except OSError:
+            return None
+        else:
+            cursor_exists = True
+            cursor_safe, cursor = load_reconciliation_cursor(cursor_path)
+            if not cursor_safe:
+                return None
+            if cursor is None:
+                body = {
+                    "schema_version": STOP_RECONCILIATION_CURSOR_SCHEMA,
+                    "round": 1,
+                    "groups": {},
+                }
+                return 0 if replace_private(cursor_path, body) else None
+            current_round = cursor["round"]
+            groups = cursor["groups"]
+        next_round = (
+            0
+            if current_round == MAX_STOP_RECONCILIATION_ROUND
+            else current_round + 1
+        )
+        body = {
+            "schema_version": STOP_RECONCILIATION_CURSOR_SCHEMA,
+            "round": next_round,
+            "groups": groups,
+        }
+        persisted = (
+            replace_private(cursor_path, body)
+            if cursor_exists
+            else write_private(
+                cursor_path, json.dumps(body, sort_keys=True) + "\n"
+            )
+        )
+        return current_round if persisted else None
+    finally:
+        release_operation_lock(descriptor)
+
+
+def reserve_reconciliation_groups(
+    records: list[Path],
+    group_keys: list[tuple[str, str, str, str]],
+    *,
+    round_index: int,
+    record_cycle: int,
+    priority_group: tuple[str, str, str, str] | None = None,
+) -> list[tuple[tuple[str, str, str, str], int]] | None:
+    if not records or not group_keys or record_cycle < 1:
+        return None
+    parent = records[0].parent
+    if any(path.parent != parent for path in records):
+        return None
+    keyed = {}
+    for key in group_keys:
+        group_digest = digest(json.dumps(key, separators=(",", ":")))
+        keyed[group_digest] = key
+    if len(keyed) != len(group_keys):
+        return None
+    cursor_path = parent / ".broker-proof-cursor"
+    descriptor = acquire_operation_lock(cursor_path)
+    if descriptor is None:
+        return None
+    try:
+        cursor = read_reconciliation_cursor(cursor_path)
+        if cursor is None:
+            return None
+        expected_round = (
+            0
+            if round_index == MAX_STOP_RECONCILIATION_ROUND
+            else round_index + 1
+        )
+        if cursor["round"] != expected_round:
+            return None
+        groups = cursor["groups"]
+        selection_epoch = round_index // record_cycle
+        for group_digest in keyed:
+            prior = groups.get(
+                group_digest,
+                {
+                    "wait": 0,
+                    "visits": 0,
+                    "last_epoch": selection_epoch,
+                    "last_wait_epoch": -1,
+                    "last_seen": round_index,
+                },
+            )
+            wait = prior["wait"]
+            if prior["last_wait_epoch"] != selection_epoch:
+                wait = min(wait + 1, MAX_STOP_RECONCILIATION_ROUND)
+            groups[group_digest] = {
+                "wait": wait,
+                "visits": prior["visits"],
+                "last_epoch": prior["last_epoch"],
+                "last_wait_epoch": selection_epoch,
+                "last_seen": max(prior["last_seen"], round_index),
+            }
+        priority_digest = None
+        if priority_group is not None:
+            candidate = digest(json.dumps(priority_group, separators=(",", ":")))
+            if candidate in keyed:
+                priority_digest = candidate
+        selected_digests: list[str] = (
+            [priority_digest] if priority_digest is not None else []
+        )
+        for wait in sorted(
+            {groups[group_digest]["wait"] for group_digest in keyed}, reverse=True
+        ):
+            tier = sorted(
+                group_digest
+                for group_digest in keyed
+                if group_digest != priority_digest
+                if groups[group_digest]["wait"] == wait
+            )
+            if not tier:
+                continue
+            start = (selection_epoch * MAX_STOP_RECONCILIATION_GROUPS) % len(tier)
+            rotated = tier[start:] + tier[:start]
+            selected_digests.extend(
+                rotated[
+                    : MAX_STOP_RECONCILIATION_GROUPS - len(selected_digests)
+                ]
+            )
+            if len(selected_digests) == MAX_STOP_RECONCILIATION_GROUPS:
+                break
+        selected: list[tuple[tuple[str, str, str, str], int]] = []
+        group_cycle = max(
+            1,
+            (len(group_keys) + MAX_STOP_RECONCILIATION_GROUPS - 1)
+            // MAX_STOP_RECONCILIATION_GROUPS,
+        )
+        admission_floor = selection_epoch // group_cycle
+        for group_digest in selected_digests:
+            group = groups[group_digest]
+            if group["visits"] == 0 or group["last_epoch"] != selection_epoch:
+                admission_round = max(group["visits"], admission_floor)
+                if admission_round >= MAX_STOP_RECONCILIATION_ROUND - 1:
+                    return None
+                group["visits"] = admission_round + 1
+                group["last_epoch"] = selection_epoch
+            else:
+                admission_round = group["visits"] - 1
+            selected.append((keyed[group_digest], admission_round))
+            group["wait"] = 0
+        if len(groups) > MAX_STOP_RECONCILIATION_CURSOR_GROUPS:
+            retained = set(keyed)
+            remaining = MAX_STOP_RECONCILIATION_CURSOR_GROUPS - len(retained)
+            if remaining < 0:
+                return None
+            prior_digests = sorted(
+                (group_digest for group_digest in groups if group_digest not in retained),
+                key=lambda group_digest: (
+                    -groups[group_digest]["last_seen"],
+                    -groups[group_digest]["wait"],
+                    group_digest,
+                ),
+            )[:remaining]
+            retained.update(prior_digests)
+            groups = {
+                group_digest: groups[group_digest]
+                for group_digest in sorted(retained)
+            }
+        body = {
+            "schema_version": STOP_RECONCILIATION_CURSOR_SCHEMA,
+            "round": cursor["round"],
+            "groups": groups,
+        }
+        if not replace_private(cursor_path, body):
+            return None
+        return selected
+    finally:
+        release_operation_lock(descriptor)
+
+
 def _pre_tool_locked(
     payload: Mapping[str, Any],
     *,
@@ -2188,8 +2514,14 @@ def _pre_tool_locked(
     if record_path.exists():
         prior = read_record(record_path)
         if prior.get("phase") == "admitting":
-            status, code = resume_admission(executable, record_path, prior)
+            status, code = recover_admission(executable, record_path, prior)
             if status == "active":
+                return ALLOW
+            if status == "terminal":
+                emit_block(
+                    "The exact prior operation is already terminal; the tool call will "
+                    "not be replayed. [reason: operation-already-terminal]"
+                )
                 return ALLOW
             emit_block(
                 "A prior admission for this tool call remains uncertain; retry the exact "
@@ -2317,7 +2649,7 @@ def _pre_tool_locked(
             "[reason: operation-state-unavailable]"
         )
         return ALLOW
-    status, code = resume_admission(executable, record_path, pending_record)
+    status, code = submit_admission(executable, record_path, pending_record)
     if status != "active":
         if code == "claim-conflict":
             reason = "definite peer conflict"
@@ -2457,7 +2789,7 @@ def retire_record(path: Path, record: Mapping[str, Any]) -> bool:
     return True
 
 
-def resume_admission(
+def submit_admission(
     executable: str, path: Path, record: dict[str, Any]
 ) -> tuple[str, str]:
     required_strings = (
@@ -2541,16 +2873,16 @@ def resume_admission(
         or lease.get("state") != "active"
     ):
         return "uncertain", "invalid-operation-lease"
-    active = dict(record)
-    active.update(
+    if not persist_admitted_record(
+        path,
+        record,
         {
-            "phase": "active",
+            "disposition": "admitted",
             "lease_id": lease["lease_id"],
             "lease_revision": lease["revision"],
-        }
-    )
-    if not replace_private(path, active):
-        return "uncertain", "completion-record-unavailable"
+        },
+    ):
+        return "uncertain", ADMISSION_RECORD_PERSISTENCE_FAILURE
     return "active", "admitted"
 
 
@@ -2635,26 +2967,47 @@ def complete_record(executable: str, path: Path, record: dict[str, Any]) -> bool
     return retire_record(path, record)
 
 
-def external_reconciliation_key(
+def exact_integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def exact_external_reconciliation_key(
     record: Mapping[str, Any],
-) -> tuple[str, str, str] | None:
+) -> tuple[str, str, str, str] | None:
     required_strings = (
         "session",
         "capability_file",
         "state_dir",
         "claim_id",
+        "session_incarnation",
     )
+    phase = record.get("phase")
     if (
         record.get("schema_version")
         != "agent-runtime-kit.session-coordination-operation.v1"
-        or record.get("phase") != "active"
+        or phase not in {"active", "admitting"}
         or any(
             not isinstance(record.get(key), str) or not record.get(key)
             for key in required_strings
         )
-        or (
-            not isinstance(record.get("lease_id"), str)
-            or not record.get("lease_id")
+        or not exact_integer(record.get("claim_revision"))
+        or record.get("claim_revision", 0) < 1
+    ):
+        return None
+    if phase == "active" and (
+        not isinstance(record.get("lease_id"), str)
+        or not record.get("lease_id")
+        or not exact_integer(record.get("lease_revision"))
+        or record.get("lease_revision", 0) < 1
+    ):
+        return None
+    if phase == "admitting" and any(
+        not isinstance(record.get(key), str) or not record.get(key)
+        for key in (
+            "operation",
+            "token_file",
+            "targets_file",
+            "admit_idempotency",
         )
     ):
         return None
@@ -2662,20 +3015,210 @@ def external_reconciliation_key(
         record["session"],
         record["capability_file"],
         record["state_dir"],
+        record["session_incarnation"],
     )
 
 
-def exact_integer(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
+def exact_operation_selector(record: Mapping[str, Any]) -> dict[str, Any] | None:
+    if record.get("phase") != "active":
+        return None
+    if exact_external_reconciliation_key(record) is None:
+        return None
+    return {
+        "kind": "operation",
+        "lease_id": record["lease_id"],
+        "revision_floor": record["lease_revision"],
+        "claim_id": record["claim_id"],
+        "claim_revision": record["claim_revision"],
+    }
 
 
-def external_reconciliation_evidence(
-    executable: str, record: Mapping[str, Any]
+def prepared_admission_selector(
+    executable: str, path: Path, record: Mapping[str, Any]
 ) -> dict[str, Any] | None:
-    key = external_reconciliation_key(record)
+    if record.get("phase") != "admitting":
+        return None
+    key = exact_external_reconciliation_key(record)
     if key is None:
         return None
-    session, capability_file, state_dir = key
+    token_file = operation_file(path, record["token_file"], ".token")
+    targets_file = operation_file(path, record["targets_file"], ".targets.json")
+    if token_file is None or targets_file is None:
+        return None
+    try:
+        if (
+            token_file.is_symlink()
+            or targets_file.is_symlink()
+            or not token_file.is_file()
+            or not targets_file.is_file()
+            or stat.S_IMODE(token_file.stat().st_mode) != 0o600
+            or stat.S_IMODE(targets_file.stat().st_mode) != 0o600
+        ):
+            return None
+    except OSError:
+        return None
+    prepared = run_cli(
+        common_cli_args(executable, record["state_dir"])
+        + [
+            "broker",
+            "prepare-admission-proof",
+            "--admit-idempotency-key",
+            record["admit_idempotency"],
+            "--claim",
+            record["claim_id"],
+            "--claim-revision",
+            str(record["claim_revision"]),
+            "--operation",
+            record["operation"],
+            "--targets-file",
+            str(targets_file),
+            "--execution-token-file",
+            str(token_file),
+            "--format",
+            "json",
+        ],
+        timeout_seconds=STOP_RECONCILIATION_TIMEOUT_SECONDS,
+    )
+    prepared_data = result_data(json_body(prepared))
+    if (
+        prepared is None
+        or prepared.returncode != 0
+        or not prepared_data
+        or prepared_data.get("schema_version")
+        != "agent-session.broker-admission-proof-preparation.v1"
+    ):
+        return None
+    selector = prepared_data.get("selector")
+    if (
+        not isinstance(selector, Mapping)
+        or set(selector)
+        != {
+            "kind",
+            "admit_idempotency_key",
+            "claim_id",
+            "claim_revision",
+            "expected_request_digest",
+        }
+        or selector.get("kind") != "admission"
+        or selector.get("admit_idempotency_key") != record["admit_idempotency"]
+        or selector.get("claim_id") != record["claim_id"]
+        or not exact_integer(selector.get("claim_revision"))
+        or selector.get("claim_revision") != record["claim_revision"]
+        or not isinstance(selector.get("expected_request_digest"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", selector["expected_request_digest"])
+        is None
+    ):
+        return None
+    return dict(selector)
+
+
+def exact_proof_disposition(
+    record: Mapping[str, Any], proof: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    claim = proof.get("claim")
+    if (
+        not isinstance(claim, Mapping)
+        or claim.get("claim_id") != record.get("claim_id")
+        or not exact_integer(claim.get("revision"))
+        or claim.get("revision") != record.get("claim_revision")
+    ):
+        return None
+    if record.get("phase") == "active":
+        revision = proof.get("revision")
+        state = proof.get("state")
+        if (
+            proof.get("kind") != "operation"
+            or proof.get("found") is not True
+            or proof.get("lease_id") != record.get("lease_id")
+            or not exact_integer(revision)
+            or revision < record.get("lease_revision", 1)
+            or state not in NONTERMINAL_OPERATION_STATES | TERMINAL_OPERATION_STATES
+        ):
+            return None
+        if state in TERMINAL_OPERATION_STATES:
+            return {"disposition": "terminal"}
+        return {"disposition": "nonterminal"}
+    if (
+        record.get("phase") != "admitting"
+        or proof.get("kind") != "admission"
+        or proof.get("status") != "committed"
+        or not isinstance(proof.get("lease_id"), str)
+        or not proof.get("lease_id")
+    ):
+        return None
+    provenance = proof.get("provenance")
+    retained = proof.get("retained")
+    state = proof.get("state")
+    revision = proof.get("revision")
+    if (
+        provenance == "historical_receipt"
+        and retained is False
+        and state is None
+        and revision is None
+        and proof.get("outcome") is None
+    ):
+        return {"disposition": "terminal"}
+    if (
+        provenance != "retained_operation"
+        or retained is not True
+        or not exact_integer(revision)
+        or revision < 1
+        or state not in NONTERMINAL_OPERATION_STATES | TERMINAL_OPERATION_STATES
+    ):
+        return None
+    if state in TERMINAL_OPERATION_STATES:
+        return {"disposition": "terminal"}
+    if state != "active" or proof.get("outcome") is not None:
+        return None
+    return {
+        "disposition": "admitted",
+        "lease_id": proof["lease_id"],
+        "lease_revision": revision,
+    }
+
+
+def persist_admitted_record(
+    path: Path,
+    record: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+) -> bool:
+    lease_id = evidence.get("lease_id")
+    lease_revision = evidence.get("lease_revision")
+    if (
+        record.get("phase") != "admitting"
+        or evidence.get("disposition") != "admitted"
+        or not isinstance(lease_id, str)
+        or not lease_id
+        or not exact_integer(lease_revision)
+        or lease_revision < 1
+    ):
+        return False
+    active = dict(record)
+    active.update(
+        {
+            "phase": "active",
+            "lease_id": lease_id,
+            "lease_revision": lease_revision,
+        }
+    )
+    return replace_private(path, active)
+
+
+def exact_external_reconciliation_evidence(
+    executable: str,
+    snapshots: list[tuple[Path, dict[str, Any]]],
+    *,
+    round_index: int = 0,
+) -> dict[Path, dict[str, Any]]:
+    if not snapshots or len(snapshots) > MAX_STOP_RECONCILIATION_RECORDS:
+        return {}
+    key = exact_external_reconciliation_key(snapshots[0][1])
+    if key is None or any(
+        exact_external_reconciliation_key(record) != key
+        for _path, record in snapshots
+    ):
+        return {}
+    session, capability_file, state_dir, session_incarnation = key
     status = run_cli(
         common_cli_args(executable, state_dir)
         + [
@@ -2691,6 +3234,7 @@ def external_reconciliation_evidence(
         timeout_seconds=STOP_RECONCILIATION_TIMEOUT_SECONDS,
     )
     status_data = result_data(json_body(status))
+    generation = status_data.get("generation") if status_data else None
     if (
         status is None
         or status.returncode != 0
@@ -2701,93 +3245,127 @@ def external_reconciliation_evidence(
         or status_data.get("state") != "ready"
         or status_data.get("capability_available") is not True
         or status_data.get("heartbeat_fresh") is not True
+        or not exact_integer(generation)
+        or generation < 1
     ):
-        return None
-    claim = status_data.get("claim")
-    operation = status_data.get("operation")
-    if (
-        not isinstance(claim, Mapping)
-        or not isinstance(claim.get("claim_id"), str)
-        or not claim.get("claim_id")
-        or not exact_integer(claim.get("revision"))
-        or claim.get("state") != "active"
-        or not isinstance(operation, Mapping)
-        or not exact_integer(operation.get("active"))
-        or not exact_integer(operation.get("uncertain"))
-        or operation.get("active") != 0
-        or operation.get("uncertain") != 0
+        return {}
+    selected: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    admitting: list[tuple[Path, dict[str, Any]]] = []
+    for path, record in snapshots:
+        selector = exact_operation_selector(record)
+        if selector is not None:
+            selected.append((path, record, selector))
+        elif record.get("phase") == "admitting":
+            admitting.append((path, record))
+    for path, record in bounded_rotated_window(
+        admitting, round_index, MAX_STOP_ADMISSION_PROOF_PREPARATIONS
     ):
-        return None
-    context = run_cli(
-        common_cli_args(executable, state_dir)
-        + [
-            "work-context",
-            "show",
-            "--session",
-            session,
-            "--capability-file",
-            capability_file,
-            "--format",
-            "json",
-        ],
-        timeout_seconds=STOP_RECONCILIATION_TIMEOUT_SECONDS,
-    )
-    context_data = result_data(json_body(context))
-    if (
-        context is None
-        or context.returncode != 0
-        or not context_data
-        or context_data.get("schema_version") != "agent-session.work-context.v1"
-        or context_data.get("session_id") != session
-        or context_data.get("claim_id") != claim.get("claim_id")
-        or not exact_integer(context_data.get("revision"))
-        or context_data.get("revision") != claim.get("revision")
-        or context_data.get("state") != "active"
-        or not isinstance(context_data.get("session_incarnation"), str)
-        or not context_data.get("session_incarnation")
-    ):
-        return None
-    return {
-        "key": key,
-        "claim_id": claim["claim_id"],
-        "session_incarnation": context_data["session_incarnation"],
+        selector = prepared_admission_selector(executable, path, record)
+        if selector is not None:
+            selected.append((path, record, selector))
+    if not selected:
+        return {}
+    batch_path = selected[0][0].parent / f".{uuid.uuid4().hex}.broker-proof-batch"
+    batch_body = {
+        "schema_version": "agent-session.broker-proof-batch.v1",
+        "selectors": [selector for _path, _record, selector in selected],
     }
-
-
-def record_matches_external_reconciliation(
-    record: Mapping[str, Any], evidence: Mapping[str, Any]
-) -> bool:
-    if external_reconciliation_key(record) != evidence.get("key"):
-        return False
-    current_incarnation = evidence.get("session_incarnation")
-    if not isinstance(current_incarnation, str) or not current_incarnation:
-        return False
-    admitted_incarnation = record.get("session_incarnation")
-    if admitted_incarnation is not None:
-        # nils-cli refuses claim rotation while any operation is nonterminal.
-        # The exact incarnation plus the fresh zero-operation snapshot therefore
-        # remains authoritative after a terminal claim is released/replaced.
-        return admitted_incarnation == current_incarnation
-    # Before this field was persisted, a claim UUID was the durable principal
-    # identity. Claims are freshly generated and never migrate across session
-    # incarnations; requiring the same active UUID from both authenticated
-    # snapshots preserves the incarnation fence for legacy records.
+    if not write_private(
+        batch_path, json.dumps(batch_body, sort_keys=True, separators=(",", ":")) + "\n"
+    ):
+        return {}
     try:
-        return (
-            str(uuid.UUID(record["claim_id"])) == record["claim_id"]
-            and evidence.get("claim_id") == record["claim_id"]
+        proved = run_cli(
+            common_cli_args(executable, state_dir)
+            + [
+                "broker",
+                "proof",
+                "--session",
+                session,
+                "--expected-incarnation",
+                session_incarnation,
+                "--expected-generation",
+                str(generation),
+                "--batch-file",
+                str(batch_path),
+                "--capability-file",
+                capability_file,
+                "--format",
+                "json",
+            ],
+            timeout_seconds=STOP_RECONCILIATION_TIMEOUT_SECONDS,
         )
-    except (ValueError, AttributeError, TypeError):
-        return False
+    finally:
+        best_effort_unlink(batch_path)
+    proof_data = result_data(json_body(proved))
+    proof_items = proof_data.get("proofs") if proof_data else None
+    if (
+        proved is None
+        or proved.returncode != 0
+        or not proof_data
+        or proof_data.get("schema_version") != "agent-session.broker-proof.v1"
+        or proof_data.get("session_id") != session
+        or proof_data.get("session_incarnation") != session_incarnation
+        or not exact_integer(proof_data.get("generation"))
+        or proof_data.get("generation") != generation
+        or not isinstance(proof_items, list)
+        or len(proof_items) != len(selected)
+    ):
+        return {}
+    evidence: dict[Path, dict[str, Any]] = {}
+    for index, (path, record, _selector) in enumerate(selected):
+        item = proof_items[index]
+        if (
+            not isinstance(item, Mapping)
+            or not exact_integer(item.get("index"))
+            or item.get("index") != index
+            or item.get("ok") is not True
+            or not isinstance(item.get("proof"), Mapping)
+        ):
+            continue
+        disposition = exact_proof_disposition(record, item["proof"])
+        if disposition is not None:
+            evidence[path] = disposition
+    return evidence
+
+
+def recover_admission(
+    executable: str, path: Path, record: dict[str, Any]
+) -> tuple[str, str]:
+    evidence = exact_external_reconciliation_evidence(executable, [(path, record)]).get(
+        path
+    )
+    if evidence is None:
+        return "uncertain", "admission-proof-unknown"
+    if evidence.get("disposition") == "terminal":
+        return "terminal", "operation-already-terminal"
+    if evidence.get("disposition") != "admitted":
+        return "uncertain", "admission-proof-invalid"
+    if not persist_admitted_record(path, record, evidence):
+        return "uncertain", ADMISSION_RECORD_PERSISTENCE_FAILURE
+    return "active", "admitted"
 
 
 def retire_externally_reconciled_records(
     executable: str, records: list[Path]
 ) -> set[Path]:
+    round_index = next_reconciliation_round(records)
+    if round_index is None:
+        emit_system(RECONCILIATION_CURSOR_FAILURE_MESSAGE)
+        return set()
+    record_cycle = rotation_cycle_length(
+        len(records), MAX_STOP_RECONCILIATION_RECORDS, stride=1
+    )
     groups: dict[
-        tuple[str, str, str], list[tuple[Path, dict[str, Any]]]
+        tuple[str, str, str, str], list[tuple[Path, dict[str, Any]]]
     ] = {}
-    for path in records[:MAX_STOP_RECONCILIATION_RECORDS]:
+    priority_group: tuple[str, str, str, str] | None = None
+    for path in bounded_rotated_window(
+        records,
+        round_index,
+        MAX_STOP_RECONCILIATION_RECORDS,
+        stride=1,
+    ):
         descriptor = acquire_operation_lock(path)
         if descriptor is None:
             continue
@@ -2795,36 +3373,55 @@ def retire_externally_reconciled_records(
             record = read_record(path)
         finally:
             release_operation_lock(descriptor)
-        key = external_reconciliation_key(record)
+        key = exact_external_reconciliation_key(record)
         if key is None:
             continue
+        if priority_group is None:
+            priority_group = key
         groups.setdefault(key, []).append((path, record))
     if not groups:
         return set()
     retired: set[Path] = set()
-    ordered_groups = sorted(
-        groups.values(),
-        key=lambda snapshots: (
-            -len(snapshots),
-            external_reconciliation_key(snapshots[0][1]),
-        ),
+    selected_groups = reserve_reconciliation_groups(
+        records,
+        sorted(groups),
+        round_index=round_index,
+        record_cycle=record_cycle,
+        priority_group=priority_group,
     )
-    for snapshots in ordered_groups[:MAX_STOP_RECONCILIATION_GROUPS]:
-        evidence = external_reconciliation_evidence(executable, snapshots[0][1])
-        if evidence is None:
+    if selected_groups is None:
+        emit_system(RECONCILIATION_CURSOR_FAILURE_MESSAGE)
+        return set()
+    for group_key, admission_round in selected_groups:
+        snapshots = groups[group_key]
+        evidence = exact_external_reconciliation_evidence(
+            executable, snapshots, round_index=admission_round
+        )
+        if not evidence:
             continue
         for path, snapshot in snapshots:
+            disposition = evidence.get(path)
+            if disposition is None:
+                continue
             descriptor = acquire_operation_lock(path)
             if descriptor is None:
                 continue
             try:
                 current = read_record(path)
-                if (
-                    current == snapshot
-                    and record_matches_external_reconciliation(current, evidence)
-                    and retire_record(path, current)
+                if current != snapshot:
+                    continue
+                if disposition.get("disposition") == "terminal":
+                    if retire_record(path, current):
+                        retired.add(path)
+                elif (
+                    disposition.get("disposition") == "admitted"
+                    and current.get("phase") == "admitting"
                 ):
-                    retired.add(path)
+                    if not persist_admitted_record(path, current, disposition):
+                        emit_system(
+                            "Session coordination admission recovery remains pending "
+                            "because its private active record could not be persisted."
+                        )
             finally:
                 release_operation_lock(descriptor)
     return retired
@@ -2869,7 +3466,7 @@ def _post_tool_locked(
         )
         return ALLOW
     if executable is not None and record.get("phase") == "admitting":
-        resume_admission(executable, record_path, record)
+        recover_admission(executable, record_path, record)
         record = read_record(record_path)
         record["outcome"] = outcome
     if executable is None or not complete_record(executable, record_path, record):
@@ -2941,9 +3538,6 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
             continue
         try:
             record = read_record(path)
-            if executable is not None and record.get("phase") == "admitting":
-                resume_admission(executable, path, record)
-                record = read_record(path)
             if (
                 executable is not None
                 and operation_outcome(path, record) in {"pass", "fail"}

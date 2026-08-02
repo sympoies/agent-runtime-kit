@@ -1798,7 +1798,7 @@ their declared scopes.
 
 | ID | Problem | Suggested fix |
 | --- | --- | --- |
-| F22 | A worker between launch and bootstrap is classified `claim_renewal_required`, telling the manager to renew a claim that never existed | Give the pre-bootstrap window its own state |
+| F22 | A worker between launch and bootstrap was classified `claim_renewal_required`, telling the manager to renew a claim that never existed. Independently accepted signed nils-cli topic candidate `357044ddd9de90920b531ff21d7bec3c692e7ed8` gives this window a typed attention state; it is not integrated or installed | Govern integration of the existing candidate; do not rerun provider behavior merely to probe capacity |
 | F24 | A packet whose `repository` is a path instead of `owner/name` is accepted by `worker start` and only fails at bootstrap, costing a launch, a readiness wait, and a reassign | Validate the identifier inside `worker start` before creating a session |
 | F25 | Closed in implementation, deployment, and the field at nils-cli `82ca3422`. The v5 submit-key recovery failed, but the same worker authenticated inside the original deadline; `worker start` returned `ready` and durable recovery became `checkpoint_confirmed` rather than returning a contradictory terminal verdict | Keep the pending-verdict reconciliation and exact prompt/composer truth covered; do not regress to prompt-absence inference |
 | F27 | In a checkout with no git remote, repository identity cannot resolve, and every scoped write plus the blocked-checkpoint escape hatch is denied with a generic identity error | Detect a remote-less checkout at claim or bootstrap time and fail with that specific cause |
@@ -1807,13 +1807,14 @@ their declared scopes.
 | F30 | Closed in implementation, deployment, and the field. V5 proved the initial authenticated checkpoint and release, then after F37 consumed guidance, re-bootstrapped at the current revision before mutation, reacquired and released its claim, made only the bounded revision, resubmitted, was accepted, retired, and proven absent | Keep the generated current-revision bootstrap and pinned absolute release lifecycle covered; do not substitute provider input or legacy argv |
 | F31 | Closed in implementation and the field at nils-cli local `main` `7857fe76`. A typed v4 supervision action revoked only the exact authoritative-idle live worker's assignment-derived claim under revision, incarnation, runtime, activity, broker, and quiescence fences. The action sent no provider input, preserved the durable session and unchanged dirty worktree, quarantined resume, and left another worker's claim active | Keep the installed primitive deployed; do not count its live-worker evidence as B2 stopped-worker field closure |
 | F32 | `main-agent checkpoint` rejected a worker packet with `invalid-checkpoint: coordination input is invalid` and named no field, the same discarded-serde-error shape as F13 | Surface the field path in checkpoint validation too |
-| F33 | Codex reported "Selected model is at capacity" mid-lane and its turn ended without progress, yet supervision still classified `healthy_progress` | Treat a provider capacity failure as attention-required, per the documented capacity rule |
-| F34 | A worker cannot clear a dangling operation lease on its own claim. `work-context complete` requires `--lease` plus `--execution-token-file`, and `work-context reconcile` requires `--lease` plus `--proof-file`; both the lease id and the execution token are minted by the hook layer at implicit admit time and never handed to the worker. The only correct worker behaviour left is to report and wait — the canary's Claude lane did exactly that, and explicitly refused to scavenge capability material out of `coordination/registry.json` to satisfy the guard checking it | Either return the lease id and execution token to the worker that owns the operation, or give the Main Agent a typed action to complete/reconcile a dangling lease on its own worker's claim |
+| F33 | Codex reported "Selected model is at capacity" mid-lane and its turn ended without progress, yet supervision still classified `healthy_progress`. Independently accepted signed nils-cli topic candidate `357044ddd9de90920b531ff21d7bec3c692e7ed8` supplies the paired capacity-attention classifier; it is not integrated or installed | Govern integration with F22; retain deterministic coverage and defer provider canaries until separately authorized and capacity is known |
+| F34 | The original worker-facing dead end is now covered by signed nils-cli exact-operation-proof topic `26ed88f8` through `bf88fb813e3d64f119475a4cb925e323915e6e78`. Its complete local-fast gate passed 7,898 tests plus doctests and the tempdir probe, and specialist review found no remaining finding. It remains a local topic candidate: not integrated, installed, released, or field-closed | Govern integration together with the runtime F47 consumer after final F47 acceptance; retain exact proof, revision-floor, owner, outcome, expiry, replay, and registry-access fencing |
 | F35 | Closed in implementation and local deployment at nils-cli local `main` `9ebbc922` / installed `main-agent 1.25.11 (v1.25.9-94-g9ebbc922)`. The capability-gated, revision-fenced, idempotent `main-agent closeout` owns checkpoint, terminal-worker retirement, cleanup-pending resume, operation fencing, run close, exact bound-claim disposition, and final read-back while preserving the Main provider session. Runtime-kit adopts the macro-first contract in this local-main change; no public release or provider PR is claimed | Keep complete/partial exact-replay, cleanup-tombstone, active-operation, unrelated-successor, pre-provenance, and provider-session-preservation coverage green; retain a multi-worker real-product closeout as optional residual field evidence |
 | F36 | Closed in implementation, deployment, and the field at nils-cli `82ca3422`. Session start validates, safely tightens, and descriptor-pins only the owned state root, `session-locks`, and `sessions` ancestors; unsafe ownership, type, symlink, unavailability, or replacement fails typed. V5 proved all ancestors `0700` and an ordinary authenticated checkpoint write | Keep the no-follow, ownership, replacement, and non-recursive mutation regressions; retain platform coverage for the descriptor-backed path |
 | F37 | Closed in implementation, deployment, specialist review, and the field at nils-cli local `main` `1a3315df`. Typed `worker reenter` fences the exact revision, incarnation, notification generation, authoritative idle composer, live detached runtime, broker, claim, and operations; it creates no message or assignment prompt. A narrow receipt-bound pre-upgrade backfill fails closed on missing, corrupt, foreign, stale, or ambiguous evidence. The same v5 worker consumed guidance and re-bootstrapped before mutation without provider input | Keep exact-generation one-send, crash replay, app-server/terminal quiescence, and retained-receipt compatibility regressions; never generalize the backfill into mutable assignment-schema authority |
 | F38 | Closed in implementation, specialist review, governed local-main integration, and installed deployment at nils-cli `02ac792b`. Exact active-run/current-worker selection and authority-locked rebind, init, admission, renewal, replay, and rollback remove historical-shadowing and split-transaction races | Keep the 18 focused continuity and ambiguous-stop regressions, exact receipt binding, expiry fencing, and direct-claim serialization green |
 | F39 | Closed in implementation, governed local-main integration, installed deployment, and installed-product field contract at nils-cli `949b92c1` / installed `agent-hook` `4a282e1f`. Activity failure on terminal Stop degrades to one typed warning while nonterminal admission remains fail-closed and coordination remains authoritative | Retain one natural end-to-end provider-runner termination as optional residual evidence; never recreate it by corrupting a live session or disabling hooks |
+| F47 | Runtime Stop cleanup previously consumed only aggregate broker counts and could not use the F34 exact-operation proof. Independently accepted signed runtime-kit topic series `2198c20e` through `5e24b8a63c121204d9301dd86ad56fc6a6cc55a3` now consumes only authenticated exact active receipts, preserves unrelated operations, provides bounded starvation-free work selection, and safely recovers only private descriptor-validated cursor metadata. The terminal sanitized positions 1-17 gate and all selected specialist reviews passed; it is not integrated or installed | Govern coupled integration with the nils-cli F34 exact-proof topic. Keep the canonical host-only forge-identity-router stdout failure classified separately from the sanitized source gate; do not weaken exact proof or cursor safety |
 | F13 | `worker start` rejects a packet with `invalid-assignment-packet: coordination input is invalid` and names no field; the serde error is discarded. The skill also names `exclusions` and `invariants`, which are not top-level schema fields | Surface the field path; align the skill with the schema |
 | F18 | Read-only `semantic-commit` probes are denied when composed — `cd X && semantic-commit …`, or a trailing `2>&1` parsed as a CLI argument | Classify read-only subcommands and redirections before default-delivery analysis |
 | F05 | `agent-session activity doctor` reports `configured:false` while the compatibility probe reports `configured:true` with `compatibility_owner:"agent-hook"` | Reconcile the doctor with agent-hook ownership |
@@ -1860,20 +1861,24 @@ claim revocation. Still requiring acceptance evidence:
 - the pre-bootstrap/safe-reassignment boundary after F22 is corrected, without
   prompt replay or a second concurrent writer.
 
-Phase D / F29-F34 disposition:
+Phase D / F22, F29-F34, and F47 disposition:
 
 | Item | Status | Next action |
 | --- | --- | --- |
 | F29 | closed by B1/B6 | Retain cross-product file-write and issued-checkpoint coverage |
 | F30 | field-closed with F37 | No rerun unless the generated re-bootstrap/release contract changes |
 | F31 | field-closed | Keep its live-worker evidence separate from B2 stopped-worker evidence |
+| F22 | independently accepted signed topic candidate with F33 | Govern integration of `357044ddd9de90920b531ff21d7bec3c692e7ed8`; retain the pre-bootstrap no-claim classifier |
 | F32 | open | Pair with F13 and surface the rejected field path instead of discarding serde detail |
-| F33 | open | Pair with F22 so provider capacity and pre-bootstrap states become typed attention-required states rather than `healthy_progress` / `claim_renewal_required` |
-| F34 | open | Give the exact operation owner a typed completion/reconciliation capability without registry scavenging |
+| F33 | independently accepted signed topic candidate with F22 | Govern integration of `357044ddd9de90920b531ff21d7bec3c692e7ed8`; no provider canary is needed for source acceptance |
+| F34 | independently accepted nils-cli topic candidate | Exact broker proof series `26ed88f8`..`bf88fb813e3d64f119475a4cb925e323915e6e78` is locally accepted; govern integration together with the accepted runtime F47 consumer |
+| F47 | independently accepted runtime-kit topic candidate | Exact-proof consumer series `2198c20e`..`5e24b8a63c121204d9301dd86ad56fc6a6cc55a3` passed sanitized positions 1-17 and terminal specialist review; govern integration with F34 |
 
-After F22/F33, take F34, then F32/F13, then the F24/F28/F27 input and
-guidance wave. F29-F31 and F37 are closed and must not be reopened by that
-sequence.
+F34/F47 source acceptance is complete. If new integration authority is granted,
+integrate that coupled pair before attempting its retained real-run closeout.
+Without integration authority, the next executable non-provider implementation
+item is F32/F13, then the F24/F28/F27 input and guidance wave. F29-F31 and F37
+are closed and must not be reopened by that sequence.
 
 C06 and C07 were not reached because both provider accounts hit their usage
 ceilings during the closure session, not because of any product defect.
@@ -1887,16 +1892,16 @@ field build is signed at `cbb31799`, with paired runtime-kit authorization at
 `828beef5`. B2 is fully closed under this inventory.
 Historical runtime-kit B2 topic head
 `d35f3960338bc4893dc0bb158e88c341cb15a44a` passed full CI and its rendered
-surfaces were deployed from the durable checkout. The current squash landing
-heads are runtime-kit `8b27d215c766dd13f39db67f8b0f3db5854f103b`
+surfaces were deployed from the durable checkout. The final B2 squash landing
+identities are runtime-kit `8b27d215c766dd13f39db67f8b0f3db5854f103b`
 and nils-cli `7d0b63192eb856ec99f23eb0bacbaae005bc472e`; their local-only
 receipts remain distinct from both the externally aligned upstream refs and
 the retained installed field builds.
 
 Next authoritative field order remains C06, C07, residual C08, then Phase D.
 Until provider capacity and canary authority are affirmatively available, the
-next executable non-provider item is the paired F22/F33 classifier repair with
-regression-first coverage; it does not require reopening B2.
+next executable non-provider item is the paired F32/F13 rejected-field-path
+repair with regression-first coverage; it does not require reopening B2.
 F25, F36, B5, B6, F30, and F37 are repaired, installed, and field-closed by
 the single v5 lane; it
 completed current-revision re-bootstrap, bounded mutation, resubmission,
@@ -1915,6 +1920,83 @@ destructive Main-session cleanup.
 Phase A/B were completed in the earlier run and re-verified on a fresh fixture:
 the governed `default-branch` dry-run, one signed commit, stale `--expect-head`
 rejection, and hook denial of an ordinary default-branch commit all passed.
+
+### Continuation repository audit, 2026-08-02
+
+The B2 default-branch receipts remain the authoritative record of the exact
+landing operations. Runtime-kit landed at
+`8b27d215c766dd13f39db67f8b0f3db5854f103b` and nils-cli landed at
+`7d0b63192eb856ec99f23eb0bacbaae005bc472e`; both receipts report a
+verified-good signature, a local default-branch commit, no provider delivery
+attempt, and `provider_delivered:false`. At landing time each local `main` was
+one commit ahead of its cached upstream. Runtime-kit then passed its complete
+positions 1-17 gate. Nils-cli passed 7,873 functional tests, but its enclosing
+`--local-fast` result remained red because the final tempdir probe found one
+`.tmp.../state` residue; that historical gate must not be rewritten as green.
+
+The later read-only audit found both default branches externally aligned, not
+still ahead: runtime-kit is clean at signed `da7119f2ebece510d6955cea72743069f5496c73`
+with `origin/main...main` `0/0`, and nils-cli is clean at
+`12537975bf28f9d071f083fcbc4f5a000a496e1d` with `origin/main...main` `0/0`.
+Both B2 squash identities remain ancestors of those heads. Local verification
+cannot authenticate the current nils-cli RSA signature because its public key
+is absent; this is an unavailable verifier, not evidence of a bad signature.
+The external alignment does not retroactively change either B2 receipt's
+`provider_delivered:false` fact. Installed field-evidence identities
+`cbb31799`, `d9ec40a0`, and `828beef5` remain distinct from the squash landing
+identities and must not be replaced by current default-branch heads.
+
+The nils-cli continuation separated two observations that had previously been
+conflated. The accepted B2 functional suite remains green. A focused rerun did
+not reproduce the historical `.tmp.../state` filesystem residue, so its writer
+is still bounded as a full-suite-only non-reproduction rather than assigned to
+B2. The investigation did independently prove a test-fixture process leak:
+four concurrent group-cleanup FIFO writers shared one PID file, later writers
+overwrote earlier identities, and final cleanup could leave two `cat` readers
+alive in the session cgroup. This is test-harness cleanup, not a demonstrated
+daemon/session product-lifecycle regression. The accepted test-only repair ends
+at signed `a52aba10f56aad156f7c7be1dd87d8c7bbf17eb3`, preserving signed first
+repair `8c6d0cbf` and the post-commit failure evidence `46506de8`. It records
+exact writer identity, captures immutable same-target generations, routes
+non-signaling fallback through per-writer supervisors, retries and surfaces
+monitor failures, and bounds child cleanup. Its final local-fast gate passed
+1,130 of 1,130 tests plus doctests, the canonical tempdir probe passed three of
+three runs, Darwin test-target compilation and strict clippy passed, five
+focused stress rounds passed, and the post-suite process probe found no new FIFO
+writer. Security and maintainability review closed clean. Testing retained one
+non-blocking regression-strength debt: the same-target replacement case uses a
+bounded retry count rather than a deterministic latch. The immutable generation
+implementation and real residue probes are accepted; this test-only refinement
+does not reopen B2 or block source closeout.
+
+The continuation also produced signed, local-only source candidates without
+provider mutation. Runtime-kit policy candidate `9679ccf1` defines bounded
+autonomous initialization recovery, one fixed idle notification/Enter nudge,
+and prompt closeout of unused resources. Independently accepted nils-cli
+F22/F33 candidate `357044ddd9de90920b531ff21d7bec3c692e7ed8` types
+pre-bootstrap and provider-capacity attention; its exact staged patch matched
+the signed commit, merged cleanly in a read-only merge-tree against current
+`main`, and passed all 1,125 `nils-agent-session` tests. Nils-cli F34
+exact-proof series `26ed88f8` through
+`bf88fb813e3d64f119475a4cb925e323915e6e78` passed its complete local-fast gate
+with 7,898 tests, doctests, and a green tempdir probe. The coupled runtime-kit
+F47 consumer is independently accepted through signed terminal commit
+`5e24b8a63c121204d9301dd86ad56fc6a6cc55a3`: 11 final focused cases, all 375
+shared-hook tests across 16 shards, all five conversation smoke cases, and the
+sanitized clean-tree positions 1-17 gate passed, with terminal security,
+testing, and maintainability review reporting no findings. The unsanitized
+host gate remains truthfully red for the same private forge-identity-router
+stdout pollution reproduced on the clean base; it is not attributed to F47.
+These identities are topic evidence only: none is integrated, installed,
+released, pushed, or provider-delivered by this continuation.
+
+During this continuation nils-cli `main` advanced externally from `b7218ea3`
+to release commit `12537975bf28f9d071f083fcbc4f5a000a496e1d`. Read-only
+merge-tree checks against that current head remained conflict-free for the
+accepted F22/F33, F34, and FIFO fixture topics. Runtime-kit `main` remained
+aligned at `da7119f2ebece510d6955cea72743069f5496c73`, and the F47 topic also
+remained conflict-free against it. No integration decision or delivery is
+implied by those compatibility checks.
 
 ## Reproduction Notes
 

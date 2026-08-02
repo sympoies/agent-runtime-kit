@@ -131,6 +131,29 @@ L3/provider dispatch. Unmanaged sessions remain valid.
   it on timeout, malformed output, or other ambiguous responses. Record the
   PostTool outcome before fresh capability/version probes; retire the operation
   record atomically before best-effort sidecar cleanup.
+- Broker aggregate operation counts never prove one retained lease terminal.
+  Stop/recovery consumers use the authenticated exact broker-proof surface,
+  fenced by session incarnation, generation, claim id/revision, lease id, and
+  revision floor. Prefer one bounded batch per session/incarnation group;
+  selector conflicts are item-scoped, and only an exact terminal item may
+  retire its matching unchanged private record while unrelated active or
+  conflicting items remain. Persist a private bounded audit cursor, advance the
+  capped record window by one record per audit, always service the first valid
+  record's group, and schedule remaining capped group/admission windows by
+  digest-only wait and visit counters so stable unknown items or surrounding
+  group churn cannot permanently starve later exact terminal evidence; cursor
+  corruption in a descriptor-validated owned private regular file resets only
+  that non-authoritative cursor under its lock, while unsafe cursor paths or
+  persistence failure emit a fixed diagnostic and preserve all operation
+  records.
+- Recover an `admitting` record from its locally prepared digest-only selector,
+  never by blind admission replay. A committed retained receipt may restore its
+  exact issued lease only when its retained operation state is exactly `active`
+  with no outcome, or prove terminality. `completing`, `reconcile_pending`,
+  `status: unknown`, and `provenance: not_retained` prove neither executable
+  admission nor replay safety, so retain the admitting record and its private
+  proof material unchanged. Promotion to `active` is one shared fail-closed
+  private persistence transition for PreTool and Stop recovery.
 
 ## Privacy and recovery
 
