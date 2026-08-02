@@ -15,7 +15,7 @@ tests. It does not ship a CLI binary — the `agent-runtime` command and the res
 of the runtime surface live in `sympoies/nils-cli` and install through
 `brew install sympoies/tap/nils-cli`. The one artifact this repo itself
 publishes is the standalone Linux container image at
-`ghcr.io/graysurf/agent-runtime-kit`; see [`RELEASING.md`](RELEASING.md) for how
+`ghcr.io/sympoies/agent-runtime-kit`; see [`RELEASING.md`](RELEASING.md) for how
 that image is versioned and cut.
 
 The local gate stack is mature. `scripts/ci/all.sh` runs seventeen positions
@@ -497,7 +497,7 @@ diff -u tests/runtime-smoke/product/expected/product-summary.json \
   /tmp/runtime-smoke-product-summary.json
 if bash tests/smoke/deliver-lifecycle.sh; then exit 1; else test $? -ne 0; fi
 bash tests/smoke/deliver-lifecycle.sh \
-  --scratch-fork graysurf/agent-runtime-kit-smoke \
+  --scratch-fork sympoies/agent-runtime-kit-smoke \
   --scratch-branch agent-runtime-kit-delivery-smoke
 ```
 

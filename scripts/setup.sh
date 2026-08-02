@@ -16,7 +16,7 @@ set -euo pipefail
 
 readonly PROG_NAME="setup.sh"
 readonly REPO_HOME_DEFAULT="$HOME/.config/agent-runtime-kit"
-readonly REPO_REMOTE_DEFAULT="https://github.com/graysurf/agent-runtime-kit.git"
+readonly REPO_REMOTE_DEFAULT="https://github.com/sympoies/agent-runtime-kit.git"
 readonly TAP_SPEC="sympoies/tap"
 readonly TAP_FORMULA="sympoies/tap/nils-cli"
 
@@ -40,7 +40,7 @@ print_help() {
   cat <<EOF
 Usage: $PROG_NAME [--profile core|recommended|full] [--skip-homebrew-install] [--skip-cli-tools] [--dry-run]
 
-Bootstrap a host so it can run graysurf/agent-runtime-kit. Installs Homebrew
+Bootstrap a host so it can run sympoies/agent-runtime-kit. Installs Homebrew
 when missing, taps sympoies/tap, installs nils-cli (which ships the
 agent-runtime binary), installs the profile-selected third-party CLI tools
 from manifests/cli-tools.yaml, clones agent-runtime-kit into
@@ -313,8 +313,20 @@ EOF_KEYS
 }
 
 ensure_repo_clone() {
+  local origin_url=""
+
   if [ -d "$REPO_HOME_DEFAULT/.git" ]; then
     log "agent-runtime-kit already cloned at $REPO_HOME_DEFAULT"
+    origin_url="$(git -C "$REPO_HOME_DEFAULT" config --get remote.origin.url 2>/dev/null || true)"
+    case "$origin_url" in
+      https://github.com/graysurf/agent-runtime-kit | \
+        https://github.com/graysurf/agent-runtime-kit.git | \
+        git@github.com:graysurf/agent-runtime-kit | \
+        git@github.com:graysurf/agent-runtime-kit.git)
+        log "migrating agent-runtime-kit origin from graysurf to sympoies"
+        run_cmd git -C "$REPO_HOME_DEFAULT" remote set-url origin "$REPO_REMOTE_DEFAULT"
+        ;;
+    esac
     return 0
   fi
   if [ -e "$REPO_HOME_DEFAULT" ]; then

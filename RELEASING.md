@@ -2,7 +2,7 @@
 
 `agent-runtime-kit` ships one published artifact: the standalone Linux container
 image (see `docker/`) published to the GitHub Container Registry (GHCR) at
-`ghcr.io/graysurf/agent-runtime-kit`. This document defines how versions are
+`ghcr.io/sympoies/agent-runtime-kit`. This document defines how versions are
 named and how a release is cut.
 
 ## Versioning — CalVer
@@ -25,8 +25,8 @@ Each release publishes, for `linux/amd64` and `linux/arm64`:
 
 | Tag | Example |
 | --- | --- |
-| Dated | `ghcr.io/graysurf/agent-runtime-kit:2026.05.30` |
-| Rolling | `ghcr.io/graysurf/agent-runtime-kit:latest` (non-prerelease only) |
+| Dated | `ghcr.io/sympoies/agent-runtime-kit:2026.05.30` |
+| Rolling | `ghcr.io/sympoies/agent-runtime-kit:latest` (non-prerelease only) |
 
 ## Cutting a release
 
@@ -74,16 +74,16 @@ scripts/release.sh --verify-only --version v2026.05.30
 ## Pulling the image
 
 ```bash
-docker pull ghcr.io/graysurf/agent-runtime-kit:latest
-docker run --rm -it ghcr.io/graysurf/agent-runtime-kit:latest
+docker pull ghcr.io/sympoies/agent-runtime-kit:latest
+docker run --rm -it ghcr.io/sympoies/agent-runtime-kit:latest
 ```
 
 For a dated release, inspect the immutable digest and verify the provenance
 attestation before running it:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/graysurf/agent-runtime-kit:2026.05.30
+docker buildx imagetools inspect ghcr.io/sympoies/agent-runtime-kit:2026.05.30
 gh attestation verify \
-  oci://ghcr.io/graysurf/agent-runtime-kit:2026.05.30 \
-  -R graysurf/agent-runtime-kit
+  oci://ghcr.io/sympoies/agent-runtime-kit:2026.05.30 \
+  -R sympoies/agent-runtime-kit
 ```

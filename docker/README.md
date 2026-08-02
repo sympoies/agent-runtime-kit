@@ -178,7 +178,7 @@ baked `$HOME/.config/zsh` or `/opt/private-skills` tree.
 ## Publishing
 
 Released images are published to the GitHub Container Registry (GHCR) at
-`ghcr.io/graysurf/agent-runtime-kit` for `linux/amd64` + `linux/arm64`. Versions
+`ghcr.io/sympoies/agent-runtime-kit` for `linux/amd64` + `linux/arm64`. Versions
 are CalVer (`vYYYY.MM.DD`); cutting a GitHub Release fires
 `.github/workflows/publish-image.yml`, which resolves the `nils-cli` pin,
 smoke-tests an `amd64` build, then pushes the multi-arch image tagged with the
@@ -187,16 +187,16 @@ attestations and a GitHub provenance attestation for the immutable image digest.
 See [`../RELEASING.md`](../RELEASING.md) for the full process.
 
 ```bash
-docker pull ghcr.io/graysurf/agent-runtime-kit:latest
+docker pull ghcr.io/sympoies/agent-runtime-kit:latest
 ```
 
 To verify a dated release before running it:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/graysurf/agent-runtime-kit:2026.05.30
+docker buildx imagetools inspect ghcr.io/sympoies/agent-runtime-kit:2026.05.30
 gh attestation verify \
-  oci://ghcr.io/graysurf/agent-runtime-kit:2026.05.30 \
-  -R graysurf/agent-runtime-kit
+  oci://ghcr.io/sympoies/agent-runtime-kit:2026.05.30 \
+  -R sympoies/agent-runtime-kit
 ```
 
 ## Known gaps / review follow-ups

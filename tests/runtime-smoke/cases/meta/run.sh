@@ -855,8 +855,11 @@ SH
 run_setup_render_before_install_probe() {
   local out="$META_ARTIFACTS_DIR/setup.render-before-install.dry-run.txt"
   local apply_out="$META_ARTIFACTS_DIR/setup.render-before-install.apply.txt"
+  local migration_out="$META_ARTIFACTS_DIR/setup.legacy-origin-migration.dry-run.txt"
   local home="$TMP_ROOT/setup-render-home"
   local apply_home="$TMP_ROOT/setup-render-apply-home"
+  local migration_home="$TMP_ROOT/setup-migration-home"
+  local migration_source_root="$migration_home/.config/agent-runtime-kit"
   local stub_bin="$TMP_ROOT/setup-render-bin"
   local source_root="$apply_home/.config/agent-runtime-kit"
   local collision_out="$META_ARTIFACTS_DIR/setup.home-prompt-collision.txt"
@@ -970,6 +973,22 @@ else:
     assert max(idx for idx, _ in product_render_lines) < min(idx for idx, _ in install_lines), lines
     assert max(idx for idx, _ in install_lines) < min(idx for idx, _ in sync_lines), lines
 PY
+
+  mkdir -p "$migration_source_root"
+  git -C "$migration_source_root" init -q
+  git -C "$migration_source_root" remote add origin \
+    https://github.com/graysurf/agent-runtime-kit.git
+  (
+    cd "$REPO_ROOT"
+    HOME="$migration_home" CODEX_HOME="$migration_home/.codex" \
+      bash scripts/setup.sh \
+      --profile core \
+      --skip-homebrew-install \
+      --skip-cli-tools \
+      --dry-run
+  ) >"$migration_out" 2>&1
+  grep -Fq "+ git -C $migration_source_root remote set-url origin https://github.com/sympoies/agent-runtime-kit.git" \
+    "$migration_out"
 
   mkdir -p "$stub_bin" "$source_root/.git" "$source_root/scripts"
   printf '# AGENT_HOME fixture\n' >"$source_root/AGENT_HOME.md"

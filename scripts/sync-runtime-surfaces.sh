@@ -47,7 +47,7 @@ print_help() {
   cat <<EOF
 Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
 
-Refresh graysurf/agent-runtime-kit managed runtime surfaces into local Codex
+Refresh sympoies/agent-runtime-kit managed runtime surfaces into local Codex
 and Claude runtime homes. This is the daily runtime surface refresh entrypoint
 after source changes land. For first-time host setup, run scripts/setup.sh
 first.

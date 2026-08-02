@@ -11,7 +11,7 @@
   - `core/skills/dispatch/plan-issue-spec/cli.md`
 - Owning implementation repos:
   - `sympoies/nils-cli`
-  - `graysurf/agent-runtime-kit`
+  - `sympoies/agent-runtime-kit`
 
 ## Purpose
 

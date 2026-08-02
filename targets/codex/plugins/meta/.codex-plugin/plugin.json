@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Explicit runtime and repository maintenance outcomes: bootstrap, deploy, execution capsules, governed skill lifecycle, release, setup, runtime sync, nils-cli bump, and worktree triage.",
   "author": {
-    "name": "graysurf"
+    "name": "sympoies"
   },
   "skills": [
     {

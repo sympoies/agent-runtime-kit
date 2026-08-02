@@ -1,7 +1,7 @@
 {
   "name": "codex-kit",
   "owner": {
-    "name": "graysurf"
+    "name": "sympoies"
   },
   "metadata": {
     "description": "Codex marketplace for agent-runtime-kit — 9 plugins (code-review, computer-use, conversation, dispatch, issue, media, meta, pr, reporting). Registered via `codex plugin marketplace add` and installed per plugin with `codex plugin add <plugin>@codex-kit`; Codex caches each plugin under $CODEX_HOME/plugins/cache/codex-kit/<plugin>/<version>/ and discovers its bundled skills/<skill>/SKILL.md. Activation is gated (see scripts/sync-runtime-surfaces.sh); the flat $CODEX_HOME/skills root stays the default discovery path until cut-over."

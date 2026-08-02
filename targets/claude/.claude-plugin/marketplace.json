@@ -1,7 +1,7 @@
 {
   "name": "claude-kit",
   "owner": {
-    "name": "graysurf"
+    "name": "sympoies"
   },
   "metadata": {
     "description": "Claude marketplace for agent-runtime-kit — 9 plugins (code-review, computer-use, conversation, dispatch, issue, media, meta, pr, reporting). Resolves to ~/.claude/plugins/<plugin>/ when installed by `agent-runtime install --product claude`."

@@ -60,7 +60,7 @@ if [ -z "$SCRATCH_FORK" ] || [ -z "$SCRATCH_BRANCH" ]; then
   exit 2
 fi
 
-if [ "$SCRATCH_FORK" = "graysurf/agent-runtime-kit" ]; then
+if [ "$SCRATCH_FORK" = "sympoies/agent-runtime-kit" ]; then
   echo "deliver-lifecycle: canonical repository is not an allowed scratch target" >&2
   exit 2
 fi

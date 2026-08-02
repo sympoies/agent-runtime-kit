@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Read-only daily brief, topic radar, and project retrospective outcomes.",
   "author": {
-    "name": "graysurf"
+    "name": "sympoies"
   },
-  "homepage": "https://github.com/graysurf/agent-runtime-kit"
+  "homepage": "https://github.com/sympoies/agent-runtime-kit"
 }

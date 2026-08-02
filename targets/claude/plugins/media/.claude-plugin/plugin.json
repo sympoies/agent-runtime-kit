@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Screen recording and image processing outcomes backed by nils-cli media tools.",
   "author": {
-    "name": "graysurf"
+    "name": "sympoies"
   },
-  "homepage": "https://github.com/graysurf/agent-runtime-kit"
+  "homepage": "https://github.com/sympoies/agent-runtime-kit"
 }

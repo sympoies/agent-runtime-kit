@@ -39,14 +39,14 @@ cat >"$ARTIFACTS_DIR/bin/gh" <<'EOF'
 set -euo pipefail
 
 if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
-  printf '%s\n' "graysurf/agent-runtime-kit"
+  printf '%s\n' "sympoies/agent-runtime-kit"
   exit 0
 fi
 
 if [ "$1" = "release" ] && [ "$2" = "view" ]; then
   case " $* " in
     *" --json url "*)
-      printf '%s\n' "https://github.com/graysurf/agent-runtime-kit/releases/tag/v2026.06.04"
+      printf '%s\n' "https://github.com/sympoies/agent-runtime-kit/releases/tag/v2026.06.04"
       exit 0
       ;;
     *)
@@ -66,12 +66,12 @@ if [ "$1" = "run" ] && [ "$2" = "list" ]; then
   {
     "databaseId": 111,
     "headSha": "1111111111111111111111111111111111111111",
-    "url": "https://github.com/graysurf/agent-runtime-kit/actions/runs/111"
+    "url": "https://github.com/sympoies/agent-runtime-kit/actions/runs/111"
   },
   {
     "databaseId": 222,
     "headSha": "2222222222222222222222222222222222222222",
-    "url": "https://github.com/graysurf/agent-runtime-kit/actions/runs/222"
+    "url": "https://github.com/sympoies/agent-runtime-kit/actions/runs/222"
   }
 ]
 JSON
@@ -81,7 +81,7 @@ fi
 if [ "$1" = "run" ] && [ "$2" = "view" ]; then
   case "$3" in
     222)
-      printf '%s\n' "https://github.com/graysurf/agent-runtime-kit/actions/runs/222"
+      printf '%s\n' "https://github.com/sympoies/agent-runtime-kit/actions/runs/222"
       exit 0
       ;;
     *)

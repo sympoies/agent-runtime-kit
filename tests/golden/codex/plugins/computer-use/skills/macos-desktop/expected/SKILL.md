@@ -295,7 +295,7 @@ A functional claim passes only when all applicable checks hold:
    current receipt.
 
 The canonical status/evidence inventory is
-[`docs/source/macos-agent-capability-matrix.md`](https://github.com/graysurf/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
+[`docs/source/macos-agent-capability-matrix.md`](https://github.com/sympoies/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
 Do not infer support beyond that matrix. A disclosed, exact-artifact
 distribution-security residual may remain non-blocking when the functional
 path passes and all non-waived hard gates remain enforced; privacy leaks, wrong

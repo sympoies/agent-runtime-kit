@@ -105,7 +105,7 @@ SOURCE_WEIGHTS = {
     "polymarket": 15.0,
     "news": 12.0,
 }
-USER_AGENT = f"agent-runtime-kit-topic-radar/{VERSION} (+https://github.com/graysurf/agent-runtime-kit)"
+USER_AGENT = f"agent-runtime-kit-topic-radar/{VERSION} (+https://github.com/sympoies/agent-runtime-kit)"
 MAX_REMOTE_RESPONSE_BYTES = 12 * 1024 * 1024
 UNSAFE_XML_DECL_RE = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 UNSAFE_XML_TEXT_DECL_RE = re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
