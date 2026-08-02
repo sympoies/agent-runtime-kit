@@ -5,7 +5,7 @@
 This document is a reusable prompt for asking an agent on another macOS host to
 install or reinstall:
 
-- `graysurf/zsh-kit`
+- `sympoies/zsh-kit`
 - `sympoies/agent-runtime-kit`
 - the released `sympoies/tap/nils-cli` Homebrew surface that provides
   `agent-runtime`, `zsh-kit`, `agent-docs`, and related tools
@@ -28,7 +28,7 @@ You are helping a non-technical user set up their macOS shell and agent runtime.
 Use plain English. Explain what you are about to change before you change it.
 
 Goal:
-1. Install or cleanly reinstall graysurf/zsh-kit at $HOME/.config/zsh.
+1. Install or cleanly reinstall sympoies/zsh-kit at $HOME/.config/zsh.
 2. Install or cleanly reinstall sympoies/agent-runtime-kit at
    $HOME/.config/agent-runtime-kit.
 3. Install the current Homebrew release of sympoies/tap/nils-cli, which provides
@@ -151,14 +151,14 @@ bash scripts/sync-runtime-surfaces.sh \
 
 ```bash
 zsh-kit setup \
-  --repo https://github.com/graysurf/zsh-kit.git \
+  --repo https://github.com/sympoies/zsh-kit.git \
   --dest "$HOME/.config/zsh" \
   --write-zshenv \
   --install-tools skip \
   --dry-run
 
 zsh-kit setup \
-  --repo https://github.com/graysurf/zsh-kit.git \
+  --repo https://github.com/sympoies/zsh-kit.git \
   --dest "$HOME/.config/zsh" \
   --write-zshenv \
   --install-tools skip \

@@ -549,7 +549,7 @@ run_create_plan_tracking_issue_probe() {
     --format json \
     --state-dir "$DISPATCH_STATE_DIR" >"$audit_out" 2>&1
   plan-issue --format json tracking run init \
-    --provider-repo graysurf/agent-runtime-kit \
+    --provider-repo sympoies/agent-runtime-kit \
     --issue 999 \
     --bundle "$source_bundle" \
     --execution-state-file "$source_state" \
