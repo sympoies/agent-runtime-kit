@@ -100,9 +100,16 @@ Verified against the pinned host (`git-cli`/`forge-cli` 1.25.13) and `main` at
 2. Closing a `area::cli` issue in this repo on the strength of a released
    upstream fix is correct when the pinned floor guarantees the fix; the durable
    record belongs in the closure comment, not a new in-repo document.
-3. Lane B's skill edit requires a render-golden refresh
-   (`agent-runtime render --product codex|claude --update-golden`), so it is the
-   only lane that writes under `targets/`.
+3. Lane B's skill edit requires a render-golden refresh, so it is the only lane
+   that writes under `tests/golden/`. Three product trees are gated, not two:
+   `codex`, `claude`, **and `hermes`** (gate position 4). Gate position 6 runs
+   `--update-golden` and then requires `git diff --exit-code tests/golden/`, so
+   the goldens must be committed for the gate to pass — refreshing them in the
+   working tree is not enough.
+4. `core/skills/pr/deliver-pr/references/pr-lifecycle.md` is a **packaged mirror**
+   of the canonical `core/skills/pr/pr-lifecycle/README.md`, and
+   `skill-governance-audit` fails when they diverge. Any shared-rule edit must
+   touch both.
 
 ## Lane A — Verification and closeout for #5, #6, #10 *(evidence only)*
 
@@ -147,8 +154,8 @@ guard demands, so the repair-and-push step cannot dead-end in a refusal.
   `--update-golden` when the change is intended)
 - `bash scripts/ci/all.sh`
 
-**Touches**: `core/skills/**`, `targets/**`. **This is the only lane that writes
-under `targets/`.**
+**Touches**: `core/skills/**`, `tests/golden/**`. **This is the only lane that
+writes render goldens.**
 
 ## Lane C — Converge the two open error-inbox entries *(disjoint subtree)*
 
@@ -200,9 +207,11 @@ Lane B  (skills + render) ────── the only render-conflicting lane
   and Lane C's archival of `push-guard-fails-closed-on-compound-command` should
   cite Lane B's consumer alignment, so C's *commit* is best sequenced after B's
   content is settled (C can be drafted in parallel and rebased).
-- **The conflict surface is `targets/`.** Render goldens are regenerated
-  wholesale, so two sessions editing any skill source will collide there. Lane B
-  must be the sole owner of skill edits for the duration.
+- **The conflict surface is `tests/golden/`**, not `targets/` — `targets/` holds
+  product adapter source, which no lane here edits. Goldens are regenerated
+  wholesale across all three product trees, so two sessions editing any skill
+  source will collide there. Lane B must be the sole owner of skill edits for the
+  duration.
 - **Lanes A and D touch no tracked files at all** — they produce issue comments
   and closures. They are safe to hand to a parallel session with no coordination
   beyond "do not close #7."
@@ -211,7 +220,7 @@ Lane B  (skills + render) ────── the only render-conflicting lane
 
 | Session | Lanes | Why it is safe |
 | --- | --- | --- |
-| This session | **B** | Owns all skill edits and the sole `targets/` render refresh; runs the full gate |
+| This session | **B** | Owns all skill edits and the sole render-golden refresh; runs the full gate |
 | Parallel session 1 | **C** | `error-inbox/**` only — disjoint from `core/skills/**` and `targets/**`; no render |
 | Parallel session 2 | **A + D** | Zero tracked-file writes; evidence gathering and issue closure only |
 
@@ -231,3 +240,48 @@ separate PR. Lanes A and D need no branch.
 - **Lane B is a docs-shaped change to a merge-owning skill**, so an error there
   degrades the delivery path itself. Mitigation: render-golden diff review plus
   the full `scripts/ci/all.sh` gate before delivery.
+
+## Execution Record — 2026-08-03
+
+All four lanes ran in one session rather than being split across parallel
+sessions; the parallelism analysis above is retained because it is what makes the
+split safe if this shape recurs.
+
+| Issue | Outcome |
+| --- | --- |
+| #5 | Closed — fixed in v1.25.13, verified by probe (`worktree add` leaves no upstream) |
+| #6 | Closed — #11, with proposal 2 recorded as answered by substitution (raw fast-forward routed to `git-cli sync-default`, not admitted) |
+| #7 | Closed on Lane B — surfaces shipped in v1.25.13, consumer layer aligned |
+| #8 | Closed — #12, verified against all four asks |
+| #9 | Closed — asks 1 and 3 delivered in v1.25.13; ask 2 refiled upstream as `sympoies/nils-cli#1428` (surface symmetry only; no functional gap) |
+| #10 | Closed — #11, all four asks; observed live when a `cd &&` invocation was refused with a message that named the condition and the fix |
+
+Lane B landed one behavior-relevant addition beyond the plan: `git-cli` was
+absent from every affected skill's CLI floor even though `git-cli worktree remove`
+was already in use, so the floors now name `git-cli >=1.25.13` explicitly.
+
+Lane C resolved `push-guard-fails-closed-on-compound-command` (promoted and
+archived) and re-triaged `managed-worktree-lockout-pushguard-ssh` to criterion
+(a) only. (a) was re-verified as still unmet at runtime:
+`checkout-lease-guard.dirty_adoption_enabled()` gates on
+`AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION`, which is unset on this host, so the
+adopt-dirty verbs remain inert.
+
+### Pre-existing gate failure, unrelated to this work
+
+`scripts/ci/all.sh` position 13 fails on `main` itself:
+
+```
+FAIL: test_checkout_lease_ref_safe_exception_rejects_reference_transaction_hook
+AssertionError: unexpectedly None
+```
+
+Reproduced on an unmodified primary checkout at `db0d5109`, so it is not caused by
+Lane B or Lane C. Because the gate stops at the first failing position, positions
+14–17 were run individually for both lanes and all pass. Positions 1–12 pass.
+
+Filed as **#15** — the guard fails *open* there, not closed: it emits no decision
+where it should refuse the dirty-checkout ref-only exception because an executable
+`reference-transaction` hook could write checkout content. Out of scope for this
+plan, but it should not be mistaken for lane fallout, and it means `main` is red
+independently of this work.
