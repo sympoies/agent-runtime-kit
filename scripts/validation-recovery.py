@@ -28,6 +28,7 @@ environment variable does.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -149,21 +150,32 @@ def selected_contracts(repo_root: str, context: str | None) -> list[dict[str, An
     return contracts
 
 
-def session_key() -> str:
-    """The controller acts on shared state.
+def session_key(argument: str | None) -> str:
+    """Derive the marker namespace the target session's hooks actually read.
 
-    A hook-authored session namespace belongs to the provider session that
-    created it. The controller has no provider payload, so it addresses the
-    shared namespace, which is what an unidentified Stop delivery also reads.
+    The gate namespaces validation state by `sha256(session identity)`, where the
+    identity is the managed `AGENT_SESSION_ID` when present and a provider payload
+    id otherwise. A managed session therefore always reads `session-<key>/`, so a
+    controller that only ever wrote the shared namespace would put its waiver
+    where that gate never looks — silently failing in exactly the deadlock this
+    lane exists for.
+
+    `--session` names the target explicitly (Agent Console knows it), and an
+    ambient `AGENT_SESSION_ID` is honored so a controller invoked inside the same
+    managed context matches without extra arguments. Neither present means the
+    shared namespace, which is what an unidentified delivery reads.
     """
-    return ""
+    identity = (argument or os.environ.get("AGENT_SESSION_ID", "")).strip()
+    if not identity:
+        return ""
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def marker_state(
-    repo_root: str, contract: dict[str, Any]
+    repo_root: str, contract: dict[str, Any], session: str | None
 ) -> tuple[dict[str, str], list[tuple[int, str]]]:
     markers = validation_marker_set(
-        repo_root, contract["marker"], session_key=session_key()
+        repo_root, contract["marker"], session_key=session_key(session)
     )
     generation = validation_edit_generation(markers)
     outstanding: list[tuple[int, str]] = []
@@ -187,7 +199,7 @@ def command_status(args: argparse.Namespace) -> int:
     rendered = []
     any_outstanding = False
     for contract in contracts:
-        markers, outstanding = marker_state(repo_root, contract)
+        markers, outstanding = marker_state(repo_root, contract, args.session)
         waiver = read_validation_waiver(markers, repo_root)
         if outstanding and waiver is None:
             any_outstanding = True
@@ -211,7 +223,12 @@ def command_status(args: argparse.Namespace) -> int:
     emit(
         "status",
         True,
-        {"repository": repo_root, "outstanding": any_outstanding, "contracts": rendered},
+        {
+            "repository": repo_root,
+            "session_namespace": session_key(args.session) or "shared",
+            "outstanding": any_outstanding,
+            "contracts": rendered,
+        },
         args.format,
     )
     return EXIT_OK
@@ -236,7 +253,7 @@ def command_run(args: argparse.Namespace) -> int:
     results: list[dict[str, Any]] = []
     overall = EXIT_OK
     for contract in contracts:
-        markers, _outstanding = marker_state(repo_root, contract)
+        markers, _outstanding = marker_state(repo_root, contract, args.session)
         for index, declared in enumerate(contract["commands"]):
             if args.command is not None and declared != args.command:
                 continue
@@ -306,7 +323,7 @@ def command_waive(args: argparse.Namespace) -> int:
 
     recorded = []
     for contract in contracts:
-        markers, _outstanding = marker_state(repo_root, contract)
+        markers, _outstanding = marker_state(repo_root, contract, args.session)
         body = {
             "schema_version": VALIDATION_WAIVER_SCHEMA,
             "recorded_at": _timestamp(),
@@ -330,6 +347,7 @@ def command_waive(args: argparse.Namespace) -> int:
             "repository": repo_root,
             "context": ", ".join(recorded),
             "reason": reason,
+            "session_namespace": session_key(args.session) or "shared",
         },
         args.format,
     )
@@ -340,7 +358,7 @@ def command_revoke(args: argparse.Namespace) -> int:
     repo_root = resolve_repo(args.repo)
     revoked = []
     for contract in selected_contracts(repo_root, args.context):
-        markers, _outstanding = marker_state(repo_root, contract)
+        markers, _outstanding = marker_state(repo_root, contract, args.session)
         path = validation_waiver_marker(markers)
         try:
             os.unlink(path)
@@ -423,6 +441,13 @@ def main(argv: list[str] | None = None) -> int:
             "--repo", help="repository path (default: current directory)"
         )
         subparser.add_argument("--context", help="limit to one declared intent")
+        subparser.add_argument(
+            "--session",
+            help=(
+                "target session identity whose marker namespace the gate reads "
+                "(defaults to AGENT_SESSION_ID, then the shared namespace)"
+            ),
+        )
 
     arguments = parser.parse_args(argv)
 

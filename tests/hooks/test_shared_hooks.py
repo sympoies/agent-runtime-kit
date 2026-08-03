@@ -8020,6 +8020,102 @@ exit 65
             )
             self.assert_allowed(decision)
 
+    def test_structured_waiver_reaches_a_managed_session_namespace(self) -> None:
+        """The waiver has to land where the *target session's* gate reads.
+
+        The gate namespaces validation state by `sha256(session identity)`, and a
+        managed session always has one, so a controller that only wrote the shared
+        namespace would put its waiver where that gate never looks — failing
+        silently in exactly the deadlock this lane exists for. The other waiver
+        tests pass an empty payload, so they only cover the unidentified case.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            managed = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_SESSION_ID": "managed-session",
+            }
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=managed,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_blocked(decision, "validation")
+
+            # A shared-namespace waiver must NOT release a session-scoped gate.
+            self.assertEqual(
+                run_controller(
+                    ["waive", "--repo", str(repo), "--reason", "wrong namespace"],
+                    env={"AGENT_RUNTIME_DOCS_HOME": str(repo)},
+                ).returncode,
+                0,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_blocked(decision, "validation")
+
+            # Naming the target session puts the record where that gate reads.
+            targeted = run_controller(
+                [
+                    "waive",
+                    "--repo",
+                    str(repo),
+                    "--reason",
+                    "bounded infra failure",
+                    "--session",
+                    "managed-session",
+                ],
+                env={"AGENT_RUNTIME_DOCS_HOME": str(repo)},
+            )
+            self.assertEqual(targeted.returncode, 0, targeted.stderr)
+            self.assertNotEqual(
+                json.loads(targeted.stdout)["data"]["session_namespace"], "shared"
+            )
+
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_blocked(decision, "routing review required")
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_allowed(decision)
+
+    def test_structured_waiver_inherits_an_ambient_managed_session(self) -> None:
+        """A controller invoked inside the managed context needs no argument."""
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            managed = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_SESSION_ID": "managed-session",
+            }
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=managed,
+            )
+            self.assertEqual(
+                run_controller(
+                    ["waive", "--repo", str(repo), "--reason", "reviewed"],
+                    env=managed,
+                ).returncode,
+                0,
+            )
+            for _ in range(2):
+                run_hook("stop-finish-line-gate.py", {}, cwd=repo, env=managed)
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_allowed(decision)
+
     def test_structured_validation_waiver_expires_on_the_next_edit(self) -> None:
         """The waiver is bound to the edit generation it was authorized against.
 

@@ -116,6 +116,11 @@ provider hook, and exposes no general shell escape:
 - `run --repo <path> [--command <declared>]` — executes only a command shape the
   repository declared in `AGENT_DOCS.toml`; anything else is refused. A pass
   records the command outcome, so the gate is satisfied for real.
+- `--session <id>` on any verb targets the marker namespace that session's
+  hooks actually read. The gate namespaces validation state by the session
+  identity, so a managed session needs this (or an ambient `AGENT_SESSION_ID`);
+  without it the controller addresses the shared namespace an unidentified
+  delivery reads. `status` reports which namespace it addressed.
 - `waive --repo <path> --reason <text>` — records an
   `agent-runtime-validation.waiver.v1` record. The reason is required, and the
   record binds to the repository, contract, product, session, and the current
