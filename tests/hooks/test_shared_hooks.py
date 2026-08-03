@@ -9700,6 +9700,9 @@ exit 64
             agent_run = bin_dir / "agent-run"
             agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             agent_run.chmod(0o755)
+            ripgrep = bin_dir / "rg"
+            ripgrep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            ripgrep.chmod(0o755)
             main_agent = bin_dir / "main-agent"
             main_agent_script = """#!/bin/sh
 if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
