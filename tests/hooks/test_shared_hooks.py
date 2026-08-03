@@ -20870,7 +20870,11 @@ exit 65
             self._init_checkout_lease_repo(repo)
             commands = (
                 "git merge --abort",
+                "git merge --quit",
+                "git merge --help",
                 "git cherry-pick --abort",
+                "git cherry-pick --quit",
+                "git cherry-pick --help",
                 "git reset -- README.md",
                 "git-cli sync-default --format json",
             )
@@ -20883,6 +20887,29 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+    def test_default_delivery_hook_does_not_treat_option_values_as_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "git merge -m --help feat/unsafe",
+                "git merge -m --abort feat/unsafe",
+                "git merge --continue",
+                "git cherry-pick --continue",
+                "git cherry-pick --skip",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: blocked]")
 
     def test_default_delivery_hook_routes_raw_fast_forward_to_sync_owner(self) -> None:
         # Local state cannot prove publication: remote-tracking refs are
@@ -20994,6 +21021,30 @@ exit 65
                         ),
                         reason,
                     )
+                    self.assertEqual(
+                        reason.count("[default-delivery: blocked]")
+                        + reason.count("[default-delivery: unverified]"),
+                        1,
+                        reason,
+                    )
+
+            marker_repo = Path(tmp) / "repo-[default-delivery: unverified]"
+            self._init_checkout_lease_repo(marker_repo)
+            command = (
+                "semantic-commit default-branch --message 'fix: x' --repo "
+                f"{shlex.quote(str(marker_repo))}"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=marker_repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: blocked]")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertIn(str(marker_repo), reason)
+            self.assertEqual(reason.count("[default-delivery: blocked]"), 1)
+            self.assertEqual(reason.count("[default-delivery: unverified]"), 1)
 
     def test_default_delivery_hook_marks_blocked_apart_from_unverified(
         self,

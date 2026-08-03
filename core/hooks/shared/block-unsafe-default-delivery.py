@@ -266,9 +266,8 @@ GIT_DEFAULT_BRANCH_REWRITE_COMMANDS = frozenset(
     # which is exactly what this guard exists to prevent.
     {"cherry-pick", "merge", "pull", "reset", "update-ref"}
 )
-GIT_EXPLICIT_RECOVERY_OPTIONS = frozenset(
-    {"--abort", "--continue", "--quit", "--skip"}
-)
+
+
 def payload_base(payload: Mapping[str, Any]) -> Path:
     # Resolve the command's effective workdir (issue #601 P0-4) so default-branch
     # delivery is judged against the repository the command really targets, not
@@ -708,7 +707,7 @@ def executable_resolution_rejection(
         in {"commit", "default-branch", "fixup", "local-default", "squash"}
     ):
         return (
-            "Blocked `semantic-commit` after an earlier shell command could "
+            f"{MARK_BLOCKED} Blocked `semantic-commit` after an earlier shell command could "
             "have changed executable resolution. Use a separate tool call "
             "with the target checkout as its top-level workdir."
         )
@@ -984,7 +983,7 @@ def semantic_commit_block_reason(
         rejection = default_branch_rejection(probe, arguments, cwd)
         if not rejection:
             return ""
-        return f"{location} {rejection} {BLOCK_REASON} {REPO_HINT}"
+        return f"{MARK_BLOCKED} {location} {rejection} {POLICY} {REPO_HINT}"
     authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
         arguments
     )
@@ -1038,9 +1037,12 @@ def git_default_branch_rewrite_targets_default(
     """Classify raw ref/commit-producing Git paths that could bypass delivery."""
     if subcommand not in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
         return False
-    if any(argument in GIT_EXPLICIT_RECOVERY_OPTIONS for argument in arguments):
+    if subcommand in {"merge", "cherry-pick"} and arguments in (
+        ["--abort"],
+        ["--quit"],
+    ):
         return False
-    if any(argument in {"-h", "--help"} for argument in arguments):
+    if arguments in (["-h"], ["--help"]):
         return False
     if subcommand == "reset":
         if not arguments:
@@ -1655,7 +1657,7 @@ def invocation_block_reason(
             invocation[0], "semantic-commit"
         ):
             return (
-                "Blocked an untrusted `semantic-commit` executable. Invoke the "
+                f"{MARK_BLOCKED} Blocked an untrusted `semantic-commit` executable. Invoke the "
                 "active managed CLI by its exact command name or trusted absolute "
                 "path."
             )
@@ -1732,7 +1734,7 @@ def candidate_block_reason(
     """Classify one invocation shape of a simple command in its own context."""
     if command_local_path_override(simple_command, candidate):
         return (
-            "Blocked a command-local `PATH` override around a governed "
+            f"{MARK_BLOCKED} Blocked a command-local `PATH` override around a governed "
             "executable. Invoke the active managed CLI without executable "
             "retargeting."
         )
@@ -1772,7 +1774,7 @@ def command_block_reason(command: str, base: Path) -> str:
             simple_command, invocation
         ):
             return (
-                "Blocked a governed `semantic-commit` authoring invocation "
+                f"{MARK_BLOCKED} Blocked a governed `semantic-commit` authoring invocation "
                 "behind a process wrapper. Invoke the active managed CLI "
                 "directly so its executable and argv can be verified."
             )
@@ -1828,10 +1830,6 @@ def normalize_refusal_reason(reason: str) -> str:
     """Put one stable classification marker at byte zero of every refusal."""
     if reason.startswith((MARK_BLOCKED, MARK_UNVERIFIED)):
         return reason
-    if MARK_UNVERIFIED in reason:
-        return f"{MARK_UNVERIFIED} {reason.replace(MARK_UNVERIFIED, '', 1).strip()}"
-    if MARK_BLOCKED in reason:
-        return f"{MARK_BLOCKED} {reason.replace(MARK_BLOCKED, '', 1).strip()}"
     return f"{MARK_BLOCKED} {reason}"
 
 
