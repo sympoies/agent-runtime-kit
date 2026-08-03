@@ -9700,6 +9700,9 @@ exit 64
             agent_run = bin_dir / "agent-run"
             agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             agent_run.chmod(0o755)
+            ripgrep = bin_dir / "rg"
+            ripgrep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            ripgrep.chmod(0o755)
             main_agent = bin_dir / "main-agent"
             main_agent_script = """#!/bin/sh
 if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
@@ -19705,7 +19708,11 @@ exit 65
                 cwd=repo,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "Do not author or push")
+            # A stale cached head makes the destination unprovable rather than
+            # proven-bad, so this is the unverified class, and the remedy is the
+            # governed push surface — which re-resolves the default itself.
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            self.assert_blocked(decision, "git-cli push")
 
     def test_default_delivery_hook_uses_only_cached_head_for_push_classification(
         self,
@@ -20860,15 +20867,19 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "Do not author or push")
 
-    def test_default_delivery_hook_preserves_recovery_and_ff_only_sync(self) -> None:
+    def test_default_delivery_hook_preserves_recovery_and_governed_sync(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             self._init_checkout_lease_repo(repo)
             commands = (
                 "git merge --abort",
+                "git merge --quit",
+                "git merge --help",
                 "git cherry-pick --abort",
+                "git cherry-pick --quit",
+                "git cherry-pick --help",
                 "git reset -- README.md",
-                "git pull --ff-only origin main",
+                "git-cli sync-default --format json",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20879,6 +20890,302 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+    def test_default_delivery_hook_does_not_treat_option_values_as_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "git merge -m --help feat/unsafe",
+                "git merge -m --abort feat/unsafe",
+                "git merge --continue",
+                "git cherry-pick --continue",
+                "git cherry-pick --skip",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: blocked]")
+
+    def test_default_delivery_hook_routes_raw_fast_forward_to_sync_owner(self) -> None:
+        # Local state cannot prove publication: remote-tracking refs are
+        # writable and pull accepts local repository paths. The governed owner
+        # verifies the remote-bound fast-forward instead.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "git merge --ff-only origin/main",
+                "git merge --ff-only --quiet refs/remotes/origin/main",
+                "git pull --ff-only origin main",
+                "git pull --ff-only",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "git-cli sync-default")
+
+    def test_default_delivery_hook_blocks_a_pull_that_can_author_a_commit(
+        self,
+    ) -> None:
+        # The superset was the hole: a bare `git pull` on the default branch can
+        # author a merge commit, which is precisely what this guard exists to
+        # prevent, and it passed unexamined while `git merge --ff-only` did not.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "git pull",
+                "git pull origin main",
+                "git pull --no-ff origin main",
+                "git pull --rebase origin main",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "Do not author or push")
+
+    def test_default_delivery_hook_blocks_fast_forward_onto_unpublished_work(
+        self,
+    ) -> None:
+        # Neither a local branch nor a locally writable remote-tracking ref
+        # proves publication. Pull also accepts a local repository source.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "branch", "feat/local-only"], cwd=repo, check=True
+            )
+            subprocess.run(
+                ["git", "update-ref", "refs/remotes/origin/fake", "HEAD"],
+                cwd=repo,
+                check=True,
+            )
+            for command in (
+                "git merge --ff-only feat/local-only",
+                "git merge --ff-only HEAD",
+                "git merge --ff-only origin/fake",
+                "git pull --ff-only . feat/local-only",
+                f"git pull --ff-only {repo} feat/local-only",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "Do not author or push")
+
+    def test_default_delivery_hook_prefixes_every_refusal_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "/tmp/semantic-commit commit --message 'fix: x'",
+                "PATH=/tmp:$PATH semantic-commit commit --message 'fix: x'",
+                "time semantic-commit commit --message 'fix: x'",
+                "printf ok; semantic-commit commit --message 'fix: x'",
+                "semantic-commit default-branch --message 'fix: x' --repo .",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    reason = str((decision or {}).get("reason", ""))
+                    self.assertTrue(
+                        reason.startswith(
+                            (
+                                "[default-delivery: blocked]",
+                                "[default-delivery: unverified]",
+                            )
+                        ),
+                        reason,
+                    )
+                    self.assertEqual(
+                        reason.count("[default-delivery: blocked]")
+                        + reason.count("[default-delivery: unverified]"),
+                        1,
+                        reason,
+                    )
+
+            marker_repo = Path(tmp) / "repo-[default-delivery: unverified]"
+            self._init_checkout_lease_repo(marker_repo)
+            command = (
+                "semantic-commit default-branch --message 'fix: x' --repo "
+                f"{shlex.quote(str(marker_repo))}"
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=marker_repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: blocked]")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertIn(str(marker_repo), reason)
+            self.assertEqual(reason.count("[default-delivery: blocked]"), 1)
+            self.assertEqual(reason.count("[default-delivery: unverified]"), 1)
+
+    def test_default_delivery_hook_marks_blocked_apart_from_unverified(
+        self,
+    ) -> None:
+        # An agent can only act on a refusal if it can tell "this is forbidden"
+        # from "restate this so it can be checked"; only the second is worth
+        # retrying with a different command shape.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            self._init_checkout_lease_repo(repo)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("git push origin main"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: blocked]")
+            proven = str((decision or {}).get("reason", ""))
+            self.assertNotIn("[default-delivery: unverified]", proven)
+
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
+                cwd=repo,
+                check=True,
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("git push"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            unverified = str((decision or {}).get("reason", ""))
+            self.assertNotIn("[default-delivery: blocked]", unverified)
+
+    def test_default_delivery_hook_names_the_shell_context_it_tripped(
+        self,
+    ) -> None:
+        # The `cd` is the discriminator, not the push. Naming the policy instead
+        # of the tripped condition sends an agent guessing at command shapes.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            # The primary checkout stays on the default branch so the cached
+            # remote head remains trustworthy; the feature branch lives in a
+            # linked worktree, which is where an agent authors anyway.
+            repo = self._add_checkout_lease_worktree(primary, "feat/tiny-repair")
+            quoted = shlex.quote(str(repo))
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(f"cd {quoted} && git push origin feat/tiny-repair"),
+                cwd=root,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertIn("`cd`", reason)
+            self.assertIn("git -C", reason)
+
+            # The same push without the context change is classifiable, so it is
+            # simply allowed. That difference is what the message has to convey.
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(f"git -C {quoted} push origin feat/tiny-repair"),
+                cwd=root,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_default_delivery_hook_offers_a_remedy_for_the_actual_operation(
+        self,
+    ) -> None:
+        # Naming `forge-cli repo push-default` for a feature-branch push is a
+        # non-substitute; it publishes the default branch, which is not what was
+        # attempted.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "switch", "-q", "-c", "feat/tiny-repair"],
+                cwd=repo,
+                check=True,
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("git push"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "git-cli push")
+
+            subprocess.run(["git", "switch", "-q", "main"], cwd=repo, check=True)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("git merge origin/main"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "git-cli sync-default")
+
+    def test_default_delivery_hook_scopes_path_override_to_governed_commands(
+        self,
+    ) -> None:
+        # The rule exists to stop a governed CLI being retargeted. Applying it to
+        # every executable blocks ordinary tooling with a message that claims a
+        # governed executable was involved, while the strictly broader
+        # `export PATH=...; <command>` passes.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            for command in (
+                "PATH=/opt/toolchain/bin:$PATH cargo test",
+                "PATH=/opt/toolchain/bin:$PATH bash scripts/ci/checks.sh",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command in (
+                "PATH=/tmp/evil:$PATH git push origin main",
+                "PATH=/tmp/evil:$PATH semantic-commit commit --message 'fix: x'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "`PATH` override")
 
     def test_default_delivery_hook_blocks_ambiguous_feature_pushes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

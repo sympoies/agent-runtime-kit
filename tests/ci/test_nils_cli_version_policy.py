@@ -124,32 +124,39 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_manifest_separates_minimum_from_validated(self) -> None:
         manifest = read("docs/source/nils-cli-pin.yaml")
+        manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.25.8")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.25.8")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.25.13")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.25.13")
         self.assertNotIn("pinned_tag:", manifest)
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "8c2cb292383e1dcedac630f9d6f4dc542fbb64cb813a00d6464c784bdbfe49ad",
+            "9789714f7089fb606baba47600ae76fffd28875af04064d53d5fbea45214045f",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "b1656e6435c347826965e4b315e3b3edb261d7fac06185d3a317e1e2b8251db5",
+            "820caacbd7e2aa58f963b535589a584d9577ce2287aff2d3fd77d941cc7a8054",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.25.8"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.25.13"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "8c2cb292383e1dcedac630f9d6f4dc542fbb64cb813a00d6464c784bdbfe49ad",
+            "9789714f7089fb606baba47600ae76fffd28875af04064d53d5fbea45214045f",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "b1656e6435c347826965e4b315e3b3edb261d7fac06185d3a317e1e2b8251db5",
+            "820caacbd7e2aa58f963b535589a584d9577ce2287aff2d3fd77d941cc7a8054",
         )
+        required_entries = manifest_data["required_clis"]
+        required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
+        self.assertEqual(len(required_clis), len(required_entries))
+        self.assertEqual(required_clis["agent-session"], "1.25.11")
+        self.assertEqual(required_clis["semantic-commit"], "1.25.11")
+        self.assertEqual(required_clis["main-agent"], "1.25.11")
 
     def test_blocking_ci_builds_deduplicated_minimum_validated_matrix(self) -> None:
         workflow_text = read(".github/workflows/ci.yml")
@@ -190,7 +197,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             {
                 "${{ matrix.lane }}": "validated",
                 "${{ matrix.roles }}": "validated",
-                "${{ matrix.tag }}": "v1.25.8",
+                "${{ matrix.tag }}": "v1.25.13",
             },
             ["agent-runtime", "plan-tooling"],
         )
@@ -276,7 +283,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.25.8", "v1.26.0"):
+        for candidate in ("v1.25.13", "v1.26.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -636,7 +643,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.25.8", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.25.13", dockerfile)
 
     def test_audits_and_maintenance_skill_understand_both_roles(self) -> None:
         bump_skill = read("core/skills/meta/nils-cli-bump/SKILL.md.tera")

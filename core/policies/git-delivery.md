@@ -12,6 +12,54 @@ own exact command parsing and deterministic state checks; this file explains
 authorization, mode choice, and recovery. Prefer current CLI help over copying
 command syntax into other prompts.
 
+## Git Mutation Ownership
+
+Every Git mutation an agent performs has one owner. Reach for the owner first;
+raw `git` for these operations is what the delivery guard is built to distrust,
+because a raw invocation cannot prove what it will touch.
+
+| Mutation | Owner |
+| --- | --- |
+| Commit | `semantic-commit commit` (`fixup`, `squash`) |
+| Managed worktree add/remove | `git-cli worktree` |
+| Publish a branch | `git-cli push` |
+| Adopt the remote's default branch locally | `git-cli sync-default` |
+| PR/MR record, review, merge | `forge-cli pr` |
+| One local-only default-branch commit | `semantic-commit default-branch` |
+| Publish the default branch | `forge-cli repo push-default` |
+
+Raw `git` remains the right tool for reads, for staging, and for anything with
+no owner above. The guard only classifies commands that could move the default
+branch.
+
+## Default-branch Fast-forward Sync
+
+`git-cli sync-default` is the sole owner for advancing the local default branch
+onto a commit already published on its remote. Raw `git merge` and `git pull`
+remain refused even with `--ff-only`: a remote-tracking ref is locally writable,
+and `pull` accepts local repository paths, so local state alone cannot prove the
+source commit was published. The governed owner binds the operation to the
+configured remote and verifies the fast-forward before moving the branch.
+
+## Reading A Delivery Refusal
+
+Every refusal leads with one of two markers, and they mean different things:
+
+- `[default-delivery: blocked]` — the command was classified and is forbidden.
+  Change what you are doing, not how you spell it.
+- `[default-delivery: unverified]` — the command could not be classified, so it
+  failed closed. Restating it more explicitly usually resolves it; the message
+  names the condition that could not be resolved.
+
+The most common `unverified` cause is a shell-context change: a `cd`, `pushd`,
+`source`, or Git environment assignment earlier in the same command line makes
+the Git context unverifiable for everything after it. Run the Git command on its
+own with an explicit repository — `git -C /absolute/path …` — or in a separate
+tool call.
+
+Each refusal names the governed surface for the operation actually attempted,
+not the policy in general.
+
 ## Delivery Mode Decision Matrix
 
 | Mode | Authorization | Authoring and delivery | Terminal evidence |
@@ -58,7 +106,10 @@ exposes no force, delete, retry, or direct merge option. Raw
 are blocked by hook
 on supported Codex/Claude hosts, including Git's wildcard and matching-branch
 refspec forms. Explicit feature-branch refspecs and documented read-only
-help/dry-run forms remain available. The PreToolUse hook uses cached local
+help/dry-run forms remain available. Raw `cherry-pick`, `merge`, `pull`,
+`reset`, and `update-ref` on the checked-out default branch are classified by
+effect and fail closed; `git-cli sync-default` is the remote-bound fast-forward
+owner (see "Default-branch Fast-forward Sync"). The PreToolUse hook uses cached local
 default-branch metadata only and performs no `ls-remote` or other network
 probe. Missing or ambiguous cache state fails closed; live truth belongs to
 `forge-cli`. Hermes has no hook runner; policy and the governed CLI

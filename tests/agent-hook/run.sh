@@ -13,15 +13,22 @@ python3 tests/agent-hook/test_main_agent_argv_contract.py
 
 run_executable_contract_tests() {
   local hook_bin="$1"
+  local test_agent_home
   local test_output_root
   local repo_agent_out_absent=0
+
+  # CI and direct terminal invocations do not necessarily export AGENT_HOME.
+  # Keep the test artifact route explicit and outside the repository instead
+  # of inheriting an operator-only environment requirement from agent-out.
+  test_agent_home="${AGENT_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}"
 
   if [[ ! -e "$REPO_ROOT/agent-out" ]]; then
     repo_agent_out_absent=1
   fi
 
   test_output_root="$(
-    agent-out project --topic agent-hook-tests --repo "$REPO_ROOT" --mkdir
+    agent-out project --agent-home "$test_agent_home" \
+      --topic agent-hook-tests --repo "$REPO_ROOT" --mkdir
   )"
   case "$test_output_root" in
     "$REPO_ROOT" | "$REPO_ROOT"/*)

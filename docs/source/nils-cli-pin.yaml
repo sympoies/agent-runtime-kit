@@ -18,17 +18,19 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # v1.25.8 is the first release whose agent-hook parses execution.read-only.v1.
-  minimum_supported_tag: "v1.25.8"
+  # v1.25.13 is the first stable release that ships every currently declared
+  # runtime skill dependency, including main-agent and the v1.25.11 session
+  # and semantic-commit contracts.
+  minimum_supported_tag: "v1.25.13"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.25.8"
+  validated_tag: "v1.25.13"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "8c2cb292383e1dcedac630f9d6f4dc542fbb64cb813a00d6464c784bdbfe49ad"
-    linux_arm64: "b1656e6435c347826965e4b315e3b3edb261d7fac06185d3a317e1e2b8251db5"
+    linux_amd64: "9789714f7089fb606baba47600ae76fffd28875af04064d53d5fbea45214045f"
+    linux_arm64: "820caacbd7e2aa58f963b535589a584d9577ce2287aff2d3fd77d941cc7a8054"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -53,14 +55,18 @@ required_clis:
     min: "0.25.5"
   - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2` + durable product/session-scoped intent activation and path classification
     min: "1.21.17"
-  - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, and body-free fixed notifications
-    min: "1.24.5"
+  - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, body-free fixed notifications, and direct-terminal-safe session coordination
+    min: "1.25.11"
   - bin: agent-memory     # bounded startup/on-demand recall, producer-isolated candidates, dry-run-first promotion, and strict budget/forbidden-term audits
     min: "1.21.21"
   - bin: evidence         # durable usage evidence archive surface: migrate (--host + blocked-record handling), mixed skill-usage v1/v2 owner provenance, unclassified-host block, working_repo_roots identity rescue, cwd/origin + slug identity hardening, purge retention, home-relativized skill paths, and prune-source --archived-only
     min: "1.21.17"
   - bin: git-cli          # managed worktree add/list/remove/prune surface + governed dirty-checkout snapshot/adopt/revoke transactions
     min: "1.24.1"
+  - bin: semantic-commit  # governed signed commits, including effect-based default-branch delivery classification
+    min: "1.25.11"
+  - bin: main-agent       # authenticated main-agent controller and worker lifecycle facade
+    min: "1.25.11"
   - bin: heuristic-inbox  # deliver + --label: records-branch PR writeback + default slug auto-suffixing + operation-record lifecycle + normalized skill/workflow/intent usage owners for closeout promotion
     min: "1.21.17"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos

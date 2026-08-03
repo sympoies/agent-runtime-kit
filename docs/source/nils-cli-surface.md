@@ -1,22 +1,32 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-07-21 (refreshed for `v1.25.8`)
+- Snapshot date: 2026-08-03 (refreshed for `v1.25.13`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.25.8`
+- Active `git describe --tags` output: `v1.25.13`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.8`,
-  `validated_tag: v1.25.8`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.13`,
+  `validated_tag: v1.25.13`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `d7edafe0`
-  (`chore(release): bump cli versions to 1.25.8 (#1347)`)
+- Head commit: `4aa0dc7e`
+  (`chore(release): bump cli versions to 1.25.13`)
 - Release:
-  [`v1.25.8`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.8),
+  [`v1.25.13`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.13),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.25.8` is both the compatibility minimum and the validated release. The
+- `v1.25.13` is both the compatibility minimum and the validated release. This
+  is an explicit compatibility retirement: current runtime skills declare
+  `semantic-commit`, `agent-session`, and `main-agent` contracts introduced in
+  v1.25.11, while v1.25.8 does not ship `main-agent` at all. The old exact
+  minimum lane therefore could not execute the repository's declared runtime
+  contract. v1.25.13 is the first stable release that also contains the
+  governed default-branch push and faithful review-loop dry-run prerequisites
+  consumed by the in-flight runtime-kit delivery fixes
+  ([nils-cli #1404](https://github.com/sympoies/nils-cli/pull/1404),
+  [nils-cli #1406](https://github.com/sympoies/nils-cli/pull/1406)).
+- `v1.25.8` was the previous compatibility minimum and validated release. The
   release uptake initially moved only the validated role, but runtime-kit's
   subsequent read-only shadow integration consumes `execution.read-only.v1`.
   `agent-hook` v1.25.5 cannot parse that capability, so PR #720 explicitly
@@ -48,9 +58,9 @@
     completes or reconciles terminal lifecycle events
     ([#1330](https://github.com/sympoies/nils-cli/pull/1330)). That ingress set
     the historical `agent-hook >=1.25.5` floor; the read-only shadow consumer
-    above supersedes it with `>=1.25.8` and makes v1.25.8 the global
-    compatibility minimum. The existing `agent-session >=1.24.5` floor remains
-    sufficient.
+    above superseded it with `>=1.25.8` and made v1.25.8 the global
+    compatibility minimum at that time. The active v1.25.13 retirement above
+    supersedes that historical policy.
   - Codex notification ownership composes and restores foreign or Computer
     Use notifier state without dropping either consumer
     ([#1329](https://github.com/sympoies/nils-cli/pull/1329)).
