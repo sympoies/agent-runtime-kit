@@ -101,3 +101,28 @@ diagnostics, explicit cleanup, and workflows that require retained artifacts.
 - If code changed after a successful gate, the result is stale. Rerun the
   smallest affected checks and the canonical completion gate required by the
   repository.
+
+### Recovery When The Shell Itself Is Blocked
+
+A capability that fails closed can leave a session unable to run the very
+validation the finish-line gate is waiting on, and unable to set the waiver
+environment variable because that also needs the blocked shell
+(`sympoies/nils-cli#1409`). `scripts/validation-recovery.py` is the out-of-band
+lane for that state. It is invoked by an operator or controller, never through a
+provider hook, and exposes no general shell escape:
+
+- `status --repo <path>` — the declared contract, what is outstanding for the
+  current edit generation, and any recorded waiver.
+- `run --repo <path> [--command <declared>]` — executes only a command shape the
+  repository declared in `AGENT_DOCS.toml`; anything else is refused. A pass
+  records the command outcome, so the gate is satisfied for real.
+- `waive --repo <path> --reason <text>` — records an
+  `agent-runtime-validation.waiver.v1` record. The reason is required, and the
+  record binds to the repository, contract, product, session, and the current
+  edit generation, so it expires the moment another edit lands. Prefer it over
+  `AGENT_RUNTIME_VALIDATION_WAIVER`, which stays true for every later Stop in the
+  process and has leaked across turns.
+- `revoke --repo <path>` — withdraws a waiver.
+
+A structured waiver still takes the one-shot discovered-defect routing review
+before the gate releases, exactly as the environment route does.

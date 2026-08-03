@@ -40,6 +40,7 @@ from hook_common import (
     emit_block,
     git_toplevel,
     read_payload,
+    read_validation_waiver,
     routing_review_marker,
     session_marker_key,
     touch_marker,
@@ -542,9 +543,14 @@ def reason(
         "identity). After all current outcomes are satisfied, Stop consolidates "
         f"the contract into {markers}, removes completed session state when "
         "present, and releases this gate.\n"
-        "Run the outstanding declared command shape before finishing. To finish "
-        "without validating, set AGENT_RUNTIME_VALIDATION_WAIVER=1 and state the "
-        f"waiver reason.{failure_guidance}"
+        "Run the outstanding declared command shape before finishing.\n"
+        "If the shell itself is blocked, the recovery lane is out-of-band and "
+        "does not need it: `scripts/validation-recovery.py run --repo <path>` "
+        "executes only the declared command shape, and "
+        "`scripts/validation-recovery.py waive --repo <path> --reason <text>` "
+        "records a structured waiver bound to this edit generation. Setting "
+        "AGENT_RUNTIME_VALIDATION_WAIVER=1 with a stated reason remains "
+        f"supported.{failure_guidance}"
     )
 
 
@@ -956,7 +962,17 @@ def main() -> int:
             emit_block(cleanup_failure_reason(repo_root))
         return ALLOW
 
-    if env_enabled(WAIVER_ENVS):
+    # A structured waiver is authorized out-of-band by a controller, so it stays
+    # reachable from a session whose `PreToolUse` is failing closed — the exact
+    # deadlock in `sympoies/nils-cli#1409`, where the documented environment-
+    # variable route required the shell execution the hook was blocking. It is
+    # also strictly narrower: each record binds to one contract and its current
+    # edit generation, so it cannot leak into a later turn.
+    waived_structurally = bool(routing_signals) and all(
+        read_validation_waiver(markers, repo_root) is not None
+        for markers, _signal in routing_signals
+    )
+    if waived_structurally or env_enabled(WAIVER_ENVS):
         needs_review = False
         persistence_failed = False
         for markers, signal_mtime in routing_signals:
