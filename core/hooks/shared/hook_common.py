@@ -111,6 +111,10 @@ def iter_workdir_values(value: Any) -> list[str]:
 # call, so a tail read suffices while capping memory and latency now that the
 # resolver runs inside the mutation/lease guards on every command.
 MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024
+CODEX_CUSTOM_EXEC_PREFIX_RE = re.compile(
+    r"\A\s*(?:const\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)?"
+    r"await\s+tools\.exec_command\(\s*"
+)
 COMMAND_CONTEXT_SOURCES = frozenset(
     {
         "tool-input",
@@ -144,6 +148,53 @@ class CommandContext(NamedTuple):
 class TranscriptWorkdirResult(NamedTuple):
     value: str | None
     diagnostic: str | None
+
+
+def _custom_exec_arguments(
+    event_payload: Mapping[str, Any],
+) -> tuple[Mapping[str, Any] | None, str | None]:
+    """Decode one canonical Codex custom-tool exec argument object.
+
+    Current Codex transcripts wrap ``tools.exec_command`` in a small JavaScript
+    orchestration input instead of exposing the legacy JSON ``arguments``
+    field. Trust only an anchored call whose first argument is strict JSON and
+    whose closing parenthesis follows that object. We deliberately do not parse
+    JavaScript object literals or search arbitrary source text for a
+    ``workdir`` substring: either would let command content impersonate host
+    context.
+    """
+    if (
+        event_payload.get("type") != "custom_tool_call"
+        or event_payload.get("name") != "exec"
+    ):
+        return None, "transcript-arguments-missing"
+    source = event_payload.get("input")
+    if not isinstance(source, str):
+        return None, "transcript-custom-input-missing"
+    match = CODEX_CUSTOM_EXEC_PREFIX_RE.match(source)
+    if match is None:
+        return None, "transcript-custom-input-unrecognized"
+    argument_source = source[match.end() :]
+    try:
+        parsed, end = json.JSONDecoder().raw_decode(argument_source)
+    except json.JSONDecodeError:
+        return None, "transcript-custom-input-malformed"
+    if not isinstance(parsed, Mapping):
+        return None, "transcript-custom-input-malformed"
+    remainder = argument_source[end:].lstrip()
+    if not remainder.startswith(")") or "tools.exec_command(" in remainder[1:]:
+        return None, "transcript-custom-input-ambiguous"
+    if not isinstance(parsed.get("cmd"), str):
+        return None, "transcript-custom-input-malformed"
+    workdir = parsed.get("workdir")
+    if workdir is None:
+        return {}, None
+    if not isinstance(workdir, str) or not workdir:
+        return None, "transcript-custom-input-malformed"
+    # The exec_command schema owns workdir at the top level. Returning only
+    # that field prevents command or metadata content from impersonating host
+    # context through the generic recursive envelope reader.
+    return {"workdir": workdir}, None
 
 
 @functools.lru_cache(maxsize=64)
@@ -185,12 +236,17 @@ def _transcript_workdir_result(
         if event_payload.get("call_id") != tool_use_id:
             continue
         arguments = event_payload.get("arguments")
-        if not isinstance(arguments, str):
-            return TranscriptWorkdirResult(None, "transcript-arguments-missing")
-        try:
-            parsed_arguments = json.loads(arguments)
-        except json.JSONDecodeError:
-            return TranscriptWorkdirResult(None, "transcript-arguments-malformed")
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return TranscriptWorkdirResult(
+                    None, "transcript-arguments-malformed"
+                )
+        else:
+            parsed_arguments, diagnostic = _custom_exec_arguments(event_payload)
+            if parsed_arguments is None:
+                return TranscriptWorkdirResult(None, diagnostic)
         for value in iter_workdir_values(parsed_arguments):
             return TranscriptWorkdirResult(value, None)
         return TranscriptWorkdirResult(None, "transcript-workdir-missing")

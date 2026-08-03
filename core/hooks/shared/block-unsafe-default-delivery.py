@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import selectors
 import shlex
 import shutil
@@ -56,6 +57,7 @@ from hook_common import (
     OPAQUE_NESTED_SHELL_COMMAND,
     OPAQUE_WRAPPER_COMMAND,
     command_from,
+    command_context,
     effective_workdir,
     emit_block,
     env_split_expanded_tokens,
@@ -140,6 +142,10 @@ REPO_HINT = (
     "workdir; it binds the target without depending on shell state."
 )
 GOVERNED_CONTEXT_EXECUTABLES = frozenset({"git", "semantic-commit"})
+EXPANDED_EXECUTABLE_PATH_RE = re.compile(
+    r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})/"
+    r"(?:[^/$`]+/)*(?P<basename>[^/$`]+)$"
+)
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
@@ -831,7 +837,41 @@ def waiver_admits(invocation: list[str], reason: str, waiver: str) -> bool:
 
 
 def unresolved(detail: str) -> str:
-    return f"{AMBIGUOUS_REASON} {detail}" if detail else AMBIGUOUS_REASON
+    return f"{AMBIGUOUS_PREFIX} {detail} {POLICY}" if detail else AMBIGUOUS_REASON
+
+
+def classification_evidence(
+    rule: str,
+    operation: str,
+    *,
+    context_source: str = "",
+    diagnostic: str = "",
+) -> str:
+    """Return stable, compact evidence for a refusal's matched classifier."""
+    fields = [f"rule={rule}", f"operation={operation}"]
+    if context_source:
+        fields.append(f"context={context_source}")
+    if diagnostic:
+        fields.append(f"diagnostic={diagnostic}")
+    return "Classification: " + "; ".join(fields) + "."
+
+
+def opaque_invocation_has_stable_non_governed_basename(
+    invocation: list[str],
+) -> bool:
+    """Whether expansion changes only a path prefix around a known-safe name.
+
+    ``$HOME/bin/tool`` still identifies ``tool`` lexically, while ``$tool`` or
+    ``$HOME/bin/$tool`` can resolve to a governed executable and remain
+    unverified. Command substitutions remain opaque because they can execute a
+    hidden command before producing the path.
+    """
+    if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
+        return False
+    match = EXPANDED_EXECUTABLE_PATH_RE.fullmatch(invocation[1])
+    return bool(
+        match and match.group("basename") not in GOVERNED_CONTEXT_EXECUTABLES
+    )
 
 
 def resolve_git_alias(
@@ -995,12 +1035,19 @@ def semantic_commit_block_reason(
         return ""
     branch = current_branch(probe, cwd)
     expected = default_branch(probe, cwd)
+    evidence = classification_evidence(
+        "governed-authoring-target",
+        f"semantic-commit {arguments[0]}",
+        context_source=source,
+    )
     if not branch or not expected:
         return unresolved(
-            f"{location} Its checked-out branch or cached default branch could "
-            f"not be read. {REPO_HINT}"
+            f"{evidence} {location} Its checked-out branch or cached default "
+            f"branch could not be read. {REPO_HINT}"
         )
-    return BLOCK_REASON if branch == expected else ""
+    if branch == expected:
+        return f"{MARK_BLOCKED} {evidence} {location} {POLICY}"
+    return ""
 
 
 def update_ref_target(arguments: list[str]) -> str | None:
@@ -1639,6 +1686,7 @@ def invocation_block_reason(
     environment_safe: bool = True,
     target_resolved: bool = True,
     base_source: str = "the tool workdir",
+    base_diagnostic: str = "",
     context_note: str = "",
 ) -> str:
     def unclassifiable(detail: str) -> str:
@@ -1661,9 +1709,30 @@ def invocation_block_reason(
                 "active managed CLI by its exact command name or trusted absolute "
                 "path."
             )
-        if not target_resolved:
+        authors_commit, _writes_files, _effects_repo = (
+            semantic_commit_invocation_effects(invocation[1:])
+        )
+        _read_only, explicit_repo = semantic_commit_invocation_state(invocation[1:])
+        explicit_absolute_repo = bool(
+            environment_safe
+            and explicit_repo
+            and Path(explicit_repo).is_absolute()
+        )
+        if authors_commit and not target_resolved and not explicit_absolute_repo:
+            operation = (
+                f"semantic-commit {invocation[1]}"
+                if len(invocation) > 1
+                else "semantic-commit <unknown>"
+            )
+            evidence = classification_evidence(
+                "governed-authoring-target",
+                operation,
+                context_source=base_source,
+                diagnostic=base_diagnostic,
+            )
             return unresolved(
-                "Command-local Git context can move where this commit lands, so "
+                f"{evidence} The command context could not attest the repository "
+                "where this commit lands, so "
                 f"its repository was not classified. {REPO_HINT}"
             )
         return semantic_commit_block_reason(probe, invocation[1:], base, base_source)
@@ -1729,7 +1798,9 @@ def candidate_block_reason(
     *,
     shell_context_safe: bool,
     directory_resolved: bool,
+    base_resolved: bool,
     base_source: str,
+    base_diagnostic: str,
 ) -> str:
     """Classify one invocation shape of a simple command in its own context."""
     if command_local_path_override(simple_command, candidate):
@@ -1744,15 +1815,27 @@ def candidate_block_reason(
         candidate,
         cwd,
         environment_safe=command_safe and shell_context_safe,
-        target_resolved=command_safe and (shell_context_safe or directory_resolved),
+        target_resolved=command_safe
+        and (
+            (shell_context_safe and base_resolved)
+            or (not shell_context_safe and directory_resolved)
+        ),
         base_source=base_source,
+        base_diagnostic=base_diagnostic,
         # When an earlier command moved the shell context, that — not the Git
         # command itself — is the discriminator, so it is what the message names.
         context_note="" if shell_context_safe else REMEDY_SHELL_CONTEXT,
     )
 
 
-def command_block_reason(command: str, base: Path) -> str:
+def command_block_reason(
+    command: str,
+    base: Path,
+    *,
+    base_source: str = "the tool workdir",
+    base_resolved: bool = True,
+    base_diagnostic: str = "",
+) -> str:
     probe = GitProbe()
     shell_context_safe = True
     executable_resolution_safe = True
@@ -1764,12 +1847,9 @@ def command_block_reason(command: str, base: Path) -> str:
     )
     directory_resolved = True
     cwd = base
-    base_source = "the tool workdir"
     for simple_command in simple_commands:
         invocation = invocation_tokens(simple_command)
         waiver = command_waiver_reason(simple_command)
-        if invocation and invocation[0] == OPAQUE_WRAPPER_COMMAND:
-            return AMBIGUOUS_REASON
         if process_wrapper_hides_governed_invocation(
             simple_command, invocation
         ):
@@ -1788,7 +1868,9 @@ def command_block_reason(command: str, base: Path) -> str:
                 candidate,
                 shell_context_safe=shell_context_safe,
                 directory_resolved=directory_resolved,
+                base_resolved=base_resolved,
                 base_source=base_source,
+                base_diagnostic=base_diagnostic,
             )
 
         reason = classify(invocation)
@@ -1796,9 +1878,21 @@ def command_block_reason(command: str, base: Path) -> str:
             return reason
         if invocation_is_unresolved_nested(invocation):
             return AMBIGUOUS_REASON
-        for candidate in opaque_invocation_candidates(
+        opaque_candidates = opaque_invocation_candidates(
             invocation, {"git", "semantic-commit"}
+        )
+        if (
+            invocation
+            and invocation[0] == OPAQUE_WRAPPER_COMMAND
+            and not opaque_candidates
+            and not opaque_invocation_has_stable_non_governed_basename(invocation)
         ):
+            return unresolved(
+                f"{classification_evidence('opaque-executable', 'dynamic-executable')} "
+                "The executable name could expand to `git` or `semantic-commit`; "
+                "invoke a stable command name or absolute path."
+            )
+        for candidate in opaque_candidates:
             if invocation_is_unresolved_nested(candidate):
                 return AMBIGUOUS_REASON
             reason = classify(candidate)
@@ -1837,7 +1931,22 @@ def main() -> int:
     payload = read_payload()
     command = command_from(payload)
     if command:
-        reason = command_block_reason(command, payload_base(payload))
+        context = command_context(payload)
+        # With no provider workdir metadata to contradict it, the hook process
+        # cwd remains the compatibility target used by unmanaged/test runners.
+        # Once a transcript claims to describe the current call, a failed match
+        # must not fall back to that cwd as if it were attested.
+        base_resolved = context.attested or (
+            context.source == "process-cwd"
+            and not isinstance(payload.get("transcript_path"), str)
+        )
+        reason = command_block_reason(
+            command,
+            context.path,
+            base_source=context.source,
+            base_resolved=base_resolved,
+            base_diagnostic=context.diagnostic or "",
+        )
         if reason:
             emit_block(normalize_refusal_reason(reason))
     return ALLOW

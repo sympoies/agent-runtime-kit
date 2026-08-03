@@ -170,7 +170,8 @@ target repository instead of each reading the hook process cwd (issue #601
 P0-4). It fans out across the union of Codex and Claude tool envelopes: explicit
 workdir keys (`workdir`, `cwd`, `current_working_directory`,
 `working_directory`) nested anywhere in the tool input; then the Codex
-`exec_command` transcript, whose `arguments` carry the `workdir` in the event
+`exec_command` transcript, whose legacy `arguments` or anchored custom-tool
+`tools.exec_command(<strict JSON>)` input carries the `workdir` in the event
 matching this call's `tool_use_id`/`call_id`; then non-session payload metadata;
 then the top-level session `cwd`; then a bounded 64 KiB private managed-session
 record whose id, agent, ready state, runtime incarnation, owner/mode, and cwd all
@@ -331,6 +332,12 @@ dirt. Codex and Claude register the shared guard on `UserPromptSubmit`; Hermes
 has no runtime-kit hook runner and does not support this enforcement.
 
 `block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
+It admits a non-governed executable when shell expansion changes only its path
+prefix (for example `$HOME/.local/bin/tool`) while retaining the literal
+basename; a wholly dynamic executable or an expanded path ending in `git` or
+`semantic-commit` remains fail-closed. Refusals include the matched rule,
+extracted operation, and command-context provenance so an unverified target is
+distinguishable from a proven default-branch write.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also

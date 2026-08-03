@@ -8456,11 +8456,46 @@ exit 65
             }
             self.assertEqual(effective_workdir(transcript_payload), target)
 
-            # 4. The transcript workdir wins over the top-level session cwd.
+            # 4. Codex custom-tool transcripts wrap exec_command in the
+            #    JavaScript orchestration input rather than exposing the legacy
+            #    `arguments` field. Accept only its strict JSON argument object.
+            custom_transcript = root / "custom-transcript.jsonl"
+            custom_transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "custom-call-1",
+                            "input": (
+                                "const r = await tools.exec_command("
+                                + json.dumps(
+                                    {
+                                        "cmd": "printf x",
+                                        "workdir": str(target),
+                                    }
+                                )
+                                + ");\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            custom_payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "printf x"},
+                "tool_use_id": "custom-call-1",
+                "transcript_path": str(custom_transcript),
+            }
+            self.assertEqual(effective_workdir(custom_payload), target)
+
+            # 5. The transcript workdir wins over the top-level session cwd.
             transcript_payload["cwd"] = str(root)
             self.assertEqual(effective_workdir(transcript_payload), target)
 
-            # 5. Top-level cwd fallback (Claude session envelope).
+            # 6. Top-level cwd fallback (Claude session envelope).
             self.assertEqual(
                 effective_workdir(
                     {"tool_name": "Bash", "tool_input": {"command": "x"}, "cwd": str(target)}
@@ -8468,7 +8503,7 @@ exit 65
                 target,
             )
 
-            # 6. A relative workdir resolves against the hook process cwd.
+            # 7. A relative workdir resolves against the hook process cwd.
             self.assertEqual(
                 effective_workdir(
                     {"tool_name": "Bash", "tool_input": {"command": "x", "workdir": "sub"}}
@@ -8476,7 +8511,7 @@ exit 65
                 Path.cwd() / "sub",
             )
 
-            # 7. Nothing declared → the hook process cwd.
+            # 8. Nothing declared → the hook process cwd.
             self.assertEqual(
                 effective_workdir({"tool_name": "Bash", "tool_input": {"command": "x"}}),
                 Path.cwd(),
@@ -8540,6 +8575,89 @@ exit 65
                 "transcript_path": str(busy),
             }
             self.assertEqual(effective_workdir(busy_payload), target)
+
+    def test_effective_workdir_rejects_untrusted_custom_exec_shapes(self) -> None:
+        resolver = getattr(hook_common, "command_context", None)
+        self.assertTrue(callable(resolver), "command_context resolver is missing")
+        assert callable(resolver)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            cases = (
+                (
+                    "javascript-object",
+                    f"const r = await tools.exec_command({{workdir: '{target}'}});",
+                ),
+                (
+                    "string-bait",
+                    "const bait = \"await tools.exec_command("
+                    + json.dumps({"workdir": str(target)})
+                    + ")\";",
+                ),
+                (
+                    "multiple-calls",
+                    "const r = await tools.exec_command("
+                    + json.dumps({"cmd": "x", "workdir": str(target)})
+                    + "); tools.exec_command("
+                    + json.dumps({"cmd": "y", "workdir": str(target)})
+                    + ");",
+                ),
+                (
+                    "nested-workdir-bait",
+                    "const r = await tools.exec_command("
+                    + json.dumps(
+                        {
+                            "cmd": "x",
+                            "metadata": {"workdir": str(target)},
+                        }
+                    )
+                    + ");",
+                ),
+                (
+                    "non-string-command",
+                    "const r = await tools.exec_command("
+                    + json.dumps(
+                        {
+                            "cmd": {"workdir": str(target)},
+                            "workdir": str(target),
+                        }
+                    )
+                    + ");",
+                ),
+            )
+            for call_id, source in cases:
+                with self.subTest(call_id=call_id):
+                    transcript = root / f"{call_id}.jsonl"
+                    transcript.write_text(
+                        json.dumps(
+                            {
+                                "payload": {
+                                    "type": "custom_tool_call",
+                                    "name": "exec",
+                                    "call_id": call_id,
+                                    "input": source,
+                                }
+                            }
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    context = resolver(
+                        {
+                            "tool_name": "Bash",
+                            "tool_input": {"command": "x"},
+                            "tool_use_id": call_id,
+                            "transcript_path": str(transcript),
+                            "cwd": str(root),
+                        }
+                    )
+                    self.assertEqual(context.path, root.resolve())
+                    self.assertEqual(context.source, "session-cwd")
+                    self.assertFalse(context.attested)
+                    self.assertEqual(
+                        context.diagnostic, "workdir-attestation-missing"
+                    )
 
     def test_command_context_records_workdir_provenance_and_attestation(self) -> None:
         """Cross-repository gating retains where the canonical target came from."""
@@ -20267,6 +20385,165 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+    def test_default_delivery_hook_allows_expanded_non_governed_executables(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
+            )
+            command = (
+                "scripts/install-hotfix-agent-runtimes.sh && "
+                '"$HOME/.local/bin/hotfix-codex" --cwd "$PWD" --version && '
+                '"$HOME/.local/bin/hotfix-claude" --cwd "$PWD" --version'
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            for hidden in (
+                "$tool --version",
+                '"$HOME/.local/bin/semantic-commit" commit '
+                "--message 'fix: hidden writer'",
+            ):
+                with self.subTest(hidden=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    if hidden.startswith("$tool"):
+                        self.assert_blocked(decision, "rule=opaque-executable")
+                        self.assert_blocked(
+                            decision, "operation=dynamic-executable"
+                        )
+                    else:
+                        self.assert_blocked(decision, "semantic-commit")
+
+    def test_default_delivery_hook_uses_custom_exec_transcript_workdir(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
+            )
+            command = (
+                "semantic-commit commit --type fix --scope hooks "
+                "--subject 'classify the real worktree' --expect-head "
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --format json"
+            )
+            transcript = root / "transcript.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "semantic-call",
+                            "input": (
+                                "const r = await tools.exec_command("
+                                + json.dumps(
+                                    {
+                                        "cmd": command,
+                                        "workdir": str(repo),
+                                        "yield_time_ms": 30000,
+                                    }
+                                )
+                                + ");\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            payload = command_payload(command)
+            payload.update(
+                {
+                    "tool_use_id": "semantic-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(primary),
+                }
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A non-JSON JavaScript object is deliberately not interpreted as
+            # host attestation. It must report the failed classifier instead of
+            # claiming the fallback primary checkout is the command target.
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "semantic-call",
+                            "input": (
+                                "const r = await tools.exec_command({"
+                                f"cmd: 'semantic-commit commit', workdir: '{repo}'"
+                                "});\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            self.assert_blocked(
+                decision, "rule=governed-authoring-target"
+            )
+            self.assert_blocked(decision, "operation=semantic-commit commit")
+            self.assert_blocked(decision, "context=session-cwd")
+            self.assert_blocked(
+                decision, "diagnostic=workdir-attestation-missing"
+            )
+            self.assert_blocked(decision, "--repo <absolute path>")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertLess(
+                reason.index("Classification:"),
+                reason.index("Do not author or push"),
+            )
+
+            explicit = command + f" --repo {shlex.quote(str(repo))}"
+            explicit_payload = command_payload(explicit)
+            explicit_payload.update(
+                {
+                    "tool_use_id": "semantic-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(primary),
+                }
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                explicit_payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
 
     def test_default_delivery_hook_allows_validate_only_on_default_branch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
