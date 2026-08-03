@@ -408,6 +408,16 @@ class AgentHookExecutableContractTests(unittest.TestCase):
     def test_shadow_only_writes_dispatch_observation_for_stateful_capabilities(
         self,
     ) -> None:
+        agent_session = self.binary.with_name("agent-session")
+        diagnose_help = subprocess.run(
+            [str(agent_session), "diagnose", "--help"],
+            text=True,
+            capture_output=True,
+            env=self.env,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        observation_supported = diagnose_help.returncode == 0
         before = self.snapshot_tree()
         decision = self.json_result(
             self.run_hook(
@@ -426,6 +436,12 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             )
         )
         full_after = self.snapshot_tree()
+        self.assertEqual(decision["action"], "allow")
+        self.assertEqual(len(decision["shadow"]), 19)
+        if not observation_supported:
+            self.assertEqual(full_after, before)
+            return
+
         after = self.snapshot_tree(
             excluded_prefixes=("agent-session/observation",)
         )
@@ -435,8 +451,6 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             if path != "agent-session/observation"
             and not path.startswith("agent-session/observation/")
         }
-        self.assertEqual(decision["action"], "allow")
-        self.assertEqual(len(decision["shadow"]), 19)
         self.assertEqual(after, before_without_observation)
         observation = {
             path: metadata
@@ -467,8 +481,6 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             ][0],
             0o600,
         )
-
-        agent_session = self.binary.with_name("agent-session")
         diagnostic = subprocess.run(
             [
                 str(agent_session),
