@@ -294,8 +294,8 @@ REVIEW_LEDGER_OPEN_COUNT="$(
 )" || exit $?
 fi
 
-# On GitHub, stop here when findings are open. Repair, publish with `git-cli
-# push --format json`, rerun validation
+# On GitHub, stop here when findings are open. Repair, publish with
+# `git-cli push --format json`, rerun validation
 # and the affected lenses, then provide REVIEW_LEDGER_DISPOSITIONS for the new
 # head. GitLab retains its outcome-note path without ledger calls.
 

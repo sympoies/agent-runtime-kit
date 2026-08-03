@@ -208,8 +208,8 @@ REVIEW_LEDGER_OPEN_COUNT="$(
 )" || exit $?
 fi
 
-# On GitHub, stop here when findings are open. Repair, publish with `git-cli
-# push --format json`, rerun validation
+# On GitHub, stop here when findings are open. Repair, publish with
+# `git-cli push --format json`, rerun validation
 # and the affected lane review, then provide REVIEW_LEDGER_DISPOSITIONS. GitLab
 # retains its outcome-note path without ledger calls.
 
@@ -427,8 +427,8 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    GitHub, for every lane generate the delivery-mode findings envelope and
    append review-loop genesis at the reviewed head before any repair. A clean
    lane uses the generated empty envelope. After the repair is published with
-   `git-cli push`, append the closing
-   dispositions with exact state-tip and repaired-head CAS before approval. On
+   `git-cli push`, append the closing dispositions with exact state-tip and
+   repaired-head CAS before approval. On
    GitLab, do not require ledger artifacts or call `pr review-loop`; retain the
    outcome-note path and pass `--review-convergence=false` to merge. On
    GitHub, read `forge-cli pr reviews` and disposition actionable current-head
