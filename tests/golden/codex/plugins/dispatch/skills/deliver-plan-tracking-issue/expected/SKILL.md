@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.25.13`, `review-specialists`.
+  `forge-cli >=1.25.13`, `git-cli >=1.25.13`, `review-specialists`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge context with the
@@ -294,7 +294,8 @@ REVIEW_LEDGER_OPEN_COUNT="$(
 )" || exit $?
 fi
 
-# On GitHub, stop here when findings are open. Repair and push, rerun validation
+# On GitHub, stop here when findings are open. Repair, publish with `git-cli
+# push --format json`, rerun validation
 # and the affected lenses, then provide REVIEW_LEDGER_DISPOSITIONS for the new
 # head. GitLab retains its outcome-note path without ledger calls.
 
@@ -629,8 +630,10 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
     lease guard must confirm no live foreign owner before removal. If that proof
     or hook is unavailable, retain the worktree. Delete the local
     branch only when its tip equals the provider-confirmed delivered head,
-    including after squash merge. Retain and report dirty, locked, missing, or
-    unverifiable state.
+    including after squash merge. When the merge left the primary checkout's
+    default branch behind its remote, advance it with
+    `git-cli sync-default --format json`. Retain and report dirty, locked,
+    missing, or unverifiable state.
 
 ## Boundary
 

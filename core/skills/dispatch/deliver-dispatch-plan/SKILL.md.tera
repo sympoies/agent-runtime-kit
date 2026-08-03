@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `dispatch`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.25.13`.
+  `forge-cli >=1.25.13`, `git-cli >=1.25.13`.
 - The dispatch issue is either not opened yet, or the existing issue is
   the same shared plan being resumed by the orchestrator.
 - Dispatch `run-state.json` is either uninitialized or reconciled.
@@ -208,7 +208,8 @@ REVIEW_LEDGER_OPEN_COUNT="$(
 )" || exit $?
 fi
 
-# On GitHub, stop here when findings are open. Repair and push, rerun validation
+# On GitHub, stop here when findings are open. Repair, publish with `git-cli
+# push --format json`, rerun validation
 # and the affected lane review, then provide REVIEW_LEDGER_DISPOSITIONS. GitLab
 # retains its outcome-note path without ledger calls.
 
@@ -425,7 +426,8 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    outcome with retained evidence and posts provider review activity. On
    GitHub, for every lane generate the delivery-mode findings envelope and
    append review-loop genesis at the reviewed head before any repair. A clean
-   lane uses the generated empty envelope. After repair/push, append the closing
+   lane uses the generated empty envelope. After the repair is published with
+   `git-cli push`, append the closing
    dispositions with exact state-tip and repaired-head CAS before approval. On
    GitLab, do not require ledger artifacts or call `pr review-loop`; retain the
    outcome-note path and pass `--review-convergence=false` to merge. On
@@ -476,7 +478,9 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
     hooked shell for each safe managed lane/integration worktree; the
     target-aware lease guard must confirm no live foreign owner before removal.
     If that proof or hook is unavailable, retain the worktree. Delete a local branch only when its tip equals
-    the provider-confirmed delivered head. Retain and report dirty, locked,
+    the provider-confirmed delivered head. When the merge left the primary
+    checkout's default branch behind its remote, advance it with
+    `git-cli sync-default --format json`. Retain and report dirty, locked,
     missing, or unverifiable state.
 
 ## Boundary
