@@ -519,11 +519,14 @@ attach to an issue that already carries those roles, because attachment posts a
 new lifecycle set rather than resuming the existing tracker.
 
 `forge-cli pr deliver --no-merge` creates or adopts the draft and completes its
-check wait without merging, leaving the window for review. Inspect native
-summaries, append review-loop genesis before repair, close every finding at the
-repaired head, and post the owner outcome before the issue-side `review`
-checkpoint; then mark the PR ready and call `forge-cli pr merge`. A clean review
-still appends genesis with the generated empty delivery envelope. The merge primitive owns
+check wait without merging, leaving the window for review. On GitHub, inspect
+native summaries, append review-loop genesis before repair, and close every
+finding at the repaired head; a clean review still appends genesis with the
+generated empty delivery envelope. On GitLab, do not require ledger artifacts
+or call `pr review-loop`; retain the outcome-note path and pass
+`--review-convergence=false` to merge. On either provider, post the owner outcome
+before the issue-side `review` checkpoint, then mark the PR ready and call
+`forge-cli pr merge`. The merge primitive owns
 the observed quiet window, complete/final native-review reads, native change
 requests, thread/task gates, and provider-head binding. When `LINKED_PR` already
 exists, adopt and verify it through `pr deliver` existing-PR adoption instead of

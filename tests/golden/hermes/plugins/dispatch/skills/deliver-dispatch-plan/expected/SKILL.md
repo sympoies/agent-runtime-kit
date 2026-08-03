@@ -423,11 +423,12 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    and stops ready for independent review.
 5. **Independent lane review** — a different reviewer runs the generic review
    outcome with retained evidence and posts provider review activity. On
-   every lane, generate the delivery-mode findings envelope and append
-   review-loop genesis at the reviewed head before any repair. A clean lane
-   uses the generated empty envelope. After repair/push, append the closing
-   dispositions with exact state-tip and repaired-head CAS before approval.
-   On
+   GitHub, for every lane generate the delivery-mode findings envelope and
+   append review-loop genesis at the reviewed head before any repair. A clean
+   lane uses the generated empty envelope. After repair/push, append the closing
+   dispositions with exact state-tip and repaired-head CAS before approval. On
+   GitLab, do not require ledger artifacts or call `pr review-loop`; retain the
+   outcome-note path and pass `--review-convergence=false` to merge. On
    GitHub, read `forge-cli pr reviews` and disposition actionable current-head
    summaries; on GitLab, retain the outcome-note path. Then finalize lane
    approval and the review checkpoint. If native submission returns
@@ -439,8 +440,8 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    with `--expected-head`.
 6. **Orchestrator merge** — after approval and provider gates, the orchestrator
    merges the lane PR through `forge-cli pr merge
-   --allow-non-default-base`. The CLI requires the closed review-loop ledger
-   for that exact head and owns observed convergence, native state,
+   --allow-non-default-base`. On GitHub, the CLI requires the closed review-loop
+   ledger for that exact head. It owns observed convergence, native state,
    threads/tasks, and head binding — outdated unresolved threads are
    auto-dispositioned `stale` (`data.stale_thread_dispositions`) so only
    non-outdated threads block, and any `--allow-unresolved-threads` bypass on a

@@ -257,8 +257,13 @@ assert_delivery_skills_use_native_review_convergence() {
       echo "runtime-smoke pr: $skill can semantically disposition a truncated review summary" >&2
       rc=1
     fi
-    if ! grep -q 'REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
+    if ! grep -Fq '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill does not preserve GitLab delivery under a user-global GitHub convergence policy" >&2
+      rc=1
+    fi
+    if ! grep -q 'do not require ledger artifacts' "$REPO_ROOT/$skill" || \
+      ! grep -q 'outcome-note path' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not state the GitLab ledger alternative at the normative workflow boundary" >&2
       rc=1
     fi
     if ! grep -q '"${REVIEW_CONVERGENCE_ARGS\[@\]}"' "$REPO_ROOT/$skill"; then
@@ -283,6 +288,8 @@ GENESIS_MARKER = "# Review-loop genesis: dry-run before live append and before a
 CLOSING_MARKER = "# Review-loop closing observation: after repair/push and before merge."
 LEDGER_GITHUB_MARKER = "# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate."
 LEDGER_CLOSING_GUARD = 'if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then'
+CLOSING_DISPOSITIONS_REQUIREMENT = ': "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"'
+GITLAB_CONVERGENCE_OVERRIDE = '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)'
 GITHUB_GUARD = 'if [ "$PROVIDER" = github ]; then'
 ID_GUARD = 'if [ -n "${PENDING_REVIEW_ID:-}" ]; then'
 
@@ -302,6 +309,8 @@ def observe_block(lines, start):
 
 def validate(relative, text):
     lines = text.splitlines()
+    if text.count(GITLAB_CONVERGENCE_OVERRIDE) != 1:
+        raise ValueError("GitLab convergence override must use the exact provider selector once")
     if relative == "core/skills/pr/deliver-pr/SKILL.md.tera":
         released_enum = "(`open`, `fixed`, `accepted`, `preference`, `follow-up`)"
         if text.count(released_enum) != 1:
@@ -380,6 +389,14 @@ def validate(relative, text):
         raise ValueError("each review-loop phase must have one dry-run and one live observe")
     if not closing_guards[0] < closing_observes[0] < closing_observes[-1] < closing_guard_end:
         raise ValueError("review-loop closing observations escape the GitHub-only branch")
+    disposition_requirements = [
+        index for index in range(closing_guards[0] + 1, closing_guard_end)
+        if lines[index].strip() == CLOSING_DISPOSITIONS_REQUIREMENT
+    ]
+    if len(disposition_requirements) != 1:
+        raise ValueError("GitHub ledger dispositions input must be required inside its closing branch")
+    if disposition_requirements[0] >= closing_observes[0]:
+        raise ValueError("GitHub ledger dispositions input must be required before both closing observations")
     genesis_blocks = [observe_block(lines, index) for index in genesis_observes]
     closing_blocks = [observe_block(lines, index) for index in closing_observes]
     for label, blocks, bindings in (
@@ -820,6 +837,16 @@ for relative in sys.argv[2:]:
         "GitHub-only ledger guard": text.replace(
             f"{LEDGER_GITHUB_MARKER}\n{GITHUB_GUARD}",
             f"{LEDGER_GITHUB_MARKER}\nif [ \"$PROVIDER\" = gitlab ]; then",
+            1,
+        ),
+        "closing ledger input guard": text.replace(
+            f"{CLOSING_MARKER}\n{LEDGER_CLOSING_GUARD}\n  {CLOSING_DISPOSITIONS_REQUIREMENT}",
+            f"{CLOSING_MARKER}\n{CLOSING_DISPOSITIONS_REQUIREMENT}\n{LEDGER_CLOSING_GUARD}",
+            1,
+        ),
+        "GitLab convergence selector": text.replace(
+            GITLAB_CONVERGENCE_OVERRIDE,
+            GITLAB_CONVERGENCE_OVERRIDE.replace("gitlab", "github"),
             1,
         ),
         "live genesis append": add_dry_run_to_live_observe(text, GENESIS_MARKER),

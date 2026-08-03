@@ -101,7 +101,7 @@ Outputs:
   `forge-cli pr reviews` and semantically dispositioned before the final owner
   outcome. Stale-head reviews remain informational. GitLab retains its outcome
   note flow because native review snapshots are GitHub-only in v1.
-- A durable `forge-cli.review-loop.v1` chain recording each reviewed head and
+- On GitHub, a durable `forge-cli.review-loop.v1` chain recording each reviewed head and
   its finding dispositions, appended through `forge-cli pr review-loop observe`
   before each repair is pushed.
 - Mechanical convergence, review-ledger, unresolved-thread, unchecked-task, and
@@ -231,7 +231,7 @@ Together they force the observation to happen *before* the repair is pushed.
 The no-finding path still appends genesis: merge requires an observation for
 the current head even when the generated delivery envelope contains no rows.
 
-For a finding-bearing round:
+For a GitHub finding-bearing round:
 
 1. review returns findings;
 2. `forge-cli pr review-loop observe --expected-head <reviewed head>`, with the
@@ -734,7 +734,7 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
    `--thread-file` for actionable findings so the fix can close a native review
    thread; summary-only reviews omit it.
-11. Produce `REVIEW_LEDGER_FINDINGS` with `review-specialists bundle --mode
+11. On GitHub, produce `REVIEW_LEDGER_FINDINGS` with `review-specialists bundle --mode
     delivery`, including its generated empty envelope for a clean review. Record
     the genesis ledger observation **before** repairing anything, at the head
     the review actually ran against:
@@ -744,12 +744,14 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     a compare-and-swap input and history cannot be backfilled, so this step has
     no second chance once the repair is pushed — see **Review-Loop Ledger** for
     both accepted `--findings-file` shapes and the ordering rules. Validate with
-    `--dry-run` first; a live `observe` writes durable provider state.
+    `--dry-run` first; a live `observe` writes durable provider state. On GitLab,
+    do not require ledger artifacts or call `pr review-loop`; retain the
+    outcome-note path and pass `--review-convergence=false` to merge.
 12. Repair concrete findings in this delivery workflow, then rerun validation,
    checks, and affected review. Post each focused follow-up review comment with
    the same semantic lens before continuing. Quick follow-up remains eligible
    only while scope is bounded; otherwise switch to full.
-13. After the repair is pushed, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
+13. On GitHub, after the repair is pushed, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
     array and append the closing observation at the repaired head with
     `disposition: fixed` (or an evidence-backed terminal disposition), passing
     `--expected-state <current tip>`.
