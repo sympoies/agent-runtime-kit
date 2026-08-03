@@ -157,6 +157,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["agent-session"], "1.25.11")
         self.assertEqual(required_clis["semantic-commit"], "1.25.11")
         self.assertEqual(required_clis["main-agent"], "1.25.11")
+        self.assertEqual(required_clis["forge-cli"], "1.25.13")
 
     def test_blocking_ci_builds_deduplicated_minimum_validated_matrix(self) -> None:
         workflow_text = read(".github/workflows/ci.yml")

@@ -217,8 +217,8 @@ assert_delivery_skills_use_native_review_convergence() {
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
-    if ! grep -q 'forge-cli >=1.22.12' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not require forge-cli 1.22.12" >&2
+    if ! grep -q 'forge-cli >=1.25.13' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not require forge-cli 1.25.13" >&2
       rc=1
     fi
     if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
@@ -257,8 +257,13 @@ assert_delivery_skills_use_native_review_convergence() {
       echo "runtime-smoke pr: $skill can semantically disposition a truncated review summary" >&2
       rc=1
     fi
-    if ! grep -q 'REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
+    if ! grep -Fq '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill does not preserve GitLab delivery under a user-global GitHub convergence policy" >&2
+      rc=1
+    fi
+    if ! grep -q 'do not require ledger artifacts' "$REPO_ROOT/$skill" || \
+      ! grep -q 'outcome-note path' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not state the GitLab ledger alternative at the normative workflow boundary" >&2
       rc=1
     fi
     if ! grep -q '"${REVIEW_CONVERGENCE_ARGS\[@\]}"' "$REPO_ROOT/$skill"; then
@@ -266,7 +271,6 @@ assert_delivery_skills_use_native_review_convergence() {
       rc=1
     fi
   done
-
   # The recovery recipe is destructive, so validate its executable ordering
   # and fail-closed semantics rather than merely checking marker tokens.
   if ! python3 - "$REPO_ROOT" \
@@ -280,6 +284,12 @@ import sys
 root = Path(sys.argv[1])
 
 RECOVERY_MARKER = "# Fetch a fresh post-conflict pr reviews snapshot."
+GENESIS_MARKER = "# Review-loop genesis: dry-run before live append and before any repair."
+CLOSING_MARKER = "# Review-loop closing observation: after repair/push and before merge."
+LEDGER_GITHUB_MARKER = "# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate."
+LEDGER_CLOSING_GUARD = 'if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then'
+CLOSING_DISPOSITIONS_REQUIREMENT = ': "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"'
+GITLAB_CONVERGENCE_OVERRIDE = '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)'
 GITHUB_GUARD = 'if [ "$PROVIDER" = github ]; then'
 ID_GUARD = 'if [ -n "${PENDING_REVIEW_ID:-}" ]; then'
 
@@ -289,8 +299,24 @@ def executable(line, token):
     return token in line and "`" not in line and not stripped.startswith("#")
 
 
+def observe_block(lines, start):
+    end = next(
+        index for index in range(start + 1, len(lines))
+        if lines[index].strip() == ')" || exit $?'
+    )
+    return end, "\n".join(lines[start:end + 1])
+
+
 def validate(relative, text):
     lines = text.splitlines()
+    if text.count(GITLAB_CONVERGENCE_OVERRIDE) != 1:
+        raise ValueError("GitLab convergence override must use the exact provider selector once")
+    if relative == "core/skills/pr/deliver-pr/SKILL.md.tera":
+        released_enum = "(`open`, `fixed`, `accepted`, `preference`, `follow-up`)"
+        if text.count(released_enum) != 1:
+            raise ValueError("deliver-pr must document the exact released disposition set once")
+        if "(`open`, `fixed`, `accepted`, `reopened`)" in text:
+            raise ValueError("deliver-pr documents reopened as an input disposition")
     deletes = [
         index for index, line in enumerate(lines)
         if executable(line, "pr pending-review delete")
@@ -305,6 +331,123 @@ def validate(relative, text):
     if len(merges) != 1:
         raise ValueError(f"expected one executable pr merge, found {len(merges)}")
     merge_index = merges[0]
+
+    genesis = [
+        index for index, line in enumerate(lines)
+        if line.strip() == GENESIS_MARKER
+    ]
+    closing = [
+        index for index, line in enumerate(lines)
+        if line.strip() == CLOSING_MARKER
+    ]
+    if len(genesis) != 1 or len(closing) != 1:
+        raise ValueError("review-loop genesis and closing markers must each appear once")
+    if not genesis[0] < closing[0] < merge_index:
+        raise ValueError("review-loop order must be genesis, closing observation, merge")
+    ledger_markers = [
+        index for index, line in enumerate(lines)
+        if line.strip() == LEDGER_GITHUB_MARKER
+    ]
+    if len(ledger_markers) != 1:
+        raise ValueError("GitHub-only review-loop boundary marker must appear once")
+    ledger_guard = ledger_markers[0] + 1
+    if lines[ledger_guard].strip() != GITHUB_GUARD:
+        raise ValueError("review-loop genesis is not guarded to GitHub")
+    ledger_guard_end = next(
+        index for index in range(ledger_guard + 1, len(lines))
+        if lines[index].strip() == "fi"
+    )
+    if not ledger_guard < genesis[0] < ledger_guard_end:
+        raise ValueError("review-loop genesis escapes the GitHub-only branch")
+    findings_requirements = [
+        index for index in range(ledger_guard + 1, ledger_guard_end)
+        if 'REVIEW_LEDGER_FINDINGS:?set to delivery-mode' in lines[index]
+    ]
+    if len(findings_requirements) != 1:
+        raise ValueError("GitHub ledger findings input must be required inside its provider branch")
+    closing_guards = [
+        index for index, line in enumerate(lines)
+        if line.strip() == LEDGER_CLOSING_GUARD
+    ]
+    if len(closing_guards) != 1:
+        raise ValueError("review-loop closing observation is not guarded to GitHub")
+    closing_guard_end = next(
+        index for index in range(closing_guards[0] + 1, len(lines))
+        if lines[index].strip() == "fi"
+    )
+    if closing_guards[0] != closing[0] + 1:
+        raise ValueError("review-loop closing GitHub guard must immediately follow its marker")
+    genesis_observes = [
+        index for index in range(genesis[0], closing[0])
+        if executable(lines[index], "pr review-loop observe")
+    ]
+    closing_observes = [
+        index for index in range(closing[0], merge_index)
+        if executable(lines[index], "pr review-loop observe")
+    ]
+    if len(genesis_observes) != 2 or len(closing_observes) != 2:
+        raise ValueError("each review-loop phase must have one dry-run and one live observe")
+    if not closing_guards[0] < closing_observes[0] < closing_observes[-1] < closing_guard_end:
+        raise ValueError("review-loop closing observations escape the GitHub-only branch")
+    disposition_requirements = [
+        index for index in range(closing_guards[0] + 1, closing_guard_end)
+        if lines[index].strip() == CLOSING_DISPOSITIONS_REQUIREMENT
+    ]
+    if len(disposition_requirements) != 1:
+        raise ValueError("GitHub ledger dispositions input must be required inside its closing branch")
+    if disposition_requirements[0] >= closing_observes[0]:
+        raise ValueError("GitHub ledger dispositions input must be required before both closing observations")
+    genesis_blocks = [observe_block(lines, index) for index in genesis_observes]
+    closing_blocks = [observe_block(lines, index) for index in closing_observes]
+    for label, blocks, bindings in (
+        (
+            "genesis",
+            genesis_blocks,
+            (
+                '--expected-head "$REVIEWED_HEAD"',
+                '"${REVIEW_LEDGER_STATE_ARGS[@]}"',
+                '--findings-file "$REVIEW_LEDGER_FINDINGS"',
+            ),
+        ),
+        (
+            "closing",
+            closing_blocks,
+            (
+                '--expected-head "$EXPECTED_REVIEW_HEAD"',
+                '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+                '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
+            ),
+        ),
+    ):
+        dry_block = blocks[0][1]
+        live_block = blocks[1][1]
+        if dry_block.count("--dry-run") != 1:
+            raise ValueError(f"{label} preflight must be exactly one dry-run")
+        if "--dry-run" in live_block:
+            raise ValueError(f"{label} live append must not carry --dry-run")
+        for token in bindings:
+            if token not in dry_block or token not in live_block:
+                raise ValueError(f"both {label} observations must bind {token}")
+    genesis_between = "\n".join(
+        lines[genesis_blocks[0][0] + 1:genesis_observes[1]]
+    )
+    if ".data.preflight_ok == true" not in genesis_between:
+        raise ValueError("genesis dry-run verdict is not checked before live append")
+    genesis_after_live = "\n".join(
+        lines[genesis_blocks[1][0] + 1:closing[0]]
+    )
+    if ".data.state_tip_digest" not in genesis_after_live:
+        raise ValueError("genesis live append does not provide the closing state tip")
+    closing_between = "\n".join(
+        lines[closing_blocks[0][0] + 1:closing_observes[1]]
+    )
+    if ".data.preflight_ok == true" not in closing_between:
+        raise ValueError("closing dry-run verdict is not checked before live append")
+    closing_after_live = "\n".join(
+        lines[closing_blocks[1][0] + 1:merge_index]
+    )
+    if ".data.state_tip_digest" not in closing_after_live:
+        raise ValueError("closing live append does not refresh the state tip")
 
     markers = [
         index for index, line in enumerate(lines[:delete_index])
@@ -536,8 +679,9 @@ def validate(relative, text):
     if len(review_body_bindings) != 1:
         raise ValueError("native review command must bind one captured body value")
     expected_head_bindings = [
-        index for index in range(provider_head_captures[0], transition_indexes[0])
-        if executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
+        index for index in range(closing_observes[-1] + 1, transition_indexes[0])
+        if "SUBMIT_REVIEW=(" in lines[index]
+        and executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
     ]
     if len(expected_head_bindings) != 1:
         raise ValueError(
@@ -607,6 +751,29 @@ def replace_merge_binding(text, token, replacement):
     return "\n".join(lines)
 
 
+def replace_expected_head_parser(text):
+    marker = "EXPECTED_REVIEW_HEAD=\"$("
+    start = text.index(marker)
+    token = ".data.head_sha"
+    index = text.index(token, start)
+    return text[:index] + ".data.removed_head_sha" + text[index + len(token):]
+
+
+def add_dry_run_to_live_observe(text, marker):
+    lines = text.splitlines()
+    marker_index = next(
+        index for index, line in enumerate(lines)
+        if line.strip() == marker
+    )
+    observes = [
+        index for index in range(marker_index + 1, len(lines))
+        if executable(lines[index], "pr review-loop observe")
+    ]
+    live_end, _ = observe_block(lines, observes[1])
+    lines.insert(live_end, "      --dry-run")
+    return "\n".join(lines)
+
+
 def insert_before_executable(text, token, insertion):
     lines = text.splitlines()
     target = next(
@@ -667,6 +834,43 @@ for relative in sys.argv[2:]:
         raise SystemExit(f"{relative}: {error}") from error
 
     mutations = {
+        "GitHub-only ledger guard": text.replace(
+            f"{LEDGER_GITHUB_MARKER}\n{GITHUB_GUARD}",
+            f"{LEDGER_GITHUB_MARKER}\nif [ \"$PROVIDER\" = gitlab ]; then",
+            1,
+        ),
+        "closing ledger input guard": text.replace(
+            f"{CLOSING_MARKER}\n{LEDGER_CLOSING_GUARD}\n  {CLOSING_DISPOSITIONS_REQUIREMENT}",
+            f"{CLOSING_MARKER}\n{CLOSING_DISPOSITIONS_REQUIREMENT}\n{LEDGER_CLOSING_GUARD}",
+            1,
+        ),
+        "GitLab convergence selector": text.replace(
+            GITLAB_CONVERGENCE_OVERRIDE,
+            GITLAB_CONVERGENCE_OVERRIDE.replace("gitlab", "github"),
+            1,
+        ),
+        "live genesis append": add_dry_run_to_live_observe(text, GENESIS_MARKER),
+        "live closing append": add_dry_run_to_live_observe(text, CLOSING_MARKER),
+        "genesis expected state": text.replace(
+            '"${REVIEW_LEDGER_STATE_ARGS[@]}"',
+            '"${OTHER_STATE_ARGS[@]}"',
+        ),
+        "genesis findings binding": text.replace(
+            '--findings-file "$REVIEW_LEDGER_FINDINGS"',
+            '--findings-file "$OTHER_FINDINGS"',
+        ),
+        "closing expected state": text.replace(
+            '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+            '--expected-state "$OTHER_STATE_TIP"',
+        ),
+        "closing findings binding": text.replace(
+            '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
+            '--findings-file "$OTHER_DISPOSITIONS"',
+        ),
+        "review-loop preflight verdict": text.replace(
+            ".data.preflight_ok == true",
+            ".data.preflight_ok == false",
+        ),
         "github guard": text.replace(GITHUB_GUARD, "# removed github guard"),
         "review-id guard": text.replace(ID_GUARD, "# removed review-id guard"),
         "exact review id": text.replace(
@@ -734,11 +938,7 @@ for relative in sys.argv[2:]:
             "pr view",
             "pr removed-view",
         ),
-        "provider head parse": text.replace(
-            ".data.head_sha",
-            ".data.removed_head_sha",
-            1,
-        ),
+        "provider head parse": replace_expected_head_parser(text),
         "provider review-head comparison": text.replace(
             ".data.head_sha == $head",
             ".data.head_sha == $other",
@@ -1471,6 +1671,13 @@ run_pr_outcome_routing_probe() {
   rendered_contract_assert_skill pr deliver-pr
   rendered_contract_assert_all_contain pr deliver-pr '## Lifecycle Mode Selection'
   rendered_contract_assert_all_contain pr deliver-pr '## Review Profile Selection'
+  rendered_contract_assert_all_contain pr deliver-pr '## Review-Loop Ledger'
+  rendered_contract_assert_all_contain pr deliver-pr '(`open`, `fixed`, `accepted`, `preference`, `follow-up`)'
+  rendered_contract_assert_all_omit pr deliver-pr '(`open`, `fixed`, `accepted`, `reopened`)'
+  rendered_contract_assert_all_contain pr deliver-pr '`review_finding_reopened`'
+  rendered_contract_assert_all_contain pr deliver-pr 'faithful non-mutating `review-loop observe --dry-run` preflight'
+  rendered_contract_assert_all_contain pr deliver-pr 'GitLab has neither the ledger'
+  rendered_contract_assert_all_contain pr deliver-pr '`--review-convergence=false` without calling `pr review-loop`'
   rendered_contract_assert_all_contain pr deliver-pr '**Quick merge**'
   rendered_contract_assert_all_contain pr deliver-pr '**Close unmerged**'
   rendered_contract_assert_all_contain pr deliver-pr 'run `forge-cli pr close` and stop before delivery'

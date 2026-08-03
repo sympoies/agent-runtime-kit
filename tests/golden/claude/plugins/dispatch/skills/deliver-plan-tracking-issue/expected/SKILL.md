@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.22.12`, `review-specialists`.
+  `forge-cli >=1.25.13`, `review-specialists`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge context with the
@@ -40,6 +40,9 @@ Inputs:
   `SPECIALIST_REVIEW_COMMENT_FILE`, optional GitHub `REVIEW_THREAD_FILE` for
   actionable findings, `REVIEW_DECISION`, and `DELIVERY_REVIEW_OUTCOME`
   (combined outcome body).
+- On GitHub, `REVIEW_LEDGER_FINDINGS`, the delivery-mode specialist merge envelope for
+  the reviewed head (including the generated empty envelope for a clean
+  review), plus `REVIEW_LEDGER_DISPOSITIONS` when genesis has open findings.
 - `REVIEW_OUTCOME_COMMENT`: the native review event URL produced by
   `forge-cli pr review --submit-review` (or a retained evidence path).
   `REVIEW_FINDINGS_JSON` is optional and contains finding rows when findings
@@ -69,8 +72,8 @@ Outputs:
   `review` role records the provider review outcome URL and is posted before merge.
 - Per-task ledger sync through `plan-tooling ledger-update`.
 - `forge-cli pr merge` after semantic review and the issue-side review
-  checkpoint; the CLI owns convergence, thread/task enforcement, and head
-  binding.
+  checkpoint and, on GitHub, a closed review-loop ledger; the CLI owns convergence,
+  thread/task enforcement, ledger enforcement, and head binding.
 - Strict `tracking close-ready --expect-visible`, followed by
   `record close --profile tracking` only when readiness and approval are complete.
 - Post-close provider read-back plus `record audit --expect-visible`, followed
@@ -208,10 +211,18 @@ review-specialists scope --base "$BASE_REF" --testing --maintainability --format
 # COMMENT per semantic lens as each lens returns, then the combined
 # APPROVE/REQUEST_CHANGES outcome. The local head is the reviewed specialist
 # diff; forge-cli rejects the write if the provider head has drifted.
-EXPECTED_REVIEW_HEAD="$(git rev-parse HEAD)"
+REVIEWED_PR="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER"
+)"
+REVIEWED_HEAD="$(
+  printf '%s\n' "$REVIEWED_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly REVIEWED_HEAD
 SUBMIT_REVIEW=()
 [ "$PROVIDER" = github ] &&
-  SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
+  SUBMIT_REVIEW=(--submit-review --expected-head "$REVIEWED_HEAD")
 FINAL_SUBMIT_REVIEW=()
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
@@ -240,6 +251,53 @@ forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --lens "$REVIEW_LENS" \
   --issue "$ISSUE" --mirror-issue --format json
 
+# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate.
+if [ "$PROVIDER" = github ]; then
+: "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
+REVIEW_LEDGER_INSPECT="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop inspect "$PR_NUMBER"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_INSPECT" |
+    jq -er 'if .ok == true then (.data.state_tip_digest // "") else error("inspect failed") end'
+)" || exit $?
+REVIEW_LEDGER_STATE_ARGS=()
+[ -n "$REVIEW_LEDGER_STATE_TIP" ] &&
+  REVIEW_LEDGER_STATE_ARGS=(--expected-state "$REVIEW_LEDGER_STATE_TIP")
+
+# Review-loop genesis: dry-run before live append and before any repair.
+REVIEW_LEDGER_GENESIS_DRY_RUN="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS" \
+    --dry-run
+)" || exit $?
+printf '%s\n' "$REVIEW_LEDGER_GENESIS_DRY_RUN" |
+  jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+REVIEW_LEDGER_GENESIS="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er 'select(.ok == true) | .data.state_tip_digest'
+)" || exit $?
+REVIEW_LEDGER_OPEN_COUNT="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er '[.data.state.findings[] | select(.status == "open")] | length'
+)" || exit $?
+fi
+
+# On GitHub, stop here when findings are open. Repair and push, rerun validation
+# and the affected lenses, then provide REVIEW_LEDGER_DISPOSITIONS for the new
+# head. GitLab retains its outcome-note path without ledger calls.
+
 # Read native review bodies after specialist posting and repair. Disposition
 # actionable current-head summaries before the combined owner outcome; stale
 # summaries are informational. When summary_truncated is true, retrieve the
@@ -253,6 +311,35 @@ EXPECTED_REVIEW_HEAD="$(
     jq -er 'select(.ok == true) | .data.head_sha'
 )" || exit $?
 readonly EXPECTED_REVIEW_HEAD
+
+# Review-loop closing observation: after repair/push and before merge.
+if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then
+  : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
+  REVIEW_LEDGER_CLOSE_DRY_RUN="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS" \
+      --dry-run
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE_DRY_RUN" |
+    jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+  REVIEW_LEDGER_CLOSE="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
+  )" || exit $?
+  REVIEW_LEDGER_STATE_TIP="$(
+    printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+      jq -er 'select(.ok == true) | .data.state_tip_digest'
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+    jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \
+      >/dev/null
+fi
 if [ "$PROVIDER" = github ]; then
   PRE_SUBMIT_REVIEWS="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
@@ -432,9 +519,14 @@ attach to an issue that already carries those roles, because attachment posts a
 new lifecycle set rather than resuming the existing tracker.
 
 `forge-cli pr deliver --no-merge` creates or adopts the draft and completes its
-check wait without merging, leaving the window for review. Inspect native
-summaries and post the owner outcome before the issue-side `review` checkpoint;
-then mark the PR ready and call `forge-cli pr merge`. The merge primitive owns
+check wait without merging, leaving the window for review. On GitHub, inspect
+native summaries, append review-loop genesis before repair, and close every
+finding at the repaired head; a clean review still appends genesis with the
+generated empty delivery envelope. On GitLab, do not require ledger artifacts
+or call `pr review-loop`; retain the outcome-note path and pass
+`--review-convergence=false` to merge. On either provider, post the owner outcome
+before the issue-side `review` checkpoint, then mark the PR ready and call
+`forge-cli pr merge`. The merge primitive owns
 the observed quiet window, complete/final native-review reads, native change
 requests, thread/task gates, and provider-head binding. When `LINKED_PR` already
 exists, adopt and verify it through `pr deliver` existing-PR adoption instead of
@@ -461,7 +553,7 @@ once; stop on an ambiguous node, a failed guard, or a second rejection. The gene
 outcome owns the read-only lenses and
 mode selection; this
 skill owns the provider writes, semantic disposition,
-checkpoint, and merge, and reviewer subagents never post. On
+review-loop observations, checkpoint, and merge, and reviewer subagents never post. On
 `review_convergence_activity_changed`, read `forge-cli pr reviews` again,
 disposition the new evidence, refresh the final outcome/checkpoint, and retry.
 For `unresolved_review_threads` or `unchecked_task_items`, call the matching

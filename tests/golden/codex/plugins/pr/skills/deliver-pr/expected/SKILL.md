@@ -10,14 +10,20 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.22.12`, `plan-issue >=1.1.0`, and
+- `agent-runtime`, `forge-cli >=1.25.13`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
   available on `PATH`. The generic code-review outcome uses a quick or full
   profile in pre-merge context; native review summaries and observed
   convergence need `forge-cli` 1.21.34, guarded pending-review recovery needs
   1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
   needs 1.0.17, and
-  existing-PR adoption in `pr deliver` needs 1.1.0. Linked issue closeout
+  existing-PR adoption in `pr deliver` needs 1.1.0. The durable review-loop
+  ledger was introduced in 1.25.0, and this workflow needs 1.25.13 for its
+  faithful non-mutating `review-loop observe --dry-run` preflight. From 1.25.0,
+  `pr merge` fails closed with
+  `review_state_conflict` ("bounded review delivery requires an explicit genesis
+  ledger observation") unless the loop was recorded, so the Workflow below
+  cannot merge without it. Linked issue closeout
   relies on the unified terminal task-row contract in `plan-issue` 1.1.0.
 - Shared provider, branch, body, and label rules in
   `references/pr-lifecycle.md` are satisfied.
@@ -46,6 +52,14 @@ Inputs:
   linked issue closeout.
 - Mandatory generic code review in pre-merge context. The caller may prefer
   quick or full review, but scope and risk own the final profile selection.
+- On GitHub, `REVIEW_LEDGER_FINDINGS`, the delivery-mode `findings.merged.json` produced
+  by `review-specialists bundle --mode delivery` for the reviewed head. A clean
+  review still supplies the generated envelope with `data.findings: []` so the
+  required genesis observation is deterministic.
+- On GitHub, `REVIEW_LEDGER_DISPOSITIONS`, a bare observation array for every finding
+  repaired or dispositioned after genesis. Omit it only when the genesis
+  envelope is empty; otherwise every row carries the same
+  `lifecycle_fingerprint` and a released disposition.
 - Local terminal identity captured before merge: checkout root, branch,
   delivered head SHA, base ref, and whether the checkout is primary or a
   managed linked worktree. When an outer L2/L3 or requested post-merge workflow
@@ -87,7 +101,11 @@ Outputs:
   `forge-cli pr reviews` and semantically dispositioned before the final owner
   outcome. Stale-head reviews remain informational. GitLab retains its outcome
   note flow because native review snapshots are GitHub-only in v1.
-- Mechanical convergence, unresolved-thread, unchecked-task, and provider-head
+- On GitHub, a durable `forge-cli.review-loop.v1` chain recording each reviewed head and
+  its finding dispositions, appended through `forge-cli pr review-loop observe`
+  before each repair is pushed.
+- Mechanical convergence, review-ledger, unresolved-thread, unchecked-task, and
+  provider-head
   gates executed by `forge-cli pr merge`. A typed gate failure routes to the
   matching read/disposition/retry path instead of an agent-authored polling
   loop.
@@ -120,7 +138,12 @@ Failure modes:
 - `forge-cli pr merge` returns `review_changes_requested`,
   `review_convergence_activity_changed`, `review_convergence_head_changed`,
   `review_convergence_timeout`, `review_snapshot_incomplete`,
-  `unresolved_review_threads`, or `unchecked_task_items`. Read and disposition
+  `unresolved_review_threads`, `unchecked_task_items`, or
+  `review_state_conflict`. A `review_state_conflict` at merge means the
+  review-loop ledger has no observation for this head; it cannot be backfilled
+  at an earlier head, so record what is true at the current head and treat the
+  lost rounds as a reporting gap rather than reconstructing them. Read and
+  disposition
   the matching provider evidence before retrying; do not replace the CLI gate
   with a custom timing loop.
 - Unchecked `- [ ]` task-list items remain in the PR/MR description at merge
@@ -189,6 +212,65 @@ The quick profile changes review depth only. It never skips checks, final
 provider review-state inspection, convergence, unresolved-thread, unchecked-task,
 expected-head, linked-lifecycle, or terminal cleanup gates.
 
+## Review-Loop Ledger
+
+On GitHub, `forge-cli pr merge` fails closed unless the repair loop was recorded
+in the durable `forge-cli.review-loop.v1` chain. GitLab has neither the ledger
+surface nor this merge gate in v1; it keeps the outcome-note flow and passes
+`--review-convergence=false` without calling `pr review-loop`. Two GitHub rules interact, and getting
+the order wrong is unrecoverable:
+
+- an observation can only be appended at the **current provider head**, so
+  history cannot be backfilled — a past head is rejected with `the provider
+  pull-request head differs from --expected-head`;
+- a `fixed` disposition requires a **repaired head**, so re-declaring a finding
+  fixed at the head where it was first recorded is rejected with `a fixed
+  disposition requires a repaired head`.
+
+Together they force the observation to happen *before* the repair is pushed.
+The no-finding path still appends genesis: merge requires an observation for
+the current head even when the generated delivery envelope contains no rows.
+
+For a GitHub finding-bearing round:
+
+1. review returns findings;
+2. `forge-cli pr review-loop observe --expected-head <reviewed head>`, with the
+   findings recorded as `open`;
+3. repair, then push;
+4. `forge-cli pr review-loop observe --expected-head <repaired head>`, with the
+   repaired findings recorded as `fixed`;
+5. merge at that same repaired head.
+
+Doing every repair first and then trying to record the history cannot be
+repaired: the pre-repair head is gone, so the round count and the
+`no_progress_rounds` budget cannot be reconstructed. The real find→fix history
+then survives only in PR comments, not in the ledger.
+
+`--findings-file` accepts two shapes, and they are not interchangeable. Produce
+the genesis envelope through `review-specialists bundle --mode delivery`; do
+not hand-author a lookalike empty payload for a clean quick pass:
+
+| Shape | When | Requirements |
+| --- | --- | --- |
+| `review-specialists merge --mode delivery` envelope | the genesis observation | each row needs `evidence`, `recommendation`, and a `lifecycle_fingerprint` of the form `<category>:<component>:<invariant>` whose category segment equals the row's `category`; the schema **rejects** `disposition` as an unknown field |
+| bare observation array | any round that carries dispositions | each row needs `lifecycle_fingerprint` and accepts `disposition` (`open`, `fixed`, `accepted`, `preference`, `follow-up`) |
+
+A finding that reappears is submitted as `open`, not `reopened`. The state
+machine decides whether that transition is a reopen and may stop with the typed
+`review_finding_reopened` gate; `reopened` is not an input disposition in
+forge-cli 1.25.13.
+
+Before every round, inspect the provider-visible chain and pass its current
+`state_tip_digest` as `--expected-state` when non-null. Replace the local tip
+with every live append's returned digest. This makes a resumed shell and a
+second repair round use the latest chain CAS rather than reusing genesis state.
+
+Check the payload and both compare-and-swap inputs before writing anything:
+`pr review-loop observe … --dry-run` performs the same reads and validation and
+reports a verdict per rule in `data.preflight[]` without appending. A live
+`observe` appends durable, provider-visible state on success, so it is not a
+probe.
+
 ## Body Format
 
 Use `agent-runtime pr-body render` as the canonical formatter. The shared
@@ -251,6 +333,16 @@ without forced lenses so scope can admit quick review; when quick is ineligible
 or returns `escalate`, rerun scope with the full profile's minimum lenses:
 
 ```bash
+REVIEWED_PR="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER"
+)"
+REVIEWED_HEAD="$(
+  printf '%s\n' "$REVIEWED_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly REVIEWED_HEAD
+
 review-specialists scope \
   --base "$BASE_REF" \
   --format json
@@ -262,6 +354,55 @@ review-specialists scope \
   --testing \
   --maintainability \
   --format json
+
+# After the selected quick or specialist review has been merged with
+# `review-specialists bundle --mode delivery`, bind its generated envelope.
+# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate.
+if [ "$PROVIDER" = github ]; then
+: "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
+REVIEW_LEDGER_INSPECT="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop inspect "$PR_NUMBER"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_INSPECT" |
+    jq -er 'if .ok == true then (.data.state_tip_digest // "") else error("inspect failed") end'
+)" || exit $?
+REVIEW_LEDGER_STATE_ARGS=()
+[ -n "$REVIEW_LEDGER_STATE_TIP" ] &&
+  REVIEW_LEDGER_STATE_ARGS=(--expected-state "$REVIEW_LEDGER_STATE_TIP")
+
+# Review-loop genesis: dry-run before live append and before any repair.
+REVIEW_LEDGER_GENESIS_DRY_RUN="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS" \
+    --dry-run
+)" || exit $?
+printf '%s\n' "$REVIEW_LEDGER_GENESIS_DRY_RUN" |
+  jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+REVIEW_LEDGER_GENESIS="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er 'select(.ok == true) | .data.state_tip_digest'
+)" || exit $?
+REVIEW_LEDGER_OPEN_COUNT="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er '[.data.state.findings[] | select(.status == "open")] | length'
+)" || exit $?
+fi
+
+# On GitHub, stop here when findings are open. Repair and push them, rerun
+# validation and affected review, then produce REVIEW_LEDGER_DISPOSITIONS as a
+# bare array. GitLab retains its outcome-note path without ledger calls.
 # Read native review bodies after specialist posting and repair. Current-head
 # summaries are semantic evidence; stale-head summaries are informational.
 PRE_SUBMIT_PR="$(
@@ -273,6 +414,35 @@ EXPECTED_REVIEW_HEAD="$(
     jq -er 'select(.ok == true) | .data.head_sha'
 )" || exit $?
 readonly EXPECTED_REVIEW_HEAD
+
+# Review-loop closing observation: after repair/push and before merge.
+if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then
+  : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
+  REVIEW_LEDGER_CLOSE_DRY_RUN="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS" \
+      --dry-run
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE_DRY_RUN" |
+    jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+  REVIEW_LEDGER_CLOSE="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
+  )" || exit $?
+  REVIEW_LEDGER_STATE_TIP="$(
+    printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+      jq -er 'select(.ok == true) | .data.state_tip_digest'
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+    jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \
+      >/dev/null
+fi
 if [ "$PROVIDER" = github ]; then
   PRE_SUBMIT_REVIEWS="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
@@ -550,30 +720,52 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    unforced scope detection and select quick or full through **Review Profile
    Selection**. Quick requires an eligible L0/L1 change and a `pass`; L2/L3,
    risk signals, unresolved current-head review state, or `escalate` select full.
-10. Keep review workers read-only. For a clean quick pass, defer provider write
-   to the single final outcome in step 13. As each full-profile lens or blocking
+10. Keep review workers read-only. For a clean quick pass, defer the review
+   outcome write to step 15; the required ledger genesis in step 11 is separate
+   workflow state. As each full-profile lens or blocking
    quick finding returns, post one compact review comment through `forge-cli pr review`
    (a native `COMMENT` review event via `--submit-review` on GitHub)
    with `--decision comments-only` and that semantic `--lens` (`quick` for a
    quick finding). The parent
    delivery workflow posts; reviewer
    subagents never call the provider. Post the moment each lens returns — before
-   the repair in step 11, never batched after it; the comment is the finding the
-   step-11 fix responds to, so it must exist first (see
+   the repair in step 12, never batched after it; the comment is the finding the
+   step-12 fix responds to, so it must exist first (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
    `--thread-file` for actionable findings so the fix can close a native review
    thread; summary-only reviews omit it.
-11. Repair concrete findings in this delivery workflow, then rerun validation,
+11. On GitHub, produce `REVIEW_LEDGER_FINDINGS` with `review-specialists bundle --mode
+    delivery`, including its generated empty envelope for a clean review. Record
+    the genesis ledger observation **before** repairing anything, at the head
+    the review actually ran against:
+    `forge-cli pr review-loop observe "$PR_NUMBER" --expected-head "$REVIEWED_HEAD"
+    --findings-file "$REVIEW_LEDGER_FINDINGS"`. Finding rows are `open` at this
+    point; an empty envelope records the clean quick/full pass. The head is
+    a compare-and-swap input and history cannot be backfilled, so this step has
+    no second chance once the repair is pushed — see **Review-Loop Ledger** for
+    both accepted `--findings-file` shapes and the ordering rules. Validate with
+    `--dry-run` first; a live `observe` writes durable provider state. On GitLab,
+    do not require ledger artifacts or call `pr review-loop`; retain the
+    outcome-note path and pass `--review-convergence=false` to merge.
+12. Repair concrete findings in this delivery workflow, then rerun validation,
    checks, and affected review. Post each focused follow-up review comment with
    the same semantic lens before continuing. Quick follow-up remains eligible
    only while scope is bounded; otherwise switch to full.
-12. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
+13. On GitHub, after the repair is pushed, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
+    array and append the closing observation at the repaired head with
+    `disposition: fixed` (or an evidence-backed terminal disposition), passing
+    `--expected-state <current tip>`.
+    A `fixed` disposition is rejected at the head where the finding was first
+    recorded, which is why step 11 had to precede the push. Repeat steps 11–13
+    per round while findings remain, inspecting the current tip before each
+    round and replacing it with each live append's returned digest.
+14. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
     semantically disposition every actionable current-head summary; stale-head
     reviews are informational. When `summary_truncated` is true, obtain the full
     review body and stop if it is unavailable. On GitLab, retain the outcome-note
     path and do not invoke the unsupported snapshot. Do not implement a polling
     or sleep loop in the workflow.
-13. Post the final combined delivery review outcome body produced by the
+15. Post the final combined delivery review outcome body produced by the
    selected pre-merge profile with `forge-cli pr review` before merge. Use the
    final `--decision` and repeat every selected `--lens` (`quick` for quick
    merge; the complete specialist set for full); add native GitHub
@@ -582,11 +774,11 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    returns `github_pending_review_exists`, use the exact-node
    `pending_reviews` recovery above and retry the unchanged outcome once; do
    not delete ambiguous drafts or downgrade the outcome to a note.
-14. Before merge, if the PR/MR references a linked tracking or dispatch issue,
+16. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are
     present. If not, stop and route to the matching plan delivery workflow.
-15. Merge with `forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER"` unless
+17. Merge with `forge-cli --provider "$PROVIDER" pr merge "$PR_NUMBER"` unless
     `--no-merge` is the requested final stop. The CLI owns observed quiet
     timing, complete/final native-review reads, native change requests,
     thread/task gates, and head CAS. On
@@ -597,13 +789,13 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     `review_convergence_head_changed` additionally requires delivery-evidence
     rebinding, validation and affected-review reruns, and a new owner outcome on
     the new head before retry.
-16. After merge, if the body referenced a linked tracking or dispatch issue
+18. After merge, if the body referenced a linked tracking or dispatch issue
     and `--no-closeout` was not supplied, run `plan-issue record close` with
     the correct profile. On gate fail, leave the issue open with the blocked
     code surfaced by `plan-issue` and route to the matching closeout skill.
-17. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
+19. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
     commit, chained closeout result, and any fallback used in delivery notes.
-18. If this workflow is the outermost terminal owner, finish any requested
+20. If this workflow is the outermost terminal owner, finish any requested
     post-merge deployment, activation, archive, evidence, and local closeout
     duties, then apply `core/policies/git-delivery.md` terminal cleanup. Recheck
     status and provider merge/head truth. Restore a clean primary checkout to

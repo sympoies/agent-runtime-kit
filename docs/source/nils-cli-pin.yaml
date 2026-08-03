@@ -47,8 +47,8 @@ required_clis:
     min: "1.0.1"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
-  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery
-    min: "1.22.12"
+  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + existing-PR adoption + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery + durable review-loop ledger with faithful observe dry-run preflight
+    min: "1.25.13"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
     min: "1.21.19"
   - bin: plan-archive     # discover / migrate / refresh / query
