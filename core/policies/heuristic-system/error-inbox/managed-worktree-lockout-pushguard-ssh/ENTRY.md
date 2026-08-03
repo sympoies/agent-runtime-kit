@@ -4,7 +4,11 @@
 
 - Status: open
 - First observed: 2026-07-17
-- Area: managed-worktree delivery; checkout-lease / intent hooks; block-unsafe-default-delivery push guard
+- Last re-triaged: 2026-08-03
+- Area: managed-worktree delivery; checkout-lease / intent hooks. The
+  `block-unsafe-default-delivery` push-guard scope in the title is resolved as of
+  2026-08-03 and retained only as history; the live scope is the deletions-first
+  lockout.
 - Severity: high
 
 ## Signal
@@ -62,9 +66,11 @@ agent session on a slow-SSH host, forcing a manual out-of-band push.
   tool edit.
 - If a checkout is already locked by unowned changes, do not fight it: create a
   fresh `git-cli worktree add` and redo the work in the correct order.
-- If the push guard fails closed, have the maintainer push the feature branch from
-  a non-agent shell (the in-session `!` prefix bypasses the PreToolUse Bash
-  hooks), then continue with `forge-cli pr create`.
+- Superseded 2026-08-03: publish the feature branch with `git-cli push --format
+  json`, then continue with `forge-cli pr create`. The former workaround was to
+  have the maintainer push from a non-agent shell (the in-session `!` prefix
+  bypasses the PreToolUse Bash hooks); that is no longer needed, because the
+  governed surface is classifiable by construction.
 
 ## Promotion Criteria
 
@@ -101,15 +107,44 @@ session and split out to its own case rather than folded in here: a compound
 unparseable — see `push-guard-fails-closed-on-compound-command`. That is not the
 #652 timeout, and it is not (c).
 
+### Re-triage 2026-08-03 — criterion (c) met; entry narrows to (a)
+
+Still not promotable, but for one reason instead of two: **(c) is now met**, so
+the whole push-guard component of this entry is closed. (a) remains the sole
+blocker and is unchanged.
+
+- **(c) met, verified.** `git-cli push` and `git-cli sync-default` ship in
+  nils-cli v1.25.13, pinned in `docs/source/nils-cli-pin.yaml` as both
+  `minimum_supported_tag` and `validated_tag`. `git-cli push` publishes the
+  checked-out branch to its own remote branch, refuses the remote's default
+  branch, and sets the upstream on first publish, so an agent no longer needs a
+  raw `git push` for a feature branch. The delivery skills now name it, so the
+  workflow and the guard agree. The companion entry
+  `push-guard-fails-closed-on-compound-command` was promoted on the same
+  release and archived.
+- **(b) still met.** No change; the cached-default fallback remains in place.
+- **(a) still unmet at runtime, verified 2026-08-03.**
+  `checkout-lease-guard.dirty_adoption_enabled()` still returns true only when
+  `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION == "1"`, and that variable is unset on
+  this host. The adopt-dirty verbs exist but stay inert, so the deletions-first
+  lockout still has no in-place recovery and destroying the worktree remains the
+  real path.
+
+Scope after this re-triage: this entry tracks the **deletions-first lockout**
+only. The slow-SSH push-guard failure (b) and the missing push verb (c) are both
+resolved; do not reopen them here.
+
 ## Next Action
 
-Two independent unblockers, either of which narrows this entry:
+One unblocker remains:
 
 1. Decide whether `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` should default to on
    (or be set in the shipped policy bundle). The #646 mechanism is inert without
-   it, so (a) currently buys nothing at runtime.
-2. Land a sanctioned feature-branch push verb for (c) — tracked in #653.
+   it, so (a) currently buys nothing at runtime. That is a policy decision about
+   how much unowned-change adoption the lease guard should admit by default, not
+   a missing mechanism.
 
-Until then keep the workaround above, and prefer a single bare push command with a
-fully-qualified refspec (`git -C <path> push -u origin refs/heads/X:refs/heads/X`)
-over any `cd … && git push` form.
+Until then keep the deletions-first workaround above: make all tool edits before
+any raw-shell tracked-file mutation, and if a checkout is already locked, create a
+fresh `git-cli worktree add` rather than fighting the guard. For the push itself,
+use `git-cli push --format json`.
