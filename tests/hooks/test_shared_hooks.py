@@ -20437,6 +20437,21 @@ exit 65
     def test_default_delivery_hook_allows_expanded_non_governed_executables(
         self,
     ) -> None:
+        self.assertEqual(
+            hook_common.shell_tokens(
+                r"printf x '\'; /usr/bin/@(git) push origin HEAD:main"
+            ),
+            [
+                "printf",
+                "x",
+                "\\",
+                ";",
+                "/usr/bin/@(git)",
+                "push",
+                "origin",
+                "HEAD:main",
+            ],
+        )
         with tempfile.TemporaryDirectory() as tmp:
             primary = Path(tmp) / "repo"
             self._init_checkout_lease_repo(primary)
@@ -20515,13 +20530,25 @@ exit 65
                 "exec =git push origin HEAD:main",
                 "/usr/bin/@(git) push origin HEAD:main",
                 "/usr/bin/@(git|echo) push origin HEAD:main",
+                "/usr/bin/git(N) push origin HEAD:main",
+                "/usr/bin/git(.) push origin HEAD:main",
+                r"printf x '\'; /usr/bin/@(git) push origin HEAD:main",
                 "/usr/bin/@(semantic-commit) commit --message 'fix: extglob writer'",
+                "/usr/bin/semantic-commit(N) commit "
+                "--message 'fix: qualifier writer'",
                 "bash -O extglob -c "
                 + shlex.quote("/usr/bin/@(git) push origin HEAD:main"),
                 "bash -O extglob -c "
                 + shlex.quote(
                     "/usr/bin/@(semantic-commit) commit "
                     "--message 'fix: nested extglob writer'"
+                ),
+                "zsh -c "
+                + shlex.quote("/usr/bin/git(N) push origin HEAD:main"),
+                "zsh -c "
+                + shlex.quote(
+                    "/usr/bin/semantic-commit(.) commit "
+                    "--message 'fix: nested qualifier writer'"
                 ),
             )
             for hidden in shell_expanded_governed_executables:

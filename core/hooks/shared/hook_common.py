@@ -1777,24 +1777,35 @@ def _shield_clobber_redirects(command: str) -> str:
     return "".join(out)
 
 
-def _shield_extglob_separators(command: str) -> str:
-    """Keep extglob words intact while ``shlex`` splits shell control syntax."""
+def _shield_dynamic_word_parentheses(command: str) -> str:
+    """Keep extglob and zsh qualifier words intact for conservative parsing."""
     out: list[str] = []
     quote = None
     extglob_depth = 0
     index = 0
     while index < len(command):
         char = command[index]
-        if char == "\\" and index + 1 < len(command):
-            out.append(char)
-            out.append(command[index + 1])
-            index += 2
-            continue
-        if quote is not None:
+        if quote == "'":
             out.append(char)
             if char == quote:
                 quote = None
             index += 1
+            continue
+        if quote == '"':
+            if char == "\\" and index + 1 < len(command):
+                out.append(char)
+                out.append(command[index + 1])
+                index += 2
+                continue
+            out.append(char)
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char == "\\" and index + 1 < len(command):
+            out.append(char)
+            out.append(command[index + 1])
+            index += 2
             continue
         if char in {"'", '"'}:
             quote = char
@@ -1810,6 +1821,18 @@ def _shield_extglob_separators(command: str) -> str:
             out.append(r"\(")
             extglob_depth = 1
             index += 2
+            continue
+        if (
+            extglob_depth == 0
+            and char == "("
+            and index > 0
+            and not command[index - 1].isspace()
+            and command[index - 1] not in ";&|()<>$"
+            and command[index + 1 : index + 2] != ")"
+        ):
+            out.append(r"\(")
+            extglob_depth = 1
+            index += 1
             continue
         if extglob_depth:
             if char == "(":
@@ -1832,7 +1855,7 @@ def _shield_extglob_separators(command: str) -> str:
 def shell_tokens(command: str) -> list[str]:
     try:
         lexer = shlex.shlex(
-            _shield_extglob_separators(_shield_clobber_redirects(command)),
+            _shield_dynamic_word_parentheses(_shield_clobber_redirects(command)),
             posix=True,
             punctuation_chars=";&|()",
         )
