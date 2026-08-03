@@ -247,6 +247,11 @@ All four lanes ran in one session rather than being split across parallel
 sessions; the parallelism analysis above is retained because it is what makes the
 split safe if this shape recurs.
 
+Delivered as three PRs: **#16** (Lane B, skills), **#17** (Lane C, error inbox),
+and **#18** (this bundle). All three were published with `git-cli push` — the
+surface Lane B documents — which is the closest thing to an end-to-end test this
+change has.
+
 | Issue | Outcome |
 | --- | --- |
 | #5 | Closed — fixed in v1.25.13, verified by probe (`worktree add` leaves no upstream) |
@@ -267,21 +272,24 @@ archived) and re-triaged `managed-worktree-lockout-pushguard-ssh` to criterion
 `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION`, which is unset on this host, so the
 adopt-dirty verbs remain inert.
 
-### Pre-existing gate failure, unrelated to this work
+### Two pre-existing gate failures, unrelated to this work
 
-`scripts/ci/all.sh` position 13 fails on `main` itself:
+`scripts/ci/all.sh` position 13 fails on `main` itself, on two independent tests
+with different root causes. Both were reproduced on an unmodified primary checkout
+at `db0d5109`, so neither is lane fallout. Positions 1–12 pass; because the gate
+stops at the first failing position, positions 14–17 were run individually for both
+lanes and all pass.
 
-```
-FAIL: test_checkout_lease_ref_safe_exception_rejects_reference_transaction_hook
-AssertionError: unexpectedly None
-```
+1. **#15** — `test_checkout_lease_ref_safe_exception_rejects_reference_transaction_hook`
+   (`AssertionError: unexpectedly None`). The guard fails *open*: it emits no
+   decision where it should refuse the dirty-checkout ref-only exception because an
+   executable `reference-transaction` hook could write checkout content.
+2. **#19** — `test_shadow_is_side_effect_free_for_stateful_capabilities`. The
+   snapshot reads a shared live state root, so concurrent `agent-session` writes
+   land between the before and after comparison. #11 bound this only for the case
+   where `AGENT_HOME` is *absent* from the environment; this host exports it, which
+   is the documented operating configuration.
 
-Reproduced on an unmodified primary checkout at `db0d5109`, so it is not caused by
-Lane B or Lane C. Because the gate stops at the first failing position, positions
-14–17 were run individually for both lanes and all pass. Positions 1–12 pass.
-
-Filed as **#15** — the guard fails *open* there, not closed: it emits no decision
-where it should refuse the dirty-checkout ref-only exception because an executable
-`reference-transaction` hook could write checkout content. Out of scope for this
-plan, but it should not be mistaken for lane fallout, and it means `main` is red
-independently of this work.
+Both are out of scope here, but they mean `main` is red independently of this work,
+and #19 additionally means the side-effect-freedom assertion cannot currently prove
+what it claims.
