@@ -217,8 +217,8 @@ assert_delivery_skills_use_native_review_convergence() {
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
-    if ! grep -q 'forge-cli >=1.25.0' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not require forge-cli 1.25.0" >&2
+    if ! grep -q 'forge-cli >=1.25.13' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not require forge-cli 1.25.13" >&2
       rc=1
     fi
     if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
@@ -266,6 +266,11 @@ assert_delivery_skills_use_native_review_convergence() {
       rc=1
     fi
   done
+  if ! grep -q 'open.*,.*fixed.*,.*accepted.*,.*reopened' \
+    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"; then
+    echo "runtime-smoke pr: deliver-pr does not document the released review-loop dispositions" >&2
+    rc=1
+  fi
 
   # The recovery recipe is destructive, so validate its executable ordering
   # and fail-closed semantics rather than merely checking marker tokens.

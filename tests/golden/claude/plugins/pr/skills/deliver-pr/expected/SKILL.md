@@ -10,7 +10,7 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.25.0`, `plan-issue >=1.1.0`, and
+- `agent-runtime`, `forge-cli >=1.25.13`, `plan-issue >=1.1.0`, and
   `review-specialists` are installed from the released nils-cli package and
   available on `PATH`. The generic code-review outcome uses a quick or full
   profile in pre-merge context; native review summaries and observed
@@ -18,7 +18,9 @@ Prereqs:
   1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
   needs 1.0.17, and
   existing-PR adoption in `pr deliver` needs 1.1.0. The durable review-loop
-  ledger needs 1.25.0: from that release `pr merge` fails closed with
+  ledger was introduced in 1.25.0, and this workflow needs 1.25.13 for its
+  faithful non-mutating `review-loop observe --dry-run` preflight. From 1.25.0,
+  `pr merge` fails closed with
   `review_state_conflict` ("bounded review delivery requires an explicit genesis
   ledger observation") unless the loop was recorded, so the Workflow below
   cannot merge without it. Linked issue closeout
@@ -235,7 +237,7 @@ then survives only in PR comments, not in the ledger.
 | Shape | When | Requirements |
 | --- | --- | --- |
 | `review-specialists merge --mode delivery` envelope | the genesis observation | each row needs `evidence`, `recommendation`, and a `lifecycle_fingerprint` of the form `<category>:<component>:<invariant>` whose category segment equals the row's `category`; the schema **rejects** `disposition` as an unknown field |
-| bare observation array | any round that carries dispositions | each row needs `lifecycle_fingerprint` and accepts `disposition` (`open`, `fixed`, `accepted`, `preference`, `follow-up`) |
+| bare observation array | any round that carries dispositions | each row needs `lifecycle_fingerprint` and accepts `disposition` (`open`, `fixed`, `accepted`, `reopened`) |
 
 Check the payload and both compare-and-swap inputs before writing anything:
 `pr review-loop observe … --dry-run` performs the same reads and validation and
