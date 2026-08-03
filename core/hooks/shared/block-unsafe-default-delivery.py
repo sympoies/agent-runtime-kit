@@ -11,12 +11,10 @@ paths that would otherwise bypass either contract.
 This is a mechanical guardrail, not a shell sandbox. Provider branch rules and
 the forge-cli expected-base/signature/read-back contract remain authoritative.
 
-Default-branch ``merge`` and ``pull`` are classified by effect, not by which
-branch is checked out. A provable fast-forward onto already-published history
-authors no commit, changes no content, publishes nothing, and is reversible with
-``git reset --hard @{1}``, so it is admitted; ``pull`` is in the analyzed set for
-the same reason, because leaving the strictly broader command unexamined while
-blocking ``merge`` admitted the one shape that can author a merge commit here.
+Default-branch ``merge`` and ``pull`` are classified as ref-moving effects, not
+merely by the branch name. Raw invocations remain refused even with
+``--ff-only`` because remote-tracking refs and local pull sources cannot prove
+publication. ``git-cli sync-default`` owns the remote-bound fast-forward.
 
 A blocked verdict names what it resolved and what failed, because an agent that
 cannot see the discriminator cannot fix the invocation. Every reason leads with
@@ -108,9 +106,8 @@ REMEDY_FEATURE_PUSH = (
 REMEDY_SYNC_DEFAULT = (
     "To advance the local default branch onto a commit already on its remote, "
     "use `git-cli sync-default`. Example: `git-cli sync-default --format json`. "
-    "The raw equivalents are admitted only in their provably fast-forward form: "
-    "`git merge --ff-only <remote>/<branch>` onto a remote-tracking ref, or "
-    "`git pull --ff-only`."
+    "Raw `git merge` and `git pull` cannot prove publication from local state "
+    "and remain refused even with `--ff-only`."
 )
 REMEDY_SHELL_CONTEXT = (
     "A `cd`, `pushd`, `source`, or Git environment assignment earlier in this "
@@ -272,26 +269,6 @@ GIT_DEFAULT_BRANCH_REWRITE_COMMANDS = frozenset(
 GIT_EXPLICIT_RECOVERY_OPTIONS = frozenset(
     {"--abort", "--continue", "--quit", "--skip"}
 )
-# Options that cannot turn a fast-forward into an authored commit. Anything
-# outside these keeps the fail-closed verdict rather than being reasoned about.
-GIT_MERGE_FAST_FORWARD_OPTIONS = frozenset(
-    {
-        "--ff-only",
-        "--quiet",
-        "-q",
-        "--verbose",
-        "-v",
-        "--progress",
-        "--no-progress",
-        "--stat",
-        "--no-stat",
-    }
-)
-GIT_PULL_FAST_FORWARD_OPTIONS = GIT_MERGE_FAST_FORWARD_OPTIONS | frozenset(
-    {"--no-rebase"}
-)
-
-
 def payload_base(payload: Mapping[str, Any]) -> Path:
     # Resolve the command's effective workdir (issue #601 P0-4) so default-branch
     # delivery is judged against the repository the command really targets, not
@@ -1051,70 +1028,6 @@ def update_ref_target(arguments: list[str]) -> str | None:
     return None
 
 
-def resolves_to_remote_tracking_ref(
-    probe: GitProbe,
-    cwd: Path,
-    config_arguments: list[str],
-    target: str,
-) -> bool:
-    """Whether ``target`` names a remote-tracking ref, i.e. published history."""
-    result = probe.run(
-        cwd,
-        *config_arguments,
-        "rev-parse",
-        "--symbolic-full-name",
-        "--verify",
-        "--quiet",
-        target,
-    )
-    if result is None or result.returncode != 0:
-        return False
-    return result.stdout.strip().startswith("refs/remotes/")
-
-
-def fast_forwards_published_work(
-    probe: GitProbe,
-    subcommand: str,
-    arguments: list[str],
-    cwd: Path,
-    config_arguments: list[str],
-) -> bool:
-    """Whether this ``merge``/``pull`` provably only adopts published history.
-
-    ``--ff-only`` is what makes "authors no commit" provable rather than
-    predicted: Git either fast-forwards or fails, and it re-checks that after
-    ``pull`` fetches, so a remote that moved cannot turn this into a merge
-    commit. ``merge`` additionally requires a remote-tracking target, because
-    fast-forwarding the default branch onto a local branch would deliver
-    unpublished work onto it without review. ``pull`` takes its source from a
-    remote by construction.
-    """
-    allowed = (
-        GIT_PULL_FAST_FORWARD_OPTIONS
-        if subcommand == "pull"
-        else GIT_MERGE_FAST_FORWARD_OPTIONS
-    )
-    positionals: list[str] = []
-    for token in arguments:
-        if token == "--":
-            return False
-        if token.startswith("-") and token != "-":
-            if token not in allowed:
-                return False
-            continue
-        positionals.append(token)
-    if "--ff-only" not in arguments:
-        return False
-    if subcommand == "pull":
-        # `<remote>`, `<remote> <branch>`, or neither.
-        return len(positionals) <= 2
-    if len(positionals) != 1:
-        return False
-    return resolves_to_remote_tracking_ref(
-        probe, cwd, config_arguments, positionals[0]
-    )
-
-
 def git_default_branch_rewrite_targets_default(
     probe: GitProbe,
     subcommand: str,
@@ -1145,15 +1058,10 @@ def git_default_branch_rewrite_targets_default(
             return None
         if current != expected:
             return False
-        # Classify by effect, not by which branch is checked out. Adopting a
-        # commit that is already published authors nothing, changes no content,
-        # publishes nothing, and is reversible with `git reset --hard @{1}`, so
-        # it is not "authoring an agent change on the default branch" under any
-        # reading — and it is the routine post-merge state.
-        if subcommand in {"merge", "pull"} and fast_forwards_published_work(
-            probe, subcommand, arguments, cwd, config_arguments
-        ):
-            return False
+        # Raw merge/pull cannot prove publication from local state alone:
+        # remote-tracking refs are locally writable and pull accepts local
+        # repository paths. The governed sync-default owner performs the
+        # remote-bound verification before moving the local default branch.
         return True
 
     target = update_ref_target(arguments)
@@ -1916,13 +1824,24 @@ def command_block_reason(command: str, base: Path) -> str:
     return ""
 
 
+def normalize_refusal_reason(reason: str) -> str:
+    """Put one stable classification marker at byte zero of every refusal."""
+    if reason.startswith((MARK_BLOCKED, MARK_UNVERIFIED)):
+        return reason
+    if MARK_UNVERIFIED in reason:
+        return f"{MARK_UNVERIFIED} {reason.replace(MARK_UNVERIFIED, '', 1).strip()}"
+    if MARK_BLOCKED in reason:
+        return f"{MARK_BLOCKED} {reason.replace(MARK_BLOCKED, '', 1).strip()}"
+    return f"{MARK_BLOCKED} {reason}"
+
+
 def main() -> int:
     payload = read_payload()
     command = command_from(payload)
     if command:
         reason = command_block_reason(command, payload_base(payload))
         if reason:
-            emit_block(reason)
+            emit_block(normalize_refusal_reason(reason))
     return ALLOW
 
 

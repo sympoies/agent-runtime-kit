@@ -34,24 +34,12 @@ branch.
 
 ## Default-branch Fast-forward Sync
 
-Advancing the local default branch onto a commit that is **already on its
-remote** is admitted. It authors no commit, changes no content, publishes
-nothing, and `git reset --hard @{1}` reverses it, so it is not "authoring an
-agent change on the default branch" under any reading — and local `main` sitting
-one commit behind after a merge is the routine state.
-
-`git-cli sync-default` is the owner. The raw equivalents are admitted only in
-their provably fast-forward form, because `--ff-only` is what makes "authors no
-commit" provable rather than predicted:
-
-- `git merge --ff-only <remote>/<branch>`, where the target resolves to a
-  remote-tracking ref. Fast-forwarding onto a *local* branch is refused: that
-  would deliver unpublished work onto the default branch without review.
-- `git pull --ff-only [<remote> [<branch>]]`. Git re-checks fast-forwardness
-  after fetching, so a remote that moved cannot turn it into a merge commit.
-
-Everything else on the default branch is refused, including a bare `git pull`,
-which can author a merge commit.
+`git-cli sync-default` is the sole owner for advancing the local default branch
+onto a commit already published on its remote. Raw `git merge` and `git pull`
+remain refused even with `--ff-only`: a remote-tracking ref is locally writable,
+and `pull` accepts local repository paths, so local state alone cannot prove the
+source commit was published. The governed owner binds the operation to the
+configured remote and verifies the fast-forward before moving the branch.
 
 ## Reading A Delivery Refusal
 
@@ -120,8 +108,8 @@ on supported Codex/Claude hosts, including Git's wildcard and matching-branch
 refspec forms. Explicit feature-branch refspecs and documented read-only
 help/dry-run forms remain available. Raw `cherry-pick`, `merge`, `pull`,
 `reset`, and `update-ref` on the checked-out default branch are classified by
-effect: only a provable fast-forward onto already-published history is admitted
-(see "Default-branch Fast-forward Sync"), and everything else fails closed. The PreToolUse hook uses cached local
+effect and fail closed; `git-cli sync-default` is the remote-bound fast-forward
+owner (see "Default-branch Fast-forward Sync"). The PreToolUse hook uses cached local
 default-branch metadata only and performs no `ls-remote` or other network
 probe. Missing or ambiguous cache state fails closed; live truth belongs to
 `forge-cli`. Hermes has no hook runner; policy and the governed CLI

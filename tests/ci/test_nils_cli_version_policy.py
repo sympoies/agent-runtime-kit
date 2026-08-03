@@ -124,6 +124,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_manifest_separates_minimum_from_validated(self) -> None:
         manifest = read("docs/source/nils-cli-pin.yaml")
+        manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.25.13")
@@ -150,6 +151,12 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             yaml_scalar(minimum_manifest, "linux_arm64"),
             "820caacbd7e2aa58f963b535589a584d9577ce2287aff2d3fd77d941cc7a8054",
         )
+        required_entries = manifest_data["required_clis"]
+        required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
+        self.assertEqual(len(required_clis), len(required_entries))
+        self.assertEqual(required_clis["agent-session"], "1.25.11")
+        self.assertEqual(required_clis["semantic-commit"], "1.25.11")
+        self.assertEqual(required_clis["main-agent"], "1.25.11")
 
     def test_blocking_ci_builds_deduplicated_minimum_validated_matrix(self) -> None:
         workflow_text = read(".github/workflows/ci.yml")

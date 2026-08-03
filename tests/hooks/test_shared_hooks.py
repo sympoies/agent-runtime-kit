@@ -20864,7 +20864,7 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "Do not author or push")
 
-    def test_default_delivery_hook_preserves_recovery_and_ff_only_sync(self) -> None:
+    def test_default_delivery_hook_preserves_recovery_and_governed_sync(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             self._init_checkout_lease_repo(repo)
@@ -20872,7 +20872,7 @@ exit 65
                 "git merge --abort",
                 "git cherry-pick --abort",
                 "git reset -- README.md",
-                "git pull --ff-only origin main",
+                "git-cli sync-default --format json",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20884,13 +20884,10 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
 
-    def test_default_delivery_hook_admits_a_published_fast_forward(self) -> None:
-        # Advancing the local default branch onto a commit that is already on
-        # its remote authors nothing, publishes nothing, changes no content, and
-        # is reversible with `git reset --hard @{1}`. Both spellings of it must
-        # be admitted, and for the same reason: `git pull --ff-only` was only
-        # ever allowed because `pull` was not classified at all, while the
-        # narrower `git merge --ff-only` was blocked.
+    def test_default_delivery_hook_routes_raw_fast_forward_to_sync_owner(self) -> None:
+        # Local state cannot prove publication: remote-tracking refs are
+        # writable and pull accepts local repository paths. The governed owner
+        # verifies the remote-bound fast-forward instead.
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             self._init_checkout_lease_repo(repo)
@@ -20908,7 +20905,7 @@ exit 65
                         cwd=repo,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "git-cli sync-default")
 
     def test_default_delivery_hook_blocks_a_pull_that_can_author_a_commit(
         self,
@@ -20938,18 +20935,25 @@ exit 65
     def test_default_delivery_hook_blocks_fast_forward_onto_unpublished_work(
         self,
     ) -> None:
-        # A fast-forward is only safe because the target is already published.
-        # Fast-forwarding the default branch onto a local branch would deliver
-        # unreviewed work onto it without a PR.
+        # Neither a local branch nor a locally writable remote-tracking ref
+        # proves publication. Pull also accepts a local repository source.
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             self._init_checkout_lease_repo(repo)
             subprocess.run(
                 ["git", "branch", "feat/local-only"], cwd=repo, check=True
             )
+            subprocess.run(
+                ["git", "update-ref", "refs/remotes/origin/fake", "HEAD"],
+                cwd=repo,
+                check=True,
+            )
             for command in (
                 "git merge --ff-only feat/local-only",
                 "git merge --ff-only HEAD",
+                "git merge --ff-only origin/fake",
+                "git pull --ff-only . feat/local-only",
+                f"git pull --ff-only {repo} feat/local-only",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -20959,6 +20963,37 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "Do not author or push")
+
+    def test_default_delivery_hook_prefixes_every_refusal_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "/tmp/semantic-commit commit --message 'fix: x'",
+                "PATH=/tmp:$PATH semantic-commit commit --message 'fix: x'",
+                "time semantic-commit commit --message 'fix: x'",
+                "printf ok; semantic-commit commit --message 'fix: x'",
+                "semantic-commit default-branch --message 'fix: x' --repo .",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    reason = str((decision or {}).get("reason", ""))
+                    self.assertTrue(
+                        reason.startswith(
+                            (
+                                "[default-delivery: blocked]",
+                                "[default-delivery: unverified]",
+                            )
+                        ),
+                        reason,
+                    )
 
     def test_default_delivery_hook_marks_blocked_apart_from_unverified(
         self,
