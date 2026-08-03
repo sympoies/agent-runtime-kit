@@ -20509,6 +20509,31 @@ exit 65
                     else:
                         self.assert_blocked(decision, "rule=opaque-executable")
 
+            shell_expanded_governed_executables = (
+                "=git push origin HEAD:main",
+                "command =git push origin HEAD:main",
+                "exec =git push origin HEAD:main",
+                "/usr/bin/@(git) push origin HEAD:main",
+                "/usr/bin/@(git|echo) push origin HEAD:main",
+                "/usr/bin/@(semantic-commit) commit --message 'fix: extglob writer'",
+                "bash -O extglob -c "
+                + shlex.quote("/usr/bin/@(git) push origin HEAD:main"),
+                "bash -O extglob -c "
+                + shlex.quote(
+                    "/usr/bin/@(semantic-commit) commit "
+                    "--message 'fix: nested extglob writer'"
+                ),
+            )
+            for hidden in shell_expanded_governed_executables:
+                with self.subTest(shell_expansion=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=opaque-executable")
+
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
                 command_payload("/usr/bin/printf --version"),

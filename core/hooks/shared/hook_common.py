@@ -1777,10 +1777,64 @@ def _shield_clobber_redirects(command: str) -> str:
     return "".join(out)
 
 
+def _shield_extglob_separators(command: str) -> str:
+    """Keep extglob words intact while ``shlex`` splits shell control syntax."""
+    out: list[str] = []
+    quote = None
+    extglob_depth = 0
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and index + 1 < len(command):
+            out.append(char)
+            out.append(command[index + 1])
+            index += 2
+            continue
+        if quote is not None:
+            out.append(char)
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            out.append(char)
+            index += 1
+            continue
+        if (
+            extglob_depth == 0
+            and char in "?*+@!"
+            and command[index + 1 : index + 2] == "("
+        ):
+            out.append(char)
+            out.append(r"\(")
+            extglob_depth = 1
+            index += 2
+            continue
+        if extglob_depth:
+            if char == "(":
+                extglob_depth += 1
+                out.append(r"\(")
+            elif char == ")":
+                extglob_depth -= 1
+                out.append(r"\)")
+            elif char in ";&|":
+                out.append("\\" + char)
+            else:
+                out.append(char)
+            index += 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def shell_tokens(command: str) -> list[str]:
     try:
         lexer = shlex.shlex(
-            _shield_clobber_redirects(command), posix=True, punctuation_chars=";&|()"
+            _shield_extglob_separators(_shield_clobber_redirects(command)),
+            posix=True,
+            punctuation_chars=";&|()",
         )
         lexer.whitespace_split = True
         lexer.commenters = ""
@@ -3166,7 +3220,7 @@ def invocation_command_position_is_dynamic(
     # governed command receives the specific executable-resolution refusal.
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\[[^\]]+\]=.*", token):
         return False
-    return token.startswith("~") or any(
+    return token.startswith(("~", "=")) or any(
         marker in token for marker in "$`*?[]{}()"
     )
 
