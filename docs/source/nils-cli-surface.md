@@ -1,23 +1,37 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-03 (refreshed for `v1.25.13`)
+- Snapshot date: 2026-08-03 (refreshed for `v1.26.0`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.25.13`
+- Active `git describe --tags` output: `v1.26.0`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.13`,
-  `validated_tag: v1.25.13`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.26.0`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `4aa0dc7e`
-  (`chore(release): bump cli versions to 1.25.13`)
+- Head commit: `eef4c633`
+  (`chore(release): bump cli versions to 1.26.0`)
 - Release:
-  [`v1.25.13`](https://github.com/sympoies/nils-cli/releases/tag/v1.25.13),
+  [`v1.26.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.0),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.25.13` is both the compatibility minimum and the validated release. This
-  is an explicit compatibility retirement: current runtime skills declare
+- `v1.26.0` is the validated release while `v1.25.13` remains the compatibility
+  minimum. This ordinary uptake adds an upgrade-safe `agent-session` binary pin
+  for newly created tmux sessions, the `agent-hook` degradation and centralized
+  observation lanes with `agent-session diagnose` and richer `/healthz`
+  projection, no-agent-attribution guards on commit and PR writers, visible and
+  consolidated review-ledger comments, and capability success based on process
+  exit status rather than stdin closure
+  ([#1415](https://github.com/sympoies/nils-cli/pull/1415),
+  [#1416](https://github.com/sympoies/nils-cli/pull/1416),
+  [#1418](https://github.com/sympoies/nils-cli/pull/1418),
+  [#1421](https://github.com/sympoies/nils-cli/pull/1421),
+  [#1424](https://github.com/sympoies/nils-cli/pull/1424)). Runtime-kit does
+  not require these additive recovery and delivery refinements to execute its
+  existing declared surface, so no compatibility or per-binary floor moves.
+- `v1.25.13` remains the compatibility minimum and was the previous validated
+  release. Its adoption was an explicit compatibility retirement: current
   `semantic-commit`, `agent-session`, and `main-agent` contracts introduced in
   v1.25.11, while v1.25.8 does not ship `main-agent` at all. The old exact
   minimum lane therefore could not execute the repository's declared runtime

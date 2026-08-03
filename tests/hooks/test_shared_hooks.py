@@ -18457,6 +18457,16 @@ exit 65
         path.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
         subprocess.run(
+            [
+                "git",
+                "config",
+                "core.hooksPath",
+                str(path / ".git" / "hooks"),
+            ],
+            cwd=path,
+            check=True,
+        )
+        subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=path,
             check=True,
@@ -24989,6 +24999,44 @@ exit 66
             self._init_checkout_lease_repo(repo)
             (repo / "untracked.log").write_text("unowned\n", encoding="utf-8")
             hook = repo / ".git" / "hooks" / "reference-transaction"
+            hook.write_text(
+                "#!/bin/sh\nprintf side-effect > checkout-hook-output.txt\n",
+                encoding="utf-8",
+            )
+            hook.chmod(0o755)
+
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "ref-session",
+                    repo,
+                    tool_name="Bash",
+                    command="git branch -D merged-topic",
+                ),
+                cwd=repo,
+                env={"AGENT_RUNTIME_STATE_HOME": str(state)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "reference-transaction hook")
+            self.assertFalse((repo / "checkout-hook-output.txt").exists())
+
+    def test_checkout_lease_ref_safe_exception_honors_custom_hooks_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            hooks = root / "custom-hooks"
+            self._init_checkout_lease_repo(repo)
+            hooks.mkdir()
+            subprocess.run(
+                ["git", "config", "core.hooksPath", str(hooks)],
+                cwd=repo,
+                check=True,
+            )
+            (repo / "untracked.log").write_text("unowned\n", encoding="utf-8")
+            hook = hooks / "reference-transaction"
             hook.write_text(
                 "#!/bin/sh\nprintf side-effect > checkout-hook-output.txt\n",
                 encoding="utf-8",
