@@ -166,12 +166,24 @@ REVIEWED_HEAD="$(
 )" || exit $?
 readonly REVIEWED_HEAD
 : "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
+REVIEW_LEDGER_INSPECT="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop inspect "$LANE_PR_NUMBER"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_INSPECT" |
+    jq -er 'if .ok == true then (.data.state_tip_digest // "") else error("inspect failed") end'
+)" || exit $?
+REVIEW_LEDGER_STATE_ARGS=()
+[ -n "$REVIEW_LEDGER_STATE_TIP" ] &&
+  REVIEW_LEDGER_STATE_ARGS=(--expected-state "$REVIEW_LEDGER_STATE_TIP")
 
 # Review-loop genesis: dry-run before live append and before any repair.
 REVIEW_LEDGER_GENESIS_DRY_RUN="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
     pr review-loop observe "$LANE_PR_NUMBER" \
     --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
     --findings-file "$REVIEW_LEDGER_FINDINGS" \
     --dry-run
 )" || exit $?
@@ -181,13 +193,13 @@ REVIEW_LEDGER_GENESIS="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
     pr review-loop observe "$LANE_PR_NUMBER" \
     --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
     --findings-file "$REVIEW_LEDGER_FINDINGS"
 )" || exit $?
 REVIEW_LEDGER_STATE_TIP="$(
   printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
     jq -er 'select(.ok == true) | .data.state_tip_digest'
 )" || exit $?
-readonly REVIEW_LEDGER_STATE_TIP
 REVIEW_LEDGER_OPEN_COUNT="$(
   printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
     jq -er '[.data.state.findings[] | select(.status == "open")] | length'
@@ -231,6 +243,10 @@ if [ "$REVIEW_LEDGER_OPEN_COUNT" -gt 0 ]; then
       --expected-head "$EXPECTED_REVIEW_HEAD" \
       --expected-state "$REVIEW_LEDGER_STATE_TIP" \
       --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
+  )" || exit $?
+  REVIEW_LEDGER_STATE_TIP="$(
+    printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+      jq -er 'select(.ok == true) | .data.state_tip_digest'
   )" || exit $?
   printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
     jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \

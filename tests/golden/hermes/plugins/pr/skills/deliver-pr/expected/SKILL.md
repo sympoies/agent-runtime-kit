@@ -251,7 +251,17 @@ not hand-author a lookalike empty payload for a clean quick pass:
 | Shape | When | Requirements |
 | --- | --- | --- |
 | `review-specialists merge --mode delivery` envelope | the genesis observation | each row needs `evidence`, `recommendation`, and a `lifecycle_fingerprint` of the form `<category>:<component>:<invariant>` whose category segment equals the row's `category`; the schema **rejects** `disposition` as an unknown field |
-| bare observation array | any round that carries dispositions | each row needs `lifecycle_fingerprint` and accepts `disposition` (`open`, `fixed`, `accepted`, `reopened`) |
+| bare observation array | any round that carries dispositions | each row needs `lifecycle_fingerprint` and accepts `disposition` (`open`, `fixed`, `accepted`, `preference`, `follow-up`) |
+
+A finding that reappears is submitted as `open`, not `reopened`. The state
+machine decides whether that transition is a reopen and may stop with the typed
+`review_finding_reopened` gate; `reopened` is not an input disposition in
+forge-cli 1.25.13.
+
+Before every round, inspect the provider-visible chain and pass its current
+`state_tip_digest` as `--expected-state` when non-null. Replace the local tip
+with every live append's returned digest. This makes a resumed shell and a
+second repair round use the latest chain CAS rather than reusing genesis state.
 
 Check the payload and both compare-and-swap inputs before writing anything:
 `pr review-loop observe … --dry-run` performs the same reads and validation and
@@ -346,12 +356,24 @@ review-specialists scope \
 # After the selected quick or specialist review has been merged with
 # `review-specialists bundle --mode delivery`, bind its generated envelope.
 : "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
+REVIEW_LEDGER_INSPECT="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop inspect "$PR_NUMBER"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_INSPECT" |
+    jq -er 'if .ok == true then (.data.state_tip_digest // "") else error("inspect failed") end'
+)" || exit $?
+REVIEW_LEDGER_STATE_ARGS=()
+[ -n "$REVIEW_LEDGER_STATE_TIP" ] &&
+  REVIEW_LEDGER_STATE_ARGS=(--expected-state "$REVIEW_LEDGER_STATE_TIP")
 
 # Review-loop genesis: dry-run before live append and before any repair.
 REVIEW_LEDGER_GENESIS_DRY_RUN="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
     pr review-loop observe "$PR_NUMBER" \
     --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
     --findings-file "$REVIEW_LEDGER_FINDINGS" \
     --dry-run
 )" || exit $?
@@ -361,13 +383,13 @@ REVIEW_LEDGER_GENESIS="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
     pr review-loop observe "$PR_NUMBER" \
     --expected-head "$REVIEWED_HEAD" \
+    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
     --findings-file "$REVIEW_LEDGER_FINDINGS"
 )" || exit $?
 REVIEW_LEDGER_STATE_TIP="$(
   printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
     jq -er 'select(.ok == true) | .data.state_tip_digest'
 )" || exit $?
-readonly REVIEW_LEDGER_STATE_TIP
 REVIEW_LEDGER_OPEN_COUNT="$(
   printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
     jq -er '[.data.state.findings[] | select(.status == "open")] | length'
@@ -406,6 +428,10 @@ if [ "$REVIEW_LEDGER_OPEN_COUNT" -gt 0 ]; then
       --expected-head "$EXPECTED_REVIEW_HEAD" \
       --expected-state "$REVIEW_LEDGER_STATE_TIP" \
       --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
+  )" || exit $?
+  REVIEW_LEDGER_STATE_TIP="$(
+    printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+      jq -er 'select(.ok == true) | .data.state_tip_digest'
   )" || exit $?
   printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
     jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \
@@ -723,7 +749,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     `--expected-state <current tip>`.
     A `fixed` disposition is rejected at the head where the finding was first
     recorded, which is why step 11 had to precede the push. Repeat steps 11–13
-    per round while findings remain.
+    per round while findings remain, inspecting the current tip before each
+    round and replacing it with each live append's returned digest.
 14. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
     semantically disposition every actionable current-head summary; stale-head
     reviews are informational. When `summary_truncated` is true, obtain the full

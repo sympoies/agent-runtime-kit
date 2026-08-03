@@ -290,14 +290,22 @@ def executable(line, token):
     return token in line and "`" not in line and not stripped.startswith("#")
 
 
+def observe_block(lines, start):
+    end = next(
+        index for index in range(start + 1, len(lines))
+        if lines[index].strip() == ')" || exit $?'
+    )
+    return end, "\n".join(lines[start:end + 1])
+
+
 def validate(relative, text):
     lines = text.splitlines()
     if relative == "core/skills/pr/deliver-pr/SKILL.md.tera":
-        released_enum = "(`open`, `fixed`, `accepted`, `reopened`)"
+        released_enum = "(`open`, `fixed`, `accepted`, `preference`, `follow-up`)"
         if text.count(released_enum) != 1:
             raise ValueError("deliver-pr must document the exact released disposition set once")
-        if "(`open`, `fixed`, `accepted`, `preference`, `follow-up`)" in text:
-            raise ValueError("deliver-pr documents unreleased review-loop dispositions")
+        if "(`open`, `fixed`, `accepted`, `reopened`)" in text:
+            raise ValueError("deliver-pr documents reopened as an input disposition")
     deletes = [
         index for index, line in enumerate(lines)
         if executable(line, "pr pending-review delete")
@@ -335,23 +343,57 @@ def validate(relative, text):
     ]
     if len(genesis_observes) != 2 or len(closing_observes) != 2:
         raise ValueError("each review-loop phase must have one dry-run and one live observe")
-    genesis_window = "\n".join(lines[genesis[0]:closing[0]])
-    closing_window = "\n".join(lines[closing[0]:merge_index])
-    for token in (
-        '--expected-head "$REVIEWED_HEAD"',
-        '--findings-file "$REVIEW_LEDGER_FINDINGS"',
-        "--dry-run",
+    genesis_blocks = [observe_block(lines, index) for index in genesis_observes]
+    closing_blocks = [observe_block(lines, index) for index in closing_observes]
+    for label, blocks, bindings in (
+        (
+            "genesis",
+            genesis_blocks,
+            (
+                '--expected-head "$REVIEWED_HEAD"',
+                '"${REVIEW_LEDGER_STATE_ARGS[@]}"',
+                '--findings-file "$REVIEW_LEDGER_FINDINGS"',
+            ),
+        ),
+        (
+            "closing",
+            closing_blocks,
+            (
+                '--expected-head "$EXPECTED_REVIEW_HEAD"',
+                '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+                '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
+            ),
+        ),
     ):
-        if token not in genesis_window:
-            raise ValueError(f"genesis observation is missing {token}")
-    for token in (
-        '--expected-head "$EXPECTED_REVIEW_HEAD"',
-        '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
-        '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
-        "--dry-run",
-    ):
-        if token not in closing_window:
-            raise ValueError(f"closing observation is missing {token}")
+        dry_block = blocks[0][1]
+        live_block = blocks[1][1]
+        if dry_block.count("--dry-run") != 1:
+            raise ValueError(f"{label} preflight must be exactly one dry-run")
+        if "--dry-run" in live_block:
+            raise ValueError(f"{label} live append must not carry --dry-run")
+        for token in bindings:
+            if token not in dry_block or token not in live_block:
+                raise ValueError(f"both {label} observations must bind {token}")
+    genesis_between = "\n".join(
+        lines[genesis_blocks[0][0] + 1:genesis_observes[1]]
+    )
+    if ".data.preflight_ok == true" not in genesis_between:
+        raise ValueError("genesis dry-run verdict is not checked before live append")
+    genesis_after_live = "\n".join(
+        lines[genesis_blocks[1][0] + 1:closing[0]]
+    )
+    if ".data.state_tip_digest" not in genesis_after_live:
+        raise ValueError("genesis live append does not provide the closing state tip")
+    closing_between = "\n".join(
+        lines[closing_blocks[0][0] + 1:closing_observes[1]]
+    )
+    if ".data.preflight_ok == true" not in closing_between:
+        raise ValueError("closing dry-run verdict is not checked before live append")
+    closing_after_live = "\n".join(
+        lines[closing_blocks[1][0] + 1:merge_index]
+    )
+    if ".data.state_tip_digest" not in closing_after_live:
+        raise ValueError("closing live append does not refresh the state tip")
 
     markers = [
         index for index, line in enumerate(lines[:delete_index])
@@ -663,6 +705,21 @@ def replace_expected_head_parser(text):
     return text[:index] + ".data.removed_head_sha" + text[index + len(token):]
 
 
+def add_dry_run_to_live_observe(text, marker):
+    lines = text.splitlines()
+    marker_index = next(
+        index for index, line in enumerate(lines)
+        if line.strip() == marker
+    )
+    observes = [
+        index for index in range(marker_index + 1, len(lines))
+        if executable(lines[index], "pr review-loop observe")
+    ]
+    live_end, _ = observe_block(lines, observes[1])
+    lines.insert(live_end, "      --dry-run")
+    return "\n".join(lines)
+
+
 def insert_before_executable(text, token, insertion):
     lines = text.splitlines()
     target = next(
@@ -723,6 +780,28 @@ for relative in sys.argv[2:]:
         raise SystemExit(f"{relative}: {error}") from error
 
     mutations = {
+        "live genesis append": add_dry_run_to_live_observe(text, GENESIS_MARKER),
+        "live closing append": add_dry_run_to_live_observe(text, CLOSING_MARKER),
+        "genesis expected state": text.replace(
+            '"${REVIEW_LEDGER_STATE_ARGS[@]}"',
+            '"${OTHER_STATE_ARGS[@]}"',
+        ),
+        "genesis findings binding": text.replace(
+            '--findings-file "$REVIEW_LEDGER_FINDINGS"',
+            '--findings-file "$OTHER_FINDINGS"',
+        ),
+        "closing expected state": text.replace(
+            '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+            '--expected-state "$OTHER_STATE_TIP"',
+        ),
+        "closing findings binding": text.replace(
+            '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
+            '--findings-file "$OTHER_DISPOSITIONS"',
+        ),
+        "review-loop preflight verdict": text.replace(
+            ".data.preflight_ok == true",
+            ".data.preflight_ok == false",
+        ),
         "github guard": text.replace(GITHUB_GUARD, "# removed github guard"),
         "review-id guard": text.replace(ID_GUARD, "# removed review-id guard"),
         "exact review id": text.replace(
@@ -1524,8 +1603,9 @@ run_pr_outcome_routing_probe() {
   rendered_contract_assert_all_contain pr deliver-pr '## Lifecycle Mode Selection'
   rendered_contract_assert_all_contain pr deliver-pr '## Review Profile Selection'
   rendered_contract_assert_all_contain pr deliver-pr '## Review-Loop Ledger'
-  rendered_contract_assert_all_contain pr deliver-pr '(`open`, `fixed`, `accepted`, `reopened`)'
-  rendered_contract_assert_all_omit pr deliver-pr '(`open`, `fixed`, `accepted`, `preference`, `follow-up`)'
+  rendered_contract_assert_all_contain pr deliver-pr '(`open`, `fixed`, `accepted`, `preference`, `follow-up`)'
+  rendered_contract_assert_all_omit pr deliver-pr '(`open`, `fixed`, `accepted`, `reopened`)'
+  rendered_contract_assert_all_contain pr deliver-pr '`review_finding_reopened`'
   rendered_contract_assert_all_contain pr deliver-pr 'faithful non-mutating `review-loop observe --dry-run` preflight'
   rendered_contract_assert_all_contain pr deliver-pr '**Quick merge**'
   rendered_contract_assert_all_contain pr deliver-pr '**Close unmerged**'
