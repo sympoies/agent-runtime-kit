@@ -3161,7 +3161,14 @@ def invocation_command_position_is_dynamic(
     if index >= len(simple_command):
         return False
     token = simple_command[index]
-    return "$" in token or "`" in token
+    # A standalone zsh indexed parameter assignment is shell state, not an
+    # executable glob. Leave it on the existing context-change path so a later
+    # governed command receives the specific executable-resolution refusal.
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\[[^\]]+\]=.*", token):
+        return False
+    return token.startswith("~") or any(
+        marker in token for marker in "$`*?[]{}()"
+    )
 
 
 def invocation_tokens(

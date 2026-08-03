@@ -20485,6 +20485,38 @@ exit 65
                     else:
                         self.assert_blocked(decision, "semantic-commit")
 
+            semantic_commit = Path(
+                shutil.which("semantic-commit") or "/usr/bin/semantic-commit"
+            )
+            dynamic_executables = (
+                "/usr/bin/g[i]t push origin HEAD:main",
+                "/usr/bin/g?t push origin HEAD:main",
+                "/usr/bin/{git,echo} push origin HEAD:main",
+                "~/bin/git push origin HEAD:main",
+                str(semantic_commit.with_name("semantic-*"))
+                + " commit --message 'fix: glob writer'",
+            )
+            for hidden in dynamic_executables:
+                with self.subTest(dynamic_executable=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if hidden.startswith("~"):
+                        self.assert_blocked(decision, "push")
+                    else:
+                        self.assert_blocked(decision, "rule=opaque-executable")
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("/usr/bin/printf --version"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
     def test_default_delivery_hook_uses_custom_exec_transcript_workdir(
         self,
     ) -> None:
