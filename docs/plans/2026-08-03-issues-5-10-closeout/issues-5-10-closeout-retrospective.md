@@ -1,4 +1,4 @@
-# Plan: Close issues #5–#10 (delivery-path guard, governed push surfaces, review-loop ledger)
+# Retrospective: Close issues #5–#10 (delivery-path guard, governed push surfaces, review-loop ledger)
 
 ## Overview
 

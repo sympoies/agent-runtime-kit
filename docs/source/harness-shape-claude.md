@@ -34,7 +34,7 @@ Scope rules:
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude surface)
   ships inside nils-cli; minimum supported **v1.25.13**; validated snapshot
-  **v1.25.13**
+  **v1.26.0**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,

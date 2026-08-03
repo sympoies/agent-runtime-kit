@@ -327,10 +327,17 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         self.assertTrue(envelope["ok"], envelope)
         return envelope["data"]
 
-    def snapshot_tree(self) -> dict[str, tuple[int, str]]:
+    def snapshot_tree(
+        self, *, excluded_prefixes: tuple[str, ...] = ()
+    ) -> dict[str, tuple[int, str]]:
         snapshot: dict[str, tuple[int, str]] = {}
         for path in sorted(self.root.rglob("*")):
             relative = str(path.relative_to(self.root))
+            if any(
+                relative == prefix or relative.startswith(f"{prefix}/")
+                for prefix in excluded_prefixes
+            ):
+                continue
             if path.is_file():
                 snapshot[relative] = (
                     stat.S_IMODE(path.stat().st_mode),
@@ -398,7 +405,29 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         )
         self.assertEqual(unmatched.get("shadow", []), [])
 
-    def test_shadow_is_side_effect_free_for_stateful_capabilities(self) -> None:
+    def test_shadow_only_writes_dispatch_observation_for_stateful_capabilities(
+        self,
+    ) -> None:
+        agent_session = self.binary.with_name("agent-session")
+        diagnose_help = subprocess.run(
+            [str(agent_session), "diagnose", "--help"],
+            text=True,
+            capture_output=True,
+            env=self.env,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        observation_supported = diagnose_help.returncode == 0
+        if not observation_supported:
+            self.assertEqual(
+                diagnose_help.returncode,
+                64,
+                f"stdout={diagnose_help.stdout}\nstderr={diagnose_help.stderr}",
+            )
+            self.assertEqual(
+                diagnose_help.stderr.strip(),
+                "error: unrecognized subcommand 'diagnose'",
+            )
         before = self.snapshot_tree()
         decision = self.json_result(
             self.run_hook(
@@ -416,10 +445,77 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                 },
             )
         )
-        after = self.snapshot_tree()
+        full_after = self.snapshot_tree()
         self.assertEqual(decision["action"], "allow")
         self.assertEqual(len(decision["shadow"]), 19)
-        self.assertEqual(after, before)
+        if not observation_supported:
+            self.assertEqual(full_after, before)
+            return
+
+        after = self.snapshot_tree(
+            excluded_prefixes=("agent-session/observation",)
+        )
+        before_without_observation = {
+            path: metadata
+            for path, metadata in before.items()
+            if path != "agent-session/observation"
+            and not path.startswith("agent-session/observation/")
+        }
+        self.assertEqual(after, before_without_observation)
+        observation = {
+            path: metadata
+            for path, metadata in full_after.items()
+            if path == "agent-session/observation"
+            or path.startswith("agent-session/observation/")
+        }
+        self.assertEqual(
+            set(observation),
+            {
+                "agent-session/observation",
+                "agent-session/observation/spool",
+                "agent-session/observation/spool/.lock",
+                "agent-session/observation/spool/segment-000000000001.jsonl",
+            },
+        )
+        self.assertEqual(observation["agent-session/observation"], (0o700, "directory"))
+        self.assertEqual(
+            observation["agent-session/observation/spool"], (0o700, "directory")
+        )
+        self.assertEqual(
+            observation["agent-session/observation/spool/.lock"],
+            (0o600, hashlib.sha256(b"").hexdigest()),
+        )
+        self.assertEqual(
+            observation[
+                "agent-session/observation/spool/segment-000000000001.jsonl"
+            ][0],
+            0o600,
+        )
+        diagnostic = subprocess.run(
+            [
+                str(agent_session),
+                "--state-dir",
+                str(self.session_state),
+                "diagnose",
+                "--format",
+                "json",
+            ],
+            text=True,
+            capture_output=True,
+            env=self.env,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+        bundle = json.loads(diagnostic.stdout)["data"]
+        self.assertEqual(bundle["health"], "healthy")
+        self.assertEqual(bundle["observation"]["event_count"], 1)
+        recent = bundle["observation"]["recent"]
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(recent[0]["component"], "agent-hook")
+        self.assertEqual(recent[0]["stage"], "dispatch")
+        self.assertEqual(recent[0]["code"], "dispatch-completed")
+        self.assertEqual(recent[0]["disposition"], "allow")
 
     def test_read_only_capability_shadow_is_product_parity_evidence_only(self) -> None:
         agent_docs = self.binary.with_name("agent-docs")
