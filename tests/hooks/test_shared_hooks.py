@@ -172,6 +172,31 @@ def scrub_ambient_envs(full_env: dict[str, str]) -> None:
         full_env.pop(name, None)
 
 
+
+def run_controller(
+    arguments: list[str], *, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the out-of-band validation recovery controller.
+
+    The lane exists precisely for a session whose `PreToolUse` is failing
+    closed, so it is never reached through a provider hook.
+    """
+    full_env = dict(os.environ)
+    full_env.pop("AGENT_SESSION_ID", None)
+    scrub_ambient_envs(full_env)
+    full_env["PYTHONPATH"] = str(HOOK_DIR)
+    full_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    full_env.setdefault("AGENT_RUNTIME_STATE_HOME", TEST_RUNTIME_STATE.name)
+    if env:
+        full_env.update(env)
+    return subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "validation-recovery.py"),
+         *arguments, "--format", "json"],
+        capture_output=True,
+        text=True,
+        env=full_env,
+    )
+
 def run_hook(
     script_name: str,
     payload: dict[str, Any],
@@ -7945,6 +7970,363 @@ exit 65
             self.assert_blocked(decision, "codex.sh")
             assert decision is not None
             self.assertNotIn("unfiltered.sh", str(decision.get("reason", "")))
+
+    def test_structured_validation_waiver_releases_the_gate_without_a_shell(
+        self,
+    ) -> None:
+        """A blocked session must be able to waive validation out-of-band.
+
+        The env-var route (`AGENT_RUNTIME_VALIDATION_WAIVER`) is unreachable from
+        inside a session whose `PreToolUse` is failing closed, because setting it
+        requires the shell execution that is blocked. See
+        `sympoies/nils-cli#1409`: that made the deadlock unrecoverable from within.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "validation")
+
+            waived = run_controller(
+                ["waive", "--repo", str(repo), "--reason", "bounded infra failure"],
+                env=base_env,
+            )
+            self.assertEqual(waived.returncode, 0, waived.stderr)
+            record = json.loads(waived.stdout)
+            self.assertEqual(record["ok"], True)
+            self.assertEqual(
+                record["data"]["schema_version"],
+                "agent-runtime-validation.waiver.v1",
+            )
+            self.assertEqual(record["data"]["reason"], "bounded infra failure")
+
+            # The structured waiver takes the same one-shot routing-review step
+            # the env route takes, then releases.
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "routing review required")
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_allowed(decision)
+
+    def test_structured_waiver_reaches_a_managed_session_namespace(self) -> None:
+        """The waiver has to land where the *target session's* gate reads.
+
+        The gate namespaces validation state by `sha256(session identity)`, and a
+        managed session always has one, so a controller that only wrote the shared
+        namespace would put its waiver where that gate never looks — failing
+        silently in exactly the deadlock this lane exists for. The other waiver
+        tests pass an empty payload, so they only cover the unidentified case.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            managed = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_SESSION_ID": "managed-session",
+            }
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=managed,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_blocked(decision, "validation")
+
+            # A shared-namespace waiver must NOT release a session-scoped gate.
+            self.assertEqual(
+                run_controller(
+                    ["waive", "--repo", str(repo), "--reason", "wrong namespace"],
+                    env={"AGENT_RUNTIME_DOCS_HOME": str(repo)},
+                ).returncode,
+                0,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_blocked(decision, "validation")
+
+            # Naming the target session puts the record where that gate reads.
+            targeted = run_controller(
+                [
+                    "waive",
+                    "--repo",
+                    str(repo),
+                    "--reason",
+                    "bounded infra failure",
+                    "--session",
+                    "managed-session",
+                ],
+                env={"AGENT_RUNTIME_DOCS_HOME": str(repo)},
+            )
+            self.assertEqual(targeted.returncode, 0, targeted.stderr)
+            self.assertNotEqual(
+                json.loads(targeted.stdout)["data"]["session_namespace"], "shared"
+            )
+
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_blocked(decision, "routing review required")
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_allowed(decision)
+
+    def test_structured_waiver_inherits_an_ambient_managed_session(self) -> None:
+        """A controller invoked inside the managed context needs no argument."""
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            managed = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_SESSION_ID": "managed-session",
+            }
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=managed,
+            )
+            self.assertEqual(
+                run_controller(
+                    ["waive", "--repo", str(repo), "--reason", "reviewed"],
+                    env=managed,
+                ).returncode,
+                0,
+            )
+            for _ in range(2):
+                run_hook("stop-finish-line-gate.py", {}, cwd=repo, env=managed)
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=managed
+            )
+            self.assert_allowed(decision)
+
+    def test_structured_validation_waiver_expires_on_the_next_edit(self) -> None:
+        """The waiver is bound to the edit generation it was authorized against.
+
+        This is the concrete improvement over the ambient env var, which stays
+        true for every later Stop in the process and has already leaked across
+        turns in production.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+            self.assertEqual(
+                run_controller(
+                    ["waive", "--repo", str(repo), "--reason", "reviewed"],
+                    env=base_env,
+                ).returncode,
+                0,
+            )
+            for _ in range(2):
+                run_hook("stop-finish-line-gate.py", {}, cwd=repo, env=base_env)
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_allowed(decision)
+
+            # A later edit advances the generation, so the waiver no longer
+            # applies and validation is outstanding again.
+            time.sleep(0.02)
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/other.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "validation")
+
+    def test_structured_validation_waiver_requires_a_recorded_reason(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            for arguments in (
+                ["waive", "--repo", str(repo)],
+                ["waive", "--repo", str(repo), "--reason", "   "],
+            ):
+                result = run_controller(arguments, env=base_env)
+                self.assertNotEqual(
+                    result.returncode, 0, f"{arguments} unexpectedly succeeded"
+                )
+
+    def test_structured_validation_waiver_is_revocable(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+            self.assertEqual(
+                run_controller(
+                    ["waive", "--repo", str(repo), "--reason", "reviewed"],
+                    env=base_env,
+                ).returncode,
+                0,
+            )
+            revoked = run_controller(["revoke", "--repo", str(repo)], env=base_env)
+            self.assertEqual(revoked.returncode, 0, revoked.stderr)
+
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "validation")
+
+    def test_typed_validation_run_executes_only_the_declared_command(self) -> None:
+        """The recovery lane runs the exact declared command, never a substitute.
+
+        `#1409` asks for a narrowly typed recovery, not a shell escape: the
+        blocked session could not re-run its own declared validation because the
+        same `PreToolUse` hook kept rejecting Bash.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(
+                tmp, commands=("bash scripts/declared.sh",)
+            )
+            script = repo / "scripts" / "declared.sh"
+            script.parent.mkdir(parents=True, exist_ok=True)
+            script.write_text(
+                "#!/bin/sh\nprintf 'declared ran\\n' >> \"$PWD/.ran\"\nexit 0\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "validation")
+
+            result = run_controller(["run", "--repo", str(repo)], env=base_env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            body = json.loads(result.stdout)
+            self.assertEqual(body["ok"], True)
+            self.assertEqual(
+                body["data"]["commands"][0]["command"], "bash scripts/declared.sh"
+            )
+            self.assertEqual(body["data"]["commands"][0]["status"], "passed")
+            self.assertEqual(
+                (repo / ".ran").read_text(encoding="utf-8"), "declared ran\n"
+            )
+
+            # Running the declared command satisfies the gate for real; no
+            # waiver is involved.
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_allowed(decision)
+
+    def test_typed_validation_run_reports_a_failing_declared_command(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(
+                tmp, commands=("bash scripts/declared.sh",)
+            )
+            script = repo / "scripts" / "declared.sh"
+            script.parent.mkdir(parents=True, exist_ok=True)
+            script.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+            script.chmod(0o755)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+
+            result = run_controller(["run", "--repo", str(repo)], env=base_env)
+            self.assertNotEqual(result.returncode, 0)
+            # A failing declared command is a failure envelope, so the outcome
+            # detail arrives under `error` per the workspace envelope contract.
+            body = json.loads(result.stdout)
+            self.assertEqual(body["ok"], False)
+            self.assertEqual(body["error"]["code"], "declared-validation-failed")
+            self.assertEqual(body["error"]["commands"][0]["status"], "failed")
+            self.assertEqual(body["error"]["commands"][0]["exit_code"], 3)
+
+            # A failed declared run must not satisfy the gate.
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=base_env
+            )
+            self.assert_blocked(decision, "validation")
+
+    def test_typed_validation_status_reports_outstanding_state(self) -> None:
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+
+            clean = run_controller(["status", "--repo", str(repo)], env=base_env)
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            body = json.loads(clean.stdout)
+            self.assertEqual(body["data"]["outstanding"], False)
+            self.assertEqual(
+                body["data"]["contracts"][0]["commands"],
+                ["bash scripts/ci/all.sh"],
+            )
+            self.assertEqual(body["data"]["contracts"][0]["waiver"], None)
+
+            run_hook(
+                "finish-line-record.py",
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/lib.rs"}},
+                cwd=repo,
+                env=base_env,
+            )
+            dirty = run_controller(["status", "--repo", str(repo)], env=base_env)
+            body = json.loads(dirty.stdout)
+            self.assertEqual(body["data"]["outstanding"], True)
+            self.assertEqual(
+                body["data"]["contracts"][0]["outstanding_commands"],
+                ["bash scripts/ci/all.sh"],
+            )
+
+    def test_typed_validation_run_refuses_an_undeclared_command(self) -> None:
+        """The lane exposes no general shell escape."""
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            result = run_controller(
+                ["run", "--repo", str(repo), "--command", "rm -rf /"],
+                env=base_env,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("rm -rf /", result.stdout)
 
     def test_finish_line_gate_waiver_and_suppress_release(self) -> None:
         self._require_agent_docs()

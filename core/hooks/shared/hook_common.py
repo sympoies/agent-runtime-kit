@@ -1359,6 +1359,84 @@ def validation_pending_marker(
     return os.path.join(marker_set["dir"], f"{stem}.pending.{token}.json")
 
 
+VALIDATION_WAIVER_SCHEMA = "agent-runtime-validation.waiver.v1"
+VALIDATION_WAIVER_MAX_BYTES = 8 * 1024
+VALIDATION_WAIVER_MAX_REASON_CHARS = 500
+
+
+def validation_waiver_marker(marker_set: Mapping[str, str]) -> str:
+    """Path of the structured waiver for one product-scoped contract."""
+    stem = marker_set.get("command_stem") or marker_set["stem"]
+    return os.path.join(marker_set["dir"], f"{stem}.waiver.json")
+
+
+def validation_edit_generation(marker_set: Mapping[str, str]) -> int:
+    """The contract's current edit generation.
+
+    The dirty marker is re-touched on every recorded edit, so its modification
+    time in nanoseconds is an exact, integral generation counter. A waiver binds
+    to this value, which is what makes it expire when the next edit lands —
+    unlike the ambient `AGENT_RUNTIME_VALIDATION_WAIVER` environment variable,
+    which stays true for every later Stop in the process.
+
+    A contract with no dirty marker reports generation ``0``; a waiver recorded
+    then still expires as soon as an edit creates the marker.
+    """
+    try:
+        metadata = os.stat(marker_set["dirty"], follow_symlinks=False)
+    except OSError:
+        return 0
+    if not stat.S_ISREG(metadata.st_mode):
+        return 0
+    return metadata.st_mtime_ns
+
+
+def read_validation_waiver(
+    marker_set: Mapping[str, str], repo_root: str
+) -> dict[str, Any] | None:
+    """The structured waiver that currently applies, or ``None``.
+
+    Fails closed on every mismatch. A waiver is only honored when it is a small
+    private regular file, declares the exact schema, carries a non-empty bounded
+    reason, and binds to this repository, contract, product, session, and the
+    contract's *current* edit generation.
+    """
+    path = validation_waiver_marker(marker_set)
+    try:
+        metadata = os.stat(path, follow_symlinks=False)
+    except OSError:
+        return None
+    if not stat.S_ISREG(metadata.st_mode):
+        return None
+    if metadata.st_size > VALIDATION_WAIVER_MAX_BYTES:
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            body = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    if body.get("schema_version") != VALIDATION_WAIVER_SCHEMA:
+        return None
+    reason = body.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return None
+    if len(reason) > VALIDATION_WAIVER_MAX_REASON_CHARS:
+        return None
+    if body.get("repository") != os.path.realpath(repo_root):
+        return None
+    for field in ("contract_key", "target_stem", "product", "session_key"):
+        if body.get(field) != marker_set.get(field, ""):
+            return None
+    generation = body.get("edit_generation_ns")
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        return None
+    if generation != validation_edit_generation(marker_set):
+        return None
+    return body
+
+
 SHELL_SEPARATOR_TOKENS = {";", "&&", "||", "|", "(", ")"}
 SHELL_CONTROL_PREFIX_TOKENS = frozenset(
     {"!", "if", "then", "elif", "else", "while", "until", "do", "{"}
