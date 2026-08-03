@@ -38,7 +38,7 @@ Inputs:
   integration evidence for close-ready.
 - Reviewer-owned lane outcome inputs: `LANE_REVIEW_DECISION`,
   `LANE_REVIEW_OUTCOME`, and `LANE_REVIEW_LENS_ARGS`.
-- `REVIEW_LEDGER_FINDINGS`, the lane review's delivery-mode specialist merge
+- On GitHub, `REVIEW_LEDGER_FINDINGS`, the lane review's delivery-mode specialist merge
   envelope (including its generated empty envelope), plus
   `REVIEW_LEDGER_DISPOSITIONS` when the genesis observation has open findings.
 - Captured terminal identity for each lane and the integration checkout:
@@ -56,7 +56,7 @@ Outputs:
 - Dispatch-level checkpoints through `tracking checkpoint --profile
   dispatch --live --post state[,session[,validation[,review]]]`.
 - Final per-lane ledger repair through `plan-tooling ledger-update`.
-- Independent lane review, durable review-loop observations, and
+- Independent lane review, GitHub review-loop observations, and
   orchestrator-owned merge after approval.
 - On GitHub, current-head native review summaries inspected through
   `forge-cli pr reviews` and semantically dispositioned before lane approval;
@@ -165,6 +165,8 @@ REVIEWED_HEAD="$(
     jq -er 'select(.ok == true) | .data.head_sha'
 )" || exit $?
 readonly REVIEWED_HEAD
+# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate.
+if [ "$PROVIDER" = github ]; then
 : "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
 REVIEW_LEDGER_INSPECT="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
@@ -204,9 +206,11 @@ REVIEW_LEDGER_OPEN_COUNT="$(
   printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
     jq -er '[.data.state.findings[] | select(.status == "open")] | length'
 )" || exit $?
+fi
 
-# Stop here when findings are open. Repair and push, rerun validation and the
-# affected lane review, then provide REVIEW_LEDGER_DISPOSITIONS.
+# On GitHub, stop here when findings are open. Repair and push, rerun validation
+# and the affected lane review, then provide REVIEW_LEDGER_DISPOSITIONS. GitLab
+# retains its outcome-note path without ledger calls.
 
 # After independent lane review, inspect native review bodies once. Repair,
 # accept with rationale, or move actionable current-head feedback to a
@@ -225,7 +229,7 @@ EXPECTED_REVIEW_HEAD="$(
 readonly EXPECTED_REVIEW_HEAD
 
 # Review-loop closing observation: after repair/push and before merge.
-if [ "$REVIEW_LEDGER_OPEN_COUNT" -gt 0 ]; then
+if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then
   : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
   REVIEW_LEDGER_CLOSE_DRY_RUN="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \

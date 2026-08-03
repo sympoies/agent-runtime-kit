@@ -40,7 +40,7 @@ Inputs:
   `SPECIALIST_REVIEW_COMMENT_FILE`, optional GitHub `REVIEW_THREAD_FILE` for
   actionable findings, `REVIEW_DECISION`, and `DELIVERY_REVIEW_OUTCOME`
   (combined outcome body).
-- `REVIEW_LEDGER_FINDINGS`, the delivery-mode specialist merge envelope for
+- On GitHub, `REVIEW_LEDGER_FINDINGS`, the delivery-mode specialist merge envelope for
   the reviewed head (including the generated empty envelope for a clean
   review), plus `REVIEW_LEDGER_DISPOSITIONS` when genesis has open findings.
 - `REVIEW_OUTCOME_COMMENT`: the native review event URL produced by
@@ -72,7 +72,7 @@ Outputs:
   `review` role records the provider review outcome URL and is posted before merge.
 - Per-task ledger sync through `plan-tooling ledger-update`.
 - `forge-cli pr merge` after semantic review and the issue-side review
-  checkpoint and a closed review-loop ledger; the CLI owns convergence,
+  checkpoint and, on GitHub, a closed review-loop ledger; the CLI owns convergence,
   thread/task enforcement, ledger enforcement, and head binding.
 - Strict `tracking close-ready --expect-visible`, followed by
   `record close --profile tracking` only when readiness and approval are complete.
@@ -251,6 +251,8 @@ forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --lens "$REVIEW_LENS" \
   --issue "$ISSUE" --mirror-issue --format json
 
+# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate.
+if [ "$PROVIDER" = github ]; then
 : "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
 REVIEW_LEDGER_INSPECT="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
@@ -290,9 +292,11 @@ REVIEW_LEDGER_OPEN_COUNT="$(
   printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
     jq -er '[.data.state.findings[] | select(.status == "open")] | length'
 )" || exit $?
+fi
 
-# Stop here when findings are open. Repair and push, rerun validation and the
-# affected lenses, then provide REVIEW_LEDGER_DISPOSITIONS for the new head.
+# On GitHub, stop here when findings are open. Repair and push, rerun validation
+# and the affected lenses, then provide REVIEW_LEDGER_DISPOSITIONS for the new
+# head. GitLab retains its outcome-note path without ledger calls.
 
 # Read native review bodies after specialist posting and repair. Disposition
 # actionable current-head summaries before the combined owner outcome; stale
@@ -309,7 +313,7 @@ EXPECTED_REVIEW_HEAD="$(
 readonly EXPECTED_REVIEW_HEAD
 
 # Review-loop closing observation: after repair/push and before merge.
-if [ "$REVIEW_LEDGER_OPEN_COUNT" -gt 0 ]; then
+if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then
   : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
   REVIEW_LEDGER_CLOSE_DRY_RUN="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \

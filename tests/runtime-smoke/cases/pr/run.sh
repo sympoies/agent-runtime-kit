@@ -281,6 +281,8 @@ root = Path(sys.argv[1])
 RECOVERY_MARKER = "# Fetch a fresh post-conflict pr reviews snapshot."
 GENESIS_MARKER = "# Review-loop genesis: dry-run before live append and before any repair."
 CLOSING_MARKER = "# Review-loop closing observation: after repair/push and before merge."
+LEDGER_GITHUB_MARKER = "# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate."
+LEDGER_CLOSING_GUARD = 'if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then'
 GITHUB_GUARD = 'if [ "$PROVIDER" = github ]; then'
 ID_GUARD = 'if [ -n "${PENDING_REVIEW_ID:-}" ]; then'
 
@@ -333,6 +335,39 @@ def validate(relative, text):
         raise ValueError("review-loop genesis and closing markers must each appear once")
     if not genesis[0] < closing[0] < merge_index:
         raise ValueError("review-loop order must be genesis, closing observation, merge")
+    ledger_markers = [
+        index for index, line in enumerate(lines)
+        if line.strip() == LEDGER_GITHUB_MARKER
+    ]
+    if len(ledger_markers) != 1:
+        raise ValueError("GitHub-only review-loop boundary marker must appear once")
+    ledger_guard = ledger_markers[0] + 1
+    if lines[ledger_guard].strip() != GITHUB_GUARD:
+        raise ValueError("review-loop genesis is not guarded to GitHub")
+    ledger_guard_end = next(
+        index for index in range(ledger_guard + 1, len(lines))
+        if lines[index].strip() == "fi"
+    )
+    if not ledger_guard < genesis[0] < ledger_guard_end:
+        raise ValueError("review-loop genesis escapes the GitHub-only branch")
+    findings_requirements = [
+        index for index in range(ledger_guard + 1, ledger_guard_end)
+        if 'REVIEW_LEDGER_FINDINGS:?set to delivery-mode' in lines[index]
+    ]
+    if len(findings_requirements) != 1:
+        raise ValueError("GitHub ledger findings input must be required inside its provider branch")
+    closing_guards = [
+        index for index, line in enumerate(lines)
+        if line.strip() == LEDGER_CLOSING_GUARD
+    ]
+    if len(closing_guards) != 1:
+        raise ValueError("review-loop closing observation is not guarded to GitHub")
+    closing_guard_end = next(
+        index for index in range(closing_guards[0] + 1, len(lines))
+        if lines[index].strip() == "fi"
+    )
+    if closing_guards[0] != closing[0] + 1:
+        raise ValueError("review-loop closing GitHub guard must immediately follow its marker")
     genesis_observes = [
         index for index in range(genesis[0], closing[0])
         if executable(lines[index], "pr review-loop observe")
@@ -343,6 +378,8 @@ def validate(relative, text):
     ]
     if len(genesis_observes) != 2 or len(closing_observes) != 2:
         raise ValueError("each review-loop phase must have one dry-run and one live observe")
+    if not closing_guards[0] < closing_observes[0] < closing_observes[-1] < closing_guard_end:
+        raise ValueError("review-loop closing observations escape the GitHub-only branch")
     genesis_blocks = [observe_block(lines, index) for index in genesis_observes]
     closing_blocks = [observe_block(lines, index) for index in closing_observes]
     for label, blocks, bindings in (
@@ -780,6 +817,11 @@ for relative in sys.argv[2:]:
         raise SystemExit(f"{relative}: {error}") from error
 
     mutations = {
+        "GitHub-only ledger guard": text.replace(
+            f"{LEDGER_GITHUB_MARKER}\n{GITHUB_GUARD}",
+            f"{LEDGER_GITHUB_MARKER}\nif [ \"$PROVIDER\" = gitlab ]; then",
+            1,
+        ),
         "live genesis append": add_dry_run_to_live_observe(text, GENESIS_MARKER),
         "live closing append": add_dry_run_to_live_observe(text, CLOSING_MARKER),
         "genesis expected state": text.replace(
@@ -1607,6 +1649,8 @@ run_pr_outcome_routing_probe() {
   rendered_contract_assert_all_omit pr deliver-pr '(`open`, `fixed`, `accepted`, `reopened`)'
   rendered_contract_assert_all_contain pr deliver-pr '`review_finding_reopened`'
   rendered_contract_assert_all_contain pr deliver-pr 'faithful non-mutating `review-loop observe --dry-run` preflight'
+  rendered_contract_assert_all_contain pr deliver-pr 'GitLab has neither the ledger'
+  rendered_contract_assert_all_contain pr deliver-pr '`--review-convergence=false` without calling `pr review-loop`'
   rendered_contract_assert_all_contain pr deliver-pr '**Quick merge**'
   rendered_contract_assert_all_contain pr deliver-pr '**Close unmerged**'
   rendered_contract_assert_all_contain pr deliver-pr 'run `forge-cli pr close` and stop before delivery'
