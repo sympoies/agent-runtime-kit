@@ -52,6 +52,14 @@ Inputs:
   linked issue closeout.
 - Mandatory generic code review in pre-merge context. The caller may prefer
   quick or full review, but scope and risk own the final profile selection.
+- `REVIEW_LEDGER_FINDINGS`, the delivery-mode `findings.merged.json` produced
+  by `review-specialists bundle --mode delivery` for the reviewed head. A clean
+  review still supplies the generated envelope with `data.findings: []` so the
+  required genesis observation is deterministic.
+- `REVIEW_LEDGER_DISPOSITIONS`, a bare observation array for every finding
+  repaired or dispositioned after genesis. Omit it only when the genesis
+  envelope is empty; otherwise every row carries the same
+  `lifecycle_fingerprint` and a released disposition.
 - Local terminal identity captured before merge: checkout root, branch,
   delivered head SHA, base ref, and whether the checkout is primary or a
   managed linked worktree. When an outer L2/L3 or requested post-merge workflow
@@ -217,7 +225,11 @@ the order wrong is unrecoverable:
   fixed at the head where it was first recorded is rejected with `a fixed
   disposition requires a repaired head`.
 
-Together they force the observation to happen *before* the repair is pushed:
+Together they force the observation to happen *before* the repair is pushed.
+The no-finding path still appends genesis: merge requires an observation for
+the current head even when the generated delivery envelope contains no rows.
+
+For a finding-bearing round:
 
 1. review returns findings;
 2. `forge-cli pr review-loop observe --expected-head <reviewed head>`, with the
@@ -232,7 +244,9 @@ repaired: the pre-repair head is gone, so the round count and the
 `no_progress_rounds` budget cannot be reconstructed. The real find→fix history
 then survives only in PR comments, not in the ledger.
 
-`--findings-file` accepts two shapes, and they are not interchangeable:
+`--findings-file` accepts two shapes, and they are not interchangeable. Produce
+the genesis envelope through `review-specialists bundle --mode delivery`; do
+not hand-author a lookalike empty payload for a clean quick pass:
 
 | Shape | When | Requirements |
 | --- | --- | --- |
@@ -307,6 +321,16 @@ without forced lenses so scope can admit quick review; when quick is ineligible
 or returns `escalate`, rerun scope with the full profile's minimum lenses:
 
 ```bash
+REVIEWED_PR="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER"
+)"
+REVIEWED_HEAD="$(
+  printf '%s\n' "$REVIEWED_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly REVIEWED_HEAD
+
 review-specialists scope \
   --base "$BASE_REF" \
   --format json
@@ -318,6 +342,39 @@ review-specialists scope \
   --testing \
   --maintainability \
   --format json
+
+# After the selected quick or specialist review has been merged with
+# `review-specialists bundle --mode delivery`, bind its generated envelope.
+: "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
+
+# Review-loop genesis: dry-run before live append and before any repair.
+REVIEW_LEDGER_GENESIS_DRY_RUN="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS" \
+    --dry-run
+)" || exit $?
+printf '%s\n' "$REVIEW_LEDGER_GENESIS_DRY_RUN" |
+  jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+REVIEW_LEDGER_GENESIS="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er 'select(.ok == true) | .data.state_tip_digest'
+)" || exit $?
+readonly REVIEW_LEDGER_STATE_TIP
+REVIEW_LEDGER_OPEN_COUNT="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er '[.data.state.findings[] | select(.status == "open")] | length'
+)" || exit $?
+
+# Stop here when findings are open. Repair and push them, rerun validation and
+# affected review, then produce REVIEW_LEDGER_DISPOSITIONS as a bare array.
 # Read native review bodies after specialist posting and repair. Current-head
 # summaries are semantic evidence; stale-head summaries are informational.
 PRE_SUBMIT_PR="$(
@@ -329,6 +386,31 @@ EXPECTED_REVIEW_HEAD="$(
     jq -er 'select(.ok == true) | .data.head_sha'
 )" || exit $?
 readonly EXPECTED_REVIEW_HEAD
+
+# Review-loop closing observation: after repair/push and before merge.
+if [ "$REVIEW_LEDGER_OPEN_COUNT" -gt 0 ]; then
+  : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
+  REVIEW_LEDGER_CLOSE_DRY_RUN="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS" \
+      --dry-run
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE_DRY_RUN" |
+    jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+  REVIEW_LEDGER_CLOSE="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+    jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \
+      >/dev/null
+fi
 if [ "$PROVIDER" = github ]; then
   PRE_SUBMIT_REVIEWS="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
@@ -606,23 +688,27 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    unforced scope detection and select quick or full through **Review Profile
    Selection**. Quick requires an eligible L0/L1 change and a `pass`; L2/L3,
    risk signals, unresolved current-head review state, or `escalate` select full.
-10. Keep review workers read-only. For a clean quick pass, defer provider write
-   to the single final outcome in step 13. As each full-profile lens or blocking
+10. Keep review workers read-only. For a clean quick pass, defer the review
+   outcome write to step 15; the required ledger genesis in step 11 is separate
+   workflow state. As each full-profile lens or blocking
    quick finding returns, post one compact review comment through `forge-cli pr review`
    (a native `COMMENT` review event via `--submit-review` on GitHub)
    with `--decision comments-only` and that semantic `--lens` (`quick` for a
    quick finding). The parent
    delivery workflow posts; reviewer
    subagents never call the provider. Post the moment each lens returns — before
-   the repair in step 11, never batched after it; the comment is the finding the
-   step-11 fix responds to, so it must exist first (see
+   the repair in step 12, never batched after it; the comment is the finding the
+   step-12 fix responds to, so it must exist first (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
    `--thread-file` for actionable findings so the fix can close a native review
    thread; summary-only reviews omit it.
-11. Record the genesis ledger observation **before** repairing anything, at the
-    head the review actually ran against:
+11. Produce `REVIEW_LEDGER_FINDINGS` with `review-specialists bundle --mode
+    delivery`, including its generated empty envelope for a clean review. Record
+    the genesis ledger observation **before** repairing anything, at the head
+    the review actually ran against:
     `forge-cli pr review-loop observe "$PR_NUMBER" --expected-head "$REVIEWED_HEAD"
-    --findings-file "$FINDINGS"`. Findings are `open` at this point. The head is
+    --findings-file "$REVIEW_LEDGER_FINDINGS"`. Finding rows are `open` at this
+    point; an empty envelope records the clean quick/full pass. The head is
     a compare-and-swap input and history cannot be backfilled, so this step has
     no second chance once the repair is pushed — see **Review-Loop Ledger** for
     both accepted `--findings-file` shapes and the ordering rules. Validate with
@@ -631,8 +717,10 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    checks, and affected review. Post each focused follow-up review comment with
    the same semantic lens before continuing. Quick follow-up remains eligible
    only while scope is bounded; otherwise switch to full.
-13. After the repair is pushed, append the closing observation at the repaired
-    head with `disposition: fixed`, passing `--expected-state <current tip>`.
+13. After the repair is pushed, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
+    array and append the closing observation at the repaired head with
+    `disposition: fixed` (or an evidence-backed terminal disposition), passing
+    `--expected-state <current tip>`.
     A `fixed` disposition is rejected at the head where the finding was first
     recorded, which is why step 11 had to precede the push. Repeat steps 11–13
     per round while findings remain.

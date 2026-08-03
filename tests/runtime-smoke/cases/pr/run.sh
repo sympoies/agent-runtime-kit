@@ -266,12 +266,6 @@ assert_delivery_skills_use_native_review_convergence() {
       rc=1
     fi
   done
-  if ! grep -q 'open.*,.*fixed.*,.*accepted.*,.*reopened' \
-    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"; then
-    echo "runtime-smoke pr: deliver-pr does not document the released review-loop dispositions" >&2
-    rc=1
-  fi
-
   # The recovery recipe is destructive, so validate its executable ordering
   # and fail-closed semantics rather than merely checking marker tokens.
   if ! python3 - "$REPO_ROOT" \
@@ -285,6 +279,8 @@ import sys
 root = Path(sys.argv[1])
 
 RECOVERY_MARKER = "# Fetch a fresh post-conflict pr reviews snapshot."
+GENESIS_MARKER = "# Review-loop genesis: dry-run before live append and before any repair."
+CLOSING_MARKER = "# Review-loop closing observation: after repair/push and before merge."
 GITHUB_GUARD = 'if [ "$PROVIDER" = github ]; then'
 ID_GUARD = 'if [ -n "${PENDING_REVIEW_ID:-}" ]; then'
 
@@ -296,6 +292,12 @@ def executable(line, token):
 
 def validate(relative, text):
     lines = text.splitlines()
+    if relative == "core/skills/pr/deliver-pr/SKILL.md.tera":
+        released_enum = "(`open`, `fixed`, `accepted`, `reopened`)"
+        if text.count(released_enum) != 1:
+            raise ValueError("deliver-pr must document the exact released disposition set once")
+        if "(`open`, `fixed`, `accepted`, `preference`, `follow-up`)" in text:
+            raise ValueError("deliver-pr documents unreleased review-loop dispositions")
     deletes = [
         index for index, line in enumerate(lines)
         if executable(line, "pr pending-review delete")
@@ -310,6 +312,46 @@ def validate(relative, text):
     if len(merges) != 1:
         raise ValueError(f"expected one executable pr merge, found {len(merges)}")
     merge_index = merges[0]
+
+    genesis = [
+        index for index, line in enumerate(lines)
+        if line.strip() == GENESIS_MARKER
+    ]
+    closing = [
+        index for index, line in enumerate(lines)
+        if line.strip() == CLOSING_MARKER
+    ]
+    if len(genesis) != 1 or len(closing) != 1:
+        raise ValueError("review-loop genesis and closing markers must each appear once")
+    if not genesis[0] < closing[0] < merge_index:
+        raise ValueError("review-loop order must be genesis, closing observation, merge")
+    genesis_observes = [
+        index for index in range(genesis[0], closing[0])
+        if executable(lines[index], "pr review-loop observe")
+    ]
+    closing_observes = [
+        index for index in range(closing[0], merge_index)
+        if executable(lines[index], "pr review-loop observe")
+    ]
+    if len(genesis_observes) != 2 or len(closing_observes) != 2:
+        raise ValueError("each review-loop phase must have one dry-run and one live observe")
+    genesis_window = "\n".join(lines[genesis[0]:closing[0]])
+    closing_window = "\n".join(lines[closing[0]:merge_index])
+    for token in (
+        '--expected-head "$REVIEWED_HEAD"',
+        '--findings-file "$REVIEW_LEDGER_FINDINGS"',
+        "--dry-run",
+    ):
+        if token not in genesis_window:
+            raise ValueError(f"genesis observation is missing {token}")
+    for token in (
+        '--expected-head "$EXPECTED_REVIEW_HEAD"',
+        '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+        '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
+        "--dry-run",
+    ):
+        if token not in closing_window:
+            raise ValueError(f"closing observation is missing {token}")
 
     markers = [
         index for index, line in enumerate(lines[:delete_index])
@@ -541,8 +583,9 @@ def validate(relative, text):
     if len(review_body_bindings) != 1:
         raise ValueError("native review command must bind one captured body value")
     expected_head_bindings = [
-        index for index in range(provider_head_captures[0], transition_indexes[0])
-        if executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
+        index for index in range(closing_observes[-1] + 1, transition_indexes[0])
+        if "SUBMIT_REVIEW=(" in lines[index]
+        and executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
     ]
     if len(expected_head_bindings) != 1:
         raise ValueError(
@@ -610,6 +653,14 @@ def replace_merge_binding(text, token, replacement):
         raise ValueError(f"expected one merge binding {token!r}")
     lines[indexes[0]] = lines[indexes[0]].replace(token, replacement)
     return "\n".join(lines)
+
+
+def replace_expected_head_parser(text):
+    marker = "EXPECTED_REVIEW_HEAD=\"$("
+    start = text.index(marker)
+    token = ".data.head_sha"
+    index = text.index(token, start)
+    return text[:index] + ".data.removed_head_sha" + text[index + len(token):]
 
 
 def insert_before_executable(text, token, insertion):
@@ -739,11 +790,7 @@ for relative in sys.argv[2:]:
             "pr view",
             "pr removed-view",
         ),
-        "provider head parse": text.replace(
-            ".data.head_sha",
-            ".data.removed_head_sha",
-            1,
-        ),
+        "provider head parse": replace_expected_head_parser(text),
         "provider review-head comparison": text.replace(
             ".data.head_sha == $head",
             ".data.head_sha == $other",
@@ -1476,6 +1523,10 @@ run_pr_outcome_routing_probe() {
   rendered_contract_assert_skill pr deliver-pr
   rendered_contract_assert_all_contain pr deliver-pr '## Lifecycle Mode Selection'
   rendered_contract_assert_all_contain pr deliver-pr '## Review Profile Selection'
+  rendered_contract_assert_all_contain pr deliver-pr '## Review-Loop Ledger'
+  rendered_contract_assert_all_contain pr deliver-pr '(`open`, `fixed`, `accepted`, `reopened`)'
+  rendered_contract_assert_all_omit pr deliver-pr '(`open`, `fixed`, `accepted`, `preference`, `follow-up`)'
+  rendered_contract_assert_all_contain pr deliver-pr 'faithful non-mutating `review-loop observe --dry-run` preflight'
   rendered_contract_assert_all_contain pr deliver-pr '**Quick merge**'
   rendered_contract_assert_all_contain pr deliver-pr '**Close unmerged**'
   rendered_contract_assert_all_contain pr deliver-pr 'run `forge-cli pr close` and stop before delivery'

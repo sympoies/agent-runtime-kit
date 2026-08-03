@@ -38,6 +38,9 @@ Inputs:
   integration evidence for close-ready.
 - Reviewer-owned lane outcome inputs: `LANE_REVIEW_DECISION`,
   `LANE_REVIEW_OUTCOME`, and `LANE_REVIEW_LENS_ARGS`.
+- `REVIEW_LEDGER_FINDINGS`, the lane review's delivery-mode specialist merge
+  envelope (including its generated empty envelope), plus
+  `REVIEW_LEDGER_DISPOSITIONS` when the genesis observation has open findings.
 - Captured terminal identity for each lane and the integration checkout:
   checkout root, branch, delivered head SHA, base ref, and
   primary-versus-managed-worktree kind.
@@ -53,7 +56,8 @@ Outputs:
 - Dispatch-level checkpoints through `tracking checkpoint --profile
   dispatch --live --post state[,session[,validation[,review]]]`.
 - Final per-lane ledger repair through `plan-tooling ledger-update`.
-- Independent lane review and orchestrator-owned merge after approval.
+- Independent lane review, durable review-loop observations, and
+  orchestrator-owned merge after approval.
 - On GitHub, current-head native review summaries inspected through
   `forge-cli pr reviews` and semantically dispositioned before lane approval;
   GitLab retains the outcome-note flow. The merge primitive owns observed
@@ -152,6 +156,46 @@ plan-tooling ledger-update \
   --status done \
   --evidence "$LANE_PR_1"
 
+REVIEWED_PR="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$LANE_PR_NUMBER"
+)"
+REVIEWED_HEAD="$(
+  printf '%s\n' "$REVIEWED_PR" |
+    jq -er 'select(.ok == true) | .data.head_sha'
+)" || exit $?
+readonly REVIEWED_HEAD
+: "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
+
+# Review-loop genesis: dry-run before live append and before any repair.
+REVIEW_LEDGER_GENESIS_DRY_RUN="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$LANE_PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS" \
+    --dry-run
+)" || exit $?
+printf '%s\n' "$REVIEW_LEDGER_GENESIS_DRY_RUN" |
+  jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+REVIEW_LEDGER_GENESIS="$(
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-loop observe "$LANE_PR_NUMBER" \
+    --expected-head "$REVIEWED_HEAD" \
+    --findings-file "$REVIEW_LEDGER_FINDINGS"
+)" || exit $?
+REVIEW_LEDGER_STATE_TIP="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er 'select(.ok == true) | .data.state_tip_digest'
+)" || exit $?
+readonly REVIEW_LEDGER_STATE_TIP
+REVIEW_LEDGER_OPEN_COUNT="$(
+  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
+    jq -er '[.data.state.findings[] | select(.status == "open")] | length'
+)" || exit $?
+
+# Stop here when findings are open. Repair and push, rerun validation and the
+# affected lane review, then provide REVIEW_LEDGER_DISPOSITIONS.
+
 # After independent lane review, inspect native review bodies once. Repair,
 # accept with rationale, or move actionable current-head feedback to a
 # follow-up before the lane approval/checkpoint is final. Stale reviews are
@@ -167,6 +211,31 @@ EXPECTED_REVIEW_HEAD="$(
     jq -er 'select(.ok == true) | .data.head_sha'
 )" || exit $?
 readonly EXPECTED_REVIEW_HEAD
+
+# Review-loop closing observation: after repair/push and before merge.
+if [ "$REVIEW_LEDGER_OPEN_COUNT" -gt 0 ]; then
+  : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
+  REVIEW_LEDGER_CLOSE_DRY_RUN="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$LANE_PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS" \
+      --dry-run
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE_DRY_RUN" |
+    jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+  REVIEW_LEDGER_CLOSE="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-loop observe "$LANE_PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" \
+      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
+  )" || exit $?
+  printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
+    jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \
+      >/dev/null
+fi
 if [ "$PROVIDER" = github ]; then
   PRE_SUBMIT_REVIEWS="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
@@ -334,6 +403,11 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    and stops ready for independent review.
 5. **Independent lane review** — a different reviewer runs the generic review
    outcome with retained evidence and posts provider review activity. On
+   every lane, generate the delivery-mode findings envelope and append
+   review-loop genesis at the reviewed head before any repair. A clean lane
+   uses the generated empty envelope. After repair/push, append the closing
+   dispositions with exact state-tip and repaired-head CAS before approval.
+   On
    GitHub, read `forge-cli pr reviews` and disposition actionable current-head
    summaries; on GitLab, retain the outcome-note path. Then finalize lane
    approval and the review checkpoint. If native submission returns
@@ -345,7 +419,8 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    with `--expected-head`.
 6. **Orchestrator merge** — after approval and provider gates, the orchestrator
    merges the lane PR through `forge-cli pr merge
-   --allow-non-default-base`. The CLI owns observed convergence, native state,
+   --allow-non-default-base`. The CLI requires the closed review-loop ledger
+   for that exact head and owns observed convergence, native state,
    threads/tasks, and head binding — outdated unresolved threads are
    auto-dispositioned `stale` (`data.stale_thread_dispositions`) so only
    non-outdated threads block, and any `--allow-unresolved-threads` bypass on a
