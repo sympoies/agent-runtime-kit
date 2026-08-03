@@ -58,7 +58,6 @@ from hook_common import (
     OPAQUE_WRAPPER_COMMAND,
     command_from,
     command_context,
-    effective_workdir,
     emit_block,
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
@@ -144,7 +143,7 @@ REPO_HINT = (
 GOVERNED_CONTEXT_EXECUTABLES = frozenset({"git", "semantic-commit"})
 EXPANDED_EXECUTABLE_PATH_RE = re.compile(
     r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})/"
-    r"(?:[^/$`]+/)*(?P<basename>[^/$`]+)$"
+    r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
 )
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
 GIT_OPTIONS_WITH_VALUE = frozenset(
@@ -272,13 +271,6 @@ GIT_DEFAULT_BRANCH_REWRITE_COMMANDS = frozenset(
     # which is exactly what this guard exists to prevent.
     {"cherry-pick", "merge", "pull", "reset", "update-ref"}
 )
-
-
-def payload_base(payload: Mapping[str, Any]) -> Path:
-    # Resolve the command's effective workdir (issue #601 P0-4) so default-branch
-    # delivery is judged against the repository the command really targets, not
-    # the hook process cwd.
-    return effective_workdir(payload).resolve(strict=False)
 
 
 class GitProbe:
@@ -414,10 +406,11 @@ class GitProbe:
 
 def git_context(
     arguments: list[str], base: Path
-) -> tuple[Path, str, list[str], list[str], bool]:
+) -> tuple[Path, str, list[str], list[str], bool, bool]:
     cwd = base
     config_arguments: list[str] = []
     context_valid = True
+    absolute_chdir = False
     index = 0
     while index < len(arguments):
         token = arguments[index]
@@ -426,19 +419,21 @@ def git_context(
             break
         if token == "-C":
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             path = Path(arguments[index + 1]).expanduser()
+            absolute_chdir = absolute_chdir or path.is_absolute()
             cwd = (path if path.is_absolute() else cwd / path).resolve(strict=False)
             index += 2
             continue
         if token.startswith("-C") and token != "-C":
             path = Path(token[2:]).expanduser()
+            absolute_chdir = absolute_chdir or path.is_absolute()
             cwd = (path if path.is_absolute() else cwd / path).resolve(strict=False)
             index += 1
             continue
         if token == "-c":
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             value = arguments[index + 1]
             config_arguments.extend((token, value))
             if delivery_sensitive_config(value):
@@ -453,7 +448,7 @@ def git_context(
             continue
         if token in {"--config-env"}:
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             value = arguments[index + 1]
             config_arguments.extend((token, value))
             if delivery_sensitive_config(value):
@@ -469,7 +464,7 @@ def git_context(
         if token in GIT_REPOSITORY_CONTEXT_OPTIONS:
             context_valid = False
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             index += 2
             continue
         if token.startswith(GIT_REPOSITORY_CONTEXT_PREFIXES):
@@ -482,7 +477,7 @@ def git_context(
             continue
         if token in GIT_OPTIONS_WITH_VALUE:
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             index += 2
             continue
         if token.startswith(GIT_OPTIONS_WITH_VALUE_PREFIXES):
@@ -491,10 +486,24 @@ def git_context(
         if token.startswith("-") and token != "-":
             index += 1
             continue
-        return cwd, token, arguments[index + 1 :], config_arguments, context_valid
+        return (
+            cwd,
+            token,
+            arguments[index + 1 :],
+            config_arguments,
+            context_valid,
+            absolute_chdir,
+        )
     if index < len(arguments):
-        return cwd, arguments[index], arguments[index + 1 :], config_arguments, context_valid
-    return cwd, "", [], config_arguments, context_valid
+        return (
+            cwd,
+            arguments[index],
+            arguments[index + 1 :],
+            config_arguments,
+            context_valid,
+            absolute_chdir,
+        )
+    return cwd, "", [], config_arguments, context_valid, absolute_chdir
 
 
 def delivery_sensitive_config(value: str) -> bool:
@@ -1737,29 +1746,54 @@ def invocation_block_reason(
             )
         return semantic_commit_block_reason(probe, invocation[1:], base, base_source)
     if executable == "git":
-        cwd, subcommand, action, config_arguments, context_valid = git_context(
-            invocation[1:], base
-        )
-        if subcommand != "push" and subcommand in probe.builtin_commands(cwd):
-            if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
-                if not environment_safe or not context_valid:
-                    return unclassifiable(
-                        f"Command-local Git context can move where `git "
-                        f"{subcommand}` applies. {POLICY}"
-                    )
-                return rewrite_verdict_reason(
-                    subcommand,
-                    git_default_branch_rewrite_targets_default(
-                        probe, subcommand, action, cwd, config_arguments
-                    ),
-                )
-            return ""
+        (
+            cwd,
+            subcommand,
+            action,
+            config_arguments,
+            context_valid,
+            absolute_chdir,
+        ) = git_context(invocation[1:], base)
         if subcommand == "push" and push_shape(action)[0]:
+            return ""
+        known_builtin = subcommand != "push" and subcommand in probe.builtin_commands(
+            cwd
+        )
+        if known_builtin and subcommand not in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
             return ""
         if not environment_safe or not context_valid:
             return unclassifiable(
                 f"Command-local Git context can move where `git {subcommand}` "
                 f"applies. {POLICY}"
+            )
+        needs_repository_attestation = (
+            subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS
+            or subcommand == "push"
+            or not known_builtin
+        )
+        if (
+            needs_repository_attestation
+            and not target_resolved
+            and not absolute_chdir
+        ):
+            evidence = classification_evidence(
+                "governed-authoring-target",
+                f"git {subcommand or '<unknown>'}",
+                context_source=base_source,
+                diagnostic=base_diagnostic,
+            )
+            return unclassifiable(
+                f"{evidence} The command context could not attest the repository "
+                "where this Git operation applies. Pass an absolute `git -C "
+                "/path/to/repository ...` target or run the Git command in a "
+                "separate tool call with that worktree as its workdir."
+            )
+        if known_builtin:
+            return rewrite_verdict_reason(
+                subcommand,
+                git_default_branch_rewrite_targets_default(
+                    probe, subcommand, action, cwd, config_arguments
+                ),
             )
         resolved = resolve_git_alias(
             probe, cwd, subcommand, action, config_arguments

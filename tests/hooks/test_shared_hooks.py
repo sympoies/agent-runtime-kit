@@ -8491,6 +8491,46 @@ exit 65
             }
             self.assertEqual(effective_workdir(custom_payload), target)
 
+            # The code-mode exec surface may prefix the same canonical wrapper
+            # with one strict-JSON execution pragma. It is provider metadata,
+            # not arbitrary JavaScript, and must not discard the call workdir.
+            pragma_transcript = root / "pragma-custom-transcript.jsonl"
+            pragma_transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "pragma-custom-call-1",
+                            "input": (
+                                '// @exec: {"yield_time_ms": 30000}\n'
+                                "const r = await tools.exec_command("
+                                + json.dumps(
+                                    {
+                                        "cmd": "printf x",
+                                        "workdir": str(target),
+                                    }
+                                )
+                                + ");\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                effective_workdir(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "printf x"},
+                        "tool_use_id": "pragma-custom-call-1",
+                        "transcript_path": str(pragma_transcript),
+                    }
+                ),
+                target,
+            )
+
             # 5. The transcript workdir wins over the top-level session cwd.
             transcript_payload["cwd"] = str(root)
             self.assertEqual(effective_workdir(transcript_payload), target)
@@ -8601,6 +8641,14 @@ exit 65
                     + json.dumps({"cmd": "x", "workdir": str(target)})
                     + "); tools.exec_command("
                     + json.dumps({"cmd": "y", "workdir": str(target)})
+                    + ");",
+                ),
+                (
+                    "multiple-calls-spaced",
+                    "const r = await tools.exec_command("
+                    + json.dumps({"cmd": "x", "workdir": str(target)})
+                    + "); await tools.exec_command ("
+                    + json.dumps({"cmd": "y", "workdir": str(root)})
                     + ");",
                 ),
                 (
@@ -20412,6 +20460,14 @@ exit 65
                 "$tool --version",
                 '"$HOME/.local/bin/semantic-commit" commit '
                 "--message 'fix: hidden writer'",
+                '"$HOMEBREW_PREFIX/bin/semantic-*" commit '
+                "--message 'fix: glob writer'",
+                '"$HOMEBREW_PREFIX/bin/semanti?-commit" commit '
+                "--message 'fix: glob writer'",
+                '"$HOMEBREW_PREFIX/bin/semanti[c]-commit" commit '
+                "--message 'fix: glob writer'",
+                '"$HOMEBREW_PREFIX/bin/{semantic-commit,tool}" commit '
+                "--message 'fix: brace writer'",
             ):
                 with self.subTest(hidden=hidden):
                     code, decision, stderr = run_hook(
@@ -20453,6 +20509,7 @@ exit 65
                             "name": "exec",
                             "call_id": "semantic-call",
                             "input": (
+                                '// @exec: {"yield_time_ms": 30000}\n'
                                 "const r = await tools.exec_command("
                                 + json.dumps(
                                     {
@@ -20540,6 +20597,69 @@ exit 65
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
                 explicit_payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_default_delivery_hook_rejects_unattested_raw_git_context(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            feature = self._add_checkout_lease_worktree(
+                primary, "feat/unattested-git"
+            )
+            transcript = root / "transcript.jsonl"
+            transcript.write_text("", encoding="utf-8")
+            commands = (
+                "git merge main",
+                "git pull origin main",
+                "git reset --hard HEAD",
+                "git cherry-pick HEAD",
+                "git update-ref refs/heads/main HEAD",
+                "git push origin HEAD",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "tool_use_id": "missing-call",
+                            "transcript_path": str(transcript),
+                            "cwd": str(feature),
+                        }
+                    )
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        payload,
+                        cwd=feature,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "[default-delivery: unverified]"
+                    )
+                    self.assert_blocked(
+                        decision, "rule=governed-authoring-target"
+                    )
+                    self.assert_blocked(
+                        decision, "diagnostic=workdir-attestation-missing"
+                    )
+
+            explicit = f"git -C {shlex.quote(str(feature))} merge main"
+            payload = command_payload(explicit)
+            payload.update(
+                {
+                    "tool_use_id": "missing-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(primary),
+                }
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                payload,
                 cwd=primary,
             )
             self.assertEqual(code, 0, stderr)

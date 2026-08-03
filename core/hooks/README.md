@@ -181,6 +181,9 @@ managed-session-cwd values are attested. Relative values and plain process cwd
 are not. A transcript-call mismatch keeps payload/session cwd un-attested, but
 does not suppress an independently authenticated managed-session cwd matching
 that same resolved path. The transcript tail remains capped at 4 MiB.
+The custom-tool form accepts one optional strict-JSON `// @exec:` pragma and
+one complete canonical wrapper only; additional JavaScript or another exec
+call makes the workdir ambiguous rather than borrowing the first call's target.
 Direct-edit verification stays target-based; shell verification is
 command-context based.
 
@@ -334,8 +337,9 @@ has no runtime-kit hook runner and does not support this enforcement.
 `block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
 It admits a non-governed executable when shell expansion changes only its path
 prefix (for example `$HOME/.local/bin/tool`) while retaining the literal
-basename; a wholly dynamic executable or an expanded path ending in `git` or
-`semantic-commit` remains fail-closed. Refusals include the matched rule,
+basename; every suffix component must be literal, so a wholly dynamic
+executable, shell glob/brace/extglob syntax, or an expanded path ending in
+`git` or `semantic-commit` remains fail-closed. Refusals include the matched rule,
 extracted operation, and command-context provenance so an unverified target is
 distinguishable from a proven default-branch write.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
@@ -364,7 +368,9 @@ aliases, functions, or shell command tables may have changed; compound routes
 must be split into a separate tool call with the target checkout as its
 top-level workdir. Relative or expanded destinations,
 nested shells, and command-local `GIT_*`/`HOME` overrides also fail closed, and
-raw Git still fails closed after every shell-context change. A
+raw Git still fails closed after every shell-context change or missing
+per-call workdir attestation. An absolute `git -C /path/to/repository ...`
+target remains independently classifiable. A
 blocked verdict names the resolved repository, how it resolved, and the first
 failing precondition. When a `semantic-commit` target stays unresolvable, one
 command may state a reason inline as

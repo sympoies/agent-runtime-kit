@@ -111,8 +111,11 @@ def iter_workdir_values(value: Any) -> list[str]:
 # call, so a tail read suffices while capping memory and latency now that the
 # resolver runs inside the mutation/lease guards on every command.
 MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024
+CODEX_EXEC_PRAGMA_RE = re.compile(
+    r"\A[ \t]*// @exec:[ \t]*(?P<options>[^\r\n]+)[ \t]*\r?\n"
+)
 CODEX_CUSTOM_EXEC_PREFIX_RE = re.compile(
-    r"\A\s*(?:const\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)?"
+    r"\A\s*(?:const\s+(?P<binding>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*)?"
     r"await\s+tools\.exec_command\(\s*"
 )
 COMMAND_CONTEXT_SOURCES = frozenset(
@@ -171,6 +174,17 @@ def _custom_exec_arguments(
     source = event_payload.get("input")
     if not isinstance(source, str):
         return None, "transcript-custom-input-missing"
+    pragma = CODEX_EXEC_PRAGMA_RE.match(source)
+    if pragma is not None:
+        try:
+            pragma_options = json.loads(pragma.group("options"))
+        except json.JSONDecodeError:
+            return None, "transcript-custom-input-malformed"
+        if not isinstance(pragma_options, Mapping):
+            return None, "transcript-custom-input-malformed"
+        source = source[pragma.end() :]
+    elif source.lstrip().startswith("// @exec:"):
+        return None, "transcript-custom-input-malformed"
     match = CODEX_CUSTOM_EXEC_PREFIX_RE.match(source)
     if match is None:
         return None, "transcript-custom-input-unrecognized"
@@ -181,8 +195,13 @@ def _custom_exec_arguments(
         return None, "transcript-custom-input-malformed"
     if not isinstance(parsed, Mapping):
         return None, "transcript-custom-input-malformed"
-    remainder = argument_source[end:].lstrip()
-    if not remainder.startswith(")") or "tools.exec_command(" in remainder[1:]:
+    binding = match.group("binding")
+    remainder_pattern = r"\s*\)\s*;?\s*"
+    if binding:
+        remainder_pattern += (
+            rf"(?:text\(\s*{re.escape(binding)}\.output\s*\)\s*;?\s*)?"
+        )
+    if re.fullmatch(remainder_pattern, argument_source[end:]) is None:
         return None, "transcript-custom-input-ambiguous"
     if not isinstance(parsed.get("cmd"), str):
         return None, "transcript-custom-input-malformed"
