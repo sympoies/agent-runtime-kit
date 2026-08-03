@@ -11,9 +11,17 @@ skill's next action.
   close, and comments.
 - Provider auth must be live before mutation: `gh auth status` for GitHub,
   `glab auth status` for GitLab.
-- The branch must be pushed, have the intended base, and match the PR kind
+- The branch must be published, have the intended base, and match the PR kind
   prefix enforced by `forge-cli` (`feature -> feat/`, `bug -> fix/`,
   `chore -> chore/`, `docs -> docs/`, `ci -> ci/`, `refactor -> refactor/`).
+- Publish the branch with `git-cli push --format json`, not a raw `git push`. It
+  pins the destination to `refs/heads/<branch>:refs/heads/<branch>`, so
+  `push.default`, `remote.pushDefault`, and configured refspecs cannot move it;
+  it refuses the remote's default branch; and it sets the upstream to the
+  branch's own ref on first publish, which is what `pr deliver` compares against
+  when it reports `head_not_pushed`. A fresh managed worktree starts with no
+  upstream at all, so the first publish must go through this surface — and
+  `block-unsafe-default-delivery` refuses a raw push it cannot classify.
 - Rendered bodies must include `## Summary` and `## Test plan`. Do not
   hand-write section scaffolding or derive title/body from `git log -1`.
 - Provider-visible bodies and comments must not contain raw machine-local home

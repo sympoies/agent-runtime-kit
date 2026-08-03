@@ -10,9 +10,11 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.25.13`, `plan-issue >=1.1.0`, and
-  `review-specialists` are installed from the released nils-cli package and
-  available on `PATH`. The generic code-review outcome uses a quick or full
+- `agent-runtime`, `forge-cli >=1.25.13`, `git-cli >=1.25.13`,
+  `plan-issue >=1.1.0`, and `review-specialists` are installed from the released
+  nils-cli package and available on `PATH`. `git-cli` 1.25.13 is the floor for
+  the `push` and `sync-default` surfaces this workflow publishes and syncs
+  through. The generic code-review outcome uses a quick or full
   profile in pre-merge context; native review summaries and observed
   convergence need `forge-cli` 1.21.34, guarded pending-review recovery needs
   1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
@@ -120,8 +122,8 @@ Outputs:
 
 Failure modes:
 
-- Provider auth fails, the branch has no pushed upstream, or the base branch is
-  not the intended target.
+- Provider auth fails, the branch has no published upstream (publish it with
+  `git-cli push`), or the base branch is not the intended target.
 - Required checks / pipeline checks fail, time out, remain pending, or are
   missing without an explicit no-checks decision.
 - Selected labels fail catalog validation or the provider rejects label
@@ -236,7 +238,7 @@ For a GitHub finding-bearing round:
 1. review returns findings;
 2. `forge-cli pr review-loop observe --expected-head <reviewed head>`, with the
    findings recorded as `open`;
-3. repair, then push;
+3. repair, then publish the repair with `git-cli push --format json`;
 4. `forge-cli pr review-loop observe --expected-head <repaired head>`, with the
    repaired findings recorded as `fixed`;
 5. merge at that same repaired head.
@@ -400,8 +402,9 @@ REVIEW_LEDGER_OPEN_COUNT="$(
 )" || exit $?
 fi
 
-# On GitHub, stop here when findings are open. Repair and push them, rerun
-# validation and affected review, then produce REVIEW_LEDGER_DISPOSITIONS as a
+# On GitHub, stop here when findings are open. Repair them, publish with
+# `git-cli push --format json`, rerun validation and affected review, then
+# produce REVIEW_LEDGER_DISPOSITIONS as a
 # bare array. GitLab retains its outcome-note path without ledger calls.
 # Read native review bodies after specialist posting and repair. Current-head
 # summaries are semantic evidence; stale-head summaries are informational.
@@ -747,11 +750,12 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     `--dry-run` first; a live `observe` writes durable provider state. On GitLab,
     do not require ledger artifacts or call `pr review-loop`; retain the
     outcome-note path and pass `--review-convergence=false` to merge.
-12. Repair concrete findings in this delivery workflow, then rerun validation,
-   checks, and affected review. Post each focused follow-up review comment with
+12. Repair concrete findings in this delivery workflow, publish the repair with
+   `git-cli push --format json`, then rerun validation, checks, and affected
+   review. Post each focused follow-up review comment with
    the same semantic lens before continuing. Quick follow-up remains eligible
    only while scope is bounded; otherwise switch to full.
-13. On GitHub, after the repair is pushed, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
+13. On GitHub, after that publish, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
     array and append the closing observation at the repaired head with
     `disposition: fixed` (or an evidence-backed terminal disposition), passing
     `--expected-state <current tip>`.
@@ -804,8 +808,13 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     lease guard must confirm no live foreign owner before removal. If that proof
     or hook is unavailable, retain the worktree. Delete the local
     branch only when its tip equals the provider-confirmed delivered head;
-    otherwise retain and report it. If an outer L2/L3 workflow remains, hand it
-    the captured identity and defer this step.
+    otherwise retain and report it. When the merge left the primary checkout's
+    default branch behind its remote, advance it with
+    `git-cli sync-default --format json`; that surface owns the remote-bound
+    fast-forward, and raw `git merge` / `git pull` on the default branch stay
+    refused even with `--ff-only` because local state cannot prove publication.
+    If an outer L2/L3 workflow remains, hand it the captured identity and defer
+    this step.
 
 ## Boundary
 
