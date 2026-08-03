@@ -418,6 +418,16 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             check=False,
         )
         observation_supported = diagnose_help.returncode == 0
+        if not observation_supported:
+            self.assertEqual(
+                diagnose_help.returncode,
+                64,
+                f"stdout={diagnose_help.stdout}\nstderr={diagnose_help.stderr}",
+            )
+            self.assertEqual(
+                diagnose_help.stderr.strip(),
+                "error: unrecognized subcommand 'diagnose'",
+            )
         before = self.snapshot_tree()
         decision = self.json_result(
             self.run_hook(
