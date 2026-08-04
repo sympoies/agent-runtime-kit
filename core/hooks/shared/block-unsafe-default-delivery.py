@@ -249,6 +249,19 @@ GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
     }
 )
 SHELL_CONTEXT_COMMANDS = frozenset({".", "cd", "popd", "pushd", "source"})
+SHELL_EXECUTABLE_RESOLUTION_COMMANDS = frozenset(
+    {
+        ".",
+        "alias",
+        "autoload",
+        "enable",
+        "functions",
+        "hash",
+        "rehash",
+        "source",
+        "unalias",
+    }
+)
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -784,6 +797,49 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
     return False
 
 
+def shell_command_changes_executable_resolution(
+    simple_command: list[str],
+) -> bool:
+    """Whether later bare command words have lost a verifiable executable."""
+    invocation = invocation_tokens(simple_command)
+    executable = ""
+    arguments: list[str] = []
+    if invocation:
+        executable = PurePosixPath(invocation[0]).name
+        arguments = invocation[1:]
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if executable != "builtin":
+            break
+        if not arguments:
+            return True
+        executable = PurePosixPath(arguments[0]).name
+        arguments = arguments[1:]
+    else:
+        return True
+    if executable in SHELL_EXECUTABLE_RESOLUTION_COMMANDS:
+        return True
+
+    def resolution_assignment(token: str) -> bool:
+        name, separator, _value = token.partition("=")
+        return bool(separator) and (
+            name in {"PATH", "path"}
+            or name.startswith("path[")
+            or name.startswith("commands[")
+        )
+
+    if any(resolution_assignment(token) for token in simple_command):
+        return True
+    if executable in {"export", "readonly", "declare", "typeset"}:
+        return any(resolution_assignment(token) for token in arguments)
+    if executable == "unset":
+        return any(
+            token in {"PATH", "path", "commands"}
+            for token in arguments
+            if not token.startswith("-")
+        )
+    return False
+
+
 def literal_directory_target(simple_command: list[str]) -> str | None:
     """Return the literal absolute directory a plain ``cd`` moves to.
 
@@ -834,38 +890,6 @@ def command_waiver_reason(simple_command: list[str]) -> str:
         if name == WAIVER_ASSIGNMENT_NAME:
             return normalized_waiver_reason(value)
     return ""
-
-
-def update_shell_alias_names(
-    simple_command: list[str], alias_names: set[str]
-) -> None:
-    """Track aliases declared in the inspected shell source.
-
-    Alias replacement is shell state rather than argv. Once a declared alias
-    is used as a command word, its executable cannot be verified from the
-    tokenized invocation, so the delivery guard rejects it without attempting
-    to emulate Bash or zsh alias expansion.
-    """
-    invocation = invocation_tokens(simple_command)
-    if not invocation:
-        return
-    executable = PurePosixPath(invocation[0]).name
-    if executable == "alias":
-        for argument in invocation[1:]:
-            if argument.startswith("-") or "=" not in argument:
-                continue
-            name = argument.split("=", 1)[0]
-            if name:
-                alias_names.add(name)
-        return
-    if executable != "unalias":
-        return
-    if "-a" in invocation[1:]:
-        alias_names.clear()
-        return
-    for argument in invocation[1:]:
-        if not argument.startswith("-"):
-            alias_names.discard(argument)
 
 
 def waiver_admits(invocation: list[str], reason: str, waiver: str) -> bool:
@@ -1905,7 +1929,7 @@ def command_block_reason(
     probe = GitProbe()
     shell_context_safe = True
     executable_resolution_safe = True
-    shell_alias_names: set[str] = set()
+    executable_resolution_tainted = False
     simple_commands = simple_commands_with_nested_shells(command)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
@@ -1916,11 +1940,15 @@ def command_block_reason(
     cwd = base
     for simple_command in simple_commands:
         invocation = invocation_tokens(simple_command)
-        if invocation and invocation[0] in shell_alias_names:
+        if (
+            executable_resolution_tainted
+            and invocation
+            and not invocation[0].startswith("/")
+        ):
             return unresolved(
-                f"{classification_evidence('opaque-alias', 'dynamic-executable')} "
-                "A shell alias can expand this command word to `git` or "
-                "`semantic-commit`; invoke the governed executable directly."
+                f"{classification_evidence('opaque-shell-resolution', 'dynamic-executable')} "
+                "Earlier shell state can resolve this command word to `git` or "
+                "`semantic-commit`; use a separate tool call or an absolute executable."
             )
         waiver = command_waiver_reason(simple_command)
         if process_wrapper_hides_governed_invocation(
@@ -1971,7 +1999,10 @@ def command_block_reason(
             reason = classify(candidate)
             if reason and not waiver_admits(candidate, reason, waiver):
                 return reason
-        update_shell_alias_names(simple_command, shell_alias_names)
+        executable_resolution_tainted = (
+            executable_resolution_tainted
+            or shell_command_changes_executable_resolution(simple_command)
+        )
         # A preceding shell command can alter PATH, zsh/bash command tables,
         # aliases, functions, hashes, or sourced state in ways this hook cannot
         # prove exhaustively. No later authoring invocation retains executable

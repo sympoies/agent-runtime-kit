@@ -346,8 +346,9 @@ The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
 even without a variable prefix. The zsh extended-glob repetition, exclusion,
 and negation operators (`#`, `~`, and `^`) are opaque there as well.
-Aliases declared and invoked in the same inspected shell source are likewise
-opaque; the guard does not emulate Bash or zsh alias expansion.
+After alias, hash, command-table, PATH, or sourced-function state changes, later
+bare command words are opaque. This taint is monotonic across the conservative
+flattened shell scan: nested removals never make an outer executable trusted.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also

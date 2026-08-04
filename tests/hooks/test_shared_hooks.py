@@ -20602,6 +20602,17 @@ exit 65
             alias_hidden_governed_executables = (
                 "alias runner=git; eval 'runner push origin HEAD:main'",
                 "alias runner='git push origin HEAD:main'; eval runner",
+                "builtin alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "alias runner=git; (unalias runner); "
+                "eval 'runner push origin HEAD:main'",
+                "alias runner=git; bash -c 'unalias runner'; "
+                "eval 'runner push origin HEAD:main'",
+                "hash runner=/usr/bin/git; runner push origin HEAD:main",
+                "hash -p /usr/bin/git runner; runner push origin HEAD:main",
+                "commands[runner]=/usr/bin/git; runner push origin HEAD:main",
+                "source <(printf 'runner() { git push origin HEAD:main; }'); "
+                "runner",
                 "alias runner=semantic-commit; "
                 "eval \"runner commit --message 'fix: alias writer'\"",
                 "zsh -c "
@@ -20621,7 +20632,19 @@ exit 65
                         cwd=repo,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "rule=opaque-alias")
+                    self.assert_blocked(
+                        decision, "rule=opaque-shell-resolution"
+                    )
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "alias runner=git; /usr/bin/printf --version"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
 
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
@@ -21077,9 +21100,9 @@ exit 65
                             "untrusted `semantic-commit`"
                             if command.startswith("commands[")
                             else (
-                                "rule=opaque-alias"
-                                if command.startswith("alias ")
-                                else "changed executable resolution"
+                                "changed executable resolution"
+                                if command.startswith(("set -A ", "true "))
+                                else "rule=opaque-shell-resolution"
                             )
                         ),
                     )
