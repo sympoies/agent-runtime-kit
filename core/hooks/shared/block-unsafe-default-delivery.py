@@ -810,26 +810,6 @@ def command_local_path_override(
     )
 
 
-def process_wrapper_hides_governed_invocation(
-    simple_command: list[str], invocation: list[str]
-) -> bool:
-    """Fail closed when a process wrapper hides a governed authoring argv."""
-    if not invocation or PurePosixPath(invocation[0]).name == "semantic-commit":
-        return False
-    for index, token in enumerate(simple_command[:-1]):
-        if PurePosixPath(token).name != "semantic-commit":
-            continue
-        if simple_command[index + 1] in {
-            "commit",
-            "default-branch",
-            "fixup",
-            "local-default",
-            "squash",
-        }:
-            return True
-    return False
-
-
 def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
     """Resolve bounded shell precommand modifiers to the governed argv."""
     invocation = invocation_tokens(simple_command)
@@ -1073,8 +1053,10 @@ def process_wrapper_target_index(
     return None
 
 
-def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
-    """Expose a literal Git argv launched by supported process wrappers."""
+def process_wrapper_governed_invocation(
+    simple_command: list[str],
+) -> list[str]:
+    """Expose a governed argv launched by supported process wrappers."""
     invocation = delivery_invocation_tokens(simple_command)
     if (
         invocation
@@ -1087,12 +1069,16 @@ def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
             return []
         executable = PurePosixPath(invocation[0]).name
         if executable not in PROCESS_LAUNCH_WRAPPERS:
-            return invocation if saw_wrapper and executable == "git" else []
+            return (
+                invocation
+                if saw_wrapper and executable in GOVERNED_CONTEXT_EXECUTABLES
+                else []
+            )
         saw_wrapper = True
         target_index = process_wrapper_target_index(executable, invocation[1:])
         if target_index in {None, -1}:
             for index, token in enumerate(invocation[1:], start=1):
-                if PurePosixPath(token).name == "git":
+                if PurePosixPath(token).name in GOVERNED_CONTEXT_EXECUTABLES:
                     return delivery_invocation_tokens(invocation[index:])
             return (
                 [OPAQUE_WRAPPER_COMMAND, "$process-wrapper-target"]
@@ -1103,7 +1089,7 @@ def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
             invocation[target_index + 1 :]
         )
     for index, token in enumerate(invocation):
-        if PurePosixPath(token).name == "git":
+        if PurePosixPath(token).name in GOVERNED_CONTEXT_EXECUTABLES:
             return delivery_invocation_tokens(invocation[index:])
     return []
 
@@ -2380,14 +2366,6 @@ def command_block_reason(
                 "`semantic-commit`; use a separate tool call or an absolute executable."
             )
         waiver = command_waiver_reason(simple_command)
-        if process_wrapper_hides_governed_invocation(
-            simple_command, invocation
-        ):
-            return (
-                f"{MARK_BLOCKED} Blocked a governed `semantic-commit` authoring invocation "
-                "behind a process wrapper. Invoke the active managed CLI "
-                "directly so its executable and argv can be verified."
-            )
         def classify(candidate: list[str]) -> str:
             return executable_resolution_rejection(
                 candidate, executable_resolution_safe
@@ -2403,16 +2381,17 @@ def command_block_reason(
                 base_diagnostic=base_diagnostic,
             )
 
-        wrapper_git = process_wrapper_git_invocation(simple_command)
-        if wrapper_git:
-            if wrapper_git[0] == OPAQUE_WRAPPER_COMMAND:
+        wrapper_governed = process_wrapper_governed_invocation(simple_command)
+        if wrapper_governed:
+            if wrapper_governed[0] == OPAQUE_WRAPPER_COMMAND:
                 return unresolved(
                     f"{classification_evidence('opaque-process-wrapper', 'dynamic-executable')} "
-                    "A process wrapper can expand its target to `git`; use a literal "
-                    "wrapper target or a separate tool call."
+                    "A process wrapper can expand its target to `git` or "
+                    "`semantic-commit`; use a literal wrapper target or a "
+                    "separate tool call."
                 )
-            reason = classify(wrapper_git)
-            if reason and not waiver_admits(wrapper_git, reason, waiver):
+            reason = classify(wrapper_governed)
+            if reason and not waiver_admits(wrapper_governed, reason, waiver):
                 return reason
         reason = classify(invocation)
         if reason and not waiver_admits(invocation, reason, waiver):

@@ -19960,7 +19960,32 @@ exit 65
                         cwd=repo,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "behind a process wrapper")
+                    self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_blocks_dynamic_semantic_modes_behind_launchers(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "action=commit; prlimit -- semantic-commit $action --message x",
+                "action=commit; setpriv -- semantic-commit $action --message x",
+                "action=commit; unshare semantic-commit $action --message x",
+                "action=commit; strace -o /tmp/trace semantic-commit $action --message x",
+                "action=commit; nsenter --target 1 --mount semantic-commit $action --message x",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "semantic-commit operation depends on shell expansion"
+                    )
 
     def test_default_delivery_hook_blocks_configured_and_shell_git_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -20572,6 +20597,11 @@ exit 65
                 "unshare --fork git status",
                 "strace --seccomp-bpf -o /tmp/trace git status",
                 "nsenter --target=1 --mount git status",
+                "prlimit -- semantic-commit commit --help",
+                "setpriv -- semantic-commit commit --help",
+                "unshare semantic-commit commit --help",
+                "strace -o /tmp/trace semantic-commit commit --help",
+                "nsenter --target 1 --mount semantic-commit commit --help",
                 "echo git push origin HEAD:main",
                 "printf git push origin HEAD:main",
                 "rg git push README.md",
