@@ -266,13 +266,110 @@ PROCESS_LAUNCH_WRAPPERS = frozenset(
         "chrt",
         "ionice",
         "nice",
+        "nsenter",
         "nohup",
+        "prlimit",
+        "setpriv",
         "setsid",
         "stdbuf",
+        "strace",
         "taskset",
         "timeout",
+        "unshare",
     }
 )
+PROCESS_LAUNCH_VALUE_OPTIONS = {
+    "prlimit": frozenset({"--output", "--pid", "-o", "-p"}),
+    "setpriv": frozenset(
+        {
+            "--ambient-caps", "--apparmor-profile", "--bounding-set", "--egid",
+            "--euid", "--groups", "--inh-caps", "--pdeathsig", "--regid",
+            "--reuid", "--rgid", "--ruid", "--securebits", "--selinux-label",
+        }
+    ),
+    "unshare": frozenset(
+        {
+            "--boottime", "--load-interp", "--map-group", "--map-groups",
+            "--map-user", "--map-users", "--monotonic", "--owner",
+            "--propagation", "--root", "--setgid", "--setgroups", "--setuid",
+            "--wd", "-G", "-R", "-S", "-W", "-l", "-w",
+        }
+    ),
+    "strace": frozenset(
+        {
+            "--columns", "--decode-fds", "--decode-pids", "--detach-on",
+            "--env", "--fault", "--inject", "--output", "--signal", "--status",
+            "--string-limit", "--syscall-limit", "--trace", "--trace-path",
+            "--user", "-E", "-I", "-O", "-P", "-S", "-U", "-X", "-a",
+            "-b", "-e", "-o", "-p", "-s", "-u",
+        }
+    ),
+    "nsenter": frozenset(
+        {"--net-socket", "--target", "--wdns", "-N", "-W", "-t"}
+    ),
+}
+PROCESS_LAUNCH_FLAG_OPTIONS = {
+    "prlimit": frozenset({"--help", "--noheadings", "--raw", "--verbose", "--version", "-h", "-V"}),
+    "setpriv": frozenset(
+        {
+            "--clear-groups", "--dump", "--help", "--init-groups",
+            "--keep-groups", "--no-new-privs", "--reset-env", "--version",
+            "-d", "-h", "-V",
+        }
+    ),
+    "unshare": frozenset(
+        {
+            "--fork", "--forward-signals", "--help", "--keep-caps",
+            "--map-auto", "--map-current-user", "--map-root-user", "--map-subids",
+            "--version", "-V", "-c", "-f", "-h", "-r",
+        }
+    ),
+    "strace": frozenset(
+        {
+            "--failed-only", "--follow-forks", "--help", "--instruction-pointer",
+            "--kill-on-exit", "--output-append-mode", "--output-separately",
+            "--seccomp-bpf", "--successful-only", "--syscall-number", "--tips",
+            "--version", "-A", "-C", "-D", "-DD", "-DDD", "-T", "-V", "-c",
+            "-d", "-f", "-ff", "-h", "-i", "-n", "-q", "-qq", "-qqq", "-r",
+            "-t", "-tt", "-ttt", "-v", "-w", "-x", "-xx", "-y", "-yy", "-z",
+            "-Z",
+        }
+    ),
+    "nsenter": frozenset(
+        {
+            "--all", "--env", "--help", "--join-cgroup", "--keep-caps",
+            "--no-fork", "--preserve-credentials", "--user-parent", "--version",
+            "-F", "-V", "-a", "-c", "-e", "-h",
+        }
+    ),
+}
+PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS = {
+    "prlimit": frozenset(
+        {
+            "--as", "--core", "--cpu", "--data", "--fsize", "--locks",
+            "--memlock", "--msgqueue", "--nice", "--nofile", "--nproc", "--rss",
+            "--rtprio", "--rttime", "--sigpending", "--stack", "-c", "-d", "-e",
+            "-f", "-i", "-l", "-m", "-n", "-q", "-r", "-s", "-t", "-u", "-v",
+            "-x", "-y",
+        }
+    ),
+    "setpriv": frozenset(),
+    "unshare": frozenset(
+        {
+            "--cgroup", "--ipc", "--kill-child", "--mount", "--mount-binfmt",
+            "--mount-proc", "--net", "--pid", "--time", "--user", "--uts", "-C",
+            "-T", "-U", "-i", "-m", "-n", "-p", "-u",
+        }
+    ),
+    "strace": frozenset({"--daemonize", "--stack-trace", "-D", "-k"}),
+    "nsenter": frozenset(
+        {
+            "--cgroup", "--ipc", "--mount", "--net", "--pid", "--root",
+            "--setgid", "--setuid", "--time", "--user", "--uts", "--wd", "-C",
+            "-G", "-S", "-T", "-U", "-i", "-m", "-n", "-p", "-r", "-u", "-w",
+        }
+    ),
+}
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -768,6 +865,44 @@ def process_wrapper_target_index(
         return -1 if shell_word_is_dynamic(arguments[index]) else index
 
     index = 0
+    if executable in PROCESS_LAUNCH_VALUE_OPTIONS:
+        value_options = PROCESS_LAUNCH_VALUE_OPTIONS[executable]
+        flag_options = PROCESS_LAUNCH_FLAG_OPTIONS[executable]
+        optional_value_options = PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS[
+            executable
+        ]
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                return resolved(index + 1)
+            if token in value_options:
+                if index + 1 >= len(arguments) or shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token in optional_value_options or token in flag_options:
+                index += 1
+                continue
+            if "=" in token and token.startswith("--"):
+                option = token.partition("=")[0]
+                if option not in optional_value_options | value_options:
+                    return -1
+                index += 1
+                continue
+            if len(token) > 2 and token[:2] in (
+                optional_value_options | value_options
+            ):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return -1
+            return resolved(index)
+        return None
+
     if executable == "nohup":
         if arguments[:1] == ["--"]:
             index = 1

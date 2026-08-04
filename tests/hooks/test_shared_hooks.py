@@ -8746,6 +8746,24 @@ exit 65
         )
         self.assertLess(elapsed, 0.5)
 
+    def test_opaque_candidate_scan_bounds_work_below_token_ceiling(self) -> None:
+        for token_count in (512, 1_024, 4_095, 4_096, 64_000):
+            invocation = [
+                hook_common.OPAQUE_WRAPPER_COMMAND,
+                *(["$argument"] * token_count),
+            ]
+            started = time.monotonic()
+            candidates = hook_common.opaque_invocation_candidates(
+                invocation, {"git", "semantic-commit"}
+            )
+            elapsed = time.monotonic() - started
+            with self.subTest(token_count=token_count):
+                self.assertIn(
+                    [hook_common.OPAQUE_NESTED_SHELL_COMMAND], candidates
+                )
+                self.assertLessEqual(len(candidates), 32)
+                self.assertLess(elapsed, 0.5)
+
     def test_command_context_records_workdir_provenance_and_attestation(self) -> None:
         """Cross-repository gating retains where the canonical target came from."""
         resolver = getattr(hook_common, "command_context", None)
@@ -19895,6 +19913,21 @@ exit 65
                 "cmd=git; setsid $cmd ship",
                 "action=commit; semantic-commit $action --message 'fix: x'",
                 "cmd=semantic-commit; setsid $cmd commit --message 'fix: x'",
+                "prlimit -- git push origin HEAD:main",
+                "setpriv -- git push origin HEAD:main",
+                "unshare git push origin HEAD:main",
+                "strace -o /tmp/trace git push origin HEAD:main",
+                "nsenter --target 1 --mount git push origin HEAD:main",
+                "cmd=git; prlimit -- $cmd push origin HEAD:main",
+                "cmd=git; setpriv -- $cmd push origin HEAD:main",
+                "cmd=git; unshare $cmd push origin HEAD:main",
+                "cmd=git; strace -o /tmp/trace $cmd push origin HEAD:main",
+                "cmd=git; nsenter --target 1 --mount $cmd push origin HEAD:main",
+                "cmd=semantic-commit; prlimit -- $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; setpriv -- $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; unshare $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; strace -o /tmp/trace $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; nsenter --target 1 --mount $cmd commit --message 'fix: x'",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -19905,6 +19938,29 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_blocks_semantic_commit_behind_launchers(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "prlimit -- semantic-commit commit --message 'fix: x'",
+                "setpriv -- semantic-commit commit --message 'fix: x'",
+                "unshare semantic-commit commit --message 'fix: x'",
+                "strace -o /tmp/trace semantic-commit commit --message 'fix: x'",
+                "nsenter --target 1 --mount semantic-commit commit --message 'fix: x'",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "behind a process wrapper")
 
     def test_default_delivery_hook_blocks_configured_and_shell_git_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -20506,6 +20562,16 @@ exit 65
                 "chrt -o 0 git status",
                 "taskset -c 0 git status",
                 "setsid printf --version",
+                "prlimit -- git status",
+                "setpriv -- git status",
+                "unshare git status",
+                "strace -o /tmp/trace git status",
+                "nsenter --target 1 --mount git status",
+                "prlimit --nofile=1024 -- git status",
+                "setpriv --no-new-privs git status",
+                "unshare --fork git status",
+                "strace --seccomp-bpf -o /tmp/trace git status",
+                "nsenter --target=1 --mount git status",
                 "echo git push origin HEAD:main",
                 "printf git push origin HEAD:main",
                 "rg git push README.md",

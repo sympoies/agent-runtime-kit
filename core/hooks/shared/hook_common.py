@@ -3001,6 +3001,7 @@ def skip_env_prefix(tokens: list[str], index: int) -> int:
 OPAQUE_WRAPPER_COMMAND = "__agent_runtime_opaque_wrapper__"
 OPAQUE_NESTED_SHELL_COMMAND = "__agent_runtime_opaque_nested_shell__"
 OPAQUE_CANDIDATE_TOKEN_LIMIT = 4096
+OPAQUE_CANDIDATE_WORK_LIMIT = 8192
 
 
 def _opaque_wrapper_invocation(tokens: list[str] | None = None) -> list[str]:
@@ -3029,32 +3030,52 @@ def opaque_invocation_candidates(
         return [[OPAQUE_NESTED_SHELL_COMMAND]]
     candidates: list[list[str]] = []
     seen: set[tuple[str, ...]] = set()
+    remaining_work = OPAQUE_CANDIDATE_WORK_LIMIT
+
+    def unresolved() -> None:
+        marker = [OPAQUE_NESTED_SHELL_COMMAND]
+        if marker not in candidates:
+            candidates.append(marker)
+
+    def consume_work(units: int) -> bool:
+        nonlocal remaining_work
+        if units > remaining_work:
+            remaining_work = 0
+            unresolved()
+            return False
+        remaining_work -= units
+        return True
 
     def inspect(tokens: list[str], depth: int) -> None:
         if not tokens or depth > max_depth:
             return
+        if not consume_work(len(tokens) + 1):
+            return
         if invocation_is_unresolved_nested(tokens):
-            candidates.append(tokens)
+            unresolved()
             return
         key = tuple(tokens)
         if key in seen:
             return
         seen.add(key)
         for index, token in enumerate(tokens):
+            suffix_length = len(tokens) - index
+            if not consume_work(suffix_length + 1):
+                return
             suffix = tokens[index:]
             if PurePosixPath(token).name in executables:
                 candidates.append(suffix)
             parsed = invocation_tokens(suffix, shell_boundary=False)
             if invocation_is_opaque(parsed):
                 if depth == max_depth:
-                    candidates.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    unresolved()
                     continue
                 inspect(parsed[1:], depth + 1)
                 continue
             payload = nested_shell_payload(parsed)
             if depth == max_depth:
                 if payload:
-                    candidates.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    unresolved()
                 continue
             if parsed != suffix:
                 inspect(parsed, depth + 1)
