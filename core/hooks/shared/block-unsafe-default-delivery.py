@@ -810,6 +810,34 @@ def command_local_path_override(
     )
 
 
+def process_wrapper_hides_governed_invocation(
+    simple_command: list[str], invocation: list[str]
+) -> bool:
+    """Fail closed when a wrapper hides semantic-commit authoring argv."""
+    if not invocation or PurePosixPath(invocation[0]).name == "semantic-commit":
+        return False
+    wrapper_names = PROCESS_LAUNCH_WRAPPERS | {
+        "builtin", "command", "env", "exec"
+    }
+    for index, token in enumerate(simple_command[:-1]):
+        if PurePosixPath(token).name != "semantic-commit":
+            continue
+        prefix_names = {
+            PurePosixPath(prefix).name for prefix in simple_command[:index]
+        }
+        if not prefix_names & wrapper_names:
+            continue
+        arguments = simple_command[index + 1 :]
+        if arguments and shell_word_is_dynamic(arguments[0]):
+            return not bool(prefix_names & PROCESS_LAUNCH_WRAPPERS)
+        authors_commit, _writes_files, _repo = (
+            semantic_commit_invocation_effects(arguments)
+        )
+        if authors_commit:
+            return True
+    return False
+
+
 def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
     """Resolve bounded shell precommand modifiers to the governed argv."""
     invocation = invocation_tokens(simple_command)
@@ -2366,6 +2394,14 @@ def command_block_reason(
                 "`semantic-commit`; use a separate tool call or an absolute executable."
             )
         waiver = command_waiver_reason(simple_command)
+        if process_wrapper_hides_governed_invocation(
+            simple_command, invocation
+        ):
+            return (
+                f"{MARK_BLOCKED} Blocked a governed `semantic-commit` authoring invocation "
+                "behind a process wrapper. Invoke the active managed CLI "
+                "directly so its executable and argv can be verified."
+            )
         def classify(candidate: list[str]) -> str:
             return executable_resolution_rejection(
                 candidate, executable_resolution_safe
