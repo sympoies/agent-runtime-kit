@@ -261,7 +261,18 @@ SHELL_PRECOMMAND_MODIFIERS = frozenset(
     {"-", "builtin", "nocorrect", "noglob"}
 )
 DELIVERY_PRECOMMAND_MODIFIERS = SHELL_PRECOMMAND_MODIFIERS - {"builtin"}
-PROCESS_LAUNCH_WRAPPERS = frozenset({"nice", "nohup", "stdbuf", "timeout"})
+PROCESS_LAUNCH_WRAPPERS = frozenset(
+    {
+        "chrt",
+        "ionice",
+        "nice",
+        "nohup",
+        "setsid",
+        "stdbuf",
+        "taskset",
+        "timeout",
+    }
+)
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -740,19 +751,21 @@ def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
     return [OPAQUE_WRAPPER_COMMAND, *invocation]
 
 
+def shell_word_is_dynamic(token: str) -> bool:
+    """Whether shell expansion can change one parsed word's meaning."""
+    return token.startswith("=") or any(
+        marker in token for marker in "$`*?[]{}()#^~"
+    )
+
+
 def process_wrapper_target_index(
     executable: str, arguments: list[str]
 ) -> int | None:
     """Return the target offset in wrapper arguments, or fail closed."""
-    def dynamic(token: str) -> bool:
-        return token.startswith("=") or any(
-            marker in token for marker in "$`*?[]{}()#^~"
-        )
-
     def resolved(index: int) -> int | None:
         if index >= len(arguments):
             return None
-        return -1 if dynamic(arguments[index]) else index
+        return -1 if shell_word_is_dynamic(arguments[index]) else index
 
     index = 0
     if executable == "nohup":
@@ -765,13 +778,15 @@ def process_wrapper_target_index(
     if executable == "nice":
         while index < len(arguments):
             token = arguments[index]
-            if dynamic(token):
+            if shell_word_is_dynamic(token):
                 return -1
             if token == "--":
                 index += 1
                 break
             if token in {"-n", "--adjustment"}:
-                if index + 1 < len(arguments) and dynamic(arguments[index + 1]):
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
                     return -1
                 index += 2
                 continue
@@ -788,13 +803,15 @@ def process_wrapper_target_index(
     if executable == "timeout":
         while index < len(arguments):
             token = arguments[index]
-            if dynamic(token):
+            if shell_word_is_dynamic(token):
                 return -1
             if token == "--":
                 index += 1
                 break
             if token in {"-k", "--kill-after", "-s", "--signal"}:
-                if index + 1 < len(arguments) and dynamic(arguments[index + 1]):
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
                     return -1
                 index += 2
                 continue
@@ -814,13 +831,15 @@ def process_wrapper_target_index(
     if executable == "stdbuf":
         while index < len(arguments):
             token = arguments[index]
-            if dynamic(token):
+            if shell_word_is_dynamic(token):
                 return -1
             if token == "--":
                 index += 1
                 break
             if token in {"-i", "--input", "-o", "--output", "-e", "--error"}:
-                if index + 1 < len(arguments) and dynamic(arguments[index + 1]):
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
                     return -1
                 index += 2
                 continue
@@ -833,6 +852,89 @@ def process_wrapper_target_index(
                 return None
             break
         return resolved(index)
+
+    if executable == "setsid":
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-c", "--ctty", "-f", "--fork", "-w", "--wait"}:
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return resolved(index)
+
+    if executable == "ionice":
+        process_selector = False
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {
+                "-c", "--class", "-n", "--classdata", "-p", "--pid",
+                "-P", "--pgid", "-u", "--uid",
+            }:
+                process_selector = process_selector or token in {
+                    "-p", "--pid", "-P", "--pgid", "-u", "--uid",
+                }
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token in {"-t", "--ignore"}:
+                index += 1
+                continue
+            if token.startswith(("--class=", "--classdata=")):
+                index += 1
+                continue
+            if token.startswith(("--pid=", "--pgid=", "--uid=")):
+                process_selector = True
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return None if process_selector else resolved(index)
+
+    if executable in {"chrt", "taskset"}:
+        process_selector = False
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-p", "--pid"}:
+                process_selector = True
+                index += 1
+                continue
+            if token in {"-T", "--sched-runtime", "-P", "--sched-period", "-D", "--sched-deadline"}:
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            break
+        if process_selector or index >= len(arguments):
+            return None
+        if shell_word_is_dynamic(arguments[index]):
+            return -1
+        return resolved(index + 1)
     return None
 
 
@@ -850,24 +952,7 @@ def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
             return []
         executable = PurePosixPath(invocation[0]).name
         if executable not in PROCESS_LAUNCH_WRAPPERS:
-            if saw_wrapper and executable == "git":
-                return invocation
-            for index, token in enumerate(invocation[1:], start=1):
-                if PurePosixPath(token).name == "git":
-                    return delivery_invocation_tokens(invocation[index:])
-            mutation_words = GIT_DEFAULT_BRANCH_REWRITE_COMMANDS | {"push"}
-            mutation_follows = False
-            for token in reversed(invocation[1:]):
-                if (
-                    token.startswith("=")
-                    or any(marker in token for marker in "$`*?[]{}()#^~")
-                ) and mutation_follows:
-                    return [
-                        OPAQUE_WRAPPER_COMMAND,
-                        "$process-wrapper-target",
-                    ]
-                mutation_follows = mutation_follows or token in mutation_words
-            return []
+            return invocation if saw_wrapper and executable == "git" else []
         saw_wrapper = True
         target_index = process_wrapper_target_index(executable, invocation[1:])
         if target_index in {None, -1}:
@@ -1971,6 +2056,12 @@ def invocation_block_reason(
                 "active managed CLI by its exact command name or trusted absolute "
                 "path."
             )
+        if len(invocation) > 1 and shell_word_is_dynamic(invocation[1]):
+            return unresolved(
+                f"{classification_evidence('opaque-governed-operation', 'semantic-commit dynamic')} "
+                "The semantic-commit operation depends on shell expansion; use a "
+                "literal read-only or authoring mode."
+            )
         authors_commit, _writes_files, _effects_repo = (
             semantic_commit_invocation_effects(invocation[1:])
         )
@@ -2007,6 +2098,12 @@ def invocation_block_reason(
             context_valid,
             absolute_chdir,
         ) = git_context(invocation[1:], base)
+        if shell_word_is_dynamic(subcommand):
+            return unresolved(
+                f"{classification_evidence('opaque-governed-operation', 'git dynamic')} "
+                "The Git subcommand depends on shell expansion; use a literal "
+                "read-only or delivery operation."
+            )
         if subcommand == "push" and push_shape(action)[0]:
             return ""
         known_builtin = subcommand != "push" and subcommand in probe.builtin_commands(

@@ -19889,6 +19889,12 @@ exit 65
                 "taskset -c 0 git reset --hard HEAD~1",
                 "nice setsid git update-ref refs/heads/main HEAD",
                 "cmd=git; setsid $cmd push origin HEAD:main",
+                "action=push; git $action origin HEAD:main",
+                "action=push; setsid git $action origin HEAD:main",
+                "cmd=git; action=push; setsid $cmd $action origin HEAD:main",
+                "cmd=git; setsid $cmd ship",
+                "action=commit; semantic-commit $action --message 'fix: x'",
+                "cmd=semantic-commit; setsid $cmd commit --message 'fix: x'",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20500,6 +20506,10 @@ exit 65
                 "chrt -o 0 git status",
                 "taskset -c 0 git status",
                 "setsid printf --version",
+                "echo git push origin HEAD:main",
+                "printf git push origin HEAD:main",
+                "rg git push README.md",
+                "echo $cmd push",
                 "git push --tags origin",
                 "git push origin refs/tags/v1.0.0",
                 "git push origin 'refs/heads/release/*:refs/heads/release/*'",
