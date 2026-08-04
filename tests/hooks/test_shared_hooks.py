@@ -20174,6 +20174,73 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
 
+    def test_default_delivery_hook_classifies_watch_exec_shell_payloads(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            below_limit = "nice " * 6
+            exact_limit = "nice " * 7
+            beyond_limit = "nice " * 8
+            blocked_commands = (
+                (
+                    "watch -x sh -c 'git push origin HEAD:main'",
+                    "forge-cli repo push-default",
+                ),
+                (
+                    "watch --exec bash -c "
+                    "'semantic-commit commit --message x'",
+                    "default branch",
+                ),
+                (
+                    "nice watch -x zsh -c 'git push origin HEAD:main'",
+                    "forge-cli repo push-default",
+                ),
+                (
+                    f"{below_limit}watch -x sh -c "
+                    "'git push origin HEAD:main'",
+                    "forge-cli repo push-default",
+                ),
+                (
+                    f"{exact_limit}watch -x sh -c "
+                    "'git push origin HEAD:main'",
+                    "forge-cli repo push-default",
+                ),
+                (
+                    f"{exact_limit}watch --exec bash -c "
+                    "'semantic-commit commit --message x'",
+                    "default branch",
+                ),
+                (
+                    f"{beyond_limit}watch -x sh -c "
+                    "'git push origin HEAD:main'",
+                    "wrapper-depth-limit",
+                ),
+            )
+            for command, fragment in blocked_commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+            for command in (
+                "watch -x sh -c 'git status'",
+                "watch --exec bash -c 'printf git push origin HEAD:main'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
     def test_default_delivery_hook_preserves_watch_parent_environment_guards(
         self,
     ) -> None:

@@ -1354,6 +1354,9 @@ def process_wrapper_watch_shell_payload(
             payload = watch_default_shell_payload(invocation)
             if payload:
                 return payload, False, context
+        shell_payload = nested_shell_payload(invocation)
+        if shell_payload:
+            return shell_payload, False, context
         if executable not in PROCESS_LAUNCH_WRAPPERS:
             return None, False, context
         target_index = process_wrapper_target_index(executable, invocation[1:])
@@ -1375,6 +1378,9 @@ def process_wrapper_watch_shell_payload(
         payload = watch_default_shell_payload(invocation)
         if payload:
             return payload, False, context
+    shell_payload = nested_shell_payload(invocation)
+    if shell_payload:
+        return shell_payload, False, context
     return (
         None,
         executable in PROCESS_LAUNCH_WRAPPERS,
