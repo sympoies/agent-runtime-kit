@@ -816,26 +816,27 @@ def process_wrapper_hides_governed_invocation(
     """Fail closed when a wrapper hides semantic-commit authoring argv."""
     if not invocation or PurePosixPath(invocation[0]).name == "semantic-commit":
         return False
-    wrapper_names = PROCESS_LAUNCH_WRAPPERS | {
-        "builtin", "command", "env", "exec"
-    }
-    for index, token in enumerate(simple_command[:-1]):
-        if PurePosixPath(token).name != "semantic-commit":
-            continue
-        prefix_names = {
-            PurePosixPath(prefix).name for prefix in simple_command[:index]
-        }
-        if not prefix_names & wrapper_names:
-            continue
-        arguments = simple_command[index + 1 :]
-        if arguments and shell_word_is_dynamic(arguments[0]):
-            return not bool(prefix_names & PROCESS_LAUNCH_WRAPPERS)
-        authors_commit, _writes_files, _repo = (
-            semantic_commit_invocation_effects(arguments)
-        )
-        if authors_commit:
-            return True
-    return False
+    candidate = process_wrapper_governed_invocation(simple_command)
+    dynamic_must_block_here = False
+    if not candidate:
+        structural = delivery_invocation_tokens(simple_command)
+        if (
+            len(structural) >= 3
+            and PurePosixPath(structural[0]).name == "builtin"
+            and PurePosixPath(structural[1]).name in {"command", "exec"}
+            and PurePosixPath(structural[2]).name == "semantic-commit"
+        ):
+            candidate = structural[2:]
+            dynamic_must_block_here = True
+    if not candidate or PurePosixPath(candidate[0]).name != "semantic-commit":
+        return False
+    arguments = candidate[1:]
+    if arguments and shell_word_is_dynamic(arguments[0]):
+        return dynamic_must_block_here
+    authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
+        arguments
+    )
+    return authors_commit
 
 
 def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
