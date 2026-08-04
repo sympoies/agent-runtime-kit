@@ -47,6 +47,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -369,9 +370,10 @@ PROCESS_LAUNCH_FLAG_OPTIONS = {
     "systemd-run": frozenset(
         {
             "--ask-password", "--collect", "--expand-environment", "--pipe",
-            "--pty", "--quiet", "--scope", "--send-sighup", "--service-type=exec",
-            "--shell", "--slice-inherit", "--slice-inherit", "--user", "--wait",
-            "-G", "-P", "-q", "-S", "-t",
+            "--pty", "--quiet", "--same-dir", "--scope", "--send-sighup",
+            "--service-type=exec", "--shell", "--slice-inherit",
+            "--slice-inherit", "--user", "--wait", "-G", "-P", "-d",
+            "-q", "-S", "-t",
         }
     ),
     "watch": frozenset(
@@ -412,6 +414,37 @@ PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS = {
     "perf": frozenset(),
     "systemd-run": frozenset(),
     "watch": frozenset({"--differences", "-d"}),
+}
+PROCESS_LAUNCH_REPOSITORY_CONTEXT_OPTIONS = {
+    "nsenter": frozenset(
+        {
+            "--all", "--env", "--mount", "--root", "--wd", "--wdns",
+            "-W", "-a", "-e", "-m", "-r", "-w",
+        }
+    ),
+    "setpriv": frozenset({"--reset-env"}),
+    "strace": frozenset({"--env", "-E"}),
+    "systemd-run": frozenset(
+        {
+            "--property", "--setenv", "--shell", "--working-directory",
+            "-E", "-S", "-p",
+        }
+    ),
+    "unshare": frozenset({"--root", "--wd", "-R", "-w"}),
+}
+PROCESS_LAUNCH_EXECUTABLE_CONTEXT_OPTIONS = {
+    "nsenter": frozenset(
+        {
+            "--all", "--env", "--mount", "--root",
+            "-a", "-e", "-m", "-r",
+        }
+    ),
+    "setpriv": frozenset({"--reset-env"}),
+    "strace": frozenset({"--env", "-E"}),
+    "systemd-run": frozenset(
+        {"--property", "--setenv", "--shell", "-E", "-S", "-p"}
+    ),
+    "unshare": frozenset({"--root", "-R"}),
 }
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
@@ -907,6 +940,90 @@ def shell_word_is_dynamic(token: str) -> bool:
     )
 
 
+def watch_target(arguments: list[str]) -> tuple[int | None, bool]:
+    """Resolve procps ``watch`` target and whether direct exec is explicit."""
+    index = 0
+    exec_mode = False
+    value_options = PROCESS_LAUNCH_VALUE_OPTIONS["watch"]
+    flag_options = PROCESS_LAUNCH_FLAG_OPTIONS["watch"]
+    optional_value_options = PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS["watch"]
+    short_flags = frozenset(
+        option[1]
+        for option in flag_options
+        if len(option) == 2 and option.startswith("-")
+    )
+    short_values = frozenset(
+        option[1]
+        for option in value_options
+        if len(option) == 2 and option.startswith("-")
+    )
+    short_optional_values = frozenset(
+        option[1]
+        for option in optional_value_options
+        if len(option) == 2 and option.startswith("-")
+    )
+
+    def resolved(target_index: int) -> tuple[int | None, bool]:
+        if target_index >= len(arguments):
+            return None, exec_mode
+        return target_index, exec_mode
+
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            return resolved(index + 1)
+        if token == "-" or not token.startswith("-"):
+            return resolved(index)
+        if shell_word_is_dynamic(token):
+            return -1, exec_mode
+        if token.startswith("--"):
+            option, separator, _value = token.partition("=")
+            if option in value_options:
+                if separator:
+                    index += 1
+                    continue
+                if index + 1 >= len(arguments) or shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1, exec_mode
+                index += 2
+                continue
+            if option in optional_value_options:
+                index += 1
+                continue
+            if option in flag_options and not separator:
+                exec_mode = exec_mode or option == "--exec"
+                index += 1
+                continue
+            return -1, exec_mode
+
+        cluster = token[1:]
+        cluster_index = 0
+        while cluster_index < len(cluster):
+            option = cluster[cluster_index]
+            if option in short_flags:
+                exec_mode = exec_mode or option == "x"
+                cluster_index += 1
+                continue
+            if option in short_values:
+                if cluster_index + 1 < len(cluster):
+                    cluster_index = len(cluster)
+                    continue
+                if index + 1 >= len(arguments) or shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1, exec_mode
+                index += 1
+                cluster_index = len(cluster)
+                continue
+            if option in short_optional_values:
+                cluster_index = len(cluster)
+                continue
+            return -1, exec_mode
+        index += 1
+    return None, exec_mode
+
+
 def process_wrapper_target_index(
     executable: str, arguments: list[str]
 ) -> int | None:
@@ -915,6 +1032,16 @@ def process_wrapper_target_index(
         if index >= len(arguments):
             return None
         return -1 if shell_word_is_dynamic(arguments[index]) else index
+
+    if executable == "watch":
+        target_index, exec_mode = watch_target(arguments)
+        if (
+            exec_mode
+            and target_index not in {None, -1}
+            and shell_word_is_dynamic(arguments[target_index])
+        ):
+            return -1
+        return target_index
 
     index = 0
     if executable in PROCESS_LAUNCH_VALUE_OPTIONS:
@@ -1131,6 +1258,136 @@ def process_wrapper_target_index(
     return None
 
 
+def watch_default_shell_payload(invocation: list[str]) -> str | None:
+    """Return the shell source procps ``watch`` evaluates without exec mode."""
+    if not invocation or PurePosixPath(invocation[0]).name != "watch":
+        return None
+    arguments = invocation[1:]
+    target_index, exec_mode = watch_target(arguments)
+    if target_index in {None, -1}:
+        return None
+    assert target_index is not None
+    if exec_mode:
+        return None
+    return " ".join(arguments[target_index:])
+
+
+@dataclass(frozen=True)
+class ProcessWrapperContext:
+    """Execution facts that a process wrapper can retarget."""
+
+    repository_unresolved: bool = False
+    executable_unresolved: bool = False
+
+    def merge(self, other: ProcessWrapperContext) -> ProcessWrapperContext:
+        return ProcessWrapperContext(
+            repository_unresolved=(
+                self.repository_unresolved or other.repository_unresolved
+            ),
+            executable_unresolved=(
+                self.executable_unresolved or other.executable_unresolved
+            ),
+        )
+
+
+def process_wrapper_changes_execution_context(
+    executable: str, arguments: list[str], target_index: int
+) -> ProcessWrapperContext:
+    """Whether wrapper options can retarget cwd, mounts, env, or shell."""
+    repository_options = PROCESS_LAUNCH_REPOSITORY_CONTEXT_OPTIONS.get(
+        executable, frozenset()
+    )
+    executable_options = PROCESS_LAUNCH_EXECUTABLE_CONTEXT_OPTIONS.get(
+        executable, frozenset()
+    )
+    repository_unresolved = False
+    executable_unresolved = False
+    preserves_systemd_cwd = False
+    systemd_scope = False
+    for token in arguments[:target_index]:
+        option = token.partition("=")[0]
+        repository_unresolved = (
+            repository_unresolved or option in repository_options
+        )
+        executable_unresolved = (
+            executable_unresolved or option in executable_options
+        )
+        if executable == "systemd-run" and option in {
+            "--same-dir", "-d",
+        }:
+            preserves_systemd_cwd = True
+        if executable == "systemd-run" and option == "--scope":
+            systemd_scope = True
+        if len(token) > 2 and token.startswith("-") and not token.startswith("--"):
+            repository_unresolved = (
+                repository_unresolved or token[:2] in repository_options
+            )
+            executable_unresolved = (
+                executable_unresolved or token[:2] in executable_options
+            )
+    if executable == "systemd-run" and not systemd_scope:
+        executable_unresolved = True
+        if not preserves_systemd_cwd:
+            repository_unresolved = True
+    return ProcessWrapperContext(
+        repository_unresolved=repository_unresolved,
+        executable_unresolved=executable_unresolved,
+    )
+
+
+def process_wrapper_watch_shell_payload(
+    simple_command: list[str],
+) -> tuple[str | None, bool, ProcessWrapperContext]:
+    """Expose a default-mode ``watch`` payload through bounded wrappers."""
+    invocation = delivery_invocation_tokens(simple_command)
+    if (
+        invocation
+        and invocation[0] == OPAQUE_WRAPPER_COMMAND
+    ) or invocation_is_unresolved_nested(invocation):
+        return None, False, ProcessWrapperContext()
+    context = ProcessWrapperContext()
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if not invocation:
+            return None, False, context
+        executable = PurePosixPath(invocation[0]).name
+        if executable == "watch":
+            payload = watch_default_shell_payload(invocation)
+            if payload:
+                return payload, False, context
+        shell_payload = nested_shell_payload(invocation)
+        if shell_payload:
+            return shell_payload, False, context
+        if executable not in PROCESS_LAUNCH_WRAPPERS:
+            return None, False, context
+        target_index = process_wrapper_target_index(executable, invocation[1:])
+        if target_index in {None, -1}:
+            return None, False, context
+        assert target_index is not None
+        context = context.merge(
+            process_wrapper_changes_execution_context(
+                executable, invocation[1:], target_index
+            )
+        )
+        invocation = delivery_invocation_tokens(
+            invocation[target_index + 1 :]
+        )
+    if not invocation:
+        return None, False, context
+    executable = PurePosixPath(invocation[0]).name
+    if executable == "watch":
+        payload = watch_default_shell_payload(invocation)
+        if payload:
+            return payload, False, context
+    shell_payload = nested_shell_payload(invocation)
+    if shell_payload:
+        return shell_payload, False, context
+    return (
+        None,
+        executable in PROCESS_LAUNCH_WRAPPERS,
+        context,
+    )
+
+
 def process_wrapper_governed_invocation(
     simple_command: list[str],
 ) -> list[str]:
@@ -1152,6 +1409,8 @@ def process_wrapper_governed_invocation(
                 if saw_wrapper and executable in GOVERNED_CONTEXT_EXECUTABLES
                 else []
             )
+        if executable == "watch" and watch_default_shell_payload(invocation):
+            return []
         saw_wrapper = True
         target_index = process_wrapper_target_index(executable, invocation[1:])
         if target_index in {None, -1}:
@@ -2379,6 +2638,7 @@ def candidate_block_reason(
     cwd: Path,
     candidate: list[str],
     *,
+    inherited_environment_commands: tuple[tuple[str, ...], ...] = (),
     shell_context_safe: bool,
     directory_resolved: bool,
     base_resolved: bool,
@@ -2386,13 +2646,23 @@ def candidate_block_reason(
     base_diagnostic: str,
 ) -> str:
     """Classify one invocation shape of a simple command in its own context."""
-    if command_local_path_override(simple_command, candidate):
+    environment_commands = (
+        *inherited_environment_commands,
+        tuple(simple_command),
+    )
+    if any(
+        command_local_path_override(list(command), candidate)
+        for command in environment_commands
+    ):
         return (
             f"{MARK_BLOCKED} Blocked a command-local `PATH` override around a governed "
             "executable. Invoke the active managed CLI without executable "
             "retargeting."
         )
-    command_safe = command_local_git_environment_is_safe(simple_command, candidate)
+    command_safe = all(
+        command_local_git_environment_is_safe(list(command), candidate)
+        for command in environment_commands
+    )
     return invocation_block_reason(
         probe,
         candidate,
@@ -2418,18 +2688,29 @@ def command_block_reason(
     base_source: str = "the tool workdir",
     base_resolved: bool = True,
     base_diagnostic: str = "",
+    watch_shell_depth: int = 0,
+    probe: GitProbe | None = None,
+    inherited_environment_commands: tuple[tuple[str, ...], ...] = (),
+    initial_shell_context_safe: bool = True,
+    initial_executable_resolution_safe: bool = True,
+    initial_executable_resolution_tainted: bool = False,
+    initial_directory_resolved: bool = True,
+    initial_repository_context_unresolved: bool = False,
+    initial_executable_identity_unresolved: bool = False,
 ) -> str:
-    probe = GitProbe()
-    shell_context_safe = True
-    executable_resolution_safe = True
-    executable_resolution_tainted = False
+    probe = probe or GitProbe()
+    shell_context_safe = initial_shell_context_safe
+    executable_resolution_safe = initial_executable_resolution_safe
+    executable_resolution_tainted = initial_executable_resolution_tainted
+    repository_context_unresolved = initial_repository_context_unresolved
+    executable_identity_unresolved = initial_executable_identity_unresolved
     simple_commands = simple_commands_with_nested_shells(command)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
     resolves_directories = not any(
         nested_shell_payload(invocation_tokens(tokens)) for tokens in simple_commands
     )
-    directory_resolved = True
+    directory_resolved = initial_directory_resolved
     cwd = base
     for simple_command in simple_commands:
         invocation = delivery_invocation_tokens(simple_command)
@@ -2443,6 +2724,60 @@ def command_block_reason(
                 "Earlier shell state can resolve this command word to `git` or "
                 "`semantic-commit`; use a separate tool call or an absolute executable."
             )
+        (
+            watch_payload,
+            watch_wrapper_depth_exhausted,
+            watch_wrapper_context,
+        ) = (
+            process_wrapper_watch_shell_payload(simple_command)
+        )
+        if watch_wrapper_depth_exhausted:
+            return unresolved(
+                f"{classification_evidence('opaque-watch-shell', 'wrapper-depth-limit')} "
+                "A `watch` payload may be hidden beyond the bounded process-wrapper depth."
+            )
+        simple_command_repository_context_unresolved = (
+            repository_context_unresolved
+            or watch_wrapper_context.repository_unresolved
+        )
+        simple_command_executable_identity_unresolved = (
+            executable_identity_unresolved
+            or watch_wrapper_context.executable_unresolved
+        )
+        if watch_payload:
+            if watch_shell_depth >= SHELL_BUILTIN_UNWRAP_LIMIT:
+                return unresolved(
+                    f"{classification_evidence('opaque-watch-shell', 'depth-limit')} "
+                    "Nested `watch` shell payloads exceed the bounded classifier depth."
+                )
+            reason = command_block_reason(
+                watch_payload,
+                cwd,
+                base_source=base_source,
+                base_resolved=base_resolved,
+                base_diagnostic=base_diagnostic,
+                watch_shell_depth=watch_shell_depth + 1,
+                probe=probe,
+                inherited_environment_commands=(
+                    *inherited_environment_commands,
+                    tuple(simple_command),
+                ),
+                initial_shell_context_safe=shell_context_safe,
+                initial_executable_resolution_safe=executable_resolution_safe,
+                initial_executable_resolution_tainted=executable_resolution_tainted,
+                initial_directory_resolved=(
+                    directory_resolved
+                    and not watch_wrapper_context.repository_unresolved
+                ),
+                initial_repository_context_unresolved=(
+                    simple_command_repository_context_unresolved
+                ),
+                initial_executable_identity_unresolved=(
+                    simple_command_executable_identity_unresolved
+                ),
+            )
+            if reason:
+                return reason
         waiver = command_waiver_reason(simple_command)
         if process_wrapper_hides_governed_invocation(
             simple_command, invocation
@@ -2453,6 +2788,58 @@ def command_block_reason(
                 "directly so its executable and argv can be verified."
             )
         def classify(candidate: list[str]) -> str:
+            if (
+                simple_command_executable_identity_unresolved
+                and candidate
+                and PurePosixPath(candidate[0]).name
+                in GOVERNED_CONTEXT_EXECUTABLES
+            ):
+                return unresolved(
+                    f"{classification_evidence('opaque-process-wrapper-executable', 'unresolved-executable-identity')} "
+                    "A process wrapper can replace the governed executable or "
+                    "its environment; invoke it without environment, root, or "
+                    "mount retargeting."
+                )
+            if (
+                simple_command_repository_context_unresolved
+                and candidate
+                and PurePosixPath(candidate[0]).name
+                in GOVERNED_CONTEXT_EXECUTABLES
+            ):
+                context_reason = candidate_block_reason(
+                    probe,
+                    simple_command,
+                    cwd,
+                    candidate,
+                    inherited_environment_commands=(
+                        inherited_environment_commands
+                    ),
+                    shell_context_safe=False,
+                    directory_resolved=False,
+                    base_resolved=False,
+                    base_source=base_source,
+                    base_diagnostic=base_diagnostic,
+                )
+                executable = PurePosixPath(candidate[0]).name
+                semantic_authors_commit = False
+                if executable == "semantic-commit":
+                    semantic_authors_commit, _writes, _repo = (
+                        semantic_commit_invocation_effects(candidate[1:])
+                    )
+                if not context_reason and not semantic_authors_commit:
+                    return ""
+                if (
+                    "rule=opaque-governed-operation" in context_reason
+                    or "command-local `PATH` override" in context_reason
+                    or "untrusted `semantic-commit`" in context_reason
+                ):
+                    return context_reason
+                return unresolved(
+                    f"{classification_evidence('opaque-process-wrapper-context', 'unresolved-repository-context')} "
+                    "A process wrapper can retarget the repository used by this "
+                    "governed operation; invoke it without context-changing "
+                    "wrapper options."
+                )
             return executable_resolution_rejection(
                 candidate, executable_resolution_safe
             ) or candidate_block_reason(
@@ -2460,6 +2847,7 @@ def command_block_reason(
                 simple_command,
                 cwd,
                 candidate,
+                inherited_environment_commands=inherited_environment_commands,
                 shell_context_safe=shell_context_safe,
                 directory_resolved=directory_resolved,
                 base_resolved=base_resolved,
