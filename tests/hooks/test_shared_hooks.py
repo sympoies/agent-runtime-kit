@@ -20071,7 +20071,6 @@ exit 65
                 "nsenter --target 1 --mount semantic-commit commit --message 'fix: x'",
                 "perf stat --null semantic-commit commit --message 'fix: x'",
                 "perf stat record -e dummy:u -o /dev/null -- semantic-commit commit --message 'fix: x'",
-                "watch -n 1 semantic-commit commit --message 'fix: x'",
                 "systemd-run --user --scope semantic-commit commit --message 'fix: x'",
             )
             for command in commands:
@@ -20083,6 +20082,364 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "behind a process wrapper")
+
+    def test_default_delivery_hook_classifies_watch_default_shell_payloads(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            static_commands = (
+                "watch 'git push origin HEAD:main'",
+                "watch -n 1 'git push origin HEAD:main'",
+                "watch -tn1 'git push origin HEAD:main'",
+                "nice watch 'git push origin HEAD:main'",
+                "watch -x watch 'git push origin HEAD:main'",
+                "watch 'semantic-commit commit --message x'",
+                "watch -n 1 'semantic-commit commit --message x'",
+                "timeout 1 watch 'semantic-commit commit --message x'",
+            )
+            for command in static_commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "forge-cli repo push-default")
+
+            exec_commands = (
+                ("watch -x git push origin HEAD:main", "forge-cli repo push-default"),
+                (
+                    "watch --exec semantic-commit commit --message x",
+                    "behind a process wrapper",
+                ),
+            )
+            for command, fragment in exec_commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+            dynamic_commands = (
+                "watch 'action=push; git $action origin HEAD:main'",
+                "watch 'action=commit; semantic-commit $action --message x'",
+            )
+            for command in dynamic_commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "opaque-governed-operation")
+
+    def test_default_delivery_hook_preserves_watch_exec_and_data_routes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "watch -x git status",
+                "watch --exec git status",
+                "watch -x semantic-commit commit --help",
+                "watch --exec semantic-commit commit --help",
+                "watch 'git status'",
+                "watch 'semantic-commit commit --help'",
+                "watch 'printf git push origin HEAD:main'",
+                "watch 'printf semantic-commit commit --message x'",
+                "nice watch 'printf git push origin HEAD:main'",
+                "watch -x watch 'git status'",
+                "watch -tn1 'printf git push origin HEAD:main'",
+                "watch -txn1 printf git push origin HEAD:main",
+                "watch -td 'printf git push origin HEAD:main'",
+                "watch -xd printf git push origin HEAD:main",
+                "watch 'printf $HOME'",
+                "watch 'printf ~'",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_default_delivery_hook_preserves_watch_parent_environment_guards(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/watch-environment"
+            )
+            blocked_commands = (
+                (
+                    "PATH=/tmp watch 'semantic-commit commit --message x'",
+                    "command-local `PATH` override",
+                ),
+                (
+                    "PATH=/tmp nice watch 'semantic-commit commit --message x'",
+                    "command-local `PATH` override",
+                ),
+                (
+                    "PATH=/tmp watch -x semantic-commit commit --message x",
+                    "behind a process wrapper",
+                ),
+            )
+            for command, fragment in blocked_commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "PATH=/tmp watch 'printf semantic-commit commit --message x'"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_default_delivery_hook_preserves_unresolved_context_inside_watch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            self._init_checkout_lease_repo(source)
+            self._init_checkout_lease_repo(target)
+            subprocess.run(["git", "branch", "-m", "trunk"], cwd=source, check=True)
+            subprocess.run(
+                ["git", "push", "-q", "origin", "trunk"], cwd=source, check=True
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "symbolic-ref",
+                    "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/trunk",
+                ],
+                cwd=source,
+                check=True,
+            )
+            source_target = shlex.quote(str(target))
+            commands = (
+                f"target={source_target}; cd \"$target\"; watch 'git push origin HEAD:main'",
+                f"target={source_target}; cd \"$target\"; nice watch 'git push origin HEAD:main'",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=source,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "could not be resolved safely")
+
+    def test_default_delivery_hook_rejects_watch_after_context_changing_wrapper(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            self._init_checkout_lease_repo(source)
+            self._init_checkout_lease_repo(target)
+            subprocess.run(["git", "branch", "-m", "trunk"], cwd=source, check=True)
+            subprocess.run(
+                ["git", "push", "-q", "origin", "trunk"], cwd=source, check=True
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "symbolic-ref",
+                    "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/trunk",
+                ],
+                cwd=source,
+                check=True,
+            )
+            target_arg = shlex.quote(str(target))
+            blocked_commands = (
+                (
+                    "systemd-run --user --wait "
+                    "watch 'git push origin HEAD:main'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    f"systemd-run --user --working-directory={target_arg} --wait "
+                    "watch 'git push origin HEAD:main'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    f"systemd-run --user --pty --working-directory={target_arg} "
+                    "watch 'git push origin HEAD:main'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "systemd-run --user --pty "
+                    "watch 'git push origin HEAD:main'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "systemd-run --user -t "
+                    "watch -x git push origin HEAD:main",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "systemd-run --user --same-dir --wait "
+                    "watch 'semantic-commit commit --message x'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "systemd-run --user -d --wait watch 'git status'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    f"unshare --wd={target_arg} "
+                    "watch 'git push origin HEAD:main'",
+                    "opaque-process-wrapper-context",
+                ),
+                (
+                    f"systemd-run --user --working-directory={target_arg} --wait "
+                    "watch -x git push origin HEAD:main",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    f"unshare --wd={target_arg} watch --exec "
+                    "git push origin HEAD:main",
+                    "opaque-process-wrapper-context",
+                ),
+                (
+                    "watch 'systemd-run --user "
+                    f"--working-directory={target_arg} --wait "
+                    "git push origin HEAD:main'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    f"watch 'unshare --wd={target_arg} "
+                    "git push origin HEAD:main'",
+                    "opaque-process-wrapper-context",
+                ),
+                (
+                    "systemd-run --user --setenv=PATH=/tmp --wait "
+                    "watch 'semantic-commit commit --help'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "watch 'systemd-run --user --setenv=GIT_DIR=/tmp/repo.git "
+                    "--wait git status'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "nsenter --target 1 --env "
+                    "watch 'semantic-commit commit --help'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "nsenter --target 1 -e watch 'git status'",
+                    "opaque-process-wrapper-executable",
+                ),
+                (
+                    "nsenter --target 1 --mount watch 'git status'",
+                    "opaque-process-wrapper-executable",
+                ),
+            )
+            for command, fragment in blocked_commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=source,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    f"systemd-run --user --working-directory={target_arg} "
+                    "--wait watch 'printf git push origin HEAD:main'"
+                ),
+                cwd=source,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            for command in (
+                "systemd-run --user --scope "
+                "watch 'git push origin HEAD:main'",
+                f"unshare --wd={target_arg} watch 'git status'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=source,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "nsenter --target 1 --no-fork "
+                    "watch 'printf semantic-commit commit --message x'"
+                ),
+                cwd=source,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_default_delivery_hook_watch_wrapper_depth_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            exact_limit = "nice " * 8
+            cases = (
+                (f"{exact_limit}printf ok", True, ""),
+                (
+                    f"{exact_limit}watch 'git push origin HEAD:main'",
+                    False,
+                    "forge-cli repo push-default",
+                ),
+                (
+                    f"nice {exact_limit}printf ok",
+                    False,
+                    "wrapper-depth-limit",
+                ),
+            )
+            for command, allowed, fragment in cases:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if allowed:
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, fragment)
 
     def test_default_delivery_hook_blocks_dynamic_semantic_modes_behind_launchers(
         self,
@@ -20109,8 +20466,13 @@ exit 65
                         cwd=repo,
                     )
                     self.assertEqual(code, 0, stderr)
+                    fragment = (
+                        "opaque-process-wrapper-executable"
+                        if "nsenter" in command
+                        else "semantic-commit operation depends on shell expansion"
+                    )
                     self.assert_blocked(
-                        decision, "semantic-commit operation depends on shell expansion"
+                        decision, fragment
                     )
 
     def test_default_delivery_hook_blocks_configured_and_shell_git_aliases(self) -> None:
@@ -20742,23 +21104,18 @@ exit 65
                 "setpriv -- git status",
                 "unshare git status",
                 "strace -o /tmp/trace git status",
-                "nsenter --target 1 --mount git status",
                 "prlimit --nofile=1024 -- git status",
                 "setpriv --no-new-privs git status",
                 "unshare --fork git status",
                 "strace --seccomp-bpf -o /tmp/trace git status",
-                "nsenter --target=1 --mount git status",
                 "perf stat --null git status",
                 "perf stat record -e dummy:u -o /dev/null -- git status",
                 "watch -n 1 git status",
                 "systemd-run --user --scope git status",
-                "systemd-run -P git status",
-                "systemd-run -G git status",
                 "prlimit -- semantic-commit commit --help",
                 "setpriv -- semantic-commit commit --help",
                 "unshare semantic-commit commit --help",
                 "strace -o /tmp/trace semantic-commit commit --help",
-                "nsenter --target 1 --mount semantic-commit commit --help",
                 "perf stat --null semantic-commit commit --help",
                 "perf stat record -e dummy:u -o /dev/null -- semantic-commit commit --help",
                 "watch -n 1 semantic-commit commit --help",
