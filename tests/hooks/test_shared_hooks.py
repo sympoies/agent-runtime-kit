@@ -19960,7 +19960,7 @@ exit 65
                         cwd=repo,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "forge-cli repo push-default")
+                    self.assert_blocked(decision, "behind a process wrapper")
 
     def test_default_delivery_hook_blocks_dynamic_semantic_modes_behind_launchers(
         self,
