@@ -744,21 +744,35 @@ def process_wrapper_target_index(
     executable: str, arguments: list[str]
 ) -> int | None:
     """Return the target offset in wrapper arguments, or fail closed."""
+    def dynamic(token: str) -> bool:
+        return token.startswith("=") or any(
+            marker in token for marker in "$`*?[]{}()#^~"
+        )
+
+    def resolved(index: int) -> int | None:
+        if index >= len(arguments):
+            return None
+        return -1 if dynamic(arguments[index]) else index
+
     index = 0
     if executable == "nohup":
         if arguments[:1] == ["--"]:
             index = 1
         elif arguments and arguments[0].startswith("-"):
             return None
-        return index if index < len(arguments) else None
+        return resolved(index)
 
     if executable == "nice":
         while index < len(arguments):
             token = arguments[index]
+            if dynamic(token):
+                return -1
             if token == "--":
                 index += 1
                 break
             if token in {"-n", "--adjustment"}:
+                if index + 1 < len(arguments) and dynamic(arguments[index + 1]):
+                    return -1
                 index += 2
                 continue
             if token.startswith("--adjustment=") or re.fullmatch(
@@ -769,15 +783,19 @@ def process_wrapper_target_index(
             if token.startswith("-"):
                 return None
             break
-        return index if index < len(arguments) else None
+        return resolved(index)
 
     if executable == "timeout":
         while index < len(arguments):
             token = arguments[index]
+            if dynamic(token):
+                return -1
             if token == "--":
                 index += 1
                 break
             if token in {"-k", "--kill-after", "-s", "--signal"}:
+                if index + 1 < len(arguments) and dynamic(arguments[index + 1]):
+                    return -1
                 index += 2
                 continue
             if token in {"--foreground", "--preserve-status", "--verbose"}:
@@ -791,15 +809,19 @@ def process_wrapper_target_index(
             break
         # `timeout` consumes one duration word before its target command.
         index += 1
-        return index if index < len(arguments) else None
+        return resolved(index)
 
     if executable == "stdbuf":
         while index < len(arguments):
             token = arguments[index]
+            if dynamic(token):
+                return -1
             if token == "--":
                 index += 1
                 break
             if token in {"-i", "--input", "-o", "--output", "-e", "--error"}:
+                if index + 1 < len(arguments) and dynamic(arguments[index + 1]):
+                    return -1
                 index += 2
                 continue
             if token.startswith(
@@ -810,7 +832,7 @@ def process_wrapper_target_index(
             if token.startswith("-"):
                 return None
             break
-        return index if index < len(arguments) else None
+        return resolved(index)
     return None
 
 
@@ -826,11 +848,15 @@ def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
             return invocation if saw_wrapper and executable == "git" else []
         saw_wrapper = True
         target_index = process_wrapper_target_index(executable, invocation[1:])
-        if target_index is None:
+        if target_index in {None, -1}:
             for index, token in enumerate(invocation[1:], start=1):
                 if PurePosixPath(token).name == "git":
                     return delivery_invocation_tokens(invocation[index:])
-            return []
+            return (
+                [OPAQUE_WRAPPER_COMMAND, "$process-wrapper-target"]
+                if target_index == -1
+                else []
+            )
         invocation = delivery_invocation_tokens(
             invocation[target_index + 1 :]
         )
@@ -2125,6 +2151,12 @@ def command_block_reason(
 
         wrapper_git = process_wrapper_git_invocation(simple_command)
         if wrapper_git:
+            if wrapper_git[0] == OPAQUE_WRAPPER_COMMAND:
+                return unresolved(
+                    f"{classification_evidence('opaque-process-wrapper', 'dynamic-executable')} "
+                    "A process wrapper can expand its target to `git`; use a literal "
+                    "wrapper target or a separate tool call."
+                )
             reason = classify(wrapper_git)
             if reason and not waiver_admits(wrapper_git, reason, waiver):
                 return reason

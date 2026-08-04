@@ -19864,6 +19864,9 @@ exit 65
                 "nice timeout 5 stdbuf -oL git push origin HEAD:main",
                 "nice noglob git push origin HEAD:main",
                 "noglob nice git push origin HEAD:main",
+                "opts='-n 5'; nice $opts git push origin HEAD:main",
+                "opts=-oL; stdbuf $opts git push origin HEAD:main",
+                "cmd=git; nice $cmd push origin HEAD:main",
             )
             for command in commands:
                 with self.subTest(command=command):
