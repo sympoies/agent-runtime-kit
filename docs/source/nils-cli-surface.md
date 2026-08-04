@@ -1,35 +1,61 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-03 (refreshed for `v1.26.0`)
+- Snapshot date: 2026-08-04 (refreshed for `v1.26.1`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.26.0`
+- Active `git describe --tags` output: `v1.26.1`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.13`,
-  `validated_tag: v1.26.0`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.26.1`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `eef4c633`
-  (`chore(release): bump cli versions to 1.26.0`)
+- Head commit: `647753d0`
+  (`chore(release): bump cli versions to 1.26.1`)
 - Release:
-  [`v1.26.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.0),
+  [`v1.26.1`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.1),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.26.0` is the validated release while `v1.25.13` remains the compatibility
-  minimum. This ordinary uptake adds an upgrade-safe `agent-session` binary pin
-  for newly created tmux sessions, the `agent-hook` degradation and centralized
-  observation lanes with `agent-session diagnose` and richer `/healthz`
-  projection, no-agent-attribution guards on commit and PR writers, visible and
-  consolidated review-ledger comments, and capability success based on process
-  exit status rather than stdin closure
+- `v1.26.1` is the validated release while `v1.25.13` remains the compatibility
+  minimum. It carries the whole `v1.26.0` uptake — an upgrade-safe
+  `agent-session` binary pin for newly created tmux sessions, the `agent-hook`
+  degradation and centralized observation lanes with `agent-session diagnose`
+  and richer `/healthz` projection, no-agent-attribution guards on commit and
+  PR writers, visible and consolidated review-ledger comments, and capability
+  success based on process exit status rather than stdin closure
   ([#1415](https://github.com/sympoies/nils-cli/pull/1415),
   [#1416](https://github.com/sympoies/nils-cli/pull/1416),
   [#1418](https://github.com/sympoies/nils-cli/pull/1418),
   [#1421](https://github.com/sympoies/nils-cli/pull/1421),
-  [#1424](https://github.com/sympoies/nils-cli/pull/1424)). Runtime-kit does
-  not require these additive recovery and delivery refinements to execute its
-  existing declared surface, so no compatibility or per-binary floor moves.
+  [#1424](https://github.com/sympoies/nils-cli/pull/1424)) — and adds
+  `agent-session` bootstrap / capacity attention classification and
+  retained-claim recovery during retire replay
+  ([#1431](https://github.com/sympoies/nils-cli/pull/1431),
+  [#1432](https://github.com/sympoies/nils-cli/pull/1432)), plus the
+  `forge-cli` changes below.
+- **One `forge-cli` change in `v1.26.1` is a tightening, not an addition, and is
+  the only item here that can turn a previously passing delivery into a typed
+  failure.** `pr merge` and `pr deliver` previously treated a head with *no*
+  registered required checks as satisfying the check gate, so an empty snapshot
+  read as green. It now fails closed with `checks_not_registered`, and
+  `pr wait-checks` no longer treats an unchecked head as terminal
+  ([#1440](https://github.com/sympoies/nils-cli/pull/1440)). Repositories that
+  genuinely configure no checks must pass `--allow-no-checks`. Runtime-kit's
+  delivery targets all register required checks, so this is expected to be
+  inert here; it is called out because the failure mode is a *new* refusal
+  rather than a missing feature.
+- `v1.26.1` also adds the offline `forge-cli pr review-loop validate` verb and
+  corrects `operation-effect` classification for the `review-loop` family, which
+  had defaulted to `network_write`; `validate` now reports `read_only` /
+  `local_read` ([#1441](https://github.com/sympoies/nils-cli/pull/1441)).
+  Runtime-kit does not consume `review-loop validate` yet, so no per-binary
+  floor moves for it. The remainder of the release is test-only hardening
+  ([#1429](https://github.com/sympoies/nils-cli/pull/1429),
+  [#1430](https://github.com/sympoies/nils-cli/pull/1430),
+  [#1433](https://github.com/sympoies/nils-cli/pull/1433),
+  [#1435](https://github.com/sympoies/nils-cli/pull/1435),
+  [#1437](https://github.com/sympoies/nils-cli/pull/1437)). No compatibility or
+  per-binary floor moves.
 - `v1.25.13` remains the compatibility minimum and was the previous validated
   release. Its adoption was an explicit compatibility retirement: current
   `semantic-commit`, `agent-session`, and `main-agent` contracts introduced in
