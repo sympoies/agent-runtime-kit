@@ -260,6 +260,25 @@ def emit_system(message: str) -> None:
     sys.stdout.write("\n")
 
 
+STOP_COORDINATION_RESULT_SCHEMA = "runtime-kit.session-coordination-result.v1"
+
+
+def emit_stop_coordination_result(status: str, message: str | None = None) -> None:
+    result: dict[str, str] = {
+        "schema_version": STOP_COORDINATION_RESULT_SCHEMA,
+        "status": status,
+    }
+    if message:
+        result["message"] = message
+    # Preserve safe behavior for the released agent-hook while the typed
+    # consumer rolls out: it already understands this provider block shape.
+    if status == "pending":
+        result["decision"] = "block"
+        result["reason"] = message or "Session coordination is pending."
+    sys.stdout.write(json.dumps(result, separators=(",", ":")))
+    sys.stdout.write("\n")
+
+
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -3513,6 +3532,7 @@ def post_tool(
 def stop_audit(executable: str | None, managed_session: str, product: str) -> int:
     namespace = private_namespace(product, managed_session)
     if not namespace.is_dir():
+        emit_stop_coordination_result("clean")
         return ALLOW
     records = list(
         path
@@ -3548,11 +3568,14 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
         finally:
             release_operation_lock(descriptor)
     if pending:
-        emit_system(
+        emit_stop_coordination_result(
+            "pending",
             "Session coordination retains an unresolved operation proof. Use authenticated "
             "work-context complete/reconcile recovery before another mutation; Stop does not "
-            "release or guess the outcome of an active operation."
+            "release or guess the outcome of an active operation.",
         )
+    else:
+        emit_stop_coordination_result("clean")
     return ALLOW
 
 
@@ -3581,6 +3604,8 @@ def main() -> int:
         return ALLOW
     mode = coordination_mode()
     if mode == "off":
+        if event == "Stop":
+            emit_stop_coordination_result("not-run")
         return ALLOW
     managed_session = os.environ.get("AGENT_SESSION_ID", "").strip()
     capability_file = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
@@ -3588,6 +3613,13 @@ def main() -> int:
     if not managed_session and not capability_file:
         return ALLOW
     if not managed_session or not capability_file or not state_dir:
+        if event == "Stop":
+            emit_stop_coordination_result(
+                "unavailable",
+                "Session coordination is unavailable because this launch lacks complete "
+                "managed session metadata; no enforcement claim is made.",
+            )
+            return ALLOW
         if mode == "advisory":
             emit_advisory_unavailable("managed-metadata-incomplete")
         else:
@@ -3600,6 +3632,8 @@ def main() -> int:
     if tool not in EDIT_TOOLS | COMMAND_TOOLS and event != "Stop":
         return ALLOW
     if mode == "advisory" and event in {"PostToolUse", "PostToolUseFailure", "Stop"}:
+        if event == "Stop":
+            emit_stop_coordination_result("not-run")
         return ALLOW
     if event in {"PostToolUse", "PostToolUseFailure"}:
         executable = resolved_agent_session()
@@ -3622,6 +3656,13 @@ def main() -> int:
         or not capability_path.is_file()
         or capability_mode != 0o600
     ):
+        if event == "Stop":
+            emit_stop_coordination_result(
+                "unavailable",
+                "Session coordination is unavailable because the managed capability file is "
+                "not a private regular file; no enforcement claim is made.",
+            )
+            return ALLOW
         if mode == "advisory":
             emit_advisory_unavailable("capability-file-invalid")
         else:
@@ -3629,8 +3670,6 @@ def main() -> int:
                 "Session coordination is unavailable because the managed capability file is "
                 "not a private regular file; no enforcement claim is made."
             )
-        if event == "Stop":
-            return stop_audit(None, managed_session, product)
         return ALLOW
     if runtime_checkpoint_write(payload, tool) is not None:
         return ALLOW
@@ -3638,6 +3677,14 @@ def main() -> int:
     if executable is None or (
         mode == "enforce" and not coordination_capability(executable, mode)
     ):
+        if event == "Stop":
+            emit_stop_coordination_result(
+                "unavailable",
+                "Session coordination is unavailable on this agent-session surface; no "
+                "enforcement claim is made. Upgrade to the repository-pinned runtime before "
+                "relying on coordination.",
+            )
+            return ALLOW
         if mode == "advisory":
             emit_advisory_unavailable("coordination-surface-unavailable")
         else:
@@ -3646,8 +3693,6 @@ def main() -> int:
                 "enforcement claim is made. Upgrade to the repository-pinned runtime before "
                 "relying on coordination."
             )
-        if event == "Stop":
-            return stop_audit(None, managed_session, product)
         return ALLOW
     if mode == "advisory":
         return advisory_pre_tool(

@@ -269,6 +269,13 @@ block; generic or malformed output, unavailable coordination, shell
 composition, transforms, and any other block fail closed. Thus neither
 provider can admit a tool denied by another prerequisite. The guard applies one
 50-second global subprocess budget inside the setup-owned dispatcher timeout.
+For Stop, the guard emits
+`runtime-kit.session-coordination-result.v1` with a `not-run`, `clean`,
+`pending`, or `unavailable` status. This typed transaction result is separate
+from provider presentation: `agent-hook` may prescribe reconciliation only for
+`pending`, while legacy `systemMessage` or generic decision output proves no
+broker state. A typed `pending` result also carries the legacy provider block
+fields during the nils-cli rollout so the released consumer remains fail-closed.
 In advisory mode,
 older/missing coordination surfaces remain usable with bounded degraded
 guidance; in enforce mode they retain accurate no-enforcement guidance. Hook

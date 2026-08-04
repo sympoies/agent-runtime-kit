@@ -407,6 +407,95 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "semantic-commit")
 
+    def test_direct_git_commit_hook_does_not_misdiagnose_git_show(self) -> None:
+        issue_reproducer = (
+            'R=$HOME/Project/sympoies/agent-runtime-kit\n'
+            "for f in a.py b.py; do\n"
+            '  git -C "$R" show "origin/main:core/hooks/shared/$f" | sha256sum\n'
+            "done"
+        )
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(issue_reproducer)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
+        opaque_read = "CMD=git env -S '${CMD} show origin/main:README.md'"
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(opaque_read)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "rule=opaque-executable")
+        assert decision is not None
+        reason = str(decision.get("reason", ""))
+        self.assertNotIn("git commit", reason)
+        self.assertNotIn("semantic-commit", reason)
+
+        for command in (
+            "CMD=git env -S '${CMD} show commit-history'",
+            "op=commit; git \"$op\" -m test",
+            "op=commit; git \"${op}\" -m test",
+            'git "$(printf commit)" -m test',
+            "part=mm; git co${part}it -m test",
+        ):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "rule=opaque-executable")
+                assert decision is not None
+                reason = str(decision.get("reason", ""))
+                self.assertNotIn("git commit", reason)
+                self.assertNotIn("semantic-commit", reason)
+
+        for command in (
+            "git -c alias.ci=commit ci -m test",
+            "git -c 'alias.ci=!git commit' ci",
+        ):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "rule=git-alias-resolution")
+
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py",
+            command_payload("git -c color.ui=false status --short"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_allowed(decision)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            aliases = (
+                ("ci", "commit"),
+                ("one", "two"),
+                ("two", "commit"),
+                ("shell-ci", "!git commit"),
+            )
+            for name, value in aliases:
+                subprocess.run(
+                    ["git", "config", f"alias.{name}", value],
+                    cwd=repo,
+                    check=True,
+                )
+            for command in (
+                "git ci -m test",
+                "git one -m test",
+                "git shell-ci",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=git-alias-resolution")
+
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
             (
@@ -585,7 +674,7 @@ class SharedHookTests(unittest.TestCase):
             command_payload(f"/usr/bin/time --future-option {opaque_nested}"),
         )
         self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "semantic-commit")
+        self.assert_blocked(decision, "rule=opaque-executable")
 
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -712,7 +801,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-git-commit.py",
                 nested("git commit -m test"),
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -762,7 +851,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-git-commit.py",
                 nested("git commit -m test"),
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -797,22 +886,22 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-git-commit.py",
                 "CMD=git env -S '${CMD} commit -m test'",
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-commit.py",
                 "CMD=git env -S '\"${CMD}\" commit -m test'",
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-commit.py",
                 "export CMD=git; env -S \"'${CMD}' commit -m test\"",
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-commit.py",
                 "env -S \"'`printf git`' commit -m test\"",
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -847,7 +936,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-git-commit.py",
                 "env -S '# ignored' git commit -m test",
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -862,7 +951,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-git-commit.py",
                 "env -S 'git\\_commit -m test'",
-                "semantic-commit",
+                "rule=opaque-executable",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -2985,6 +3074,8 @@ exit 64
             self.assertIn("session-scoped", reason)
             self.assertIn("Stop consolidates", reason)
             self.assertIn("removes completed session state when present", reason)
+            self.assertIn("own tool call with no preceding shell state", reason)
+            self.assertIn("absolute interpreter", reason)
             self.assertNotIn("Running it records", reason)
 
             # Running the declared validation records the run.
@@ -13164,7 +13255,13 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assertIsNotNone(decision)
-            self.assertIn("does not release or guess", str(decision))
+            assert decision is not None
+            self.assertEqual(
+                decision.get("schema_version"),
+                "runtime-kit.session-coordination-result.v1",
+            )
+            self.assertEqual(decision.get("status"), "pending")
+            self.assertIn("does not release or guess", str(decision.get("message")))
 
             post = dict(pre)
             post["hook_event_name"] = "PostToolUse"
@@ -13196,7 +13293,13 @@ exit 64
                 "session-coordination-guard.py", dropped_stop, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assertEqual(
+                decision,
+                {
+                    "schema_version": "runtime-kit.session-coordination-result.v1",
+                    "status": "clean",
+                },
+            )
             self.assertEqual(list(namespace.glob("*.json")), [])
             self.assertEqual(list(namespace.glob("*.token")), [])
             self.assertEqual(list(namespace.glob("*.outcome")), [])
@@ -13380,7 +13483,13 @@ exit 64
                 "session-coordination-guard.py", stop, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(reconciled_stop)
+            self.assertEqual(
+                reconciled_stop,
+                {
+                    "schema_version": "runtime-kit.session-coordination-result.v1",
+                    "status": "clean",
+                },
+            )
             call_text = calls.read_text(encoding="utf-8")
             self.assertEqual(call_text.count("broker status"), 2)
             self.assertEqual(call_text.count("broker proof"), 2)
@@ -20678,6 +20787,35 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+    def test_declared_validation_shape_is_admitted_by_delivery_classifier(
+        self,
+    ) -> None:
+        declared = "bash scripts/ci/nils-cli-checks-entrypoint.sh --local-fast"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp, commands=(declared,))
+            catalog = tomllib.loads(
+                (repo / "AGENT_DOCS.toml").read_text(encoding="utf-8")
+            )
+            command = catalog["validation"][0]["commands"][0]
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    'export PATH="$HOME/.cargo/bin:$PATH"; ' + command
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "rule=opaque-shell-resolution")
 
     def test_default_delivery_hook_allows_expanded_non_governed_executables(
         self,
