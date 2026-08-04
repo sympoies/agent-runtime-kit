@@ -153,6 +153,42 @@ class TranscriptWorkdirResult(NamedTuple):
     diagnostic: str | None
 
 
+def _custom_exec_remainder_is_canonical(
+    remainder: str, binding: str | None
+) -> bool:
+    """Recognize the tiny supported wrapper suffix in one linear scan."""
+
+    def skip_space(index: int) -> int:
+        while index < len(remainder) and remainder[index].isspace():
+            index += 1
+        return index
+
+    index = skip_space(0)
+    if index >= len(remainder) or remainder[index] != ")":
+        return False
+    index = skip_space(index + 1)
+    if index < len(remainder) and remainder[index] == ";":
+        index = skip_space(index + 1)
+    if index == len(remainder):
+        return True
+    if binding is None or not remainder.startswith("text", index):
+        return False
+    index = skip_space(index + len("text"))
+    if index >= len(remainder) or remainder[index] != "(":
+        return False
+    index = skip_space(index + 1)
+    output_expression = f"{binding}.output"
+    if not remainder.startswith(output_expression, index):
+        return False
+    index = skip_space(index + len(output_expression))
+    if index >= len(remainder) or remainder[index] != ")":
+        return False
+    index = skip_space(index + 1)
+    if index < len(remainder) and remainder[index] == ";":
+        index = skip_space(index + 1)
+    return index == len(remainder)
+
+
 def _custom_exec_arguments(
     event_payload: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any] | None, str | None]:
@@ -196,12 +232,7 @@ def _custom_exec_arguments(
     if not isinstance(parsed, Mapping):
         return None, "transcript-custom-input-malformed"
     binding = match.group("binding")
-    remainder_pattern = r"\s*\)\s*;?\s*"
-    if binding:
-        remainder_pattern += (
-            rf"(?:text\(\s*{re.escape(binding)}\.output\s*\)\s*;?\s*)?"
-        )
-    if re.fullmatch(remainder_pattern, argument_source[end:]) is None:
+    if not _custom_exec_remainder_is_canonical(argument_source[end:], binding):
         return None, "transcript-custom-input-ambiguous"
     if not isinstance(parsed.get("cmd"), str):
         return None, "transcript-custom-input-malformed"
@@ -3243,8 +3274,8 @@ def invocation_command_position_is_dynamic(
     # governed command receives the specific executable-resolution refusal.
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\[[^\]]+\]=.*", token):
         return False
-    return token.startswith(("~", "=")) or any(
-        marker in token for marker in "$`*?[]{}()"
+    return token.startswith("=") or any(
+        marker in token for marker in "$`*?[]{}()#^~"
     )
 
 

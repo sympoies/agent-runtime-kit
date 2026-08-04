@@ -344,7 +344,8 @@ extracted operation, and command-context provenance so an unverified target is
 distinguishable from a proven default-branch write.
 The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
-even without a variable prefix.
+even without a variable prefix. The zsh extended-glob repetition, exclusion,
+and negation operators (`#`, `~`, and `^`) are opaque there as well.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also

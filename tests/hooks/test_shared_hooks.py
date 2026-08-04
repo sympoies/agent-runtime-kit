@@ -8707,6 +8707,29 @@ exit 65
                         context.diagnostic, "workdir-attestation-missing"
                     )
 
+    def test_custom_exec_malformed_remainder_is_rejected_in_linear_time(
+        self,
+    ) -> None:
+        source = (
+            "const r = await tools.exec_command("
+            + json.dumps({"cmd": "x", "workdir": "/tmp"})
+            + ")"
+            + (" " * 12_000)
+            + "unexpected"
+        )
+        started = time.monotonic()
+        arguments, diagnostic = hook_common._custom_exec_arguments(
+            {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "input": source,
+            }
+        )
+        elapsed = time.monotonic() - started
+        self.assertIsNone(arguments)
+        self.assertEqual(diagnostic, "transcript-custom-input-ambiguous")
+        self.assertLess(elapsed, 0.5)
+
     def test_command_context_records_workdir_provenance_and_attestation(self) -> None:
         """Cross-repository gating retains where the canonical target came from."""
         resolver = getattr(hook_common, "command_context", None)
@@ -20532,10 +20555,15 @@ exit 65
                 "/usr/bin/@(git|echo) push origin HEAD:main",
                 "/usr/bin/git(N) push origin HEAD:main",
                 "/usr/bin/git(.) push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/gi#t push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/gi##t push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/git~notgit push origin HEAD:main",
                 r"printf x '\'; /usr/bin/@(git) push origin HEAD:main",
                 "/usr/bin/@(semantic-commit) commit --message 'fix: extglob writer'",
                 "/usr/bin/semantic-commit(N) commit "
                 "--message 'fix: qualifier writer'",
+                "setopt EXTENDED_GLOB; /usr/bin/semanti#c-commit commit "
+                "--message 'fix: repetition writer'",
                 "bash -O extglob -c "
                 + shlex.quote("/usr/bin/@(git) push origin HEAD:main"),
                 "bash -O extglob -c "
@@ -20549,6 +20577,13 @@ exit 65
                 + shlex.quote(
                     "/usr/bin/semantic-commit(.) commit "
                     "--message 'fix: nested qualifier writer'"
+                ),
+                "zsh -o EXTENDED_GLOB -c "
+                + shlex.quote("/usr/bin/gi#t push origin HEAD:main"),
+                "zsh -o EXTENDED_GLOB -c "
+                + shlex.quote(
+                    "/usr/bin/semanti#c-commit commit "
+                    "--message 'fix: nested repetition writer'"
                 ),
             )
             for hidden in shell_expanded_governed_executables:
