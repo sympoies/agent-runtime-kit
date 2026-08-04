@@ -268,14 +268,17 @@ PROCESS_LAUNCH_WRAPPERS = frozenset(
         "nice",
         "nsenter",
         "nohup",
+        "perf",
         "prlimit",
         "setpriv",
         "setsid",
         "stdbuf",
         "strace",
+        "systemd-run",
         "taskset",
         "timeout",
         "unshare",
+        "watch",
     }
 )
 PROCESS_LAUNCH_VALUE_OPTIONS = {
@@ -307,6 +310,20 @@ PROCESS_LAUNCH_VALUE_OPTIONS = {
     "nsenter": frozenset(
         {"--net-socket", "--target", "--wdns", "-N", "-W", "-t"}
     ),
+    "perf": frozenset(
+        {
+            "--cpu", "--event", "--filter", "--output", "--pid", "--repeat",
+            "--tid", "-C", "-e", "-o", "-p", "-r", "-t",
+        }
+    ),
+    "systemd-run": frozenset(
+        {
+            "--description", "--gid", "--nice", "--property", "--service-type",
+            "--setenv", "--slice", "--uid", "--unit", "--working-directory",
+            "-E", "-G", "-P", "-p", "-u",
+        }
+    ),
+    "watch": frozenset({"--equexit", "--interval", "-n", "-q"}),
 }
 PROCESS_LAUNCH_FLAG_OPTIONS = {
     "prlimit": frozenset({"--help", "--noheadings", "--raw", "--verbose", "--version", "-h", "-V"}),
@@ -342,6 +359,29 @@ PROCESS_LAUNCH_FLAG_OPTIONS = {
             "-F", "-V", "-a", "-c", "-e", "-h",
         }
     ),
+    "perf": frozenset(
+        {
+            "--all-cpus", "--append", "--help", "--no-big-num", "--no-merge",
+            "--null", "--per-core", "--per-socket", "--per-thread", "--quiet",
+            "--verbose", "-a", "-A", "-B", "-h", "-q", "-v",
+        }
+    ),
+    "systemd-run": frozenset(
+        {
+            "--ask-password", "--collect", "--expand-environment", "--pipe",
+            "--pty", "--quiet", "--scope", "--send-sighup", "--service-type=exec",
+            "--shell", "--slice-inherit", "--slice-inherit", "--user", "--wait",
+            "-G", "-P", "-q", "-S", "-t",
+        }
+    ),
+    "watch": frozenset(
+        {
+            "--beep", "--chgexit", "--color", "--differences", "--errexit",
+            "--exec", "--help", "--no-rerun", "--no-title", "--precise",
+            "--version", "-b", "-C", "-c", "-e", "-g", "-h", "-p", "-r",
+            "-t", "-v", "-w", "-x",
+        }
+    ),
 }
 PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS = {
     "prlimit": frozenset(
@@ -369,6 +409,9 @@ PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS = {
             "-G", "-S", "-T", "-U", "-i", "-m", "-n", "-p", "-r", "-u", "-w",
         }
     ),
+    "perf": frozenset(),
+    "systemd-run": frozenset(),
+    "watch": frozenset({"--differences", "-d"}),
 }
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
@@ -875,6 +918,12 @@ def process_wrapper_target_index(
 
     index = 0
     if executable in PROCESS_LAUNCH_VALUE_OPTIONS:
+        if executable == "perf":
+            if not arguments or shell_word_is_dynamic(arguments[0]):
+                return -1
+            if arguments[0] not in {"record", "stat", "trace"}:
+                return None
+            index = 1
         value_options = PROCESS_LAUNCH_VALUE_OPTIONS[executable]
         flag_options = PROCESS_LAUNCH_FLAG_OPTIONS[executable]
         optional_value_options = PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS[

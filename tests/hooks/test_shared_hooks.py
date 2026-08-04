@@ -19928,6 +19928,12 @@ exit 65
                 "cmd=semantic-commit; unshare $cmd commit --message 'fix: x'",
                 "cmd=semantic-commit; strace -o /tmp/trace $cmd commit --message 'fix: x'",
                 "cmd=semantic-commit; nsenter --target 1 --mount $cmd commit --message 'fix: x'",
+                "perf stat --null git push origin HEAD:main",
+                "watch -n 1 git push origin HEAD:main",
+                "systemd-run --user --scope git push origin HEAD:main",
+                "action=push; perf stat --null git $action origin HEAD:main",
+                "action=push; watch -n 1 git $action origin HEAD:main",
+                "action=push; systemd-run --user --scope git $action origin HEAD:main",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -19951,6 +19957,9 @@ exit 65
                 "unshare semantic-commit commit --message 'fix: x'",
                 "strace -o /tmp/trace semantic-commit commit --message 'fix: x'",
                 "nsenter --target 1 --mount semantic-commit commit --message 'fix: x'",
+                "perf stat --null semantic-commit commit --message 'fix: x'",
+                "watch -n 1 semantic-commit commit --message 'fix: x'",
+                "systemd-run --user --scope semantic-commit commit --message 'fix: x'",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -19974,6 +19983,9 @@ exit 65
                 "action=commit; unshare semantic-commit $action --message x",
                 "action=commit; strace -o /tmp/trace semantic-commit $action --message x",
                 "action=commit; nsenter --target 1 --mount semantic-commit $action --message x",
+                "action=commit; perf stat --null semantic-commit $action --message x",
+                "action=commit; watch -n 1 semantic-commit $action --message x",
+                "action=commit; systemd-run --user --scope semantic-commit $action --message x",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20597,11 +20609,17 @@ exit 65
                 "unshare --fork git status",
                 "strace --seccomp-bpf -o /tmp/trace git status",
                 "nsenter --target=1 --mount git status",
+                "perf stat --null git status",
+                "watch -n 1 git status",
+                "systemd-run --user --scope git status",
                 "prlimit -- semantic-commit commit --help",
                 "setpriv -- semantic-commit commit --help",
                 "unshare semantic-commit commit --help",
                 "strace -o /tmp/trace semantic-commit commit --help",
                 "nsenter --target 1 --mount semantic-commit commit --help",
+                "perf stat --null semantic-commit commit --help",
+                "watch -n 1 semantic-commit commit --help",
+                "systemd-run --user --scope semantic-commit commit --help",
                 "echo git push origin HEAD:main",
                 "printf git push origin HEAD:main",
                 "rg git push README.md",
