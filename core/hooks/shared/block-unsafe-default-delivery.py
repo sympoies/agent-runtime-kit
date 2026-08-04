@@ -923,7 +923,7 @@ def process_wrapper_target_index(
                 return -1
             if arguments[0] not in {"record", "stat", "trace"}:
                 return None
-            index = 1
+            index = 2 if arguments[:2] == ["stat", "record"] else 1
         value_options = PROCESS_LAUNCH_VALUE_OPTIONS[executable]
         flag_options = PROCESS_LAUNCH_FLAG_OPTIONS[executable]
         optional_value_options = PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS[
