@@ -252,16 +252,12 @@ SHELL_CONTEXT_COMMANDS = frozenset({".", "cd", "popd", "pushd", "source"})
 SHELL_EXECUTABLE_RESOLUTION_COMMANDS = frozenset(
     {
         ".",
-        "alias",
         "autoload",
-        "enable",
-        "functions",
-        "hash",
         "rehash",
         "source",
-        "unalias",
     }
 )
+SHELL_PRECOMMAND_MODIFIERS = frozenset({"builtin", "nocorrect", "noglob"})
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -755,7 +751,7 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
         )
         arguments = invocation[1:]
     for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
-        if executable != "builtin":
+        if executable not in SHELL_PRECOMMAND_MODIFIERS:
             break
         if not arguments or "$" in arguments[0] or "`" in arguments[0]:
             return True
@@ -766,8 +762,7 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
         )
         arguments = arguments[1:]
     else:
-        if executable == "builtin":
-            return True
+        return True
     if executable in SHELL_CONTEXT_COMMANDS:
         return True
     if not invocation:
@@ -808,7 +803,7 @@ def shell_command_changes_executable_resolution(
         executable = PurePosixPath(invocation[0]).name
         arguments = invocation[1:]
     for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
-        if executable != "builtin":
+        if executable not in SHELL_PRECOMMAND_MODIFIERS:
             break
         if not arguments:
             return True
@@ -818,6 +813,24 @@ def shell_command_changes_executable_resolution(
         return True
     if executable in SHELL_EXECUTABLE_RESOLUTION_COMMANDS:
         return True
+    if executable == "alias":
+        # With no definition, both bash and zsh only list aliases or query the
+        # named entries. Definitions contain an assignment separator.
+        return any("=" in token for token in arguments)
+    if executable == "hash":
+        # A bare invocation only lists the current command hash table. Other
+        # forms can populate, clear, or replace entries across supported shells.
+        return bool(arguments)
+    if executable == "functions":
+        # A bare zsh `functions` lists definitions. Options and names are kept
+        # conservative because several forms copy, autoload, or mutate entries.
+        return bool(arguments)
+    if executable == "enable":
+        # A bare bash `enable` lists builtins; named/option forms can toggle or
+        # load builtins and therefore change later executable resolution.
+        return bool(arguments)
+    if executable == "unalias":
+        return bool(arguments)
 
     def resolution_assignment(token: str) -> bool:
         name, separator, _value = token.partition("=")

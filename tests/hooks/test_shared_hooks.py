@@ -20098,11 +20098,15 @@ exit 65
                 "unset HOME; git push origin HEAD:refs/heads/feat/safe",
                 "builtin cd "
                 f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
+                "noglob cd "
+                f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
                 f"HOME={shlex.quote(str(alternate_home))} export HOME; git ship",
                 "builtin export HOME="
                 f"{shlex.quote(str(alternate_home))}; git ship",
                 f". {shlex.quote(str(context_script))}; git ship",
                 f"source {shlex.quote(str(context_script))}; git ship",
+                "nocorrect source "
+                f"{shlex.quote(str(context_script))}; git ship",
                 "builtin builtin cd "
                 f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
                 "builtin builtin export HOME="
@@ -20604,6 +20608,12 @@ exit 65
                 "alias runner='git push origin HEAD:main'; eval runner",
                 "builtin alias runner=git; "
                 "eval 'runner push origin HEAD:main'",
+                "noglob alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "nocorrect alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "noglob hash runner=/usr/bin/git; "
+                "runner push origin HEAD:main",
                 "alias runner=git; (unalias runner); "
                 "eval 'runner push origin HEAD:main'",
                 "alias runner=git; bash -c 'unalias runner'; "
@@ -20618,6 +20628,16 @@ exit 65
                 "zsh -c "
                 + shlex.quote(
                     "alias runner=git; eval 'runner push origin HEAD:main'"
+                ),
+                "zsh -c "
+                + shlex.quote(
+                    "noglob alias runner=git; "
+                    "eval 'runner push origin HEAD:main'"
+                ),
+                "zsh -c "
+                + shlex.quote(
+                    "nocorrect noglob alias runner=git; "
+                    "eval 'runner push origin HEAD:main'"
                 ),
                 "bash -O expand_aliases -c "
                 + shlex.quote(
@@ -20645,6 +20665,23 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+            read_only_resolution_queries = (
+                "alias",
+                "alias runner",
+                "hash",
+                "functions",
+                "enable",
+            )
+            for query in read_only_resolution_queries:
+                with self.subTest(read_only_resolution_query=query):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{query}; printf --version"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
