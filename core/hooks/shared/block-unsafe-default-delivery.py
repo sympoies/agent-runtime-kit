@@ -836,6 +836,38 @@ def command_waiver_reason(simple_command: list[str]) -> str:
     return ""
 
 
+def update_shell_alias_names(
+    simple_command: list[str], alias_names: set[str]
+) -> None:
+    """Track aliases declared in the inspected shell source.
+
+    Alias replacement is shell state rather than argv. Once a declared alias
+    is used as a command word, its executable cannot be verified from the
+    tokenized invocation, so the delivery guard rejects it without attempting
+    to emulate Bash or zsh alias expansion.
+    """
+    invocation = invocation_tokens(simple_command)
+    if not invocation:
+        return
+    executable = PurePosixPath(invocation[0]).name
+    if executable == "alias":
+        for argument in invocation[1:]:
+            if argument.startswith("-") or "=" not in argument:
+                continue
+            name = argument.split("=", 1)[0]
+            if name:
+                alias_names.add(name)
+        return
+    if executable != "unalias":
+        return
+    if "-a" in invocation[1:]:
+        alias_names.clear()
+        return
+    for argument in invocation[1:]:
+        if not argument.startswith("-"):
+            alias_names.discard(argument)
+
+
 def waiver_admits(invocation: list[str], reason: str, waiver: str) -> bool:
     """Whether a stated one-shot waiver may admit this blocked invocation."""
     if len(waiver) < MINIMUM_WAIVER_REASON_LENGTH:
@@ -1873,6 +1905,7 @@ def command_block_reason(
     probe = GitProbe()
     shell_context_safe = True
     executable_resolution_safe = True
+    shell_alias_names: set[str] = set()
     simple_commands = simple_commands_with_nested_shells(command)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
@@ -1883,6 +1916,12 @@ def command_block_reason(
     cwd = base
     for simple_command in simple_commands:
         invocation = invocation_tokens(simple_command)
+        if invocation and invocation[0] in shell_alias_names:
+            return unresolved(
+                f"{classification_evidence('opaque-alias', 'dynamic-executable')} "
+                "A shell alias can expand this command word to `git` or "
+                "`semantic-commit`; invoke the governed executable directly."
+            )
         waiver = command_waiver_reason(simple_command)
         if process_wrapper_hides_governed_invocation(
             simple_command, invocation
@@ -1932,6 +1971,7 @@ def command_block_reason(
             reason = classify(candidate)
             if reason and not waiver_admits(candidate, reason, waiver):
                 return reason
+        update_shell_alias_names(simple_command, shell_alias_names)
         # A preceding shell command can alter PATH, zsh/bash command tables,
         # aliases, functions, hashes, or sourced state in ways this hook cannot
         # prove exhaustively. No later authoring invocation retains executable

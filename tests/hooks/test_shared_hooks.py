@@ -20558,6 +20558,7 @@ exit 65
                 "setopt EXTENDED_GLOB; /usr/bin/gi#t push origin HEAD:main",
                 "setopt EXTENDED_GLOB; /usr/bin/gi##t push origin HEAD:main",
                 "setopt EXTENDED_GLOB; /usr/bin/git~notgit push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/git^notgit push origin HEAD:main",
                 r"printf x '\'; /usr/bin/@(git) push origin HEAD:main",
                 "/usr/bin/@(semantic-commit) commit --message 'fix: extglob writer'",
                 "/usr/bin/semantic-commit(N) commit "
@@ -20581,6 +20582,8 @@ exit 65
                 "zsh -o EXTENDED_GLOB -c "
                 + shlex.quote("/usr/bin/gi#t push origin HEAD:main"),
                 "zsh -o EXTENDED_GLOB -c "
+                + shlex.quote("/usr/bin/git^notgit push origin HEAD:main"),
+                "zsh -o EXTENDED_GLOB -c "
                 + shlex.quote(
                     "/usr/bin/semanti#c-commit commit "
                     "--message 'fix: nested repetition writer'"
@@ -20595,6 +20598,30 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "rule=opaque-executable")
+
+            alias_hidden_governed_executables = (
+                "alias runner=git; eval 'runner push origin HEAD:main'",
+                "alias runner='git push origin HEAD:main'; eval runner",
+                "alias runner=semantic-commit; "
+                "eval \"runner commit --message 'fix: alias writer'\"",
+                "zsh -c "
+                + shlex.quote(
+                    "alias runner=git; eval 'runner push origin HEAD:main'"
+                ),
+                "bash -O expand_aliases -c "
+                + shlex.quote(
+                    "alias runner=git; eval 'runner push origin HEAD:main'"
+                ),
+            )
+            for hidden in alias_hidden_governed_executables:
+                with self.subTest(alias_expansion=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=opaque-alias")
 
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
@@ -21049,7 +21076,11 @@ exit 65
                         (
                             "untrusted `semantic-commit`"
                             if command.startswith("commands[")
-                            else "changed executable resolution"
+                            else (
+                                "rule=opaque-alias"
+                                if command.startswith("alias ")
+                                else "changed executable resolution"
+                            )
                         ),
                     )
 
