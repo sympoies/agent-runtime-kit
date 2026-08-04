@@ -320,7 +320,7 @@ PROCESS_LAUNCH_VALUE_OPTIONS = {
         {
             "--description", "--gid", "--nice", "--property", "--service-type",
             "--setenv", "--slice", "--uid", "--unit", "--working-directory",
-            "-E", "-G", "-P", "-p", "-u",
+            "-E", "-p", "-u",
         }
     ),
     "watch": frozenset({"--equexit", "--interval", "-n", "-q"}),
@@ -346,7 +346,7 @@ PROCESS_LAUNCH_FLAG_OPTIONS = {
             "--failed-only", "--follow-forks", "--help", "--instruction-pointer",
             "--kill-on-exit", "--output-append-mode", "--output-separately",
             "--seccomp-bpf", "--successful-only", "--syscall-number", "--tips",
-            "--version", "-A", "-C", "-D", "-DD", "-DDD", "-T", "-V", "-c",
+            "--version", "-A", "-C", "-DD", "-DDD", "-T", "-V", "-c",
             "-d", "-f", "-ff", "-h", "-i", "-n", "-q", "-qq", "-qqq", "-r",
             "-t", "-tt", "-ttt", "-v", "-w", "-x", "-xx", "-y", "-yy", "-z",
             "-Z",
@@ -376,7 +376,7 @@ PROCESS_LAUNCH_FLAG_OPTIONS = {
     ),
     "watch": frozenset(
         {
-            "--beep", "--chgexit", "--color", "--differences", "--errexit",
+            "--beep", "--chgexit", "--color", "--errexit",
             "--exec", "--help", "--no-rerun", "--no-title", "--precise",
             "--version", "-b", "-C", "-c", "-e", "-g", "-h", "-p", "-r",
             "-t", "-v", "-w", "-x",

@@ -19931,6 +19931,8 @@ exit 65
                 "perf stat --null git push origin HEAD:main",
                 "watch -n 1 git push origin HEAD:main",
                 "systemd-run --user --scope git push origin HEAD:main",
+                "systemd-run -P git push origin HEAD:main",
+                "systemd-run -G git push origin HEAD:main",
                 "action=push; perf stat --null git $action origin HEAD:main",
                 "action=push; watch -n 1 git $action origin HEAD:main",
                 "action=push; systemd-run --user --scope git $action origin HEAD:main",
@@ -20299,6 +20301,31 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_process_launcher_option_kinds_are_disjoint(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_launcher_option_invariant_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            for launcher in module.PROCESS_LAUNCH_VALUE_OPTIONS:
+                kinds = (
+                    module.PROCESS_LAUNCH_VALUE_OPTIONS[launcher],
+                    module.PROCESS_LAUNCH_FLAG_OPTIONS[launcher],
+                    module.PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS[launcher],
+                )
+                with self.subTest(launcher=launcher):
+                    self.assertFalse(kinds[0] & kinds[1])
+                    self.assertFalse(kinds[0] & kinds[2])
+                    self.assertFalse(kinds[1] & kinds[2])
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_default_delivery_git_probe_caps_output_and_kills_descendants(
         self,
     ) -> None:
@@ -20612,6 +20639,8 @@ exit 65
                 "perf stat --null git status",
                 "watch -n 1 git status",
                 "systemd-run --user --scope git status",
+                "systemd-run -P git status",
+                "systemd-run -G git status",
                 "prlimit -- semantic-commit commit --help",
                 "setpriv -- semantic-commit commit --help",
                 "unshare semantic-commit commit --help",
