@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import selectors
 import shlex
 import shutil
@@ -56,7 +57,7 @@ from hook_common import (
     OPAQUE_NESTED_SHELL_COMMAND,
     OPAQUE_WRAPPER_COMMAND,
     command_from,
-    effective_workdir,
+    command_context,
     emit_block,
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
@@ -140,6 +141,10 @@ REPO_HINT = (
     "workdir; it binds the target without depending on shell state."
 )
 GOVERNED_CONTEXT_EXECUTABLES = frozenset({"git", "semantic-commit"})
+EXPANDED_EXECUTABLE_PATH_RE = re.compile(
+    r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})/"
+    r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
+)
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
@@ -244,6 +249,170 @@ GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
     }
 )
 SHELL_CONTEXT_COMMANDS = frozenset({".", "cd", "popd", "pushd", "source"})
+SHELL_EXECUTABLE_RESOLUTION_COMMANDS = frozenset(
+    {
+        ".",
+        "autoload",
+        "rehash",
+        "source",
+    }
+)
+SHELL_PRECOMMAND_MODIFIERS = frozenset(
+    {"-", "builtin", "nocorrect", "noglob"}
+)
+DELIVERY_PRECOMMAND_MODIFIERS = SHELL_PRECOMMAND_MODIFIERS - {"builtin"}
+PROCESS_LAUNCH_WRAPPERS = frozenset(
+    {
+        "chrt",
+        "ionice",
+        "nice",
+        "nsenter",
+        "nohup",
+        "perf",
+        "prlimit",
+        "setpriv",
+        "setsid",
+        "stdbuf",
+        "strace",
+        "systemd-run",
+        "taskset",
+        "timeout",
+        "unshare",
+        "watch",
+    }
+)
+PROCESS_LAUNCH_VALUE_OPTIONS = {
+    "prlimit": frozenset({"--output", "--pid", "-o", "-p"}),
+    "setpriv": frozenset(
+        {
+            "--ambient-caps", "--apparmor-profile", "--bounding-set", "--egid",
+            "--euid", "--groups", "--inh-caps", "--pdeathsig", "--regid",
+            "--reuid", "--rgid", "--ruid", "--securebits", "--selinux-label",
+        }
+    ),
+    "unshare": frozenset(
+        {
+            "--boottime", "--load-interp", "--map-group", "--map-groups",
+            "--map-user", "--map-users", "--monotonic", "--owner",
+            "--propagation", "--root", "--setgid", "--setgroups", "--setuid",
+            "--wd", "-G", "-R", "-S", "-W", "-l", "-w",
+        }
+    ),
+    "strace": frozenset(
+        {
+            "--columns", "--decode-fds", "--decode-pids", "--detach-on",
+            "--env", "--fault", "--inject", "--output", "--signal", "--status",
+            "--string-limit", "--syscall-limit", "--trace", "--trace-path",
+            "--user", "-E", "-I", "-O", "-P", "-S", "-U", "-X", "-a",
+            "-b", "-e", "-o", "-p", "-s", "-u",
+        }
+    ),
+    "nsenter": frozenset(
+        {"--net-socket", "--target", "--wdns", "-N", "-W", "-t"}
+    ),
+    "perf": frozenset(
+        {
+            "--cpu", "--event", "--filter", "--output", "--pid", "--repeat",
+            "--tid", "-C", "-e", "-o", "-p", "-r", "-t",
+        }
+    ),
+    "systemd-run": frozenset(
+        {
+            "--description", "--gid", "--nice", "--property", "--service-type",
+            "--setenv", "--slice", "--uid", "--unit", "--working-directory",
+            "-E", "-p", "-u",
+        }
+    ),
+    "watch": frozenset({"--equexit", "--interval", "-n", "-q"}),
+}
+PROCESS_LAUNCH_FLAG_OPTIONS = {
+    "prlimit": frozenset({"--help", "--noheadings", "--raw", "--verbose", "--version", "-h", "-V"}),
+    "setpriv": frozenset(
+        {
+            "--clear-groups", "--dump", "--help", "--init-groups",
+            "--keep-groups", "--no-new-privs", "--reset-env", "--version",
+            "-d", "-h", "-V",
+        }
+    ),
+    "unshare": frozenset(
+        {
+            "--fork", "--forward-signals", "--help", "--keep-caps",
+            "--map-auto", "--map-current-user", "--map-root-user", "--map-subids",
+            "--version", "-V", "-c", "-f", "-h", "-r",
+        }
+    ),
+    "strace": frozenset(
+        {
+            "--failed-only", "--follow-forks", "--help", "--instruction-pointer",
+            "--kill-on-exit", "--output-append-mode", "--output-separately",
+            "--seccomp-bpf", "--successful-only", "--syscall-number", "--tips",
+            "--version", "-A", "-C", "-DD", "-DDD", "-T", "-V", "-c",
+            "-d", "-f", "-ff", "-h", "-i", "-n", "-q", "-qq", "-qqq", "-r",
+            "-t", "-tt", "-ttt", "-v", "-w", "-x", "-xx", "-y", "-yy", "-z",
+            "-Z",
+        }
+    ),
+    "nsenter": frozenset(
+        {
+            "--all", "--env", "--help", "--join-cgroup", "--keep-caps",
+            "--no-fork", "--preserve-credentials", "--user-parent", "--version",
+            "-F", "-V", "-a", "-c", "-e", "-h",
+        }
+    ),
+    "perf": frozenset(
+        {
+            "--all-cpus", "--append", "--help", "--no-big-num", "--no-merge",
+            "--null", "--per-core", "--per-socket", "--per-thread", "--quiet",
+            "--verbose", "-a", "-A", "-B", "-h", "-q", "-v",
+        }
+    ),
+    "systemd-run": frozenset(
+        {
+            "--ask-password", "--collect", "--expand-environment", "--pipe",
+            "--pty", "--quiet", "--scope", "--send-sighup", "--service-type=exec",
+            "--shell", "--slice-inherit", "--slice-inherit", "--user", "--wait",
+            "-G", "-P", "-q", "-S", "-t",
+        }
+    ),
+    "watch": frozenset(
+        {
+            "--beep", "--chgexit", "--color", "--errexit",
+            "--exec", "--help", "--no-rerun", "--no-title", "--precise",
+            "--version", "-b", "-C", "-c", "-e", "-g", "-h", "-p", "-r",
+            "-t", "-v", "-w", "-x",
+        }
+    ),
+}
+PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS = {
+    "prlimit": frozenset(
+        {
+            "--as", "--core", "--cpu", "--data", "--fsize", "--locks",
+            "--memlock", "--msgqueue", "--nice", "--nofile", "--nproc", "--rss",
+            "--rtprio", "--rttime", "--sigpending", "--stack", "-c", "-d", "-e",
+            "-f", "-i", "-l", "-m", "-n", "-q", "-r", "-s", "-t", "-u", "-v",
+            "-x", "-y",
+        }
+    ),
+    "setpriv": frozenset(),
+    "unshare": frozenset(
+        {
+            "--cgroup", "--ipc", "--kill-child", "--mount", "--mount-binfmt",
+            "--mount-proc", "--net", "--pid", "--time", "--user", "--uts", "-C",
+            "-T", "-U", "-i", "-m", "-n", "-p", "-u",
+        }
+    ),
+    "strace": frozenset({"--daemonize", "--stack-trace", "-D", "-k"}),
+    "nsenter": frozenset(
+        {
+            "--cgroup", "--ipc", "--mount", "--net", "--pid", "--root",
+            "--setgid", "--setuid", "--time", "--user", "--uts", "--wd", "-C",
+            "-G", "-S", "-T", "-U", "-i", "-m", "-n", "-p", "-r", "-u", "-w",
+        }
+    ),
+    "perf": frozenset(),
+    "systemd-run": frozenset(),
+    "watch": frozenset({"--differences", "-d"}),
+}
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -266,13 +435,6 @@ GIT_DEFAULT_BRANCH_REWRITE_COMMANDS = frozenset(
     # which is exactly what this guard exists to prevent.
     {"cherry-pick", "merge", "pull", "reset", "update-ref"}
 )
-
-
-def payload_base(payload: Mapping[str, Any]) -> Path:
-    # Resolve the command's effective workdir (issue #601 P0-4) so default-branch
-    # delivery is judged against the repository the command really targets, not
-    # the hook process cwd.
-    return effective_workdir(payload).resolve(strict=False)
 
 
 class GitProbe:
@@ -408,10 +570,11 @@ class GitProbe:
 
 def git_context(
     arguments: list[str], base: Path
-) -> tuple[Path, str, list[str], list[str], bool]:
+) -> tuple[Path, str, list[str], list[str], bool, bool]:
     cwd = base
     config_arguments: list[str] = []
     context_valid = True
+    absolute_chdir = False
     index = 0
     while index < len(arguments):
         token = arguments[index]
@@ -420,19 +583,21 @@ def git_context(
             break
         if token == "-C":
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             path = Path(arguments[index + 1]).expanduser()
+            absolute_chdir = absolute_chdir or path.is_absolute()
             cwd = (path if path.is_absolute() else cwd / path).resolve(strict=False)
             index += 2
             continue
         if token.startswith("-C") and token != "-C":
             path = Path(token[2:]).expanduser()
+            absolute_chdir = absolute_chdir or path.is_absolute()
             cwd = (path if path.is_absolute() else cwd / path).resolve(strict=False)
             index += 1
             continue
         if token == "-c":
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             value = arguments[index + 1]
             config_arguments.extend((token, value))
             if delivery_sensitive_config(value):
@@ -447,7 +612,7 @@ def git_context(
             continue
         if token in {"--config-env"}:
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             value = arguments[index + 1]
             config_arguments.extend((token, value))
             if delivery_sensitive_config(value):
@@ -463,7 +628,7 @@ def git_context(
         if token in GIT_REPOSITORY_CONTEXT_OPTIONS:
             context_valid = False
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             index += 2
             continue
         if token.startswith(GIT_REPOSITORY_CONTEXT_PREFIXES):
@@ -476,7 +641,7 @@ def git_context(
             continue
         if token in GIT_OPTIONS_WITH_VALUE:
             if index + 1 >= len(arguments):
-                return cwd, "", [], config_arguments, False
+                return cwd, "", [], config_arguments, False, absolute_chdir
             index += 2
             continue
         if token.startswith(GIT_OPTIONS_WITH_VALUE_PREFIXES):
@@ -485,10 +650,24 @@ def git_context(
         if token.startswith("-") and token != "-":
             index += 1
             continue
-        return cwd, token, arguments[index + 1 :], config_arguments, context_valid
+        return (
+            cwd,
+            token,
+            arguments[index + 1 :],
+            config_arguments,
+            context_valid,
+            absolute_chdir,
+        )
     if index < len(arguments):
-        return cwd, arguments[index], arguments[index + 1 :], config_arguments, context_valid
-    return cwd, "", [], config_arguments, context_valid
+        return (
+            cwd,
+            arguments[index],
+            arguments[index + 1 :],
+            config_arguments,
+            context_valid,
+            absolute_chdir,
+        )
+    return cwd, "", [], config_arguments, context_valid, absolute_chdir
 
 
 def delivery_sensitive_config(value: str) -> bool:
@@ -677,21 +856,320 @@ def command_local_path_override(
 def process_wrapper_hides_governed_invocation(
     simple_command: list[str], invocation: list[str]
 ) -> bool:
-    """Fail closed when a process wrapper hides a governed authoring argv."""
+    """Fail closed when a wrapper hides semantic-commit authoring argv."""
     if not invocation or PurePosixPath(invocation[0]).name == "semantic-commit":
         return False
-    for index, token in enumerate(simple_command[:-1]):
-        if PurePosixPath(token).name != "semantic-commit":
-            continue
-        if simple_command[index + 1] in {
-            "commit",
-            "default-branch",
-            "fixup",
-            "local-default",
-            "squash",
-        }:
-            return True
-    return False
+    candidate = process_wrapper_governed_invocation(simple_command)
+    dynamic_must_block_here = False
+    if not candidate:
+        structural = delivery_invocation_tokens(simple_command)
+        if (
+            len(structural) >= 3
+            and PurePosixPath(structural[0]).name == "builtin"
+            and PurePosixPath(structural[1]).name in {"command", "exec"}
+            and PurePosixPath(structural[2]).name == "semantic-commit"
+        ):
+            candidate = structural[2:]
+            dynamic_must_block_here = True
+    if not candidate or PurePosixPath(candidate[0]).name != "semantic-commit":
+        return False
+    arguments = candidate[1:]
+    if arguments and shell_word_is_dynamic(arguments[0]):
+        return dynamic_must_block_here
+    authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(
+        arguments
+    )
+    return authors_commit
+
+
+def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
+    """Resolve bounded shell precommand modifiers to the governed argv."""
+    invocation = invocation_tokens(simple_command)
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if (
+            not invocation
+            or PurePosixPath(invocation[0]).name
+            not in DELIVERY_PRECOMMAND_MODIFIERS
+        ):
+            return invocation
+        if len(invocation) == 1:
+            return invocation
+        invocation = invocation_tokens(
+            invocation[1:], shell_boundary=False
+        )
+    return [OPAQUE_WRAPPER_COMMAND, *invocation]
+
+
+def shell_word_is_dynamic(token: str) -> bool:
+    """Whether shell expansion can change one parsed word's meaning."""
+    return token.startswith("=") or any(
+        marker in token for marker in "$`*?[]{}()#^~"
+    )
+
+
+def process_wrapper_target_index(
+    executable: str, arguments: list[str]
+) -> int | None:
+    """Return the target offset in wrapper arguments, or fail closed."""
+    def resolved(index: int) -> int | None:
+        if index >= len(arguments):
+            return None
+        return -1 if shell_word_is_dynamic(arguments[index]) else index
+
+    index = 0
+    if executable in PROCESS_LAUNCH_VALUE_OPTIONS:
+        if executable == "perf":
+            if not arguments or shell_word_is_dynamic(arguments[0]):
+                return -1
+            if arguments[0] not in {"record", "stat", "trace"}:
+                return None
+            index = 2 if arguments[:2] == ["stat", "record"] else 1
+        value_options = PROCESS_LAUNCH_VALUE_OPTIONS[executable]
+        flag_options = PROCESS_LAUNCH_FLAG_OPTIONS[executable]
+        optional_value_options = PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS[
+            executable
+        ]
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                return resolved(index + 1)
+            if token in value_options:
+                if index + 1 >= len(arguments) or shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token in optional_value_options or token in flag_options:
+                index += 1
+                continue
+            if "=" in token and token.startswith("--"):
+                option = token.partition("=")[0]
+                if option not in optional_value_options | value_options:
+                    return -1
+                index += 1
+                continue
+            if len(token) > 2 and token[:2] in (
+                optional_value_options | value_options
+            ):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return -1
+            return resolved(index)
+        return None
+
+    if executable == "nohup":
+        if arguments[:1] == ["--"]:
+            index = 1
+        elif arguments and arguments[0].startswith("-"):
+            return None
+        return resolved(index)
+
+    if executable == "nice":
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-n", "--adjustment"}:
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith("--adjustment=") or re.fullmatch(
+                r"-[0-9]+", token
+            ):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return resolved(index)
+
+    if executable == "timeout":
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-k", "--kill-after", "-s", "--signal"}:
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token in {"--foreground", "--preserve-status", "--verbose"}:
+                index += 1
+                continue
+            if token.startswith(("--kill-after=", "--signal=")):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        # `timeout` consumes one duration word before its target command.
+        index += 1
+        return resolved(index)
+
+    if executable == "stdbuf":
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-i", "--input", "-o", "--output", "-e", "--error"}:
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith(
+                ("-i", "-o", "-e", "--input=", "--output=", "--error=")
+            ):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return resolved(index)
+
+    if executable == "setsid":
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-c", "--ctty", "-f", "--fork", "-w", "--wait"}:
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return resolved(index)
+
+    if executable == "ionice":
+        process_selector = False
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {
+                "-c", "--class", "-n", "--classdata", "-p", "--pid",
+                "-P", "--pgid", "-u", "--uid",
+            }:
+                process_selector = process_selector or token in {
+                    "-p", "--pid", "-P", "--pgid", "-u", "--uid",
+                }
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token in {"-t", "--ignore"}:
+                index += 1
+                continue
+            if token.startswith(("--class=", "--classdata=")):
+                index += 1
+                continue
+            if token.startswith(("--pid=", "--pgid=", "--uid=")):
+                process_selector = True
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return None if process_selector else resolved(index)
+
+    if executable in {"chrt", "taskset"}:
+        process_selector = False
+        while index < len(arguments):
+            token = arguments[index]
+            if shell_word_is_dynamic(token):
+                return -1
+            if token == "--":
+                index += 1
+                break
+            if token in {"-p", "--pid"}:
+                process_selector = True
+                index += 1
+                continue
+            if token in {"-T", "--sched-runtime", "-P", "--sched-period", "-D", "--sched-deadline"}:
+                if index + 1 < len(arguments) and shell_word_is_dynamic(
+                    arguments[index + 1]
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            break
+        if process_selector or index >= len(arguments):
+            return None
+        if shell_word_is_dynamic(arguments[index]):
+            return -1
+        return resolved(index + 1)
+    return None
+
+
+def process_wrapper_governed_invocation(
+    simple_command: list[str],
+) -> list[str]:
+    """Expose a governed argv launched by supported process wrappers."""
+    invocation = delivery_invocation_tokens(simple_command)
+    if (
+        invocation
+        and invocation[0] == OPAQUE_WRAPPER_COMMAND
+    ) or invocation_is_unresolved_nested(invocation):
+        return []
+    saw_wrapper = False
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if not invocation:
+            return []
+        executable = PurePosixPath(invocation[0]).name
+        if executable not in PROCESS_LAUNCH_WRAPPERS:
+            return (
+                invocation
+                if saw_wrapper and executable in GOVERNED_CONTEXT_EXECUTABLES
+                else []
+            )
+        saw_wrapper = True
+        target_index = process_wrapper_target_index(executable, invocation[1:])
+        if target_index in {None, -1}:
+            for index, token in enumerate(invocation[1:], start=1):
+                if PurePosixPath(token).name in GOVERNED_CONTEXT_EXECUTABLES:
+                    return delivery_invocation_tokens(invocation[index:])
+            return (
+                [OPAQUE_WRAPPER_COMMAND, "$process-wrapper-target"]
+                if target_index == -1
+                else []
+            )
+        invocation = delivery_invocation_tokens(
+            invocation[target_index + 1 :]
+        )
+    for index, token in enumerate(invocation):
+        if PurePosixPath(token).name in GOVERNED_CONTEXT_EXECUTABLES:
+            return delivery_invocation_tokens(invocation[index:])
+    return []
 
 
 def executable_resolution_rejection(
@@ -727,7 +1205,7 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
         )
         arguments = invocation[1:]
     for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
-        if executable != "builtin":
+        if executable not in SHELL_PRECOMMAND_MODIFIERS:
             break
         if not arguments or "$" in arguments[0] or "`" in arguments[0]:
             return True
@@ -738,8 +1216,7 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
         )
         arguments = arguments[1:]
     else:
-        if executable == "builtin":
-            return True
+        return True
     if executable in SHELL_CONTEXT_COMMANDS:
         return True
     if not invocation:
@@ -763,6 +1240,81 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
     if executable == "unset":
         return any(
             token.startswith("GIT_") or token in GIT_CONFIG_ENVIRONMENT_NAMES
+            for token in arguments
+            if not token.startswith("-")
+        )
+    return False
+
+
+def shell_command_changes_executable_resolution(
+    simple_command: list[str],
+) -> bool:
+    """Whether later bare command words have lost a verifiable executable."""
+    invocation = invocation_tokens(simple_command)
+    executable = ""
+    arguments: list[str] = []
+    if invocation:
+        executable = PurePosixPath(invocation[0]).name
+        arguments = invocation[1:]
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if executable not in SHELL_PRECOMMAND_MODIFIERS:
+            break
+        if not arguments:
+            return True
+        executable = PurePosixPath(arguments[0]).name
+        arguments = arguments[1:]
+    else:
+        return True
+    if executable in SHELL_EXECUTABLE_RESOLUTION_COMMANDS:
+        return True
+
+    def literal_query_name(token: str) -> bool:
+        return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.:+-]*", token))
+
+    if executable == "alias":
+        # With no definition, both bash and zsh only list aliases or query the
+        # named entries. Definitions contain an assignment separator.
+        return any(
+            "=" in token
+            or not (token.startswith("-") or literal_query_name(token))
+            for token in arguments
+        )
+    if executable == "hash":
+        # A bare invocation only lists the current command hash table. Other
+        # forms can populate, clear, or replace entries across supported shells.
+        return bool(arguments) and not (
+            arguments[0] == "-t"
+            and len(arguments) > 1
+            and all(not token.startswith("-") for token in arguments[1:])
+        )
+    if executable == "functions":
+        # Bare and named zsh forms print definitions. Option-bearing forms stay
+        # conservative because several copy, autoload, or mutate entries.
+        return any(not literal_query_name(token) for token in arguments)
+    if executable == "enable":
+        # Listing flags without builtin names are query-only. Named, load, and
+        # delete forms can change later resolution and remain tainted.
+        return bool(arguments) and not all(
+            re.fullmatch(r"-[anps]+", token) for token in arguments
+        )
+    if executable == "unalias":
+        return bool(arguments)
+
+    def resolution_assignment(token: str) -> bool:
+        name, separator, _value = token.partition("=")
+        return bool(separator) and (
+            name in {"PATH", "path"}
+            or name.startswith("path[")
+            or name.startswith("commands[")
+        )
+
+    if any(resolution_assignment(token) for token in simple_command):
+        return True
+    if executable in {"export", "readonly", "declare", "typeset"}:
+        return any(resolution_assignment(token) for token in arguments)
+    if executable == "unset":
+        return any(
+            token in {"PATH", "path", "commands"}
             for token in arguments
             if not token.startswith("-")
         )
@@ -831,7 +1383,41 @@ def waiver_admits(invocation: list[str], reason: str, waiver: str) -> bool:
 
 
 def unresolved(detail: str) -> str:
-    return f"{AMBIGUOUS_REASON} {detail}" if detail else AMBIGUOUS_REASON
+    return f"{AMBIGUOUS_PREFIX} {detail} {POLICY}" if detail else AMBIGUOUS_REASON
+
+
+def classification_evidence(
+    rule: str,
+    operation: str,
+    *,
+    context_source: str = "",
+    diagnostic: str = "",
+) -> str:
+    """Return stable, compact evidence for a refusal's matched classifier."""
+    fields = [f"rule={rule}", f"operation={operation}"]
+    if context_source:
+        fields.append(f"context={context_source}")
+    if diagnostic:
+        fields.append(f"diagnostic={diagnostic}")
+    return "Classification: " + "; ".join(fields) + "."
+
+
+def opaque_invocation_has_stable_non_governed_basename(
+    invocation: list[str],
+) -> bool:
+    """Whether expansion changes only a path prefix around a known-safe name.
+
+    ``$HOME/bin/tool`` still identifies ``tool`` lexically, while ``$tool`` or
+    ``$HOME/bin/$tool`` can resolve to a governed executable and remain
+    unverified. Command substitutions remain opaque because they can execute a
+    hidden command before producing the path.
+    """
+    if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
+        return False
+    match = EXPANDED_EXECUTABLE_PATH_RE.fullmatch(invocation[1])
+    return bool(
+        match and match.group("basename") not in GOVERNED_CONTEXT_EXECUTABLES
+    )
 
 
 def resolve_git_alias(
@@ -995,12 +1581,19 @@ def semantic_commit_block_reason(
         return ""
     branch = current_branch(probe, cwd)
     expected = default_branch(probe, cwd)
+    evidence = classification_evidence(
+        "governed-authoring-target",
+        f"semantic-commit {arguments[0]}",
+        context_source=source,
+    )
     if not branch or not expected:
         return unresolved(
-            f"{location} Its checked-out branch or cached default branch could "
-            f"not be read. {REPO_HINT}"
+            f"{evidence} {location} Its checked-out branch or cached default "
+            f"branch could not be read. {REPO_HINT}"
         )
-    return BLOCK_REASON if branch == expected else ""
+    if branch == expected:
+        return f"{MARK_BLOCKED} {evidence} {location} {POLICY}"
+    return ""
 
 
 def update_ref_target(arguments: list[str]) -> str | None:
@@ -1639,6 +2232,7 @@ def invocation_block_reason(
     environment_safe: bool = True,
     target_resolved: bool = True,
     base_source: str = "the tool workdir",
+    base_diagnostic: str = "",
     context_note: str = "",
 ) -> str:
     def unclassifiable(detail: str) -> str:
@@ -1661,36 +2255,94 @@ def invocation_block_reason(
                 "active managed CLI by its exact command name or trusted absolute "
                 "path."
             )
-        if not target_resolved:
+        if len(invocation) > 1 and shell_word_is_dynamic(invocation[1]):
             return unresolved(
-                "Command-local Git context can move where this commit lands, so "
+                f"{classification_evidence('opaque-governed-operation', 'semantic-commit dynamic')} "
+                "The semantic-commit operation depends on shell expansion; use a "
+                "literal read-only or authoring mode."
+            )
+        authors_commit, _writes_files, _effects_repo = (
+            semantic_commit_invocation_effects(invocation[1:])
+        )
+        _read_only, explicit_repo = semantic_commit_invocation_state(invocation[1:])
+        explicit_absolute_repo = bool(
+            environment_safe
+            and explicit_repo
+            and Path(explicit_repo).is_absolute()
+        )
+        if authors_commit and not target_resolved and not explicit_absolute_repo:
+            operation = (
+                f"semantic-commit {invocation[1]}"
+                if len(invocation) > 1
+                else "semantic-commit <unknown>"
+            )
+            evidence = classification_evidence(
+                "governed-authoring-target",
+                operation,
+                context_source=base_source,
+                diagnostic=base_diagnostic,
+            )
+            return unresolved(
+                f"{evidence} The command context could not attest the repository "
+                "where this commit lands, so "
                 f"its repository was not classified. {REPO_HINT}"
             )
         return semantic_commit_block_reason(probe, invocation[1:], base, base_source)
     if executable == "git":
-        cwd, subcommand, action, config_arguments, context_valid = git_context(
-            invocation[1:], base
-        )
-        if subcommand != "push" and subcommand in probe.builtin_commands(cwd):
-            if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
-                if not environment_safe or not context_valid:
-                    return unclassifiable(
-                        f"Command-local Git context can move where `git "
-                        f"{subcommand}` applies. {POLICY}"
-                    )
-                return rewrite_verdict_reason(
-                    subcommand,
-                    git_default_branch_rewrite_targets_default(
-                        probe, subcommand, action, cwd, config_arguments
-                    ),
-                )
-            return ""
+        (
+            cwd,
+            subcommand,
+            action,
+            config_arguments,
+            context_valid,
+            absolute_chdir,
+        ) = git_context(invocation[1:], base)
+        if shell_word_is_dynamic(subcommand):
+            return unresolved(
+                f"{classification_evidence('opaque-governed-operation', 'git dynamic')} "
+                "The Git subcommand depends on shell expansion; use a literal "
+                "read-only or delivery operation."
+            )
         if subcommand == "push" and push_shape(action)[0]:
+            return ""
+        known_builtin = subcommand != "push" and subcommand in probe.builtin_commands(
+            cwd
+        )
+        if known_builtin and subcommand not in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
             return ""
         if not environment_safe or not context_valid:
             return unclassifiable(
                 f"Command-local Git context can move where `git {subcommand}` "
                 f"applies. {POLICY}"
+            )
+        needs_repository_attestation = (
+            subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS
+            or subcommand == "push"
+            or not known_builtin
+        )
+        if (
+            needs_repository_attestation
+            and not target_resolved
+            and not absolute_chdir
+        ):
+            evidence = classification_evidence(
+                "governed-authoring-target",
+                f"git {subcommand or '<unknown>'}",
+                context_source=base_source,
+                diagnostic=base_diagnostic,
+            )
+            return unclassifiable(
+                f"{evidence} The command context could not attest the repository "
+                "where this Git operation applies. Pass an absolute `git -C "
+                "/path/to/repository ...` target or run the Git command in a "
+                "separate tool call with that worktree as its workdir."
+            )
+        if known_builtin:
+            return rewrite_verdict_reason(
+                subcommand,
+                git_default_branch_rewrite_targets_default(
+                    probe, subcommand, action, cwd, config_arguments
+                ),
             )
         resolved = resolve_git_alias(
             probe, cwd, subcommand, action, config_arguments
@@ -1729,7 +2381,9 @@ def candidate_block_reason(
     *,
     shell_context_safe: bool,
     directory_resolved: bool,
+    base_resolved: bool,
     base_source: str,
+    base_diagnostic: str,
 ) -> str:
     """Classify one invocation shape of a simple command in its own context."""
     if command_local_path_override(simple_command, candidate):
@@ -1744,18 +2398,31 @@ def candidate_block_reason(
         candidate,
         cwd,
         environment_safe=command_safe and shell_context_safe,
-        target_resolved=command_safe and (shell_context_safe or directory_resolved),
+        target_resolved=command_safe
+        and (
+            (shell_context_safe and base_resolved)
+            or (not shell_context_safe and directory_resolved)
+        ),
         base_source=base_source,
+        base_diagnostic=base_diagnostic,
         # When an earlier command moved the shell context, that — not the Git
         # command itself — is the discriminator, so it is what the message names.
         context_note="" if shell_context_safe else REMEDY_SHELL_CONTEXT,
     )
 
 
-def command_block_reason(command: str, base: Path) -> str:
+def command_block_reason(
+    command: str,
+    base: Path,
+    *,
+    base_source: str = "the tool workdir",
+    base_resolved: bool = True,
+    base_diagnostic: str = "",
+) -> str:
     probe = GitProbe()
     shell_context_safe = True
     executable_resolution_safe = True
+    executable_resolution_tainted = False
     simple_commands = simple_commands_with_nested_shells(command)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
@@ -1764,12 +2431,19 @@ def command_block_reason(command: str, base: Path) -> str:
     )
     directory_resolved = True
     cwd = base
-    base_source = "the tool workdir"
     for simple_command in simple_commands:
-        invocation = invocation_tokens(simple_command)
+        invocation = delivery_invocation_tokens(simple_command)
+        if (
+            executable_resolution_tainted
+            and invocation
+            and not invocation[0].startswith("/")
+        ):
+            return unresolved(
+                f"{classification_evidence('opaque-shell-resolution', 'dynamic-executable')} "
+                "Earlier shell state can resolve this command word to `git` or "
+                "`semantic-commit`; use a separate tool call or an absolute executable."
+            )
         waiver = command_waiver_reason(simple_command)
-        if invocation and invocation[0] == OPAQUE_WRAPPER_COMMAND:
-            return AMBIGUOUS_REASON
         if process_wrapper_hides_governed_invocation(
             simple_command, invocation
         ):
@@ -1788,22 +2462,52 @@ def command_block_reason(command: str, base: Path) -> str:
                 candidate,
                 shell_context_safe=shell_context_safe,
                 directory_resolved=directory_resolved,
+                base_resolved=base_resolved,
                 base_source=base_source,
+                base_diagnostic=base_diagnostic,
             )
 
+        wrapper_governed = process_wrapper_governed_invocation(simple_command)
+        if wrapper_governed:
+            if wrapper_governed[0] == OPAQUE_WRAPPER_COMMAND:
+                return unresolved(
+                    f"{classification_evidence('opaque-process-wrapper', 'dynamic-executable')} "
+                    "A process wrapper can expand its target to `git` or "
+                    "`semantic-commit`; use a literal wrapper target or a "
+                    "separate tool call."
+                )
+            reason = classify(wrapper_governed)
+            if reason and not waiver_admits(wrapper_governed, reason, waiver):
+                return reason
         reason = classify(invocation)
         if reason and not waiver_admits(invocation, reason, waiver):
             return reason
         if invocation_is_unresolved_nested(invocation):
             return AMBIGUOUS_REASON
-        for candidate in opaque_invocation_candidates(
+        opaque_candidates = opaque_invocation_candidates(
             invocation, {"git", "semantic-commit"}
+        )
+        if (
+            invocation
+            and invocation[0] == OPAQUE_WRAPPER_COMMAND
+            and not opaque_candidates
+            and not opaque_invocation_has_stable_non_governed_basename(invocation)
         ):
+            return unresolved(
+                f"{classification_evidence('opaque-executable', 'dynamic-executable')} "
+                "The executable name could expand to `git` or `semantic-commit`; "
+                "invoke a stable command name or absolute path."
+            )
+        for candidate in opaque_candidates:
             if invocation_is_unresolved_nested(candidate):
                 return AMBIGUOUS_REASON
             reason = classify(candidate)
             if reason and not waiver_admits(candidate, reason, waiver):
                 return reason
+        executable_resolution_tainted = (
+            executable_resolution_tainted
+            or shell_command_changes_executable_resolution(simple_command)
+        )
         # A preceding shell command can alter PATH, zsh/bash command tables,
         # aliases, functions, hashes, or sourced state in ways this hook cannot
         # prove exhaustively. No later authoring invocation retains executable
@@ -1837,7 +2541,22 @@ def main() -> int:
     payload = read_payload()
     command = command_from(payload)
     if command:
-        reason = command_block_reason(command, payload_base(payload))
+        context = command_context(payload)
+        # With no provider workdir metadata to contradict it, the hook process
+        # cwd remains the compatibility target used by unmanaged/test runners.
+        # Once a transcript claims to describe the current call, a failed match
+        # must not fall back to that cwd as if it were attested.
+        base_resolved = context.attested or (
+            context.source == "process-cwd"
+            and not isinstance(payload.get("transcript_path"), str)
+        )
+        reason = command_block_reason(
+            command,
+            context.path,
+            base_source=context.source,
+            base_resolved=base_resolved,
+            base_diagnostic=context.diagnostic or "",
+        )
         if reason:
             emit_block(normalize_refusal_reason(reason))
     return ALLOW

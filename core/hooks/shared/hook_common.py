@@ -111,6 +111,13 @@ def iter_workdir_values(value: Any) -> list[str]:
 # call, so a tail read suffices while capping memory and latency now that the
 # resolver runs inside the mutation/lease guards on every command.
 MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024
+CODEX_EXEC_PRAGMA_RE = re.compile(
+    r"\A[ \t]*// @exec:[ \t]*(?P<options>[^\r\n]+)[ \t]*\r?\n"
+)
+CODEX_CUSTOM_EXEC_PREFIX_RE = re.compile(
+    r"\A\s*(?:const\s+(?P<binding>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*)?"
+    r"await\s+tools\.exec_command\(\s*"
+)
 COMMAND_CONTEXT_SOURCES = frozenset(
     {
         "tool-input",
@@ -144,6 +151,100 @@ class CommandContext(NamedTuple):
 class TranscriptWorkdirResult(NamedTuple):
     value: str | None
     diagnostic: str | None
+
+
+def _custom_exec_remainder_is_canonical(
+    remainder: str, binding: str | None
+) -> bool:
+    """Recognize the tiny supported wrapper suffix in one linear scan."""
+
+    def skip_space(index: int) -> int:
+        while index < len(remainder) and remainder[index].isspace():
+            index += 1
+        return index
+
+    index = skip_space(0)
+    if index >= len(remainder) or remainder[index] != ")":
+        return False
+    index = skip_space(index + 1)
+    if index < len(remainder) and remainder[index] == ";":
+        index = skip_space(index + 1)
+    if index == len(remainder):
+        return True
+    if binding is None or not remainder.startswith("text", index):
+        return False
+    index = skip_space(index + len("text"))
+    if index >= len(remainder) or remainder[index] != "(":
+        return False
+    index = skip_space(index + 1)
+    output_expression = f"{binding}.output"
+    if not remainder.startswith(output_expression, index):
+        return False
+    index = skip_space(index + len(output_expression))
+    if index >= len(remainder) or remainder[index] != ")":
+        return False
+    index = skip_space(index + 1)
+    if index < len(remainder) and remainder[index] == ";":
+        index = skip_space(index + 1)
+    return index == len(remainder)
+
+
+def _custom_exec_arguments(
+    event_payload: Mapping[str, Any],
+) -> tuple[Mapping[str, Any] | None, str | None]:
+    """Decode one canonical Codex custom-tool exec argument object.
+
+    Current Codex transcripts wrap ``tools.exec_command`` in a small JavaScript
+    orchestration input instead of exposing the legacy JSON ``arguments``
+    field. Trust only an anchored call whose first argument is strict JSON and
+    whose closing parenthesis follows that object. We deliberately do not parse
+    JavaScript object literals or search arbitrary source text for a
+    ``workdir`` substring: either would let command content impersonate host
+    context.
+    """
+    if (
+        event_payload.get("type") != "custom_tool_call"
+        or event_payload.get("name") != "exec"
+    ):
+        return None, "transcript-arguments-missing"
+    source = event_payload.get("input")
+    if not isinstance(source, str):
+        return None, "transcript-custom-input-missing"
+    pragma = CODEX_EXEC_PRAGMA_RE.match(source)
+    if pragma is not None:
+        try:
+            pragma_options = json.loads(pragma.group("options"))
+        except json.JSONDecodeError:
+            return None, "transcript-custom-input-malformed"
+        if not isinstance(pragma_options, Mapping):
+            return None, "transcript-custom-input-malformed"
+        source = source[pragma.end() :]
+    elif source.lstrip().startswith("// @exec:"):
+        return None, "transcript-custom-input-malformed"
+    match = CODEX_CUSTOM_EXEC_PREFIX_RE.match(source)
+    if match is None:
+        return None, "transcript-custom-input-unrecognized"
+    argument_source = source[match.end() :]
+    try:
+        parsed, end = json.JSONDecoder().raw_decode(argument_source)
+    except json.JSONDecodeError:
+        return None, "transcript-custom-input-malformed"
+    if not isinstance(parsed, Mapping):
+        return None, "transcript-custom-input-malformed"
+    binding = match.group("binding")
+    if not _custom_exec_remainder_is_canonical(argument_source[end:], binding):
+        return None, "transcript-custom-input-ambiguous"
+    if not isinstance(parsed.get("cmd"), str):
+        return None, "transcript-custom-input-malformed"
+    workdir = parsed.get("workdir")
+    if workdir is None:
+        return {}, None
+    if not isinstance(workdir, str) or not workdir:
+        return None, "transcript-custom-input-malformed"
+    # The exec_command schema owns workdir at the top level. Returning only
+    # that field prevents command or metadata content from impersonating host
+    # context through the generic recursive envelope reader.
+    return {"workdir": workdir}, None
 
 
 @functools.lru_cache(maxsize=64)
@@ -185,12 +286,17 @@ def _transcript_workdir_result(
         if event_payload.get("call_id") != tool_use_id:
             continue
         arguments = event_payload.get("arguments")
-        if not isinstance(arguments, str):
-            return TranscriptWorkdirResult(None, "transcript-arguments-missing")
-        try:
-            parsed_arguments = json.loads(arguments)
-        except json.JSONDecodeError:
-            return TranscriptWorkdirResult(None, "transcript-arguments-malformed")
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return TranscriptWorkdirResult(
+                    None, "transcript-arguments-malformed"
+                )
+        else:
+            parsed_arguments, diagnostic = _custom_exec_arguments(event_payload)
+            if parsed_arguments is None:
+                return TranscriptWorkdirResult(None, diagnostic)
         for value in iter_workdir_values(parsed_arguments):
             return TranscriptWorkdirResult(value, None)
         return TranscriptWorkdirResult(None, "transcript-workdir-missing")
@@ -1702,10 +1808,87 @@ def _shield_clobber_redirects(command: str) -> str:
     return "".join(out)
 
 
+def _shield_dynamic_word_parentheses(command: str) -> str:
+    """Keep extglob and zsh qualifier words intact for conservative parsing."""
+    out: list[str] = []
+    quote = None
+    extglob_depth = 0
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            out.append(char)
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if quote == '"':
+            if char == "\\" and index + 1 < len(command):
+                out.append(char)
+                out.append(command[index + 1])
+                index += 2
+                continue
+            out.append(char)
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char == "\\" and index + 1 < len(command):
+            out.append(char)
+            out.append(command[index + 1])
+            index += 2
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            out.append(char)
+            index += 1
+            continue
+        if (
+            extglob_depth == 0
+            and char in "?*+@!"
+            and command[index + 1 : index + 2] == "("
+        ):
+            out.append(char)
+            out.append(r"\(")
+            extglob_depth = 1
+            index += 2
+            continue
+        if (
+            extglob_depth == 0
+            and char == "("
+            and index > 0
+            and not command[index - 1].isspace()
+            and command[index - 1] not in ";&|()<>$"
+            and command[index + 1 : index + 2] != ")"
+        ):
+            out.append(r"\(")
+            extglob_depth = 1
+            index += 1
+            continue
+        if extglob_depth:
+            if char == "(":
+                extglob_depth += 1
+                out.append(r"\(")
+            elif char == ")":
+                extglob_depth -= 1
+                out.append(r"\)")
+            elif char in ";&|":
+                out.append("\\" + char)
+            else:
+                out.append(char)
+            index += 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def shell_tokens(command: str) -> list[str]:
     try:
         lexer = shlex.shlex(
-            _shield_clobber_redirects(command), posix=True, punctuation_chars=";&|()"
+            _shield_dynamic_word_parentheses(_shield_clobber_redirects(command)),
+            posix=True,
+            punctuation_chars=";&|()",
         )
         lexer.whitespace_split = True
         lexer.commenters = ""
@@ -2817,6 +3000,8 @@ def skip_env_prefix(tokens: list[str], index: int) -> int:
 
 OPAQUE_WRAPPER_COMMAND = "__agent_runtime_opaque_wrapper__"
 OPAQUE_NESTED_SHELL_COMMAND = "__agent_runtime_opaque_nested_shell__"
+OPAQUE_CANDIDATE_TOKEN_LIMIT = 4096
+OPAQUE_CANDIDATE_WORK_LIMIT = 8192
 
 
 def _opaque_wrapper_invocation(tokens: list[str] | None = None) -> list[str]:
@@ -2838,37 +3023,59 @@ def opaque_invocation_candidates(
     *,
     max_depth: int = 4,
 ) -> list[list[str]]:
-    """Return governed command slices retained beneath an opaque wrapper parse."""
+    """Return governed slices within a bounded opaque-wrapper work budget."""
     if not invocation_is_opaque(invocation):
         return []
+    if len(invocation) > OPAQUE_CANDIDATE_TOKEN_LIMIT:
+        return [[OPAQUE_NESTED_SHELL_COMMAND]]
     candidates: list[list[str]] = []
     seen: set[tuple[str, ...]] = set()
+    remaining_work = OPAQUE_CANDIDATE_WORK_LIMIT
+
+    def unresolved() -> None:
+        marker = [OPAQUE_NESTED_SHELL_COMMAND]
+        if marker not in candidates:
+            candidates.append(marker)
+
+    def consume_work(units: int) -> bool:
+        nonlocal remaining_work
+        if units > remaining_work:
+            remaining_work = 0
+            unresolved()
+            return False
+        remaining_work -= units
+        return True
 
     def inspect(tokens: list[str], depth: int) -> None:
         if not tokens or depth > max_depth:
             return
+        if not consume_work(len(tokens) + 1):
+            return
         if invocation_is_unresolved_nested(tokens):
-            candidates.append(tokens)
+            unresolved()
             return
         key = tuple(tokens)
         if key in seen:
             return
         seen.add(key)
         for index, token in enumerate(tokens):
+            suffix_length = len(tokens) - index
+            if not consume_work(suffix_length + 1):
+                return
             suffix = tokens[index:]
             if PurePosixPath(token).name in executables:
                 candidates.append(suffix)
             parsed = invocation_tokens(suffix, shell_boundary=False)
             if invocation_is_opaque(parsed):
                 if depth == max_depth:
-                    candidates.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    unresolved()
                     continue
                 inspect(parsed[1:], depth + 1)
                 continue
             payload = nested_shell_payload(parsed)
             if depth == max_depth:
                 if payload:
-                    candidates.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    unresolved()
                 continue
             if parsed != suffix:
                 inspect(parsed, depth + 1)
@@ -3086,7 +3293,14 @@ def invocation_command_position_is_dynamic(
     if index >= len(simple_command):
         return False
     token = simple_command[index]
-    return "$" in token or "`" in token
+    # A standalone zsh indexed parameter assignment is shell state, not an
+    # executable glob. Leave it on the existing context-change path so a later
+    # governed command receives the specific executable-resolution refusal.
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\[[^\]]+\]=.*", token):
+        return False
+    return token.startswith("=") or any(
+        marker in token for marker in "$`*?[]{}()#^~"
+    )
 
 
 def invocation_tokens(

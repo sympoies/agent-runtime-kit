@@ -8456,11 +8456,86 @@ exit 65
             }
             self.assertEqual(effective_workdir(transcript_payload), target)
 
-            # 4. The transcript workdir wins over the top-level session cwd.
+            # 4. Codex custom-tool transcripts wrap exec_command in the
+            #    JavaScript orchestration input rather than exposing the legacy
+            #    `arguments` field. Accept only its strict JSON argument object.
+            custom_transcript = root / "custom-transcript.jsonl"
+            custom_transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "custom-call-1",
+                            "input": (
+                                "const r = await tools.exec_command("
+                                + json.dumps(
+                                    {
+                                        "cmd": "printf x",
+                                        "workdir": str(target),
+                                    }
+                                )
+                                + ");\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            custom_payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "printf x"},
+                "tool_use_id": "custom-call-1",
+                "transcript_path": str(custom_transcript),
+            }
+            self.assertEqual(effective_workdir(custom_payload), target)
+
+            # The code-mode exec surface may prefix the same canonical wrapper
+            # with one strict-JSON execution pragma. It is provider metadata,
+            # not arbitrary JavaScript, and must not discard the call workdir.
+            pragma_transcript = root / "pragma-custom-transcript.jsonl"
+            pragma_transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "pragma-custom-call-1",
+                            "input": (
+                                '// @exec: {"yield_time_ms": 30000}\n'
+                                "const r = await tools.exec_command("
+                                + json.dumps(
+                                    {
+                                        "cmd": "printf x",
+                                        "workdir": str(target),
+                                    }
+                                )
+                                + ");\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                effective_workdir(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "printf x"},
+                        "tool_use_id": "pragma-custom-call-1",
+                        "transcript_path": str(pragma_transcript),
+                    }
+                ),
+                target,
+            )
+
+            # 5. The transcript workdir wins over the top-level session cwd.
             transcript_payload["cwd"] = str(root)
             self.assertEqual(effective_workdir(transcript_payload), target)
 
-            # 5. Top-level cwd fallback (Claude session envelope).
+            # 6. Top-level cwd fallback (Claude session envelope).
             self.assertEqual(
                 effective_workdir(
                     {"tool_name": "Bash", "tool_input": {"command": "x"}, "cwd": str(target)}
@@ -8468,7 +8543,7 @@ exit 65
                 target,
             )
 
-            # 6. A relative workdir resolves against the hook process cwd.
+            # 7. A relative workdir resolves against the hook process cwd.
             self.assertEqual(
                 effective_workdir(
                     {"tool_name": "Bash", "tool_input": {"command": "x", "workdir": "sub"}}
@@ -8476,7 +8551,7 @@ exit 65
                 Path.cwd() / "sub",
             )
 
-            # 7. Nothing declared → the hook process cwd.
+            # 8. Nothing declared → the hook process cwd.
             self.assertEqual(
                 effective_workdir({"tool_name": "Bash", "tool_input": {"command": "x"}}),
                 Path.cwd(),
@@ -8540,6 +8615,154 @@ exit 65
                 "transcript_path": str(busy),
             }
             self.assertEqual(effective_workdir(busy_payload), target)
+
+    def test_effective_workdir_rejects_untrusted_custom_exec_shapes(self) -> None:
+        resolver = getattr(hook_common, "command_context", None)
+        self.assertTrue(callable(resolver), "command_context resolver is missing")
+        assert callable(resolver)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            cases = (
+                (
+                    "javascript-object",
+                    f"const r = await tools.exec_command({{workdir: '{target}'}});",
+                ),
+                (
+                    "string-bait",
+                    "const bait = \"await tools.exec_command("
+                    + json.dumps({"workdir": str(target)})
+                    + ")\";",
+                ),
+                (
+                    "multiple-calls",
+                    "const r = await tools.exec_command("
+                    + json.dumps({"cmd": "x", "workdir": str(target)})
+                    + "); tools.exec_command("
+                    + json.dumps({"cmd": "y", "workdir": str(target)})
+                    + ");",
+                ),
+                (
+                    "multiple-calls-spaced",
+                    "const r = await tools.exec_command("
+                    + json.dumps({"cmd": "x", "workdir": str(target)})
+                    + "); await tools.exec_command ("
+                    + json.dumps({"cmd": "y", "workdir": str(root)})
+                    + ");",
+                ),
+                (
+                    "nested-workdir-bait",
+                    "const r = await tools.exec_command("
+                    + json.dumps(
+                        {
+                            "cmd": "x",
+                            "metadata": {"workdir": str(target)},
+                        }
+                    )
+                    + ");",
+                ),
+                (
+                    "non-string-command",
+                    "const r = await tools.exec_command("
+                    + json.dumps(
+                        {
+                            "cmd": {"workdir": str(target)},
+                            "workdir": str(target),
+                        }
+                    )
+                    + ");",
+                ),
+            )
+            for call_id, source in cases:
+                with self.subTest(call_id=call_id):
+                    transcript = root / f"{call_id}.jsonl"
+                    transcript.write_text(
+                        json.dumps(
+                            {
+                                "payload": {
+                                    "type": "custom_tool_call",
+                                    "name": "exec",
+                                    "call_id": call_id,
+                                    "input": source,
+                                }
+                            }
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    context = resolver(
+                        {
+                            "tool_name": "Bash",
+                            "tool_input": {"command": "x"},
+                            "tool_use_id": call_id,
+                            "transcript_path": str(transcript),
+                            "cwd": str(root),
+                        }
+                    )
+                    self.assertEqual(context.path, root.resolve())
+                    self.assertEqual(context.source, "session-cwd")
+                    self.assertFalse(context.attested)
+                    self.assertEqual(
+                        context.diagnostic, "workdir-attestation-missing"
+                    )
+
+    def test_custom_exec_malformed_remainder_is_rejected_in_linear_time(
+        self,
+    ) -> None:
+        source = (
+            "const r = await tools.exec_command("
+            + json.dumps({"cmd": "x", "workdir": "/tmp"})
+            + ")"
+            + (" " * 12_000)
+            + "unexpected"
+        )
+        started = time.monotonic()
+        arguments, diagnostic = hook_common._custom_exec_arguments(
+            {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "input": source,
+            }
+        )
+        elapsed = time.monotonic() - started
+        self.assertIsNone(arguments)
+        self.assertEqual(diagnostic, "transcript-custom-input-ambiguous")
+        self.assertLess(elapsed, 0.5)
+
+    def test_opaque_candidate_scan_has_a_bounded_token_budget(self) -> None:
+        invocation = [
+            hook_common.OPAQUE_WRAPPER_COMMAND,
+            "tool*",
+            *(["argument"] * 64_000),
+        ]
+        started = time.monotonic()
+        candidates = hook_common.opaque_invocation_candidates(
+            invocation, {"git", "semantic-commit"}
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual(
+            candidates, [[hook_common.OPAQUE_NESTED_SHELL_COMMAND]]
+        )
+        self.assertLess(elapsed, 0.5)
+
+    def test_opaque_candidate_scan_bounds_work_below_token_ceiling(self) -> None:
+        for token_count in (512, 1_024, 4_095, 4_096, 64_000):
+            invocation = [
+                hook_common.OPAQUE_WRAPPER_COMMAND,
+                *(["$argument"] * token_count),
+            ]
+            started = time.monotonic()
+            candidates = hook_common.opaque_invocation_candidates(
+                invocation, {"git", "semantic-commit"}
+            )
+            elapsed = time.monotonic() - started
+            with self.subTest(token_count=token_count):
+                self.assertIn(
+                    [hook_common.OPAQUE_NESTED_SHELL_COMMAND], candidates
+                )
+                self.assertLessEqual(len(candidates), 32)
+                self.assertLess(elapsed, 0.5)
 
     def test_command_context_records_workdir_provenance_and_attestation(self) -> None:
         """Cross-repository gating retains where the canonical target came from."""
@@ -19661,6 +19884,59 @@ exit 65
                 "semantic-commit commit --message-file -h",
                 "semantic-commit commit --message-file --dry-run",
                 "bash -c 'git push origin HEAD:main'",
+                "noglob git push origin HEAD:main",
+                "nocorrect git push origin HEAD:main",
+                "- git push origin HEAD:main",
+                "noglob semantic-commit commit --message 'fix: tiny repair'",
+                "zsh -c 'noglob git push origin HEAD:main'",
+                "nice git push origin HEAD:main",
+                "nice -n 5 git merge origin/main",
+                "timeout 5 git pull origin main",
+                "timeout --signal TERM 5 git reset --hard HEAD~1",
+                "nohup git cherry-pick HEAD~1",
+                "stdbuf -oL git update-ref refs/heads/main HEAD",
+                "nice timeout 5 stdbuf -oL git push origin HEAD:main",
+                "nice noglob git push origin HEAD:main",
+                "noglob nice git push origin HEAD:main",
+                "opts='-n 5'; nice $opts git push origin HEAD:main",
+                "opts=-oL; stdbuf $opts git push origin HEAD:main",
+                "cmd=git; nice $cmd push origin HEAD:main",
+                "setsid git push origin HEAD:main",
+                "ionice git merge origin/main",
+                "chrt -o 0 git pull origin main",
+                "taskset -c 0 git reset --hard HEAD~1",
+                "nice setsid git update-ref refs/heads/main HEAD",
+                "cmd=git; setsid $cmd push origin HEAD:main",
+                "action=push; git $action origin HEAD:main",
+                "action=push; setsid git $action origin HEAD:main",
+                "cmd=git; action=push; setsid $cmd $action origin HEAD:main",
+                "cmd=git; setsid $cmd ship",
+                "action=commit; semantic-commit $action --message 'fix: x'",
+                "cmd=semantic-commit; setsid $cmd commit --message 'fix: x'",
+                "prlimit -- git push origin HEAD:main",
+                "setpriv -- git push origin HEAD:main",
+                "unshare git push origin HEAD:main",
+                "strace -o /tmp/trace git push origin HEAD:main",
+                "nsenter --target 1 --mount git push origin HEAD:main",
+                "cmd=git; prlimit -- $cmd push origin HEAD:main",
+                "cmd=git; setpriv -- $cmd push origin HEAD:main",
+                "cmd=git; unshare $cmd push origin HEAD:main",
+                "cmd=git; strace -o /tmp/trace $cmd push origin HEAD:main",
+                "cmd=git; nsenter --target 1 --mount $cmd push origin HEAD:main",
+                "cmd=semantic-commit; prlimit -- $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; setpriv -- $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; unshare $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; strace -o /tmp/trace $cmd commit --message 'fix: x'",
+                "cmd=semantic-commit; nsenter --target 1 --mount $cmd commit --message 'fix: x'",
+                "perf stat --null git push origin HEAD:main",
+                "perf stat record -e dummy:u -o /dev/null -- git push origin HEAD:main",
+                "watch -n 1 git push origin HEAD:main",
+                "systemd-run --user --scope git push origin HEAD:main",
+                "systemd-run -P git push origin HEAD:main",
+                "systemd-run -G git push origin HEAD:main",
+                "action=push; perf stat --null git $action origin HEAD:main",
+                "action=push; watch -n 1 git $action origin HEAD:main",
+                "action=push; systemd-run --user --scope git $action origin HEAD:main",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -19671,6 +19947,62 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "forge-cli repo push-default")
+
+    def test_default_delivery_hook_blocks_semantic_commit_behind_launchers(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "prlimit -- semantic-commit commit --message 'fix: x'",
+                "setpriv -- semantic-commit commit --message 'fix: x'",
+                "unshare semantic-commit commit --message 'fix: x'",
+                "strace -o /tmp/trace semantic-commit commit --message 'fix: x'",
+                "nsenter --target 1 --mount semantic-commit commit --message 'fix: x'",
+                "perf stat --null semantic-commit commit --message 'fix: x'",
+                "perf stat record -e dummy:u -o /dev/null -- semantic-commit commit --message 'fix: x'",
+                "watch -n 1 semantic-commit commit --message 'fix: x'",
+                "systemd-run --user --scope semantic-commit commit --message 'fix: x'",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "behind a process wrapper")
+
+    def test_default_delivery_hook_blocks_dynamic_semantic_modes_behind_launchers(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            commands = (
+                "action=commit; prlimit -- semantic-commit $action --message x",
+                "action=commit; setpriv -- semantic-commit $action --message x",
+                "action=commit; unshare semantic-commit $action --message x",
+                "action=commit; strace -o /tmp/trace semantic-commit $action --message x",
+                "action=commit; nsenter --target 1 --mount semantic-commit $action --message x",
+                "action=commit; perf stat --null semantic-commit $action --message x",
+                "action=commit; perf stat record -e dummy:u -o /dev/null -- semantic-commit $action --message x",
+                "action=commit; watch -n 1 semantic-commit $action --message x",
+                "action=commit; systemd-run --user --scope semantic-commit $action --message x",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "semantic-commit operation depends on shell expansion"
+                    )
 
     def test_default_delivery_hook_blocks_configured_and_shell_git_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -19909,11 +20241,15 @@ exit 65
                 "unset HOME; git push origin HEAD:refs/heads/feat/safe",
                 "builtin cd "
                 f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
+                "noglob cd "
+                f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
                 f"HOME={shlex.quote(str(alternate_home))} export HOME; git ship",
                 "builtin export HOME="
                 f"{shlex.quote(str(alternate_home))}; git ship",
                 f". {shlex.quote(str(context_script))}; git ship",
                 f"source {shlex.quote(str(context_script))}; git ship",
+                "nocorrect source "
+                f"{shlex.quote(str(context_script))}; git ship",
                 "builtin builtin cd "
                 f"{shlex.quote(str(repo_b))}; git push origin HEAD:trunk",
                 "builtin builtin export HOME="
@@ -19967,6 +20303,31 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+    def test_process_launcher_option_kinds_are_disjoint(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_launcher_option_invariant_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            for launcher in module.PROCESS_LAUNCH_VALUE_OPTIONS:
+                kinds = (
+                    module.PROCESS_LAUNCH_VALUE_OPTIONS[launcher],
+                    module.PROCESS_LAUNCH_FLAG_OPTIONS[launcher],
+                    module.PROCESS_LAUNCH_OPTIONAL_VALUE_OPTIONS[launcher],
+                )
+                with self.subTest(launcher=launcher):
+                    self.assertFalse(kinds[0] & kinds[1])
+                    self.assertFalse(kinds[0] & kinds[2])
+                    self.assertFalse(kinds[1] & kinds[2])
+        finally:
+            sys.modules.pop(spec.name, None)
 
     def test_default_delivery_git_probe_caps_output_and_kills_descendants(
         self,
@@ -20250,6 +20611,56 @@ exit 65
                 "semantic-commit commit --dry-run --message 'fix: tiny repair'",
                 "git push -u origin feat/tiny-repair",
                 "git push origin HEAD:refs/heads/feat/tiny-repair",
+                "noglob git push origin HEAD:refs/heads/feat/tiny-repair",
+                "nocorrect git push origin HEAD:refs/heads/feat/tiny-repair",
+                "zsh -c "
+                + shlex.quote(
+                    "noglob git push origin "
+                    "HEAD:refs/heads/feat/tiny-repair"
+                ),
+                "noglob semantic-commit commit --message 'fix: tiny repair'",
+                "nice git status",
+                "timeout 5 git status",
+                "nohup git status",
+                "stdbuf -oL git status",
+                "nice printf --version",
+                "setsid git status",
+                "ionice git status",
+                "chrt -o 0 git status",
+                "taskset -c 0 git status",
+                "setsid printf --version",
+                "prlimit -- git status",
+                "setpriv -- git status",
+                "unshare git status",
+                "strace -o /tmp/trace git status",
+                "nsenter --target 1 --mount git status",
+                "prlimit --nofile=1024 -- git status",
+                "setpriv --no-new-privs git status",
+                "unshare --fork git status",
+                "strace --seccomp-bpf -o /tmp/trace git status",
+                "nsenter --target=1 --mount git status",
+                "perf stat --null git status",
+                "perf stat record -e dummy:u -o /dev/null -- git status",
+                "watch -n 1 git status",
+                "systemd-run --user --scope git status",
+                "systemd-run -P git status",
+                "systemd-run -G git status",
+                "prlimit -- semantic-commit commit --help",
+                "setpriv -- semantic-commit commit --help",
+                "unshare semantic-commit commit --help",
+                "strace -o /tmp/trace semantic-commit commit --help",
+                "nsenter --target 1 --mount semantic-commit commit --help",
+                "perf stat --null semantic-commit commit --help",
+                "perf stat record -e dummy:u -o /dev/null -- semantic-commit commit --help",
+                "watch -n 1 semantic-commit commit --help",
+                "systemd-run --user --scope semantic-commit commit --help",
+                "echo git push origin HEAD:main",
+                "printf git push origin HEAD:main",
+                "rg git push README.md",
+                "echo nice semantic-commit commit",
+                "printf timeout semantic-commit commit",
+                "rg env semantic-commit commit README.md",
+                "echo $cmd push",
                 "git push --tags origin",
                 "git push origin refs/tags/v1.0.0",
                 "git push origin 'refs/heads/release/*:refs/heads/release/*'",
@@ -20267,6 +20678,447 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+    def test_default_delivery_hook_allows_expanded_non_governed_executables(
+        self,
+    ) -> None:
+        self.assertEqual(
+            hook_common.shell_tokens(
+                r"printf x '\'; /usr/bin/@(git) push origin HEAD:main"
+            ),
+            [
+                "printf",
+                "x",
+                "\\",
+                ";",
+                "/usr/bin/@(git)",
+                "push",
+                "origin",
+                "HEAD:main",
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
+            )
+            command = (
+                "scripts/install-hotfix-agent-runtimes.sh && "
+                '"$HOME/.local/bin/hotfix-codex" --cwd "$PWD" --version && '
+                '"$HOME/.local/bin/hotfix-claude" --cwd "$PWD" --version'
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            for hidden in (
+                "$tool --version",
+                '"$HOME/.local/bin/semantic-commit" commit '
+                "--message 'fix: hidden writer'",
+                '"$HOMEBREW_PREFIX/bin/semantic-*" commit '
+                "--message 'fix: glob writer'",
+                '"$HOMEBREW_PREFIX/bin/semanti?-commit" commit '
+                "--message 'fix: glob writer'",
+                '"$HOMEBREW_PREFIX/bin/semanti[c]-commit" commit '
+                "--message 'fix: glob writer'",
+                '"$HOMEBREW_PREFIX/bin/{semantic-commit,tool}" commit '
+                "--message 'fix: brace writer'",
+            ):
+                with self.subTest(hidden=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNotNone(decision)
+                    if hidden.startswith("$tool"):
+                        self.assert_blocked(decision, "rule=opaque-executable")
+                        self.assert_blocked(
+                            decision, "operation=dynamic-executable"
+                        )
+                    else:
+                        self.assert_blocked(decision, "semantic-commit")
+
+            semantic_commit = Path(
+                shutil.which("semantic-commit") or "/usr/bin/semantic-commit"
+            )
+            dynamic_executables = (
+                "/usr/bin/g[i]t push origin HEAD:main",
+                "/usr/bin/g?t push origin HEAD:main",
+                "/usr/bin/{git,echo} push origin HEAD:main",
+                "~/bin/git push origin HEAD:main",
+                str(semantic_commit.with_name("semantic-*"))
+                + " commit --message 'fix: glob writer'",
+            )
+            for hidden in dynamic_executables:
+                with self.subTest(dynamic_executable=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if hidden.startswith("~"):
+                        self.assert_blocked(decision, "push")
+                    else:
+                        self.assert_blocked(decision, "rule=opaque-executable")
+
+            shell_expanded_governed_executables = (
+                "=git push origin HEAD:main",
+                "command =git push origin HEAD:main",
+                "exec =git push origin HEAD:main",
+                "/usr/bin/@(git) push origin HEAD:main",
+                "/usr/bin/@(git|echo) push origin HEAD:main",
+                "/usr/bin/git(N) push origin HEAD:main",
+                "/usr/bin/git(.) push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/gi#t push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/gi##t push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/git~notgit push origin HEAD:main",
+                "setopt EXTENDED_GLOB; /usr/bin/git^notgit push origin HEAD:main",
+                r"printf x '\'; /usr/bin/@(git) push origin HEAD:main",
+                "/usr/bin/@(semantic-commit) commit --message 'fix: extglob writer'",
+                "/usr/bin/semantic-commit(N) commit "
+                "--message 'fix: qualifier writer'",
+                "setopt EXTENDED_GLOB; /usr/bin/semanti#c-commit commit "
+                "--message 'fix: repetition writer'",
+                "bash -O extglob -c "
+                + shlex.quote("/usr/bin/@(git) push origin HEAD:main"),
+                "bash -O extglob -c "
+                + shlex.quote(
+                    "/usr/bin/@(semantic-commit) commit "
+                    "--message 'fix: nested extglob writer'"
+                ),
+                "zsh -c "
+                + shlex.quote("/usr/bin/git(N) push origin HEAD:main"),
+                "zsh -c "
+                + shlex.quote(
+                    "/usr/bin/semantic-commit(.) commit "
+                    "--message 'fix: nested qualifier writer'"
+                ),
+                "zsh -o EXTENDED_GLOB -c "
+                + shlex.quote("/usr/bin/gi#t push origin HEAD:main"),
+                "zsh -o EXTENDED_GLOB -c "
+                + shlex.quote("/usr/bin/git^notgit push origin HEAD:main"),
+                "zsh -o EXTENDED_GLOB -c "
+                + shlex.quote(
+                    "/usr/bin/semanti#c-commit commit "
+                    "--message 'fix: nested repetition writer'"
+                ),
+            )
+            for hidden in shell_expanded_governed_executables:
+                with self.subTest(shell_expansion=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=opaque-executable")
+
+            alias_hidden_governed_executables = (
+                "alias runner=git; eval 'runner push origin HEAD:main'",
+                "alias runner='git push origin HEAD:main'; eval runner",
+                "definition=runner=git; alias \"$definition\"; "
+                "eval 'runner push origin HEAD:main'",
+                "builtin alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "noglob alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "nocorrect alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "- alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "- hash runner=/usr/bin/git; "
+                "runner push origin HEAD:main",
+                "- nocorrect noglob alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "noglob hash runner=/usr/bin/git; "
+                "runner push origin HEAD:main",
+                "alias runner=git; (unalias runner); "
+                "eval 'runner push origin HEAD:main'",
+                "alias runner=git; bash -c 'unalias runner'; "
+                "eval 'runner push origin HEAD:main'",
+                "hash runner=/usr/bin/git; runner push origin HEAD:main",
+                "hash -p /usr/bin/git runner; runner push origin HEAD:main",
+                "action=-c; functions \"$action\" git runner; "
+                "runner push origin HEAD:main",
+                "commands[runner]=/usr/bin/git; runner push origin HEAD:main",
+                "source <(printf 'runner() { git push origin HEAD:main; }'); "
+                "runner",
+                "alias runner=semantic-commit; "
+                "eval \"runner commit --message 'fix: alias writer'\"",
+                "zsh -c "
+                + shlex.quote(
+                    "alias runner=git; eval 'runner push origin HEAD:main'"
+                ),
+                "zsh -c "
+                + shlex.quote(
+                    "noglob alias runner=git; "
+                    "eval 'runner push origin HEAD:main'"
+                ),
+                "zsh -c "
+                + shlex.quote(
+                    "nocorrect noglob alias runner=git; "
+                    "eval 'runner push origin HEAD:main'"
+                ),
+                "bash -O expand_aliases -c "
+                + shlex.quote(
+                    "alias runner=git; eval 'runner push origin HEAD:main'"
+                ),
+            )
+            for hidden in alias_hidden_governed_executables:
+                with self.subTest(alias_expansion=hidden):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(hidden),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "rule=opaque-shell-resolution"
+                    )
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "alias runner=git; /usr/bin/printf --version"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            read_only_resolution_queries = (
+                "alias",
+                "alias runner",
+                "hash",
+                "hash -t git",
+                "functions",
+                "functions runner",
+                "enable",
+                "enable -p",
+                "enable -a",
+            )
+            for query in read_only_resolution_queries:
+                with self.subTest(read_only_resolution_query=query):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{query}; printf --version"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            resolution_mutations = (
+                "hash -r",
+                "functions -c runner copy",
+                "enable printf",
+            )
+            for mutation in resolution_mutations:
+                with self.subTest(executable_resolution_mutation=mutation):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{mutation}; printf --version"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "rule=opaque-shell-resolution"
+                    )
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("/usr/bin/printf --version"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_default_delivery_hook_uses_custom_exec_transcript_workdir(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(
+                primary, "feat/tiny-repair"
+            )
+            command = (
+                "semantic-commit commit --type fix --scope hooks "
+                "--subject 'classify the real worktree' --expect-head "
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --format json"
+            )
+            transcript = root / "transcript.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "semantic-call",
+                            "input": (
+                                '// @exec: {"yield_time_ms": 30000}\n'
+                                "const r = await tools.exec_command("
+                                + json.dumps(
+                                    {
+                                        "cmd": command,
+                                        "workdir": str(repo),
+                                        "yield_time_ms": 30000,
+                                    }
+                                )
+                                + ");\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            payload = command_payload(command)
+            payload.update(
+                {
+                    "tool_use_id": "semantic-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(primary),
+                }
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A non-JSON JavaScript object is deliberately not interpreted as
+            # host attestation. It must report the failed classifier instead of
+            # claiming the fallback primary checkout is the command target.
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "semantic-call",
+                            "input": (
+                                "const r = await tools.exec_command({"
+                                f"cmd: 'semantic-commit commit', workdir: '{repo}'"
+                                "});\ntext(r.output);\n"
+                            ),
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            self.assert_blocked(
+                decision, "rule=governed-authoring-target"
+            )
+            self.assert_blocked(decision, "operation=semantic-commit commit")
+            self.assert_blocked(decision, "context=session-cwd")
+            self.assert_blocked(
+                decision, "diagnostic=workdir-attestation-missing"
+            )
+            self.assert_blocked(decision, "--repo <absolute path>")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertLess(
+                reason.index("Classification:"),
+                reason.index("Do not author or push"),
+            )
+
+            explicit = command + f" --repo {shlex.quote(str(repo))}"
+            explicit_payload = command_payload(explicit)
+            explicit_payload.update(
+                {
+                    "tool_use_id": "semantic-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(primary),
+                }
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                explicit_payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_default_delivery_hook_rejects_unattested_raw_git_context(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            feature = self._add_checkout_lease_worktree(
+                primary, "feat/unattested-git"
+            )
+            transcript = root / "transcript.jsonl"
+            transcript.write_text("", encoding="utf-8")
+            commands = (
+                "git merge main",
+                "git pull origin main",
+                "git reset --hard HEAD",
+                "git cherry-pick HEAD",
+                "git update-ref refs/heads/main HEAD",
+                "git push origin HEAD",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    payload = command_payload(command)
+                    payload.update(
+                        {
+                            "tool_use_id": "missing-call",
+                            "transcript_path": str(transcript),
+                            "cwd": str(feature),
+                        }
+                    )
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        payload,
+                        cwd=feature,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "[default-delivery: unverified]"
+                    )
+                    self.assert_blocked(
+                        decision, "rule=governed-authoring-target"
+                    )
+                    self.assert_blocked(
+                        decision, "diagnostic=workdir-attestation-missing"
+                    )
+
+            explicit = f"git -C {shlex.quote(str(feature))} merge main"
+            payload = command_payload(explicit)
+            payload.update(
+                {
+                    "tool_use_id": "missing-call",
+                    "transcript_path": str(transcript),
+                    "cwd": str(primary),
+                }
+            )
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                payload,
+                cwd=primary,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
 
     def test_default_delivery_hook_allows_validate_only_on_default_branch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -20533,7 +21385,11 @@ exit 65
                         (
                             "untrusted `semantic-commit`"
                             if command.startswith("commands[")
-                            else "changed executable resolution"
+                            else (
+                                "changed executable resolution"
+                                if command.startswith(("set -A ", "true "))
+                                else "rule=opaque-shell-resolution"
+                            )
                         ),
                     )
 
