@@ -257,7 +257,10 @@ SHELL_EXECUTABLE_RESOLUTION_COMMANDS = frozenset(
         "source",
     }
 )
-SHELL_PRECOMMAND_MODIFIERS = frozenset({"builtin", "nocorrect", "noglob"})
+SHELL_PRECOMMAND_MODIFIERS = frozenset(
+    {"-", "builtin", "nocorrect", "noglob"}
+)
+DELIVERY_PRECOMMAND_MODIFIERS = SHELL_PRECOMMAND_MODIFIERS - {"builtin"}
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -718,6 +721,24 @@ def process_wrapper_hides_governed_invocation(
     return False
 
 
+def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
+    """Resolve bounded shell precommand modifiers to the governed argv."""
+    invocation = invocation_tokens(simple_command)
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if (
+            not invocation
+            or PurePosixPath(invocation[0]).name
+            not in DELIVERY_PRECOMMAND_MODIFIERS
+        ):
+            return invocation
+        if len(invocation) == 1:
+            return invocation
+        invocation = invocation_tokens(
+            invocation[1:], shell_boundary=False
+        )
+    return [OPAQUE_WRAPPER_COMMAND, *invocation]
+
+
 def executable_resolution_rejection(
     invocation: list[str], context_safe: bool
 ) -> str:
@@ -813,22 +834,36 @@ def shell_command_changes_executable_resolution(
         return True
     if executable in SHELL_EXECUTABLE_RESOLUTION_COMMANDS:
         return True
+
+    def literal_query_name(token: str) -> bool:
+        return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.:+-]*", token))
+
     if executable == "alias":
         # With no definition, both bash and zsh only list aliases or query the
         # named entries. Definitions contain an assignment separator.
-        return any("=" in token for token in arguments)
+        return any(
+            "=" in token
+            or not (token.startswith("-") or literal_query_name(token))
+            for token in arguments
+        )
     if executable == "hash":
         # A bare invocation only lists the current command hash table. Other
         # forms can populate, clear, or replace entries across supported shells.
-        return bool(arguments)
+        return bool(arguments) and not (
+            arguments[0] == "-t"
+            and len(arguments) > 1
+            and all(not token.startswith("-") for token in arguments[1:])
+        )
     if executable == "functions":
-        # A bare zsh `functions` lists definitions. Options and names are kept
-        # conservative because several forms copy, autoload, or mutate entries.
-        return bool(arguments)
+        # Bare and named zsh forms print definitions. Option-bearing forms stay
+        # conservative because several copy, autoload, or mutate entries.
+        return any(not literal_query_name(token) for token in arguments)
     if executable == "enable":
-        # A bare bash `enable` lists builtins; named/option forms can toggle or
-        # load builtins and therefore change later executable resolution.
-        return bool(arguments)
+        # Listing flags without builtin names are query-only. Named, load, and
+        # delete forms can change later resolution and remain tainted.
+        return bool(arguments) and not all(
+            re.fullmatch(r"-[anps]+", token) for token in arguments
+        )
     if executable == "unalias":
         return bool(arguments)
 
@@ -1952,7 +1987,7 @@ def command_block_reason(
     directory_resolved = True
     cwd = base
     for simple_command in simple_commands:
-        invocation = invocation_tokens(simple_command)
+        invocation = delivery_invocation_tokens(simple_command)
         if (
             executable_resolution_tainted
             and invocation

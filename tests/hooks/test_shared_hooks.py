@@ -19850,6 +19850,11 @@ exit 65
                 "semantic-commit commit --message-file -h",
                 "semantic-commit commit --message-file --dry-run",
                 "bash -c 'git push origin HEAD:main'",
+                "noglob git push origin HEAD:main",
+                "nocorrect git push origin HEAD:main",
+                "- git push origin HEAD:main",
+                "noglob semantic-commit commit --message 'fix: tiny repair'",
+                "zsh -c 'noglob git push origin HEAD:main'",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20606,11 +20611,19 @@ exit 65
             alias_hidden_governed_executables = (
                 "alias runner=git; eval 'runner push origin HEAD:main'",
                 "alias runner='git push origin HEAD:main'; eval runner",
+                "definition=runner=git; alias \"$definition\"; "
+                "eval 'runner push origin HEAD:main'",
                 "builtin alias runner=git; "
                 "eval 'runner push origin HEAD:main'",
                 "noglob alias runner=git; "
                 "eval 'runner push origin HEAD:main'",
                 "nocorrect alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "- alias runner=git; "
+                "eval 'runner push origin HEAD:main'",
+                "- hash runner=/usr/bin/git; "
+                "runner push origin HEAD:main",
+                "- nocorrect noglob alias runner=git; "
                 "eval 'runner push origin HEAD:main'",
                 "noglob hash runner=/usr/bin/git; "
                 "runner push origin HEAD:main",
@@ -20620,6 +20633,8 @@ exit 65
                 "eval 'runner push origin HEAD:main'",
                 "hash runner=/usr/bin/git; runner push origin HEAD:main",
                 "hash -p /usr/bin/git runner; runner push origin HEAD:main",
+                "action=-c; functions \"$action\" git runner; "
+                "runner push origin HEAD:main",
                 "commands[runner]=/usr/bin/git; runner push origin HEAD:main",
                 "source <(printf 'runner() { git push origin HEAD:main; }'); "
                 "runner",
@@ -20670,8 +20685,12 @@ exit 65
                 "alias",
                 "alias runner",
                 "hash",
+                "hash -t git",
                 "functions",
+                "functions runner",
                 "enable",
+                "enable -p",
+                "enable -a",
             )
             for query in read_only_resolution_queries:
                 with self.subTest(read_only_resolution_query=query):
@@ -20682,6 +20701,23 @@ exit 65
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+            resolution_mutations = (
+                "hash -r",
+                "functions -c runner copy",
+                "enable printf",
+            )
+            for mutation in resolution_mutations:
+                with self.subTest(executable_resolution_mutation=mutation):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{mutation}; printf --version"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(
+                        decision, "rule=opaque-shell-resolution"
+                    )
 
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",
