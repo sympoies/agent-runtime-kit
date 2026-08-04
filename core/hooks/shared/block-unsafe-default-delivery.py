@@ -261,6 +261,7 @@ SHELL_PRECOMMAND_MODIFIERS = frozenset(
     {"-", "builtin", "nocorrect", "noglob"}
 )
 DELIVERY_PRECOMMAND_MODIFIERS = SHELL_PRECOMMAND_MODIFIERS - {"builtin"}
+PROCESS_LAUNCH_WRAPPERS = frozenset({"nice", "nohup", "stdbuf", "timeout"})
 SHELL_BUILTIN_UNWRAP_LIMIT = 8
 PUSH_OPTIONS_WITH_VALUE = frozenset(
     {"--exec", "--push-option", "--receive-pack", "--repo", "-o"}
@@ -737,6 +738,106 @@ def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
             invocation[1:], shell_boundary=False
         )
     return [OPAQUE_WRAPPER_COMMAND, *invocation]
+
+
+def process_wrapper_target_index(
+    executable: str, arguments: list[str]
+) -> int | None:
+    """Return the target offset in wrapper arguments, or fail closed."""
+    index = 0
+    if executable == "nohup":
+        if arguments[:1] == ["--"]:
+            index = 1
+        elif arguments and arguments[0].startswith("-"):
+            return None
+        return index if index < len(arguments) else None
+
+    if executable == "nice":
+        while index < len(arguments):
+            token = arguments[index]
+            if token == "--":
+                index += 1
+                break
+            if token in {"-n", "--adjustment"}:
+                index += 2
+                continue
+            if token.startswith("--adjustment=") or re.fullmatch(
+                r"-[0-9]+", token
+            ):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return index if index < len(arguments) else None
+
+    if executable == "timeout":
+        while index < len(arguments):
+            token = arguments[index]
+            if token == "--":
+                index += 1
+                break
+            if token in {"-k", "--kill-after", "-s", "--signal"}:
+                index += 2
+                continue
+            if token in {"--foreground", "--preserve-status", "--verbose"}:
+                index += 1
+                continue
+            if token.startswith(("--kill-after=", "--signal=")):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        # `timeout` consumes one duration word before its target command.
+        index += 1
+        return index if index < len(arguments) else None
+
+    if executable == "stdbuf":
+        while index < len(arguments):
+            token = arguments[index]
+            if token == "--":
+                index += 1
+                break
+            if token in {"-i", "--input", "-o", "--output", "-e", "--error"}:
+                index += 2
+                continue
+            if token.startswith(
+                ("-i", "-o", "-e", "--input=", "--output=", "--error=")
+            ):
+                index += 1
+                continue
+            if token.startswith("-"):
+                return None
+            break
+        return index if index < len(arguments) else None
+    return None
+
+
+def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
+    """Expose a literal Git argv launched by supported process wrappers."""
+    invocation = delivery_invocation_tokens(simple_command)
+    saw_wrapper = False
+    for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
+        if not invocation:
+            return []
+        executable = PurePosixPath(invocation[0]).name
+        if executable not in PROCESS_LAUNCH_WRAPPERS:
+            return invocation if saw_wrapper and executable == "git" else []
+        saw_wrapper = True
+        target_index = process_wrapper_target_index(executable, invocation[1:])
+        if target_index is None:
+            for index, token in enumerate(invocation[1:], start=1):
+                if PurePosixPath(token).name == "git":
+                    return delivery_invocation_tokens(invocation[index:])
+            return []
+        invocation = delivery_invocation_tokens(
+            invocation[target_index + 1 :]
+        )
+    for index, token in enumerate(invocation):
+        if PurePosixPath(token).name == "git":
+            return delivery_invocation_tokens(invocation[index:])
+    return []
 
 
 def executable_resolution_rejection(
@@ -2022,6 +2123,11 @@ def command_block_reason(
                 base_diagnostic=base_diagnostic,
             )
 
+        wrapper_git = process_wrapper_git_invocation(simple_command)
+        if wrapper_git:
+            reason = classify(wrapper_git)
+            if reason and not waiver_admits(wrapper_git, reason, waiver):
+                return reason
         reason = classify(invocation)
         if reason and not waiver_admits(invocation, reason, waiver):
             return reason

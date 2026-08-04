@@ -19855,6 +19855,15 @@ exit 65
                 "- git push origin HEAD:main",
                 "noglob semantic-commit commit --message 'fix: tiny repair'",
                 "zsh -c 'noglob git push origin HEAD:main'",
+                "nice git push origin HEAD:main",
+                "nice -n 5 git merge origin/main",
+                "timeout 5 git pull origin main",
+                "timeout --signal TERM 5 git reset --hard HEAD~1",
+                "nohup git cherry-pick HEAD~1",
+                "stdbuf -oL git update-ref refs/heads/main HEAD",
+                "nice timeout 5 stdbuf -oL git push origin HEAD:main",
+                "nice noglob git push origin HEAD:main",
+                "noglob nice git push origin HEAD:main",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20448,6 +20457,19 @@ exit 65
                 "semantic-commit commit --dry-run --message 'fix: tiny repair'",
                 "git push -u origin feat/tiny-repair",
                 "git push origin HEAD:refs/heads/feat/tiny-repair",
+                "noglob git push origin HEAD:refs/heads/feat/tiny-repair",
+                "nocorrect git push origin HEAD:refs/heads/feat/tiny-repair",
+                "zsh -c "
+                + shlex.quote(
+                    "noglob git push origin "
+                    "HEAD:refs/heads/feat/tiny-repair"
+                ),
+                "noglob semantic-commit commit --message 'fix: tiny repair'",
+                "nice git status",
+                "timeout 5 git status",
+                "nohup git status",
+                "stdbuf -oL git status",
+                "nice printf --version",
                 "git push --tags origin",
                 "git push origin refs/tags/v1.0.0",
                 "git push origin 'refs/heads/release/*:refs/heads/release/*'",
