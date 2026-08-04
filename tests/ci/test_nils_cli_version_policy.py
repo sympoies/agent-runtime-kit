@@ -128,15 +128,15 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.25.13")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.26.1")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.26.2")
         self.assertNotIn("pinned_tag:", manifest)
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "71e83dd9a2ef0d0e8a9a52d8b1748e7cf6e3092ce2466092077f67f164969ab2",
+            "b9d466899ebddd61ccce15daf8455b20d4035da6864c29a164ca08bf0675070b",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "935f92508dd518fc2c6b6d86c099704e465c7543ca8646a23e4cf7d5d5c7a76d",
+            "c6be21dd422f26fc5892ab2503cac975c4391d9a23d1e7017a2bd626efce64de",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
@@ -284,7 +284,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.26.1", "v1.27.0"):
+        for candidate in ("v1.26.2", "v1.27.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -646,7 +646,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.26.1", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.26.2", dockerfile)
 
     def test_audits_and_maintenance_skill_understand_both_roles(self) -> None:
         bump_skill = read("core/skills/meta/nils-cli-bump/SKILL.md.tera")

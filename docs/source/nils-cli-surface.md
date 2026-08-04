@@ -1,23 +1,23 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-04 (refreshed for `v1.26.1`)
+- Snapshot date: 2026-08-04 (refreshed for `v1.26.2`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.26.1`
+- Active `git describe --tags` output: `v1.26.2`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.13`,
-  `validated_tag: v1.26.1`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.26.2`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `647753d0`
-  (`chore(release): bump cli versions to 1.26.1`)
+- Head commit: `54275888`
+  (`chore(release): bump cli versions to 1.26.2`)
 - Release:
-  [`v1.26.1`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.1),
+  [`v1.26.2`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.2),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.26.1` is the validated release while `v1.25.13` remains the compatibility
-  minimum. It carries the whole `v1.26.0` uptake — an upgrade-safe
+- `v1.26.2` is the validated release while `v1.25.13` remains the compatibility
+  minimum. It carries the whole `v1.26.1` uptake — an upgrade-safe
   `agent-session` binary pin for newly created tmux sessions, the `agent-hook`
   degradation and centralized observation lanes with `agent-session diagnose`
   and richer `/healthz` projection, no-agent-attribution guards on commit and
@@ -32,7 +32,12 @@
   retained-claim recovery during retire replay
   ([#1431](https://github.com/sympoies/nils-cli/pull/1431),
   [#1432](https://github.com/sympoies/nils-cli/pull/1432)), plus the
-  `forge-cli` changes below.
+  `forge-cli` changes below. It also fixes `agent-hook` Stop re-entry so typed
+  `NotRun`, `Clean`, `Pending`, and `Unavailable` coordination results preserve
+  their observed state; only a typed pending transaction now prescribes broker
+  reconciliation ([#1448](https://github.com/sympoies/nils-cli/pull/1448)).
+  This corrects misleading recovery advice without changing runtime-kit's
+  compatibility floor or any per-binary floor.
 - **One `forge-cli` change in `v1.26.1` is a tightening, not an addition, and is
   the only item here that can turn a previously passing delivery into a typed
   failure.** `pr merge` and `pr deliver` previously treated a head with *no*
