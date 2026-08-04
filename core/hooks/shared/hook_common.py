@@ -3000,6 +3000,7 @@ def skip_env_prefix(tokens: list[str], index: int) -> int:
 
 OPAQUE_WRAPPER_COMMAND = "__agent_runtime_opaque_wrapper__"
 OPAQUE_NESTED_SHELL_COMMAND = "__agent_runtime_opaque_nested_shell__"
+OPAQUE_CANDIDATE_TOKEN_LIMIT = 4096
 
 
 def _opaque_wrapper_invocation(tokens: list[str] | None = None) -> list[str]:
@@ -3021,9 +3022,11 @@ def opaque_invocation_candidates(
     *,
     max_depth: int = 4,
 ) -> list[list[str]]:
-    """Return governed command slices retained beneath an opaque wrapper parse."""
+    """Return governed slices within a bounded opaque-wrapper work budget."""
     if not invocation_is_opaque(invocation):
         return []
+    if len(invocation) > OPAQUE_CANDIDATE_TOKEN_LIMIT:
+        return [[OPAQUE_NESTED_SHELL_COMMAND]]
     candidates: list[list[str]] = []
     seen: set[tuple[str, ...]] = set()
 

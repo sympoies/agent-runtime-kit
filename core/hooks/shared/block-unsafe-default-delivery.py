@@ -839,13 +839,35 @@ def process_wrapper_target_index(
 def process_wrapper_git_invocation(simple_command: list[str]) -> list[str]:
     """Expose a literal Git argv launched by supported process wrappers."""
     invocation = delivery_invocation_tokens(simple_command)
+    if (
+        invocation
+        and invocation[0] == OPAQUE_WRAPPER_COMMAND
+    ) or invocation_is_unresolved_nested(invocation):
+        return []
     saw_wrapper = False
     for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
         if not invocation:
             return []
         executable = PurePosixPath(invocation[0]).name
         if executable not in PROCESS_LAUNCH_WRAPPERS:
-            return invocation if saw_wrapper and executable == "git" else []
+            if saw_wrapper and executable == "git":
+                return invocation
+            for index, token in enumerate(invocation[1:], start=1):
+                if PurePosixPath(token).name == "git":
+                    return delivery_invocation_tokens(invocation[index:])
+            mutation_words = GIT_DEFAULT_BRANCH_REWRITE_COMMANDS | {"push"}
+            mutation_follows = False
+            for token in reversed(invocation[1:]):
+                if (
+                    token.startswith("=")
+                    or any(marker in token for marker in "$`*?[]{}()#^~")
+                ) and mutation_follows:
+                    return [
+                        OPAQUE_WRAPPER_COMMAND,
+                        "$process-wrapper-target",
+                    ]
+                mutation_follows = mutation_follows or token in mutation_words
+            return []
         saw_wrapper = True
         target_index = process_wrapper_target_index(executable, invocation[1:])
         if target_index in {None, -1}:

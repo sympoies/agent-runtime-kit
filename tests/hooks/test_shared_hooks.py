@@ -8730,6 +8730,22 @@ exit 65
         self.assertEqual(diagnostic, "transcript-custom-input-ambiguous")
         self.assertLess(elapsed, 0.5)
 
+    def test_opaque_candidate_scan_has_a_bounded_token_budget(self) -> None:
+        invocation = [
+            hook_common.OPAQUE_WRAPPER_COMMAND,
+            "tool*",
+            *(["argument"] * 64_000),
+        ]
+        started = time.monotonic()
+        candidates = hook_common.opaque_invocation_candidates(
+            invocation, {"git", "semantic-commit"}
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual(
+            candidates, [[hook_common.OPAQUE_NESTED_SHELL_COMMAND]]
+        )
+        self.assertLess(elapsed, 0.5)
+
     def test_command_context_records_workdir_provenance_and_attestation(self) -> None:
         """Cross-repository gating retains where the canonical target came from."""
         resolver = getattr(hook_common, "command_context", None)
@@ -19867,6 +19883,12 @@ exit 65
                 "opts='-n 5'; nice $opts git push origin HEAD:main",
                 "opts=-oL; stdbuf $opts git push origin HEAD:main",
                 "cmd=git; nice $cmd push origin HEAD:main",
+                "setsid git push origin HEAD:main",
+                "ionice git merge origin/main",
+                "chrt -o 0 git pull origin main",
+                "taskset -c 0 git reset --hard HEAD~1",
+                "nice setsid git update-ref refs/heads/main HEAD",
+                "cmd=git; setsid $cmd push origin HEAD:main",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -20473,6 +20495,11 @@ exit 65
                 "nohup git status",
                 "stdbuf -oL git status",
                 "nice printf --version",
+                "setsid git status",
+                "ionice git status",
+                "chrt -o 0 git status",
+                "taskset -c 0 git status",
+                "setsid printf --version",
                 "git push --tags origin",
                 "git push origin refs/tags/v1.0.0",
                 "git push origin 'refs/heads/release/*:refs/heads/release/*'",
