@@ -25,8 +25,8 @@ auth, sessions, logs, caches, generated backups, or secrets.
 
 | component | floor | source |
 |---|---|---|
-| Codex CLI (`codex --version`) | `0.144.5` (effective 2026-07-10) | `manifests/runtime-roots.yaml` |
-| Claude Code (`claude --version`) | `2.1.211` (effective 2026-07-10) | `manifests/runtime-roots.yaml` |
+| Codex CLI (`codex --version`) | `0.146.0` (effective 2026-09-01) | `manifests/runtime-roots.yaml` |
+| Claude Code (`claude --version`) | `2.1.222` (effective 2026-09-01) | `manifests/runtime-roots.yaml` |
 | Hermes Agent (`hermes --version`) | `0.17.0` (effective 2026-06-30) | `manifests/runtime-roots.yaml` |
 | `nils-cli` surface (`agent-runtime --version`) | minimum `v1.25.13`; validated `v1.26.2` | `docs/source/nils-cli-surface.md` |
 
