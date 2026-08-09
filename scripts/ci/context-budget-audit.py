@@ -17,7 +17,15 @@ Surfaces and targets come from the issue's quantitative acceptance budgets
 
 Each surface is classified:
 
-  ok             actual <= target
+  ok             actual <= target with room left
+  near-limit     actual <= target but at or above ``WARN_RATIO`` of it. Advisory
+                 only -- it never fails the gate. A pass/FAIL gate tells an
+                 author their addition does not fit only after they have written
+                 it; a surface sitting at 99% of target looks identical to one
+                 sitting at 40%. This reports the remaining headroom so the
+                 "there is no room here" decision can be made before the work,
+                 and so a surface approaching its ceiling becomes visible while
+                 trimming is still cheap.
   waived         actual >  target but an explicit ``override`` allows it. An
                  override records the allowed ceiling, WHY the surface is over
                  target, and a tracking ref -- either debt a later slice removes
@@ -36,11 +44,13 @@ Each surface is classified:
                  = enforced by a named test).
 
 ``check`` (default, the CI gate) is deterministic and network-free: it exits
-non-zero if any surface FAILs or carries a stale override.
+non-zero if any surface FAILs or carries a stale override. ``near-limit`` is
+advisory and never changes the exit code.
 
 ``--self-test`` runs the classifier against synthetic surfaces and asserts the
 verdicts, proving the gate actually detects an over-budget surface, honors an
-override, and rejects an override that no longer applies.
+override, rejects an override that no longer applies, and warns before a
+surface runs out of room.
 
 Budgets are declared inline (see ``BUDGETS``) rather than in a YAML manifest so
 the gate stays stdlib-only and runs on any python3 (including macOS system
@@ -226,10 +236,15 @@ def measure_bytes(measure):
     raise ValueError("unknown measure kind: %r" % (kind,))
 
 
+# Fraction of target at or above which an in-budget surface is reported as
+# near-limit. Advisory only; it never fails the gate.
+WARN_RATIO = 0.90
+
+
 def classify(target, actual, override):
     """Classify one surface. Returns (verdict, note).
 
-    verdict in {"ok", "waived", "FAIL", "stale-override", "skip"}.
+    verdict in {"ok", "near-limit", "waived", "FAIL", "stale-override", "skip"}.
     """
     if actual is None:
         return "skip", ""
@@ -239,6 +254,16 @@ def classify(target, actual, override):
                 "actual %d <= target %d but an override is still declared; "
                 "remove it so the target is enforced bare (RED->GREEN for %s)"
                 % (actual, target, override.get("tracking", "?"))
+            )
+        # target > 0 guards the percentage below: a zero-target surface (an
+        # "emit nothing" budget such as route-cue.unchanged-prompt) has no band
+        # to be near, and dividing by it would crash the gate instead of
+        # reporting. Zero-target surfaces stay ok until they actually exceed 0.
+        if target > 0 and actual >= target * WARN_RATIO:
+            return "near-limit", (
+                "only %d byte(s) left of target %d (%.1f%% used); trim this "
+                "surface before adding to it"
+                % (target - actual, target, 100.0 * actual / target)
             )
         return "ok", ""
     # actual > target
@@ -308,13 +333,24 @@ def coverage_errors(budgets):
 
 def _emit(rows):
     failing = 0
+    near = 0
     for spec, actual, detail, verdict, note in rows:
         actual_s = "%d" % actual if actual is not None else "-"
         print("  %-14s %-42s target=%-6d actual=%-7s %s" % (
             verdict, spec["id"], spec["target"], actual_s, note or detail))
         if verdict in ("FAIL", "stale-override"):
             failing += 1
-    print("\ncontext-budget-audit: %d surfaces, %d failing" % (len(rows), failing))
+        elif verdict == "near-limit":
+            near += 1
+    print("\ncontext-budget-audit: %d surfaces, %d failing, %d near-limit"
+          % (len(rows), failing, near))
+    if near:
+        print(
+            "\n%d surface(s) are within %d%% of target. They pass, but they "
+            "have little room left: trim them before adding anything, or the "
+            "next addition will fail this gate after it is already written."
+            % (near, int(round((1.0 - WARN_RATIO) * 100)))
+        )
     if failing:
         print(
             "\nBudget gate failed. For each failing surface either bring it "
@@ -337,6 +373,13 @@ SELF_TEST_CASES = [
     (100, 150, None, "FAIL"),             # over target, no override
     (100, 80, _OV, "stale-override"),     # under target but override lingers
     (100, None, None, "skip"),            # not measured here
+    (100, 89, None, "ok"),                # just below the warn band
+    (100, 90, None, "near-limit"),        # exactly at WARN_RATIO
+    (100, 99, None, "near-limit"),        # in budget with 1 byte to spare
+    (100, 100, None, "near-limit"),       # exactly at target: no room left
+    (100, 95, _OV, "stale-override"),     # a stale override outranks near-limit
+    (0, 0, None, "ok"),                   # zero-target surface: no band, no division
+    (0, 1, None, "FAIL"),                 # zero-target surface still fails when exceeded
 ]
 
 
