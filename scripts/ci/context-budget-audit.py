@@ -255,7 +255,11 @@ def classify(target, actual, override):
                 "remove it so the target is enforced bare (RED->GREEN for %s)"
                 % (actual, target, override.get("tracking", "?"))
             )
-        if actual >= target * WARN_RATIO:
+        # target > 0 guards the percentage below: a zero-target surface (an
+        # "emit nothing" budget such as route-cue.unchanged-prompt) has no band
+        # to be near, and dividing by it would crash the gate instead of
+        # reporting. Zero-target surfaces stay ok until they actually exceed 0.
+        if target > 0 and actual >= target * WARN_RATIO:
             return "near-limit", (
                 "only %d byte(s) left of target %d (%.1f%% used); trim this "
                 "surface before adding to it"
@@ -374,6 +378,8 @@ SELF_TEST_CASES = [
     (100, 99, None, "near-limit"),        # in budget with 1 byte to spare
     (100, 100, None, "near-limit"),       # exactly at target: no room left
     (100, 95, _OV, "stale-override"),     # a stale override outranks near-limit
+    (0, 0, None, "ok"),                   # zero-target surface: no band, no division
+    (0, 1, None, "FAIL"),                 # zero-target surface still fails when exceeded
 ]
 
 
