@@ -43,7 +43,7 @@ ARG YQ_SHA256_ARM64=9477ac3cc447b6c083986129e35af8122eb2b938fe55c9c3e40436fb966e
 # against the in-repo SHA256 pin and published .sha256 sidecar — no Linuxbrew
 # required.
 # -----------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS nils
+FROM debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258 AS nils
 ARG NILS_CLI_VERSION
 ARG NILS_CLI_SHA256_AMD64
 ARG NILS_CLI_SHA256_ARM64
