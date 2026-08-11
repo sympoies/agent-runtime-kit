@@ -20,14 +20,14 @@
       "event": "UserPromptSubmit",
       "matcher_field": null,
       "matcher": null,
-      "shadow_rule_count": 6
+      "shadow_rule_count": 5
     },
     {
       "product": "codex",
       "event": "SessionStart",
       "matcher_field": "source",
       "matcher": "startup",
-      "shadow_rule_count": 2
+      "shadow_rule_count": 3
     },
     {
       "product": "codex",
@@ -69,7 +69,7 @@
       "event": "SessionStart",
       "matcher_field": "source",
       "matcher": "resume",
-      "shadow_rule_count": 2
+      "shadow_rule_count": 3
     },
     {
       "product": "claude",

@@ -300,10 +300,11 @@ override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
 [[rules]]
-id = "runtime.codex.user-prompt-submit.all.user-prompt-agent-memory"
+id = "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory"
 products = ["codex"]
-events = ["UserPromptSubmit"]
-priority = 120
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 110
 mode = "enforce"
 failure_posture = "open"
 timeout_posture = "warn"
@@ -400,10 +401,22 @@ override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
 
 [[rules]]
+id = "runtime.claude.session-start.startup-resume-clear.user-prompt-agent-memory"
+products = ["claude"]
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 110
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-memory" }
+
+[[rules]]
 id = "runtime.claude.user-prompt-submit.all.skill-usage-reminder"
 products = ["claude"]
 events = ["UserPromptSubmit"]
-priority = 120
+priority = 130
 mode = "enforce"
 failure_posture = "open"
 timeout_posture = "warn"

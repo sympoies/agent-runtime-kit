@@ -1,23 +1,37 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-04 (refreshed for `v1.26.2`)
+- Snapshot date: 2026-08-11 (refreshed for `v1.26.4`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.26.2`
+- Active `git describe --tags` output: `v1.26.4`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.25.13`,
-  `validated_tag: v1.26.2`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.26.4`,
+  `validated_tag: v1.26.4`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `54275888`
-  (`chore(release): bump cli versions to 1.26.2`)
+- Head commit: `06ca8564`
+  (`chore(release): bump cli versions to 1.26.4`)
 - Release:
-  [`v1.26.2`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.2),
+  [`v1.26.4`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.4),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.26.2` is the validated release while `v1.25.13` remains the compatibility
-  minimum. It carries the whole `v1.26.1` uptake — an upgrade-safe
+- `v1.26.4` is both the compatibility minimum and validated release.
+  Runtime-kit consumes its provider-native aggregate-context
+  preservation in `agent-hook`, plus the 768-byte startup default, exact
+  optional agent recall scope, trusted agent-root checks, and frontmatter-aware
+  candidate previews in `agent-memory`
+  ([#1460](https://github.com/sympoies/nils-cli/pull/1460)). The `agent-hook` and
+  `agent-memory` consumer floors therefore move to `>=1.26.4`. Because the
+  exact-minimum lane admits every `required_clis[]` floor before running the
+  behavior stack, retaining `v1.25.13` would make the declared contract
+  impossible to execute; this explicitly retires that compatibility floor and
+  moves its retained release digests to `v1.26.4`. No other per-binary floor
+  moves. The intervening
+  `v1.26.3` release-pipeline and dependency changes are not consumed runtime
+  contracts in this repository.
+- `v1.26.2` was the previous validated release. It carries the whole `v1.26.1`
+  uptake — an upgrade-safe
   `agent-session` binary pin for newly created tmux sessions, the `agent-hook`
   degradation and centralized observation lanes with `agent-session diagnose`
   and richer `/healthz` projection, no-agent-attribution guards on commit and
@@ -61,8 +75,8 @@
   [#1435](https://github.com/sympoies/nils-cli/pull/1435),
   [#1437](https://github.com/sympoies/nils-cli/pull/1437)). No compatibility or
   per-binary floor moves.
-- `v1.25.13` remains the compatibility minimum and was the previous validated
-  release. Its adoption was an explicit compatibility retirement: current
+- `v1.25.13` was the previous compatibility minimum and validated release. Its
+  adoption was an explicit compatibility retirement: current
   `semantic-commit`, `agent-session`, and `main-agent` contracts introduced in
   v1.25.11, while v1.25.8 does not ship `main-agent` at all. The old exact
   minimum lane therefore could not execute the repository's declared runtime
@@ -77,8 +91,9 @@
   `agent-hook` v1.25.5 cannot parse that capability, so PR #720 explicitly
   retires the old minimum ([failed minimum job](https://github.com/graysurf/agent-runtime-kit/actions/runs/29815639931/job/88586262640),
   [current-head review](https://github.com/graysurf/agent-runtime-kit/pull/720#pullrequestreview-4742842523)).
-  The `agent-hook` consumer floor remains `>=1.25.8`; v1.25.9 is reserved for
-  the later enforce cutover and is not adopted here:
+  The `agent-hook` consumer floor was `>=1.25.8` at that point; the `v1.26.4`
+  adoption above supersedes it. v1.25.9 was reserved for the later enforce
+  cutover and was not adopted there:
   - `agent-hook doctor` now validates policy-backed handler trust before it
     reports activation convergence ([#1342](https://github.com/sympoies/nils-cli/pull/1342)).
     Runtime-kit's disposable setup-migration fixture materializes regular
@@ -104,7 +119,7 @@
     ([#1330](https://github.com/sympoies/nils-cli/pull/1330)). That ingress set
     the historical `agent-hook >=1.25.5` floor; the read-only shadow consumer
     above superseded it with `>=1.25.8` and made v1.25.8 the global
-    compatibility minimum at that time. The active v1.25.13 retirement above
+    compatibility minimum at that time. The active v1.26.4 retirement above
     supersedes that historical policy.
   - Codex notification ownership composes and restores foreign or Computer
     Use notifier state without dropping either consumer
@@ -1488,7 +1503,7 @@ Notes on derivation:
 | Crate                       | Binary                                                                                                              | Notes                                                                                                                                                                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent-docs`                | `agent-docs`                                                                                                        | Data-driven required-doc resolver and auditor; no hardcoded builtins. As of `v0.30.0` the surface is `audit` (repo health: install-symlink wiring + declared-doc presence/validity + catalog validity), `preflight --intent X` (resolve the doc set plus the per-repo validation contract as versioned JSON for hooks to inject and enforce), and `init` / `explain` / `list` / `remove`. Policy is declared in `AGENT_DOCS.toml` (`[[document]]` + `[[validation]]`, `when` predicates, content validation); docs-home is derived from the install symlink. As of `v0.30.1`, a docs-home catalog's `scope = "project"` documents and its `[[validation]]` contracts are scoped to the declaring repository, so they never leak into unrelated projects. As of `v0.31.6`, `preflight --require-declared-intent` lets known-intent callers fail closed for undeclared intent names while preserving the unguarded compatibility fallback. As of `v1.12.1`, catalog documents and validation contracts can declare `product`, and `preflight` / `audit` / `explain` / `list` accept `--product codex|claude`; `preflight` now emits `agent-docs.preflight.v2` with product scope. The `resolve` / `baseline` / `scaffold-*` / `add` / `contexts` commands and the `startup` per-task context were retired in the redesign. As of `v1.23.0`, `session prepare` adds an atomic intent-preparation primitive that mirrors `session activate`'s strict preflight + activation and reports a stable `cli.agent-docs.session.prepare.v1` result (`prepared_intents` plus a `prepared` / `already-current` reason code) for runtime hooks ([#1273](https://github.com/sympoies/nils-cli/pull/1273)); additive and not yet consumed by runtime-kit. As of `v1.24.0`, an optional `phase` field on `[[document]]` (string or array) and a `--phase` filter on `preflight` / `session activate|prepare|verify` scope resolution and preparation to a workflow phase (no-phase docs apply to all phases; new codes `phase-unsatisfied` / `invalid-phase`, [#1282](https://github.com/sympoies/nils-cli/pull/1282)); additive and not yet consumed by runtime-kit.                                                                                                  |
-| `agent-memory`              | `agent-memory`                                                                                                      | Agent memory helper. As of `v1.21.21`, runtime-kit consumes bounded `recall startup` in the Codex UserPromptSubmit hook and `check --max-index-bytes --forbid-terms-file` in the retired-memory audit. The CLI also owns curated on-demand recall, producer-isolated untrusted candidates, and dry-run-first promotion. The hook fails open without falling back to the full global index; policy requires live verification and explicit user approval before curated promotion ([#1143](https://github.com/sympoies/nils-cli/pull/1143)). As of `v1.21.22`, the additive `archive` command moves superseded entries into an inactive archive through a dry-run-first atomic workflow; runtime-kit does not consume it yet ([#1155](https://github.com/sympoies/nils-cli/pull/1155)). |
+| `agent-memory`              | `agent-memory`                                                                                                      | Agent memory helper. Runtime-kit consumes bounded `recall startup` in the Codex and Claude `startup|resume|clear` SessionStart policy groups and `check --max-index-bytes --forbid-terms-file` in the retired-memory audit. The shared hook is stateless, fails open, and never falls back to the full global index or candidate roots, so a blocked aggregate cannot consume a later startup-memory delivery. As of `v1.26.4`, runtime-kit also consumes the 768-byte startup default and exact optional `recall on-demand --agent <id>` scope; that release adds trusted agent-root checks and frontmatter-aware candidate previews ([#1460](https://github.com/sympoies/nils-cli/pull/1460)), so the floor is `>=1.26.4`. The CLI also owns producer-isolated untrusted candidates, dry-run-first promotion, and dry-run-first inactive archive retirement. Policy requires live verification and explicit user approval before curated promotion. |
 | `agent-out`                 | `agent-out`                                                                                                         | Agent output / artifact helper. As of `v1.19.2`, runtime-kit consumes `agent-out path-for --domain <domain> [--topic <topic>]` as the compatibility allocator for rendered `state_out(...)` skill instructions; it delegates to the canonical project allocator, supports `path` / `json` / `env`, and emits `cli.agent-out.path-for.v1` JSON ([#984](https://github.com/sympoies/nils-cli/pull/984)). As of `v1.19.3`, runtime-kit consumes `agent-out cleanup plan/apply` for reviewed cleanup of stale cache and noncanonical output entries: plans emit `cli.agent-out.cleanup.plan.v1` with a digest, and apply emits `cli.agent-out.cleanup.apply.v1` after digest, containment, delete-shape, and evidence-marker checks ([#987](https://github.com/sympoies/nils-cli/pull/987)). |
 | `agent-runtime`         | `agent-runtime`                                                                                                     | Runtime kit CLI. As of `v0.20.0`, this repo consumes released `render`, `install`, `uninstall`, `doctor` (including `--class skill-surface --product codex`), `audit-drift`, `gc-backups`, `restore-backups`, `purge-state`, and `pr-body render` bodies through Homebrew. The `pr-body render` surface renders standardized feature / bug PR and MR bodies before `forge-cli pr create` / `forge-cli pr deliver`. As of `v0.22.4`, `sync-runtime-surfaces` consumes `agent-runtime prune-stale` to remove stale managed Codex and Claude skill surfaces after install. As of `v0.28.0`, ships `doctor --class version-alignment --pin <manifest>` (the surface-pin drift gate this repo's Position 1 consumes via `docs/source/nils-cli-pin.yaml`) and adds build metadata to the `agent-runtime --version` output. As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `sync-runtime-surfaces` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)). As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup feature-detects it and keeps a phase-command fallback for older hosts ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)). As of `v1.3.0`, `render` adds an optional agents surface: an absent `manifests/agents.yaml` is a no-op, and when present each `core/agents/<id>/AGENT.md.tera` renders per product into `build/<product>/` at `render_to` (Codex TOML / Claude Markdown selected via the `product` Tera variable), cached in a separate `.render-cache-agents.json` and covered by `--update-golden` / `audit-drift` ([#839](https://github.com/sympoies/nils-cli/pull/839)). As of `v1.3.1`, `audit-drift`'s `rendered-target` class skips the `.render-cache-agents.json` agents render cache scratchpad (matching the existing `.render-cache.json` skip), so a `build/<product>/` tree lacking that cache file no longer produces a spurious `rendered-target` drift warn ([#842](https://github.com/sympoies/nils-cli/pull/842)). As of `v1.12.1`, `render --target home-prompt` renders `AGENT_HOME.md` to `build/<product-or-neutral>/AGENT_HOME.md`, which runtime-kit setup consumes for per-product home prompt symlinks. As of `v1.21.15`, the skills manifest loader supports schema v2 independently of other manifest families, and `list-skills --format json` reports invocation, exposure, and pending-disposition metadata for Codex, Claude, and Hermes ([#1111](https://github.com/sympoies/nils-cli/pull/1111)). As of `v1.22.6`, `prune-stale` accepts repeatable explicit prior source roots, validates each as a non-empty runtime-kit link-map owner, preserves foreign links, and reports the normalized authorities additively in JSON v1. Portable convergence consumes this surface for relocated-checkout stale-helper cleanup, so the floor moves to `>= 1.22.6` ([#1245](https://github.com/sympoies/nils-cli/pull/1245)). |
 | `agent-scope-lock`          | `agent-scope-lock`                                                                                                  | Workspace scope-lock helper.                                                                                                                                                                                                                                           |

@@ -350,12 +350,12 @@ class AgentHookExecutableContractTests(unittest.TestCase):
     def test_policy_validates_and_inventory_is_complete(self) -> None:
         validated = self.json_result(self.run_hook("validate", "--format", "json"))
         self.assertEqual(validated["bundle_id"], "runtime-kit")
-        self.assertEqual(validated["rule_count"], 100)
+        self.assertEqual(validated["rule_count"], 101)
 
         inventory = self.json_result(self.run_hook("inventory", "--format", "json"))
         self.assertEqual(inventory["schema_version"], "agent-hook.inventory.v1")
-        self.assertEqual(len(inventory["rules"]), 100)
-        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 100)
+        self.assertEqual(len(inventory["rules"]), 101)
+        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 101)
 
     def test_grouped_matchers_select_exact_rules_in_global_shadow(self) -> None:
         fixture = json.loads(DISPATCH_CASES.read_text(encoding="utf-8"))
@@ -805,6 +805,211 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
         self.assertEqual(missing["action"], "block")
         self.assertIn("capability-failure-closed", missing["reasons"][0]["code"])
 
+    def test_session_start_memory_provider_envelope_retries_after_block(self) -> None:
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        agent_memory = bin_dir / "agent-memory"
+        agent_memory.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${AGENT_MEMORY_FIXTURE_FAIL:-0}\" == \"1\" ]]; then exit 1; fi\n"
+            "printf '%s\\n' \"$*\" >> \"${AGENT_MEMORY_FIXTURE_LOG:?}\"\n"
+            "printf '%s\\n' '# Dispatcher startup memory'\n",
+            encoding="utf-8",
+        )
+        agent_memory.chmod(0o700)
+        for product in ("claude", "codex"):
+            with self.subTest(product=product):
+                self.install_source_handler(product, "user-prompt-agent-memory.sh")
+                self.install_fixture_handler(
+                    product,
+                    "session-start-healthcheck",
+                    json.dumps(
+                        {
+                            "hookSpecificOutput": {
+                                "hookEventName": "SessionStart",
+                                "additionalContext": f"fixture-health-{product}",
+                            }
+                        }
+                    ),
+                )
+                self.install_fixture_handler(
+                    product,
+                    "checkout-lease-guard",
+                    '{"decision":"block","reason":"fixture-session-start-block"}',
+                )
+                self.write_policy(
+                    f"""
+[[rules]]
+id = "fixture.{product}.session-start-block"
+products = ["{product}"]
+events = ["SessionStart"]
+matcher = "startup"
+priority = 90
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "closed"
+override_class = "locked"
+capability = {{ id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }}
+
+[[rules]]
+id = "fixture.{product}.user-prompt-agent-memory"
+products = ["{product}"]
+events = ["SessionStart"]
+matcher = "startup"
+priority = 100
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = {{ id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-memory" }}
+
+[[rules]]
+id = "fixture.{product}.session-start-healthcheck"
+products = ["{product}"]
+events = ["SessionStart"]
+matcher = "startup"
+priority = 110
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healthcheck" }}
+"""
+                )
+                case_env = {
+                    **self.env,
+                    "PATH": f"{bin_dir}{os.pathsep}{self.env.get('PATH', '')}",
+                    "AGENT_MEMORY_FIXTURE_LOG": str(
+                        self.root / f"agent-memory-{product}.log"
+                    ),
+                }
+                recall_log = Path(case_env["AGENT_MEMORY_FIXTURE_LOG"])
+                payload = {
+                    "hook_event_name": "SessionStart",
+                    "source": "startup",
+                    "session_id": f"provider-memory-{product}",
+                    "cwd": str(self.root),
+                }
+
+                blocked = self.run_hook(
+                    "dispatch",
+                    "--product",
+                    product,
+                    "--format",
+                    "provider",
+                    payload=payload,
+                    env=case_env,
+                    check=False,
+                )
+                self.assertEqual(blocked.returncode, 0, blocked.stderr)
+                self.assertEqual(
+                    json.loads(blocked.stdout),
+                    {
+                        "decision": "block",
+                        "reason": "fixture-session-start-block",
+                    },
+                )
+                self.assertNotIn("Dispatcher startup memory", blocked.stdout)
+                self.assertEqual(
+                    recall_log.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup"],
+                )
+
+                self.write_policy(
+                    f"""
+[[rules]]
+id = "fixture.{product}.user-prompt-agent-memory"
+products = ["{product}"]
+events = ["SessionStart"]
+matcher = "startup"
+priority = 100
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = {{ id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-memory" }}
+
+[[rules]]
+id = "fixture.{product}.session-start-healthcheck"
+products = ["{product}"]
+events = ["SessionStart"]
+matcher = "startup"
+priority = 110
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healthcheck" }}
+"""
+                )
+
+                success = self.run_hook(
+                    "dispatch",
+                    "--product",
+                    product,
+                    "--format",
+                    "provider",
+                    payload=payload,
+                    env=case_env,
+                )
+                provider = json.loads(success.stdout)
+                self.assertIn("hookSpecificOutput", provider, provider)
+                output = provider["hookSpecificOutput"]
+                self.assertEqual(output["hookEventName"], "SessionStart")
+                context = output["additionalContext"]
+                self.assertIn("Dispatcher startup memory", context)
+                self.assertIn(f"fixture-health-{product}", context)
+                self.assertEqual(
+                    recall_log.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup", "recall startup"],
+                )
+
+                repeated = self.run_hook(
+                    "dispatch",
+                    "--product",
+                    product,
+                    "--format",
+                    "provider",
+                    payload=payload,
+                    env=case_env,
+                )
+                repeated_context = json.loads(repeated.stdout)["hookSpecificOutput"][
+                    "additionalContext"
+                ]
+                self.assertIn("Dispatcher startup memory", repeated_context)
+                self.assertIn(f"fixture-health-{product}", repeated_context)
+                self.assertEqual(
+                    recall_log.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup", "recall startup", "recall startup"],
+                )
+
+                self.write_policy(
+                    f"""
+[[rules]]
+id = "fixture.{product}.user-prompt-agent-memory"
+products = ["{product}"]
+events = ["SessionStart"]
+matcher = "startup"
+priority = 100
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = {{ id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-memory" }}
+"""
+                )
+                failed = self.run_hook(
+                    "dispatch",
+                    "--product",
+                    product,
+                    "--format",
+                    "provider",
+                    payload={**payload, "session_id": f"provider-memory-fail-{product}"},
+                    env={**case_env, "AGENT_MEMORY_FIXTURE_FAIL": "1"},
+                )
+                self.assertEqual(failed.returncode, 0)
+                self.assertEqual(json.loads(failed.stdout), {})
+
     def test_runtime_checkpoint_write_reaches_real_product_dispatchers(self) -> None:
         self.env["AGENT_SESSION_COORDINATION_MODE"] = "enforce"
         self.env["AGENT_SESSION_ID"] = "fixture-current"
@@ -1159,7 +1364,8 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
         else:
             root = self.home / ".claude/hooks"
         root.mkdir(parents=True, exist_ok=True)
-        suffix = ".sh" if handler == "user-prompt-agent-docs" else ".py"
+        bash_handlers = {"session-start-healthcheck", "user-prompt-agent-docs"}
+        suffix = ".sh" if handler in bash_handlers else ".py"
         path = root / f"{handler}{suffix}"
         if suffix == ".sh":
             content = f"#!/usr/bin/env bash\nprintf '%s\\n' {json.dumps(output)}\n"
@@ -1172,6 +1378,18 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
             )
         path.write_text(content, encoding="utf-8")
         path.chmod(0o700)
+
+    def install_source_handler(self, product: str, filename: str) -> None:
+        if product == "codex":
+            root = self.root / "codex-home/hooks"
+            self.env["CODEX_HOME"] = str(self.root / "codex-home")
+        else:
+            root = self.home / ".claude/hooks"
+        root.mkdir(parents=True, exist_ok=True)
+        source = REPO_ROOT / "core/hooks/shared" / filename
+        target = root / filename
+        shutil.copyfile(source, target)
+        target.chmod(0o700)
 
     def write_coordination_registry(
         self, *, peer_fresh: bool, same_reference: bool

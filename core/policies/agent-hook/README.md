@@ -10,12 +10,20 @@ digest-pinned bundle under the user's
 is `manifests/hook-rules.yaml`, stored as JSON-compatible YAML so the repository
 can validate it without an additional parser dependency. The inventory records
 every policy rule's behavior owner, recovery class, documentation, and test
-owner. It freezes all 68 legacy Codex and Claude registrations across 22
-shared handlers as the parity baseline, adds 23 typed coordination/liveness
-rules, adds eight locked transaction rules, and adds one shared read-only
-capability shadow rule for 100 rules total. Each
-migrated handler remains a distinct ordered rule so the cutover proves provider
-parity without changing grouped matchers or handler order.
+owner. It freezes all 67 retained legacy Codex and Claude registrations across
+21 shared handlers as the parity baseline, adds 23 typed coordination/liveness
+rules, adds eight locked transaction rules, one shared read-only capability
+shadow rule, and two product-scoped SessionStart memory rules for 101 rules
+total. Each retained migrated handler remains a distinct ordered rule so the
+cutover proves provider parity without changing grouped matchers or handler
+order. The former Codex UserPromptSubmit memory registration is intentionally
+removed from the frozen migration set and, together with Claude, relocated to
+the `startup|resume|clear` SessionStart boundary. That boundary has no
+handler-owned delivery stamp to consume when aggregate delivery is blocked;
+both relocation rules are audited separately from the frozen baseline.
+The source basename remains `user-prompt-agent-memory.sh` because the released
+`agent-hook` v1 handler allowlist treats handler IDs as stable compatibility
+keys; its header, policy event, matcher, and emitted envelope are SessionStart.
 
 ## Evaluation boundary
 
@@ -134,6 +142,13 @@ Live apply must run from a durable primary checkout. The sync refuses linked
 worktrees, Codex transient worktrees, and every source root inside
 `AGENT_HOME`; persistent runtime-home links must never target disposable
 runtime state such as `source-checkouts/`.
+
+`agent-hook doctor` convergence proves that live provider settings match this
+bundle; it does not prove that the bundle contains every required ingress. When
+a product behavior is missing, inspect the policy and inventory together with
+the legacy-registration fixture and the bounded agent-session activity journal.
+A required event/matcher/handler absent from the bundle is a source-contract
+gap, even when doctor reports a converged live installation.
 
 ## Performance budget
 

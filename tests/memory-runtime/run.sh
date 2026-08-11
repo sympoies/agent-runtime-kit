@@ -29,6 +29,7 @@ inventory = json.loads(
     (root / "manifests/hook-rules.yaml").read_text(encoding="utf-8")
 )["rules"]
 codex_harness = (root / "docs/source/harness-shape-codex.md").read_text(encoding="utf-8")
+claude_harness = (root / "docs/source/harness-shape-claude.md").read_text(encoding="utf-8")
 
 for text in (
     "agent-memory recall startup",
@@ -38,21 +39,31 @@ for text in (
     "| Codex |",
     "| Claude |",
     "| Hermes |",
+    "each eligible startup/resume/clear SessionStart boundary",
 ):
     assert text in policy, text
 
+assert "Once-per-session" not in policy
+
 memory_rules = [
-    rule for rule in inventory if rule["legacy_handler"] == "user-prompt-agent-memory"
+    rule
+    for rule in inventory
+    if rule["capability"].get("handler_id") == "user-prompt-agent-memory"
 ]
 assert memory_rules
-assert all(rule["products"] == ["codex"] for rule in memory_rules)
+assert {tuple(rule["products"]) for rule in memory_rules} == {("codex",), ("claude",)}
+assert {tuple(rule["events"]) for rule in memory_rules} == {("SessionStart",)}
+assert {rule["matcher"] for rule in memory_rules} == {"startup|resume|clear"}
+assert {rule["state_owner"] for rule in memory_rules} == {"none"}
 assert "agent-memory recall startup" in codex_harness
-assert "agent-memory candidate add\n  codex" in codex_harness
+assert "Codex and Claude" in codex_harness
+assert "agent-memory recall startup" in claude_harness
+assert "Claude native auto-memory remains project-local" in claude_harness
 assert "agent-memory index global" not in codex_harness
 assert "/Users/" not in policy
 assert "/home/" not in policy
 PY
 
-python3 -m unittest tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_injects_startup_memory_once_for_codex tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_outside_codex tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_when_startup_recall_fails
+python3 -m unittest tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_injects_at_codex_session_start tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_injects_at_claude_session_start tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_outside_supported_products tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_when_startup_recall_fails
 
 echo "memory-runtime: deterministic policy, audit, and product routing passed"

@@ -33,8 +33,8 @@ Scope rules:
   `min_version_effective_from`: **2026-09-01**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude surface)
-  ships inside nils-cli; minimum supported **v1.25.13**; validated snapshot
-  **v1.26.2**
+  ships inside nils-cli; minimum supported **v1.26.4**; validated snapshot
+  **v1.26.4**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,
@@ -194,6 +194,15 @@ a uniform shape:
 - Source: portable logic under `core/hooks/shared/`; Claude adapter slot
   reserved under `core/hooks/claude/` (`core/hooks/` tree present in
   repo).
+- The shared `user-prompt-agent-memory.sh` handler injects the curated
+  `agent-memory recall startup` profile at each `startup|resume|clear`
+  SessionStart boundary with a 768-byte hard cap, no global-index or candidate
+  fallback, and failure-open behavior. The handler owns no delivery stamp, so a
+  blocked aggregate cannot consume the next eligible startup-memory delivery.
+  Claude native auto-memory remains project-local; persona isolation is an
+  explicit launcher/settings concern rather than a hook-owned store. Deeper
+  shared recall uses `agent-memory recall on-demand <term>` after loading the
+  governed memory policy.
 - Install mechanism: `scripts/sync-runtime-surfaces.sh` copies the shared
   source into an independently owned `$HOME/.claude/hooks` directory. Handler
   files are materialized as owner-only regular files (`0700`; non-executable
@@ -305,7 +314,7 @@ a uniform shape:
 | 6 | `commands/<n>.md` | yes | linked directory | 2.1.145 | v0.17.5 |
 | 7 | `agents/<n>.md` | yes | rendered + directory symlink into `~/.claude/agents` | 2.1.145 | v1.3.0 |
 | 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.5 |
-| 9 | `settings.json` hooks block | yes | digest-bound `agent-hook setup` | 2.1.145 | v1.25.8 |
+| 9 | `settings.json` hooks block | yes | digest-bound `agent-hook setup` | 2.1.145 | v1.26.4 |
 | 10 | `output-styles/<n>.md` | no | — | n/a | n/a |
 | 11 | `statusLine` | no | — | n/a | n/a |
 | 12 | MCP servers | no | — | n/a | n/a |

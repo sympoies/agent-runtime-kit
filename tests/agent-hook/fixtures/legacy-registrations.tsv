@@ -23,7 +23,6 @@ codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	checkout-lease-guard
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	finish-line-record
 codex	UserPromptSubmit	-	user-prompt-agent-docs
 codex	UserPromptSubmit	-	checkout-lease-guard
-codex	UserPromptSubmit	-	user-prompt-agent-memory
 codex	UserPromptSubmit	-	skill-usage-reminder
 codex	SessionStart	startup|resume|clear	session-start-healthcheck
 codex	Stop	-	stop-pre-pr-reminder

@@ -50,8 +50,8 @@ Scope rules:
   `min_version_effective_from`: **2026-09-01**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex surface)
-  ships inside nils-cli; minimum supported **v1.25.13**; validated snapshot
-  **v1.26.2**
+  ships inside nils-cli; minimum supported **v1.26.4**; validated snapshot
+  **v1.26.4**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),
@@ -231,13 +231,15 @@ a uniform shape:
   `core/hooks/codex/` tree today. Registration behavior is canonical in
   `core/policies/agent-hook/runtime-kit-v1.toml` and
   `manifests/hook-rules.yaml`.
-  The Codex-only `user-prompt-agent-memory.sh` hook lives in the shared hook
-  source tree for install reuse, but is selected only by the Codex policy;
-  it reads bounded `agent-memory recall startup` context once per session
-  without falling back to the full global index. The untrusted cue directs
-  Codex to write stable proposals only through `agent-memory candidate add
-  codex`; curated promotion remains dry-run-first and requires explicit user
-  approval.
+  The shared `user-prompt-agent-memory.sh` hook is registered separately for
+  Codex and Claude at each `startup|resume|clear` SessionStart boundary. It
+  invokes `agent-memory recall startup` and reads at most 768 bytes without
+  falling back to the full global index or any producer-candidate root. It
+  keeps no delivery stamp, so an aggregate block cannot suppress recall on the
+  next eligible boundary. Failures emit no memory context and do not block the
+  session. Deeper Codex-owned recall uses `agent-memory
+  recall on-demand <term> --agent codex`; durable cross-agent proposals go
+  through the Codex producer candidate root under the governed memory policy.
 - Install mechanism: `scripts/sync-runtime-surfaces.sh` copies the shared
   source into an independently owned `$CODEX_HOME/hooks` directory. Handler
   files are materialized as owner-only regular files (`0700`; non-executable
@@ -388,7 +390,7 @@ a uniform shape:
 | 13 | Heuristic system | yes | shared policy root | 0.130.0 | v1.8.0 (heuristic-inbox) |
 | 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 | 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | retired; plugin-scoped discovery is row 5 | n/a | n/a |
-| 16 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.25.8 |
+| 16 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.26.4 |
 | 17 | work-tier delegation policy | yes | agent-docs policy routing | 0.130.0 | v0.16.0 |
 
 Status legend:

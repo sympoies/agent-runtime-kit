@@ -95,7 +95,7 @@ run_audit() {
   local store="$1"
   local status=0
   AGENT_MEMORY_HOME="$store" agent-memory check global --strict --max-index-bytes 8192 --forbid-terms-file "$TERMS_FILE" || status=$?
-  AGENT_MEMORY_HOME="$store" agent-memory check profiles/startup --strict --max-index-bytes 3072 --forbid-terms-file "$TERMS_FILE" || status=$?
+  AGENT_MEMORY_HOME="$store" agent-memory check profiles/startup --strict --max-index-bytes 768 --forbid-terms-file "$TERMS_FILE" || status=$?
   return "$status"
 }
 
@@ -118,13 +118,34 @@ write_fixture() {
   printf '%s\n' '- [Fixture memory](../../global/fixture-memory.md) — synthetic startup route' >"$root/profiles/startup/MEMORY.md"
 }
 
+write_startup_budget_fixture() {
+  local root="$1"
+  local size="$2"
+  write_fixture "$root" 'Current memory contains no retired runtime surface.'
+  python3 - "$root/profiles/startup/MEMORY.md" "$size" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+size = int(sys.argv[2])
+content = path.read_bytes()
+if len(content) > size:
+    raise SystemExit(f"startup fixture base exceeds requested size: {len(content)} > {size}")
+path.write_bytes(content + b" " * (size - len(content)))
+PY
+}
+
 if [ "$SELF_TEST" -eq 1 ]; then
   fixture_root="$OUT_ROOT/self-test"
   bad_store="$fixture_root/bad"
   clean_store="$fixture_root/clean"
+  boundary_store="$fixture_root/startup-768"
+  oversized_store="$fixture_root/startup-769"
   rm -rf "$fixture_root"
   write_fixture "$bad_store" 'Retired reference: browser.browser-session'
   write_fixture "$clean_store" 'Current memory contains no retired runtime surface.'
+  write_startup_budget_fixture "$boundary_store" 768
+  write_startup_budget_fixture "$oversized_store" 769
 
   if run_audit "$bad_store" >"$OUT_ROOT/self-test-bad.txt" 2>&1; then
     echo "retired-memory-audit: failing fixture unexpectedly passed" >&2
@@ -132,6 +153,12 @@ if [ "$SELF_TEST" -eq 1 ]; then
   fi
   grep -q 'forbidden-term' "$OUT_ROOT/self-test-bad.txt"
   run_audit "$clean_store" >"$OUT_ROOT/self-test-clean.txt" 2>&1
+  run_audit "$boundary_store" >"$OUT_ROOT/self-test-startup-768.txt" 2>&1
+  if run_audit "$oversized_store" >"$OUT_ROOT/self-test-startup-769.txt" 2>&1; then
+    echo "retired-memory-audit: oversized startup fixture unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -q 'index-byte-budget-exceeded' "$OUT_ROOT/self-test-startup-769.txt"
   echo "retired-memory-audit: self-test passed"
   exit 0
 fi

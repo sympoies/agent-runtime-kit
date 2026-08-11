@@ -142,12 +142,12 @@ BUDGETS = [
     {
         "id": "route-cue.unchanged-prompt",
         "description": (
-            "New agent-docs / memory context emitted on an unchanged repeat "
-            "prompt."
+            "New agent-docs context emitted on an unchanged repeat prompt; "
+            "startup memory runs only at SessionStart boundaries."
         ),
         "measure": ("behavioral",
-                    "tests/hooks/test_shared_hooks.py (delta cue + memory "
-                    "once-per-session dedupe)"),
+                    "tests/hooks/test_shared_hooks.py "
+                    "(delta cue unchanged-prompt suppression)"),
         "target": 0,
         "override": None,
     },
