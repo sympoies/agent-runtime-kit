@@ -74,8 +74,8 @@ No hook, product, or model may bypass this dry-run and approval boundary.
 
 | Product | Automatic read | Proposal write | Unsupported claim |
 | --- | --- | --- | --- |
-| Codex | Once-per-session bounded curated startup hook; global or exact Codex scope on demand | `candidate add codex` for shared proposals; agent-owned durable facts may use the governed Codex scope | No full-global startup fallback and no autonomous promotion |
-| Claude | Once-per-session bounded curated startup hook plus native per-project or explicit-persona auto-memory | `candidate add claude` for shared proposals | No candidate root as native auto-memory, full-global startup fallback, or autonomous promotion |
+| Codex | Bounded curated recall at each eligible startup/resume/clear SessionStart boundary; global or exact Codex scope on demand | `candidate add codex` for shared proposals; agent-owned durable facts may use the governed Codex scope | No full-global startup fallback and no autonomous promotion |
+| Claude | Bounded curated recall at each eligible startup/resume/clear SessionStart boundary plus native per-project or explicit-persona auto-memory | `candidate add claude` for shared proposals | No candidate root as native auto-memory, full-global startup fallback, or autonomous promotion |
 | Hermes | None; curated recall is on demand | `candidate add hermes` | No runtime-kit memory hook or automatic startup parity |
 
 Claude native auto-memory is product state, not the producer proposal queue. A

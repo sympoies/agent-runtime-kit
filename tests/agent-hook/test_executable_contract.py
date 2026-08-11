@@ -812,6 +812,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
         agent_memory.write_text(
             "#!/usr/bin/env bash\n"
             "if [[ \"${AGENT_MEMORY_FIXTURE_FAIL:-0}\" == \"1\" ]]; then exit 1; fi\n"
+            "printf '%s\\n' \"$*\" >> \"${AGENT_MEMORY_FIXTURE_LOG:?}\"\n"
             "printf '%s\\n' '# Dispatcher startup memory'\n",
             encoding="utf-8",
         )
@@ -878,7 +879,11 @@ capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healt
                 case_env = {
                     **self.env,
                     "PATH": f"{bin_dir}{os.pathsep}{self.env.get('PATH', '')}",
+                    "AGENT_MEMORY_FIXTURE_LOG": str(
+                        self.root / f"agent-memory-{product}.log"
+                    ),
                 }
+                recall_log = Path(case_env["AGENT_MEMORY_FIXTURE_LOG"])
                 payload = {
                     "hook_event_name": "SessionStart",
                     "source": "startup",
@@ -896,7 +901,19 @@ capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healt
                     env=case_env,
                     check=False,
                 )
+                self.assertEqual(blocked.returncode, 0, blocked.stderr)
+                self.assertEqual(
+                    json.loads(blocked.stdout),
+                    {
+                        "decision": "block",
+                        "reason": "fixture-session-start-block",
+                    },
+                )
                 self.assertNotIn("Dispatcher startup memory", blocked.stdout)
+                self.assertEqual(
+                    recall_log.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup"],
+                )
 
                 self.write_policy(
                     f"""
@@ -942,6 +959,10 @@ capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healt
                 context = output["additionalContext"]
                 self.assertIn("Dispatcher startup memory", context)
                 self.assertIn(f"fixture-health-{product}", context)
+                self.assertEqual(
+                    recall_log.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup", "recall startup"],
+                )
 
                 repeated = self.run_hook(
                     "dispatch",
@@ -957,6 +978,10 @@ capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healt
                 ]
                 self.assertIn("Dispatcher startup memory", repeated_context)
                 self.assertIn(f"fixture-health-{product}", repeated_context)
+                self.assertEqual(
+                    recall_log.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup", "recall startup", "recall startup"],
+                )
 
                 self.write_policy(
                     f"""

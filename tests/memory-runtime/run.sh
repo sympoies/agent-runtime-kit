@@ -39,8 +39,11 @@ for text in (
     "| Codex |",
     "| Claude |",
     "| Hermes |",
+    "each eligible startup/resume/clear SessionStart boundary",
 ):
     assert text in policy, text
+
+assert "Once-per-session" not in policy
 
 memory_rules = [
     rule

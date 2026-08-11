@@ -2977,6 +2977,56 @@ class SharedHookTests(unittest.TestCase):
                 self.assertIn(f"content truncated to {expected_limit} bytes", ctx)
                 self.assertLess(len(ctx.encode("utf-8")), max_cue)
 
+    def test_agent_memory_cue_enforces_inclusive_768_byte_boundary(self) -> None:
+        cases = (
+            ("exact ascii ceiling", "x" * 768, "x" * 768, False),
+            ("one ascii byte over", "x" * 769, "x" * 768, True),
+            ("multibyte crossing", "x" * 767 + "é", "x" * 767, True),
+        )
+        for name, memory, expected_content, truncated in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                memory_file = root / "memory.txt"
+                memory_file.write_text(memory, encoding="utf-8")
+                agent_memory = bin_dir / "agent-memory"
+                agent_memory.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    "[[ \"$*\" == \"recall startup\" ]] || exit 64\n"
+                    "command cat \"${AGENT_MEMORY_FIXTURE_FILE:?}\"\n",
+                    encoding="utf-8",
+                )
+                agent_memory.chmod(0o755)
+                home = root / "home"
+                home.mkdir()
+
+                code, decision, stderr = run_shell_hook(
+                    "user-prompt-agent-memory.sh",
+                    {"session_id": f"memory-boundary-{name}", "prompt": "hello"},
+                    cwd=root,
+                    env={
+                        "AGENT_RUNTIME_PRODUCT": "codex",
+                        "AGENT_MEMORY_FIXTURE_FILE": str(memory_file),
+                        "HOME": str(home),
+                        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                    },
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNotNone(decision)
+                assert decision is not None
+                output = decision.get("hookSpecificOutput")
+                self.assertIsInstance(output, dict)
+                assert isinstance(output, dict)
+                ctx = str(output.get("additionalContext", ""))
+                content = ctx.split("BEGIN_SHARED_AGENT_MEMORY\n", 1)[1].split(
+                    "\n[agent-memory content truncated", 1
+                )[0].split("\nEND_SHARED_AGENT_MEMORY", 1)[0]
+                self.assertEqual(content, expected_content)
+                marker = "[agent-memory content truncated to 768 bytes]"
+                self.assertEqual(marker in ctx, truncated)
+
     def test_agent_memory_cue_startup_context_within_budget(self) -> None:
         # #601 P1 slice 3b: the injected Codex startup memory context is a
         # micro-profile. Assert the visible budget -- header + profile stays
