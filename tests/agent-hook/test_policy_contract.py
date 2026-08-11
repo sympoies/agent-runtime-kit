@@ -48,15 +48,14 @@ EXPECTED_HANDLERS = {
     "stop-finish-line-gate",
     "stop-pre-pr-reminder",
     "user-prompt-agent-docs",
-    "user-prompt-agent-memory",
 }
 
 EXPECTED_EVENT_COUNTS = {
     "codex": Counter(
-        {"PreToolUse": 22, "UserPromptSubmit": 4, "Stop": 4, "SessionStart": 1}
+        {"PreToolUse": 22, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
     ),
     "claude": Counter(
-        {"PreToolUse": 29, "UserPromptSubmit": 4, "Stop": 4, "SessionStart": 1}
+        {"PreToolUse": 29, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
     ),
 }
 
@@ -108,6 +107,10 @@ COORDINATION_CAPABILITY_COUNTS = Counter(
 )
 
 READ_ONLY_SHADOW_RULE_ID = "runtime.shared.pre-tool-use.bash.read-only-shadow"
+MEMORY_RULE_IDS = {
+    "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory",
+    "runtime.claude.session-start.startup-resume-clear.user-prompt-agent-memory",
+}
 
 TERMINAL_COORDINATION_GROUPS = {
     (
@@ -237,7 +240,7 @@ def load_inventory() -> dict[str, Any]:
 class AgentHookPolicyContractTests(unittest.TestCase):
     def test_baseline_inventory_is_complete_and_exact(self) -> None:
         registrations = frozen_legacy_registrations()
-        self.assertEqual(len(registrations), 69)
+        self.assertEqual(len(registrations), 67)
         self.assertEqual({row[3] for row in registrations}, EXPECTED_HANDLERS)
         for product in ("codex", "claude"):
             event_counts = Counter(row[1] for row in registrations if row[0] == product)
@@ -247,8 +250,8 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             product: {row[3] for row in registrations if row[0] == product}
             for product in ("codex", "claude")
         }
-        self.assertEqual(len(product_handlers["codex"]), 21)
-        self.assertEqual(len(product_handlers["claude"]), 22)
+        self.assertEqual(len(product_handlers["codex"]), 20)
+        self.assertEqual(len(product_handlers["claude"]), 21)
         self.assertEqual(
             product_handlers["codex"] - product_handlers["claude"],
             set(),
@@ -414,8 +417,8 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         )
         self.assertEqual(inventory["schema_version"], "agent-runtime-kit.hook-rules.v1")
         self.assertEqual(inventory["policy_bundle"], "core/policies/agent-hook/runtime-kit-v1.toml")
-        self.assertEqual(inventory["legacy_handler_count"], 22)
-        self.assertEqual(inventory["legacy_registration_count"], 69)
+        self.assertEqual(inventory["legacy_handler_count"], 21)
+        self.assertEqual(inventory["legacy_registration_count"], 67)
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
@@ -470,8 +473,32 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         self.assertEqual(read_only_rules[0]["mode"], "shadow")
         self.assertEqual(read_only_rules[0]["disposition"], "added-read-only-shadow")
 
+        memory_rules = [rule for rule in added_rules if rule["id"] in MEMORY_RULE_IDS]
+        self.assertEqual(len(memory_rules), 2)
+        self.assertEqual(
+            {tuple(rule["products"]) for rule in memory_rules},
+            {("codex",), ("claude",)},
+        )
+        for rule in memory_rules:
+            self.assertEqual(rule["events"], ["SessionStart"])
+            self.assertEqual(rule["matcher"], "startup|resume|clear")
+            self.assertEqual(rule["priority"], 110)
+            self.assertEqual(rule["mode"], "enforce")
+            self.assertEqual(rule["failure_posture"], "open")
+            self.assertEqual(rule["timeout_posture"], "warn")
+            self.assertEqual(rule["override_class"], "free")
+            self.assertEqual(rule["state_owner"], "none")
+            self.assertEqual(rule["transformation"], "additional-context")
+            self.assertEqual(rule["recovery"], "config-or-exact-capability")
+            self.assertEqual(
+                rule["capability"]["handler_id"], "user-prompt-agent-memory"
+            )
+            self.assertEqual(rule["disposition"], "relocated-startup-capability")
+
         coordination_rules = [
-            rule for rule in added_rules if rule["id"] != READ_ONLY_SHADOW_RULE_ID
+            rule
+            for rule in added_rules
+            if rule["id"] not in {READ_ONLY_SHADOW_RULE_ID, *MEMORY_RULE_IDS}
         ]
         self.assertEqual(len(coordination_rules), 31)
         self.assertEqual(

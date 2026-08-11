@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# UserPromptSubmit hook: inject bounded shared agent-memory context.
+# SessionStart hook: inject bounded shared agent-memory context.
 #
-# Codex and Claude receive the same curated, git-backed startup profile once per
-# session. Claude native auto-memory remains a separate per-project or explicit
-# persona scope; producer candidates are never read by this hook.
+# Codex and Claude receive the same curated, git-backed profile at each
+# startup/resume/clear lifecycle boundary. Claude native auto-memory remains a
+# separate per-project or explicit persona scope; producer candidates are never
+# read by this hook.
 #
 set -uo pipefail
 
@@ -22,31 +23,7 @@ command -v agent-memory >/dev/null 2>&1 || exit 0
 python_bin="$(command -v python3 || true)"
 [[ -z "$python_bin" ]] && exit 0
 
-payload="$(cat)"
-
-session_key="$(
-  "$python_bin" -c '
-import json, sys
-try:
-    payload = json.load(sys.stdin)
-except Exception:
-    payload = {}
-for key in ("session_id", "sessionId", "session", "conversation_id"):
-    value = payload.get(key) if isinstance(payload, dict) else None
-    if isinstance(value, str) and value:
-        print(value)
-        break
-' <<<"$payload" 2>/dev/null || true
-)"
-if [[ -z "$session_key" ]]; then
-  session_key="$(date +%Y%m%d)"
-fi
-
-stamp_dir="$HOME/.cache/agent-runtime-kit"
-stamp_hash="$(printf '%s' "$session_key" | cksum 2>/dev/null | awk '{print $1}' || true)"
-[[ -z "$stamp_hash" ]] && stamp_hash="unknown"
-stamp="$stamp_dir/memory-cue-${product}-${stamp_hash}.stamp"
-[[ -f "$stamp" ]] && exit 0
+cat >/dev/null
 
 memory=""
 if ! memory="$(agent-memory recall startup 2>/dev/null)"; then
@@ -99,16 +76,16 @@ print(header + "BEGIN_SHARED_AGENT_MEMORY\n" + text + footer + "\nEND_SHARED_AGE
 )"
 [[ -z "$cue" ]] && exit 0
 
-CTX="$cue" "$python_bin" -c '
+decision="$(CTX="$cue" "$python_bin" -c '
 import json
 import os
 
 print(json.dumps({
     "hookSpecificOutput": {
-        "hookEventName": "UserPromptSubmit",
+        "hookEventName": "SessionStart",
         "additionalContext": os.environ["CTX"],
     }
 }))
-'
-
-mkdir -p "$stamp_dir" 2>/dev/null && : >"$stamp"
+' 2>/dev/null || true)"
+[[ -z "$decision" ]] && exit 0
+printf '%s\n' "$decision"

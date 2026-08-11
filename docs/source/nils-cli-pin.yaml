@@ -18,19 +18,19 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # v1.25.13 is the first stable release that ships every currently declared
-  # runtime skill dependency, including main-agent and the v1.25.11 session
-  # and semantic-commit contracts.
-  minimum_supported_tag: "v1.25.13"
+  # v1.26.4 is the first stable release that ships every currently declared
+  # runtime contract, including agent-hook aggregate-context preservation and
+  # agent-memory's bounded startup plus exact optional agent scope.
+  minimum_supported_tag: "v1.26.4"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.26.2"
+  validated_tag: "v1.26.4"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "b9d466899ebddd61ccce15daf8455b20d4035da6864c29a164ca08bf0675070b"
-    linux_arm64: "c6be21dd422f26fc5892ab2503cac975c4391d9a23d1e7017a2bd626efce64de"
+    linux_amd64: "569b7f1a481594629e113415034ad1f7ff660f754ec9d3b8d88dda14d6ba0f6d"
+    linux_arm64: "60e7cfac40e5245f751e38246ceee016dab80249c8b7e0695b95805c6ec03e1b"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -39,8 +39,8 @@ nils_cli:
 # consumed surface each binary must satisfy. Values track the
 # surface-introduction versions recorded in docs/source/nils-cli-surface.md.
 required_clis:
-  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
-    min: "1.25.8"
+  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
+    min: "1.26.4"
   - bin: plan-issue       # tracking controller + execution-state sync/writeback + review evidence context gate + provider payload privacy gate + lifecycle mutation lock + unified terminal closeout rows
     min: "1.1.0"
   - bin: plan-tooling     # ledger-update / ledger-sync + exec-state-sync repair
@@ -57,8 +57,8 @@ required_clis:
     min: "1.21.17"
   - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, body-free fixed notifications, and direct-terminal-safe session coordination
     min: "1.25.11"
-  - bin: agent-memory     # bounded startup/on-demand recall, producer-isolated candidates, dry-run-first promotion, and strict budget/forbidden-term audits
-    min: "1.21.21"
+  - bin: agent-memory     # 768-byte startup recall + exact optional agent scope + trusted agent roots + frontmatter-aware producer candidates + dry-run-first promotion/archive and strict audits
+    min: "1.26.4"
   - bin: evidence         # durable usage evidence archive surface: migrate (--host + blocked-record handling), mixed skill-usage v1/v2 owner provenance, unclassified-host block, working_repo_roots identity rescue, cwd/origin + slug identity hardening, purge retention, home-relativized skill paths, and prune-source --archived-only
     min: "1.21.17"
   - bin: git-cli          # managed worktree add/list/remove/prune surface + governed dirty-checkout snapshot/adopt/revoke transactions

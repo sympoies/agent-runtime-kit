@@ -2624,7 +2624,7 @@ class SharedHookTests(unittest.TestCase):
                 context = str(output.get("additionalContext", ""))
         self.assertNotIn("evidence-migrate", context)
 
-    def test_agent_memory_cue_injects_startup_memory_once_for_codex(self) -> None:
+    def test_agent_memory_cue_injects_at_codex_session_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             bin_dir = root / "bin"
@@ -2652,7 +2652,11 @@ class SharedHookTests(unittest.TestCase):
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
 
-            payload = {"session_id": "memory-cue-test", "prompt": "hello"}
+            payload = {
+                "hook_event_name": "SessionStart",
+                "source": "startup",
+                "session_id": "memory-cue-test",
+            }
             code, decision, stderr = run_shell_hook(
                 "user-prompt-agent-memory.sh",
                 payload,
@@ -2682,9 +2686,13 @@ class SharedHookTests(unittest.TestCase):
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assertIsNone(decision)
+            self.assertIsNotNone(decision)
+            self.assertEqual(
+                log_path.read_text(encoding="utf-8"),
+                "recall startup\nrecall startup\n",
+            )
 
-    def test_agent_memory_cue_injects_startup_memory_once_for_claude(self) -> None:
+    def test_agent_memory_cue_injects_at_claude_session_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             bin_dir = root / "bin"
@@ -2711,9 +2719,9 @@ class SharedHookTests(unittest.TestCase):
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
             payload = {
-                "hook_event_name": "UserPromptSubmit",
+                "hook_event_name": "SessionStart",
+                "source": "resume",
                 "session_id": "memory-claude-test",
-                "prompt": "hello",
             }
 
             code, decision, stderr = run_shell_hook(
@@ -2728,7 +2736,7 @@ class SharedHookTests(unittest.TestCase):
             output = decision.get("hookSpecificOutput")
             self.assertIsInstance(output, dict)
             assert isinstance(output, dict)
-            self.assertEqual(output.get("hookEventName"), "UserPromptSubmit")
+            self.assertEqual(output.get("hookEventName"), "SessionStart")
             ctx = str(output.get("additionalContext", ""))
             self.assertIn("[agent-runtime-kit:claude]", ctx)
             self.assertIn("agent-memory recall on-demand <term>", ctx)
@@ -2742,7 +2750,11 @@ class SharedHookTests(unittest.TestCase):
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assertIsNone(decision)
+            self.assertIsNotNone(decision)
+            self.assertEqual(
+                log_path.read_text(encoding="utf-8"),
+                "recall startup\nrecall startup\n",
+            )
 
     def test_agent_memory_cue_noops_outside_supported_products(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -18759,7 +18771,11 @@ exit 65
             )
         for script in codex_claude_scripts:
             handler = script.rsplit(".", 1)[0]
-            rules = inventory_rules(handler=handler)
+            rules = [
+                rule
+                for rule in load_hook_inventory()
+                if rule["capability"].get("handler_id") == handler
+            ]
             self.assertTrue(rules, script)
             self.assertEqual(
                 {tuple(rule["products"]) for rule in rules},
