@@ -32,6 +32,7 @@ codex	Stop	-	checkout-lease-guard
 codex	Stop	-	stop-finish-line-gate
 claude	UserPromptSubmit	-	user-prompt-agent-docs
 claude	UserPromptSubmit	-	checkout-lease-guard
+claude	UserPromptSubmit	-	user-prompt-agent-memory
 claude	UserPromptSubmit	-	skill-usage-reminder
 claude	Stop	-	stop-pre-pr-reminder
 claude	Stop	-	agent-scope-lock-guard

@@ -25,6 +25,7 @@ from pathlib import Path
 
 root = Path.cwd()
 policy = (root / "core/policies/memory.md").read_text(encoding="utf-8")
+retired_audit = (root / "scripts/ci/retired-memory-audit.sh").read_text(encoding="utf-8")
 inventory = json.loads(
     (root / "manifests/hook-rules.yaml").read_text(encoding="utf-8")
 )["rules"]
@@ -45,14 +46,16 @@ memory_rules = [
     rule for rule in inventory if rule["legacy_handler"] == "user-prompt-agent-memory"
 ]
 assert memory_rules
-assert all(rule["products"] == ["codex"] for rule in memory_rules)
+assert {tuple(rule["products"]) for rule in memory_rules} == {("codex",), ("claude",)}
 assert "agent-memory recall startup" in codex_harness
 assert "agent-memory candidate add\n  codex" in codex_harness
 assert "agent-memory index global" not in codex_harness
 assert "/Users/" not in policy
 assert "/home/" not in policy
+assert "--max-index-bytes 768" in retired_audit
+assert "--max-index-bytes 3072" not in retired_audit
 PY
 
-python3 -m unittest tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_injects_startup_memory_once_for_codex tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_outside_codex tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_when_startup_recall_fails
+python3 -m unittest tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_injects_startup_memory_once_for_codex tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_injects_startup_memory_once_for_claude tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_outside_supported_products tests.hooks.test_shared_hooks.SharedHookTests.test_agent_memory_cue_noops_when_startup_recall_fails
 
 echo "memory-runtime: deterministic policy, audit, and product routing passed"

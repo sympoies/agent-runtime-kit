@@ -56,7 +56,7 @@ EXPECTED_EVENT_COUNTS = {
         {"PreToolUse": 22, "UserPromptSubmit": 4, "Stop": 4, "SessionStart": 1}
     ),
     "claude": Counter(
-        {"PreToolUse": 29, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
+        {"PreToolUse": 29, "UserPromptSubmit": 4, "Stop": 4, "SessionStart": 1}
     ),
 }
 
@@ -237,7 +237,7 @@ def load_inventory() -> dict[str, Any]:
 class AgentHookPolicyContractTests(unittest.TestCase):
     def test_baseline_inventory_is_complete_and_exact(self) -> None:
         registrations = frozen_legacy_registrations()
-        self.assertEqual(len(registrations), 68)
+        self.assertEqual(len(registrations), 69)
         self.assertEqual({row[3] for row in registrations}, EXPECTED_HANDLERS)
         for product in ("codex", "claude"):
             event_counts = Counter(row[1] for row in registrations if row[0] == product)
@@ -248,10 +248,10 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             for product in ("codex", "claude")
         }
         self.assertEqual(len(product_handlers["codex"]), 21)
-        self.assertEqual(len(product_handlers["claude"]), 21)
+        self.assertEqual(len(product_handlers["claude"]), 22)
         self.assertEqual(
             product_handlers["codex"] - product_handlers["claude"],
-            {"user-prompt-agent-memory"},
+            set(),
         )
         self.assertEqual(
             product_handlers["claude"] - product_handlers["codex"],
@@ -415,11 +415,11 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         self.assertEqual(inventory["schema_version"], "agent-runtime-kit.hook-rules.v1")
         self.assertEqual(inventory["policy_bundle"], "core/policies/agent-hook/runtime-kit-v1.toml")
         self.assertEqual(inventory["legacy_handler_count"], 22)
-        self.assertEqual(inventory["legacy_registration_count"], 68)
+        self.assertEqual(inventory["legacy_registration_count"], 69)
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
-        self.assertEqual(len(rules), 100)
+        self.assertEqual(len(rules), 101)
         ids = [rule["id"] for rule in rules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate inventory rule id")
         for rule in rules:

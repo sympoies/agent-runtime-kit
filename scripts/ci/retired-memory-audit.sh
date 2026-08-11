@@ -95,7 +95,7 @@ run_audit() {
   local store="$1"
   local status=0
   AGENT_MEMORY_HOME="$store" agent-memory check global --strict --max-index-bytes 8192 --forbid-terms-file "$TERMS_FILE" || status=$?
-  AGENT_MEMORY_HOME="$store" agent-memory check profiles/startup --strict --max-index-bytes 3072 --forbid-terms-file "$TERMS_FILE" || status=$?
+  AGENT_MEMORY_HOME="$store" agent-memory check profiles/startup --strict --max-index-bytes 768 --forbid-terms-file "$TERMS_FILE" || status=$?
   return "$status"
 }
 

@@ -2684,7 +2684,67 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIsNone(decision)
 
-    def test_agent_memory_cue_noops_outside_codex(self) -> None:
+    def test_agent_memory_cue_injects_startup_memory_once_for_claude(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            log_path = root / "agent-memory.args"
+            agent_memory = bin_dir / "agent-memory"
+            agent_memory.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log_path))}\n"
+                "if [[ \"$*\" == \"recall startup\" ]]; then\n"
+                "  printf '%s\\n' '# Shared startup memory'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 64\n",
+                encoding="utf-8",
+            )
+            agent_memory.chmod(0o755)
+            home = root / "home"
+            home.mkdir()
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "claude",
+                "HOME": str(home),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = {
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": "memory-claude-test",
+                "prompt": "hello",
+            }
+
+            code, decision, stderr = run_shell_hook(
+                "user-prompt-agent-memory.sh",
+                payload,
+                cwd=root,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            output = decision.get("hookSpecificOutput")
+            self.assertIsInstance(output, dict)
+            assert isinstance(output, dict)
+            self.assertEqual(output.get("hookEventName"), "UserPromptSubmit")
+            ctx = str(output.get("additionalContext", ""))
+            self.assertIn("[agent-runtime-kit:claude]", ctx)
+            self.assertIn("agent-memory recall on-demand <term>", ctx)
+            self.assertNotIn("add a candidate", ctx)
+            self.assertEqual(log_path.read_text(encoding="utf-8"), "recall startup\n")
+
+            code, decision, stderr = run_shell_hook(
+                "user-prompt-agent-memory.sh",
+                payload,
+                cwd=root,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNone(decision)
+
+    def test_agent_memory_cue_noops_outside_supported_products(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             bin_dir = root / "bin"
@@ -2705,7 +2765,7 @@ class SharedHookTests(unittest.TestCase):
                 {"session_id": "memory-non-codex", "prompt": "hello"},
                 cwd=root,
                 env={
-                    "AGENT_RUNTIME_PRODUCT": "claude",
+                    "AGENT_RUNTIME_PRODUCT": "hermes",
                     "HOME": str(home),
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 },
@@ -2713,6 +2773,42 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIsNone(decision)
             self.assertFalse(log_path.exists())
+
+    def test_agent_memory_cue_suppression_applies_to_codex_and_claude(self) -> None:
+        cases = (
+            ("codex", "AGENT_RUNTIME_SUPPRESS_MEMORY"),
+            ("claude", "AGENT_MEMORY_SUPPRESS"),
+        )
+        for product, suppression in cases:
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                log_path = root / "agent-memory.args"
+                agent_memory = bin_dir / "agent-memory"
+                agent_memory.write_text(
+                    "#!/usr/bin/env bash\n"
+                    f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log_path))}\n",
+                    encoding="utf-8",
+                )
+                agent_memory.chmod(0o755)
+                home = root / "home"
+                home.mkdir()
+
+                code, decision, stderr = run_shell_hook(
+                    "user-prompt-agent-memory.sh",
+                    {"session_id": f"memory-suppressed-{product}", "prompt": "hello"},
+                    cwd=root,
+                    env={
+                        "AGENT_RUNTIME_PRODUCT": product,
+                        suppression: "1",
+                        "HOME": str(home),
+                        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                    },
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+                self.assertFalse(log_path.exists())
 
     def test_agent_memory_cue_noops_when_agent_memory_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2755,19 +2851,24 @@ class SharedHookTests(unittest.TestCase):
             home = root / "home"
             home.mkdir()
 
-            code, decision, stderr = run_shell_hook(
-                "user-prompt-agent-memory.sh",
-                {"session_id": "memory-index-fails", "prompt": "hello"},
-                cwd=root,
-                env={
-                    "AGENT_RUNTIME_PRODUCT": "codex",
-                    "HOME": str(home),
-                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-                },
+            for product in ("codex", "claude"):
+                with self.subTest(product=product):
+                    code, decision, stderr = run_shell_hook(
+                        "user-prompt-agent-memory.sh",
+                        {"session_id": f"memory-index-fails-{product}", "prompt": "hello"},
+                        cwd=root,
+                        env={
+                            "AGENT_RUNTIME_PRODUCT": product,
+                            "HOME": str(home),
+                            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                        },
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNone(decision)
+            self.assertEqual(
+                log_path.read_text(encoding="utf-8"),
+                "recall startup\nrecall startup\n",
             )
-            self.assertEqual(code, 0, stderr)
-            self.assertIsNone(decision)
-            self.assertEqual(log_path.read_text(encoding="utf-8"), "recall startup\n")
 
     def test_agent_memory_cue_delimits_and_redacts_memory_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2818,10 +2919,10 @@ class SharedHookTests(unittest.TestCase):
 
     def test_agent_memory_cue_caps_large_memory_index(self) -> None:
         cases = (
-            ("respects lower override", "500", 2048, 500, 1300),
-            ("hard ceiling", "12000", 4096, 768, 1300),
+            ("respects lower override", "codex", "500", 2048, 500, 1300),
+            ("hard ceiling", "claude", "12000", 4096, 768, 1300),
         )
-        for name, configured_limit, emitted_bytes, expected_limit, max_cue in cases:
+        for name, product, configured_limit, emitted_bytes, expected_limit, max_cue in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 bin_dir = root / "bin"
@@ -2848,7 +2949,7 @@ class SharedHookTests(unittest.TestCase):
                     {"session_id": f"memory-cap-test-{expected_limit}", "prompt": "hello"},
                     cwd=root,
                     env={
-                        "AGENT_RUNTIME_PRODUCT": "codex",
+                        "AGENT_RUNTIME_PRODUCT": product,
                         "AGENT_MEMORY_CONTEXT_MAX_BYTES": configured_limit,
                         "HOME": str(home),
                         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -18632,10 +18733,10 @@ exit 65
             "stop-pre-pr-reminder.sh",
             "user-prompt-agent-docs.sh",
         }
-        codex_only_scripts = {
+        codex_claude_scripts = {
             "user-prompt-agent-memory.sh",
         }
-        for script in shared_registered_scripts | codex_only_scripts:
+        for script in shared_registered_scripts | codex_claude_scripts:
             self.assertTrue((HOOK_DIR / script).is_file(), script)
             self.assertTrue(os.access(HOOK_DIR / script, os.X_OK), script)
 
@@ -18656,11 +18757,14 @@ exit 65
                 rules,
                 f"missing policy inventory for {script}",
             )
-        for script in codex_only_scripts:
+        for script in codex_claude_scripts:
             handler = script.rsplit(".", 1)[0]
             rules = inventory_rules(handler=handler)
             self.assertTrue(rules, script)
-            self.assertTrue(all(rule["products"] == ["codex"] for rule in rules))
+            self.assertEqual(
+                {tuple(rule["products"]) for rule in rules},
+                {("codex",), ("claude",)},
+            )
         self.assertNotIn("/hooks/", codex_block)
         self.assertNotIn("/hooks/", claude_fragment)
 

@@ -25,6 +25,7 @@ Use the released CLI instead of reading whole indexes by hand:
 ```text
 agent-memory recall startup
 agent-memory recall on-demand <term>
+agent-memory recall on-demand <term> --agent <id>
 agent-memory recall candidates [producer]
 agent-memory candidate add <producer> --name <slug> ...
 ```
@@ -73,13 +74,15 @@ No hook, product, or model may bypass this dry-run and approval boundary.
 
 | Product | Automatic read | Proposal write | Unsupported claim |
 | --- | --- | --- | --- |
-| Codex | Once-per-session bounded startup hook | `candidate add codex` | No full-global startup fallback and no autonomous promotion |
-| Claude | Native auto-memory only when the host points it at the Claude candidate root | Claude candidate root | Runtime-kit does not claim a Claude model action or curated-global auto-memory |
+| Codex | Once-per-session bounded curated startup hook; global or exact Codex scope on demand | `candidate add codex` for shared proposals; agent-owned durable facts may use the governed Codex scope | No full-global startup fallback and no autonomous promotion |
+| Claude | Once-per-session bounded curated startup hook plus native per-project or explicit-persona auto-memory | `candidate add claude` for shared proposals | No candidate root as native auto-memory, full-global startup fallback, or autonomous promotion |
 | Hermes | None; curated recall is on demand | `candidate add hermes` | No runtime-kit memory hook or automatic startup parity |
 
-Product settings that select a candidate root are host activation state, not
-public repository defaults. Public policy and tests use producer names only and
-must not embed personal paths, hostnames, or account details.
+Claude native auto-memory is product state, not the producer proposal queue. A
+base session uses Claude's default per-project directory; an explicit persona
+launcher may pass its isolated settings file with `claude --settings`. Public
+policy and tests use producer names only and must not embed personal paths,
+hostnames, or account details.
 
 ## Hooks And Audits
 
