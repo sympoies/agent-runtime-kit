@@ -23,14 +23,14 @@ nils_cli:
   # agent-memory's bounded startup plus exact optional agent scope.
   minimum_supported_tag: "v1.26.4"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.26.4"
+  validated_tag: "v1.27.0"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "569b7f1a481594629e113415034ad1f7ff660f754ec9d3b8d88dda14d6ba0f6d"
-    linux_arm64: "60e7cfac40e5245f751e38246ceee016dab80249c8b7e0695b95805c6ec03e1b"
+    linux_amd64: "192f2e9b0225d730ff870f16654d9cec99a70ccec8dafe3199ea35a8672d421c"
+    linux_arm64: "b52cbb2c454d897627df8f4244faa68eff9234ac064d43c63c8a6b4119fd4013"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the

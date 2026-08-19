@@ -1,22 +1,32 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-11 (refreshed for `v1.26.4`)
+- Snapshot date: 2026-08-20 (refreshed for `v1.27.0`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.26.4`
+- Active `git describe --tags` output: `v1.27.0`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.26.4`,
-  `validated_tag: v1.26.4`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.27.0`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `06ca8564`
-  (`chore(release): bump cli versions to 1.26.4`)
+- Head commit: `cf997a39`
+  (`chore(release): bump cli versions to 1.27.0`)
 - Release:
-  [`v1.26.4`](https://github.com/sympoies/nils-cli/releases/tag/v1.26.4),
+  [`v1.27.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.0),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.26.4` is both the compatibility minimum and validated release.
+- `v1.27.0` is the validated release while `v1.26.4` remains the compatibility
+  minimum. The release adds the nils-native DeepSeek Harness ingress,
+  main-agent provider, and finish-line engine
+  ([#1465](https://github.com/sympoies/nils-cli/pull/1465),
+  [#1467](https://github.com/sympoies/nils-cli/pull/1467),
+  [#1468](https://github.com/sympoies/nils-cli/pull/1468)). The legacy
+  runtime-kit does not consume those new DSH contracts, so this ordinary
+  validated-role uptake does not move the compatibility minimum or any
+  `required_clis[]` floor.
+- `v1.26.4` was the previous validated release and remains the compatibility
+  minimum.
   Runtime-kit consumes its provider-native aggregate-context
   preservation in `agent-hook`, plus the 768-byte startup default, exact
   optional agent recall scope, trusted agent-root checks, and frontmatter-aware

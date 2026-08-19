@@ -128,15 +128,15 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.26.4")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.26.4")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.0")
         self.assertNotIn("pinned_tag:", manifest)
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "569b7f1a481594629e113415034ad1f7ff660f754ec9d3b8d88dda14d6ba0f6d",
+            "192f2e9b0225d730ff870f16654d9cec99a70ccec8dafe3199ea35a8672d421c",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "60e7cfac40e5245f751e38246ceee016dab80249c8b7e0695b95805c6ec03e1b",
+            "b52cbb2c454d897627df8f4244faa68eff9234ac064d43c63c8a6b4119fd4013",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
@@ -297,7 +297,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.26.4", "v1.27.0"):
+        for candidate in ("v1.27.0", "v1.28.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -660,7 +660,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.26.4", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.27.0", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(
