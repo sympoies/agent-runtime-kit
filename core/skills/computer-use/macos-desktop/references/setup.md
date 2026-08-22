@@ -24,11 +24,12 @@ macos-agent backend install --strict --format json
 macos-agent backend verify --strict --format json
 ```
 
-The exact locked v3.9.3 standalone CLI may report the reviewed
-`notary=waived` / `security_posture=reduced` posture. That result is disclosed,
-not equivalent to notarization success. App notarization, Gatekeeper, archive
-and executable hashes, architecture, version, bundle metadata, signing
-identities, and locked capability checks remain enforced.
+The locked Peekaboo v4.2.2 CLI and app both require notarization and report
+`security_posture=full`. The exact v3.9.3 tuple is recognized only to
+authenticate an in-place upgrade; it is not an active or rollback-capable
+runtime under the v4 adapter contract. Gatekeeper, archive and executable
+hashes, architecture, version, bundle metadata, signing identities, and locked
+capability checks remain enforced.
 
 ## Permissions
 
@@ -118,15 +119,17 @@ For SSH, add `--host "$MACOS_SSH_HOST"` to `exec`. A valid run contains
 `redaction.json` without the alias, user/home paths, keys, or raw remote
 commands.
 
-## Rollback Readiness
+## Release Transition Readiness
 
-Rollback is limited to the exact previous release embedded in the adapter
-allowlist. Review without changing live state:
+Rollback is available only when an exact compatible previous release is in the
+adapter's rollback allowlist. The v4.2.2 lock intentionally has no rollback
+target because v3.9.3 cannot satisfy the v4 command contract. Status and a
+dry-run must therefore be reviewed rather than assuming rollback exists:
 
 ```bash
 macos-agent backend rollback --dry-run --strict --format json
 ```
 
-Apply rollback only as part of a reviewed runtime rollback, then run strict
-verify, strict doctor, and one read-only observation. Never replay a mutation
-automatically during rollback.
+Apply rollback only when the dry-run identifies an authorized target, then run
+strict verify, strict doctor, and one read-only observation. Never replay a
+mutation automatically during a release transition.

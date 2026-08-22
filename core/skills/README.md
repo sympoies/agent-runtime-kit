@@ -125,7 +125,7 @@ Shared issue label, comment, and close discipline lives in
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| macOS desktop automation | [macos-desktop](./computer-use/macos-desktop/) | Operates and tests a local or SSH-reachable Mac through nils-cli `macos-agent`, retaining screenshots, scenarios, permission gaps, and structured evidence. |
+| macOS desktop automation | [macos-desktop](./computer-use/macos-desktop/) | Operates and tests a local or SSH-reachable Mac through nils-cli `macos-agent`, retaining screenshots, guarded multi-step flows, permission gaps, and structured evidence. |
 
 ## Meta
 

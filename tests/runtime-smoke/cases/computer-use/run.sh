@@ -39,12 +39,12 @@ write_journal() {
   local tool_profile="${7:-}"
   local tool_profile_json=""
   local backend_digest="${COMPUTER_USE_TEST_BACKEND_DIGEST:-sha256:synthetic}"
+  local sequence=1
+  local step_id=""
 
   local replay_class=safe
   local replay_argv='["see"]'
   local failure_json=null
-  local failed=0
-  local policy_blocked=0
   if [[ "$evidence_mode" == sensitive || "$status" != passed ]]; then
     replay_class=never
     replay_argv=null
@@ -52,20 +52,25 @@ write_journal() {
   if [[ "$failure_class" != none ]]; then
     failure_json='"'"$failure_class"'"'
   fi
-  if [[ "$status" == failed ]]; then
-    failed=1
-  elif [[ "$status" == policy_blocked ]]; then
-    policy_blocked=1
-  fi
   if [[ -n "$tool_profile" ]]; then
     tool_profile_json=',"tool_profile":"'"$tool_profile"'"'
   fi
+  if [[ -s "$out_dir/steps.jsonl" ]]; then
+    sequence="$(( $(wc -l <"$out_dir/steps.jsonl") + 1 ))"
+  fi
+  printf -v step_id 'step-%06d' "$sequence"
+  JOURNAL_STEP_ID="$step_id"
 
   mkdir -p "$out_dir/artifacts"
-  printf '%s\n' "{\"schema_version\":\"macos-agent.journal.v2\",\"run_id\":\"synthetic-run\",\"adapter_version\":\"1.22.6\",\"peekaboo_tag\":\"v3.9.3\",\"peekaboo_commit\":\"3cfd612adbcb1b43e8431a7a1f3b02ec45d01269\",\"backend_digest\":\"$backend_digest\",\"runtime\":\"app\",\"transport\":\"$transport\",\"evidence_mode\":\"$evidence_mode\"${tool_profile_json},\"started_at\":\"2026-07-16T00:00:00Z\",\"closed_at\":\"2026-07-16T00:00:01Z\",\"state\":\"closed\"}" >"$out_dir/manifest.json"
-  printf '%s\n' '{"schema_version":"macos-agent.journal-step.v2","sequence":1,"id":"step-000001","correlation_id":"correlation-000001","recorded_at":"2026-07-16T00:00:00Z","command":"'"$command"'","argv_shape":["fixture"],"replay_argv":'"$replay_argv"',"backend_digest":"'"$backend_digest"'","runtime":"app","transport":"'"$transport"'","status":"'"$status"'","failure_class":'"$failure_json"',"duration_ms":1,"retries":0,"replay_class":"'"$replay_class"'"}' >"$out_dir/steps.jsonl"
+  printf '%s\n' "{\"schema_version\":\"macos-agent.journal.v2\",\"run_id\":\"synthetic-run\",\"adapter_version\":\"1.27.3\",\"peekaboo_tag\":\"v4.2.2\",\"peekaboo_commit\":\"05675b0b5e2c382146963e19493787d9dac0d45b\",\"backend_digest\":\"$backend_digest\",\"runtime\":\"app\",\"transport\":\"$transport\",\"evidence_mode\":\"$evidence_mode\"${tool_profile_json},\"started_at\":\"2026-08-23T00:00:00Z\",\"closed_at\":\"2026-08-23T00:00:01Z\",\"state\":\"closed\"}" >"$out_dir/manifest.json"
+  printf '%s\n' '{"schema_version":"macos-agent.journal-step.v2","sequence":'"$sequence"',"id":"'"$step_id"'","correlation_id":"correlation-'"$(printf '%06d' "$sequence")"'","recorded_at":"2026-08-23T00:00:00Z","command":"'"$command"'","argv_shape":["fixture"],"replay_argv":'"$replay_argv"',"backend_digest":"'"$backend_digest"'","runtime":"app","transport":"'"$transport"'","status":"'"$status"'","failure_class":'"$failure_json"',"duration_ms":1,"retries":0,"replay_class":"'"$replay_class"'"}' >>"$out_dir/steps.jsonl"
+  local total_steps passed_steps failed_steps policy_blocked_steps
+  total_steps="$(wc -l <"$out_dir/steps.jsonl")"
+  passed_steps="$(grep -c '"status":"passed"' "$out_dir/steps.jsonl" || true)"
+  failed_steps="$(grep -c '"status":"failed"' "$out_dir/steps.jsonl" || true)"
+  policy_blocked_steps="$(grep -c '"status":"policy_blocked"' "$out_dir/steps.jsonl" || true)"
   printf '%s\n' '{"schema_version":"macos-agent.artifact-index.v1","artifacts":[]}' >"$out_dir/artifacts/index.json"
-  printf '%s\n' '{"schema_version":"macos-agent.journal-summary.v1","total_steps":1,"passed":'"$([[ "$status" == passed ]] && printf 1 || printf 0)"',"failed":'"$failed"',"unknown":0,"policy_blocked":'"$policy_blocked"',"failure_signatures":[],"replay_candidates":[],"defect_candidates":[],"assertions":[],"residual_user_actions":[],"recovered_tail":false}' >"$out_dir/summary.json"
+  printf '%s\n' '{"schema_version":"macos-agent.journal-summary.v1","total_steps":'"$total_steps"',"passed":'"$passed_steps"',"failed":'"$failed_steps"',"unknown":0,"policy_blocked":'"$policy_blocked_steps"',"failure_signatures":[],"replay_candidates":[],"defect_candidates":[],"assertions":[],"residual_user_actions":[],"recovered_tail":false}' >"$out_dir/summary.json"
   printf '%s\n' '{"schema_version":"macos-agent.redaction.v1","rules":[],"suppressed_fields":[],"failures":[],"private_identifier_matches":0,"secret_matches":0}' >"$out_dir/redaction.json"
 }
 
@@ -116,10 +121,10 @@ shift || true
 case "$command" in
   backend)
     test "${1:-}" = status
-    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"backend.status","result":{"locked_tag":"v3.9.3","locked_commit":"3cfd612adbcb1b43e8431a7a1f3b02ec45d01269","strict":false,"security_posture":"reduced","cli_notarization_policy":"waived","installed":true,"verified":true,"current":{"tag":"v3.9.3","commit":"3cfd612adbcb1b43e8431a7a1f3b02ec45d01269","installed_at":"2026-07-16T00:00:00Z"},"previous":null,"app_owned":true,"dry_run":false}}'
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"backend.status","result":{"locked_tag":"v4.2.2","locked_commit":"05675b0b5e2c382146963e19493787d9dac0d45b","strict":false,"security_posture":"full","cli_notarization_policy":"required","installed":true,"verified":true,"current":{"tag":"v4.2.2","commit":"05675b0b5e2c382146963e19493787d9dac0d45b","installed_at":"2026-08-23T00:00:00Z"},"previous":null,"app_owned":true,"dry_run":false}}'
     ;;
   capabilities)
-    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"capabilities","result":{"transport":["local","ssh"],"interfaces":["exec","scenario","mcp_stdio"],"runtime":["app","daemon","auto","process"],"tool_profiles":["observe","interact","extended"],"disabled":["agent","analyze","audio","browser","clipboard","config","credentials","http_mcp","image","mcp_agent","permission_mutation","shell","sse_mcp"]}}'
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"capabilities","result":{"transport":["local","ssh"],"interfaces":["exec","mcp_stdio"],"runtime":["app","daemon","auto","process"],"tool_profiles":["observe","interact","extended"],"disabled":["agent","analyze","audio","browser","clipboard","config","credentials","http_mcp","image","mcp_agent","permission_mutation","shell","sse_mcp"]}}'
     ;;
   doctor)
     while [[ "$#" -gt 0 ]]; do
@@ -132,13 +137,14 @@ case "$command" in
           ;;
       esac
     done
-    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"doctor","result":{"locked_tag":"v3.9.3","strict":true,"ready":true,"backend":{"locked_tag":"v3.9.3","active_tag":"v3.9.3","rollback_active":false,"strict":true,"security_posture":"reduced","ready":true,"checks":[{"id":"notary","status":"waived","message":"exact locked waiver"}]},"runtime":{"id":"runtime","status":"pass","message":"ready"},"permissions":{"id":"permissions","status":"pass","message":"ready"},"bridge":{"id":"bridge","status":"pass","message":"ready"},"capabilities":[]}}'
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"doctor","result":{"locked_tag":"v4.2.2","strict":true,"ready":true,"backend":{"locked_tag":"v4.2.2","active_tag":"v4.2.2","rollback_active":false,"strict":true,"security_posture":"full","ready":true,"checks":[{"id":"notary","status":"pass","message":"required notarization passed"}]},"runtime":{"id":"runtime","status":"pass","message":"ready"},"permissions":{"id":"permissions","status":"pass","message":"ready"},"bridge":{"id":"bridge","status":"pass","message":"ready"},"capabilities":[]}}'
     ;;
   exec)
     out_dir=""
     transport=local
     evidence_mode=minimal
     expected=""
+    intent=""
     while [[ "$#" -gt 0 ]]; do
       case "$1" in
         --host)
@@ -153,7 +159,11 @@ case "$command" in
           evidence_mode="$2"
           shift 2
           ;;
-        --intent | --runtime | --timeout-seconds)
+        --intent)
+          intent="$2"
+          shift 2
+          ;;
+        --runtime | --timeout-seconds)
           shift 2
           ;;
         --expected)
@@ -173,52 +183,20 @@ case "$command" in
     assert_compatible_journal "$out_dir" "$transport" "$evidence_mode"
     upstream_command="${1:-unknown}"
     case "$upstream_command" in
-      click | type | hotkey | scroll | swipe | drag | move | set-value | perform-action | window | app | menu | dialog | dock | space | capture | paste)
+      action | click | type | press | scroll | drag | move | set-value | window | app | menu | dialog | dock | space | capture | paste)
         if [[ -z "$expected" ]]; then
           printf '%s\n' 'error: mutating command requires an observable --expected postcondition' >&2
           exit 78
         fi
         ;;
     esac
+    if [[ "$intent" == 'Exercise synthetic wrong-target handling' ]]; then
+      write_journal "$out_dir" "exec.$upstream_command" "$transport" "$evidence_mode" failed wrong_target
+      printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"'"$JOURNAL_STEP_ID"'","upstream":{"exit_code":9,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"diagnostic":"synthetic exec stopped after a significant wrong-target failure"}}}'
+      exit 70
+    fi
     write_journal "$out_dir" "exec.$upstream_command" "$transport" "$evidence_mode" passed none
-    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"step-000001","upstream":{"exit_code":0,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"json":{"success":true}}}}'
-    ;;
-  scenario)
-    out_dir=""
-    transport=local
-    evidence_mode=minimal
-    scenario=""
-    while [[ "$#" -gt 0 ]]; do
-      case "$1" in
-        --host)
-          transport=ssh
-          shift 2
-          ;;
-        --out-dir)
-          out_dir="$2"
-          shift 2
-          ;;
-        --file)
-          scenario="$2"
-          shift 2
-          ;;
-        --evidence-mode)
-          evidence_mode="$2"
-          shift 2
-          ;;
-        --runtime | --timeout-seconds)
-          shift 2
-          ;;
-        *)
-          shift
-          ;;
-      esac
-    done
-    test -s "$scenario"
-    assert_compatible_journal "$out_dir" "$transport" "$evidence_mode"
-    write_journal "$out_dir" scenario "$transport" "$evidence_mode" failed wrong_target
-    printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"scenario","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"step-000001","upstream":{"exit_code":9,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"diagnostic":"synthetic scenario stopped after a significant wrong-target failure"}}}'
-    exit 70
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"'"$JOURNAL_STEP_ID"'","upstream":{"exit_code":0,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"json":{"success":true}}}}'
     ;;
   mcp)
     out_dir=""
@@ -248,15 +226,26 @@ case "$command" in
     done
     assert_compatible_journal "$out_dir" "$transport" sensitive "$profile"
     input="$(cat)"
+    case "$profile" in
+      observe)
+        tools_json='[{"name":"see"},{"name":"inspect_ui"},{"name":"permissions"},{"name":"sleep"},{"name":"verify_state"}]'
+        ;;
+      interact)
+        tools_json='[{"name":"see"},{"name":"inspect_ui"},{"name":"permissions"},{"name":"sleep"},{"name":"verify_state"},{"name":"click"},{"name":"type"},{"name":"press"},{"name":"scroll"},{"name":"drag"},{"name":"move"},{"name":"set_value"},{"name":"action"},{"name":"window"},{"name":"app"},{"name":"menu"}]'
+        ;;
+      extended)
+        tools_json='[{"name":"see"},{"name":"inspect_ui"},{"name":"permissions"},{"name":"sleep"},{"name":"verify_state"},{"name":"click"},{"name":"type"},{"name":"press"},{"name":"scroll"},{"name":"drag"},{"name":"move"},{"name":"set_value"},{"name":"action"},{"name":"window"},{"name":"app"},{"name":"menu"},{"name":"dialog"},{"name":"dock"},{"name":"space"},{"name":"capture"},{"name":"paste"}]'
+        ;;
+    esac
     if [[ "$input" == *'"name":"shell"'* ]]; then
       write_journal "$out_dir" mcp.tools_call "$transport" sensitive policy_blocked policy "$profile"
       printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"tool denied by adapter profile"}}' \
-        '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+        '{"jsonrpc":"2.0","id":2,"result":{"tools":'"$tools_json"'}}'
       exit 0
     fi
     write_journal "$out_dir" mcp "$transport" sensitive passed none "$profile"
-    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":'"$tools_json"'}}'
     ;;
   journal)
     journal_command="${1:-}"
@@ -276,28 +265,36 @@ case "$command" in
     test -s "$out_dir/manifest.json"
     case "$journal_command" in
       summarize)
-        printf '%s' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"journal.summarize","result":'
+        printf '%s' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"journal.summarize","result":'
         cat "$out_dir/summary.json"
         printf '}\n'
         ;;
       review)
-        review='{"schema_version":"macos-agent.journal-review.v1","candidates":[{"signature":"scenario:wrong_target","count":1,"significant":true,"proposed_owner":"runtime_skill_policy","step_ids":["step-000001"]}],"clean":false}'
+        failed_step="$(grep '"status":"failed"' "$out_dir/steps.jsonl" | tail -1 | sed -E 's/.*"id":"([^"]+)".*/\1/')"
+        review='{"schema_version":"macos-agent.journal-review.v1","candidates":[{"signature":"exec.click:wrong_target","count":1,"significant":true,"proposed_owner":"runtime_skill_policy","step_ids":["'"$failed_step"'"]}],"clean":false}'
         printf '%s\n' "$review" >"$out_dir/review.json"
-        printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"journal.review","result":'"$review"'}'
+        printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"journal.review","result":'"$review"'}'
         ;;
       replay-plan)
-        replay_class=safe
-        eligible=true
-        reason=eligible
-        if grep -q '"replay_class":"never"' "$out_dir/steps.jsonl"; then
-          replay_class=never
-          eligible=false
-          reason=never
-        elif grep -q '"transport":"ssh"' "$out_dir/manifest.json"; then
-          eligible=false
-          reason='remote journal replay is not supported'
-        fi
-        printf '%s\n' '{"schema_version":"macos-agent.adapter.v2","ok":true,"command":"journal.replay-plan","result":{"steps":[{"id":"step-000001","replay_class":"'"$replay_class"'","eligible":'"$eligible"',"reason":"'"$reason"'"}]}}'
+        python3 - "$out_dir/steps.jsonl" "$out_dir/manifest.json" <<'PY'
+import json
+import pathlib
+import sys
+
+steps = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
+manifest = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+rows = []
+for step in steps:
+    replay_class = step["replay_class"]
+    if replay_class == "never":
+        eligible, reason = False, "never"
+    elif manifest["transport"] == "ssh":
+        eligible, reason = False, "remote journal replay is not supported"
+    else:
+        eligible, reason = True, "eligible"
+    rows.append({"id": step["id"], "replay_class": replay_class, "eligible": eligible, "reason": reason})
+print(json.dumps({"schema_version":"macos-agent.adapter.v3","ok":True,"command":"journal.replay-plan","result":{"steps":rows}}, separators=(",", ":")))
+PY
         ;;
       *)
         exit 64
@@ -353,9 +350,8 @@ run_direct_adapter_probe() {
   local remote_out="$CASE_ROOT/remote"
   local mutation_out="$CASE_ROOT/mutation"
   local sensitive_out="$CASE_ROOT/sensitive"
-  local scenario_out="$CASE_ROOT/scenario"
+  local failed_flow_out="$CASE_ROOT/failed-flow"
   local mcp_out="$CASE_ROOT/mcp"
-  local scenario="$CASE_ROOT/partial-failure.peekaboo.json"
   local secret='SYNTHETIC_SECRET_CANARY_7f90'
 
   "$REAL_MACOS_AGENT" capabilities --format json >"$CASE_ARTIFACTS/capabilities.json"
@@ -365,11 +361,11 @@ import pathlib
 import sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+assert payload["schema_version"] == "macos-agent.adapter.v3", payload
 assert payload["command"] == "capabilities", payload
 result = payload["result"]
 assert result["transport"] == ["local", "ssh"], result
-assert result["interfaces"] == ["exec", "scenario", "mcp_stdio"], result
+assert result["interfaces"] == ["exec", "mcp_stdio"], result
 assert result["runtime"] == ["app", "daemon", "auto", "process"], result
 assert result["tool_profiles"] == ["observe", "interact", "extended"], result
 for denied in ("browser", "permission_mutation", "shell", "http_mcp", "sse_mcp"):
@@ -383,7 +379,7 @@ import pathlib
 import sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+assert payload["schema_version"] == "macos-agent.adapter.v3", payload
 assert payload["command"] == "backend.status", payload
 result = payload["result"]
 assert set(result) == {
@@ -392,7 +388,7 @@ assert set(result) == {
     "previous", "app_owned", "dry_run",
 }, result
 assert result["verified"] is True, result
-assert result["security_posture"] == "reduced", result
+assert result["security_posture"] == "full", result
 assert set(result["current"]) == {"tag", "commit", "installed_at"}, result
 PY
 
@@ -405,7 +401,7 @@ import sys
 
 for path in sys.argv[1:]:
     payload = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+    assert payload["schema_version"] == "macos-agent.adapter.v3", payload
     assert payload["command"] == "doctor", payload
     result = payload["result"]
     assert set(result) == {
@@ -419,7 +415,7 @@ for path in sys.argv[1:]:
     }, result["backend"]
     checks = [result["runtime"], result["permissions"], result["bridge"], *result["capabilities"], *result["backend"]["checks"]]
     assert all(set(check) == {"id", "status", "message"} for check in checks), checks
-    assert all(check["status"] in {"pass", "waived"} for check in checks), checks
+    assert all(check["status"] == "pass" for check in checks), checks
 PY
 
   PATH="$FAKE_BIN:$PATH" macos-agent exec --out-dir "$local_out" --intent 'Inspect the synthetic app' --runtime app -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/local-exec.json"
@@ -431,7 +427,7 @@ import sys
 
 for path in sys.argv[1:]:
     payload = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "macos-agent.adapter.v2", payload
+    assert payload["schema_version"] == "macos-agent.adapter.v3", payload
     assert payload["command"] == "exec", payload
     result = payload["result"]
     assert set(result) == {"transport", "runtime", "evidence_mode", "journal_step", "upstream"}, result
@@ -482,38 +478,60 @@ PY
   PATH="$FAKE_BIN:$PATH" macos-agent journal replay-plan --out-dir "$sensitive_out" --format json >"$CASE_ARTIFACTS/sensitive-replay-plan.json"
   grep -q '"replay_class":"never"' "$CASE_ARTIFACTS/sensitive-replay-plan.json"
 
-  printf '%s\n' '{"name":"synthetic-partial-failure","steps":[{"command":"see","app":"Synthetic App"}]}' >"$scenario"
-  if PATH="$FAKE_BIN:$PATH" macos-agent scenario --host example-mac --out-dir "$scenario_out" --file "$scenario" --runtime app --evidence-mode minimal >"$CASE_ARTIFACTS/scenario.json" 2>"$CASE_ARTIFACTS/scenario.stderr.txt"; then
+  PATH="$FAKE_BIN:$PATH" macos-agent exec --host example-mac --out-dir "$failed_flow_out" --intent 'Observe before the synthetic flow mutation' --runtime app -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/failed-flow-observe.json"
+  if PATH="$FAKE_BIN:$PATH" macos-agent exec --host example-mac --out-dir "$failed_flow_out" --intent 'Exercise synthetic wrong-target handling' --expected 'The synthetic target changes' --runtime app -- click --app 'Synthetic App' --on Missing --json >"$CASE_ARTIFACTS/failed-flow.json" 2>"$CASE_ARTIFACTS/failed-flow.stderr.txt"; then
     return 1
   fi
-  test ! -s "$CASE_ARTIFACTS/scenario.stderr.txt"
-  python3 - "$CASE_ARTIFACTS/scenario.json" <<'PY'
+  test ! -s "$CASE_ARTIFACTS/failed-flow.stderr.txt"
+  python3 - "$CASE_ARTIFACTS/failed-flow.json" <<'PY'
 import json
 import pathlib
 import sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert payload["schema_version"] == "macos-agent.adapter.v2", payload
-assert payload["command"] == "scenario", payload
+assert payload["schema_version"] == "macos-agent.adapter.v3", payload
+assert payload["command"] == "exec", payload
 result = payload["result"]
 assert set(result) == {"transport", "runtime", "evidence_mode", "journal_step", "upstream"}, result
 assert set(result["upstream"]) == {
     "exit_code", "timed_out", "stdout_truncated", "stderr_truncated", "diagnostic",
 }, result["upstream"]
 assert result["upstream"]["exit_code"] != 0, result
+assert result["journal_step"] == "step-000002", result
 PY
-  assert_journal "$scenario_out"
-  PATH="$FAKE_BIN:$PATH" macos-agent journal summarize --out-dir "$scenario_out" --format json >"$CASE_ARTIFACTS/scenario-summary.json"
-  PATH="$FAKE_BIN:$PATH" macos-agent journal review --out-dir "$scenario_out" --format json >"$CASE_ARTIFACTS/scenario-review.json"
-  grep -q '"significant":true' "$CASE_ARTIFACTS/scenario-review.json"
-  grep -q '"proposed_owner":"runtime_skill_policy"' "$CASE_ARTIFACTS/scenario-review.json"
-  if grep -q '"provider_mutation"' "$CASE_ARTIFACTS/scenario-review.json"; then
+  assert_journal "$failed_flow_out"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal summarize --out-dir "$failed_flow_out" --format json >"$CASE_ARTIFACTS/failed-flow-summary.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal review --out-dir "$failed_flow_out" --format json >"$CASE_ARTIFACTS/failed-flow-review.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal replay-plan --out-dir "$failed_flow_out" --format json >"$CASE_ARTIFACTS/failed-flow-replay-plan.json"
+  python3 - "$failed_flow_out/steps.jsonl" "$CASE_ARTIFACTS/failed-flow-summary.json" "$CASE_ARTIFACTS/failed-flow-review.json" "$CASE_ARTIFACTS/failed-flow-replay-plan.json" <<'PY'
+import json
+import pathlib
+import sys
+
+steps = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
+assert [(row["id"], row["command"], row["status"], row["replay_class"]) for row in steps] == [
+    ("step-000001", "exec.see", "passed", "safe"),
+    ("step-000002", "exec.click", "failed", "never"),
+], steps
+summary = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))["result"]
+assert (summary["total_steps"], summary["passed"], summary["failed"]) == (2, 1, 1), summary
+review = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8"))["result"]
+assert review["candidates"][0]["step_ids"] == ["step-000002"], review
+plan = json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8"))["result"]["steps"]
+assert [(row["id"], row["replay_class"], row["eligible"]) for row in plan] == [
+    ("step-000001", "safe", False),
+    ("step-000002", "never", False),
+], plan
+PY
+  grep -q '"significant":true' "$CASE_ARTIFACTS/failed-flow-review.json"
+  grep -q '"proposed_owner":"runtime_skill_policy"' "$CASE_ARTIFACTS/failed-flow-review.json"
+  if grep -q '"provider_mutation"' "$CASE_ARTIFACTS/failed-flow-review.json"; then
     return 1
   fi
 
   for profile in observe interact extended; do
     PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$mcp_out-$profile" --tool-profile "$profile" --runtime app >"$CASE_ARTIFACTS/mcp-$profile.json"
-    python3 - "$CASE_ARTIFACTS/mcp-$profile.json" <<'PY'
+    python3 - "$CASE_ARTIFACTS/mcp-$profile.json" "$profile" <<'PY'
 import json
 import pathlib
 import sys
@@ -521,7 +539,15 @@ import sys
 frames = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
 assert frames, "MCP emitted no JSON-RPC frames"
 assert all(frame.get("jsonrpc") == "2.0" for frame in frames), frames
-assert all(frame.get("schema_version") != "macos-agent.adapter.v2" for frame in frames), frames
+assert all(frame.get("schema_version") != "macos-agent.adapter.v3" for frame in frames), frames
+actual = [tool["name"] for tool in frames[-1]["result"]["tools"]]
+observe = ["see", "inspect_ui", "permissions", "sleep", "verify_state"]
+interact = observe + ["click", "type", "press", "scroll", "drag", "move", "set_value", "action", "window", "app", "menu"]
+extended = interact + ["dialog", "dock", "space", "capture", "paste"]
+expected = {"observe": observe, "interact": interact, "extended": extended}[sys.argv[2]]
+assert actual == expected, (sys.argv[2], actual)
+for retired in ("hotkey", "swipe", "scenario", "shell"):
+    assert retired not in actual, (retired, actual)
 PY
     assert_journal "$mcp_out-$profile"
   done
@@ -546,7 +572,7 @@ PY
     return 1
   fi
   if rg -n 'example-mac|/home/|/Users/|HostName|IdentityFile|BEGIN OPENSSH PRIVATE KEY' \
-    "$local_out" "$remote_out" "$mutation_out" "$sensitive_out" "$scenario_out" "$mcp_out"-* "$CASE_ARTIFACTS"; then
+    "$local_out" "$remote_out" "$mutation_out" "$sensitive_out" "$failed_flow_out" "$mcp_out"-* "$CASE_ARTIFACTS"; then
     return 1
   fi
 }
@@ -558,10 +584,10 @@ assert_homogeneous_run_contract() {
   grep -Fq 'backend_digest, runtime, transport, evidence_mode,' "$skill"
   grep -Fq '512-step journal rotation bound' "$skill"
   grep -Fq "exec_out=\"\$session_root/local-exec-minimal-app\"" "$skill"
-  grep -Fq "scenario_out=\"\$session_root/local-scenario-minimal-app\"" "$skill"
+  grep -Fq "flow_out=\"\$session_root/local-flow-minimal-app\"" "$skill"
   grep -Fq "mcp_out=\"\$session_root/local-mcp-sensitive-app-observe\"" "$skill"
   grep -Fq "mkdir -p \"\$exec_out\"" "$skill"
-  grep -Fq "mkdir -p \"\$scenario_out\"" "$skill"
+  grep -Fq "mkdir -p \"\$flow_out\"" "$skill"
   grep -Fq "mkdir -p \"\$mcp_out\"" "$skill"
   grep -Fq "run_out=\"\$exec_out\"" "$skill"
   grep -Fq "journal summarize --out-dir \"\$run_out\"" "$skill"
@@ -576,7 +602,8 @@ required_counts = {
     "or after any backend install, rollback, or\nreplacement:": 1,
     'macos-agent exec \\\n  --out-dir "$exec_out" \\\n  --intent "Inspect Calculator controls" \\': 1,
     'macos-agent exec \\\n  --out-dir "$exec_out" \\\n  --intent "Clear Calculator" \\\n  --expected "Calculator display is zero" \\': 1,
-    'macos-agent scenario \\\n  --out-dir "$scenario_out" \\': 1,
+    'macos-agent exec \\\n  --out-dir "$flow_out" \\\n  --intent "Observe the first flow state" \\': 1,
+    'macos-agent exec \\\n  --out-dir "$flow_out" \\\n  --intent "Perform the reviewed next step" \\': 1,
     'macos-agent mcp --out-dir "$mcp_out" --runtime app --tool-profile observe': 1,
     'macos-agent journal replay-step \\\n  --out-dir "$run_out" \\': 1,
 }
@@ -596,7 +623,10 @@ run_skill_and_matrix_contract_probe() {
   grep -Fq 'macos-agent backend install' "$skill"
   grep -Fq 'macos-agent doctor' "$skill"
   grep -Fq 'macos-agent exec' "$skill"
-  grep -Fq 'macos-agent scenario' "$skill"
+  grep -Fq 'Peekaboo v4 removed the `.peekaboo.json` runner.' "$skill"
+  if grep -Fq 'macos-agent scenario' "$skill"; then
+    return 1
+  fi
   grep -Fq 'macos-agent mcp' "$skill"
   grep -Fq 'macos-agent journal summarize' "$skill"
   grep -Fq 'macos-agent journal review' "$skill"
@@ -630,6 +660,17 @@ run_skill_and_matrix_contract_probe() {
     grep -Fq "$capability" "$matrix"
   done
   grep -Fq 'Evidence' "$matrix"
+  grep -Fq 'As of `v1.27.3`' "$REPO_ROOT/docs/source/nils-cli-surface.md"
+  grep -Fq 'guarded multi-step flows' "$REPO_ROOT/core/skills/README.md"
+  grep -Fq 'guarded exec-flow postconditions' "$REPO_ROOT/manifests/skill-dispositions.yaml"
+  if rg -n 'retaining screenshots, scenarios|scenario assertions' \
+    "$REPO_ROOT/core/skills/README.md" \
+    "$REPO_ROOT/manifests/skill-dispositions.yaml"; then
+    return 1
+  fi
+  if rg -n 'reduced distribution posture|may remain non-blocking' "$skill"; then
+    return 1
+  fi
 
   for product in codex claude hermes; do
     rendered_contract_prepare_product "$product"

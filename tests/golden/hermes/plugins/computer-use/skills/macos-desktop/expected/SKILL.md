@@ -2,7 +2,7 @@
 name: macos-desktop
 description: >
   Operate and test a local or SSH-reachable macOS desktop through nils-cli
-  macos-agent, with AX-first actions, screenshots, scenarios, explicit
+  macos-agent, with AX-first actions, screenshots, guarded multi-step flows, explicit
   postconditions, guarded replay, and privacy-preserving journals.
 ---
 
@@ -20,7 +20,7 @@ quality, visual interpretation, defect significance, and final acceptance.
 Prerequisites:
 
 - The target runs macOS 15 or newer with an active, unlocked graphical login.
-- `macos-agent >=1.22.6` is installed on the controller and target. For SSH,
+- `macos-agent >=1.27.3` is installed on the controller and target. For SSH,
   both ends must report the same adapter version and Peekaboo lock.
 - The locked backend is installed and verified. Do not install or select a
   floating Peekaboo release outside `macos-agent backend`.
@@ -37,7 +37,7 @@ Inputs:
 - One named app/window or bounded desktop fixture, the desired outcome,
   allowed mutation scope, and stopping conditions.
 - A local target or a runtime-only trusted SSH alias.
-- Optional scenario JSON, runtime mode, evidence mode, or MCP tool profile.
+- Optional runtime mode, evidence mode, or MCP tool profile.
 - Optional output directory. Allocate one internally when absent.
 
 Outputs:
@@ -52,7 +52,8 @@ Outputs:
   caller-owned session root.
 - A pass/fail/blocked conclusion grounded in an observed postcondition, not
   merely process exit zero.
-- Explicit residuals for skipped capabilities or reduced distribution posture.
+- Explicit residuals for skipped capabilities. Active Peekaboo v4.2.2
+  readiness rejects any waived or reduced distribution result.
 
 ## Outcome Routing
 
@@ -65,7 +66,7 @@ Allocate one caller-owned session root. Each child run directory is homogeneous
 for one interface and `(backend_digest, runtime, transport, evidence_mode,
 tool_profile)` tuple; reuse that child only while every dimension remains
 unchanged and the 512-step journal rotation bound is not reached. Allocate a
-new sibling child before switching between `exec`, `scenario`, or `mcp`, before
+new sibling child before switching between `exec` or `mcp`, before
 changing any tuple dimension, or after any backend install, rollback, or
 replacement:
 
@@ -76,7 +77,7 @@ mkdir -p "$exec_out"
 ```
 
 Add `--host "$MACOS_SSH_HOST"` to `backend`, `doctor`, `capabilities`, `exec`,
-`scenario`, or `mcp` for an SSH target. Never copy SSH, transfer, or redaction
+or `mcp` for an SSH target. Never copy SSH, transfer, or redaction
 logic into the skill; the adapter owns those mechanics.
 
 ## Readiness And Backend Lifecycle
@@ -95,8 +96,8 @@ macos-agent capabilities --strict --format json
 
 For SSH, pass the runtime alias to each command. `doctor --strict` is a hard
 readiness gate for a live mutation. Report-only doctor may be used to inventory
-degraded capabilities. A locked standalone-CLI notary waiver is visible as
-`notary=waived` / `security_posture=reduced`; never relabel it as passing.
+degraded capabilities. The v4.2.2 CLI and app require notarization and must
+report `security_posture=full`; an active waived or reduced result is not ready.
 
 A strict doctor result whose only blocked check is `bridge` with
 `Peekaboo GUI Bridge exact build is unavailable`, while backend verification,
@@ -139,7 +140,7 @@ macos-agent exec \
 Every mutation requires a fresh, externally observable postcondition. A click
 resolves against the latest `see` snapshot, so observe first: `--on`/`--id`
 take the opaque element ID that `see`/`inspect_ui` reported (a human label is
-the positional `[query]`, never an `--on` value), while `type`/`hotkey` drive
+the positional `[query]`, never an `--on` value), while `type`/`press` drive
 the focused app with no element ID:
 
 ```bash
@@ -162,18 +163,27 @@ Treat timeout or signal termination during a mutation as unknown. Observe the
 current UI before deciding what to do and never blindly retry a non-idempotent
 action. Exit zero confirms adapter execution, not user-visible success.
 
-## Scenarios
+## Multi-step Flows
 
-Use a reviewed, regular `.peekaboo.json` file for a repeatable multi-step flow:
+Peekaboo v4 removed the `.peekaboo.json` runner. Build a repeatable flow from
+individually reviewed `exec` calls in one homogeneous exec journal. Check each
+result and its postcondition before continuing; never use a shell fallback or
+send an unreviewed command bundle:
 
 ```bash
-scenario_out="$session_root/local-scenario-minimal-app"
-mkdir -p "$scenario_out"
-macos-agent scenario \
-  --out-dir "$scenario_out" \
-  --file ./flow.peekaboo.json \
+flow_out="$session_root/local-flow-minimal-app"
+mkdir -p "$flow_out"
+macos-agent exec \
+  --out-dir "$flow_out" \
+  --intent "Observe the first flow state" \
   --runtime app \
-  --evidence-mode minimal
+  -- see --app "$TARGET_APP" --json
+macos-agent exec \
+  --out-dir "$flow_out" \
+  --intent "Perform the reviewed next step" \
+  --expected "The target reports the next state" \
+  --runtime app \
+  -- click --app "$TARGET_APP" --on "$target_id" --json
 ```
 
 Keep setup/reset steps and assertions explicit so each run is independent.
@@ -194,8 +204,8 @@ Profiles are monotonic:
 
 | Profile | Admitted capability families |
 | --- | --- |
-| `observe` | `see`, `inspect_ui`, `list`, `permissions`, `sleep` |
-| `interact` | observe plus click/type/hotkey/scroll/swipe/drag/move, AX value/action, and bounded app/window/menu operations |
+| `observe` | `see`, `inspect_ui`, `permissions`, `sleep`, `verify_state` |
+| `interact` | observe plus click/type/press/scroll/drag/move, AX value/action, and bounded app/window/menu operations |
 | `extended` | interact plus dialog, Dock, Spaces, capture, and paste |
 
 Choose `observe` by default, `interact` for a declared mutation, and `extended`
@@ -287,19 +297,19 @@ A functional claim passes only when all applicable checks hold:
 6. For installed-surface acceptance, a fresh product session discovers this
    skill, uses direct `macos-agent`, and never invokes retired mechanics or a
    disabled tool.
-7. Recovery is proven without changing the accepted live state: when an exact
-   allowlisted previous receipt passes strict verification, rollback dry-run
-   and previous-release read-back succeed; on a fresh install where `backend
-   status` reports no previous receipt, rollback dry-run refuses
-   deterministically and a subsequent status read-back reports the unchanged
-   current receipt.
+7. Release transition recovery is proven without changing the accepted live
+   state: an authenticated v3.9.3 predecessor can upgrade in place and recover
+   after interruption, but it cannot be reactivated or selected as rollback;
+   rollback dry-run refuses deterministically and a subsequent status read-back
+   reports the unchanged v4.2.2 receipt.
 
 The canonical status/evidence inventory is
 [`docs/source/macos-agent-capability-matrix.md`](https://github.com/sympoies/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
-Do not infer support beyond that matrix. A disclosed, exact-artifact
-distribution-security residual may remain non-blocking when the functional
-path passes and all non-waived hard gates remain enforced; privacy leaks, wrong
-targets, false success, or unusable behavior are always functional blockers.
+Do not infer support beyond that matrix. Active v4.2.2 acceptance requires full
+distribution-security posture; the historical v3.9.3 notarization waiver is
+transition-authentication metadata only and never an accepted runtime
+residual. Privacy leaks, wrong targets, false success, or unusable behavior are
+always functional blockers.
 
 ## Approval Boundary
 

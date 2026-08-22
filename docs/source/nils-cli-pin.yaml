@@ -18,19 +18,18 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # v1.26.4 is the first stable release that ships every currently declared
-  # runtime contract, including agent-hook aggregate-context preservation and
-  # agent-memory's bounded startup plus exact optional agent scope.
-  minimum_supported_tag: "v1.26.4"
+  # v1.27.3 is the first stable release that ships the currently declared
+  # breaking macos-agent adapter v3 and Peekaboo v4.2.2 contract.
+  minimum_supported_tag: "v1.27.3"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.27.0"
+  validated_tag: "v1.27.3"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "192f2e9b0225d730ff870f16654d9cec99a70ccec8dafe3199ea35a8672d421c"
-    linux_arm64: "b52cbb2c454d897627df8f4244faa68eff9234ac064d43c63c8a6b4119fd4013"
+    linux_amd64: "b61eaa0981d5bda1b18cdf69f700a9dda07b55ed94d8dfbc61ed0d08b26923bc"
+    linux_arm64: "f78a90ccec34b58f1dcba0e36050c9297cff6f93b3fecadde6af66cbab65d514"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -73,8 +72,8 @@ required_clis:
     min: "1.0.9"
   - bin: agent-runtime    # schema-v2 version policy + home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning
     min: "1.25.0"
-  - bin: macos-agent      # Peekaboo-backed macOS Computer Use adapter: locked backend lifecycle, local/SSH exec and scenarios, MCP profiles, journal/redaction/replay, doctor, and rollback
-    min: "1.22.6"
+  - bin: macos-agent      # Peekaboo v4.2.2 adapter: locked backend lifecycle, local/SSH exec, MCP profiles, journal/redaction/replay, doctor, and transition-only v3 upgrade
+    min: "1.27.3"
   - bin: docs-impact      # durable scan disposition record/show/verify workflow
     min: "1.21.17"
   - bin: skill-usage      # v2 skill/workflow/intent owner records with v1 compatibility

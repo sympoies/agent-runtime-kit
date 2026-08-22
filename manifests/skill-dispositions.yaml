@@ -387,7 +387,7 @@ dispositions:
     parent_intents: [computer-use]
     current_clis: [agent-out, macos-agent]
     current_hooks: []
-    enforcement_point: "AX-first safety workflow, scenario assertions, and retained evidence."
+    enforcement_point: "AX-first safety workflow, guarded exec-flow postconditions, and retained evidence."
     migration_path: "Retain as the direct macOS desktop operation and testing outcome."
     compatibility_required: false
     live_cleanup_required: false

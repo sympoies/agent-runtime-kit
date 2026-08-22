@@ -307,7 +307,7 @@ cases:
     mode: deterministic
     fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
     setup: create one synthetic direct macos-agent adapter with isolated journal roots
-    invocation: run backend/capabilities/doctor, guarded local and SSH exec, sensitive exec, partial-failure scenario/review, and positive/negative MCP profiles
+    invocation: run backend/capabilities/doctor, guarded local and SSH exec, sensitive exec, chained-exec partial-failure review, and positive/negative MCP profiles
     expected_exit_code: 0
     expected_artifacts: adapter envelopes plus manifest, steps, artifact index, summary, redaction, review, replay, privacy, and capability-matrix assertions
     cleanup: temp-output-only
