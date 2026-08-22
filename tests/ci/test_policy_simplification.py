@@ -13,6 +13,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME_PRODUCTS = ("codex", "claude", "hermes", "neutral")
+SHARED_HOME_PRODUCTS = ["codex", "claude", "hermes"]
+HOME_PRODUCT_EXCEPTIONS = {
+    "core/policies/code-review-delegation-codex.md": "codex",
+}
 HOME_BUDGET_BYTES = 4 * 1024
 EDIT_DOC_BUDGET_BYTES = 20 * 1024
 
@@ -64,6 +68,110 @@ def required_relative_paths(payload: dict) -> list[str]:
 
 
 class PolicySimplificationContractTests(unittest.TestCase):
+    def test_dsh_uses_its_selected_home_policy_without_project_home_leakage(self) -> None:
+        cases = (
+            ("project-dev", "edit"),
+            ("project-dev", "delivery"),
+            ("project-dev", "review"),
+            ("task-tools", None),
+            ("browser-test", None),
+            ("memory", None),
+            ("session-coordination", None),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            docs_home = root / "dsh-home"
+            state_home = root / "state"
+            docs_home.mkdir()
+            state_home.mkdir()
+            catalog_entries: list[str] = []
+            expected_content: dict[tuple[str, str | None], str] = {}
+            for index, (intent, phase) in enumerate(cases):
+                document_name = f"DSH_POLICY_{index}.md"
+                content = f"# DSH {intent} {phase or 'all'}\n"
+                expected_content[(intent, phase)] = content
+                phase_entry = f'phase = "{phase}"\n' if phase is not None else ""
+                catalog_entries.append(
+                    f"""
+[[document]]
+context = "{intent}"
+scope = "home"
+path = "{document_name}"
+product = "dsh"
+{phase_entry}required = true
+when = "always"
+""".lstrip()
+                )
+                (docs_home / document_name).write_text(content, encoding="utf-8")
+            (docs_home / "AGENT_DOCS.toml").write_text(
+                "\n".join(catalog_entries),
+                encoding="utf-8",
+            )
+
+            for index, (intent, phase) in enumerate(cases):
+                command = [
+                    "agent-docs",
+                    "session",
+                    "context",
+                    "--docs-home",
+                    str(docs_home),
+                    "--session-id",
+                    "policy-simplification-dsh",
+                    "--product",
+                    "dsh",
+                    "--state-home",
+                    str(state_home),
+                    "--intent",
+                    intent,
+                    "--request-id",
+                    f"policy-simplification-dsh-{index}",
+                    "--project-path",
+                    str(ROOT),
+                    "--worktree-fallback",
+                    "local-only",
+                    "--format",
+                    "json",
+                ]
+                if phase is not None:
+                    command.extend(["--phase", phase])
+                result = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+                payload = json.loads(result.stdout)
+                with self.subTest(intent=intent, phase=phase):
+                    self.assertEqual(result.returncode, 0, payload)
+                    self.assertTrue(payload["ok"], payload)
+                    decision = payload["data"]["decision"]
+                    self.assertEqual(decision["document_count"], 1)
+                    self.assertEqual(
+                        decision["documents"],
+                        [
+                            {
+                                "source": "home",
+                                "scope": "home",
+                                "content": expected_content[(intent, phase)],
+                            }
+                        ],
+                    )
+
+    def test_home_catalog_entries_declare_their_product_boundary(self) -> None:
+        catalog = tomllib.loads(read("AGENT_DOCS.toml"))
+
+        for document in catalog["document"]:
+            if document["scope"] != "home":
+                continue
+            path = document["path"]
+            with self.subTest(path=path):
+                self.assertEqual(
+                    document.get("product"),
+                    HOME_PRODUCT_EXCEPTIONS.get(path, SHARED_HOME_PRODUCTS),
+                )
+
     def test_rendered_home_prompts_fit_the_unwaived_budget(self) -> None:
         for product in HOME_PRODUCTS:
             path = ROOT / "build" / product / "AGENT_HOME.md"
