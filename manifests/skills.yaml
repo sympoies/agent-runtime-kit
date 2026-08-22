@@ -452,7 +452,7 @@ skills:
         render_to: plugins/computer-use/skills/macos-desktop/SKILL.md
     required_clis:
       agent-out: ">=1.19.3"
-      macos-agent: ">=1.22.6"
+      macos-agent: ">=1.27.3"
     state_out_mode: runtime
 
   - id: conversation.discussion-to-implementation-doc

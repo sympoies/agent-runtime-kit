@@ -1,23 +1,35 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-20 (refreshed for `v1.27.0`)
+- Snapshot date: 2026-08-23 (refreshed for `v1.27.3`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.0`
+- Active `git describe --tags` output: `v1.27.3`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.26.4`,
-  `validated_tag: v1.27.0`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.3`,
+  `validated_tag: v1.27.3`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `cf997a39`
-  (`chore(release): bump cli versions to 1.27.0`)
+- Head commit: `d17ae7d4`
+  (`chore(release): bump cli versions to 1.27.3`)
 - Release:
-  [`v1.27.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.0),
+  [`v1.27.3`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.3),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.0` is the validated release while `v1.26.4` remains the compatibility
-  minimum. The release adds the nils-native DeepSeek Harness ingress,
+- `v1.27.3` is both the validated release and compatibility minimum. Runtime-kit
+  consumes the breaking `macos-agent` adapter v3 contract:
+  official Peekaboo v4.2.2 provenance, a remote wire/schema bump, transition-only
+  authentication of installed v3.9.3 backends, individually reviewed exec flows
+  in place of the removed scenario runner, and the v4 action/press/verification
+  surfaces ([#1478](https://github.com/sympoies/nils-cli/pull/1478)). The
+  `macos-agent` floor therefore moves to `>=1.27.3`. Because the previous
+  `v1.26.4` minimum cannot provide this required adapter contract, this adoption
+  explicitly retires that floor and moves the retained minimum digests to
+  `v1.27.3`; no other per-binary floor moves. The intervening v1.27.1 DSH
+  coordination changes and v1.27.2 authenticated recovery-ingress fix are
+  compatible hardening rather than separate runtime-kit requirements.
+- `v1.27.0` was the previous validated release while `v1.26.4` remained the
+  compatibility minimum. The release adds the nils-native DeepSeek Harness ingress,
   main-agent provider, and finish-line engine
   ([#1465](https://github.com/sympoies/nils-cli/pull/1465),
   [#1467](https://github.com/sympoies/nils-cli/pull/1467),
@@ -25,8 +37,8 @@
   runtime-kit does not consume those new DSH contracts, so this ordinary
   validated-role uptake does not move the compatibility minimum or any
   `required_clis[]` floor.
-- `v1.26.4` was the previous validated release and remains the compatibility
-  minimum.
+- `v1.26.4` was the previous validated release and compatibility minimum until
+  the breaking macos-agent v3 adoption above.
   Runtime-kit consumes its provider-native aggregate-context
   preservation in `agent-hook`, plus the 768-byte startup default, exact
   optional agent recall scope, trusted agent-root checks, and frontmatter-aware

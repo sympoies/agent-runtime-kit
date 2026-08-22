@@ -33,8 +33,8 @@ Scope rules:
   `min_version_effective_from`: **2026-09-01**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude surface)
-  ships inside nils-cli; minimum supported **v1.26.4**; validated snapshot
-  **v1.27.0**
+  ships inside nils-cli; minimum supported **v1.27.3**; validated snapshot
+  **v1.27.3**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor`, `audit-drift`, `gc-backups`, `restore-backups`,
@@ -44,7 +44,7 @@ Scope rules:
   commands run through explicit `.envrc` / `.env` handling.
 - Per-skill nils-cli floors come from `manifests/skills.yaml`
   `required_clis` (e.g. `agent-out: ">=1.19.3"`,
-  `macos-agent: ">=1.22.6"`, `agent-run: ">=0.20.0"`). These gate skill
+  `macos-agent: ">=1.27.3"`, `agent-run: ">=0.20.0"`). These gate skill
   bodies, not the harness load path.
 
 ## Surface-By-Surface Shape
