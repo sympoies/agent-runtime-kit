@@ -64,6 +64,78 @@ def required_relative_paths(payload: dict) -> list[str]:
 
 
 class PolicySimplificationContractTests(unittest.TestCase):
+    def test_dsh_uses_its_selected_home_policy_without_project_home_leakage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            docs_home = root / "dsh-home"
+            state_home = root / "state"
+            docs_home.mkdir()
+            state_home.mkdir()
+            (docs_home / "AGENT_DOCS.toml").write_text(
+                """
+[[document]]
+context = "project-dev"
+scope = "home"
+path = "PROJECT_DEV_EDIT.md"
+product = "dsh"
+phase = "edit"
+required = true
+when = "always"
+""".lstrip(),
+                encoding="utf-8",
+            )
+            (docs_home / "PROJECT_DEV_EDIT.md").write_text(
+                "# DSH project development\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "agent-docs",
+                    "session",
+                    "context",
+                    "--docs-home",
+                    str(docs_home),
+                    "--session-id",
+                    "policy-simplification-dsh",
+                    "--product",
+                    "dsh",
+                    "--state-home",
+                    str(state_home),
+                    "--intent",
+                    "project-dev",
+                    "--phase",
+                    "edit",
+                    "--request-id",
+                    "policy-simplification-dsh-1",
+                    "--project-path",
+                    str(ROOT),
+                    "--worktree-fallback",
+                    "local-only",
+                    "--format",
+                    "json",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 0, payload)
+        self.assertTrue(payload["ok"], payload)
+        decision = payload["data"]["decision"]
+        self.assertEqual(decision["document_count"], 1)
+        self.assertEqual(
+            decision["documents"],
+            [
+                {
+                    "source": "home",
+                    "scope": "home",
+                    "content": "# DSH project development\n",
+                }
+            ],
+        )
+
     def test_rendered_home_prompts_fit_the_unwaived_budget(self) -> None:
         for product in HOME_PRODUCTS:
             path = ROOT / "build" / product / "AGENT_HOME.md"
