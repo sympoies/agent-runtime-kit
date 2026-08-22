@@ -6,9 +6,8 @@ This is the canonical runtime-kit claim for the Peekaboo-backed
 `computer-use.macos-desktop` route. It describes nils-cli `macos-agent` adapter
 v3, introduced by the v1.27.3 migration and locked to Peekaboo v4.2.2.
 The adapter implementation was reviewed and merged in
-[sympoies/nils-cli#1478](https://github.com/sympoies/nils-cli/pull/1478); the
-runtime cutover is tracked in
-[graysurf/agent-runtime-kit#610](https://github.com/graysurf/agent-runtime-kit/issues/610).
+[sympoies/nils-cli#1478](https://github.com/sympoies/nils-cli/pull/1478); live
+v4.2.2 cutover evidence is retained by the consumer delivery for this matrix.
 
 Status meanings:
 
@@ -27,7 +26,7 @@ paths, AX values, and typed data remain in private `agent-out` journals.
 
 | Capability | Status | Contract / option | Evidence |
 | --- | --- | --- | --- |
-| macOS 15+ active GUI session | supported | Local or SSH target must be unlocked with an active graphical login. | Adapter platform guard; live Calculator acceptance summarized on #610. |
+| macOS 15+ active GUI session | supported | Local or SSH target must be unlocked with an active graphical login. | Adapter platform guard plus consumer-delivery live Calculator acceptance. |
 | macOS before 15 | unsupported | No compatibility claim. | `capabilities` minimum macOS plus negative platform guard tests in nils-cli#1478. |
 | Local execution | supported | `doctor`, `exec`, and stdio `mcp` operate locally. | Deterministic transport suite and live local Calculator acceptance. |
 | Local / SSH execution | adapter | `--host <trusted-alias>` uses fixed remote commands and typed stdin; no remote shell surface. | Fake-SSH suite, controller-side live acceptance, and privacy scan. |
@@ -38,7 +37,7 @@ paths, AX values, and typed data remain in private `agent-out` journals.
 | Permission mutation or TCC bypass | disabled | Adapter never grants, resets, or bypasses TCC. | Hard-disabled capabilities output and policy-negative tests. |
 | Apps/windows list, focus, move, and resize | supported | Use reviewed Peekaboo argv through `exec`; mutations require `--expected`. | Peekaboo contract tests and local/SSH live target exercises. |
 | AX/UI inspection and stable element targeting | supported | Prefer fresh UI maps/snapshots and stable target descriptions. | Peekaboo contract tests plus fresh observation acceptance. |
-| Displayless element-ID targeting | unsupported | `display_count=0` does not support the snapshot element-ID claim. | Live residual reproduced during Task 3.2 and recorded on #610. |
+| Displayless element-ID targeting | unsupported | `display_count=0` does not support the snapshot element-ID claim. | Live residual retained in the consumer-delivery acceptance evidence. |
 | Fresh-observation coordinate fallback | optional | Allowed only inside the declared app with an explicit postcondition. | Live displayless global-coordinate canary passed with 0→3 postcondition. |
 | Action-first click/set-value/named action | supported | Mutations require an observable `--expected` result. | Policy tests and live Calculator action acceptance. |
 | Coordinate click, button, count, modifiers | supported | Last-resort bounded input after current geometry observation. | Peekaboo CLI contract plus synthetic input acceptance. |
@@ -60,7 +59,7 @@ paths, AX values, and typed data remain in private `agent-out` journals.
 | MCP HTTP/SSE | unsupported | Upstream stubs are not exposed. | Capabilities ceiling and negative interface tests. |
 | Natural-language agent / AI analysis | disabled | Calling agent owns planning and interpretation. | `agent`/`analyze` hard-deny tests and capabilities output. |
 | Browser DOM/CDP | disabled | Use a separately governed browser route; no unpinned package fallback. | `browser` hard-deny tests and hostile upstream-config tests. |
-| Dia DOM/page automation | unsupported | Native AX only; no DOM claim. | Boundary review in #610; no adapter command family. |
+| Dia DOM/page automation | unsupported | Native AX only; no DOM claim. | Consumer-delivery boundary review; no adapter command family. |
 | Shell and audio | disabled | Never available through CLI or MCP profiles. | `shell`/`audio` hard-deny tests and negative MCP calls. |
 | Configuration and credentials management | disabled | Provider configuration, keys, and credential tools are stripped/denied. | Environment-clearing and hostile-config MCP tests. |
 | Secret/private-key entry | optional | Only an explicitly approved sensitive fixture; no real credential in acceptance, screenshot, value, or replay material. | Synthetic sensitive canary scan and `never` replay classification. |

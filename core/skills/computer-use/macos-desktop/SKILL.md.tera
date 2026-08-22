@@ -52,7 +52,8 @@ Outputs:
   caller-owned session root.
 - A pass/fail/blocked conclusion grounded in an observed postcondition, not
   merely process exit zero.
-- Explicit residuals for skipped capabilities or reduced distribution posture.
+- Explicit residuals for skipped capabilities. Active Peekaboo v4.2.2
+  readiness rejects any waived or reduced distribution result.
 
 ## Outcome Routing
 
@@ -296,19 +297,19 @@ A functional claim passes only when all applicable checks hold:
 6. For installed-surface acceptance, a fresh product session discovers this
    skill, uses direct `macos-agent`, and never invokes retired mechanics or a
    disabled tool.
-7. Recovery is proven without changing the accepted live state: when an exact
-   allowlisted previous receipt passes strict verification, rollback dry-run
-   and previous-release read-back succeed; on a fresh install where `backend
-   status` reports no previous receipt, rollback dry-run refuses
-   deterministically and a subsequent status read-back reports the unchanged
-   current receipt.
+7. Release transition recovery is proven without changing the accepted live
+   state: an authenticated v3.9.3 predecessor can upgrade in place and recover
+   after interruption, but it cannot be reactivated or selected as rollback;
+   rollback dry-run refuses deterministically and a subsequent status read-back
+   reports the unchanged v4.2.2 receipt.
 
 The canonical status/evidence inventory is
 [`docs/source/macos-agent-capability-matrix.md`](https://github.com/sympoies/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
-Do not infer support beyond that matrix. A disclosed, exact-artifact
-distribution-security residual may remain non-blocking when the functional
-path passes and all non-waived hard gates remain enforced; privacy leaks, wrong
-targets, false success, or unusable behavior are always functional blockers.
+Do not infer support beyond that matrix. Active v4.2.2 acceptance requires full
+distribution-security posture; the historical v3.9.3 notarization waiver is
+transition-authentication metadata only and never an accepted runtime
+residual. Privacy leaks, wrong targets, false success, or unusable behavior are
+always functional blockers.
 
 ## Approval Boundary
 

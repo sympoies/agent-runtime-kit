@@ -39,12 +39,12 @@ write_journal() {
   local tool_profile="${7:-}"
   local tool_profile_json=""
   local backend_digest="${COMPUTER_USE_TEST_BACKEND_DIGEST:-sha256:synthetic}"
+  local sequence=1
+  local step_id=""
 
   local replay_class=safe
   local replay_argv='["see"]'
   local failure_json=null
-  local failed=0
-  local policy_blocked=0
   if [[ "$evidence_mode" == sensitive || "$status" != passed ]]; then
     replay_class=never
     replay_argv=null
@@ -52,20 +52,25 @@ write_journal() {
   if [[ "$failure_class" != none ]]; then
     failure_json='"'"$failure_class"'"'
   fi
-  if [[ "$status" == failed ]]; then
-    failed=1
-  elif [[ "$status" == policy_blocked ]]; then
-    policy_blocked=1
-  fi
   if [[ -n "$tool_profile" ]]; then
     tool_profile_json=',"tool_profile":"'"$tool_profile"'"'
   fi
+  if [[ -s "$out_dir/steps.jsonl" ]]; then
+    sequence="$(( $(wc -l <"$out_dir/steps.jsonl") + 1 ))"
+  fi
+  printf -v step_id 'step-%06d' "$sequence"
+  JOURNAL_STEP_ID="$step_id"
 
   mkdir -p "$out_dir/artifacts"
   printf '%s\n' "{\"schema_version\":\"macos-agent.journal.v2\",\"run_id\":\"synthetic-run\",\"adapter_version\":\"1.27.3\",\"peekaboo_tag\":\"v4.2.2\",\"peekaboo_commit\":\"05675b0b5e2c382146963e19493787d9dac0d45b\",\"backend_digest\":\"$backend_digest\",\"runtime\":\"app\",\"transport\":\"$transport\",\"evidence_mode\":\"$evidence_mode\"${tool_profile_json},\"started_at\":\"2026-08-23T00:00:00Z\",\"closed_at\":\"2026-08-23T00:00:01Z\",\"state\":\"closed\"}" >"$out_dir/manifest.json"
-  printf '%s\n' '{"schema_version":"macos-agent.journal-step.v2","sequence":1,"id":"step-000001","correlation_id":"correlation-000001","recorded_at":"2026-07-16T00:00:00Z","command":"'"$command"'","argv_shape":["fixture"],"replay_argv":'"$replay_argv"',"backend_digest":"'"$backend_digest"'","runtime":"app","transport":"'"$transport"'","status":"'"$status"'","failure_class":'"$failure_json"',"duration_ms":1,"retries":0,"replay_class":"'"$replay_class"'"}' >"$out_dir/steps.jsonl"
+  printf '%s\n' '{"schema_version":"macos-agent.journal-step.v2","sequence":'"$sequence"',"id":"'"$step_id"'","correlation_id":"correlation-'"$(printf '%06d' "$sequence")"'","recorded_at":"2026-08-23T00:00:00Z","command":"'"$command"'","argv_shape":["fixture"],"replay_argv":'"$replay_argv"',"backend_digest":"'"$backend_digest"'","runtime":"app","transport":"'"$transport"'","status":"'"$status"'","failure_class":'"$failure_json"',"duration_ms":1,"retries":0,"replay_class":"'"$replay_class"'"}' >>"$out_dir/steps.jsonl"
+  local total_steps passed_steps failed_steps policy_blocked_steps
+  total_steps="$(wc -l <"$out_dir/steps.jsonl")"
+  passed_steps="$(grep -c '"status":"passed"' "$out_dir/steps.jsonl" || true)"
+  failed_steps="$(grep -c '"status":"failed"' "$out_dir/steps.jsonl" || true)"
+  policy_blocked_steps="$(grep -c '"status":"policy_blocked"' "$out_dir/steps.jsonl" || true)"
   printf '%s\n' '{"schema_version":"macos-agent.artifact-index.v1","artifacts":[]}' >"$out_dir/artifacts/index.json"
-  printf '%s\n' '{"schema_version":"macos-agent.journal-summary.v1","total_steps":1,"passed":'"$([[ "$status" == passed ]] && printf 1 || printf 0)"',"failed":'"$failed"',"unknown":0,"policy_blocked":'"$policy_blocked"',"failure_signatures":[],"replay_candidates":[],"defect_candidates":[],"assertions":[],"residual_user_actions":[],"recovered_tail":false}' >"$out_dir/summary.json"
+  printf '%s\n' '{"schema_version":"macos-agent.journal-summary.v1","total_steps":'"$total_steps"',"passed":'"$passed_steps"',"failed":'"$failed_steps"',"unknown":0,"policy_blocked":'"$policy_blocked_steps"',"failure_signatures":[],"replay_candidates":[],"defect_candidates":[],"assertions":[],"residual_user_actions":[],"recovered_tail":false}' >"$out_dir/summary.json"
   printf '%s\n' '{"schema_version":"macos-agent.redaction.v1","rules":[],"suppressed_fields":[],"failures":[],"private_identifier_matches":0,"secret_matches":0}' >"$out_dir/redaction.json"
 }
 
@@ -187,11 +192,11 @@ case "$command" in
     esac
     if [[ "$intent" == 'Exercise synthetic wrong-target handling' ]]; then
       write_journal "$out_dir" "exec.$upstream_command" "$transport" "$evidence_mode" failed wrong_target
-      printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"step-000001","upstream":{"exit_code":9,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"diagnostic":"synthetic exec stopped after a significant wrong-target failure"}}}'
+      printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"'"$JOURNAL_STEP_ID"'","upstream":{"exit_code":9,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"diagnostic":"synthetic exec stopped after a significant wrong-target failure"}}}'
       exit 70
     fi
     write_journal "$out_dir" "exec.$upstream_command" "$transport" "$evidence_mode" passed none
-    printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"step-000001","upstream":{"exit_code":0,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"json":{"success":true}}}}'
+    printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"exec","result":{"transport":"'"$transport"'","runtime":"app","evidence_mode":"'"$evidence_mode"'","journal_step":"'"$JOURNAL_STEP_ID"'","upstream":{"exit_code":0,"timed_out":false,"stdout_truncated":false,"stderr_truncated":false,"json":{"success":true}}}}'
     ;;
   mcp)
     out_dir=""
@@ -221,15 +226,26 @@ case "$command" in
     done
     assert_compatible_journal "$out_dir" "$transport" sensitive "$profile"
     input="$(cat)"
+    case "$profile" in
+      observe)
+        tools_json='[{"name":"see"},{"name":"inspect_ui"},{"name":"permissions"},{"name":"sleep"},{"name":"verify_state"}]'
+        ;;
+      interact)
+        tools_json='[{"name":"see"},{"name":"inspect_ui"},{"name":"permissions"},{"name":"sleep"},{"name":"verify_state"},{"name":"click"},{"name":"type"},{"name":"press"},{"name":"scroll"},{"name":"drag"},{"name":"move"},{"name":"set_value"},{"name":"action"},{"name":"window"},{"name":"app"},{"name":"menu"}]'
+        ;;
+      extended)
+        tools_json='[{"name":"see"},{"name":"inspect_ui"},{"name":"permissions"},{"name":"sleep"},{"name":"verify_state"},{"name":"click"},{"name":"type"},{"name":"press"},{"name":"scroll"},{"name":"drag"},{"name":"move"},{"name":"set_value"},{"name":"action"},{"name":"window"},{"name":"app"},{"name":"menu"},{"name":"dialog"},{"name":"dock"},{"name":"space"},{"name":"capture"},{"name":"paste"}]'
+        ;;
+    esac
     if [[ "$input" == *'"name":"shell"'* ]]; then
       write_journal "$out_dir" mcp.tools_call "$transport" sensitive policy_blocked policy "$profile"
       printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"tool denied by adapter profile"}}' \
-        '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+        '{"jsonrpc":"2.0","id":2,"result":{"tools":'"$tools_json"'}}'
       exit 0
     fi
     write_journal "$out_dir" mcp "$transport" sensitive passed none "$profile"
-    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":'"$tools_json"'}}'
     ;;
   journal)
     journal_command="${1:-}"
@@ -254,23 +270,31 @@ case "$command" in
         printf '}\n'
         ;;
       review)
-        review='{"schema_version":"macos-agent.journal-review.v1","candidates":[{"signature":"exec.click:wrong_target","count":1,"significant":true,"proposed_owner":"runtime_skill_policy","step_ids":["step-000001"]}],"clean":false}'
+        failed_step="$(grep '"status":"failed"' "$out_dir/steps.jsonl" | tail -1 | sed -E 's/.*"id":"([^"]+)".*/\1/')"
+        review='{"schema_version":"macos-agent.journal-review.v1","candidates":[{"signature":"exec.click:wrong_target","count":1,"significant":true,"proposed_owner":"runtime_skill_policy","step_ids":["'"$failed_step"'"]}],"clean":false}'
         printf '%s\n' "$review" >"$out_dir/review.json"
         printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"journal.review","result":'"$review"'}'
         ;;
       replay-plan)
-        replay_class=safe
-        eligible=true
-        reason=eligible
-        if grep -q '"replay_class":"never"' "$out_dir/steps.jsonl"; then
-          replay_class=never
-          eligible=false
-          reason=never
-        elif grep -q '"transport":"ssh"' "$out_dir/manifest.json"; then
-          eligible=false
-          reason='remote journal replay is not supported'
-        fi
-        printf '%s\n' '{"schema_version":"macos-agent.adapter.v3","ok":true,"command":"journal.replay-plan","result":{"steps":[{"id":"step-000001","replay_class":"'"$replay_class"'","eligible":'"$eligible"',"reason":"'"$reason"'"}]}}'
+        python3 - "$out_dir/steps.jsonl" "$out_dir/manifest.json" <<'PY'
+import json
+import pathlib
+import sys
+
+steps = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
+manifest = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+rows = []
+for step in steps:
+    replay_class = step["replay_class"]
+    if replay_class == "never":
+        eligible, reason = False, "never"
+    elif manifest["transport"] == "ssh":
+        eligible, reason = False, "remote journal replay is not supported"
+    else:
+        eligible, reason = True, "eligible"
+    rows.append({"id": step["id"], "replay_class": replay_class, "eligible": eligible, "reason": reason})
+print(json.dumps({"schema_version":"macos-agent.adapter.v3","ok":True,"command":"journal.replay-plan","result":{"steps":rows}}, separators=(",", ":")))
+PY
         ;;
       *)
         exit 64
@@ -454,6 +478,7 @@ PY
   PATH="$FAKE_BIN:$PATH" macos-agent journal replay-plan --out-dir "$sensitive_out" --format json >"$CASE_ARTIFACTS/sensitive-replay-plan.json"
   grep -q '"replay_class":"never"' "$CASE_ARTIFACTS/sensitive-replay-plan.json"
 
+  PATH="$FAKE_BIN:$PATH" macos-agent exec --host example-mac --out-dir "$failed_flow_out" --intent 'Observe before the synthetic flow mutation' --runtime app -- see --app 'Synthetic App' --json >"$CASE_ARTIFACTS/failed-flow-observe.json"
   if PATH="$FAKE_BIN:$PATH" macos-agent exec --host example-mac --out-dir "$failed_flow_out" --intent 'Exercise synthetic wrong-target handling' --expected 'The synthetic target changes' --runtime app -- click --app 'Synthetic App' --on Missing --json >"$CASE_ARTIFACTS/failed-flow.json" 2>"$CASE_ARTIFACTS/failed-flow.stderr.txt"; then
     return 1
   fi
@@ -472,10 +497,32 @@ assert set(result["upstream"]) == {
     "exit_code", "timed_out", "stdout_truncated", "stderr_truncated", "diagnostic",
 }, result["upstream"]
 assert result["upstream"]["exit_code"] != 0, result
+assert result["journal_step"] == "step-000002", result
 PY
   assert_journal "$failed_flow_out"
   PATH="$FAKE_BIN:$PATH" macos-agent journal summarize --out-dir "$failed_flow_out" --format json >"$CASE_ARTIFACTS/failed-flow-summary.json"
   PATH="$FAKE_BIN:$PATH" macos-agent journal review --out-dir "$failed_flow_out" --format json >"$CASE_ARTIFACTS/failed-flow-review.json"
+  PATH="$FAKE_BIN:$PATH" macos-agent journal replay-plan --out-dir "$failed_flow_out" --format json >"$CASE_ARTIFACTS/failed-flow-replay-plan.json"
+  python3 - "$failed_flow_out/steps.jsonl" "$CASE_ARTIFACTS/failed-flow-summary.json" "$CASE_ARTIFACTS/failed-flow-review.json" "$CASE_ARTIFACTS/failed-flow-replay-plan.json" <<'PY'
+import json
+import pathlib
+import sys
+
+steps = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
+assert [(row["id"], row["command"], row["status"], row["replay_class"]) for row in steps] == [
+    ("step-000001", "exec.see", "passed", "safe"),
+    ("step-000002", "exec.click", "failed", "never"),
+], steps
+summary = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))["result"]
+assert (summary["total_steps"], summary["passed"], summary["failed"]) == (2, 1, 1), summary
+review = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8"))["result"]
+assert review["candidates"][0]["step_ids"] == ["step-000002"], review
+plan = json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8"))["result"]["steps"]
+assert [(row["id"], row["replay_class"], row["eligible"]) for row in plan] == [
+    ("step-000001", "safe", False),
+    ("step-000002", "never", False),
+], plan
+PY
   grep -q '"significant":true' "$CASE_ARTIFACTS/failed-flow-review.json"
   grep -q '"proposed_owner":"runtime_skill_policy"' "$CASE_ARTIFACTS/failed-flow-review.json"
   if grep -q '"provider_mutation"' "$CASE_ARTIFACTS/failed-flow-review.json"; then
@@ -484,7 +531,7 @@ PY
 
   for profile in observe interact extended; do
     PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$mcp_out-$profile" --tool-profile "$profile" --runtime app >"$CASE_ARTIFACTS/mcp-$profile.json"
-    python3 - "$CASE_ARTIFACTS/mcp-$profile.json" <<'PY'
+    python3 - "$CASE_ARTIFACTS/mcp-$profile.json" "$profile" <<'PY'
 import json
 import pathlib
 import sys
@@ -493,6 +540,14 @@ frames = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encod
 assert frames, "MCP emitted no JSON-RPC frames"
 assert all(frame.get("jsonrpc") == "2.0" for frame in frames), frames
 assert all(frame.get("schema_version") != "macos-agent.adapter.v3" for frame in frames), frames
+actual = [tool["name"] for tool in frames[-1]["result"]["tools"]]
+observe = ["see", "inspect_ui", "permissions", "sleep", "verify_state"]
+interact = observe + ["click", "type", "press", "scroll", "drag", "move", "set_value", "action", "window", "app", "menu"]
+extended = interact + ["dialog", "dock", "space", "capture", "paste"]
+expected = {"observe": observe, "interact": interact, "extended": extended}[sys.argv[2]]
+assert actual == expected, (sys.argv[2], actual)
+for retired in ("hotkey", "swipe", "scenario", "shell"):
+    assert retired not in actual, (retired, actual)
 PY
     assert_journal "$mcp_out-$profile"
   done
@@ -605,6 +660,17 @@ run_skill_and_matrix_contract_probe() {
     grep -Fq "$capability" "$matrix"
   done
   grep -Fq 'Evidence' "$matrix"
+  grep -Fq 'As of `v1.27.3`' "$REPO_ROOT/docs/source/nils-cli-surface.md"
+  grep -Fq 'guarded multi-step flows' "$REPO_ROOT/core/skills/README.md"
+  grep -Fq 'guarded exec-flow postconditions' "$REPO_ROOT/manifests/skill-dispositions.yaml"
+  if rg -n 'retaining screenshots, scenarios|scenario assertions' \
+    "$REPO_ROOT/core/skills/README.md" \
+    "$REPO_ROOT/manifests/skill-dispositions.yaml"; then
+    return 1
+  fi
+  if rg -n 'reduced distribution posture|may remain non-blocking' "$skill"; then
+    return 1
+  fi
 
   for product in codex claude hermes; do
     rendered_contract_prepare_product "$product"
