@@ -18976,6 +18976,9 @@ exit 65
         subprocess.run(
             ["git", "config", "user.name", "Hook Test"], cwd=path, check=True
         )
+        subprocess.run(
+            ["git", "config", "commit.gpgsign", "false"], cwd=path, check=True
+        )
         (path / "README.md").write_text("# lease fixture\n", encoding="utf-8")
         subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
         subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=path, check=True)
@@ -18998,6 +19001,22 @@ exit 65
             cwd=path,
             check=True,
         )
+
+    def test_checkout_lease_fixture_is_independent_of_ambient_commit_signing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "fixture"
+            self._init_checkout_lease_repo(repo)
+            signing = subprocess.run(
+                ["git", "config", "--local", "--get", "commit.gpgsign"],
+                cwd=repo,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(signing.returncode, 0)
+            self.assertEqual(signing.stdout.strip(), "false")
 
     @staticmethod
     def _add_checkout_lease_worktree(primary: Path, branch: str) -> Path:
