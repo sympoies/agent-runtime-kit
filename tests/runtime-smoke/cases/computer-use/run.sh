@@ -831,18 +831,19 @@ run_live_recovery_contract_probe() {
 
   assert_live_recovery_contract "$skill"
 
-  # The matrix publishes each live-verified recovery and the one honest
-  # negative: SSH journals do not accumulate, so a fixture cannot read its
-  # stability rate back from them until the adapter defect is fixed.
+  # The matrix publishes each live-verified recovery, including the SSH journal
+  # merge that lets a chained flow read its own stability rate back out of
+  # steps.jsonl instead of tracking it beside the journal.
   grep -Fq '| Cold app-runtime bootstrap | supported |' "$matrix"
   grep -Fq '| Outcome envelope interpretation | supported |' "$matrix"
   grep -Fq '| Partial-inventory identity retargeting | supported |' "$matrix"
-  grep -Fq '| SSH journal step accumulation | unsupported |' "$matrix"
-  grep -Fq 'sympoies/nils-cli#1512' "$matrix"
+  grep -Fq '| SSH journal step accumulation | supported |' "$matrix"
+  grep -Fq 'merges its transferred journal' "$matrix"
+  grep -Fq 'remapped local id' "$matrix"
 
-  # The fixture format carries the same caveat, so a fixture author does not
-  # plan a stability rate the SSH journal cannot supply.
-  grep -Fq 'sympoies/nils-cli#1512' "$fixtures"
+  # The fixture format names the adapter floor, so a fixture author does not
+  # plan a journal read-back an older SSH target cannot supply.
+  grep -Fq '1.27.12 onward' "$fixtures"
 
   for product in codex claude hermes; do
     rendered_contract_prepare_product "$product"
