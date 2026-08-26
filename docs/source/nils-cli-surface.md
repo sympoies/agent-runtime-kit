@@ -1,23 +1,36 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-26 (refreshed for `v1.27.12`)
+- Snapshot date: 2026-08-26 (refreshed for `v1.27.13`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.12`
+- Active `git describe --tags` output: `v1.27.13`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.3`,
-  `validated_tag: v1.27.12`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.27.13`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `7662a44a`
-  (`chore(release): bump cli versions to 1.27.12 (#1518)`)
+- Head commit: `3dee4915`
+  (`chore(release): bump cli versions to 1.27.13`)
 - Release:
-  [`v1.27.12`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.12),
+  [`v1.27.13`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.13),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.12` is the validated release while `v1.27.3` remains the compatibility
-  minimum. Runtime-kit consumes its body-free authenticated coordination
+- `v1.27.13` is the validated release while `v1.27.3` remains the compatibility
+  minimum. It preserves tmux-backed session liveness under a C locale by using
+  a printable snapshot delimiter while accepting the historical tab form
+  ([#1523](https://github.com/sympoies/nils-cli/pull/1523)), bounds contained
+  finish-line unit teardown without weakening cgroup termination
+  ([#1522](https://github.com/sympoies/nils-cli/pull/1522)), and makes
+  `forge-cli` review-loop merge-gate failures name their exact remedy
+  ([#1519](https://github.com/sympoies/nils-cli/pull/1519)). The remaining
+  release change retargets an existing nextest retry comment to its live
+  follow-up ([#1525](https://github.com/sympoies/nils-cli/pull/1525)). These are
+  compatible fixes to already-admitted contracts, so this ordinary
+  validated-role uptake does not move the global compatibility minimum or any
+  `required_clis[]` floor.
+- `v1.27.12` was the previous validated release while `v1.27.3` remains the
+  compatibility minimum. Runtime-kit consumes its body-free authenticated coordination
   checkpoint notification, which lets long-running agents inspect mailbox
   metadata promptly at safe boundaries without interrupting an atomic mutation
   ([#1509](https://github.com/sympoies/nils-cli/pull/1509)). Releases
