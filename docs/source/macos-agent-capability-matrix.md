@@ -31,6 +31,7 @@ paths, AX values, and typed data remain in private `agent-out` journals.
 | Local execution | supported | `doctor`, `exec`, and stdio `mcp` operate locally. | Deterministic transport suite and live local Calculator acceptance. |
 | Local / SSH execution | adapter | `--host <trusted-alias>` uses fixed remote commands and typed stdin; no remote shell surface. | Fake-SSH suite, controller-side live acceptance, and privacy scan. |
 | Exact backend pin and verification | adapter | Immutable tag/commit/assets/digests/signatures; v3.9.3 is transition-only for in-place upgrade and cannot be reactivated. | Lock/provenance tests plus transition-only upgrade regression. |
+| Backend freshness audit | adapter | This matrix, `docs/source/nils-cli-pin.yaml`, and `docs/source/nils-cli-surface.md` must name the same pinned Peekaboo release. Adopting a newer upstream release stays a separate reviewed decision. | Network-free mirror-agreement assertion in the surface-routing contract probe. |
 | App-held TCC authority | supported | `--runtime app` is the stable default. | Bridge handshake tests and live foreground/background acceptance. |
 | Daemon/auto/process runtimes | optional | `daemon` and `auto` use verified digest-scoped authority; `process` is diagnostic `--no-remote`. | Runtime selection/lease/transition tests in nils-cli#1478. |
 | Permission diagnosis | supported | `doctor` and `capabilities` report readiness; strict doctor gates live mutation. | Deterministic doctor matrix and live strict-doctor result. |
@@ -38,6 +39,10 @@ paths, AX values, and typed data remain in private `agent-out` journals.
 | Apps/windows list, focus, move, and resize | supported | Use reviewed Peekaboo argv through `exec`; mutations require `--expected`. | Peekaboo contract tests and local/SSH live target exercises. |
 | AX/UI inspection and stable element targeting | supported | Prefer fresh UI maps/snapshots and stable target descriptions. | Peekaboo contract tests plus fresh observation acceptance. |
 | Displayless element-ID targeting | unsupported | `display_count=0` does not support the snapshot element-ID claim. | Live residual retained in the consumer-delivery acceptance evidence. |
+| Accessibility health gate | supported | Judge tree health on the fresh `see` result before any mutation, then take the bounded coordinate fallback or stop with a named blocker. | Accessibility health gate in the skill plus the surface-routing contract probe. |
+| Degenerate-AX application classes | unsupported | Chromium-family web content, Qt, OpenGL and canvas-drawn surfaces, and other non-native toolkits that publish no usable tree. Continuing to probe one is a false-success risk, not a retry case. | Negative-class row asserted by the surface-routing contract probe. |
+| Deterministic surface preference | supported | App Intents/Shortcuts, a first-party CLI/API, or a scripting dictionary outranks GUI driving. Those rungs run outside the adapter and never reopen a denied adapter tool. | Surface selection ladder asserted for source and every rendered product. |
+| Rerunnable flow fixtures | supported | Declare a repeatable flow in a tracked fixture and run it as chained `exec`; `journal replay-plan` is not the rerun mechanism. | `references/flow-fixtures.md` rendered-reference equality plus fixture-shape assertions. |
 | Fresh-observation coordinate fallback | optional | Allowed only inside the declared app with an explicit postcondition. | Live displayless global-coordinate canary passed with 0→3 postcondition. |
 | Action-first click/set-value/named action | supported | Mutations require an observable `--expected` result. | Policy tests and live Calculator action acceptance. |
 | Coordinate click, button, count, modifiers | supported | Last-resort bounded input after current geometry observation. | Peekaboo CLI contract plus synthetic input acceptance. |
@@ -58,7 +63,7 @@ paths, AX values, and typed data remain in private `agent-out` journals.
 | MCP stdio | optional | Local/SSH proxy with `observe`, `interact`, or `extended` profiles. | JSON-RPC framing, cancellation, shutdown, SSH status, and profile tests. |
 | MCP HTTP/SSE | unsupported | Upstream stubs are not exposed. | Capabilities ceiling and negative interface tests. |
 | Natural-language agent / AI analysis | disabled | Calling agent owns planning and interpretation. | `agent`/`analyze` hard-deny tests and capabilities output. |
-| Browser DOM/CDP | disabled | Use a separately governed browser route; no unpinned package fallback. | `browser` hard-deny tests and hostile upstream-config tests. |
+| Browser DOM/CDP | disabled | Route DOM, selector, and rendered-page claims to the `browser-test` route in `core/policies/browser-test-routing.md`; no unpinned package fallback. | `browser` hard-deny tests and hostile upstream-config tests. |
 | Dia DOM/page automation | unsupported | Native AX only; no DOM claim. | Consumer-delivery boundary review; no adapter command family. |
 | Shell and audio | disabled | Never available through CLI or MCP profiles. | `shell`/`audio` hard-deny tests and negative MCP calls. |
 | Configuration and credentials management | disabled | Provider configuration, keys, and credential tools are stripped/denied. | Environment-clearing and hostile-config MCP tests. |

@@ -55,6 +55,42 @@ Outputs:
 - Explicit residuals for skipped capabilities. Active Peekaboo v4.2.2
   readiness rejects any waived or reduced distribution result.
 
+## Surface Selection
+
+Prefer the most deterministic surface that can prove the outcome. GUI driving
+is the last rung, not the default: published macOS GUI-agent benchmarks put
+end-to-end task success far below what a scripted interface reaches, so skip a
+rung only when it genuinely does not exist for this target.
+
+| Rung | Surface | Use when |
+| --- | --- | --- |
+| 1 | App Intents / Shortcuts | The target publishes an action Shortcuts can run. |
+| 2 | First-party CLI or API | The target ships a command line or local API that performs the outcome. |
+| 3 | Scripting dictionary | The target exposes AppleScript/JXA terminology for the outcome. |
+| 4 | Adapter AX interaction | Only a GUI exists and its accessibility tree is healthy. |
+| 5 | Bounded coordinate fallback | The tree is degenerate and fresh observation proved the geometry. |
+
+Rungs 1 to 3 run outside the adapter and are not adapter capabilities. They do
+not widen the adapter surface. Adapter shell remains hard-disabled, and so do
+browser, agent/analysis, audio, clipboard, and configuration tools; a
+caller-side surface never reopens a denied adapter tool.
+
+State the selected rung and why the rungs above it were rejected before the
+first mutation, and carry that reason in the run intent so a reviewer can see
+the outcome was not driven through pixels by default.
+
+### Browser Claim Handoff
+
+Hand a DOM, selector, or rendered-page claim to the `browser-test` route in
+`core/policies/browser-test-routing.md`. This skill owns native window chrome,
+cross-application behavior, permission dialogs, and AX interaction, and claims
+no DOM or CDP capability of its own.
+
+The browser route owns signed-in session state and its own artifact directory.
+Link its output from the parent session instead of re-observing the same page
+through AX, and never report a desktop screenshot of a browser window as proof
+of rendered DOM state.
+
 ## Outcome Routing
 
 Infer local versus SSH from the named reachable target, select the narrowest
@@ -121,6 +157,27 @@ bootstrap, rerun strict doctor and capabilities before any mutation. Do not
 reinstall an already verified backend for this state, do not use a floating
 Peekaboo build, and do not treat a backend mismatch, permission denial, failed
 observation, or still-blocked strict result as cold-start recovery.
+
+## Accessibility Health Gate
+
+Judge accessibility health before the first mutation. Read the fresh `see`
+result and decide whether the tree actually exposes the declared target and
+actionable elements, or is degenerate: empty, collapsed into one opaque
+container, or a window whose visible controls never appear as elements.
+
+Chromium-family web content, Qt, OpenGL and canvas-drawn surfaces, and other
+non-native toolkits routinely report a degenerate tree. On that result:
+
+- Take the bounded coordinate fallback of rung 5 only inside the declared
+  application, only when a fresh observation proved the current geometry, and
+  only with an explicit postcondition.
+- Otherwise stop and report a blocker that names the application class, rather
+  than continuing to search the tree for a target it does not publish.
+
+Continuing to probe a degenerate tree is a false-success risk, and a false
+success is always a functional blocker under the acceptance standard below.
+Never widen the target, retry blindly, or substitute a screenshot description
+for an observed postcondition.
 
 ## Execute And Prove Postconditions
 
@@ -189,6 +246,12 @@ macos-agent exec \
 Keep setup/reset steps and assertions explicit so each run is independent.
 After partial failure, inspect the journal and resume only from a newly observed
 state; never assume all prior steps completed.
+
+A flow worth rerunning is a tracked fixture, not transcript prose. Declare it
+with [references/flow-fixtures.md](references/flow-fixtures.md) and run it as
+the same chained `exec` calls in one homogeneous journal. `journal replay-plan`
+is not the rerun mechanism: its `never` classification and ineligible SSH rows
+are deliberate safety ceilings, not a limitation to work around.
 
 ## MCP Tool Profiles
 
@@ -291,7 +354,13 @@ A functional claim passes only when all applicable checks hold:
    the declared scope.
 3. An explicit postcondition was observed after mutation; exit zero alone is
    insufficient.
-4. The same fixture can run independently without a blind mutation retry.
+4. The same fixture completed at least three independent runs, each with its
+   own setup, reset, and fresh observation, and the observed
+   postcondition success rate is read back from those journals. A flow
+   converges and may be called unattended-safe only at a full success rate
+   across those independent runs; a lower rate is reported as not
+   unattended-safe with the observed rate and the failing step. Repeated
+   independent runs are never a blind mutation retry, which remains forbidden.
 5. Required journal files validate, sensitive suppression is clean, and every
    significant review candidate has an owner.
 6. For installed-surface acceptance, a fresh product session discovers this
