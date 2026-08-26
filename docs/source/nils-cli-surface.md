@@ -1,22 +1,34 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-23 (refreshed for `v1.27.3`)
+- Snapshot date: 2026-08-26 (refreshed for `v1.27.12`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.3`
+- Active `git describe --tags` output: `v1.27.12`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.3`,
-  `validated_tag: v1.27.3`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.27.12`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `d17ae7d4`
-  (`chore(release): bump cli versions to 1.27.3`)
+- Head commit: `7662a44a`
+  (`chore(release): bump cli versions to 1.27.12 (#1518)`)
 - Release:
-  [`v1.27.3`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.3),
+  [`v1.27.12`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.12),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.3` is both the validated release and compatibility minimum. Runtime-kit
+- `v1.27.12` is the validated release while `v1.27.3` remains the compatibility
+  minimum. Runtime-kit consumes its body-free authenticated coordination
+  checkpoint notification, which lets long-running agents inspect mailbox
+  metadata promptly at safe boundaries without interrupting an atomic mutation
+  ([#1509](https://github.com/sympoies/nils-cli/pull/1509)). Releases
+  `v1.27.4` through `v1.27.12` also carry compatible DSH lifecycle,
+  workspace-lease, advisory coordination, transactional prerequisite, graceful
+  session deletion, Git-version inspection, and macOS refusal-classification
+  hardening. These changes preserve the existing contracts admitted by
+  `v1.27.3`, so this ordinary validated-role uptake does not move the global
+  compatibility minimum or any `required_clis[]` floor.
+- `v1.27.3` was the previous validated release and remains the compatibility
+  minimum. Runtime-kit
   consumes the breaking `macos-agent` adapter v3 contract:
   official Peekaboo v4.2.2 provenance, a remote wire/schema bump, transition-only
   authentication of installed v3.9.3 backends, individually reviewed exec flows
