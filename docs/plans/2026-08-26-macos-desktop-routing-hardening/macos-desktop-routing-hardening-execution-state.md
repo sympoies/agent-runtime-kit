@@ -7,16 +7,18 @@
 - Tracking issue: <https://github.com/sympoies/agent-runtime-kit/issues/49>
 - Current sprint: Sprint 4 stability, freshness, and delivery
 - Status: in progress
-- Current gate: canonical `bash scripts/ci/all.sh` once against the committed
-  final change, then PR delivery and the full review gate
-- Current task: 4.3
-- Next task: 4.4
+- Current gate: merge PR #50 after the combined review outcome and the
+  issue-side review checkpoint, then strict closeout
+- Current task: 4.4
+- Next task: none
 - Plan branch: `feat/macos-desktop-routing-hardening`
 - Backend: unchanged; Peekaboo `v4.2.2` behind `macos-agent` adapter v3, nils-cli
   floor `>= 1.27.3`
 - Blockers: none
 - Last updated: 2026-08-26
-- Branch/commit/PR: pending
+- Branch/commit/PR: <https://github.com/sympoies/agent-runtime-kit/pull/50> on
+  `feat/macos-desktop-routing-hardening`; plan bundle `6922380`, implementation
+  `1243989`, lock-ignore `082d7b7`, review repairs `6be6bbd`
 
 ## Validation Plan
 
@@ -43,7 +45,7 @@
 | 3.2 | done | Define the declarative flow fixture and its runner | references/flow-fixtures.md added with fixture shape, chained-exec runner, stability sampling, and privacy rules; renders byte-identical into codex, claude, and hermes | Runner is the existing chained exec shape, not a scenario runner |
 | 4.1 | done | Add the stability convergence threshold | Acceptance Standard item 4 now requires at least three independent runs, a recorded postcondition success rate, and an unattended-safe classification | Repeated independent runs, never blind retry |
 | 4.2 | done | Add the upstream backend freshness audit | Backend freshness audit matrix row plus a network-free mirror-agreement assertion across the matrix, nils-cli-pin.yaml, and nils-cli-surface.md | Deterministic and network-free mirror agreement |
-| 4.3 | in-progress | Validate, review, and merge the delivery | deterministic runtime-smoke suite exits 0 with all three computer-use cases passing; canonical gate rerun pending after commit | Canonical gate once against the final change |
+| 4.3 | done | Validate, review, and merge the delivery | deterministic runtime-smoke suite exits 0 with all three computer-use cases passing; canonical gate rerun pending after commit; PR #50 delivered with --no-merge; testing, maintainability, and red-team lenses each found one defect; all three repaired at head 6be6bbd and the review-loop ledger closed with no open rows; canonical gate exits 0 across 17 positions on the repaired head | Canonical gate once against the final change |
 | 4.4 | pending | Close the tracker and route archive maintenance | | Archive apply stays confirmation-gated |
 
 ## Validation Log
@@ -63,6 +65,16 @@
 - 2026-08-26: `bash scripts/ci/all.sh` positions 1-5 passed on the uncommitted
   tree; position 6 correctly reported the refreshed-but-uncommitted goldens, so
   the canonical gate is rerun once against the committed change.
+- 2026-08-26: Canonical gate exits 0 across all 17 positions on committed head
+  `1243989`, and again on repaired head `6be6bbd`. Provider CI on the delivered
+  branch reports success for both required lanes.
+- 2026-08-26: Full review gate ran three lenses. `review-specialists scope`
+  forced testing and maintainability and required red-team on a 1514-line diff.
+  Each lens produced one finding: a lexicographic backend-version reduction that
+  could pick the wrong release, a rendered-reference assertion that depended on
+  case ordering, and a surface ladder that named caller-side surfaces without
+  restating the Approval Boundary. All three were repaired in-branch and the
+  review-loop ledger closed with no open rows.
 
 ## Session Notes
 
