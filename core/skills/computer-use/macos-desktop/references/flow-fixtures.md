@@ -120,6 +120,14 @@ Repeated independent runs are not a blind mutation retry. Retrying a failed
 non-idempotent action inside one run remains forbidden; rerunning a fixture
 from a clean reset is how stability is measured.
 
+Over SSH the journal is not yet a usable source for that rate. Each SSH `exec`
+replaces the journal in `--out-dir` instead of appending, so `steps.jsonl`
+retains only the last step of the flow. Until
+[sympoies/nils-cli#1512](https://github.com/sympoies/nils-cli/issues/1512)
+ships, record the per-run postcondition outcome as the fixture runs and report
+the rate from that record, naming the source. A local-transport journal
+accumulates correctly and may be read back directly.
+
 ## Privacy
 
 Fixtures are tracked source. Keep host aliases, user names, absolute home
