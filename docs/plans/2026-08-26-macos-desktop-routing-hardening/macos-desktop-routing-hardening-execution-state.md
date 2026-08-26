@@ -93,3 +93,13 @@
 ## Handoff
 
 - Tracking issue <https://github.com/sympoies/agent-runtime-kit/issues/49> is closed; terminal execution state is synchronized. No closeout or merge action remains.
+- Residual gap carried forward: the contract is published and internally
+  consistent across source and all three rendered products, but was never
+  exercised on a live macOS GUI target. The smoke harness fakes `macos-agent`,
+  so the surface ladder, accessibility health gate, and stability threshold
+  should be run against the private macOS role the next time a live
+  computer-use acceptance happens.
+- Open environment decision: the `lume` macOS VM fixture. It would convert the
+  `Locked/logged-out desktop` limitation into a configuration choice without
+  adopting cua-driver's private-API input path, and remains the strongest
+  reason to revisit that ecosystem.
