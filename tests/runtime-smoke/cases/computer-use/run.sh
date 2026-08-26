@@ -757,6 +757,11 @@ run_surface_routing_contract_probe() {
   if grep -Fq 'macos-agent scenario' "$fixtures"; then
     return 1
   fi
+  # Prepare every product before asserting the rendered reference so this case
+  # does not depend on an earlier case having built the render tree.
+  for product in codex claude hermes; do
+    rendered_contract_prepare_product "$product"
+  done
   rendered_contract_assert_reference computer-use macos-desktop references/flow-fixtures.md
 
   # The matrix names the browser route instead of only denying DOM access, and
@@ -772,9 +777,13 @@ run_surface_routing_contract_probe() {
 
   # Deterministic, network-free backend-freshness mirror agreement: the matrix,
   # the pin, and the consumed-surface note must name the same Peekaboo release.
-  local matrix_backend
-  matrix_backend="$(sed -n 's/.*Peekaboo \(v4\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' "$matrix" | sort -u | head -1)"
-  test -n "$matrix_backend"
+  # Exactly one v4 release may be named. Reducing a multi-release set would hide
+  # the ambiguity this audit exists to catch, and `sort` is lexicographic, so a
+  # future v4.10.x would otherwise order below v4.2.2.
+  local matrix_backends matrix_backend
+  matrix_backends="$(sed -n 's/.*Peekaboo \(v4\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' "$matrix" | sort -u)"
+  test "$(printf '%s\n' "$matrix_backends" | grep -c .)" -eq 1
+  matrix_backend="$matrix_backends"
   grep -Fq "Peekaboo $matrix_backend" "$pin"
   grep -Fq "Peekaboo \`$matrix_backend\`" "$surface"
 

@@ -79,6 +79,11 @@ State the selected rung and why the rungs above it were rejected before the
 first mutation, and carry that reason in the run intent so a reviewer can see
 the outcome was not driven through pixels by default.
 
+Choosing a higher rung buys determinism, never reduced approval. The Approval
+Boundary below governs every rung equally: preferring Shortcuts, a first-party
+CLI, or a scripting dictionary is not authorization to act outside the named
+target or to take an action that would need approval through the GUI.
+
 ### Browser Claim Handoff
 
 Hand a DOM, selector, or rendered-page claim to the `browser-test` route in
