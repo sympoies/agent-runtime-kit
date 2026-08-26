@@ -22,14 +22,14 @@ nils_cli:
   # breaking macos-agent adapter v3 and Peekaboo v4.2.2 contract.
   minimum_supported_tag: "v1.27.3"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.27.12"
+  validated_tag: "v1.27.13"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "2ed947efe1f41c7ff182dfbbe50b2360d58230650dd2d0ae528eec83d7e395f4"
-    linux_arm64: "85cec374ee4983cb37660b0c100c5f3cd73b6e58e36c1baeaf02ec1245ae33b1"
+    linux_amd64: "617d452481d4c992c0228684331d275c647096de94be8197f24cd5bdd2b527f4"
+    linux_arm64: "60a48465c622a3616a0c4342a1273c53c92c69dc5263ed4b05489917ba1c8c7b"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
