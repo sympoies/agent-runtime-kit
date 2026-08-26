@@ -19,6 +19,11 @@ auth.json
 .claude/
 backup-*.zip
 
+# Transient advisory lock written next to an execution-state file while
+# plan-issue / plan-tooling patch it. It is always empty and is recreated on
+# every write, so it must never enter a commit or block a delivery gate.
+docs/plans/**/*-execution-state.md.lock
+
 # Override the user's global ignore so this repo can version its own
 # repo-local agent policy. agent-runtime-kit is the source of truth for the
 # runtime layer, so its AGENTS.md / CLAUDE.md must travel with the repo.

@@ -22,6 +22,14 @@ Static HTTP success must not be reported as proof that JavaScript rendered, a
 visual assertion passed, or a desktop interaction occurred. Source inspection
 alone is not browser execution.
 
+Routing is reciprocal. The `computer-use.macos-desktop` route
+hands DOM-level, selector, and rendered-page claims back here
+rather than driving a browser through the accessibility tree, which is
+unreliable for Chromium-family content. This route owns signed-in session state and its own artifact
+directory; the desktop route owns native window chrome, cross-application
+behavior, permission dialogs, and AX interaction. A desktop screenshot of a
+browser window is never proof of rendered DOM state.
+
 ## Parent Workflow
 
 1. Activate the `browser-test` intent and read this document.

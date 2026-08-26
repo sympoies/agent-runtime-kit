@@ -696,6 +696,105 @@ run_skill_and_matrix_contract_probe() {
   done
 }
 
+assert_surface_routing_contract() {
+  local skill="$1"
+
+  # Deterministic-first surface selection ladder.
+  grep -Fq '## Surface Selection' "$skill"
+  grep -Fq 'Prefer the most deterministic surface that can prove the outcome' "$skill"
+  grep -Fq 'App Intents / Shortcuts' "$skill"
+  grep -Fq 'Scripting dictionary' "$skill"
+  grep -Fq 'run outside the adapter' "$skill"
+  grep -Fq 'shell remains hard-disabled' "$skill"
+  grep -Fq 'State the selected rung' "$skill"
+
+  # Reciprocal browser-test handoff; this skill still claims no DOM capability.
+  grep -Fq 'browser-test' "$skill"
+  grep -Fq 'DOM, selector, or rendered-page claim' "$skill"
+  grep -Fq 'owns signed-in session state' "$skill"
+
+  # Accessibility-degeneracy gate before mutation.
+  grep -Fq '## Accessibility Health Gate' "$skill"
+  grep -Fq 'Judge accessibility health before the first mutation' "$skill"
+  grep -Fq 'degenerate' "$skill"
+  grep -Fq 'Continuing to probe a degenerate tree is a false-success risk' "$skill"
+
+  # Declarative rerunnable flow fixtures.
+  grep -Fq 'references/flow-fixtures.md' "$skill"
+  grep -Fq 'is not the rerun mechanism' "$skill"
+
+  # Stability convergence threshold in the acceptance standard.
+  grep -Fq 'independent runs' "$skill"
+  grep -Fq 'postcondition success rate' "$skill"
+  grep -Fq 'unattended-safe' "$skill"
+
+  # The ladder must not reintroduce retired or hard-denied mechanics.
+  if grep -Fq 'macos-agent scenario' "$skill"; then
+    return 1
+  fi
+}
+
+run_surface_routing_contract_probe() {
+  local skill="$REPO_ROOT/core/skills/computer-use/macos-desktop/SKILL.md.tera"
+  local fixtures="$REPO_ROOT/core/skills/computer-use/macos-desktop/references/flow-fixtures.md"
+  local matrix="$REPO_ROOT/docs/source/macos-agent-capability-matrix.md"
+  local routing="$REPO_ROOT/core/policies/browser-test-routing.md"
+  local pin="$REPO_ROOT/docs/source/nils-cli-pin.yaml"
+  local surface="$REPO_ROOT/docs/source/nils-cli-surface.md"
+  local product rendered
+
+  assert_surface_routing_contract "$skill"
+
+  # The flow-fixture reference exists, defines the shape, and keeps the runner
+  # on the already-published chained exec mechanics.
+  test -s "$fixtures"
+  grep -Fq 'expected:' "$fixtures"
+  grep -Fq 'steps:' "$fixtures"
+  grep -Fq 'reset:' "$fixtures"
+  grep -Fq 'macos-agent exec' "$fixtures"
+  grep -Fq 'is not the rerun mechanism' "$fixtures"
+  grep -Fq 'Every mutating step declares an observable postcondition' "$fixtures"
+  if grep -Fq 'macos-agent scenario' "$fixtures"; then
+    return 1
+  fi
+  # Prepare every product before asserting the rendered reference so this case
+  # does not depend on an earlier case having built the render tree.
+  for product in codex claude hermes; do
+    rendered_contract_prepare_product "$product"
+  done
+  rendered_contract_assert_reference computer-use macos-desktop references/flow-fixtures.md
+
+  # The matrix names the browser route instead of only denying DOM access, and
+  # publishes the negative application classes.
+  grep -Fq 'Degenerate-AX application classes' "$matrix"
+  grep -Fq 'browser-test' "$matrix"
+  grep -Fq 'core/policies/browser-test-routing.md' "$matrix"
+  grep -Fq 'Backend freshness audit' "$matrix"
+
+  # The routing policy points back at the desktop route in both directions.
+  grep -Fq 'macos-desktop' "$routing"
+  grep -Fq 'hands DOM-level, selector, and rendered-page claims back here' "$routing"
+
+  # Deterministic, network-free backend-freshness mirror agreement: the matrix,
+  # the pin, and the consumed-surface note must name the same Peekaboo release.
+  # Exactly one v4 release may be named. Reducing a multi-release set would hide
+  # the ambiguity this audit exists to catch, and `sort` is lexicographic, so a
+  # future v4.10.x would otherwise order below v4.2.2.
+  local matrix_backends matrix_backend
+  matrix_backends="$(sed -n 's/.*Peekaboo \(v4\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' "$matrix" | sort -u)"
+  test "$(printf '%s\n' "$matrix_backends" | grep -c .)" -eq 1
+  matrix_backend="$matrix_backends"
+  grep -Fq "Peekaboo $matrix_backend" "$pin"
+  grep -Fq "Peekaboo \`$matrix_backend\`" "$surface"
+
+  for product in codex claude hermes; do
+    rendered_contract_prepare_product "$product"
+    rendered="$REPO_ROOT/build/$product/plugins/computer-use/skills/macos-desktop/SKILL.md"
+    test -s "$rendered"
+    assert_surface_routing_contract "$rendered"
+  done
+}
+
 failures=0
 results_record_case \
   "computer-use.macos-desktop" \
@@ -705,5 +804,9 @@ results_record_case \
   "computer-use.capability-contract" \
   "source and rendered skills remove duplicate mechanics and publish complete capability choices" \
   run_skill_and_matrix_contract_probe
+results_record_case \
+  "computer-use.surface-routing-contract" \
+  "source and rendered skills publish deterministic-first surface selection, the accessibility health gate, the reciprocal browser handoff, rerunnable flow fixtures, the stability threshold, and backend freshness" \
+  run_surface_routing_contract_probe
 
 exit "$failures"
