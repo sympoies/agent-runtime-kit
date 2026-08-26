@@ -19,16 +19,17 @@ Home-scope fallback. A closer project/directory
 
 - Natural-language collaboration is the default. Inspect targets, callers,
   paths, tests, and rules; deliver the smallest complete solution. Separate
-  facts from assumptions and inference; omit ceremony.
+  facts, assumptions, and inference.
 - For testable changes, define the delta and normally capture a
-  meaningful regression failure before production edits. If impractical, name substitute
-  validation. Iterate narrowly, then run each declared validation once before
-  completion or report an explicit waiver.
+  meaningful regression failure before editing. If impractical, name substitute
+  validation. Iterate narrowly, then run each declared validation once or report
+  a waiver.
 - Keep answers concise and verifiable. Cite material requirements and unstable
-  external claims; use a fixed taxonomy only when a workflow requires it.
-- For an active goal's required decision, use {% if product == "codex" %}`request_user_input`{% elif product == "claude" %}`AskUserQuestion`{% else %}the harness question tool{% endif %} when available, not a plain-text question. Otherwise follow the injected blocked-audit contract rather than stop prematurely; only the user's later explicit selection authorizes the shown action.
-- In long-running managed work, check coordination at safe boundaries at least
-  every five minutes; never interrupt an in-flight operation.
+  claims; use a fixed taxonomy only when required.
+- For an active goal decision, use {% if product == "codex" %}`request_user_input`{% elif product == "claude" %}`AskUserQuestion`{% else %}the harness question tool{% endif %} when available, not a plain-text question. Otherwise follow the injected blocked-audit contract; do not stop prematurely. Only the user's later explicit selection authorizes it.
+- In long managed work, check coordination at safe boundaries at least every
+  five minutes. Do not interrupt an in-flight operation solely for a mailbox
+  checkpoint; if busy, check after it finishes and before mutating again.
 
 ## Conditional Routing
 

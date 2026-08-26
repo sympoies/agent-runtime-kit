@@ -380,17 +380,27 @@ when = "always"
         ).casefold()
 
         for required in (
-            "long-running managed work",
+            "long managed work",
             "five minutes",
             "in-flight operation",
+            "solely for a mailbox checkpoint",
+            "after it finishes",
+            "before mutating again",
         ):
             self.assertIn(required, home_policy)
-        for product in ("codex", "claude"):
+        for product in HOME_PRODUCTS:
             rendered = " ".join(
                 read(f"build/{product}/AGENT_HOME.md").split()
             ).casefold()
-            self.assertIn("long-running managed work", rendered)
-            self.assertIn("five minutes", rendered)
+            for required in (
+                "long managed work",
+                "five minutes",
+                "in-flight operation",
+                "solely for a mailbox checkpoint",
+                "after it finishes",
+                "before mutating again",
+            ):
+                self.assertIn(required, rendered)
 
         for required in (
             "do not wait for the whole task to become idle",
