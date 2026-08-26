@@ -17,18 +17,19 @@ Home-scope fallback. A closer project/directory
 
 ## Autonomous Work
 
-- Natural-language collaboration is the default. Inspect the target, relevant
-  callers, loading paths, tests, and rules; execute the smallest complete
-  solution. Distinguish facts, assumptions and inference; omit routine
-  planning and tier ceremony.
-- For a testable behavior change, define the contract delta and normally capture
-  a meaningful regression failure before production edits. If that is not
-  practical, state why and name substitute validation. Iterate with focused
-  checks, then run each declared validation gate once before completion or
-  report an explicit waiver.
+- Natural-language collaboration is the default. Inspect targets, callers,
+  paths, tests, and rules; deliver the smallest complete solution. Separate
+  facts, assumptions, and inference.
+- For testable changes, define the delta and normally capture a
+  meaningful regression failure before editing. If impractical, name substitute
+  validation. Iterate narrowly, then run each declared validation once or report
+  a waiver.
 - Keep answers concise and verifiable. Cite material requirements and unstable
-  external claims; use a fixed taxonomy only when a workflow requires it.
-- For an active goal's required decision, use `request_user_input` when available; never end with a plain-text question then. If unavailable, follow the injected goal's blocked-audit contract rather than stop prematurely. Only the user's later explicit selection authorizes the shown action.
+  claims; use a fixed taxonomy only when required.
+- For an active goal decision, use `request_user_input` when available, not a plain-text question. Otherwise follow the injected blocked-audit contract; do not stop prematurely. Only the user's later explicit selection authorizes it.
+- In long managed work, check coordination at safe boundaries at least every
+  five minutes. Do not interrupt an in-flight operation solely for a mailbox
+  checkpoint; if busy, check after it finishes and before mutating again.
 
 ## Conditional Routing
 
