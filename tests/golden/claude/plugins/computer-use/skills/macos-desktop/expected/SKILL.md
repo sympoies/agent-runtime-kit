@@ -140,12 +140,15 @@ readiness gate for a live mutation. Report-only doctor may be used to inventory
 degraded capabilities. The v4.2.2 CLI and app require notarization and must
 report `security_posture=full`; an active waived or reduced result is not ready.
 
-A strict doctor result whose only blocked check is `bridge` with
-`Peekaboo GUI Bridge exact build is unavailable`, while backend verification,
-runtime, permissions, and capability probes pass, is a cold app-runtime state,
-not a terminal blocker. Bootstrap it autonomously with one bounded read-only
-`exec --runtime app` observation of the named target. The adapter launches the
-owned stable app when needed and verifies its exact GUI Bridge handshake:
+A strict doctor result whose backend verification and runtime pass, and whose
+blocked checks are limited to `permissions` and `bridge`, is a
+cold app-runtime state, not a terminal blocker. A cold runtime blocks that
+pair together and reports both under the generic diagnostic
+`required capability probe failed`, so read the pair as the cold-start
+signature rather than waiting for bridge-specific text it does not emit.
+Bootstrap it autonomously with one bounded read-only `exec --runtime app`
+observation of the named target. The adapter launches the owned stable app
+when needed and verifies its exact GUI Bridge handshake:
 
 ```bash
 macos-agent exec \
@@ -158,10 +161,12 @@ macos-agent capabilities --strict --format json
 ```
 
 For SSH, pass the same runtime alias to all three commands. After the read-only
-bootstrap, rerun strict doctor and capabilities before any mutation. Do not
-reinstall an already verified backend for this state, do not use a floating
-Peekaboo build, and do not treat a backend mismatch, permission denial, failed
-observation, or still-blocked strict result as cold-start recovery.
+bootstrap, rerun strict doctor and capabilities before any mutation; a cold
+runtime clears both checks and reports `ready: true`. A check that stays
+blocked afterwards is a real permission or backend fault. Do not reinstall an
+already verified backend for this state, do not use a floating Peekaboo build,
+and do not treat a backend mismatch, a denial that survives the bootstrap, a
+failed observation, or a still-blocked strict result as cold-start recovery.
 
 ## Accessibility Health Gate
 
@@ -224,6 +229,65 @@ only with an explicit postcondition on the active GUI target.
 Treat timeout or signal termination during a mutation as unknown. Observe the
 current UI before deciding what to do and never blindly retry a non-idempotent
 action. Exit zero confirms adapter execution, not user-visible success.
+
+### Reading The Outcome Envelope
+
+Every v4 mutation returns a structured outcome beside its data. Read it as
+dispatch and verification metadata, never as the verdict:
+
+| Field | Meaning |
+| --- | --- |
+| `mutation_dispatched` | Whether input actually reached the target. |
+| `effect` | `confirmed`, `unverifiable`, or `refused` — what Peekaboo itself could prove. |
+| `escalation` | The recovery it recommends, such as `observe_before_retry` or `refresh_target`. |
+| `refusal_reason` | Why a refused mutation never dispatched. |
+
+`effect: "unverifiable"` together with `mutation_dispatched: true`
+is the normal result of a background accessibility-action delivery. Peekaboo
+delivered the input and cannot prove the resulting state, which is exactly the
+observation this skill already requires: judge the step on the freshly observed
+postcondition and never score it failed on `effect` alone.
+
+`mutation_dispatched` also separates a genuinely unknown mutation from one that
+provably never ran. On timeout or signal, keep treating the mutation as unknown
+unless the envelope proves it never dispatched.
+
+### Partial Application Inventory
+
+One process without process-generation identity fails the whole inventory while
+Peekaboo resolves an application by name, reporting
+`Application inventory was incomplete` for a target that is running. `app list`
+and `see` still succeed with a warning and still return the target row, so
+observation keeps working while every name-targeted mutation refuses with
+`refusal_reason: "target_unavailable"` and `escalation: "refresh_target"`.
+
+Recover by retargeting on the exact process identity from that inventory row
+instead of reporting a blocker:
+
+```bash
+macos-agent exec \
+  --out-dir "$exec_out" \
+  --intent "Resolve the target process identity" \
+  --runtime app \
+  -- app list --json
+macos-agent exec \
+  --out-dir "$exec_out" \
+  --intent "Press the reviewed control" \
+  --expected "The target reports the next state" \
+  --runtime app \
+  -- click --pid "$target_pid" --on "$element_id" --json
+```
+
+Add `--expected-process-start-identity "$identity"` to a destructive verb so a
+re-used PID cannot be hit. This is a
+retarget on a fresh observation, not a blind retry, and binding the exact
+process is stricter than name targeting rather than a widening of scope.
+
+Retarget only the application this run already declared. Resolve its row by
+name in the inventory and use that row's identity; a process id that was
+not resolved from the declared target in this run is out of scope. The
+Approval Boundary governs the retargeted action exactly as it governed the
+original.
 
 ## Multi-step Flows
 
@@ -361,7 +425,7 @@ A functional claim passes only when all applicable checks hold:
    insufficient.
 4. The same fixture completed at least three independent runs, each with its
    own setup, reset, and fresh observation, and the observed
-   postcondition success rate is read back from those journals. A flow
+   postcondition success rate is read back from those runs. A flow
    converges and may be called unattended-safe only at a full success rate
    across those independent runs; a lower rate is reported as not
    unattended-safe with the observed rate and the failing step. Repeated

@@ -795,6 +795,63 @@ run_surface_routing_contract_probe() {
   done
 }
 
+assert_live_recovery_contract() {
+  local skill="$1"
+
+  # A real cold app runtime blocks `permissions` and `bridge` together under the
+  # generic probe diagnostic, so the recovery must key on that pair rather than
+  # on bridge-specific text that a cold runtime never emits.
+  grep -Fq 'blocked checks are limited to `permissions` and `bridge`' "$skill"
+  grep -Fq 'required capability probe failed' "$skill"
+
+  # The v4 outcome envelope is dispatch metadata, never the verdict.
+  grep -Fq '### Reading The Outcome Envelope' "$skill"
+  grep -Fq 'mutation_dispatched' "$skill"
+  grep -Fq 'is the normal result of a background accessibility-action delivery' "$skill"
+  grep -Fq 'never score it failed on `effect` alone' "$skill"
+  grep -Fq 'observe_before_retry' "$skill"
+
+  # A partial inventory is recovered by exact process identity, not reported as
+  # a blocker and not retried blindly against the same name.
+  grep -Fq '### Partial Application Inventory' "$skill"
+  grep -Fq 'Application inventory was incomplete' "$skill"
+  grep -Fq -e '--expected-process-start-identity' "$skill"
+  grep -Fq 'retarget on a fresh observation, not a blind retry' "$skill"
+
+  # Identity targeting narrows the target; it must never read as a widening.
+  grep -Fq 'stricter than name targeting' "$skill"
+  grep -Fq 'not resolved from the declared target in this run is out of scope' "$skill"
+}
+
+run_live_recovery_contract_probe() {
+  local skill="$REPO_ROOT/core/skills/computer-use/macos-desktop/SKILL.md.tera"
+  local fixtures="$REPO_ROOT/core/skills/computer-use/macos-desktop/references/flow-fixtures.md"
+  local matrix="$REPO_ROOT/docs/source/macos-agent-capability-matrix.md"
+  local product rendered
+
+  assert_live_recovery_contract "$skill"
+
+  # The matrix publishes each live-verified recovery and the one honest
+  # negative: SSH journals do not accumulate, so a fixture cannot read its
+  # stability rate back from them until the adapter defect is fixed.
+  grep -Fq '| Cold app-runtime bootstrap | supported |' "$matrix"
+  grep -Fq '| Outcome envelope interpretation | supported |' "$matrix"
+  grep -Fq '| Partial-inventory identity retargeting | supported |' "$matrix"
+  grep -Fq '| SSH journal step accumulation | unsupported |' "$matrix"
+  grep -Fq 'sympoies/nils-cli#1512' "$matrix"
+
+  # The fixture format carries the same caveat, so a fixture author does not
+  # plan a stability rate the SSH journal cannot supply.
+  grep -Fq 'sympoies/nils-cli#1512' "$fixtures"
+
+  for product in codex claude hermes; do
+    rendered_contract_prepare_product "$product"
+    rendered="$REPO_ROOT/build/$product/plugins/computer-use/skills/macos-desktop/SKILL.md"
+    test -s "$rendered"
+    assert_live_recovery_contract "$rendered"
+  done
+}
+
 failures=0
 results_record_case \
   "computer-use.macos-desktop" \
@@ -808,5 +865,8 @@ results_record_case \
   "computer-use.surface-routing-contract" \
   "source and rendered skills publish deterministic-first surface selection, the accessibility health gate, the reciprocal browser handoff, rerunnable flow fixtures, the stability threshold, and backend freshness" \
   run_surface_routing_contract_probe
-
+results_record_case \
+  "computer-use.live-recovery-contract" \
+  "source and rendered skills publish the cold-start signature, the outcome envelope reading, and identity retargeting for a partial inventory" \
+  run_live_recovery_contract_probe
 exit "$failures"
