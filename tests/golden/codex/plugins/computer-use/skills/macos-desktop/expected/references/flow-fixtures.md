@@ -120,13 +120,13 @@ Repeated independent runs are not a blind mutation retry. Retrying a failed
 non-idempotent action inside one run remains forbidden; rerunning a fixture
 from a clean reset is how stability is measured.
 
-Over SSH the journal is not yet a usable source for that rate. Each SSH `exec`
-replaces the journal in `--out-dir` instead of appending, so `steps.jsonl`
-retains only the last step of the flow. Until
-[sympoies/nils-cli#1512](https://github.com/sympoies/nils-cli/issues/1512)
-ships, record the per-run postcondition outcome as the fixture runs and report
-the rate from that record, naming the source. A local-transport journal
-accumulates correctly and may be read back directly.
+Over SSH the journal is a usable source for that rate from `macos-agent`
+1.27.12 onward. Each SSH `exec` merges its transferred journal into `--out-dir`
+and the chained steps accumulate under one `run_id`, so `steps.jsonl` reads back
+directly the same way a local-transport journal does. Against an older adapter
+each SSH `exec` replaced the journal and retained only the last step; there,
+record the per-run postcondition outcome as the fixture runs and report the rate
+from that record, naming the source.
 
 ## Privacy
 
