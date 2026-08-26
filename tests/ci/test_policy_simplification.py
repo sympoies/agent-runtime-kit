@@ -373,6 +373,33 @@ when = "always"
         ):
             self.assertIn(disposition, coordination)
 
+    def test_long_running_work_checks_mailbox_at_bounded_safe_checkpoints(self) -> None:
+        home_policy = " ".join(read("AGENT_HOME.md").split()).casefold()
+        coordination = " ".join(
+            read("core/policies/session-coordination.md").split()
+        ).casefold()
+
+        for required in (
+            "long-running managed work",
+            "five minutes",
+            "in-flight operation",
+        ):
+            self.assertIn(required, home_policy)
+        for product in ("codex", "claude"):
+            rendered = " ".join(
+                read(f"build/{product}/AGENT_HOME.md").split()
+            ).casefold()
+            self.assertIn("long-running managed work", rendered)
+            self.assertIn("five minutes", rendered)
+
+        for required in (
+            "do not wait for the whole task to become idle",
+            "next proven safe boundary",
+            "before the next mutable step",
+            "does not acknowledge or authorize the message",
+        ):
+            self.assertIn(required, coordination)
+
     def test_hermes_has_a_resolvable_conditional_policy_route(self) -> None:
         hermes_home = read("build/hermes/AGENT_HOME.md")
         documented = (
