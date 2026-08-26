@@ -5,20 +5,18 @@
 
 - Source document: `docs/plans/2026-08-26-macos-desktop-routing-hardening/macos-desktop-routing-hardening-plan.md`
 - Tracking issue: <https://github.com/sympoies/agent-runtime-kit/issues/49>
-- Current sprint: Sprint 4 stability, freshness, and delivery
-- Status: in progress
-- Current gate: merge PR #50 after the combined review outcome and the
-  issue-side review checkpoint, then strict closeout
-- Current task: 4.4
+- Current sprint: Sprint 4 closeout
+- Status: complete
+- Current gate: none; strict close-ready, provider read-back audit, and
+  dry-run-first archive routing are the remaining closeout mechanics
+- Current task: complete
 - Next task: none
-- Plan branch: `feat/macos-desktop-routing-hardening`
+- Plan branch: `feat/macos-desktop-routing-hardening` (merged and deleted)
 - Backend: unchanged; Peekaboo `v4.2.2` behind `macos-agent` adapter v3, nils-cli
   floor `>= 1.27.3`
 - Blockers: none
 - Last updated: 2026-08-26
-- Branch/commit/PR: <https://github.com/sympoies/agent-runtime-kit/pull/50> on
-  `feat/macos-desktop-routing-hardening`; plan bundle `6922380`, implementation
-  `1243989`, lock-ignore `082d7b7`, review repairs `6be6bbd`
+- Branch/commit/PR: sympoies/agent-runtime-kit#50 merged (<https://github.com/sympoies/agent-runtime-kit/pull/50>)
 
 ## Validation Plan
 
@@ -46,7 +44,7 @@
 | 4.1 | done | Add the stability convergence threshold | Acceptance Standard item 4 now requires at least three independent runs, a recorded postcondition success rate, and an unattended-safe classification | Repeated independent runs, never blind retry |
 | 4.2 | done | Add the upstream backend freshness audit | Backend freshness audit matrix row plus a network-free mirror-agreement assertion across the matrix, nils-cli-pin.yaml, and nils-cli-surface.md | Deterministic and network-free mirror agreement |
 | 4.3 | done | Validate, review, and merge the delivery | deterministic runtime-smoke suite exits 0 with all three computer-use cases passing; canonical gate rerun pending after commit; PR #50 delivered with --no-merge; testing, maintainability, and red-team lenses each found one defect; all three repaired at head 6be6bbd and the review-loop ledger closed with no open rows; canonical gate exits 0 across 17 positions on the repaired head | Canonical gate once against the final change |
-| 4.4 | pending | Close the tracker and route archive maintenance | | Archive apply stays confirmation-gated |
+| 4.4 | done | Close the tracker and route archive maintenance | PR #50 merged as squash commit 7ca13d4 with the source branch deleted; review-loop ledger rebound to the merge head with all three findings fixed and no open rows; strict close-ready, provider read-back audit, and dry-run-first archive routing complete the tracker | Archive apply stays confirmation-gated |
 
 ## Validation Log
 
@@ -94,6 +92,14 @@
 
 ## Handoff
 
-- Nothing is handed off yet. On completion this bundle is routed through
-  `plan-archive discover` and a dry-run `plan-archive migrate`, with apply
-  gated on explicit confirmation.
+- Tracking issue <https://github.com/sympoies/agent-runtime-kit/issues/49> is closed; terminal execution state is synchronized. No closeout or merge action remains.
+- Residual gap carried forward: the contract is published and internally
+  consistent across source and all three rendered products, but was never
+  exercised on a live macOS GUI target. The smoke harness fakes `macos-agent`,
+  so the surface ladder, accessibility health gate, and stability threshold
+  should be run against the private macOS role the next time a live
+  computer-use acceptance happens.
+- Open environment decision: the `lume` macOS VM fixture. It would convert the
+  `Locked/logged-out desktop` limitation into a configuration choice without
+  adopting cua-driver's private-API input path, and remains the strongest
+  reason to revisit that ecosystem.
