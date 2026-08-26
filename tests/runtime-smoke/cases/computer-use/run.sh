@@ -820,6 +820,7 @@ assert_live_recovery_contract() {
 
   # Identity targeting narrows the target; it must never read as a widening.
   grep -Fq 'stricter than name targeting' "$skill"
+  grep -Fq 'not resolved from the declared target in this run is out of scope' "$skill"
 }
 
 run_live_recovery_contract_probe() {
@@ -833,10 +834,10 @@ run_live_recovery_contract_probe() {
   # The matrix publishes each live-verified recovery and the one honest
   # negative: SSH journals do not accumulate, so a fixture cannot read its
   # stability rate back from them until the adapter defect is fixed.
-  grep -Fq 'Cold app-runtime bootstrap' "$matrix"
-  grep -Fq 'Outcome envelope interpretation' "$matrix"
-  grep -Fq 'Partial-inventory identity retargeting' "$matrix"
-  grep -Fq 'SSH journal step accumulation' "$matrix"
+  grep -Fq '| Cold app-runtime bootstrap | supported |' "$matrix"
+  grep -Fq '| Outcome envelope interpretation | supported |' "$matrix"
+  grep -Fq '| Partial-inventory identity retargeting | supported |' "$matrix"
+  grep -Fq '| SSH journal step accumulation | unsupported |' "$matrix"
   grep -Fq 'sympoies/nils-cli#1512' "$matrix"
 
   # The fixture format carries the same caveat, so a fixture author does not

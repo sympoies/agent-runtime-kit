@@ -283,6 +283,12 @@ re-used PID cannot be hit. This is a
 retarget on a fresh observation, not a blind retry, and binding the exact
 process is stricter than name targeting rather than a widening of scope.
 
+Retarget only the application this run already declared. Resolve its row by
+name in the inventory and use that row's identity; a process id that was
+not resolved from the declared target in this run is out of scope. The
+Approval Boundary governs the retargeted action exactly as it governed the
+original.
+
 ## Multi-step Flows
 
 Peekaboo v4 removed the `.peekaboo.json` runner. Build a repeatable flow from
