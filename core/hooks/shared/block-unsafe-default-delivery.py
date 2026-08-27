@@ -1730,6 +1730,28 @@ def current_branch(
     return result.stdout.strip() if result and result.returncode == 0 else ""
 
 
+DEFAULT_BRANCH_CORROBORATED = "corroborated"
+DEFAULT_BRANCH_UNCORROBORATED = "uncorroborated"
+DEFAULT_BRANCH_UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class DefaultBranchResolution:
+    """What is known about a remote's default branch, and how firmly."""
+
+    name: str
+    candidates: tuple[str, ...]
+    confidence: str
+
+    @property
+    def corroborated(self) -> bool:
+        return self.confidence == DEFAULT_BRANCH_CORROBORATED
+
+    @property
+    def unknown(self) -> bool:
+        return self.confidence == DEFAULT_BRANCH_UNKNOWN
+
+
 def cached_default_branch(
     probe: GitProbe,
     cwd: Path,
@@ -1780,16 +1802,40 @@ def resolve_default_branch(
     cwd: Path,
     remote: str = "origin",
     config_arguments: list[str] | None = None,
-) -> tuple[str, bool]:
-    """Resolve an authoritative local default branch without network I/O."""
+) -> DefaultBranchResolution:
+    """Resolve the remote's default branch locally, and say how well.
+
+    `refs/remotes/<remote>/HEAD` is locally writable, so a cached name alone is
+    not proof: a stale or planted head would reclassify a default-branch push as
+    a feature push. The primary worktree's branch is the corroborating witness,
+    because the primary checkout conventionally tracks the default branch.
+
+    Disagreement is not the same as no evidence, and the difference decides what
+    a caller may conclude:
+
+    * corroborated — both agree, so the name can prove a destination is *or* is
+      not the default;
+    * uncorroborated — a cached name the witness does not confirm. The default
+      is one of the two names, so a destination that is neither is provably
+      safe, while either candidate stays unproven;
+    * unknown — no cached name at all, so no branch destination is decidable.
+    """
     if not remote or "/" in remote or ":" in remote:
-        return "", False
+        return DefaultBranchResolution("", (), DEFAULT_BRANCH_UNKNOWN)
     git_config = config_arguments or []
     cached = cached_default_branch(probe, cwd, remote, git_config)
     primary = primary_worktree_branch(probe, cwd, git_config)
-    if not cached or not primary or cached != primary:
-        return "", False
-    return cached, False
+    if not cached:
+        # The witness alone cannot stand in for the cache: a repository whose
+        # primary checkout is parked on a feature branch would make the real
+        # default look like a safe destination.
+        return DefaultBranchResolution("", (), DEFAULT_BRANCH_UNKNOWN)
+    if primary and cached == primary:
+        return DefaultBranchResolution(
+            cached, (cached,), DEFAULT_BRANCH_CORROBORATED
+        )
+    candidates = (cached,) if not primary else (cached, primary)
+    return DefaultBranchResolution(cached, candidates, DEFAULT_BRANCH_UNCORROBORATED)
 
 
 def default_branch(
@@ -1798,10 +1844,13 @@ def default_branch(
     remote: str = "origin",
     config_arguments: list[str] | None = None,
 ) -> str:
-    expected, cached_timeout = resolve_default_branch(
-        probe, cwd, remote, config_arguments
-    )
-    return "" if cached_timeout else expected
+    """Return the default branch only when it is corroborated.
+
+    Callers that ask whether a checked-out branch *is* the default need proof in
+    both directions, so an uncorroborated name is withheld from them.
+    """
+    resolution = resolve_default_branch(probe, cwd, remote, config_arguments)
+    return resolution.name if resolution.corroborated else ""
 
 
 def semantic_commit_repo(
@@ -2312,25 +2361,41 @@ def refspec_targets_default(refspec: str, default: str, current: str) -> bool:
     return target == default
 
 
-def explicit_branch_refspec_target(refspec: str) -> str:
-    """Return one exact destination branch that needs no current-branch lookup."""
+def refspec_destination_is_branch(refspec: str) -> bool | None:
+    """Whether a refspec's destination is a branch, when that is decidable.
+
+    This is deliberately separate from asking *which* branch a refspec targets.
+    That question has no answer for a wildcard, for a destination needing a
+    current-branch lookup, and for a destination that is not a branch at all —
+    but only the last of those is provable while knowing nothing about the
+    remote, and it is the one that keeps tag and note pushes classifiable.
+
+    Returns True for a branch destination, False when the destination provably
+    cannot be a branch, and None when the shape does not settle it.
+    """
     value = refspec.lstrip("+")
-    if not value or "*" in value or value == ":":
-        return ""
-    if ":" in value:
-        source, destination = value.split(":", 1)
-        if not source or not destination:
-            return ""
-    else:
-        destination = value
+    if not value:
+        return None
+    # Git's matching refspec pushes every same-named branch.
+    if value == ":":
+        return True
+    destination = value.split(":", 1)[1] if ":" in value else value
+    if not destination:
+        # A delete refspec (`:name`) names its target on the other side.
+        source = value.split(":", 1)[0]
+        return refspec_destination_is_branch(source) if source else None
     if destination in {"HEAD", "@"}:
-        return ""
+        return True
     for prefix in ("refs/heads/", "heads/"):
         if destination.startswith(prefix):
-            return destination[len(prefix) :]
+            return True
     if destination.startswith("refs/") or destination.startswith("tags/"):
-        return ""
-    return destination
+        # A fully qualified ref outside refs/heads/ — a tag, a note, a
+        # replacement — cannot be a branch whatever the default branch is.
+        return False
+    # A bare name is resolved by Git against the remote and may well be a
+    # branch, so it settles nothing here.
+    return None
 
 
 def push_shape(arguments: list[str]) -> tuple[bool, bool, bool, bool, str, list[str]]:
@@ -2403,47 +2468,102 @@ def push_shape(arguments: list[str]) -> tuple[bool, bool, bool, bool, str, list[
     return dry_run, all_or_mirror, delete, tags_only, "origin", []
 
 
+# With no explicit refspec, Git may select a destination from
+# remote.<name>.push, branch pushRemote/upstream, remote.pushDefault, and
+# push.default. The checked-out branch alone cannot prove the destination is
+# non-default, so callers must spell out a safe feature refspec.
+NO_REFSPEC_DETAIL = (
+    "no refspec was given, so the destination comes from `push.default`, "
+    "`remote.pushDefault`, or a configured push refspec"
+)
+
+
+def push_classification(
+    probe: GitProbe,
+    arguments: list[str],
+    cwd: Path,
+    config_arguments: list[str],
+) -> tuple[bool | None, str]:
+    """Classify a push, and name the condition when it cannot be classified."""
+    dry_run, all_or_mirror, delete, tags_only, remote, refspecs = push_shape(arguments)
+    if dry_run:
+        return False, ""
+    if tags_only and not refspecs:
+        return False, ""
+    # An all-refs or mirror push moves every branch there is, so it needs no
+    # default-branch name to be proven bad.
+    if all_or_mirror:
+        return True, ""
+    # A push whose every destination is outside refs/heads/ cannot move a
+    # branch, whatever the default branch turns out to be. Deciding this first
+    # keeps tag and note pushes classifiable on a remote nothing is known about.
+    if refspecs and all(
+        refspec_destination_is_branch(refspec) is False for refspec in refspecs
+    ):
+        return False, ""
+
+    resolution = resolve_default_branch(probe, cwd, remote, config_arguments)
+    if resolution.unknown:
+        return None, (
+            f"remote `{remote}` has no cached default branch, so no branch "
+            f"destination can be checked against it. Cache it with `git remote "
+            f"set-head {remote} --auto`. If that fails because the remote has "
+            "no branches yet, the remote is empty and no push surface can "
+            "publish its first branch; that needs a governed bootstrap publish, "
+            "not a raw push"
+        )
+    current = current_branch(probe, cwd, config_arguments)
+
+    if not resolution.corroborated:
+        # The default is one of the candidate names. That is enough to clear a
+        # destination which is none of them, and never enough to condemn one.
+        if not refspecs:
+            return None, NO_REFSPEC_DETAIL
+        # `refspec_targets_default` already resolves HEAD, the matching
+        # refspec, and wildcards against a candidate, so a destination that
+        # matches no candidate is safe under either hypothesis. Delete refspecs
+        # are named the same way and need no separate rule.
+        if any(
+            refspec_targets_default(refspec, candidate, current)
+            for refspec in refspecs
+            for candidate in resolution.candidates
+        ):
+            return None, (
+                f"the cached default branch of remote `{remote}` is not "
+                "corroborated by the primary worktree, and this destination is "
+                "one of the candidate names"
+            )
+        return False, ""
+
+    default = resolution.name
+    if delete:
+        if not refspecs:
+            return None, NO_REFSPEC_DETAIL
+        return (
+            any(
+                normalized_branch(refspec, current) == default
+                for refspec in refspecs
+            ),
+            "",
+        )
+    if refspecs:
+        return (
+            any(
+                refspec_targets_default(refspec, default, current)
+                for refspec in refspecs
+            ),
+            "",
+        )
+    return None, NO_REFSPEC_DETAIL
+
+
 def push_targets_default(
     probe: GitProbe,
     arguments: list[str],
     cwd: Path,
     config_arguments: list[str],
 ) -> bool | None:
-    dry_run, all_or_mirror, delete, tags_only, remote, refspecs = push_shape(arguments)
-    if dry_run:
-        return False
-    if tags_only and not refspecs:
-        return False
-    default, cached_timeout = resolve_default_branch(
-        probe, cwd, remote, config_arguments
-    )
-    if not default:
-        return None
-    if cached_timeout:
-        if all_or_mirror or delete or tags_only or not refspecs:
-            return None
-        targets = [explicit_branch_refspec_target(refspec) for refspec in refspecs]
-        if any(not target for target in targets):
-            return None
-        return any(target == default for target in targets)
-    if all_or_mirror:
-        return True
-    current = current_branch(probe, cwd, config_arguments)
-    if delete:
-        if not refspecs:
-            return None
-        return any(
-            normalized_branch(refspec, current) == default for refspec in refspecs
-        )
-    if refspecs:
-        return any(
-            refspec_targets_default(refspec, default, current) for refspec in refspecs
-        )
-    # With no explicit refspec, Git may select a destination from
-    # remote.<name>.push, branch pushRemote/upstream, remote.pushDefault, and
-    # push.default. The checked-out branch alone cannot prove the destination
-    # is non-default, so require callers to spell out a safe feature refspec.
-    return None
+    return push_classification(probe, arguments, cwd, config_arguments)[0]
 
 
 def rewrite_verdict_reason(subcommand: str, target: bool | None) -> str:
@@ -2468,7 +2588,7 @@ def rewrite_verdict_reason(subcommand: str, target: bool | None) -> str:
     )
 
 
-def push_verdict_reason(target: bool | None) -> str:
+def push_verdict_reason(target: bool | None, detail: str = "") -> str:
     """Name what a push verdict resolved, with a remedy for that push."""
     if target is False:
         return ""
@@ -2477,10 +2597,16 @@ def push_verdict_reason(target: bool | None) -> str:
             f"{MARK_BLOCKED} This push resolves to the remote's default branch. "
             f"{POLICY}"
         )
-    return (
-        f"{AMBIGUOUS_PREFIX} The destination branch of this push could not be "
-        f"resolved from its arguments and configuration. {REMEDY_FEATURE_PUSH}"
+    # An unverified verdict is only actionable if it says which condition
+    # tripped; "could not be resolved" sends a caller to surfaces that fail the
+    # same way.
+    condition = (
+        f"The destination branch of this push was not classified: {detail}."
+        if detail
+        else "The destination branch of this push could not be resolved from "
+        "its arguments and configuration."
     )
+    return f"{AMBIGUOUS_PREFIX} {condition} {REMEDY_FEATURE_PUSH}"
 
 
 def invocation_block_reason(
@@ -2624,7 +2750,7 @@ def invocation_block_reason(
         if push_shape(action)[0]:
             return ""
         reason = push_verdict_reason(
-            push_targets_default(probe, action, cwd, config_arguments)
+            *push_classification(probe, action, cwd, config_arguments)
         )
         if reason.startswith(AMBIGUOUS_PREFIX) and context_note:
             return f"{AMBIGUOUS_PREFIX} {context_note}"

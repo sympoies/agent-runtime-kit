@@ -21282,6 +21282,8 @@ exit 65
                 ),
                 True,
             )
+            # No cached head at all leaves the default's name unknown, so a
+            # branch destination cannot be cleared.
             self.assertIsNone(
                 module.push_targets_default(
                     DefaultBranchProbe(cached_ref=""),
@@ -21290,13 +21292,18 @@ exit 65
                     [],
                 )
             )
-            self.assertIsNone(
+            # An uncorroborated cached head still names a candidate default, and
+            # this destination is not it. See
+            # `test_default_delivery_hook_classifies_pushes_without_a_corroborated_default`
+            # for the candidate-set rules this relies on.
+            self.assertIs(
                 module.push_targets_default(
                     DefaultBranchProbe(primary_ref=""),
                     ["origin", "HEAD:refs/heads/feat/tiny-repair"],
                     Path("."),
                     [],
-                )
+                ),
+                False,
             )
 
             expected = (
@@ -21316,6 +21323,197 @@ exit 65
                         ),
                         result,
                     )
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_default_delivery_hook_classifies_pushes_without_a_corroborated_default(
+        self,
+    ) -> None:
+        """An unresolved default must not make every push unclassifiable.
+
+        Three situations collapse into "no corroborated default" today, and each
+        one carries different evidence:
+
+        * no cached remote HEAD at all — the default's name is unknown, so any
+          branch destination stays unverified;
+        * a cached HEAD the primary worktree does not corroborate — the default
+          is one of two candidate names, so a destination that is neither is
+          provably safe;
+        * a destination that is not a branch at all — provably safe whatever the
+          default branch turns out to be.
+        """
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_uncorroborated_default_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+
+            class DefaultBranchProbe:
+                """Answer only the local probes the classifier is allowed to make."""
+
+                def __init__(
+                    self,
+                    *,
+                    cached_ref: str = "origin/main\n",
+                    primary_ref: str = "main",
+                    current_ref: str = "feat/tiny-repair\n",
+                ) -> None:
+                    self.cached_ref = cached_ref
+                    self.primary_ref = primary_ref
+                    self.current_ref = current_ref
+
+                def run(
+                    self, _cwd: Path, *arguments: str
+                ) -> subprocess.CompletedProcess[str] | None:
+                    if "ls-remote" in arguments or arguments[:2] == (
+                        "remote",
+                        "get-url",
+                    ):
+                        raise AssertionError(f"network probe attempted: {arguments!r}")
+                    if arguments[-1] == "refs/remotes/origin/HEAD":
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments],
+                            0 if self.cached_ref else 1,
+                            self.cached_ref,
+                            "",
+                        )
+                    if arguments[-2:] == ("list", "--porcelain"):
+                        branch = (
+                            f"branch refs/heads/{self.primary_ref}\n"
+                            if self.primary_ref
+                            else ""
+                        )
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments],
+                            0,
+                            f"worktree /repo\nHEAD deadbeef\n{branch}\n",
+                            "",
+                        )
+                    if arguments[-1] == "HEAD":
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 0, self.current_ref, ""
+                        )
+                    if "config" in arguments and "--get" in arguments:
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 1, "", ""
+                        )
+                    raise AssertionError(f"unexpected git probe: {arguments!r}")
+
+            def verdict(probe: object, arguments: list[str]) -> bool | None:
+                return module.push_targets_default(probe, arguments, Path("."), [])
+
+            # Resolution states are named, so the dead always-false second
+            # element of the old tuple cannot come back.
+            self.assertEqual(
+                module.resolve_default_branch(
+                    DefaultBranchProbe(), Path("."), "origin", []
+                ).confidence,
+                module.DEFAULT_BRANCH_CORROBORATED,
+            )
+            self.assertEqual(
+                module.resolve_default_branch(
+                    DefaultBranchProbe(primary_ref="feat/work"), Path("."), "origin", []
+                ).confidence,
+                module.DEFAULT_BRANCH_UNCORROBORATED,
+            )
+            self.assertEqual(
+                module.resolve_default_branch(
+                    DefaultBranchProbe(cached_ref=""), Path("."), "origin", []
+                ).confidence,
+                module.DEFAULT_BRANCH_UNKNOWN,
+            )
+
+            # A destination outside refs/heads/ cannot move any branch, so it
+            # needs no default-branch name at all.
+            for arguments in (
+                ["origin", "refs/tags/v1.0.0:refs/tags/v1.0.0"],
+                ["origin", "refs/tags/*:refs/tags/*"],
+                ["origin", "refs/notes/commits:refs/notes/commits"],
+                ["origin", "v1.0.0^{}:refs/tags/v1.0.0"],
+            ):
+                for probe in (
+                    DefaultBranchProbe(),
+                    DefaultBranchProbe(cached_ref=""),
+                    DefaultBranchProbe(cached_ref="", primary_ref=""),
+                    DefaultBranchProbe(primary_ref="feat/work"),
+                ):
+                    with self.subTest(non_branch=arguments, cached=probe.cached_ref):
+                        self.assertIs(verdict(probe, arguments), False)
+
+            # An uncorroborated cache narrows the default to two candidate
+            # names. A destination that is neither is provably safe.
+            uncorroborated = DefaultBranchProbe(primary_ref="feat/work")
+            for arguments in (
+                ["origin", "refs/heads/feat/a:refs/heads/feat/a"],
+                # A bare destination carries the same risk as the qualified
+                # form, and it is the shape the refusal text recommends.
+                ["origin", "feat/a:feat/a"],
+                ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+                ["--delete", "origin", "feat/a"],
+            ):
+                with self.subTest(uncorroborated_safe=arguments):
+                    self.assertIs(verdict(uncorroborated, arguments), False)
+            # Either candidate stays unverified: neither name is disproved.
+            for arguments in (
+                ["origin", "main:main"],
+                ["origin", "feat/work:feat/work"],
+                ["origin", "refs/heads/*:refs/heads/*"],
+                ["--delete", "origin", "main"],
+                ["origin"],
+            ):
+                with self.subTest(uncorroborated_candidate=arguments):
+                    self.assertIsNone(verdict(uncorroborated, arguments))
+
+            # A cached HEAD the primary worktree cannot corroborate because the
+            # inventory is unreadable is still one candidate name.
+            self.assertIs(
+                verdict(
+                    DefaultBranchProbe(primary_ref=""),
+                    ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+                ),
+                False,
+            )
+            self.assertIsNone(
+                verdict(DefaultBranchProbe(primary_ref=""), ["origin", "main:main"])
+            )
+
+            # With no cached HEAD the default's name is unknown, so a branch
+            # destination must not be admitted just because it looks like a
+            # feature branch.
+            unknown = DefaultBranchProbe(cached_ref="")
+            for arguments in (
+                ["origin", "main:main"],
+                ["origin", "refs/heads/feat/a:refs/heads/feat/a"],
+                ["origin", "HEAD:refs/heads/feat/tiny-repair"],
+            ):
+                with self.subTest(unknown_branch=arguments):
+                    self.assertIsNone(verdict(unknown, arguments))
+
+            # An all-refs or mirror push moves every branch, so it is proven bad
+            # without knowing which one is the default.
+            for arguments in (["--all", "origin"], ["--mirror", "origin"]):
+                with self.subTest(all_refs=arguments):
+                    self.assertIs(verdict(unknown, arguments), True)
+
+            # The refusal names the condition that actually tripped, instead of
+            # recommending a surface that cannot run here either.
+            reason = module.invocation_block_reason(
+                DefaultBranchProbe(cached_ref=""),
+                ["git", "push", "origin", "main:main"],
+                Path("."),
+            )
+            self.assertIn(module.MARK_UNVERIFIED, reason)
+            self.assertIn("no cached default branch", reason)
+            self.assertIn("git remote set-head origin --auto", reason)
+            # An empty remote cannot answer that hint, so the refusal has to say
+            # so rather than sending the caller around the same loop.
+            self.assertIn("has no branches yet", reason)
         finally:
             sys.modules.pop(spec.name, None)
 
