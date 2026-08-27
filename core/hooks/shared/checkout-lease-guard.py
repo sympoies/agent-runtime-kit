@@ -617,7 +617,11 @@ def git_invocation_mutates(arguments: list[str]) -> bool:
 
 def git_cli_invocation_mutates(arguments: list[str]) -> bool:
     if arguments and arguments[0] == "sync-branch":
-        return not any(argument in {"-h", "--help", "help"} for argument in arguments[1:])
+        action = arguments[1:]
+        return not (
+            (action and action[0] == "help")
+            or any(argument in {"-h", "--help"} for argument in action)
+        )
     return len(arguments) >= 2 and arguments[0] == "worktree" and arguments[1] in {
         "add",
         "adopt-dirty",

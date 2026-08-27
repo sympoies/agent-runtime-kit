@@ -23318,6 +23318,11 @@ exit 65
                     ["sync-branch", "--remote", "origin", "--format", "json"]
                 )
             )
+            self.assertTrue(
+                module.git_cli_invocation_mutates(
+                    ["sync-branch", "--remote", "help", "--format", "json"]
+                )
+            )
             self.assertFalse(module.git_cli_invocation_mutates(["sync-branch", "--help"]))
         finally:
             sys.modules.pop(spec.name, None)
