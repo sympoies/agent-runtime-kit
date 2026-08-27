@@ -126,9 +126,19 @@ default CI:
   as `gpt-5.6-sol` / `xhigh` / `danger-full-access` so inherited reasoning and
   sandbox defaults cannot satisfy the child-profile checks. When the dispatch
   schema exposes `agent_type`, it selects every canonical hyphenated reviewer
-  identity while deliberately using unrelated `task_name` labels. When the
-  selector is absent, the result is an explicit `skip-host-capability` with
-  `fallback=inline`; the probe never spawns a generic child.
+  identity while deliberately using unrelated `task_name` labels.
+
+  Three outcomes are distinguished, and only the last is a pass. A host with no
+  `agent_type` selector records an explicit `skip-host-capability` with
+  `fallback=inline`; the probe never spawns a generic child. A host that
+  advertises a canonical identity but refuses to dispatch it fails with
+  `status=fail-advertised-rejected` (agent-runtime-kit#58) — the inline
+  fallback still preserves correctness, but a schema advertising an
+  undispatchable reviewer is a broken surface, not a supported host shape. That
+  verdict is read from the host's verbatim `agent type is currently not
+  available` in the Codex event stream rather than from the model's own report.
+  The probe also fails ahead of any dispatch if an installed profile leaf is a
+  symlink, which is the install shape that produces the rejection.
 
 ## Matrix Contract
 

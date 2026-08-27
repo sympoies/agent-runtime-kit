@@ -725,6 +725,121 @@ install_product() {
     "$mode_flag"
 }
 
+# True when `path` is the rendered Codex agents tree of a runtime-kit checkout
+# this sync is allowed to own: the active source root, a source root the
+# operator explicitly authorized with --owned-source-root, or a checkout the
+# shared managed-checkout validator accepts. Mirrors
+# `is_managed_rendered_home_prompt_target` for the agents surface.
+is_managed_rendered_agents_root() {
+  local existing="$1"
+  local suffix="/build/codex/agents"
+  local candidate_root
+  local owned_root
+
+  case "$existing" in
+    *"$suffix") candidate_root="${existing%"$suffix"}" ;;
+    *) return 1 ;;
+  esac
+  [ -d "$existing" ] || return 1
+
+  for owned_root in "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]}"; do
+    [ -n "$owned_root" ] || continue
+    if [ "$(canonical_path "$owned_root")" = "$(canonical_path "$candidate_root")" ]; then
+      return 0
+    fi
+  done
+  is_managed_runtime_kit_checkout_root "$candidate_root"
+}
+
+# Normalize `$CODEX_HOME/agents` so `agent-runtime install` can converge it.
+#
+# codex-cli advertises every `$CODEX_HOME/agents/*.toml` in the `spawn_agent`
+# `agent_type` schema but refuses to dispatch a profile whose directory entry is
+# a symlink (agent-runtime-kit#58), so the link map installs the whole directory
+# as one symlink and every leaf stays a regular file. Install will not swap a
+# real directory for a symlink, and the retired layout was exactly that: a real
+# directory of one runtime-kit symlink per profile. Rolling back to a revision
+# that still wants the retired layout hits the mirror-image problem, and would
+# otherwise write through the directory symlink into a rendered tree.
+#
+# So: leave the surface alone when it already matches this source root, remove
+# it when it is provably runtime-kit-owned in either shape, and refuse when
+# anything unmanaged is present. Install then creates whichever shape the active
+# link map declares.
+reset_codex_managed_agents_root() {
+  local live_home="$1"
+  local agents_root="$live_home/agents"
+  local desired="$SOURCE_ROOT/build/codex/agents"
+  local target entry entry_target removed=0
+  local -a owned_entries=()
+  local -a unmanaged_entries=()
+
+  if [ ! -e "$agents_root" ] && [ ! -L "$agents_root" ]; then
+    return 0
+  fi
+
+  if [ -L "$agents_root" ]; then
+    target="$(resolve_symlink_target "$agents_root")" || target=""
+    if [ "$target" = "$(canonical_path "$desired")" ]; then
+      return 0
+    fi
+    if ! is_managed_rendered_agents_root "$target"; then
+      err "managed Codex agent root points outside this runtime kit: ${target:-$agents_root}"
+      return 3
+    fi
+    if [ "$APPLY" = "1" ]; then
+      rm -f "$agents_root"
+      log "removed managed Codex agent directory symlink -> $target"
+    else
+      log "would remove managed Codex agent directory symlink -> $target"
+    fi
+    return 0
+  fi
+
+  if [ ! -d "$agents_root" ]; then
+    err "managed Codex agent root is neither a symlink nor a directory: $agents_root"
+    return 3
+  fi
+
+  for entry in "$agents_root"/* "$agents_root"/.[!.]*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    entry_target=""
+    if [ -L "$entry" ]; then
+      entry_target="$(resolve_symlink_target "$entry")" || entry_target=""
+    fi
+    if [ -n "$entry_target" ] &&
+      [ "$(basename "$entry_target")" = "$(basename "$entry")" ] &&
+      is_managed_rendered_agents_root "$(dirname "$entry_target")"; then
+      owned_entries+=("$entry")
+    else
+      unmanaged_entries+=("$(basename "$entry")")
+    fi
+  done
+
+  if [ "${#unmanaged_entries[@]}" -gt 0 ]; then
+    err "Codex agent directory holds entries this sync does not own: ${unmanaged_entries[*]}"
+    err "move them aside first; \$CODEX_HOME/agents is a runtime-kit-owned surface (a personal profile belongs in a project-level .codex/agents/ instead)"
+    return 3
+  fi
+
+  for entry in "${owned_entries[@]}"; do
+    if [ "$APPLY" = "1" ]; then
+      rm -f "$entry"
+      log "removed retired Codex agent symlink agents/$(basename "$entry")"
+    else
+      log "would remove retired Codex agent symlink agents/$(basename "$entry")"
+    fi
+    removed=$((removed + 1))
+  done
+
+  if [ "$APPLY" = "1" ]; then
+    rmdir "$agents_root"
+    log "removed retired Codex agent directory agents/ (symlinks=$removed)"
+  else
+    log "would remove retired Codex agent directory agents/ (symlinks=$removed)"
+  fi
+}
+
 sync_agent_hook_handlers() {
   local product="$1"
   local live_home="$2"
@@ -4433,6 +4548,13 @@ main() {
     render_home_prompt_product "$product"
     ensure_home_prompt "$product"
     render_product "$product"
+    if [ "$product" = "codex" ]; then
+      if reset_codex_managed_agents_root "$(product_live_home "$product")"; then
+        :
+      else
+        return $?
+      fi
+    fi
     sync_agent_hook_handlers "$product" "$(product_live_home "$product")"
     prepare_agent_hook_cutover "$product"
     if install_product "$product"; then

@@ -373,17 +373,17 @@ surfaces:
     products:
       codex:
         state: shipped
-        mechanism: "rendered to `build/codex/agents/<name>.toml`, then `symlinked-file` `recursive: true` (`agents-tree`) into `$CODEX_HOME/agents/`; Codex discovers personal subagents at `~/.codex/agents/*.toml` (TOML name / description / developer_instructions plus explicit model / model_reasoning_effort / `sandbox_mode = read-only`); managed reviewers all pin `gpt-5.6-sol`, with quick at `low` and specialists at `medium` reasoning"
+        mechanism: "rendered to `build/codex/agents/<name>.toml`, then one non-recursive `symlinked-file` directory symlink (`agents-tree`) at `$CODEX_HOME/agents`, which keeps every profile leaf a regular file; codex-cli advertises a symlinked leaf in the `spawn_agent` `agent_type` schema but refuses to dispatch it. Codex discovers personal subagents at `~/.codex/agents/*.toml` (TOML name / description / developer_instructions plus explicit model / model_reasoning_effort / `sandbox_mode = read-only`); managed reviewers all pin `gpt-5.6-sol`, with quick at `low` and specialists at `medium` reasoning"
         source_artifacts:
           - "core/agents/<domain>/<name>/AGENT.md.tera -> build/codex/agents/<name>.toml"
         min_product: "0.139.0"
         min_nils_cli: "v1.3.0"
         acceptance:
           - kind: ci
-            note: "gate 3 (render), gate 4 (golden), gate 5 (drift), gate 7 (sandbox install rehearsal), plus manifest-driven reviewer profile governance"
+            note: "gate 3 (render), gate 4 (golden), gate 5 (drift), gate 7 (sandbox install rehearsal, which pins the Codex directory-symlink install shape and fails a plan that reverts to per-profile symlinks), plus manifest-driven reviewer profile governance"
             descriptive_only: true
           - kind: live
-            note: "opt-in authenticated `tests/runtime-smoke/product/codex-reviewer-dispatch.sh` validates all installed profiles against the manifest and dispatches every canonical identity when `agent_type` is exposed; otherwise it records `skip-host-capability` and the inline fallback"
+            note: "opt-in authenticated `tests/runtime-smoke/product/codex-reviewer-dispatch.sh` validates all installed profiles against the manifest, rejects a symlinked profile leaf, and dispatches every canonical identity when `agent_type` is exposed; a selector-less host records `skip-host-capability` and the inline fallback, while an advertised-but-rejected identity (`agent type is currently not available`) fails the probe"
             descriptive_only: true
         source_manifest:
           - "docs/source/harness-shape-codex.md#7-subagent-definitions-agentsnamemd"

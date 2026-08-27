@@ -357,6 +357,33 @@ assert observed == expected, (product, observed, expected)
 PY
 }
 
+# Normalize `$CODEX_HOME/agents` before an install that changes its shape.
+# codex-cli refuses to dispatch a symlinked profile leaf (agent-runtime-kit#58),
+# so the current link map installs that directory as one symlink while the
+# frozen baseline still installs one symlink per profile. `agent-runtime install`
+# converges neither shape onto the other, so the same production helper the
+# sync script runs before install owns the transition in both directions.
+# `helper_root` always supplies the script: the frozen baseline predates this
+# helper, so the rollback leg still loads it from the current portable source
+# while pointing it at the shape the baseline install wants.
+runtime_reset_codex_agents_root() {
+  local helper_root="$1"
+  local desired_root="$2"
+  local product="$3"
+  local live_home="$4"
+  local other_root="$5"
+
+  [ "$product" = codex ] || return 0
+  (
+    # shellcheck disable=SC1091
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$helper_root/scripts/sync-runtime-surfaces.sh"
+    SOURCE_ROOT="$desired_root"
+    OWNED_SOURCE_ROOTS=("$desired_root" "$other_root")
+    APPLY=1
+    reset_codex_managed_agents_root "$live_home"
+  )
+}
+
 runtime_remove_retired_surface() {
   local repo_root="$1"
   local product="$2"
@@ -507,6 +534,9 @@ runtime_convergence_product() {
   agent-runtime render \
     --source-root "$repo_root" \
     --product "$product" >"$artifacts_dir/${product}.upgrade-render.log" 2>&1 || return 1
+  runtime_reset_codex_agents_root \
+    "$repo_root" "$repo_root" "$product" "$live_home" "$prior_root" \
+    >"$artifacts_dir/${product}.upgrade-agents-reset.log" 2>&1 || return 1
   agent-runtime install \
     --source-root "$repo_root" \
     --product "$product" \
@@ -536,6 +566,9 @@ runtime_convergence_product() {
   runtime_remove_post_baseline_skills \
     "$repo_root" "$prior_root" "$product" "$live_home" \
     >"$artifacts_dir/${product}.rollback-cleanup.log" 2>&1 || return 1
+  runtime_reset_codex_agents_root \
+    "$repo_root" "$prior_root" "$product" "$live_home" "$repo_root" \
+    >"$artifacts_dir/${product}.rollback-agents-reset.log" 2>&1 || return 1
   runtime_install_product \
     "$prior_root" "$tmp_root" "$product" "$artifacts_dir/rollback" || return 1
   runtime_assert_macos_helpers_present "$live_home" "$product" || return 1
@@ -548,6 +581,9 @@ runtime_convergence_product() {
   )" = "$baseline_skill_count" ] || return 1
   cmp "$operator_surface" "$live_home/operator-owned.txt" || return 1
 
+  runtime_reset_codex_agents_root \
+    "$repo_root" "$repo_root" "$product" "$live_home" "$prior_root" \
+    >"$artifacts_dir/${product}.upgrade-second-agents-reset.log" 2>&1 || return 1
   agent-runtime install \
     --source-root "$repo_root" \
     --product "$product" \

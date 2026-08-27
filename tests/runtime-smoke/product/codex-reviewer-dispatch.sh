@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # Authenticated, opt-in Codex reviewer profile and selector smoke.
+#
+# Three distinct outcomes, and only the third is a pass:
+#   * the host exposes no `agent_type` selector  -> skip-host-capability
+#   * the host advertises a canonical identity but refuses to dispatch it
+#     -> FAIL (agent-runtime-kit#58); the inline fallback still works, but a
+#     schema that advertises an undispatchable reviewer is a broken surface,
+#     not a supported host shape
+#   * every canonical identity dispatches         -> pass
+#
+# The advertised-but-rejected verdict does not rely on the model's own report:
+# the probe greps the Codex event stream for the host's verbatim rejection
+# (`agent type is currently not available`) and fails on it directly.
 
 set -euo pipefail
 
@@ -94,6 +106,17 @@ for name in names:
     actual = {key: profile.get(key) for key in expected}
     if actual != expected:
         raise SystemExit(f"installed profile mismatch for {name}: {actual!r}")
+    # agent-runtime-kit#58: codex-cli enumerates `$CODEX_HOME/agents/*.toml`
+    # into the `spawn_agent` `agent_type` schema through a path-following stat,
+    # but resolves dispatch content from the directory entry itself and refuses
+    # a symlinked leaf. The link map therefore installs `agents` as one
+    # directory symlink so every profile leaf stays a regular file.
+    if profile_path.is_symlink():
+        raise SystemExit(
+            f"installed reviewer profile is a symlink: {profile_path}; codex-cli "
+            "advertises it but cannot dispatch it. Install `$CODEX_HOME/agents` "
+            "as a single directory symlink (agent-runtime-kit#58)."
+        )
 inventory_file.write_text("\n".join(names) + "\n", encoding="utf-8")
 PY
 
@@ -112,6 +135,9 @@ PY
   echo 'If agent_type is exposed, dispatch every identity below with agent_type set to the exact hyphenated identity.'
   echo 'Use task_name values probe-1 through probe-8 so task_name cannot masquerade as the profile selector.'
   echo 'Ask each child only to reply PROFILE_OK followed by its assigned identity; wait for all children.'
+  echo 'Never retry a rejected dispatch and never substitute a different agent_type for a rejected one.'
+  echo 'If the schema advertises an identity below but dispatching it fails, reply exactly:'
+  echo 'REVIEWER_DISPATCH_ADVERTISED_REJECTED followed by each rejected identity and its verbatim error text.'
   echo 'Then reply REVIEWER_DISPATCH_PASS followed by all eight identities in manifest order.'
   cat "$INVENTORY_FILE"
 } >"$PROMPT_FILE"
@@ -151,6 +177,21 @@ if not messages:
 Path(sys.argv[2]).write_text(messages[-1].strip() + "\n", encoding="utf-8")
 PY
 
+# Objective host verdict first: codex-cli emits this verbatim when it advertises
+# an `agent_type` it will not dispatch. Checked against the Codex event stream
+# and stderr, so a model that misreports the outcome cannot turn a broken
+# surface into a skip or a pass.
+HOST_REJECTION='agent type is currently not available'
+if grep -Fq "$HOST_REJECTION" "$STDOUT_FILE" "$STDERR_FILE" "$RESPONSE_FILE" 2>/dev/null; then
+  echo "codex-reviewer-dispatch: status=fail-advertised-rejected selector=agent_type host_error='$HOST_REJECTION'" >&2
+  echo "codex-reviewer-dispatch: the active spawn_agent schema advertises a canonical reviewer identity the host refuses to dispatch (agent-runtime-kit#58); artifacts=$ARTIFACTS_DIR" >&2
+  exit 1
+fi
+if grep -Eq '^REVIEWER_DISPATCH_ADVERTISED_REJECTED([[:space:]]|$)' "$RESPONSE_FILE"; then
+  echo "codex-reviewer-dispatch: status=fail-advertised-rejected selector=agent_type artifacts=$ARTIFACTS_DIR" >&2
+  cat "$RESPONSE_FILE" >&2
+  exit 1
+fi
 if grep -Fxq 'REVIEWER_DISPATCH_SKIP selector=agent_type unavailable fallback=inline' "$RESPONSE_FILE"; then
   echo "codex-reviewer-dispatch: status=skip-host-capability selector=agent_type fallback=inline artifacts=$ARTIFACTS_DIR"
   exit 0
