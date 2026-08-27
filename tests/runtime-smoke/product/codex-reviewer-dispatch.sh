@@ -12,6 +12,12 @@
 # The advertised-but-rejected verdict does not rely on the model's own report:
 # the probe greps the Codex event stream for the host's verbatim rejection
 # (`agent type is currently not available`) and fails on it directly.
+#
+# Two host constraints keep the probe honest, because violating either makes a
+# dispatch fail for a reason that has nothing to do with the reviewer surface:
+# child names must be hyphen-free (`agent_name` accepts only lowercase letters,
+# digits, and underscores), and the run must not be `--ephemeral` (an
+# unpersisted parent thread cannot take children at all).
 
 set -euo pipefail
 
@@ -35,8 +41,10 @@ RESPONSE_FILE="$ARTIFACTS_DIR/final-agent-message.txt"
 mkdir -p "$PROBE_HOME"
 
 cleanup_probe_home() {
+  # Unlink the borrowed surfaces first so the recursive remove can never follow
+  # them into the real Codex home.
   rm -f "$PROBE_HOME/auth.json" "$PROBE_HOME/agents" "$PROBE_HOME/config.toml"
-  rmdir "$PROBE_HOME" 2>/dev/null || true
+  rm -rf "$PROBE_HOME"
 }
 trap cleanup_probe_home EXIT
 
@@ -133,18 +141,25 @@ PY
   echo 'If it does not expose an agent_type selector, do not spawn any child and reply exactly:'
   echo 'REVIEWER_DISPATCH_SKIP selector=agent_type unavailable fallback=inline'
   echo 'If agent_type is exposed, dispatch every identity below with agent_type set to the exact hyphenated identity.'
-  echo 'Use task_name values probe-1 through probe-8 so task_name cannot masquerade as the profile selector.'
+  echo 'Name each child probe_1 through probe_8 so the child label cannot masquerade as the profile selector.'
+  echo 'Those labels are deliberately hyphen-free: the child name parameter (agent_name where the schema exposes it)'
+  echo 'accepts only lowercase letters, digits, and underscores, so never put the hyphenated identity in it.'
   echo 'Ask each child only to reply PROFILE_OK followed by its assigned identity; wait for all children.'
-  echo 'Never retry a rejected dispatch and never substitute a different agent_type for a rejected one.'
-  echo 'If the schema advertises an identity below but dispatching it fails, reply exactly:'
+  echo 'Never retry a dispatch whose agent_type was rejected, and never substitute a different agent_type.'
+  echo 'If a call is rejected for some other argument, correct that argument and retry the same agent_type.'
+  echo 'If the schema advertises an identity below but its agent_type is rejected, reply exactly:'
   echo 'REVIEWER_DISPATCH_ADVERTISED_REJECTED followed by each rejected identity and its verbatim error text.'
   echo 'Then reply REVIEWER_DISPATCH_PASS followed by all eight identities in manifest order.'
   cat "$INVENTORY_FILE"
 } >"$PROMPT_FILE"
 
+# Deliberately not `--ephemeral`: that leaves the parent thread unpersisted, and
+# codex-cli 0.150.0 then fails every child with `collab spawn failed: no thread
+# with id`, before any agent_type is resolved. The probe home is already an
+# isolated throwaway under $ARTIFACTS_DIR, so the session state it writes is
+# contained and kept with the rest of the run's artifacts.
 set +e
 CODEX_HOME="$PROBE_HOME" codex --ask-for-approval never exec \
-  --ephemeral \
   --skip-git-repo-check \
   -C "$REPO_ROOT" \
   --json \
