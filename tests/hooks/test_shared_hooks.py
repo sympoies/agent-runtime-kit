@@ -23302,6 +23302,26 @@ exit 65
                     self.assert_blocked(decision, "unowned changes")
             self.assertEqual(self._checkout_lease_files(state), [])
 
+    def test_checkout_lease_classifies_git_cli_sync_branch_as_mutating(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "checkout_lease_guard_sync_branch_test",
+            HOOK_DIR / "checkout-lease-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            self.assertTrue(module.git_cli_invocation_mutates(["sync-branch"]))
+            self.assertTrue(
+                module.git_cli_invocation_mutates(
+                    ["sync-branch", "--remote", "origin", "--format", "json"]
+                )
+            )
+            self.assertFalse(module.git_cli_invocation_mutates(["sync-branch", "--help"]))
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_checkout_lease_multi_edit_resolves_one_checkout_once(self) -> None:
         import importlib.util
 

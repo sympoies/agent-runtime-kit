@@ -24,6 +24,7 @@ because a raw invocation cannot prove what it will touch.
 | Managed worktree add/remove | `git-cli worktree` |
 | Publish a branch | `git-cli push` |
 | Adopt the remote's default branch locally | `git-cli sync-default` |
+| Adopt a published non-default branch locally | `git-cli sync-branch` |
 | PR/MR record, review, merge | `forge-cli pr` |
 | One local-only default-branch commit | `semantic-commit default-branch` |
 | Publish the default branch | `forge-cli repo push-default` |
@@ -40,6 +41,20 @@ remain refused even with `--ff-only`: a remote-tracking ref is locally writable,
 and `pull` accepts local repository paths, so local state alone cannot prove the
 source commit was published. The governed owner binds the operation to the
 configured remote and verifies the fast-forward before moving the branch.
+
+## Published Non-default Branch Sync
+
+`git-cli sync-branch` owns fast-forwarding the checked-out, published
+non-default branch to its same-named remote ref. It is intended for persistent
+integration branches such as `mainline`: the branch must track its own ref on
+the selected remote, the remote default branch is refused, and the only
+mutation is a clean-checkout `merge --ff-only` after an exact single-branch
+fetch. It never authors, rebases, resets, pushes, or changes upstream state.
+
+When a persistent integration worktree participates in cleanup scans, pass its
+exact branch name to `worktree-triage --protect-branch <branch>`. Protection is
+explicit and repeatable; it keeps a fully merged integration branch out of the
+safe-removal set without changing the selected comparison base.
 
 ## Reading A Delivery Refusal
 

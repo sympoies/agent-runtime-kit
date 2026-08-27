@@ -3292,8 +3292,16 @@ run_worktree_triage_probe() {
     # rescue-candidate: a unique commit not represented on the base.
     git worktree add -q wt-real -b real-work main
     (cd wt-real && printf 'unique\n' >h.txt && git add h.txt && git commit -q -m "unique work")
+    # protected integration branch: it may be fully merged into the selected
+    # base and still be intentionally persistent.
+    git worktree add -q wt-integration -b integration-branch main
+    # Protection never hides a dirty checkout that still needs rescue.
+    git worktree add -q wt-protected-dirty -b protected-dirty main
+    printf 'uncommitted\n' >wt-protected-dirty/dirty.txt
   )
-  python3 "$helper" --repo "$repo" --base origin/main --format json >"$out" 2>&1
+  python3 "$helper" --repo "$repo" --base origin/main \
+    --protect-branch protected-dirty --protect-branch integration-branch \
+    --format json >"$out" 2>&1
   python3 - "$out" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
@@ -3302,6 +3310,13 @@ by = {w.get("branch"): w["disposition"] for w in data["worktrees"]}
 assert by.get("merged-branch") == "safe-merged", by
 assert by.get("super-branch") == "safe-superseded", by
 assert by.get("real-work") == "rescue-candidate", by
+assert by.get("integration-branch") == "protected", by
+assert by.get("protected-dirty") == "dirty", by
+assert data["protected_branches"] == ["integration-branch", "protected-dirty"], data
+protected = next(w for w in data["worktrees"] if w.get("branch") == "integration-branch")
+assert protected["protected"] is True, protected
+dirty = next(w for w in data["worktrees"] if w.get("branch") == "protected-dirty")
+assert dirty["protected"] is True, dirty
 PY
 
   mkdir -p "$managed/repo-one" "$managed/repo-two" "$repo2"
@@ -3470,7 +3485,7 @@ record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run
 record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
 record_case "meta.nils-cli-bump" "schema-v2 doctor blocked below minimum, admitted ahead into a real downstream gate, rejected an incompatible newer surface, and rejected an inverted range" run_nils_cli_bump_probe
 record_case "meta.repo-docs-boundary" "repo docs placement contract rendered consistently for all products" run_repo_docs_boundary_probe
-record_case "meta.worktree-triage" "worktree triage scan classified safe-merged, safe-superseded, and rescue-candidate worktrees" run_worktree_triage_probe
+record_case "meta.worktree-triage" "worktree triage scan classified safe, rescue, and protected integration worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe
 record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
 record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply rewires managed home prompt symlinks" run_sync_runtime_surfaces_home_prompt_apply_probe
