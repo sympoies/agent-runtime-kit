@@ -50,8 +50,8 @@ Scope rules:
   `min_version_effective_from`: **2026-09-01**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex surface)
-  ships inside nils-cli; minimum supported **v1.27.3**; validated snapshot
-  **v1.27.13**
+  ships inside nils-cli; minimum supported **v1.27.16**; validated snapshot
+  **v1.27.16**
   (`docs/source/nils-cli-surface.md`, `docs/source/nils-cli-pin.yaml`).
   Released subcommands consumed today: `render`, `install`, `uninstall`,
   `doctor` (including `--class skill-surface --product codex`),

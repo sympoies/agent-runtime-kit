@@ -10,7 +10,7 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.25.13`, `git-cli >=1.25.13`,
+- `agent-runtime`, `forge-cli >=1.27.16`, `git-cli >=1.25.13`,
   `plan-issue >=1.1.0`, and `review-specialists` are installed from the released
   nils-cli package and available on `PATH`. `git-cli` 1.25.13 is the floor for
   the `push` and `sync-default` surfaces this workflow publishes and syncs
