@@ -89,11 +89,18 @@ entries:
     destination: plugins/code-review/skills
     recursive: true
 
+  # Installed as ONE directory symlink (`recursive: false`), not one symlink per
+  # profile. codex-cli 0.150.0 advertises every `$CODEX_HOME/agents/*.toml` in
+  # the `spawn_agent` `agent_type` schema but refuses to dispatch a profile
+  # whose directory entry is itself a symlink ("agent type is currently not
+  # available"). A symlinked parent directory keeps every leaf a regular file,
+  # so the advertised identities stay dispatchable. Codex therefore has no
+  # unmanaged `$CODEX_HOME/agents/` slot: the whole directory is runtime-kit
+  # owned. Claude reads symlinked leaves fine and stays `recursive: true`.
   - id: agents-tree
     kind: symlinked-file
     source: build/codex/agents
     destination: agents
-    recursive: true
 
   - id: pr.plugin-manifest
     kind: plugin-manifest-copy

@@ -198,19 +198,46 @@ a uniform shape:
   `name`, `description`, `developer_instructions`, optional `model` and
   `model_reasoning_effort`, and (for a reviewer) `sandbox_mode = "read-only"`
   (`manifests/agents.yaml`).
-- Install mechanism: rendered to `build/codex/agents/<name>.toml`, then
-  `symlinked-file` `recursive: true` (`id: agents-tree`) into
-  `$CODEX_HOME/agents/` (`targets/codex/link-map.yaml`).
+- Install mechanism: rendered to `build/codex/agents/<name>.toml`, then one
+  non-recursive `symlinked-file` directory symlink (`id: agents-tree`) at
+  `$CODEX_HOME/agents` (`targets/codex/link-map.yaml`). The whole directory is
+  linked, not one symlink per profile, because codex-cli resolves an advertised
+  `agent_type` back to its directory entry at dispatch time: it enumerates
+  `$CODEX_HOME/agents/*.toml` into the `spawn_agent` schema through a
+  path-following stat, but refuses a profile whose directory entry is itself a
+  symlink with `agent type is currently not available`
+  (agent-runtime-kit#58, reproduced on codex-cli 0.150.0). Linking the parent
+  directory keeps every leaf a regular file, so every advertised identity
+  dispatches. Two consequences follow. Codex has no unmanaged
+  `$CODEX_HOME/agents/` slot — the directory is runtime-kit owned, and a
+  personal profile belongs in a project-level `.codex/agents/` instead. And
+  `agent-runtime install` will not swap a real directory for a symlink, so
+  `reset_codex_managed_agents_root` in `scripts/sync-runtime-surfaces.sh` runs
+  before install and normalizes that surface. It leaves an `agents` symlink that
+  already matches the active source root alone (so a converged host still
+  installs zero changes), removes a provably runtime-kit-owned surface in either
+  shape — the retired directory of per-profile symlinks, or a directory symlink
+  into another owned checkout, which is what a rollback to a pre-#58 revision
+  needs — and refuses when anything unmanaged is present. Claude reads a
+  symlinked leaf fine and stays `recursive: true`.
 - Acceptance lane: render / golden / audit-drift / sandbox install rehearsal
   gates (the rehearsal pins the installed reviewer agents per product against
-  `tests/sandbox/codex/expected-agents.txt`) plus manifest-driven governance
-  of every Codex reviewer's explicit model, reasoning effort, and sandbox.
-  The opt-in authenticated probe
+  `tests/sandbox/codex/expected-agents.txt`, and pins the Codex install shape
+  itself: a plan that reverts to per-profile symlinks fails the gate) plus
+  manifest-driven governance of every Codex reviewer's explicit model,
+  reasoning effort, and sandbox. The opt-in authenticated probe
   `tests/runtime-smoke/product/codex-reviewer-dispatch.sh` checks installed
-  profiles and dispatches every canonical identity when the active
-  `spawn_agent` schema exposes `agent_type`. A selector-less host records
+  profiles, rejects a symlinked profile leaf, and dispatches every canonical
+  identity when the active `spawn_agent` schema exposes `agent_type`. It
+  separates three outcomes. A selector-less host records
   `skip-host-capability` and the required inline fallback instead of silently
-  spawning a generic child.
+  spawning a generic child. A host that advertises a canonical identity but
+  refuses to dispatch it fails the probe: the inline fallback still preserves
+  correctness, but a schema advertising an undispatchable reviewer is a broken
+  surface, not a supported host shape. That verdict is read from the host's
+  verbatim `agent type is currently not available` in the Codex event stream,
+  so a misreporting model cannot downgrade it to a skip or a pass. Only a full
+  eight-identity dispatch passes.
 - Support today: **shipped (`reviewer-quick` + seven specialist lenses)**. The
   cross-product agents render surface ships in nils-cli v1.3.0; the managed
   read-only reviewers are `reviewer-quick` (quick pass) plus seven specialist

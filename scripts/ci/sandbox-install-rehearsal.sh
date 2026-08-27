@@ -8,10 +8,20 @@
 # empty product result, so this script keeps working against released binaries
 # whose list-skills surface predates Codex plugin-scoped discovery.
 #
-# It also diffs the installed reviewer subagent files (the `agents-tree`
+# It also diffs the installed reviewer subagent surfaces (the `agents-tree`
 # link-map entry, parsed from the dry-run plan) against the committed
 # `tests/sandbox/<product>/expected-agents.txt` pin, so a missing or renamed
 # reviewer agent fails the gate in both product homes.
+#
+# The two products install that entry differently on purpose. Claude reads a
+# symlinked `~/.claude/agents/<name>.md` fine, so it keeps `recursive: true`
+# and one symlink per profile. codex-cli refuses to dispatch a profile whose
+# directory entry is a symlink even though it still advertises that identity in
+# the `spawn_agent` `agent_type` schema (sympoies/agent-runtime-kit#58), so
+# Codex installs `$CODEX_HOME/agents` as a single directory symlink and every
+# leaf stays a regular file. This gate pins that shape per product: a Codex
+# plan that reverts to per-profile symlinks fails here instead of shipping an
+# advertised-but-undispatchable reviewer.
 
 set -euo pipefail
 
@@ -85,13 +95,51 @@ extract_skill_ids_via_dry_run_regex() {
   esac
 }
 
-extract_agent_names() {
+# Capture the per-profile `agents-tree` symlinks a plan installs, one agent
+# name per line (basename without the product-specific .toml / .md extension).
+extract_agent_leaf_symlinks() {
   local dry_run_output="$1"
   local out="$2"
-  # `agents-tree` installs one file symlink per reviewer agent into the product
-  # home's `agents/` dir; capture each agent name (basename without the
-  # product-specific .toml / .md extension) from the dry-run plan.
   sed -n 's#.*/agents/\([^/]*\)\.[a-z][a-z]* -> .*(agents-tree)#\1#p' "$dry_run_output" | sort -u >"$out"
+}
+
+# Codex must install `agents` as ONE directory symlink into the rendered
+# `build/codex/agents` tree. Per-profile symlinks are the sympoies/agent-runtime-kit#58
+# regression: codex-cli advertises each `agent_type` from the directory listing
+# but refuses to dispatch a profile whose directory entry is itself a symlink.
+assert_codex_agents_directory_symlink() {
+  local dry_run_output="$1"
+  local live_home="$2"
+  local leaf_symlinks="$TMP_ROOT/codex.leaf-agent-symlinks.txt"
+
+  extract_agent_leaf_symlinks "$dry_run_output" "$leaf_symlinks"
+  if [ -s "$leaf_symlinks" ]; then
+    echo "sandbox-install-rehearsal.sh: codex installed per-profile agent symlinks; codex-cli advertises but cannot dispatch those identities (agent-runtime-kit#58). Use a single directory symlink (drop \`recursive: true\` from the codex \`agents-tree\` entry). Offending profiles:" >&2
+    cat "$leaf_symlinks" >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "directory symlink $live_home/agents -> $REPO_ROOT/build/codex/agents (agents-tree)" "$dry_run_output"; then
+    echo "sandbox-install-rehearsal.sh: codex plan did not install \`agents\` as one directory symlink into build/codex/agents (agents-tree)" >&2
+    grep -F "(agents-tree)" "$dry_run_output" >&2 || true
+    exit 1
+  fi
+}
+
+# Reviewer names a product actually exposes. Claude installs one symlink per
+# profile, so its plan lists them. Codex links the whole directory, so the
+# exposed set is exactly the rendered tree the directory symlink points at.
+extract_agent_names() {
+  local product="$1"
+  local dry_run_output="$2"
+  local out="$3"
+
+  if [ "$product" = "codex" ]; then
+    find "$REPO_ROOT/build/codex/agents" -maxdepth 1 -type f -name '*.toml' -printf '%f\n' 2>/dev/null |
+      sed 's#\.toml$##' | sort -u >"$out"
+    return 0
+  fi
+  extract_agent_leaf_symlinks "$dry_run_output" "$out"
 }
 
 run_product() {
@@ -141,10 +189,13 @@ run_product() {
     exit 1
   fi
 
-  # Reviewer subagent surfaces: the `agents-tree` link-map entry installs one
-  # file per reviewer agent into the product home `agents/` dir.
+  # Reviewer subagent surfaces: the `agents-tree` link-map entry. Claude
+  # installs one symlink per profile; Codex installs the directory itself.
   local observed_agents="$TMP_ROOT/${product}.observed-agents.txt"
-  extract_agent_names "$dry_run_output" "$observed_agents"
+  if [ "$product" = "codex" ]; then
+    assert_codex_agents_directory_symlink "$dry_run_output" "$live_home"
+  fi
+  extract_agent_names "$product" "$dry_run_output" "$observed_agents"
 
   if [ "$expect_agents" = "0" ]; then
     # Products without an `agents-tree` (e.g. Hermes) must install no reviewer
