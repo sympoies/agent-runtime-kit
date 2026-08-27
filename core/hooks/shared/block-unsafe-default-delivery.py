@@ -2485,7 +2485,7 @@ def push_classification(
     config_arguments: list[str],
 ) -> tuple[bool | None, str]:
     """Classify a push, and name the condition when it cannot be classified."""
-    dry_run, all_or_mirror, delete, tags_only, remote, refspecs = push_shape(arguments)
+    dry_run, all_or_mirror, _delete, tags_only, remote, refspecs = push_shape(arguments)
     if dry_run:
         return False, ""
     if tags_only and not refspecs:
@@ -2536,17 +2536,11 @@ def push_classification(
         return False, ""
 
     default = resolution.name
-    if delete:
-        if not refspecs:
-            return None, NO_REFSPEC_DETAIL
-        return (
-            any(
-                normalized_branch(refspec, current) == default
-                for refspec in refspecs
-            ),
-            "",
-        )
     if refspecs:
+        # `--delete origin <ref>` and `origin :<ref>` ask the same question, so
+        # they take the same answer. Classifying deletes by name alone would
+        # miss a wildcard: `normalized_branch` returns the pattern unchanged, so
+        # `--delete origin '*'` compared unequal to the default and was admitted.
         return (
             any(
                 refspec_targets_default(refspec, default, current)

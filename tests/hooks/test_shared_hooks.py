@@ -21311,7 +21311,14 @@ exit 65
                 (["--all", "origin"], True),
                 (["--mirror", "origin"], True),
                 (["--delete", "origin", "feat/tiny-repair"], False),
+                (["--delete", "origin", "main"], True),
+                # A delete classified by name alone missed this: the pattern
+                # compared unequal to `main` and the push was admitted, even
+                # though it deletes every branch including the default.
+                (["--delete", "origin", "*"], True),
+                (["--delete", "origin"], None),
                 (["origin", ":feat/tiny-repair"], False),
+                (["origin", ":main"], True),
                 (["origin", "HEAD"], False),
                 (["origin", "refs/heads/release/*:refs/heads/release/*"], False),
             )
