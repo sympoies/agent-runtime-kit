@@ -1,22 +1,33 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-26 (refreshed for `v1.27.13`)
+- Snapshot date: 2026-08-27 (refreshed for `v1.27.16`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.13`
+- Active `git describe --tags` output: `v1.27.16`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.3`,
-  `validated_tag: v1.27.13`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.16`,
+  `validated_tag: v1.27.16`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `3dee4915`
-  (`chore(release): bump cli versions to 1.27.13`)
+- Head commit: `64310784`
+  (`chore(release): bump cli versions to 1.27.16 (#1534)`)
 - Release:
-  [`v1.27.13`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.13),
+  [`v1.27.16`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.16),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.13` is the validated release while `v1.27.3` remains the compatibility
+- `v1.27.16` is the validated release and compatibility minimum. Runtime-kit
+  now consumes exact requested-base binding across `forge-cli` PR lookup,
+  adoption, create readback, ready, and merge, plus `git-cli sync-branch` for
+  same-name-upstream, fast-forward-only synchronization of persistent
+  non-default integration branches
+  ([#1533](https://github.com/sympoies/nils-cli/pull/1533)). The `forge-cli`
+  and `git-cli` consumer floors therefore move to `>=1.27.16`; because the old
+  `v1.27.3` minimum cannot provide either required contract, this adoption
+  explicitly retires it and moves the retained minimum digests to `v1.27.16`.
+  Minimum and validated share one physical CI lane while preserving both role
+  labels. The release commit is [#1534](https://github.com/sympoies/nils-cli/pull/1534).
+- `v1.27.13` was the previous validated release while `v1.27.3` remained the compatibility
   minimum. It preserves tmux-backed session liveness under a C locale by using
   a printable snapshot delimiter while accepting the historical tab form
   ([#1523](https://github.com/sympoies/nils-cli/pull/1523)), bounds contained

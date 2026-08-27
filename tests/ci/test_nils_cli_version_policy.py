@@ -127,29 +127,29 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.3")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.13")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.16")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.16")
         self.assertNotIn("pinned_tag:", manifest)
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "617d452481d4c992c0228684331d275c647096de94be8197f24cd5bdd2b527f4",
+            "ce9c840ebb1ac6d8addd45cdf1fc91b7ca192467b66f8caf5bd032bafc4c76b6",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "60a48465c622a3616a0c4342a1273c53c92c69dc5263ed4b05489917ba1c8c7b",
+            "2e850c89f53fc7b0a8d346166346f1881f0bbb9a6ccddd155fb61a015b9ee06c",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.3"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.16"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "b61eaa0981d5bda1b18cdf69f700a9dda07b55ed94d8dfbc61ed0d08b26923bc",
+            "ce9c840ebb1ac6d8addd45cdf1fc91b7ca192467b66f8caf5bd032bafc4c76b6",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "f78a90ccec34b58f1dcba0e36050c9297cff6f93b3fecadde6af66cbab65d514",
+            "2e850c89f53fc7b0a8d346166346f1881f0bbb9a6ccddd155fb61a015b9ee06c",
         )
         required_entries = manifest_data["required_clis"]
         required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
@@ -157,7 +157,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["agent-session"], "1.25.11")
         self.assertEqual(required_clis["semantic-commit"], "1.25.11")
         self.assertEqual(required_clis["main-agent"], "1.25.11")
-        self.assertEqual(required_clis["forge-cli"], "1.25.13")
+        self.assertEqual(required_clis["forge-cli"], "1.27.16")
+        self.assertEqual(required_clis["git-cli"], "1.27.16")
         self.assertEqual(required_clis["agent-hook"], "1.26.4")
         self.assertEqual(required_clis["agent-memory"], "1.26.4")
         minimum = tuple(
@@ -297,7 +298,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.27.13", "v1.28.0"):
+        for candidate in ("v1.27.16", "v1.28.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -307,6 +308,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     text=True,
                 )
         for candidate in (
+            "v1.27.15",
+            "v1.27.13",
             "v1.27.12",
             "v1.27.2",
             "v1.26.2",
@@ -662,7 +665,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.27.13", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.27.16", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(

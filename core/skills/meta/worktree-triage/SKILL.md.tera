@@ -17,7 +17,7 @@ Prereqs:
 - For machine-wide cleanup, pass `--all-managed` to scan every repository
   represented under the managed worktree root
   (`${AGENT_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}/worktrees`).
-- `git` and `git-cli` are on `PATH`; Python 3.11+ is available (the bundled
+- `git` and `git-cli >=1.27.16` are on `PATH`; Python 3.11+ is available (the bundled
   `worktree_triage.py` scanner is stdlib-only). `semantic-commit` is required
   for any commit the rescue path makes; `forge-cli >=1.11.2` is required only
   for the PR-mode rescue path. The scan itself needs no provider access.
