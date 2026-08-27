@@ -33,6 +33,52 @@ Raw `git` remains the right tool for reads, for staging, and for anything with
 no owner above. The guard only classifies commands that could move the default
 branch.
 
+## Resolving The Remote's Default Branch
+
+The guard has to know which branch is the default before it can say whether a
+push would move it. It resolves that locally, from the cached
+`refs/remotes/<remote>/HEAD` corroborated by the primary worktree's branch,
+because a cached head is locally writable and a stale or planted one would
+reclassify a default-branch push as a feature push.
+
+How firmly it resolves decides what a refusal can claim, and the three states
+are not interchangeable:
+
+- **Corroborated** — cache and primary worktree agree. A destination can be
+  proven to be the default, or proven not to be.
+- **Uncorroborated** — a cached name the primary worktree does not confirm,
+  which is the ordinary state when the primary checkout is parked on a feature
+  branch. The default is one of those two names, so a destination that is
+  neither is admitted, and either candidate stays unverified. This is why a
+  parked primary checkout no longer makes every push in the repository
+  unclassifiable.
+- **Unknown** — no cached head at all. No branch destination is decidable, and
+  the primary worktree's branch is not accepted as a substitute: a repository
+  whose primary checkout sits on a feature branch would otherwise make the real
+  default look like a safe destination.
+
+Two classes of push need no default-branch name at all. A destination outside
+`refs/heads/` — a tag, a note — cannot move a branch whatever the default turns
+out to be, so it is admitted in every state. An `--all` or `--mirror` push moves
+every branch there is, so it is refused in every state.
+
+A push that cannot be classified names the condition that tripped. "The default
+branch could not be resolved" is not actionable on its own, and steering such a
+caller to a governed surface that fails the same way is worse than saying
+nothing.
+
+### Publishing to an empty remote
+
+A remote that advertises no refs has no default branch, so publishing its first
+branch cannot move one. Nothing in the resolution above can establish that from
+local state, and the usual remedy is a dead end: `git remote set-head <remote>
+--auto` has no remote HEAD to read, and `forge-cli repo push-default` needs an
+expected base that does not exist yet. Publishing the first branch of an empty
+remote is therefore a governed bootstrap publish, whose safety argument is the
+emptiness itself — checked against the remote, never inferred from missing
+remote-tracking refs, which a fresh clone also lacks. It creates a ref and
+forces nothing.
+
 ## Default-branch Fast-forward Sync
 
 `git-cli sync-default` is the sole owner for advancing the local default branch
