@@ -134,11 +134,11 @@ dh_args=()
 [[ -n "$docs_home" ]] && dh_args=(--docs-home "$docs_home")
 
 require_declared_args=()
-if "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+if "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
   preflight --help 2>/dev/null | grep -q -- "--require-declared-intent"; then
   require_declared_args=(--require-declared-intent)
 fi
-if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
   preflight --help 2>/dev/null | grep -q -- "--product"; then
   product_args=(--product "$product")
 fi
@@ -147,7 +147,7 @@ fi
 # Keep a canonical identity separate from display order so even a session with
 # no active intent invalidates its cue when the declared catalog changes.
 catalog_json="$(
-  "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" list --format json 2>/dev/null || true
+  "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" list --format json 2>/dev/null || true
 )"
 intents="$(
   printf '%s' "$catalog_json" | "$python_bin" -c '
@@ -195,14 +195,14 @@ state_home=""
 status_json=""
 verify_json=""
 activation_stale=0
-if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
   session --help 2>/dev/null | grep -q -- "status" &&
-  "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+  "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
     session --help 2>/dev/null | grep -q -- "verify"; then
   session_supported=1
   state_home="$(runtime_state_home)"
   if [[ -n "$session_id" && -n "$state_home" ]]; then
-    status_json="$("$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+    status_json="$("$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
       session status --session-id "$session_id" --product "$product" \
       --state-home "$state_home" --format json 2>/dev/null || true)"
     active_intents="$(
@@ -223,9 +223,9 @@ for intent in (data or {}).get("active_intents", []):
       while IFS= read -r active_intent; do
         [[ -n "$active_intent" ]] && verify_args+=(--require-intent "$active_intent")
       done <<<"$active_intents"
-      verify_json="$("$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
+      verify_json="$("$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
         session verify --session-id "$session_id" --product "$product" \
-        --state-home "$state_home" "${verify_args[@]}" --format json 2>/dev/null || true)"
+        --state-home "$state_home" "${verify_args[@]+"${verify_args[@]}"}" --format json 2>/dev/null || true)"
       verified="$(printf '%s' "$verify_json" | "$python_bin" -c '
 import json, sys
 try:
@@ -255,9 +255,9 @@ preflights=()
 while IFS= read -r intent; do
   [[ -z "$intent" ]] && continue
   pf="$(
-    "$agent_docs_bin" "${dh_args[@]}" --project-path "$repo_root" \
-      preflight --intent "$intent" "${require_declared_args[@]}" \
-      "${product_args[@]}" \
+    "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
+      preflight --intent "$intent" "${require_declared_args[@]+"${require_declared_args[@]}"}" \
+      "${product_args[@]+"${product_args[@]}"}" \
       --format json 2>/dev/null
   )"
   status=$?
@@ -273,7 +273,7 @@ while IFS= read -r intent; do
   preflights+=("$pf")
 done <<<"$selected_intents"
 
-preflight_identity="$(printf '%s\n' "${preflights[@]}" | cksum 2>/dev/null || true)"
+preflight_identity="$(printf '%s\n' "${preflights[@]+"${preflights[@]}"}" | cksum 2>/dev/null || true)"
 # The session record's raw bytes are intentionally NOT part of this key: a
 # same-name reactivation that only rewrites the record (e.g. a no-op `session
 # prepare` that refreshes activated_at) with unchanged active intents, documents,
@@ -315,7 +315,7 @@ cue="$(
     AGENT_RUNTIME_RESOLVED_AGENT_DOCS="$agent_docs_bin" \
     AGENT_RUNTIME_RESOLVED_DOCS_HOME="$docs_home" \
     AGENT_RUNTIME_RESOLVED_PROJECT_PATH="$repo_root" \
-    "$python_bin" - "${preflights[@]}" <<'PY' 2>/dev/null || true
+    "$python_bin" - "${preflights[@]+"${preflights[@]}"}" <<'PY' 2>/dev/null || true
 import json, os, shlex, sys
 lines = []
 val_cmds = []

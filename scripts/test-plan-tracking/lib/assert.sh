@@ -380,7 +380,7 @@ case "${phase}" in
     # All expected labels.
     # shellcheck disable=SC2153  # FIXTURE_LABELS is set by the sourced fixture manifest/state.
     IFS=',' read -ra labels_arr <<<"${FIXTURE_LABELS}"
-    for l in "${labels_arr[@]}"; do
+    for l in "${labels_arr[@]+"${labels_arr[@]}"}"; do
       check_label_present "${l}"
     done
     # Source / plan / state roles, each at least once.
