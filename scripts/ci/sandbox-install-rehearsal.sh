@@ -135,8 +135,11 @@ extract_agent_names() {
   local out="$3"
 
   if [ "$product" = "codex" ]; then
-    find "$REPO_ROOT/build/codex/agents" -maxdepth 1 -type f -name '*.toml' -printf '%f\n' 2>/dev/null |
-      sed 's#\.toml$##' | sort -u >"$out"
+    # `-printf` is GNU-only; BSD find rejects it, and `2>/dev/null` plus
+    # `pipefail` turned that into a silent `set -e` abort on macOS. `-print`
+    # with the directory prefix stripped is portable and says the same thing.
+    find "$REPO_ROOT/build/codex/agents" -maxdepth 1 -type f -name '*.toml' -print 2>/dev/null |
+      sed -e 's#^.*/##' -e 's#\.toml$##' | sort -u >"$out"
     return 0
   fi
   extract_agent_leaf_symlinks "$dry_run_output" "$out"

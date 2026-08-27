@@ -257,14 +257,14 @@ if [[ "$have_agent_docs" -eq 1 && -n "$repo_root" && -f "$repo_root/AGENT_DOCS.t
   project_args=(--project-path "$repo_root")
   product_args=()
   if [[ "$product" == "codex" || "$product" == "claude" ]]; then
-    if "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} \
+    if "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]+"${dh_args[@]}"}"} ${project_args[@]+"${project_args[@]+"${project_args[@]}"}"} \
       preflight --help 2>/dev/null | grep -q -- "--product"; then
       product_args=(--product "$product")
     fi
   fi
 
   list_output="$(
-    "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} list --format json 2>&1
+    "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]+"${dh_args[@]}"}"} ${project_args[@]+"${project_args[@]+"${project_args[@]}"}"} list --format json 2>&1
   )"
   list_status=$?
   intents=""
@@ -302,8 +302,8 @@ ${list_output}
     while IFS= read -r intent; do
       [[ -z "$intent" ]] && continue
       out="$(
-        "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]}"} ${project_args[@]+"${project_args[@]}"} \
-          preflight --intent "$intent" ${product_args[@]+"${product_args[@]}"} --strict --format text 2>&1
+        "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]+"${dh_args[@]}"}"} ${project_args[@]+"${project_args[@]+"${project_args[@]}"}"} \
+          preflight --intent "$intent" ${product_args[@]+"${product_args[@]+"${product_args[@]}"}"} --strict --format text 2>&1
       )"
       status=$?
       preflight_output="${preflight_output}intent ${intent}:

@@ -320,7 +320,7 @@ if [ "$mode" = "execute" ]; then
     args+=(--prerelease)
   fi
 
-  gh "${args[@]}"
+  gh "${args[@]+"${args[@]}"}"
   release_url="$(gh release view "$tag" --repo "$repo" --json url --jq .url)"
   info "created GitHub Release: $release_url"
 

@@ -92,7 +92,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-python3 - "$MODE" "$REPO_ROOT" ${SHAPE_PATHS[@]+"${SHAPE_PATHS[@]}"} <<'PY'
+python3 - "$MODE" "$REPO_ROOT" ${SHAPE_PATHS[@]+"${SHAPE_PATHS[@]+"${SHAPE_PATHS[@]}"}"} <<'PY'
 from __future__ import annotations
 
 import json

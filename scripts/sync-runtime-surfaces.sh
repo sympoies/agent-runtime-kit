@@ -256,7 +256,7 @@ resolve_owned_source_roots() {
   local root
   local physical
 
-  for root in "${OWNED_SOURCE_ROOTS[@]}"; do
+  for root in "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}"; do
     case "$root" in
       /*) ;;
       *)
@@ -271,7 +271,7 @@ resolve_owned_source_roots() {
     physical="$(cd "$root" && pwd -P)"
     resolved+=("$physical")
   done
-  OWNED_SOURCE_ROOTS=("${resolved[@]}")
+  OWNED_SOURCE_ROOTS=("${resolved[@]+"${resolved[@]}"}")
 }
 
 absolute_git_dir() {
@@ -742,7 +742,7 @@ is_managed_rendered_agents_root() {
   esac
   [ -d "$existing" ] || return 1
 
-  for owned_root in "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]}"; do
+  for owned_root in "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}"; do
     [ -n "$owned_root" ] || continue
     if [ "$(canonical_path "$owned_root")" = "$(canonical_path "$candidate_root")" ]; then
       return 0
@@ -822,7 +822,7 @@ reset_codex_managed_agents_root() {
     return 3
   fi
 
-  for entry in "${owned_entries[@]}"; do
+  for entry in "${owned_entries[@]+"${owned_entries[@]}"}"; do
     if [ "$APPLY" = "1" ]; then
       rm -f "$entry"
       log "removed retired Codex agent symlink agents/$(basename "$entry")"
@@ -865,9 +865,9 @@ sync_agent_hook_handlers() {
 
   log "materializing trusted agent-hook handlers product=$product live_home=$live_home"
   print_cmd python3 - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
-    "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]}"
+    "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}"
   python3 - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
-    "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]}" <<'PY'
+    "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}" <<'PY'
 import hashlib
 import json
 import os
@@ -4218,12 +4218,12 @@ prune_product() {
     --product "$product"
     --live-home "$live_home"
   )
-  for owned_root in "${OWNED_SOURCE_ROOTS[@]}"; do
+  for owned_root in "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}"; do
     prune_cmd+=(--owned-source-root "$owned_root")
   done
 
   if [ "$APPLY" = "0" ]; then
-    run_cmd "${prune_cmd[@]}" --dry-run
+    run_cmd "${prune_cmd[@]+"${prune_cmd[@]}"}" --dry-run
     if [ "$product" = "codex" ]; then
       cleanup_codex_legacy_flat_skill_root "$live_home"
     fi
@@ -4234,10 +4234,10 @@ prune_product() {
     return 0
   fi
 
-  print_cmd "${prune_cmd[@]}" --apply --format json
+  print_cmd "${prune_cmd[@]+"${prune_cmd[@]}"}" --apply --format json
 
   set +e
-  prune_json="$("${prune_cmd[@]}" --apply --format json 2>&1)"
+  prune_json="$("${prune_cmd[@]+"${prune_cmd[@]}"}" --apply --format json 2>&1)"
   code=$?
   set -e
 
