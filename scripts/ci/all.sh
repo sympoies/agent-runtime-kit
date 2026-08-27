@@ -422,13 +422,13 @@ python3 scripts/ci/version-baseline-audit.py check
 # -----------------------------------------------------------------------------
 # Position 15 — rendered product leakage audit
 # -----------------------------------------------------------------------------
-banner 15 "product leakage audit + macOS bash array-expansion audit"
+banner 15 "product leakage audit + macOS portability audit"
 bash scripts/ci/product-leak-audit.sh --self-test
 bash scripts/ci/product-leak-audit.sh
-# Linux CI cannot reproduce the bash 3.2 fault this guards, so the audit is
-# static: it fails on the spelling rather than on the runtime behaviour.
-bash scripts/ci/bash-empty-array-audit.sh --self-test
-bash scripts/ci/bash-empty-array-audit.sh
+# Linux CI cannot reproduce the bash 3.2 and BSD-tooling faults this guards, so
+# the audit is static: it fails on the spelling rather than on the behaviour.
+bash scripts/ci/macos-portability-audit.sh --self-test
+bash scripts/ci/macos-portability-audit.sh
 
 # -----------------------------------------------------------------------------
 # Position 16 — memory policy, retired-reference audit, and product routing

@@ -25,6 +25,17 @@ mkdir -p "$META_ARTIFACTS_DIR" "$TMP_ROOT/workspaces"
 cp -R "$SCRIPT_DIR/workspaces/basic-repo/." "$META_WORKSPACE"
 git -C "$META_WORKSPACE" init -q
 
+# GNU coreutils spells the permission bits `stat -c '%a'`; BSD stat, which is
+# what macOS ships, spells the same field `stat -f '%Lp'`. Neither accepts the
+# other's flag, so the probe has to ask for whichever one this host has.
+portable_file_mode() {
+  local path="$1"
+  if stat -c '%a' "$path" 2>/dev/null; then
+    return 0
+  fi
+  stat -f '%Lp' "$path"
+}
+
 require_meta_bin() {
   local bin="$1"
   if ! command -v "$bin" >/dev/null 2>&1; then
@@ -1576,7 +1587,8 @@ PY
   grep -q "review-needed legacy Hermes runtime-kit skill copy skills/meta/bootstrap" \
     "$active_mode_out"
   test -f "$active_mode_copy/SKILL.md"
-  test "$(stat -c '%a' "$active_mode_copy/SKILL.md")" = "755"
+  # `stat -c` is GNU-only; BSD stat spells the same field `stat -f '%Lp'`.
+  test "$(portable_file_mode "$active_mode_copy/SKILL.md")" = "755"
 
   local race_home="$TMP_ROOT/sync-prune/hermes-race-add"
   local race_retired="$race_home/skills/browser/canary-check"
