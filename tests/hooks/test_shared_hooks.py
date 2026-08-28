@@ -19337,6 +19337,65 @@ exit 65
             self.assert_blocked(decision, "unowned changes")
             self.assertEqual(self._checkout_lease_files(state), [])
 
+    def test_dirty_checkout_adoption_reports_typed_snapshot_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            fake_bin = root / "bin"
+            fake_bin.mkdir(mode=0o700)
+            fake_git_cli = fake_bin / "git-cli"
+            fake_git_cli.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' "
+                "'{\"schema_version\":\"cli.git-cli.worktree.dirty-snapshot.v1\","
+                "\"ok\":false,\"error\":{\"code\":"
+                "\"dirty-checkout-resource-unavailable\",\"message\":"
+                "\"dirty snapshot worker executable path is not trusted; "
+                "PRIVATE-SNAPSHOT-DETAIL\"}}'\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            fake_git_cli.chmod(0o700)
+            self._init_checkout_lease_repo(repo)
+            private_prompt = "PRIVATE-PROMPT-snapshot-5319"
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+                "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+            }
+
+            code, advisory, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "snapshot-failure-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": private_prompt,
+                },
+                cwd=repo,
+                env=env,
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            hook_output = advisory.get("hookSpecificOutput")
+            self.assertIsInstance(hook_output, dict)
+            assert isinstance(hook_output, dict)
+            context = str(hook_output.get("additionalContext", ""))
+            self.assertIn(
+                "dirty-checkout-resource-unavailable/worker-path-untrusted",
+                context,
+            )
+            self.assertIn("remain read-only", context.lower())
+            self.assertIn("git-cli worktree dirty-snapshot --format=json", context)
+            self.assertIn("git-cli worktree add", context)
+            rendered = json.dumps(advisory, sort_keys=True)
+            self.assertNotIn(private_prompt, rendered)
+            self.assertNotIn("PRIVATE-SNAPSHOT-DETAIL", rendered)
+            self.assertFalse(state.exists())
+
     def test_dirty_checkout_adoption_flag_on_emits_one_private_challenge(
         self,
     ) -> None:
