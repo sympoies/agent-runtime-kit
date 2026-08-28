@@ -194,6 +194,13 @@ class Checkout:
     primary: bool
 
 
+@dataclass(frozen=True)
+class DirtySnapshotProbe:
+    snapshot: dict[str, Any] | None
+    failure_code: str | None
+    failure_reason: str | None
+
+
 class LeaseError(RuntimeError):
     """Raised when lease identity or state cannot be trusted."""
 
@@ -2305,7 +2312,51 @@ def dirty_adoption_enabled() -> bool:
     return os.environ.get("AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION") == "1"
 
 
-def dirty_snapshot(checkout: Checkout) -> dict[str, Any] | None:
+def dirty_snapshot_failure_reason(message: object) -> str:
+    if not isinstance(message, str):
+        return "unspecified"
+    categories = (
+        ("worker executable path is not trusted", "worker-path-untrusted"),
+        ("worker executable is not trusted", "worker-executable-untrusted"),
+        ("worker executable changed", "worker-executable-changed"),
+        ("worker executable digest cache", "worker-digest-cache-unavailable"),
+        ("trusted system Git executable is unavailable", "system-git-unavailable"),
+        ("process cleanup exceeds", "process-containment-unavailable"),
+        ("process supervisor", "process-supervisor-unavailable"),
+        ("Git operation state could not be verified", "git-operation-state-unavailable"),
+        ("capture budget", "capture-budget-exceeded"),
+        ("entry count exceeds", "entry-budget-exceeded"),
+        ("size limit", "file-size-limit-exceeded"),
+        ("total bytes exceed", "aggregate-size-limit-exceeded"),
+        ("Git output", "git-output-unavailable"),
+    )
+    for fragment, reason in categories:
+        if fragment in message:
+            return reason
+    return "unspecified"
+
+
+def dirty_snapshot_error_details(stdout: str) -> tuple[str, str]:
+    try:
+        envelope = json.loads(stdout)
+    except json.JSONDecodeError:
+        return "dirty-snapshot-command-failed", "response-invalid"
+    if (
+        not isinstance(envelope, dict)
+        or frozenset(envelope) != {"schema_version", "ok", "error"}
+        or envelope.get("schema_version")
+        != "cli.git-cli.worktree.dirty-snapshot.v1"
+        or envelope.get("ok") is not False
+        or not isinstance(envelope.get("error"), dict)
+    ):
+        return "dirty-snapshot-command-failed", "response-invalid"
+    code = envelope["error"].get("code")
+    if not isinstance(code, str) or re.fullmatch(r"[a-z0-9-]{1,80}", code) is None:
+        return "dirty-snapshot-command-failed", "response-invalid"
+    return code, dirty_snapshot_failure_reason(envelope["error"].get("message"))
+
+
+def dirty_snapshot(checkout: Checkout) -> DirtySnapshotProbe:
     try:
         completed = subprocess.run(
             ["git-cli", "worktree", "dirty-snapshot", "--format=json"],
@@ -2315,14 +2366,19 @@ def dirty_snapshot(checkout: Checkout) -> dict[str, Any] | None:
             check=False,
             timeout=DIRTY_SNAPSHOT_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    except OSError:
+        return DirtySnapshotProbe(
+            None, "dirty-snapshot-command-unavailable", "executable-unavailable"
+        )
+    except subprocess.TimeoutExpired:
+        return DirtySnapshotProbe(None, "dirty-snapshot-command-timeout", "timeout")
     if completed.returncode != 0:
-        return None
+        failure_code, failure_reason = dirty_snapshot_error_details(completed.stdout)
+        return DirtySnapshotProbe(None, failure_code, failure_reason)
     try:
         envelope = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        return None
+        return DirtySnapshotProbe(None, "dirty-snapshot-response-invalid", "response-invalid")
     if (
         not isinstance(envelope, dict)
         or frozenset(envelope) != {"schema_version", "ok", "data"}
@@ -2331,10 +2387,10 @@ def dirty_snapshot(checkout: Checkout) -> dict[str, Any] | None:
         or envelope.get("ok") is not True
         or not isinstance(envelope.get("data"), dict)
     ):
-        return None
+        return DirtySnapshotProbe(None, "dirty-snapshot-response-invalid", "response-invalid")
     snapshot = envelope["data"]
     if frozenset(snapshot) != SNAPSHOT_KEYS:
-        return None
+        return DirtySnapshotProbe(None, "dirty-snapshot-response-invalid", "response-invalid")
     head_oid = snapshot.get("head_oid")
     head_valid = isinstance(head_oid, str) and (
         re.fullmatch(r"[0-9a-f]{40,64}", head_oid) is not None
@@ -2362,8 +2418,8 @@ def dirty_snapshot(checkout: Checkout) -> dict[str, Any] | None:
         or snapshot["checkout_key"]
         != hashlib.sha256(os.fsencode(checkout.root)).hexdigest()
     ):
-        return None
-    return snapshot
+        return DirtySnapshotProbe(None, "dirty-snapshot-response-invalid", "response-invalid")
+    return DirtySnapshotProbe(snapshot, None, None)
 
 
 def remove_same_session_challenges(
@@ -2487,8 +2543,32 @@ def issue_dirty_checkout_challenge(payload: Mapping[str, Any]) -> int:
             ):
                 return ALLOW
 
-        snapshot = dirty_snapshot(checkout)
+        snapshot_probe = dirty_snapshot(checkout)
+        snapshot = snapshot_probe.snapshot
         if snapshot is None:
+            failure_code = snapshot_probe.failure_code or "dirty-snapshot-command-failed"
+            failure_reason = snapshot_probe.failure_reason or "unspecified"
+            context = (
+                "This checkout has unowned changes, but authenticated dirty-state "
+                f"snapshotting is unavailable (`{failure_code}/{failure_reason}`). "
+                "Remain read-only; "
+                "do not guess at takeover or bypass the guard. Run "
+                "`git-cli worktree dirty-snapshot --format=json` to inspect the typed "
+                "failure, repair the reported trust/runtime prerequisite, then retry. "
+                "If implementation must proceed meanwhile, use a clean managed worktree "
+                "via `git-cli worktree add <slug>`."
+            )
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "UserPromptSubmit",
+                            "additionalContext": context,
+                        }
+                    }
+                )
+                + "\n"
+            )
             return ALLOW
         if read_instance(checkout, create=False) != snapshot["checkout_instance"]:
             return ALLOW

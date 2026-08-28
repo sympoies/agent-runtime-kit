@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Trust-sensitive fixtures create private executables and state directories.
+# Do not inherit an interactive agent's collaborative-group umask: production
+# deliberately rejects group-writable trust roots, so the test runner must
+# create its own fixtures with deterministic non-writable group/other bits.
+umask 022
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
