@@ -1,23 +1,32 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-28 (refreshed for `v1.27.19`)
+- Snapshot date: 2026-08-28 (refreshed for `v1.27.21`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.19`
+- Active `git describe --tags` output: `v1.27.21`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.16`,
-  `validated_tag: v1.27.19`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.27.21`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `07969611`
-  (`chore(release): bump cli versions to 1.27.19`)
+- Head commit: `2d077ec9`
+  (`chore(release): bump cli versions to 1.27.21`)
 - Release:
-  [`v1.27.19`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.19),
+  [`v1.27.21`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.21),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.19` is the validated release; `v1.27.16` remains the compatibility
-  minimum. It adds `git-cli push --bootstrap`, which publishes the first branch
+- `v1.27.21` is the validated release; `v1.27.16` remains the compatibility
+  minimum. It adds privacy-safe handler identity, capability-cause, doctor, and
+  owner-repair guidance to existing `agent-hook` fail-posture errors
+  ([#1550](https://github.com/sympoies/nils-cli/pull/1550)), and admits the
+  fixed system Git executable when strict Linux user-namespace evidence proves
+  host root is represented by the unmapped overflow UID
+  ([#1552](https://github.com/sympoies/nils-cli/pull/1552)). These are compatible
+  diagnostics and trust-proof repairs to existing contracts, so no
+  `required_clis[]` floor moves and the minimum remains v1.27.16.
+- `v1.27.19` was the previous validated release; `v1.27.16` remains the
+  compatibility minimum. It adds `git-cli push --bootstrap`, which publishes the first branch
   of a remote proven empty by `ls-remote` and carries a create-only lease so a
   branch appearing between the emptiness check and the push is rejected rather
   than fast-forwarded
