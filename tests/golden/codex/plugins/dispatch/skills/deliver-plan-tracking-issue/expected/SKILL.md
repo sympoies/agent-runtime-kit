@@ -99,8 +99,9 @@ Failure modes:
   `plan-tooling ledger-update` before retrying the gate.
 - Stop when `pr merge` fails closed on review convergence, native change
   requests, unresolved threads, unchecked tasks, or head drift. Read the
-  matching provider surface, disposition the evidence, update the owner
-  outcome/checkpoint when it changed, and only then retry.
+  matching provider surface, disposition the evidence under the closed-set
+  admission rule, update the owner outcome/checkpoint when it changed, and only
+  then retry without extending the repair loop for a non-admitted concern.
 - Forbidden writes: dispatch-profile posts, raw lifecycle comments, raw
   `gh pr review` / `glab mr approve` for recorded review evidence, or merging before the review
   gate and `review` checkpoint complete.
@@ -556,7 +557,9 @@ mode selection; this
 skill owns the provider writes, semantic disposition,
 review-loop observations, checkpoint, and merge, and reviewer subagents never post. On
 `review_convergence_activity_changed`, read `forge-cli pr reviews` again,
-disposition the new evidence, refresh the final outcome/checkpoint, and retry.
+disposition the new evidence under the closed-set admission rule, refresh the
+final outcome/checkpoint, and retry without extending the repair loop for a
+non-admitted concern.
 For `unresolved_review_threads` or `unchecked_task_items`, call the matching
 `pr review-threads list` or `pr tasks` read surface, disposition the returned
 items, and retry. Outdated unresolved threads are auto-dispositioned `stale` by
@@ -588,15 +591,19 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    review comment through `forge-cli pr review` as it returns (native `COMMENT`
    on GitHub via `--submit-review`, semantic `--lens`; `--thread-file`
    for actionable findings). After repairs, read `forge-cli pr reviews` and
-   disposition every actionable current-head summary; stale summaries are
-   informational. Then post the combined delivery outcome (native GitHub
+   disposition every actionable current-head summary under the closed-set
+   admission rule; route a non-admitted new concern to follow-up or an explicit
+   critical-risk handoff without extending the repair loop. Stale summaries
+   are informational. Then post the combined delivery outcome (native GitHub
    approval only with the independent-identity capability; repeated selected
    lenses; `--mirror-issue`), per
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`. Every tracking PR runs the full gate —
-   there is no single-author self-review shortcut. Repair concrete findings in
-   this delivery branch and rerun affected lenses before continuing. A pending
-   native draft uses only the exact-node recovery above; never delete an
-   ambiguous draft or replace the requested native outcome with a note.
+   there is no single-author self-review shortcut. Repair admitted findings in
+   this delivery branch and rerun affected lenses as closed-set closure without
+   restarting full-diff discovery. Only the generic review outcome's explicit
+   new-generation conditions may reopen discovery. A pending native draft uses
+   only the exact-node recovery above; never delete an ambiguous draft or
+   replace the requested native outcome with a note.
 5. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked
    PR, review decision, lenses, and `--review-outcome-comment` (the provider
    outcome URL); add `--review-findings-file "$REVIEW_FINDINGS_JSON"` when findings
@@ -605,7 +612,8 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
 6. **Merge** — mark the PR ready, then call `forge-cli pr merge` once semantic
    review and the issue-side checkpoint pass. Let the CLI enforce convergence,
    native state, threads, tasks, and head binding. On a typed failure, read and
-   disposition the matching evidence; `review_convergence_activity_changed`
+   disposition the matching evidence under the closed-set admission rule;
+   `review_convergence_activity_changed`
    requires a refreshed owner outcome/checkpoint before retry.
    `review_convergence_head_changed` requires rebinding delivery evidence to
    the new head, then re-run validation and affected review lenses, read the

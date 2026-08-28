@@ -296,6 +296,13 @@ when = "always"
         ):
             self.assertNotIn(retired, policy)
 
+        self.assertIn("accepted observable outcome", policy)
+        self.assertIn("possible improvement is not incompleteness", policy)
+        self.assertIn("hypothetical hardening", policy)
+        self.assertIn("unsupported edge cases", policy)
+        self.assertIn("targets, callers, tests, and rules", policy)
+        self.assertIn("facts, assumptions, and inference", policy)
+
     def test_conditional_delivery_and_cross_repo_routes_are_consistent(self) -> None:
         delivery = read("core/policies/git-delivery.md")
         tier = read("core/policies/work-tier-levels.md")

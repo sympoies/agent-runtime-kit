@@ -36,9 +36,10 @@ delivery context; quick or full is the review profile inside that context.
 2. Run `review-specialists scope --base "$BASE_REF" --format json` without
    forced lenses first. Select quick only when every eligibility condition below
    holds; otherwise select full. A user preference for quick is not a bypass.
-3. Bind the selected review to the current provider head. Findings block merge,
-   provider-native review state remains authoritative, and the owning delivery
-   workflow retains the convergence, thread, task, and head-drift gates.
+3. Bind the selected review to the current provider head. Admitted current-scope
+   findings block merge; provider-native review state remains authoritative,
+   and the owning delivery workflow retains the convergence, thread, task, and
+   head-drift gates.
 
 ## Quick Pre-Merge Profile
 
@@ -58,9 +59,10 @@ Quick review is eligible only when all of these are true:
 Dispatch `reviewer-quick` when the runtime exposes its managed reviewer profile;
 otherwise use the declared inline fallback. Its verdict controls the route:
 
-- `pass`: a clean result plus residual risks is terminal review evidence for the
-  current head. The delivery owner posts one final outcome with `--lens quick`
-  and may proceed to the unchanged merge gates.
+- `pass`: a clean result is terminal review evidence for the current head;
+  include residual risk only when concrete and decision-relevant. The delivery
+  owner posts one final outcome with `--lens quick` and may proceed to the
+  unchanged merge gates.
 - `findings`: post concrete actionable findings before repair, block merge,
   rerun affected validation, and use quick follow-up only while scope remains
   bounded. A clean follow-up can then become the final outcome.
@@ -93,9 +95,10 @@ Use the full profile for every L2/L3 PR and whenever quick eligibility fails.
      migration, or persistence changes.
    - `--performance` for runtime hot paths, build/runtime loops, query behavior,
      concurrency, rendering, or deployment-time execution.
-   - `--red-team` when `diff_lines > 200`, a previous specialist pass found a
-     critical issue, or the reviewable changes safety/security-sensitive
-     behavior.
+   - `--red-team` when a previous specialist pass found a critical issue, or
+     when a broad diff also crosses a material security, data, migration,
+     public-contract, concurrency, or other safety boundary.
+     Raw diff size alone never activates red-team.
 4. For doc-only, generated-only, formatting-only, or mechanical metadata
    reviewables that are ineligible for quick only because of their outer
    lifecycle, the full review may be a short testing/maintainability pass that
@@ -150,12 +153,19 @@ command block containing a `forge-cli`, `gh`, or `glab` invocation:
 
 ## Findings And Repair Loop
 
-- Treat evidence-backed quick or specialist findings as blocking before merge.
-- Repair concrete findings on the same delivery branch when they are inside the
-  accepted delivery scope.
+- Evidence alone does not make a concern blocking. Block only on an admitted
+  current-scope finding that the change introduced or materially worsened, is
+  reachable in a supported scenario, and is material to acceptance, correctness,
+  security, data, migration, or a public contract.
+- Low and informational observations never block delivery.
+- Repair admitted findings on the same delivery branch. Do not absorb unrelated
+  pre-existing defects, hypothetical hardening, architecture preferences,
+  optional cleanup, or future-flexibility work into this delivery.
 - After repairs, rerun focused validation, provider checks or pipelines, and the
-  affected quick or specialist review. Post the focused follow-up review comment
-  with the same semantic lens before continuing to the next gate step.
+  affected quick or specialist review as a closed-set closure pass. Re-check the
+  supplied findings, repair hunks, and their direct regression surface; do not
+  restart full-diff discovery or add unrelated lenses. Post the focused follow-up
+  review comment with the same semantic lens before continuing to the next gate step.
   Resolve the original GitHub review threads after the fix is verified; follow-up
   pass comments normally omit `--thread-file`.
 - At the merge gate, `forge-cli pr merge` counts only unresolved threads that are
@@ -168,13 +178,17 @@ command block containing a `forge-cli`, `gh`, or `glab` invocation:
   `data.unresolved_threads_override_reason`). Re-posting the same follow-up
   threads on an unchanged head is idempotent (`data.threads_skipped_idempotent`)
   and never sweeps prior reviews.
-- Repeat review and repair until no concrete unresolved findings remain, or
-  stop with an exact blocker and unblock action.
+- Repeat targeted closure only for the finite set of unresolved admitted
+  findings. A new finding joins that set only when the repair introduced a
+  material regression under the admission rule above. Stop when the set is
+  resolved or explicitly accepted; possible further improvement is not a
+  reason to reopen discovery.
 - Do not treat user-authorized review fixes as a successful stopping point; they
   are part of the delivery repair loop.
-- Weakly evidenced concerns, accepted tradeoffs, cleanup notes, and residual
-  risks must be reported by the owning delivery workflow. Issue-backed delivery
-  must also record their issue-visible disposition before closeout.
+- Report residual risk only when it is concrete, decision-relevant, and tied to
+  an explicitly unvalidated boundary. Do not manufacture residual risk or
+  cleanup notes for completeness. Issue-backed delivery records only material
+  dispositions required by its closeout contract.
 - The owning delivery workflow must post the final or blocked outcome through
   `forge-cli pr review`, following
   `references/DELIVERY_REVIEW_OUTCOME_COMMENT.md`, before final merge/close.

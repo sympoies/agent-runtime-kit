@@ -178,8 +178,8 @@ The user requests the PR/MR outcome, not a lifecycle helper.
   merge through the CLI-owned convergence/thread/task gates unless the user
   requested a readiness stop.
 - **Review repair** — adopt the existing record, classify unresolved review
-  threads, make authorized fixes, rerun validation and affected review modes,
-  and return to the delivery gates.
+  threads, make authorized fixes, rerun validation, and recheck affected review
+  modes as closed-set closure before returning to the delivery gates.
 - **Merge** — adopt an existing ready record, inspect native review evidence,
   and satisfy every remaining semantic, linked-lifecycle, and provider gate
   before `forge-cli pr merge`.
@@ -623,23 +623,26 @@ fi
 ```
 
 On GitHub, treat `data.current_head_reviews[].summary` as evidence, never as a
-machine verdict: repair actionable feedback, accept it with rationale, or move
-it to a follow-up before posting the final combined owner outcome. Stale-head
-reviews are informational. GitLab has no native snapshot in v1 and keeps the
-existing specialist/outcome-note flow. If `summary_truncated` is true, retrieve
-the full review body through provider read tooling before disposition; stop if
-the full body cannot be read. Do not poll or sleep in agent instructions; the
-released `forge-cli pr merge` owns the configured observed-bot quiet period,
-timeout, complete snapshot, final recheck, native `CHANGES_REQUESTED`,
-unresolved-thread, unchecked-task, and provider-head gates.
+machine verdict. Apply the closed-set admission rule: repair admitted feedback,
+accept it with rationale, or move it to a follow-up; a non-admitted critical
+concern requires an explicit handoff rather than another repair round. Do this
+before posting the final combined owner outcome. Stale-head reviews are
+informational. GitLab has no native snapshot in v1 and keeps the existing
+specialist/outcome-note flow. If `summary_truncated` is true, retrieve the full
+review body through provider read tooling before disposition; stop if the full
+body cannot be read. Do not poll or sleep in agent instructions; the released
+`forge-cli pr merge` owns the configured observed-bot quiet period, timeout,
+complete snapshot, final recheck, native `CHANGES_REQUESTED`, unresolved-thread,
+unchecked-task, and provider-head gates.
 
 Observed convergence is GitHub-only in v1. On GitLab, pass
 `--review-convergence=false` explicitly so a user-global GitHub policy does not
 turn a supported MR delivery into `provider_unsupported`.
 
 If merge returns `review_convergence_activity_changed`, read `pr reviews`
-again, disposition the new current-head evidence, refresh the final owner
-outcome, and retry. For `review_changes_requested` or
+again, disposition the new current-head evidence under the closed-set admission
+rule, refresh the final owner outcome, and retry without extending the repair
+loop for a non-admitted concern. For `review_changes_requested` or
 `review_snapshot_incomplete`, inspect `pr reviews` and stop until the native
 state is cleared or complete. For `unresolved_review_threads`, use
 `forge-cli pr review-threads list`, then repair, reply and resolve as accepted,
@@ -750,25 +753,32 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     `--dry-run` first; a live `observe` writes durable provider state. On GitLab,
     do not require ledger artifacts or call `pr review-loop`; retain the
     outcome-note path and pass `--review-convergence=false` to merge.
-12. Repair concrete findings in this delivery workflow, publish the repair with
+12. Repair admitted findings in this delivery workflow, publish the repair with
    `git-cli push --format json`, then rerun validation, checks, and affected
-   review. Post each focused follow-up review comment with
-   the same semantic lens before continuing. Quick follow-up remains eligible
-   only while scope is bounded; otherwise switch to full.
+   review as closed-set closure. Post each focused follow-up review comment with
+   the same semantic lens before continuing. A changed head or ordinary repair
+   never switches quick closure to full discovery. Start a new discovery
+   generation only for a user-requested fresh review or a repair that materially
+   changes the accepted design, public contract, trust boundary, or migration
+   strategy.
 13. On GitHub, after that publish, create `REVIEW_LEDGER_DISPOSITIONS` as a bare
     array and append the closing observation at the repaired head with
     `disposition: fixed` (or an evidence-backed terminal disposition), passing
     `--expected-state <current tip>`.
     A `fixed` disposition is rejected at the head where the finding was first
-    recorded, which is why step 11 had to precede the push. Repeat steps 11–13
-    per round while findings remain, inspecting the current tip before each
-    round and replacing it with each live append's returned digest.
+    recorded, which is why step 11 had to precede the push. Repeat the closure
+    mechanics only for the finite unresolved admitted finding set, inspecting
+    the current tip before each round and replacing it with each live append's
+    returned digest. Do not reopen full-diff discovery for an ordinary repair.
 14. On GitHub, read `forge-cli pr reviews` once after specialist repairs and
-    semantically disposition every actionable current-head summary; stale-head
-    reviews are informational. When `summary_truncated` is true, obtain the full
-    review body and stop if it is unavailable. On GitLab, retain the outcome-note
-    path and do not invoke the unsupported snapshot. Do not implement a polling
-    or sleep loop in the workflow.
+    semantically disposition every actionable current-head summary under the
+    closed-set admission rule. A new concern that is not admitted becomes
+    follow-up or an explicit critical-risk handoff; it does not extend the
+    current repair loop. Stale-head reviews are informational. When
+    `summary_truncated` is true, obtain the full review body and
+    stop if it is unavailable. On GitLab, retain the outcome-note path and
+    do not invoke the unsupported snapshot. Do not implement a polling or sleep loop in the
+    workflow.
 15. Post the final combined delivery review outcome body produced by the
    selected pre-merge profile with `forge-cli pr review` before merge. Use the
    final `--decision` and repeat every selected `--lens` (`quick` for quick
@@ -787,7 +797,9 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     timing, complete/final native-review reads, native change requests,
     thread/task gates, and head CAS. On
     `review_convergence_activity_changed`, re-read `pr reviews`, disposition
-    the new evidence, refresh the final owner outcome, and retry. Route other
+    the new evidence under the closed-set admission rule, refresh the final
+    owner outcome, and retry without extending the repair loop for a
+    non-admitted concern. Route other
     typed review/thread/task failures through the matching read surface and the
     same repair/accept/follow-up discipline before retrying.
     `review_convergence_head_changed` additionally requires delivery-evidence

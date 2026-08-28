@@ -87,8 +87,9 @@ The caller requests the review outcome; the workflow selects context and depth.
 - Pre-merge is a delivery context, not a review depth. Every delivered PR still
   receives a review before merge; the workflow selects quick or full depth
   inside that context.
-- **Follow-up** — previous findings or review threads are supplied and must be
-  classified as resolved, unresolved, accepted, or residual risk.
+- **Follow-up** — previous findings or review threads are supplied. Treat this
+  as closed-set closure review: classify them as resolved, unresolved,
+  accepted, or residual risk without starting another discovery generation.
 - **Pre-merge** — the review is a delivery gate. Select quick depth only for an
   eligible L0/L1 routine diff; use the full profile for L2/L3 delivery or any
   risk trigger. Preserve comment-before-fix ordering and return a decision to
@@ -97,7 +98,8 @@ The caller requests the review outcome; the workflow selects context and depth.
   those lenses unless scope reveals a mandatory safety lens.
 - **Quick** — the diff is small or ordinary, with no migration, security,
   public API, or other specialist trigger. Inspect the complete diff directly
-  and report concrete findings or a clean result plus residual test risk.
+  and report concrete findings or a clean result. Include residual risk only
+  when it is concrete and decision-relevant.
 - **Specialist** — the diff is broad, risky, cross-cutting, or exceeds normal
   reviewer confidence. Use scope detection and the specialist workflow below.
 - **Quick pre-merge** — quick depth may terminate the delivery review when scope
@@ -121,15 +123,21 @@ parent owns base selection, synthesis, and any authorized provider action.
    can force the full pre-merge profile.
 3. For **quick** mode, inspect the complete diff, changed tests, and validation
    evidence directly. Report findings first with file anchors; if clean, state
-   that explicitly and name residual test or validation risk. In quick
+   that explicitly. Include residual test or validation risk only when it is
+   concrete and decision-relevant. In quick
    pre-merge context, return `pass`, `findings`, or `escalate` to the delivery
    owner; stop without manufacturing specialist work.
-4. For **follow-up** mode, re-check every supplied finding against the current
-   diff and classify it as `resolved`, `unresolved`, `accepted`, or
-   `residual-risk`. Do not broaden scope unless a fix created a new concrete
-   regression.
-5. Run deterministic scope detection for every pre-merge review and for
-   **focused** or **specialist** ad-hoc review:
+4. For **follow-up** mode, re-check every supplied finding, its repair hunks,
+   and their direct regression surface. Classify each as `resolved`,
+   `unresolved`, `accepted`, or `residual-risk`. Admit a new finding only when
+   concrete evidence shows that the repair introduced a material correctness,
+   security, data, migration, or public-contract regression in a reachable
+   supported scenario. Otherwise do not broaden scope, add lenses, or restart
+   full-diff discovery.
+5. Run deterministic scope detection for the initial pre-merge discovery and
+   for **focused** or **specialist** ad-hoc review. A follow-up to a completed
+   pre-merge discovery reuses only the affected lenses and does not rerun
+   general scope selection:
 
    ```bash
    review-specialists scope --base "$BASE_REF" --format json
@@ -168,8 +176,10 @@ parent owns base selection, synthesis, and any authorized provider action.
    review-specialists merge --input findings.jsonl --summary-out specialist-review.md --format json
    ```
 
-11. Run red-team only after the selected specialists when `diff_lines > 200`, any
-   selected specialist produced a `critical` finding, or the reviewer forced it.
+11. Run red-team only after the selected specialists when a selected specialist
+   produced a `critical` finding, the reviewer forced it, or `diff_lines > 200`
+   and the change crosses a material security, data, migration, public-contract,
+   concurrency, or other safety boundary. Raw diff size alone is insufficient.
    Build the red-team prompt from `references/specialists/red-team.md` and use
    generic `delegate_task` when it is exposed. If delegation is unavailable or
    blocked, state the fallback reason and run the same red-team lens inline.

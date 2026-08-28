@@ -23,6 +23,27 @@ thread" loop recurses across generations and may never converge; or it stops
 early and leaves a genuine bug. The discipline below decides what to fix, how to
 fix it so it converges, and when the sweep is done.
 
+## Discovery And Closure Generations
+
+Each discovery generation has at most one broad review. A delivery attempt
+starts one generation; an ordinary repair commit or changed head remains in it.
+After that pass, review is a closed-set closure review: re-check the supplied
+findings, the repair hunks, and their direct regression surface without
+restarting full-diff discovery or adding unrelated lenses.
+
+A new concern may join the closure set only when concrete evidence shows that
+the repair introduced a material correctness, security, data, migration, or
+public-contract regression in a reachable supported scenario. Pre-existing
+defects, hypothetical hardening, architecture or style preferences, optional
+cleanup, and unrelated test gaps do not extend the current repair loop. Report
+a critical pre-existing risk when necessary, but do not absorb it into the
+current delivery without authority.
+
+A user-requested fresh review or a repair that materially changes the accepted
+design, public contract, trust boundary, or migration strategy
+starts a new discovery generation. Otherwise changing the provider head is
+closure activity, not a new review generation.
+
 ## Per-Finding Triage
 
 Disposition every thread; classify each on two axes.
@@ -37,7 +58,8 @@ Route by classification:
 
 | Classification | Disposition |
 | --- | --- |
-| Genuine defect | `fix` — make the repair and link the fix PR. Major/high-risk (security, data loss, contract break, destructive migration, cross-repo architecture) → stop and ask the user first. |
+| Admitted genuine defect | `fix` — make the repair and link the fix PR. During closure, "admitted" means an existing finding or a repair-introduced regression allowed by the rule above. Major/high-risk (security, data loss, contract break, destructive migration, cross-repo architecture) → stop and ask the user first. |
+| New genuine concern not admitted to closure | `follow_up`, or stop for an explicit critical-risk handoff; do not extend the current repair loop. |
 | No longer applies to the merged code | resolve as `stale`. `forge-cli pr merge` also auto-dispositions **outdated** unresolved threads as `stale` (recorded in `data.stale_thread_dispositions`), so those no longer block the merge gate. |
 | Real but out of scope for this pass | `follow_up` — open/link a tracking issue. |
 | Preference/style on principled, correct, business-logic-irrelevant code | `accepted` with recorded rationale. Do **not** open a fix PR. |
