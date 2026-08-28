@@ -85,9 +85,10 @@ Failure modes:
 - Stop on `ledger-rows-pending`; repair only the named task rows before
   retrying close-ready.
 - Stop on typed review-convergence, native change-request, thread/task, or head
-  gate failures. Read and disposition the matching evidence; on
-  `review_convergence_activity_changed`, refresh lane review approval before
-  retrying merge.
+  gate failures. Read and disposition the matching evidence under the
+  closed-set admission rule; on `review_convergence_activity_changed`, refresh
+  lane review approval before retrying merge without extending the repair loop
+  for a non-admitted concern.
 - Forbidden writes: lane-scoped implementation posts by the orchestrator, lane
   review posts by lane executors, lightweight-tracking closeout rules, multiple
   shared issues for one dispatch plan, or raw lifecycle comments.
@@ -426,13 +427,17 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    outcome with retained evidence and posts provider review activity. On
    GitHub, for every lane generate the delivery-mode findings envelope and
    append review-loop genesis at the reviewed head before any repair. A clean
-   lane uses the generated empty envelope. After the repair is published with
-   `git-cli push`, append the closing dispositions with exact state-tip and
-   repaired-head CAS before approval. On
+   lane uses the generated empty envelope. After the repair is published, rerun
+   affected lenses as closed-set closure without restarting full-diff discovery;
+   only the generic review outcome's explicit new-generation conditions may
+   reopen discovery. Then append the closing dispositions with exact state-tip
+   and repaired-head CAS before approval. On
    GitLab, do not require ledger artifacts or call `pr review-loop`; retain the
    outcome-note path and pass `--review-convergence=false` to merge. On
    GitHub, read `forge-cli pr reviews` and disposition actionable current-head
-   summaries; on GitLab, retain the outcome-note path. Then finalize lane
+   summaries under the closed-set admission rule; route a non-admitted new
+   concern to follow-up or an explicit critical-risk handoff without extending
+   the repair loop. On GitLab, retain the outcome-note path. Then finalize lane
    approval and the review checkpoint. If native submission returns
    `github_pending_review_exists`, use `data.pending_reviews[]` plus `pr
    pending-review delete` only for one exact abandoned node, refresh the
@@ -449,9 +454,11 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    non-outdated threads block, and any `--allow-unresolved-threads` bypass on a
    lane requires a paired `--allow-unresolved-threads-reason`
    (`data.unresolved_threads_override_reason`). On
-   `review_convergence_activity_changed`, re-read summaries and refresh lane
-   approval/checkpoint before retrying; other typed failures route to their
-   matching read/disposition path. Observed convergence is GitHub-only in v1,
+   `review_convergence_activity_changed`, re-read summaries, disposition them
+   under the closed-set admission rule, and refresh lane approval/checkpoint
+   before retrying without extending the repair loop for a non-admitted
+   concern; other typed failures route to their matching read/disposition path.
+   Observed convergence is GitHub-only in v1,
    so GitLab merge calls explicitly pass `--review-convergence=false` to
    neutralize any user-global GitHub policy.
    `review_convergence_head_changed` requires rebinding lane delivery evidence

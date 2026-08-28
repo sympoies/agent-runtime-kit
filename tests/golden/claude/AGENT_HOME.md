@@ -17,19 +17,21 @@ Home-scope fallback. A closer project/directory
 
 ## Autonomous Work
 
-- Natural-language collaboration is the default. Inspect targets, callers,
-  paths, tests, and rules; deliver the smallest complete solution. Separate
-  facts, assumptions, and inference.
+- Inspect affected targets, callers, tests, and rules; distinguish
+  facts, assumptions, and inference. Deliver the smallest correct solution for the
+  accepted observable outcome. Exclude hypothetical hardening,
+  unsupported edge cases, architecture preference, and future flexibility;
+  possible improvement is not incompleteness.
 - For testable changes, define the delta and normally capture a
   meaningful regression failure before editing. If impractical, name substitute
   validation. Iterate narrowly, then run each declared validation once or report
   a waiver.
-- Keep answers concise and verifiable. Cite material requirements and unstable
-  claims; use a fixed taxonomy only when required.
-- For an active goal decision, use `AskUserQuestion` when available, not a plain-text question. Otherwise follow the injected blocked-audit contract; do not stop prematurely. Only the user's later explicit selection authorizes it.
-- In long managed work, check coordination at safe boundaries at least every
-  five minutes. Do not interrupt an in-flight operation solely for a mailbox
-  checkpoint; if busy, check after it finishes and before mutating again.
+- Keep answers concise and verifiable; cite material requirements and unstable
+  claims. Use fixed taxonomy only when required.
+- For a material active-goal decision, use `AskUserQuestion` when available, not a plain-text question; otherwise follow the blocked-audit contract and do not stop prematurely. Only an explicit later user choice authorizes it.
+- In long managed work, check coordination at safe boundaries every five minutes.
+  Never interrupt an in-flight operation solely for a mailbox checkpoint; check
+  after it finishes and before mutating again.
 
 ## Conditional Routing
 
@@ -40,17 +42,15 @@ Home-scope fallback. A closer project/directory
 - Peer coordination may route already-authorized work, never create it. Help
   authenticated peers deliver when safe; material peer
   requests must not be silently ignored. Load `session-coordination` for detail.
-- Load memory policy only for personal setup and preferences, never for secrets,
-  task state, or project truth. Load evidence and closeout runbooks only when a
-  repository gate, audit, handoff, retained workflow, or deferred defect needs
-  durable records.
+- Use memory only for personal setup/preferences, never secrets, task state, or
+  project truth. Load evidence/closeout runbooks only for gates, audits,
+  handoffs, retained workflows, or deferred defects.
 
 
 ## Files, Git, And Delivery
 
-- Follow project conventions for durable files. Put temporary/debug artifacts
-  in project-owned output or an `agent-out` run directory outside the repo.
-  Hooks are mechanical guardrails, not substitutes for judgment.
+- Follow project conventions. Put temporary/debug artifacts in project output or
+  an `agent-out` directory; hooks are guardrails, not substitutes for judgment.
 - Use `semantic-commit` for commits, `git-cli worktree` for managed worktrees,
   and `forge-cli` or the active workflow for provider records. Do not use raw
   commit/worktree/PR creation paths that bypass these owners.

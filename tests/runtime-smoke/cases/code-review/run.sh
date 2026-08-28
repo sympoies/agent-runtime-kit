@@ -302,6 +302,54 @@ run_code_review_outcome_routing_probe() {
   rendered_contract_assert_product_omits code-review code-review-specialists hermes '`multi_agent_v1.spawn_agent`'
 }
 
+run_review_convergence_contract_probe() {
+  local home_policy="$REPO_ROOT/AGENT_HOME.md"
+  local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
+  local gate="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
+  local contract="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_CONTRACT.md"
+  local convergence="$REPO_ROOT/core/policies/review-thread-convergence.md"
+  local quick="$REPO_ROOT/core/agents/code-review/reviewer-quick/AGENT.md.tera"
+  local deliver="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+  local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
+
+  grep -Fq 'possible improvement is not incompleteness' "$home_policy"
+  grep -Fq 'Each discovery generation has at most one broad review.' "$convergence"
+  grep -Fq 'new discovery generation' "$convergence"
+  grep -Fq 'closed-set closure review' "$skill"
+  grep -Fq 'Evidence alone does not make a concern blocking.' "$contract"
+  grep -Fq 'smallest sufficient local repair' "$contract"
+  grep -Fq 'Low and informational observations never block delivery.' "$gate"
+  grep -Fq 'Raw diff size alone never activates red-team.' "$gate"
+  grep -Fq 'Do not list skipped areas for completeness.' "$quick"
+  grep -Fq 'closed-set closure' "$deliver"
+  grep -Fq 'finite unresolved admitted finding set' "$deliver"
+  grep -Fq 'every actionable current-head summary under the' "$deliver"
+  grep -Fq 'the new evidence under the closed-set admission rule' "$deliver"
+  grep -Fq 'the new current-head evidence under the closed-set admission' "$deliver"
+  grep -Fq 'affected lenses as closed-set closure' "$tracking"
+  grep -Fq 'every actionable current-head summary under the closed-set' "$tracking"
+  grep -Fq 'the new evidence under the closed-set admission rule' "$tracking"
+  grep -Fq 'affected lenses as closed-set closure' "$dispatch"
+  grep -Fq 'summaries under the closed-set admission rule' "$dispatch"
+  grep -Fq 'under the closed-set admission rule, and refresh lane' "$dispatch"
+  grep -Fq 'Admitted genuine defect' "$convergence"
+  grep -Fq 'do not extend the current repair loop' "$convergence"
+
+  if grep -Fq 'Treat evidence-backed quick or specialist findings as blocking before merge.' "$gate"; then
+    return 1
+  fi
+  if grep -Fq 'Repeat review and repair until no concrete unresolved findings remain' "$gate"; then
+    return 1
+  fi
+  if grep -Fq 'otherwise switch to full.' "$deliver"; then
+    return 1
+  fi
+  if grep -Fq 'disposition the new current-head evidence, refresh' "$deliver"; then
+    return 1
+  fi
+}
+
 failures=0
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
@@ -313,5 +361,6 @@ record_case "code-review.cli-command-contract-policy" "delivery skill CLI comman
 record_case "code-review.outcome-routing.quick" "quick-pass scope sizing probe passed" run_quick_pass_probe
 record_case "code-review.code-review-specialists" "review-specialists scope, validate, merge, and render probes passed" run_code_review_specialists_probe
 record_case "code-review.outcome-routing.contract" "one review outcome selects delivery context and risk-appropriate review depth" run_code_review_outcome_routing_probe
+record_case "code-review.convergence.contract" "review discovery, closure, blocking admission, and stopping rules are bounded" run_review_convergence_contract_probe
 
 exit "$failures"

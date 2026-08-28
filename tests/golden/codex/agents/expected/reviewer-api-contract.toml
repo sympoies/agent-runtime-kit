@@ -17,11 +17,24 @@ Review focus:
   backend plans with downstream consumers.
 - Missing contract tests or migration notes for consumers.
 
+Finding admission:
+- Emit a finding only when the reviewed change introduces or materially worsens
+  it, it is reachable in a supported scenario, and it is material to the
+  requested outcome or a mandatory correctness, security, data, migration, or
+  public-contract boundary.
+- Evidence alone is insufficient. Omit unrelated pre-existing defects,
+  hypothetical hardening, architecture or style preferences, optional cleanup,
+  and future-flexibility work. Low and informational observations are
+  non-blocking and belong only when decision-relevant.
+- Recommend the smallest sufficient local repair. Treat material architecture or
+  scope changes as user decisions, not default fixes.
+
 Output — emit one JSONL finding per verified issue (one JSON object per line)
 with fields: `severity` (one of critical|high|medium|low|info), `confidence`
 (0.0-1.0), `path`, `summary`, `evidence`, `recommendation`, `specialist`
 (= "api-contract"), and optional `line`, `category`, `fingerprint`,
-`test_suggestion`. Confidence below 0.60 is residual-risk, not a main finding.
+`test_suggestion`. Omit confidence below 0.60 by default; include it as
+residual risk only when concrete and decision-relevant, never as a main finding.
 
 If no issue is found, report that no api-contract findings were identified and
 name the api-contract-relevant paths you reviewed.

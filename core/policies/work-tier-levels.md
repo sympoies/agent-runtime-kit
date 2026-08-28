@@ -27,8 +27,9 @@ Work has three independent axes. Do not collapse them:
 - **Review axis — risk-selected depth.** Every delivered PR receives a
   pre-merge review, but the review can be quick or full. Eligible L0/L1 routine
   diffs may use a quick review whose clean `pass` is terminal for the reviewed
-  head; findings block merge and an `escalate` verdict routes to the full
-  specialist gate. L2/L3 PRs and risk-triggering diffs keep the full gate.
+  head; admitted current-scope findings block merge and an `escalate` verdict
+  routes to the full specialist gate. L2/L3 PRs and risk-triggering diffs keep
+  the full gate.
 
 The tiers are ordered by overhead. Pick the lowest tier that satisfies the
 work's actual needs, and escalate only when a concrete trigger fires. Size alone
