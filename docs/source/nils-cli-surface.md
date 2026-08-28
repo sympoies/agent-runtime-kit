@@ -1,22 +1,36 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-27 (refreshed for `v1.27.16`)
+- Snapshot date: 2026-08-28 (refreshed for `v1.27.19`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.16`
+- Active `git describe --tags` output: `v1.27.19`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.16`,
-  `validated_tag: v1.27.16`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.27.19`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `64310784`
-  (`chore(release): bump cli versions to 1.27.16 (#1534)`)
+- Head commit: `07969611`
+  (`chore(release): bump cli versions to 1.27.19`)
 - Release:
-  [`v1.27.16`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.16),
+  [`v1.27.19`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.19),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.16` is the validated release and compatibility minimum. Runtime-kit
+- `v1.27.19` is the validated release; `v1.27.16` remains the compatibility
+  minimum. It adds `git-cli push --bootstrap`, which publishes the first branch
+  of a remote proven empty by `ls-remote` and carries a create-only lease so a
+  branch appearing between the emptiness check and the push is rejected rather
+  than fast-forwarded
+  ([#1540](https://github.com/sympoies/nils-cli/pull/1540)). It also removes
+  `git-cli push --expect-default`, whose conventional-name guard only ever
+  stopped a caller who named the branch truthfully
+  ([#1544](https://github.com/sympoies/nils-cli/pull/1544)). Runtime-kit
+  consumes neither surface directly, so no `required_clis[]` floor moves and the
+  minimum stays where it is: a host at the floor still has `--expect-default`
+  and lacks `--bootstrap`, which is why the delivery guard's empty-remote
+  refusal describes the bootstrap route in general terms instead of naming the
+  flag.
+- `v1.27.16` is the compatibility minimum. Runtime-kit
   now consumes exact requested-base binding across `forge-cli` PR lookup,
   adoption, create readback, ready, and merge, plus `git-cli sync-branch` for
   same-name-upstream, fast-forward-only synchronization of persistent
