@@ -51,6 +51,7 @@ from hook_common import (
     output_redirect_targets,
     patch_text_candidates,
     read_payload,
+    resolves_within_its_directory,
     semantic_commit_invocation_effects,
     simple_commands_with_nested_shells,
     tool_input_dict,
@@ -341,11 +342,17 @@ def resolved_trusted_cli(name: str) -> str | None:
     for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
         if os.path.dirname(lexical) == os.path.join(prefix, "bin"):
             cellar = os.path.join(prefix, "Cellar", "nils-cli")
-            if resolved == lexical or os.path.commonpath((resolved, cellar)) == cellar:
+            if resolves_within_its_directory(
+                lexical, resolved
+            ) or os.path.commonpath((resolved, cellar)) == cellar:
                 return resolved
-    if os.path.dirname(lexical) == "/usr/bin" and resolved == lexical:
+    if os.path.dirname(lexical) == "/usr/bin" and resolves_within_its_directory(
+        lexical, resolved
+    ):
         return resolved
-    if is_managed_cli_home_bin(os.path.dirname(lexical)) and resolved == lexical:
+    if is_managed_cli_home_bin(
+        os.path.dirname(lexical)
+    ) and resolves_within_its_directory(lexical, resolved):
         return resolved
     return None
 

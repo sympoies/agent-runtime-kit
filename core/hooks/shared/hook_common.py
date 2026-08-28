@@ -39,13 +39,33 @@ TERMINAL_OWNER_MARKER_NAMES = frozenset(
 # trusted next to the packaged prefixes rather than needing an explicit
 # override: on Linux hosts the Homebrew prefix is owner-writable too, so this
 # location is no weaker than what these hooks already accept. Binaries here are
-# regular files, so callers pair it with a lexical == resolved check, exactly as
-# they do for /usr/bin.
+# regular files, so callers pair it with a leaf-is-not-a-symlink check, exactly
+# as they do for /usr/bin. That check must be anchored at the resolved directory
+# rather than compared against the whole lexical path, or a symlinked ancestor
+# — every path under macOS's `/var` — fails it for a reason unrelated to trust.
 MANAGED_CLI_HOME_BIN = os.path.join("~", ".local", "nils-cli", "bin")
 
 
 def managed_cli_home_bin() -> str:
     return os.path.expanduser(MANAGED_CLI_HOME_BIN)
+
+
+def resolves_within_its_directory(lexical: str, resolved: str) -> bool:
+    """Whether `lexical` is a regular entry of its own directory, not a link out of it.
+
+    `os.path.realpath` resolves ancestor components as well as the leaf, so
+    comparing it against the whole lexical path conflates "this binary is a
+    symlink" — the property the trusted roots actually care about — with "some
+    parent directory is a symlink", which is true of any path reached through a
+    link (macOS resolves `/var` to `/private/var`) and says nothing about trust.
+    The callers below have already established the directory's identity from its
+    resolved form, so anchor the comparison there and let the leaf answer the
+    only remaining question.
+    """
+    anchored = os.path.join(
+        os.path.realpath(os.path.dirname(lexical)), os.path.basename(lexical)
+    )
+    return resolved == anchored
 
 
 def is_managed_cli_home_bin(directory: str) -> bool:
@@ -1057,14 +1077,21 @@ def _is_runtime_kit_source_checkout(repo_root: str | None) -> bool:
 
 
 def _docs_home(repo_root: str | None = None) -> str | None:
+    """Resolve the docs-home every hook should name for one repository.
+
+    Canonicalized, matching `pre-edit-intent-gate`, so the four hooks that build
+    a `--docs-home` argument all name the same directory even when the
+    configured path reaches it through a symlink (macOS resolves `/var` to
+    `/private/var`). The preflight cache below is keyed on this string, so two
+    spellings of one directory would split the cache as well as reach agent-docs
+    under two names.
+    """
     docs_home = os.environ.get("AGENT_RUNTIME_DOCS_HOME") or os.environ.get(
         "AGENT_DOCS_HOME"
     )
-    if docs_home:
-        return docs_home
-    if _is_runtime_kit_source_checkout(repo_root):
-        return repo_root
-    return None
+    if not docs_home and _is_runtime_kit_source_checkout(repo_root):
+        docs_home = repo_root
+    return os.path.realpath(docs_home) if docs_home else None
 
 
 def _runtime_product() -> str | None:

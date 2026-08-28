@@ -7585,6 +7585,13 @@ exit 65
             docs_home = repo / "docs-home"
             docs_home.mkdir()
             expected_docs_home = docs_home.resolve()
+            # Reach docs-home through a symlink so the assertion below actually
+            # discriminates. Without it the configured spelling and its resolved
+            # form coincide wherever $TMPDIR has no symlinked ancestor, which is
+            # every Linux CI run, and a hook that forwards the raw value passes
+            # for free (#66).
+            docs_home_link = repo / "docs-home-link"
+            docs_home_link.symlink_to(docs_home)
             bin_dir = repo / "bin"
             bin_dir.mkdir()
             log_path = repo / "agent-docs.args"
@@ -7614,7 +7621,7 @@ exit 65
 """,
             )
             env = {
-                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_DOCS_HOME": str(docs_home_link),
                 "AGENT_RUNTIME_DOCS_HOME": "",
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -8663,6 +8670,11 @@ exit 65
             root = Path(tmp)
             target = root / "target"
             target.mkdir()
+            # `command_context` canonicalizes, as any guard comparing a workdir
+            # against a repo root must. Compare against the canonical spelling,
+            # or this asserts nothing wherever $TMPDIR has a symlinked ancestor
+            # (macOS resolves /var to /private/var).
+            target = target.resolve()
 
             # 1. Every recognized workdir spelling in tool_input.
             for key in (
@@ -8822,6 +8834,7 @@ exit 65
             root = Path(tmp)
             target = root / "target"
             target.mkdir()
+            target = target.resolve()  # see the sibling test: the resolver canonicalizes
 
             # Missing transcript -> fail soft to the top-level cwd fallback.
             missing = {
@@ -9799,6 +9812,13 @@ exit 64
             docs_home = repo / "docs-home"
             docs_home.mkdir()
             expected_docs_home = docs_home.resolve()
+            # Reach docs-home through a symlink so the assertion below actually
+            # discriminates. Without it the configured spelling and its resolved
+            # form coincide wherever $TMPDIR has no symlinked ancestor, which is
+            # every Linux CI run, and a hook that forwards the raw value passes
+            # for free (#66).
+            docs_home_link = repo / "docs-home-link"
+            docs_home_link.symlink_to(docs_home)
             bin_dir = repo / "bin"
             bin_dir.mkdir()
             log_path = repo / "agent-docs.args"
@@ -9826,7 +9846,7 @@ exit 65
             home = repo / "home"
             home.mkdir()
             env = {
-                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_DOCS_HOME": str(docs_home_link),
                 "AGENT_RUNTIME_DOCS_HOME": "",
                 "AGENT_RUNTIME_PRODUCT": "codex",
                 "CODEX_AGENT_STATE_HOME": str(repo / "state"),
@@ -18556,6 +18576,13 @@ exit 65
             docs_home = repo / "docs-home"
             docs_home.mkdir()
             expected_docs_home = docs_home.resolve()
+            # Reach docs-home through a symlink so the assertion below actually
+            # discriminates. Without it the configured spelling and its resolved
+            # form coincide wherever $TMPDIR has no symlinked ancestor, which is
+            # every Linux CI run, and a hook that forwards the raw value passes
+            # for free (#66).
+            docs_home_link = repo / "docs-home-link"
+            docs_home_link.symlink_to(docs_home)
             bin_dir = repo / "bin"
             bin_dir.mkdir()
             log_path = repo / "agent-docs.args"
@@ -18587,7 +18614,7 @@ exit 65
             home = repo / "home"
             home.mkdir()
             env = {
-                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_DOCS_HOME": str(docs_home_link),
                 "AGENT_RUNTIME_DOCS_HOME": "",
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -26143,6 +26170,13 @@ exit 65
             docs_home = repo / "docs-home"
             docs_home.mkdir()
             expected_docs_home = docs_home.resolve()
+            # Reach docs-home through a symlink so the assertion below actually
+            # discriminates. Without it the configured spelling and its resolved
+            # form coincide wherever $TMPDIR has no symlinked ancestor, which is
+            # every Linux CI run, and a hook that forwards the raw value passes
+            # for free (#66).
+            docs_home_link = repo / "docs-home-link"
+            docs_home_link.symlink_to(docs_home)
             expected_repo = repo.resolve()
             bin_dir = repo / "bin"
             bin_dir.mkdir()
@@ -26176,7 +26210,7 @@ exit 65
             home.mkdir()
             env = {
                 "HOME": str(home),
-                "AGENT_DOCS_HOME": str(docs_home),
+                "AGENT_DOCS_HOME": str(docs_home_link),
                 "AGENT_RUNTIME_DOCS_HOME": "",
                 "AGENT_EVIDENCE_ARCHIVE_HOME": "",
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -26980,12 +27014,18 @@ exit 66
         return module
 
     @contextlib.contextmanager
-    def _managed_cli_home_fixture(self):
+    def _managed_cli_home_fixture(self, *, symlinked_ancestor: bool = False):
         """Temporary HOME holding a per-user managed CLI bin and a decoy bin.
 
         Scoped per test rather than in setUp: this class has no setUp, and
         adding one would retarget HOME for all of its other tests, which breaks
         every fixture that shells out to git.
+
+        With `symlinked_ancestor`, HOME is reached through a symlink, so the
+        managed bin's resolved path differs from its lexical one for a reason
+        that has nothing to do with the binary. That is the ordinary shape of
+        any macOS path under `/var`, and it is what separates "this binary is a
+        symlink" from "some parent directory is" (#66).
         """
         saved = {
             key: os.environ.get(key)
@@ -27001,7 +27041,12 @@ exit 66
                     binary = directory / tool
                     binary.write_text("#!/bin/sh\nexit 0\n")
                     binary.chmod(0o755)
-            os.environ["HOME"] = str(root / "home")
+            if symlinked_ancestor:
+                (root / "elsewhere-home").symlink_to(root / "home")
+                os.environ["HOME"] = str(root / "elsewhere-home")
+                home_bin = root / "elsewhere-home" / ".local" / "nils-cli" / "bin"
+            else:
+                os.environ["HOME"] = str(root / "home")
             os.environ.pop("AGENT_RUNTIME_TRUSTED_CLI_ROOT", None)
             os.environ.pop("AGENT_SESSION_BIN", None)
             sys.path.insert(0, str(HOOK_DIR))
@@ -27028,6 +27073,57 @@ exit 66
             self.assertTrue(
                 module.trusted_managed_cli_invocation("semantic-commit", "semantic-commit")
             )
+
+    def test_delivery_trusts_the_per_user_root_through_a_symlinked_ancestor(self) -> None:
+        """A symlinked parent is not a reason to distrust the binary.
+
+        `os.path.realpath` resolves ancestors as well as the leaf, so comparing
+        it against the whole lexical path rejects every managed CLI whose HOME
+        is reached through a link — which is every macOS temp path, and any
+        `$HOME` on a linked volume.
+        """
+        with self._managed_cli_home_fixture(symlinked_ancestor=True) as (home_bin, _other):
+            module = self._load("delivery_symlinked_home", "block-unsafe-default-delivery.py")
+            os.environ["PATH"] = f"{home_bin}{os.pathsep}/usr/bin"
+            self.assertTrue(
+                module.trusted_managed_cli_invocation("semantic-commit", "semantic-commit")
+            )
+
+    def test_coordination_guard_trusts_the_per_user_root_through_a_symlinked_ancestor(
+        self,
+    ) -> None:
+        with self._managed_cli_home_fixture(symlinked_ancestor=True) as (home_bin, _other):
+            module = self._load("coord_symlinked_home", "session-coordination-guard.py")
+            os.environ["PATH"] = f"{home_bin}{os.pathsep}/usr/bin"
+            self.assertIsNotNone(module.resolved_trusted_cli("agent-session"))
+
+    def test_a_symlink_out_of_the_per_user_root_is_still_rejected(self) -> None:
+        """Tolerating a symlinked ancestor must not tolerate a symlinked leaf.
+
+        The leaf check is the whole point of the pairing: the trusted roots are
+        writable, so a link planted *in* one that points at another binary must
+        stay untrusted, with or without a symlinked ancestor above it.
+        """
+        for symlinked_ancestor in (False, True):
+            with self.subTest(symlinked_ancestor=symlinked_ancestor):
+                with self._managed_cli_home_fixture(
+                    symlinked_ancestor=symlinked_ancestor
+                ) as (home_bin, other_bin):
+                    planted = Path(home_bin) / "planted"
+                    planted.symlink_to(Path(other_bin) / "semantic-commit")
+                    os.environ["PATH"] = f"{home_bin}{os.pathsep}/usr/bin"
+                    delivery = self._load(
+                        f"delivery_planted_{symlinked_ancestor}",
+                        "block-unsafe-default-delivery.py",
+                    )
+                    self.assertFalse(
+                        delivery.trusted_managed_cli_invocation("planted", "planted")
+                    )
+                    coordination = self._load(
+                        f"coord_planted_{symlinked_ancestor}",
+                        "session-coordination-guard.py",
+                    )
+                    self.assertIsNone(coordination.resolved_trusted_cli("planted"))
 
     def test_delivery_still_rejects_an_unrelated_directory(self) -> None:
         with self._managed_cli_home_fixture() as (_home_bin, other_bin):
