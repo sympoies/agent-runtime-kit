@@ -1,23 +1,34 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-28 (refreshed for `v1.27.21`)
+- Snapshot date: 2026-08-28 (refreshed for `v1.27.22`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.21`
+- Active `git describe --tags` output: `v1.27.22`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.16`,
-  `validated_tag: v1.27.21`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.27.22`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `2d077ec9`
-  (`chore(release): bump cli versions to 1.27.21`)
+- Head commit: `5ffcf3c0`
+  (`chore(release): bump cli versions to 1.27.22`)
 - Release:
-  [`v1.27.21`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.21),
+  [`v1.27.22`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.22),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.21` is the validated release; `v1.27.16` remains the compatibility
-  minimum. It adds privacy-safe handler identity, capability-cause, doctor, and
+- `v1.27.22` is the validated release; `v1.27.16` remains the compatibility
+  minimum. It keeps audited read-only startup diagnosis available when typed
+  activity observation is unavailable while enforce-mode mutations remain
+  fail closed ([#1554](https://github.com/sympoies/nils-cli/pull/1554)). It
+  also attaches bounded recovery context to unclassifiable shell denials so
+  DSH can explain the pre-dispatch boundary and the immediate separate-call
+  retry without exposing command arguments
+  ([#1555](https://github.com/sympoies/nils-cli/pull/1555)). These are
+  compatible repairs to existing `agent-hook` contracts, so no
+  `required_clis[]` floor moves and the minimum remains v1.27.16.
+- `v1.27.21` was the previous validated release; `v1.27.16` remains the
+  compatibility minimum. It adds privacy-safe handler identity,
+  capability-cause, doctor, and
   owner-repair guidance to existing `agent-hook` fail-posture errors
   ([#1550](https://github.com/sympoies/nils-cli/pull/1550)), and admits the
   fixed system Git executable when strict Linux user-namespace evidence proves
