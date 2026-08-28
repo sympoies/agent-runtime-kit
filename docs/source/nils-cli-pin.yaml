@@ -22,14 +22,14 @@ nils_cli:
   # delivery contract and guarded persistent integration-branch sync surface.
   minimum_supported_tag: "v1.27.16"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.27.16"
+  validated_tag: "v1.27.19"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "ce9c840ebb1ac6d8addd45cdf1fc91b7ca192467b66f8caf5bd032bafc4c76b6"
-    linux_arm64: "2e850c89f53fc7b0a8d346166346f1881f0bbb9a6ccddd155fb61a015b9ee06c"
+    linux_amd64: "a66a2ef122a85b6bb536cd736363cfc88e9c3e2a8f6563a5d13f14810adafeb0"
+    linux_arm64: "78604c63db1295bd8de5e7bff1e12f1eb5a1a9d2a2db152fea86670890038f4e"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the

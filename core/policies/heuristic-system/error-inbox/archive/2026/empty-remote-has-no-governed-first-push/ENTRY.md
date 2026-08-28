@@ -2,10 +2,16 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-08-28
+- Resolved: 2026-08-28
 - Area: `block-unsafe-default-delivery` default-branch resolution; `git-cli push`
 - Severity: high
+- Durable link: `https://github.com/sympoies/agent-runtime-kit/issues/61`
+- Durable link: `https://github.com/sympoies/agent-runtime-kit/pull/62`
+- Durable link: `https://github.com/sympoies/agent-runtime-kit/pull/63`
+- Durable link: `https://github.com/sympoies/nils-cli/pull/1540`
+- Durable link: `https://github.com/sympoies/nils-cli/pull/1544`
 
 ## Signal
 
@@ -84,8 +90,56 @@ Promote when all three hold:
 
 ## Next Action
 
-Criteria (1) and (2) are addressed in this repository alongside this entry;
-(3) lands in `sympoies/nils-cli` as `git-cli push --bootstrap` and reaches hosts
-only through a nils-cli release and a pin bump. Until that pin moves, the hook's
-refusal deliberately describes the bootstrap route in general terms rather than
-naming a flag the pinned CLI does not have. Re-triage after the bump.
+None. See Resolution.
+
+## Resolution
+
+Promoted 2026-08-28. All three criteria are met, and each was verified on a real
+host rather than only in CI.
+
+- **(1) met.** `resolve_default_branch()` now returns a named resolution —
+  corroborated, uncorroborated, or unknown — instead of collapsing unrelated
+  situations into one empty string. A primary checkout parked on a feature
+  branch no longer locks raw pushes out of the whole repository, while the
+  stale-cache defence the equality check existed for is preserved by the
+  candidate-set rule: a planted `refs/remotes/<remote>/HEAD` still cannot clear
+  a push to the real default. sympoies/agent-runtime-kit#62.
+- **(2) met.** A destination outside `refs/heads/` is classified without
+  resolving the default branch at all, so tag and note pushes are admitted in
+  every resolution state. Same PR.
+- **(3) met.** `git-cli push --bootstrap` publishes the first branch of a remote
+  proven empty by `ls-remote`, and the ordinary path reports
+  `remote-has-no-branches` naming that route instead of a hint that cannot run.
+  sympoies/nils-cli#1540, released in v1.27.19 and adopted as `validated_tag`
+  by the commit this entry ships with.
+
+Two findings surfaced while fixing this, both repaired in the same work:
+
+- A pre-existing hole in the same classifier admitted
+  `git push --delete origin '*'`, which removes every branch including the
+  default, because deletes were compared by name and a pattern matched
+  literally. Confirmed by running the classifier against clean `main` and the
+  patched tree side by side.
+- The bootstrap push needed a create-only lease. A plain push *fast-forwards* a
+  branch that appears between the emptiness check and the push, which for the
+  default branch is the write the command exists to prevent. Verified against
+  git 2.50.1.
+
+Deploying the fix exposed a fourth, unrelated blocker: `sync-runtime-surfaces.sh`
+— the documented refresh entrypoint — could not run on macOS at all, because
+bash 3.2 aborts on an empty `"${arr[@]}"` under `set -u`. That is
+sympoies/agent-runtime-kit#63, now guarded by a static `macos-portability-audit`
+since Linux CI cannot reproduce the fault.
+
+The end-to-end scenario this case opened with — empty remote, first branch,
+tag, cached head — now completes entirely through governed surfaces and
+produces a ref set byte-identical to the real `sympoies/night-owl-cli`.
+
+Note: the compatibility minimum stays at `v1.27.16`, where `--bootstrap` does
+not exist. That is why the delivery guard's empty-remote refusal describes the
+bootstrap route in general terms instead of naming the flag.
+
+## Archive
+
+- Archived: 2026-08-28
+- Reason: Completed entry archived out of the active error inbox.
