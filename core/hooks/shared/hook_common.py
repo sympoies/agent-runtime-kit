@@ -61,6 +61,13 @@ def resolves_within_its_directory(lexical: str, resolved: str) -> bool:
     The callers below have already established the directory's identity from its
     resolved form, so anchor the comparison there and let the leaf answer the
     only remaining question.
+
+    This does relax one case: where the trusted bin *directory* is itself a
+    symlink, the whole-path comparison used to refuse it. That refusal bought
+    nothing, because `is_managed_cli_home_bin` resolves both sides and admits
+    the directory anyway, and because anyone able to replace `~/.local/...`
+    with a link can equally replace the binaries inside it. `/usr/bin` is
+    unaffected either way: `realpath` cannot redirect it.
     """
     anchored = os.path.join(
         os.path.realpath(os.path.dirname(lexical)), os.path.basename(lexical)
