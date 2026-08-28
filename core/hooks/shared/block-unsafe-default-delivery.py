@@ -68,6 +68,7 @@ from hook_common import (
     nested_shell_payload,
     opaque_invocation_candidates,
     read_payload,
+    resolves_within_its_directory,
     semantic_commit_invocation_effects,
     semantic_commit_invocation_state,
     simple_commands_with_nested_shells,
@@ -2315,18 +2316,18 @@ def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
     lexical_dir = os.path.realpath(os.path.dirname(lexical))
     if lexical_dir in trusted_roots:
         return True
-    if lexical_dir == "/usr/bin" and resolved == lexical:
+    if lexical_dir == "/usr/bin" and resolves_within_its_directory(lexical, resolved):
         return True
-    if is_managed_cli_home_bin(lexical_dir) and resolved == lexical:
+    if is_managed_cli_home_bin(lexical_dir) and resolves_within_its_directory(lexical, resolved):
         return True
     for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
         if os.path.dirname(lexical) != os.path.join(prefix, "bin"):
             continue
         cellar = os.path.join(prefix, "Cellar", "nils-cli")
         try:
-            return resolved == lexical or os.path.commonpath(
-                (resolved, cellar)
-            ) == cellar
+            return resolves_within_its_directory(
+                lexical, resolved
+            ) or os.path.commonpath((resolved, cellar)) == cellar
         except ValueError:
             return False
     return False

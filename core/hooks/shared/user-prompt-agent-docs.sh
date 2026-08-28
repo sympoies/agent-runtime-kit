@@ -27,8 +27,14 @@ agent_docs_candidate="$(command -v agent-docs 2>/dev/null || true)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -z "$repo_root" ]] && exit 0
 [[ -f "$repo_root/AGENT_DOCS.toml" ]] || exit 0
-agent_docs_bin="$(
-  "$python_bin" - "$agent_docs_candidate" "$repo_root" <<'PY' 2>/dev/null || true
+# bash 3.2 does not treat the body of a heredoc as opaque when the heredoc is
+# opened inside a command substitution: it scans the body as shell text,
+# counting parentheses and tracking quote state. An unbalanced bracket or a lone
+# apostrophe in an embedded program therefore breaks the enclosing `$( … )`, and
+# this whole hook stops parsing on the macOS system bash (#65). Read each
+# program with a top-level heredoc, where the body really is opaque, and pass it
+# on stdin.
+IFS= read -r -d '' resolve_agent_docs_program <<'PY' || true
 import os
 import pathlib
 import sys
@@ -77,6 +83,9 @@ if candidate_path.parent == pathlib.Path("~/.local/nils-cli/bin").expanduser() a
 if trusted and candidate.is_file() and os.access(candidate, os.X_OK):
     print(candidate)
 PY
+
+agent_docs_bin="$(
+  "$python_bin" - "$agent_docs_candidate" "$repo_root" <<<"$resolve_agent_docs_program" 2>/dev/null || true
 )"
 [[ "$agent_docs_bin" == /* && -x "$agent_docs_bin" ]] || exit 0
 
@@ -129,6 +138,13 @@ announced_file="$stamp_dir/preflight-announced-${stamp_product}-${repo_hash}-${k
 docs_home="${AGENT_RUNTIME_DOCS_HOME:-${AGENT_DOCS_HOME:-}}"
 if [[ -z "$docs_home" ]] && runtime_kit_source_checkout "$repo_root"; then
   docs_home="$repo_root"
+fi
+# Canonical, so every hook that builds `--docs-home` names one directory even
+# when the configured path reaches it through a symlink (#66). A path that
+# cannot be entered keeps its configured spelling; agent-docs owns that error.
+if [[ -n "$docs_home" ]]; then
+  docs_home_physical="$(cd "$docs_home" 2>/dev/null && pwd -P)"
+  [[ -n "$docs_home_physical" ]] && docs_home="$docs_home_physical"
 fi
 dh_args=()
 [[ -n "$docs_home" ]] && dh_args=(--docs-home "$docs_home")
@@ -302,20 +318,9 @@ if [[ "$session_supported" == "1" && -n "$active_intents" ]]; then
 fi
 
 # Compose one cue across active intents and include a concise route to inactive
-# intents without loading their document bodies.
-cue="$(
-  AGENT_RUNTIME_DECLARED_INTENTS="$intents" \
-    AGENT_RUNTIME_ACTIVE_INTENTS="$active_intents" \
-    AGENT_RUNTIME_NEW_ACTIVE_INTENTS="$new_active_intents" \
-    AGENT_RUNTIME_SESSION_SUPPORTED="$session_supported" \
-    AGENT_RUNTIME_SESSION_ID="$session_id" \
-    AGENT_RUNTIME_SESSION_PRODUCT="$product" \
-    AGENT_RUNTIME_SESSION_STATE_HOME="$state_home" \
-    AGENT_RUNTIME_SESSION_STALE="$activation_stale" \
-    AGENT_RUNTIME_RESOLVED_AGENT_DOCS="$agent_docs_bin" \
-    AGENT_RUNTIME_RESOLVED_DOCS_HOME="$docs_home" \
-    AGENT_RUNTIME_RESOLVED_PROJECT_PATH="$repo_root" \
-    "$python_bin" - "${preflights[@]+"${preflights[@]}"}" <<'PY' 2>/dev/null || true
+# intents without loading their document bodies. Read the program at top level
+# for the bash 3.2 reason above, then feed it to the substitution below.
+IFS= read -r -d '' cue_program <<'PY' || true
 import json, os, shlex, sys
 lines = []
 val_cmds = []
@@ -446,6 +451,20 @@ if not lines:
     raise SystemExit(0)
 print("\n".join(lines))
 PY
+
+cue="$(
+  AGENT_RUNTIME_DECLARED_INTENTS="$intents" \
+    AGENT_RUNTIME_ACTIVE_INTENTS="$active_intents" \
+    AGENT_RUNTIME_NEW_ACTIVE_INTENTS="$new_active_intents" \
+    AGENT_RUNTIME_SESSION_SUPPORTED="$session_supported" \
+    AGENT_RUNTIME_SESSION_ID="$session_id" \
+    AGENT_RUNTIME_SESSION_PRODUCT="$product" \
+    AGENT_RUNTIME_SESSION_STATE_HOME="$state_home" \
+    AGENT_RUNTIME_SESSION_STALE="$activation_stale" \
+    AGENT_RUNTIME_RESOLVED_AGENT_DOCS="$agent_docs_bin" \
+    AGENT_RUNTIME_RESOLVED_DOCS_HOME="$docs_home" \
+    AGENT_RUNTIME_RESOLVED_PROJECT_PATH="$repo_root" \
+    "$python_bin" - "${preflights[@]+"${preflights[@]}"}" <<<"$cue_program" 2>/dev/null || true
 )"
 [[ -z "$cue" ]] && exit 0
 

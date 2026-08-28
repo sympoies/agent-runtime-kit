@@ -251,6 +251,13 @@ if [[ "$have_agent_docs" -eq 1 && -n "$repo_root" && -f "$repo_root/AGENT_DOCS.t
   if [[ -z "$docs_home" ]] && runtime_kit_source_checkout "$repo_root"; then
     docs_home="$repo_root"
   fi
+  # Canonical, so every hook that builds `--docs-home` names one directory even
+  # when the configured path reaches it through a symlink (#66). A path that
+  # cannot be entered keeps its configured spelling; agent-docs owns that error.
+  if [[ -n "$docs_home" ]]; then
+    docs_home_physical="$(cd "$docs_home" 2>/dev/null && pwd -P)"
+    [[ -n "$docs_home_physical" ]] && docs_home="$docs_home_physical"
+  fi
   dh_args=()
   [[ -n "$docs_home" ]] && dh_args=(--docs-home "$docs_home")
   project_args=()
