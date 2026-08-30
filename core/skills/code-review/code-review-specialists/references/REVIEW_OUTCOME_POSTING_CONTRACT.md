@@ -126,9 +126,13 @@ the workflow of hand-guarding against duplicate posts on retry.
 ## Posting order is non-negotiable
 
 A review finding is both work-progress and evidence: it is the cause a fix
-commit responds to. Post it the moment the lens that produced it returns —
-before repairing, committing, or moving to the next lens. The fix is the reply
-to the comment, so the comment must already exist when the fix lands.
+commit responds to. Before repairing or committing, preserve it through the
+provider route selected below. In the portable fallback, post it the moment the
+lens that produced it returns. In a governed GitHub environment, do not post a
+per-lens full report through the personal identity. Retain each lens result in
+the review-ledger input, then publish one combined pre-repair review-generation
+report through the owner App after the selected lens wave completes and before
+repair. The adapter's personal step remains metadata-only.
 
 Never invert this. Do not repair and commit first and post the comment after. A
 comment posted after its fix reads as caused by nothing, inverts the PR/MR
@@ -145,8 +149,11 @@ For a clean quick pass, the parent posts only the final delivery-owner outcome
 with `--lens quick`; there is no finding to preserve before repair. For quick
 findings and full-profile review, the required posting order is:
 
-1. After each reviewer lens returns, the parent posts a compact single-lens
-   finding/specialist review comment with that semantic `--lens`.
+1. After each reviewer lens returns, the parent adds it to the delivery ledger
+   input. The portable fallback also posts a compact single-lens review comment
+   with that semantic `--lens`. The governed GitHub route waits for the selected
+   wave, then publishes one combined owner-App report for that reviewed head;
+   it never publishes the report body through the personal identity.
 2. If the lens blocks delivery, the parent repairs in the delivery branch,
    commits, reruns validation, and reruns the affected lens.
 3. The parent posts the follow-up review comment with the same
@@ -215,7 +222,8 @@ attempting native self-approval.
 Do not let a reviewer subagent post directly. If the active provider identity
 cannot write the review, stop and surface the provider error.
 
-The governed publisher's semantic interface is:
+The governed publisher's semantic interface follows. Issue mirroring is added only
+for a workflow that actually owns a tracking or dispatch issue:
 
 ```bash
 ISSUE_MIRROR_ARGS=()
@@ -265,7 +273,8 @@ if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
 fi
 ```
 
-Single quick-finding or specialist-lens report:
+Portable fallback only — single quick-finding or specialist-lens report. A
+governed GitHub workflow does not post a per-lens full report through the personal identity:
 
 ```bash
 forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \

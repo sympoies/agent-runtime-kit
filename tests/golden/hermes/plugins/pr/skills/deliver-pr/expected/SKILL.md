@@ -733,17 +733,17 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    risk signals, unresolved current-head review state, or `escalate` select full.
 10. Keep review workers read-only. For a clean quick pass, defer the review
    outcome write to step 15; the required ledger genesis in step 11 is separate
-   workflow state. As each full-profile lens or blocking
-   quick finding returns, execute the governed-vs-portable publication branch:
-   on GitHub use `forge-review-publish` when it is available, and use direct
-   `forge-cli pr review` only for GitLab or the explicit no-publisher portable
-   fallback. Publish a native `COMMENT` review event via `--submit-review` on
-   GitHub with `--decision comments-only` and that semantic `--lens` (`quick`
-   for a quick finding). The parent
-   delivery workflow posts; reviewer
-   subagents never call the provider. Post the moment each lens returns — before
-   the repair in step 12, never batched after it; the comment is the finding the
-   step-12 fix responds to, so it must exist first (see
+   workflow state. As each full-profile lens or blocking quick finding returns,
+   add it to the delivery ledger input. In the portable fallback, post one
+   compact review comment through `forge-cli pr review` (a native `COMMENT`
+   review event via `--submit-review` on GitHub) with `--decision comments-only`
+   and that semantic `--lens` (`quick` for a quick finding). In a governed
+   GitHub environment, do not post per-lens full reports through the personal identity.
+   After the selected lens wave completes and before repair, publish
+   one combined pre-repair report through `forge-review-publish`; its personal
+   phase is metadata-only. The parent delivery workflow posts; reviewer
+   subagents never call the provider. In either route, provider-visible finding
+   evidence must exist before the repair in step 12 (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
    `--thread-file` for actionable findings so the fix can close a native review
    thread; summary-only reviews omit it. Render both the body and thread file

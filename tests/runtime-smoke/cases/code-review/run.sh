@@ -66,6 +66,7 @@ run_portable_review_identity_contract_probe() {
   local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
   local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
   local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+  local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
 
   if grep -R -E 'FORGE_BOT_PROFILE|lens bot profile|same lens bot profile|review-testing-bot|review-maintainability|dobi-bot' \
     "$REPO_ROOT/core/skills"; then
@@ -85,6 +86,7 @@ run_portable_review_identity_contract_probe() {
   grep -Fq '"${ISSUE_MIRROR_ARGS[@]}"' "$posting"
   bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
   ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
+  grep -Fq 'does not post a per-lens full report through the personal identity' "$posting"
   grep -Fq 'For a clean quick pass' "$posting"
   grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
@@ -92,12 +94,17 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
-  grep -Fq 'governed-vs-portable publication branch' "$delivery"
-  grep -Fq 'explicit no-publisher portable' "$delivery"
+  grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
   grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
-  grep -Fq 'governed `forge-review-publish` path' "$tracking"
-  grep -Fq 'explicit no-publisher portable fallback' "$tracking"
+  grep -Fq 'In the portable fallback, post one compact review comment' "$tracking"
+  grep -Fq 'In a governed GitHub environment, do not post per-lens full reports through the personal identity.' "$tracking"
+  grep -Fq 'one combined pre-repair report through `forge-review-publish`' "$tracking"
+  for owner in "$delivery" "$tracking" "$dispatch"; do
+    grep -Fq -- '--profile provider-review' "$owner"
+    grep -Fq -- '--metadata-only' "$owner"
+    grep -Fq -- '--comment-file' "$owner"
+  done
   grep -Fq -- '--decision comments-only' "$gate"
 
   if sed -n '29,125p' "$REPO_ROOT/docs/source/nils-cli-surface.md" \

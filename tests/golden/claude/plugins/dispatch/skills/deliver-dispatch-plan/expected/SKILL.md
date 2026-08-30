@@ -58,6 +58,11 @@ Outputs:
 - Final per-lane ledger repair through `plan-tooling ledger-update`.
 - Independent lane review, GitHub review-loop observations, and
   orchestrator-owned merge after approval.
+- Every provider-visible specialist body and its actionable thread file come
+  from one `review-specialists bundle --profile provider-review` artifact. In a
+  governed environment, the owner App publishes that complete report exactly
+  once and the personal identity records only exact-head-verified
+  `--metadata-only` provenance without the report `--comment-file`.
 - On GitHub, current-head native review summaries inspected through
   `forge-cli pr reviews` and semantically dispositioned before lane approval;
   GitLab retains the outcome-note flow. The merge primitive owns observed
@@ -425,6 +430,13 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    and stops ready for independent review.
 5. **Independent lane review** — a different reviewer runs the generic review
    outcome with retained evidence and posts provider review activity. On
+   GitHub, render the canonical five-column body and actionable thread artifact
+   together with `review-specialists bundle --profile provider-review`, then
+   validate the body with `forge-cli pr review validate --specialist-report`
+   before publication. When a governed environment publisher is available, its
+   personal step must use `--metadata-only`, the exact reviewed head, native
+   review URL, and expected App author, and must not receive the report body or
+   `--comment-file`. On
    GitHub, for every lane generate the delivery-mode findings envelope and
    append review-loop genesis at the reviewed head before any repair. A clean
    lane uses the generated empty envelope. After the repair is published, rerun
