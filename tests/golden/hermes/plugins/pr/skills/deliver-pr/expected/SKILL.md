@@ -11,17 +11,16 @@ description: >
 Prereqs:
 
 - `agent-runtime`, `forge-cli >=1.27.27`, `git-cli >=1.25.13`,
-  `plan-issue >=1.1.0`, and `review-specialists >=1.27.27` are installed from
-  the released nils-cli package and available on `PATH`. `git-cli` 1.25.13 is the floor for
+  `plan-issue >=1.1.0`, and `review-specialists >=1.27.27` are installed from the released
+  nils-cli package and available on `PATH`. `git-cli` 1.25.13 is the floor for
   the `push` and `sync-default` surfaces this workflow publishes and syncs
   through. The generic code-review outcome uses a quick or full
   profile in pre-merge context; native review summaries and observed
   convergence need `forge-cli` 1.21.34, guarded pending-review recovery needs
   1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
   needs 1.0.17, and
-  existing-PR adoption in `pr deliver` needs 1.1.0. Canonical provider-review
-  bundles and metadata-only native-review binding need 1.27.27. The durable
-  review-loop ledger was introduced in 1.25.0, and this workflow needs 1.25.13 for its
+  existing-PR adoption in `pr deliver` needs 1.1.0. The durable review-loop
+  ledger was introduced in 1.25.0, and this workflow needs 1.25.13 for its
   faithful non-mutating `review-loop observe --dry-run` preflight. From 1.25.0,
   `pr merge` fails closed with
   `review_state_conflict` ("bounded review delivery requires an explicit genesis
@@ -767,7 +766,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 12. Repair admitted findings in this delivery workflow, publish the repair with
    `git-cli push --format json`, then rerun validation, checks, and affected
    review as closed-set closure. Post each focused follow-up review comment with
-   the same semantic lens before continuing. A changed head or ordinary repair
+   the same semantic lens through the same governed-vs-portable publication
+   branch before continuing. A changed head or ordinary repair
    never switches quick closure to full discovery. Start a new discovery
    generation only for a user-requested fresh review or a repair that materially
    changes the accepted design, public contract, trust boundary, or migration
@@ -791,7 +791,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     do not invoke the unsupported snapshot. Do not implement a polling or sleep loop in the
     workflow.
 15. Post the final combined delivery review outcome body produced by the
-   selected pre-merge profile with `forge-cli pr review` before merge. Use the
+   selected pre-merge profile through the same governed-vs-portable publication
+   branch before merge. Use the
    final `--decision` and repeat every selected `--lens` (`quick` for quick
    merge; the complete specialist set for full); add native GitHub
    approval only through the declared independent-identity capability, and keep
@@ -799,7 +800,9 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    returns `github_pending_review_exists`, use the exact-node
    `pending_reviews` recovery above and retry the unchanged outcome once; do
    not delete ambiguous drafts or downgrade the outcome to a note.
-   When a governed environment publisher is available, it posts the complete
+   On GitHub, `forge-review-publish` is the governed path when available;
+   direct `forge-cli pr review` is only the explicit portable fallback. The
+   governed publisher posts the complete
    canonical body exactly once through the owner App and records only
    exact-head-verified `--metadata-only` provenance through the personal
    identity; the personal call never receives the report `--comment-file`.

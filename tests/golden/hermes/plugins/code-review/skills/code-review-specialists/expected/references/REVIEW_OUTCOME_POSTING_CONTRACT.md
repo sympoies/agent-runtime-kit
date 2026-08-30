@@ -227,7 +227,7 @@ for a workflow that actually owns a tracking or dispatch issue:
 
 ```bash
 ISSUE_MIRROR_ARGS=()
-if [ -n "${ISSUE:-}" ]; then
+if [[ -n "${ISSUE:-}" ]]; then
   ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue)
 fi
 forge-review-publish --provider github --repo "$OWNER_REPO" \
