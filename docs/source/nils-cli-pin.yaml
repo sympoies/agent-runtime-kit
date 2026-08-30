@@ -20,16 +20,16 @@ nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
   # v1.27.16 is the first stable release that ships the exact-base forge
   # delivery contract and guarded persistent integration-branch sync surface.
-  minimum_supported_tag: "v1.27.16"
+  minimum_supported_tag: "v1.27.27"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.27.22"
+  validated_tag: "v1.27.27"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "06378bd4f9bcfa0041077489d9e1d95bc7bd49d22e0fd52eb62c4f76fcb91706"
-    linux_arm64: "d24e530d5bd307fdeaee5e06ed3f071f019eabee413012063aea4ae8736f86d1"
+    linux_amd64: "8c9fc05c37a575e639265ad11608312723d81f8cbaca19452824d995deeee2df"
+    linux_arm64: "db3146dd3863e243f05636912ed15f1835a80c587982f91573e66df761714cda"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -47,7 +47,9 @@ required_clis:
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
   - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + exact requested-base binding across lookup/adopt/create readback/ready/merge + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery + durable review-loop ledger with faithful observe dry-run preflight
-    min: "1.27.16"
+    min: "1.27.27"
+  - bin: review-specialists # canonical provider-review report bundle and native-thread finding transport
+    min: "1.27.27"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
     min: "1.21.19"
   - bin: plan-archive     # discover / migrate / refresh / query

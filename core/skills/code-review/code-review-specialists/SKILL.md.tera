@@ -16,7 +16,7 @@ returns findings before any summary.
 Prereqs:
 
 - Run inside the target git repository with `git` available on `PATH`.
-- `review-specialists` is installed from the released nils-cli package and
+- `review-specialists >=1.27.27` is installed from the released nils-cli package and
   available on `PATH`.
 - Know the base ref for the diff under review, or explicitly choose one before
   running scope detection.
@@ -90,7 +90,7 @@ review-specialists scope --base "$BASE_REF" --format json
 review-specialists validate --input findings.jsonl --format json
 review-specialists merge --input findings.jsonl --summary-out specialist-review.md --format json
 review-specialists render --profile report --input merged-findings.json --out specialist-review.md
-review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile report --format json
+review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile provider-review --format json
 ```
 
 ## Mode Selection

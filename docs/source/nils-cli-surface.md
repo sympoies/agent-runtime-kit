@@ -1,23 +1,34 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-28 (refreshed for `v1.27.22`)
+- Snapshot date: 2026-08-30 (refreshed for `v1.27.27`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.22`
+- Active `git describe --tags` output: `v1.27.27`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.16`,
-  `validated_tag: v1.27.22`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.27`,
+  `validated_tag: v1.27.27`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `5ffcf3c0`
-  (`chore(release): bump cli versions to 1.27.22`)
+- Head commit: `1e93e23c`
+  (`chore(release): bump cli versions to 1.27.27`)
 - Release:
-  [`v1.27.22`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.22),
+  [`v1.27.27`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.27),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.22` is the validated release; `v1.27.16` remains the compatibility
-  minimum. It keeps audited read-only startup diagnosis available when typed
+- `v1.27.27` is the validated release and compatibility minimum. It provides
+  one canonical five-column provider-review renderer,
+  native actionable diff-thread payloads, and a metadata-only personal review
+  projection ([#1567](https://github.com/sympoies/nils-cli/pull/1567)); it also
+  normalizes GitHub single-line review anchors before submission
+  ([#1570](https://github.com/sympoies/nils-cli/pull/1570)). Runtime-kit now
+  consumes these `forge-cli` and `review-specialists` contracts directly, so
+  both per-binary floors move to `>=1.27.27`. Because the old `v1.27.16`
+  minimum cannot provide either required contract, this adoption explicitly
+  retires it and moves the retained minimum digests to `v1.27.27`.
+- `v1.27.22` was the previous validated release; at that release point,
+  `v1.27.16` was the compatibility minimum. It kept audited read-only startup
+  diagnosis available when typed
   activity observation is unavailable while enforce-mode mutations remain
   fail closed ([#1554](https://github.com/sympoies/nils-cli/pull/1554)). It
   also attaches bounded recovery context to unclassifiable shell denials so
@@ -25,9 +36,9 @@
   retry without exposing command arguments
   ([#1555](https://github.com/sympoies/nils-cli/pull/1555)). These are
   compatible repairs to existing `agent-hook` contracts, so no
-  `required_clis[]` floor moves and the minimum remains v1.27.16.
-- `v1.27.21` was the previous validated release; `v1.27.16` remains the
-  compatibility minimum. It adds privacy-safe handler identity,
+  `required_clis[]` floor moved beyond v1.27.16 at that time.
+- `v1.27.21` was the previous validated release; at that release point,
+  `v1.27.16` was the compatibility minimum. It added privacy-safe handler identity,
   capability-cause, doctor, and
   owner-repair guidance to existing `agent-hook` fail-posture errors
   ([#1550](https://github.com/sympoies/nils-cli/pull/1550)), and admits the
@@ -35,9 +46,10 @@
   host root is represented by the unmapped overflow UID
   ([#1552](https://github.com/sympoies/nils-cli/pull/1552)). These are compatible
   diagnostics and trust-proof repairs to existing contracts, so no
-  `required_clis[]` floor moves and the minimum remains v1.27.16.
-- `v1.27.19` was the previous validated release; `v1.27.16` remains the
-  compatibility minimum. It adds `git-cli push --bootstrap`, which publishes the first branch
+  `required_clis[]` floor moved beyond v1.27.16 at that time.
+- `v1.27.19` was the previous validated release; at that release point,
+  `v1.27.16` was the compatibility minimum. It added
+  `git-cli push --bootstrap`, which publishes the first branch
   of a remote proven empty by `ls-remote` and carries a create-only lease so a
   branch appearing between the emptiness check and the push is rejected rather
   than fast-forwarded
@@ -45,13 +57,13 @@
   `git-cli push --expect-default`, whose conventional-name guard only ever
   stopped a caller who named the branch truthfully
   ([#1544](https://github.com/sympoies/nils-cli/pull/1544)). Runtime-kit
-  consumes neither surface directly, so no `required_clis[]` floor moves and the
-  minimum stays where it is: a host at the floor still has `--expect-default`
-  and lacks `--bootstrap`, which is why the delivery guard's empty-remote
+  consumed neither surface directly, so no `required_clis[]` floor moved and
+  the minimum stayed at `v1.27.16` at that release point: a host at that floor
+  had `--expect-default` and lacked `--bootstrap`, which is why the delivery guard's empty-remote
   refusal describes the bootstrap route in general terms instead of naming the
   flag.
-- `v1.27.16` is the compatibility minimum. Runtime-kit
-  now consumes exact requested-base binding across `forge-cli` PR lookup,
+- `v1.27.16` became the compatibility minimum at that release point. Runtime-kit
+  adopted exact requested-base binding across `forge-cli` PR lookup,
   adoption, create readback, ready, and merge, plus `git-cli sync-branch` for
   same-name-upstream, fast-forward-only synchronization of persistent
   non-default integration branches
@@ -74,7 +86,7 @@
   compatible fixes to already-admitted contracts, so this ordinary
   validated-role uptake does not move the global compatibility minimum or any
   `required_clis[]` floor.
-- `v1.27.12` was the previous validated release while `v1.27.3` remains the
+- `v1.27.12` was the previous validated release while `v1.27.3` was the
   compatibility minimum. Runtime-kit consumes its body-free authenticated coordination
   checkpoint notification, which lets long-running agents inspect mailbox
   metadata promptly at safe boundaries without interrupting an atomic mutation
@@ -85,7 +97,7 @@
   hardening. These changes preserve the existing contracts admitted by
   `v1.27.3`, so this ordinary validated-role uptake does not move the global
   compatibility minimum or any `required_clis[]` floor.
-- `v1.27.3` was the previous validated release and remains the compatibility
+- `v1.27.3` was the previous validated release and compatibility
   minimum. Runtime-kit
   consumes the breaking `macos-agent` adapter v3 contract:
   official Peekaboo v4.2.2 provenance, a remote wire/schema bump, transition-only

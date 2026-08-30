@@ -611,7 +611,7 @@ skills:
       hermes:
         render_to: plugins/code-review/skills/code-review-specialists/SKILL.md
     required_clis:
-      review-specialists: ">=0.17.1"
+      review-specialists: ">=1.27.27"
     state_out_mode: runtime
 
   - id: pr.deliver-pr
@@ -634,10 +634,10 @@ skills:
       hermes:
         render_to: plugins/pr/skills/deliver-pr/SKILL.md
     required_clis:
-      forge-cli: ">=1.27.16"
+      forge-cli: ">=1.27.27"
       agent-runtime: ">=0.19.0"
       plan-issue: ">=1.1.0"
-      review-specialists: ">=0.17.1"
+      review-specialists: ">=1.27.27"
     state_out_mode: runtime
 
   - id: dispatch.deliver-dispatch-plan
@@ -662,9 +662,9 @@ skills:
     required_clis:
       plan-tooling: ">=1.0.1"
       plan-issue: ">=1.0.13"
-      forge-cli: ">=1.27.16"
+      forge-cli: ">=1.27.27"
       review-evidence: ">=0.16.0"
-      review-specialists: ">=0.17.1"
+      review-specialists: ">=1.27.27"
     state_out_mode: runtime
 
   - id: dispatch.deliver-plan-tracking-issue
@@ -689,7 +689,7 @@ skills:
     required_clis:
       plan-tooling: ">=1.0.1"
       plan-issue: ">=1.0.13"
-      forge-cli: ">=1.27.16"
+      forge-cli: ">=1.27.27"
       review-evidence: ">=0.16.0"
-      review-specialists: ">=0.17.1"
+      review-specialists: ">=1.27.27"
     state_out_mode: runtime

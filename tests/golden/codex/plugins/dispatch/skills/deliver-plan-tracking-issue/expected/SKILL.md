@@ -13,7 +13,7 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.27.16`, `git-cli >=1.25.13`, `review-specialists`.
+  `forge-cli >=1.27.27`, `git-cli >=1.25.13`, `review-specialists >=1.27.27`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge context with the
@@ -64,6 +64,11 @@ Outputs:
   `--mirror-issue` breadcrumb to the tracking issue. The combined outcome is a
   native GitHub approval only when an environment-owned router guarantees an
   identity independent from the PR author; otherwise it is an outcome note.
+  Every specialist body and its actionable thread file come from one
+  `review-specialists bundle --profile provider-review` artifact. A governed
+  environment publisher posts that complete table exactly once through the
+  owner App and leaves only exact-head-verified metadata through the personal
+  identity.
 - On GitHub, current-head native review summaries read through
   `forge-cli pr reviews` and semantically dispositioned before the combined
   owner outcome. GitLab retains the outcome-note flow because native snapshots
@@ -587,10 +592,14 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    verify `LINKED_PR` through `pr deliver` existing-PR adoption). Do not merge
    yet; the review gate runs first.
 4. **Review gate** — run the generic code-review outcome in pre-merge context with the full profile (min `testing` +
-   `maintainability`; add risk lenses per scope). Post each lens's specialist
-   review comment through `forge-cli pr review` as it returns (native `COMMENT`
-   on GitHub via `--submit-review`, semantic `--lens`; `--thread-file`
-   for actionable findings). After repairs, read `forge-cli pr reviews` and
+   `maintainability`; add risk lenses per scope). For GitHub, post each lens's
+   specialist review through the governed `forge-review-publish` path when it
+   is available; use direct `forge-cli pr review` only for GitLab or the
+   explicit no-publisher portable fallback. Apply the same branch to follow-up
+   reports (native `COMMENT` on GitHub, semantic `--lens`; `--thread-file` for
+   actionable findings). Render the canonical five-column body and thread
+   artifact together, and pass `--specialist-report` during validation before
+   publication. After repairs, read `forge-cli pr reviews` and
    disposition every actionable current-head summary under the closed-set
    admission rule; route a non-admitted new concern to follow-up or an explicit
    critical-risk handoff without extending the repair loop. Stale summaries
@@ -604,6 +613,9 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    new-generation conditions may reopen discovery. A pending native draft uses
    only the exact-node recovery above; never delete an ambiguous draft or
    replace the requested native outcome with a note.
+   When a governed environment publisher is available, its personal metadata
+   step must use `--metadata-only`, the exact reviewed head, native review URL,
+   and expected App author, and must not receive the report body.
 5. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked
    PR, review decision, lenses, and `--review-outcome-comment` (the provider
    outcome URL); add `--review-findings-file "$REVIEW_FINDINGS_JSON"` when findings

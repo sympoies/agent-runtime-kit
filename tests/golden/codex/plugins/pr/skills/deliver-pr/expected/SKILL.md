@@ -10,8 +10,8 @@ description: >
 
 Prereqs:
 
-- `agent-runtime`, `forge-cli >=1.27.16`, `git-cli >=1.25.13`,
-  `plan-issue >=1.1.0`, and `review-specialists` are installed from the released
+- `agent-runtime`, `forge-cli >=1.27.27`, `git-cli >=1.25.13`,
+  `plan-issue >=1.1.0`, and `review-specialists >=1.27.27` are installed from the released
   nils-cli package and available on `PATH`. `git-cli` 1.25.13 is the floor for
   the `push` and `sync-default` surfaces this workflow publishes and syncs
   through. The generic code-review outcome uses a quick or full
@@ -93,6 +93,11 @@ Outputs:
   resolve them; no-finding reports omit `--thread-file` and stay summary-only.
   If a linked tracking or dispatch issue is present, mirror the compact review
   URL breadcrumb to that issue.
+- Every provider-visible specialist body is the canonical
+  `review-specialists bundle --profile provider-review` artifact. The complete
+  report uses the marker and five-column table; actionable GitHub threads come
+  from the same bundle. `pr-comment` is only an alias for this profile, never a
+  second bullet renderer.
 - A delivery review outcome posted to the PR/MR before merge through
   `forge-cli pr review`; combined owner outcomes use the final `--decision`
   plus repeated selected lenses and own final finding dispositions. GitHub uses
@@ -729,17 +734,22 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 10. Keep review workers read-only. For a clean quick pass, defer the review
    outcome write to step 15; the required ledger genesis in step 11 is separate
    workflow state. As each full-profile lens or blocking
-   quick finding returns, post one compact review comment through `forge-cli pr review`
-   (a native `COMMENT` review event via `--submit-review` on GitHub)
-   with `--decision comments-only` and that semantic `--lens` (`quick` for a
-   quick finding). The parent
+   quick finding returns, execute the governed-vs-portable publication branch:
+   on GitHub use `forge-review-publish` when it is available, and use direct
+   `forge-cli pr review` only for GitLab or the explicit no-publisher portable
+   fallback. Publish a native `COMMENT` review event via `--submit-review` on
+   GitHub with `--decision comments-only` and that semantic `--lens` (`quick`
+   for a quick finding). The parent
    delivery workflow posts; reviewer
    subagents never call the provider. Post the moment each lens returns — before
    the repair in step 12, never batched after it; the comment is the finding the
    step-12 fix responds to, so it must exist first (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
    `--thread-file` for actionable findings so the fix can close a native review
-   thread; summary-only reviews omit it.
+   thread; summary-only reviews omit it. Render both the body and thread file
+   through `review-specialists bundle --profile provider-review`, then validate
+   the body with `forge-cli pr review validate --specialist-report` before the
+   provider write.
 11. On GitHub, produce `REVIEW_LEDGER_FINDINGS` with `review-specialists bundle --mode
     delivery`, including its generated empty envelope for a clean review. Record
     the genesis ledger observation **before** repairing anything, at the head
@@ -756,7 +766,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
 12. Repair admitted findings in this delivery workflow, publish the repair with
    `git-cli push --format json`, then rerun validation, checks, and affected
    review as closed-set closure. Post each focused follow-up review comment with
-   the same semantic lens before continuing. A changed head or ordinary repair
+   the same semantic lens through the same governed-vs-portable publication
+   branch before continuing. A changed head or ordinary repair
    never switches quick closure to full discovery. Start a new discovery
    generation only for a user-requested fresh review or a repair that materially
    changes the accepted design, public contract, trust boundary, or migration
@@ -780,7 +791,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     do not invoke the unsupported snapshot. Do not implement a polling or sleep loop in the
     workflow.
 15. Post the final combined delivery review outcome body produced by the
-   selected pre-merge profile with `forge-cli pr review` before merge. Use the
+   selected pre-merge profile through the same governed-vs-portable publication
+   branch before merge. Use the
    final `--decision` and repeat every selected `--lens` (`quick` for quick
    merge; the complete specialist set for full); add native GitHub
    approval only through the declared independent-identity capability, and keep
@@ -788,6 +800,12 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    returns `github_pending_review_exists`, use the exact-node
    `pending_reviews` recovery above and retry the unchanged outcome once; do
    not delete ambiguous drafts or downgrade the outcome to a note.
+   On GitHub, `forge-review-publish` is the governed path when available;
+   direct `forge-cli pr review` is only the explicit portable fallback. The
+   governed publisher posts the complete
+   canonical body exactly once through the owner App and records only
+   exact-head-verified `--metadata-only` provenance through the personal
+   identity; the personal call never receives the report `--comment-file`.
 16. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are
