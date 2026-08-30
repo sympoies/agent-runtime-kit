@@ -85,6 +85,7 @@ run_portable_review_identity_contract_probe() {
   grep -Fq '"${ISSUE_MIRROR_ARGS[@]}"' "$posting"
   bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
   ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
+  grep -Fq 'does not post a per-lens full report through the personal identity' "$posting"
   grep -Fq 'For a clean quick pass' "$posting"
   grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
@@ -92,8 +93,7 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
-  grep -Fq 'governed-vs-portable publication branch' "$delivery"
-  grep -Fq 'explicit no-publisher portable' "$delivery"
+  grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
   grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
   grep -Fq 'governed `forge-review-publish` path' "$tracking"
