@@ -20,7 +20,7 @@
 # from docs/source/nils-cli-pin.yaml; keep this default and the SHA256 args in
 # step with that pin for plain `docker build` users.
 ARG NILS_CLI_VERSION=v1.27.27
-ARG CLAUDE_CODE_VERSION=2.1.222
+ARG CLAUDE_CODE_VERSION=2.1.247
 ARG CODEX_VERSION=0.150.1
 ARG GH_VERSION=2.65.0
 ARG GLAB_VERSION=1.101.0
