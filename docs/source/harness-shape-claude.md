@@ -29,7 +29,7 @@ Scope rules:
 
 ## Version Floors (Claude side)
 
-- Claude product `min_version` / `recommended_version`: **2.1.222**;
+- Claude product `min_version` / `recommended_version`: **2.1.247**;
   `min_version_effective_from`: **2026-09-01**; probe: `claude --version`
   (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Claude surface)
