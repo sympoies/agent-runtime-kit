@@ -73,6 +73,13 @@ run_portable_review_identity_contract_probe() {
   fi
   grep -Fq 'FINAL_SUBMIT_REVIEW' "$posting"
   grep -Fq 'AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED' "$posting"
+  grep -Fq -- '--profile provider-review' "$posting"
+  grep -Fq -- '--specialist-report' "$posting"
+  grep -Fq -- '--metadata-only' "$posting"
+  grep -Fq -- '--native-review-url' "$posting"
+  grep -Fq -- '--native-review-author' "$posting"
+  grep -Fq 'complete report body exactly once' "$posting"
+  grep -Fq 'must not pass `--comment-file`' "$posting"
   grep -Fq 'For a clean quick pass' "$posting"
   grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
@@ -109,7 +116,7 @@ write_findings() {
   local findings="$1"
 
   cat >"$findings" <<'JSONL'
-{"severity":"HIGH","confidence":0.82,"path":"src/api.py","line":1,"category":"api-contract","summary":"Runtime smoke finding.","evidence":"Fixture evidence anchors the changed API file.","recommendation":"Keep the fixture stable.","specialist":"api-contract","test_suggestion":"Keep a focused smoke test."}
+{"severity":"HIGH","confidence":0.82,"path":"src/api.py","line":1,"category":"api-contract","summary":"Runtime smoke finding.","evidence":"Fixture evidence anchors the changed API file.","recommendation":"Keep the fixture stable.","specialist":"api-contract","test_suggestion":"Keep a focused smoke test.","actionable":true}
 JSONL
 }
 
@@ -231,6 +238,10 @@ run_code_review_specialists_probe() {
   local summary_out="$CODE_REVIEW_ARTIFACTS_DIR/specialist-review.md"
   local render_out="$CODE_REVIEW_ARTIFACTS_DIR/render.json"
   local rendered_report="$CODE_REVIEW_ARTIFACTS_DIR/rendered-report.md"
+  local bundle_out="$CODE_REVIEW_ARTIFACTS_DIR/provider-bundle.json"
+  local bundle_dir="$CODE_REVIEW_ARTIFACTS_DIR/provider-bundle"
+  local provider_report="$bundle_dir/provider-review.md"
+  local provider_threads="$bundle_dir/review-threads.json"
   require_code_review_bin review-specialists || return 1
   init_diff_fixture
   write_findings "$findings"
@@ -254,6 +265,18 @@ run_code_review_specialists_probe() {
     --input "$merge_out" \
     --out "$rendered_report" \
     --format json >"$render_out" 2>&1
+  review-specialists bundle \
+    --input "$findings" \
+    --out-dir "$bundle_dir" \
+    --profile provider-review \
+    --repo sympoies/agent-runtime-kit \
+    --ref runtime-smoke \
+    --reviewable 'PR #123' \
+    --lens api-contract \
+    --lens-verdict findings \
+    --scope 'runtime smoke provider review contract' \
+    --evidence-reviewed 'deterministic fixture' \
+    --format json >"$bundle_out" 2>&1
 
   grep -q '"schema_version": "cli.review-specialists.scope.v1"' "$scope_out"
   grep -q '"schema_version": "cli.review-specialists.validate.v1"' "$validate_out"
@@ -261,6 +284,11 @@ run_code_review_specialists_probe() {
   grep -q '"schema_version": "cli.review-specialists.render.v1"' "$render_out"
   grep -q 'Runtime smoke finding' "$summary_out"
   grep -q 'Specialist Review Report' "$rendered_report"
+  grep -q '"profile": "provider-review"' "$bundle_out"
+  grep -Fq '<!-- agent-kit:specialist-review-report:v1 -->' "$provider_report"
+  grep -Fq '| Finding | Severity | Confidence | Evidence | Recommendation |' "$provider_report"
+  jq -e 'length == 1 and .[0].path == "src/api.py" and .[0].line == 1' \
+    "$provider_threads" >/dev/null
 }
 
 run_code_review_outcome_routing_probe() {

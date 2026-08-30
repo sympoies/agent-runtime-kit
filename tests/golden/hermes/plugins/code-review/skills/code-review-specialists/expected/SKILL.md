@@ -77,7 +77,7 @@ review-specialists scope --base "$BASE_REF" --format json
 review-specialists validate --input findings.jsonl --format json
 review-specialists merge --input findings.jsonl --summary-out specialist-review.md --format json
 review-specialists render --profile report --input merged-findings.json --out specialist-review.md
-review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile report --format json
+review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile provider-review --format json
 ```
 
 ## Mode Selection
