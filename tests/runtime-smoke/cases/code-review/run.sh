@@ -96,8 +96,14 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
   grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
-  grep -Fq 'governed `forge-review-publish` path' "$tracking"
-  grep -Fq 'explicit no-publisher portable fallback' "$tracking"
+  grep -Fq 'In the portable fallback, post one compact review comment' "$tracking"
+  grep -Fq 'In a governed GitHub environment, do not post per-lens full reports through the personal identity.' "$tracking"
+  grep -Fq 'one combined pre-repair report through `forge-review-publish`' "$tracking"
+  for owner in "$delivery" "$tracking" "$dispatch"; do
+    grep -Fq -- '--profile provider-review' "$owner"
+    grep -Fq -- '--metadata-only' "$owner"
+    grep -Fq -- '--comment-file' "$owner"
+  done
   grep -Fq -- '--decision comments-only' "$gate"
 
   if sed -n '29,125p' "$REPO_ROOT/docs/source/nils-cli-surface.md" \

@@ -13,7 +13,8 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.27.27`, `git-cli >=1.25.13`, `review-specialists >=1.27.27`.
+  `forge-cli >=1.27.27`, `git-cli >=1.25.13`,
+  `review-specialists >=1.27.27`.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge context with the
@@ -58,12 +59,15 @@ Outputs:
   state[,session[,validation]]`.
 - PR delivery through `forge-cli pr deliver --no-merge`, or adoption of an
   already linked PR, so the review gate runs before merge.
-- Provider review activity through `forge-cli pr review`: one native GitHub
-  `COMMENT` per specialist lens and one combined semantic outcome, expressed
-  only through portable provider / decision / lens flags, with a
-  `--mirror-issue` breadcrumb to the tracking issue. The combined outcome is a
-  native GitHub approval only when an environment-owned router guarantees an
-  identity independent from the PR author; otherwise it is an outcome note.
+- Provider review activity through the portable `forge-cli pr review` fallback:
+  one native GitHub `COMMENT` per specialist lens and one combined semantic
+  outcome, expressed only through portable provider / decision / lens flags,
+  with a `--mirror-issue` breadcrumb to the tracking issue. In a governed GitHub
+  environment, the workflow instead publishes one combined report through
+  `forge-review-publish`; its personal phase is metadata-only. The combined
+  outcome is a native GitHub approval only when an environment-owned router
+  guarantees an identity independent from the PR author; otherwise it is an
+  outcome note.
   Every specialist body and its actionable thread file come from one
   `review-specialists bundle --profile provider-review` artifact. A governed
   environment publisher posts that complete table exactly once through the
@@ -242,8 +246,11 @@ for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
   TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")
 done
 
-# Repeat this specialist block once for each returned lens: testing,
-# maintainability, plus any risk lens selected by the full pre-merge review.
+# Portable fallback only: repeat this specialist block once for each returned
+# lens: testing, maintainability, plus any risk lens selected by the full
+# pre-merge review. In a governed GitHub environment, do not execute this block;
+# publish one combined pre-repair report through forge-review-publish after the
+# selected lens wave, with a metadata-only personal phase.
 THREAD_FILE_ARGS=()
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
@@ -541,10 +548,15 @@ re-creating it, and record the ref with `tracking run update --linked-pr`.
 Observed convergence is GitHub-only in v1, so GitLab merge calls explicitly pass
 `--review-convergence=false` to neutralize any user-global GitHub policy.
 
-Post one compact specialist review comment per lens as it returns — before any
-repair — using `--decision comments-only` plus the semantic `--lens`, with
-`--thread-file "$REVIEW_THREAD_FILE"` for actionable GitHub findings; the
-combined delivery outcome posts last with the final decision and selected lenses.
+In the portable fallback, post one compact review comment per specialist lens
+as it returns — before any repair — using `--decision comments-only` plus the
+semantic `--lens`, with `--thread-file "$REVIEW_THREAD_FILE"` for actionable
+GitHub findings; the combined delivery outcome posts last with the final
+decision and selected lenses. In a governed GitHub environment, do not post per-lens full reports through the personal identity.
+After the selected lens wave completes and before repair, publish one combined pre-repair report through `forge-review-publish`;
+its personal phase is metadata-only. The parent tracking workflow posts, and
+reviewer subagents never call the provider. In either route, provider-visible
+finding evidence exists before repair.
 On GitHub, read native summaries before the combined outcome; on GitLab, retain
 the outcome-note path and do not invoke the unsupported snapshot. A
 `summary_truncated` item requires the full review body before disposition; stop
@@ -592,12 +604,13 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    verify `LINKED_PR` through `pr deliver` existing-PR adoption). Do not merge
    yet; the review gate runs first.
 4. **Review gate** — run the generic code-review outcome in pre-merge context with the full profile (min `testing` +
-   `maintainability`; add risk lenses per scope). For GitHub, post each lens's
-   specialist review through the governed `forge-review-publish` path when it
-   is available; use direct `forge-cli pr review` only for GitLab or the
-   explicit no-publisher portable fallback. Apply the same branch to follow-up
-   reports (native `COMMENT` on GitHub, semantic `--lens`; `--thread-file` for
-   actionable findings). Render the canonical five-column body and thread
+   `maintainability`; add risk lenses per scope). In the portable fallback,
+   post each lens's specialist review comment through `forge-cli pr review` as
+   it returns (native `COMMENT` on GitHub via `--submit-review`, semantic
+   `--lens`; `--thread-file` for actionable findings). In a governed GitHub
+   environment, publish one combined pre-repair report through
+   `forge-review-publish` and keep its personal phase metadata-only; do not post
+   per-lens full reports through the personal identity. Render the canonical five-column body and thread
    artifact together, and pass `--specialist-report` during validation before
    publication. After repairs, read `forge-cli pr reviews` and
    disposition every actionable current-head summary under the closed-set
