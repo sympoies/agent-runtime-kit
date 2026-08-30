@@ -66,6 +66,7 @@ run_portable_review_identity_contract_probe() {
   local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
   local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
   local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+  local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
 
   if grep -R -E 'FORGE_BOT_PROFILE|lens bot profile|same lens bot profile|review-testing-bot|review-maintainability|dobi-bot' \
     "$REPO_ROOT/core/skills"; then
