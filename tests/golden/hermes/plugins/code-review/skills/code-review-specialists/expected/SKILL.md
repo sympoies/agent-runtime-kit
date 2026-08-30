@@ -16,7 +16,7 @@ returns findings before any summary.
 Prereqs:
 
 - Run inside the target git repository with `git` available on `PATH`.
-- `review-specialists` is installed from the released nils-cli package and
+- `review-specialists >=1.27.27` is installed from the released nils-cli package and
   available on `PATH`.
 - Know the base ref for the diff under review, or explicitly choose one before
   running scope detection.

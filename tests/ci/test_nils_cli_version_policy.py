@@ -127,32 +127,31 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.16")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.22")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.27")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.27")
         self.assertNotIn("pinned_tag:", manifest)
-        # Validated and minimum now name different releases, so their retained
-        # digests differ too. They were identical only while both roles pointed
-        # at v1.27.16.
+        # This adoption explicitly retires the previous minimum, so validated
+        # and minimum resolve to the same release and archive digests.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "06378bd4f9bcfa0041077489d9e1d95bc7bd49d22e0fd52eb62c4f76fcb91706",
+            "8c9fc05c37a575e639265ad11608312723d81f8cbaca19452824d995deeee2df",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "d24e530d5bd307fdeaee5e06ed3f071f019eabee413012063aea4ae8736f86d1",
+            "db3146dd3863e243f05636912ed15f1835a80c587982f91573e66df761714cda",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.16"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.27"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "ce9c840ebb1ac6d8addd45cdf1fc91b7ca192467b66f8caf5bd032bafc4c76b6",
+            "8c9fc05c37a575e639265ad11608312723d81f8cbaca19452824d995deeee2df",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "2e850c89f53fc7b0a8d346166346f1881f0bbb9a6ccddd155fb61a015b9ee06c",
+            "db3146dd3863e243f05636912ed15f1835a80c587982f91573e66df761714cda",
         )
         required_entries = manifest_data["required_clis"]
         required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
@@ -160,7 +159,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["agent-session"], "1.25.11")
         self.assertEqual(required_clis["semantic-commit"], "1.25.11")
         self.assertEqual(required_clis["main-agent"], "1.25.11")
-        self.assertEqual(required_clis["forge-cli"], "1.27.16")
+        self.assertEqual(required_clis["forge-cli"], "1.27.27")
+        self.assertEqual(required_clis["review-specialists"], "1.27.27")
         self.assertEqual(required_clis["git-cli"], "1.27.16")
         self.assertEqual(required_clis["agent-hook"], "1.26.4")
         self.assertEqual(required_clis["agent-memory"], "1.26.4")
@@ -301,7 +301,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.27.22", "v1.28.0"):
+        for candidate in ("v1.27.27", "v1.28.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -311,6 +311,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     text=True,
                 )
         for candidate in (
+            "v1.27.26",
+            "v1.27.22",
             "v1.27.21",
             "v1.27.19",
             "v1.27.16",
@@ -671,7 +673,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.27.22", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.27.27", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(

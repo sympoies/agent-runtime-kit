@@ -218,6 +218,10 @@ cannot write the review, stop and surface the provider error.
 The governed publisher's semantic interface is:
 
 ```bash
+ISSUE_MIRROR_ARGS=()
+if [[ -n "${ISSUE:-}" ]]; then
+  ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue)
+fi
 forge-review-publish --provider github --repo "$OWNER_REPO" \
   pr review-publish "$PR_NUMBER" \
   --decision "$REVIEW_DECISION" \
@@ -226,8 +230,7 @@ forge-review-publish --provider github --repo "$OWNER_REPO" \
   --comment-file "$REVIEW_COMMENT_FILE" \
   "${THREAD_FILE_ARGS[@]}" \
   "${REVIEW_LENS_ARGS[@]}" \
-  --issue "$ISSUE" \
-  --mirror-issue \
+  "${ISSUE_MIRROR_ARGS[@]}" \
   --format json
 ```
 

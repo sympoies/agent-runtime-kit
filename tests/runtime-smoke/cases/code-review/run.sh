@@ -80,6 +80,11 @@ run_portable_review_identity_contract_probe() {
   grep -Fq -- '--native-review-author' "$posting"
   grep -Fq 'complete report body exactly once' "$posting"
   grep -Fq 'must not pass `--comment-file`' "$posting"
+  grep -Fq 'ISSUE_MIRROR_ARGS=()' "$posting"
+  grep -Fq '[[ -n "${ISSUE:-}" ]]' "$posting"
+  grep -Fq '"${ISSUE_MIRROR_ARGS[@]}"' "$posting"
+  bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
+  ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
   grep -Fq 'For a clean quick pass' "$posting"
   grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
@@ -87,9 +92,19 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
+  grep -Fq 'governed-vs-portable publication branch' "$delivery"
+  grep -Fq 'explicit no-publisher portable' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
   grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
+  grep -Fq 'governed `forge-review-publish` path' "$tracking"
+  grep -Fq 'explicit no-publisher portable fallback' "$tracking"
   grep -Fq -- '--decision comments-only' "$gate"
+
+  if sed -n '29,125p' "$REPO_ROOT/docs/source/nils-cli-surface.md" \
+    | grep -Eq 'is the compatibility minimum|remains the compatibility minimum|minimum stays where it is'; then
+    echo 'runtime-smoke code-review: historical nils entries claim a current compatibility minimum' >&2
+    return 1
+  fi
 }
 
 init_diff_fixture() {
@@ -117,7 +132,76 @@ write_findings() {
 
   cat >"$findings" <<'JSONL'
 {"severity":"HIGH","confidence":0.82,"path":"src/api.py","line":1,"category":"api-contract","summary":"Runtime smoke finding.","evidence":"Fixture evidence anchors the changed API file.","recommendation":"Keep the fixture stable.","specialist":"api-contract","test_suggestion":"Keep a focused smoke test.","actionable":true}
+{"severity":"MEDIUM","confidence":0.78,"path":"tests/test_api.py","category":"testing","summary":"Runtime smoke file finding.","evidence":"Fixture evidence anchors a file-level test concern.","recommendation":"Keep the file-level fixture stable.","specialist":"testing","test_suggestion":"Keep a file-level smoke test.","actionable":true}
 JSONL
+}
+
+run_recording_publisher_probe() {
+  local report="$1"
+  local threads="$2"
+  local recorder="$CODE_REVIEW_ARTIFACTS_DIR/recording-forge-review-publish"
+  local calls="$CODE_REVIEW_ARTIFACTS_DIR/recorded-publication"
+  local expected_head='0123456789abcdef0123456789abcdef01234567'
+
+  mkdir -p "$calls"
+  cat >"$recorder" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+: "${RECORD_CALLS:?}"
+repo=''
+pr=''
+decision=''
+head=''
+comment_file=''
+thread_file=''
+lens=''
+submit=0
+while (($#)); do
+  case "$1" in
+    --provider|--format) shift 2 ;;
+    --repo) repo="$2"; shift 2 ;;
+    --decision) decision="$2"; shift 2 ;;
+    --expected-head) head="$2"; shift 2 ;;
+    --comment-file) comment_file="$2"; shift 2 ;;
+    --thread-file) thread_file="$2"; shift 2 ;;
+    --lens) lens="$2"; shift 2 ;;
+    --submit-review) submit=1; shift ;;
+    pr)
+      [[ "${2:-}" == review-publish && "${3:-}" =~ ^[0-9]+$ ]]
+      pr="$3"
+      shift 3
+      ;;
+    *) echo "recording publisher: unsupported argument $1" >&2; exit 64 ;;
+  esac
+done
+[[ -n "$repo" && -n "$pr" && -n "$decision" && -n "$head" && -s "$comment_file" && -s "$thread_file" && -n "$lens" && "$submit" == 1 ]]
+native_url="https://github.com/$repo/pull/$pr#pullrequestreview-1"
+native_author='sympoies-agent-runtime-reviewer[bot]'
+printf '%s\n' --repo "$repo" pr review "$pr" --decision "$decision" \
+  --expected-head "$head" --comment-file "$comment_file" \
+  --thread-file "$thread_file" --submit-review >"$RECORD_CALLS/app.argv"
+printf '%s\n' --repo "$repo" pr review "$pr" --decision "$decision" \
+  --metadata-only --expected-head "$head" --native-review-url "$native_url" \
+  --native-review-author "$native_author" --lens "$lens" >"$RECORD_CALLS/personal.argv"
+SH
+  chmod 700 "$recorder"
+  RECORD_CALLS="$calls" "$recorder" \
+    --provider github --repo sympoies/agent-runtime-kit \
+    pr review-publish 123 --decision comments-only --submit-review \
+    --expected-head "$expected_head" --comment-file "$report" \
+    --thread-file "$threads" --lens api-contract --format json
+
+  [[ "$(grep -Fxc -- '--comment-file' "$calls/app.argv")" == 1 ]]
+  [[ "$(grep -Fxc -- '--thread-file' "$calls/app.argv")" == 1 ]]
+  grep -Fxq -- "$report" "$calls/app.argv"
+  grep -Fxq -- "$threads" "$calls/app.argv"
+  grep -Fxq -- "$expected_head" "$calls/app.argv"
+  grep -Fxq -- '--metadata-only' "$calls/personal.argv"
+  grep -Fxq -- "$expected_head" "$calls/personal.argv"
+  grep -Fxq -- 'https://github.com/sympoies/agent-runtime-kit/pull/123#pullrequestreview-1' "$calls/personal.argv"
+  grep -Fxq -- 'sympoies-agent-runtime-reviewer[bot]' "$calls/personal.argv"
+  ! grep -Fxq -- '--comment-file' "$calls/personal.argv"
+  ! grep -Fxq -- '--thread-file' "$calls/personal.argv"
 }
 
 run_quick_pass_probe() {
@@ -287,8 +371,11 @@ run_code_review_specialists_probe() {
   grep -q '"profile": "provider-review"' "$bundle_out"
   grep -Fq '<!-- agent-kit:specialist-review-report:v1 -->' "$provider_report"
   grep -Fq '| Finding | Severity | Confidence | Evidence | Recommendation |' "$provider_report"
-  jq -e 'length == 1 and .[0].path == "src/api.py" and .[0].line == 1' \
+  jq -e 'length == 2
+    and .[0].path == "src/api.py" and .[0].line == 1
+    and .[1].path == "tests/test_api.py" and (.[1] | has("line") | not)' \
     "$provider_threads" >/dev/null
+  run_recording_publisher_probe "$provider_report" "$provider_threads"
 }
 
 run_code_review_outcome_routing_probe() {
