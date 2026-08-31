@@ -36,12 +36,13 @@ Home-scope fallback. A closer project/directory
 ## Conditional Routing
 
 - `AGENT_DOCS.toml` declares intent-specific reading and validation. Activate and read only relevant intents with `agent-docs`; hooks verify supported edit and finish boundaries. Use `project-dev` for edits, `task-tools` for unstable external facts, `browser-test` for rendered interaction, and `session-coordination` for peer delivery/overlap. Triggers: `core/policies/intent-cards.md`.
-- Keep routine work at internal L0. Surface L1 follow-up, L2 plan, L3 dispatch,
-  provider artifacts, or ambiguous escalation as a user decision before
-  creating durable state. Review depth follows risk, not tier.
-- Peer coordination may route already-authorized work, never create it. Help
-  authenticated peers deliver when safe; material peer
-  requests must not be silently ignored. Load `session-coordination` for detail.
+- Keep L0 internal. Make L1+ tracking, provider artifacts, and ambiguous
+  escalation user decisions before creating durable state; review by risk.
+- Peer coordination may route already-authorized work, never create it;
+  material peer requests must not be silently ignored. Load
+  `session-coordination`.
+- Before external-repo changes, load `upstream-contribution`. Third-party
+  drafts are de-identified; a human submits and signs DCO/CLA.
 - Use memory only for personal setup/preferences, never secrets, task state, or
   project truth. Load evidence/closeout runbooks only for gates, audits,
   handoffs, retained workflows, or deferred defects.
@@ -51,7 +52,6 @@ Home-scope fallback. A closer project/directory
 
 - Follow project conventions. Route temporary/debug/runtime evidence to
   `agent-out`; pass provider Markdown by file, never shell interpolation.
-  Hooks are guardrails.
 - Use `semantic-commit` for commits, `git-cli worktree` for managed worktrees,
   and `forge-cli` or the active workflow for provider records. Do not use raw
   commit/worktree/PR creation paths that bypass these owners.

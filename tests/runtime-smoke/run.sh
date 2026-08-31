@@ -89,8 +89,7 @@ if [ -z "$MODE" ]; then
 fi
 
 case "$MODE" in
-  matrix | install | deterministic | product | convergence)
-    ;;
+  matrix | install | deterministic | product | convergence) ;;
   *)
     echo "runtime-smoke: unsupported mode: $MODE" >&2
     exit 2
@@ -98,8 +97,7 @@ case "$MODE" in
 esac
 
 case "$FORMAT" in
-  text | json)
-    ;;
+  text | json) ;;
   *)
     echo "runtime-smoke: unsupported format: $FORMAT" >&2
     exit 2
@@ -107,8 +105,7 @@ case "$FORMAT" in
 esac
 
 case "$PRODUCT" in
-  "" | codex | claude)
-    ;;
+  "" | codex | claude) ;;
   hermes)
     if [ "$MODE" != convergence ]; then
       echo "runtime-smoke: product hermes is supported only in convergence mode" >&2
@@ -122,8 +119,7 @@ case "$PRODUCT" in
 esac
 
 case "$DOMAIN" in
-  "" | browser | code-review | computer-use | conversation | dispatch | evidence | issue | media | meta | pr | reporting)
-    ;;
+  "" | browser | code-review | computer-use | conversation | dispatch | evidence | issue | media | meta | pr | reporting) ;;
   *)
     echo "runtime-smoke: unsupported domain: $DOMAIN" >&2
     exit 2
@@ -137,15 +133,17 @@ fi
 mkdir -p "$ARTIFACTS_DIR"
 RESULTS_FILE="$ARTIFACTS_DIR/results.tsv"
 
-# Isolate child tools (notably forge-cli) from the operator's ~/.config so
-# user-global config never leaks into probe behaviour. Without this, a host
-# that opts into the forge-cli test-first gate
+# Isolate child tools from the operator's Codex home and ~/.config so live
+# managed roots and user-global config never leak into probe behaviour. Without
+# this, a managed Codex install can make a worktree smoke run reject its source
+# root, while a host that opts into the forge-cli test-first gate
 # ($XDG_CONFIG_HOME/forge-cli/config.toml `[test_first] require = true`) makes
 # the `pr create --kind feature` dry-run probes fail with
 # test_first_evidence_required, even though that config is absent on CI runners.
 # Probes must exercise the documented default surface, not host gate settings.
+export CODEX_HOME="$TMP_ROOT/codex-home"
 export XDG_CONFIG_HOME="$TMP_ROOT/xdg-config"
-mkdir -p "$XDG_CONFIG_HOME"
+mkdir -p "$CODEX_HOME" "$XDG_CONFIG_HOME"
 
 cleanup() {
   if [ "$KEEP_ARTIFACTS" -eq 1 ]; then
@@ -228,8 +226,7 @@ validate_matrix_contract() {
   sed -n 's/^    expected_disposition:[[:space:]]*//p' "$matrix" >"$dispositions"
   while IFS= read -r disposition; do
     case "$disposition" in
-      pass | fail | skip-host-capability | blocked-design)
-        ;;
+      pass | fail | skip-host-capability | blocked-design) ;;
       *)
         echo "runtime-smoke: unknown disposition: $disposition" >&2
         return 1

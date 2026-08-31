@@ -221,6 +221,82 @@ when = "always"
         ):
             self.assertIn(path, required)
 
+    def test_upstream_contribution_route_and_hard_boundaries_are_semantically_owned(
+        self,
+    ) -> None:
+        catalog = tomllib.loads(read("AGENT_DOCS.toml"))
+        entries = [
+            document
+            for document in catalog["document"]
+            if document["path"] == "core/policies/upstream-contribution.md"
+        ]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(
+            {
+                key: entries[0][key]
+                for key in (
+                    "context",
+                    "scope",
+                    "product",
+                    "required",
+                    "when",
+                    "phase",
+                )
+            },
+            {
+                "context": "project-dev",
+                "scope": "home",
+                "product": SHARED_HOME_PRODUCTS,
+                "required": False,
+                "when": "always",
+                "phase": "delivery",
+            },
+        )
+
+        documents = [
+            document
+            for document in preflight("project-dev", phase="delivery")["documents"]
+            if document["path"].endswith("core/policies/upstream-contribution.md")
+        ]
+        self.assertEqual(len(documents), 1)
+        self.assertEqual(documents[0]["scope"], "home")
+        self.assertEqual(documents[0]["phases"], ["delivery"])
+        self.assertFalse(documents[0]["declared_required"])
+        self.assertFalse(documents[0]["required"])
+        self.assertEqual(documents[0]["status"], "present")
+        self.assertTrue(documents[0]["validation"]["valid"])
+
+        for product in HOME_PRODUCTS:
+            rendered = " ".join(
+                read(f"build/{product}/AGENT_HOME.md").split()
+            )
+            self.assertIn("load `upstream-contribution`", rendered)
+            self.assertIn("a human submits and signs DCO/CLA", rendered)
+            self.assertIn("before creating durable state", rendered)
+
+        intent_card = " ".join(read("core/policies/intent-cards.md").split())
+        policy = " ".join(
+            read("core/policies/upstream-contribution.md").split()
+        )
+        for required in (
+            "read `core/policies/upstream-contribution.md` before proposing",
+            "submit a third-party issue or pull request",
+            "sign a DCO or CLA",
+            "publish a security defect",
+            "expose credentials, private content, local paths, internal hosts, "
+            "topology, or identifiers",
+        ):
+            self.assertIn(required.casefold(), intent_card.casefold())
+        for required in (
+            "It must not create the upstream issue, open the upstream pull request, "
+            "or sign a DCO or CLA",
+            "must never become a public issue, pull request, reproduction, or discussion",
+            "Follow the project's `SECURITY.md` private disclosure route",
+            "must not contain credentials, machine-local paths, internal hostnames, "
+            "private topology, private skill contents",
+        ):
+            self.assertIn(required.casefold(), policy.casefold())
+
     def test_review_phase_keeps_evidence_and_codex_only_delegation(self) -> None:
         self.assertEqual(
             required_relative_paths(preflight("project-dev", phase="review")),
@@ -312,6 +388,7 @@ when = "always"
             "plain-text question",
             "blocked-audit contract",
             "stop prematurely",
+            "before creating durable state",
         ):
             self.assertIn(required.casefold(), policy.casefold())
         for retired in (
