@@ -81,6 +81,16 @@ notes = "Conditional durable evidence ownership for review, delivery gates, audi
 
 [[document]]
 context = "project-dev"
+scope = "home"
+path = "core/policies/upstream-contribution.md"
+product = ["codex", "claude", "hermes"]
+required = false
+when = "always"
+phase = "delivery"
+notes = "On-demand policy for changes outside the current repository: downstream-first escalation, third-party draft-only authority, contribution-rule verification, and disclosure controls."
+
+[[document]]
+context = "project-dev"
 scope = "project"
 path = "docs/source/docs-placement-retention-policy-v1.md"
 required = false

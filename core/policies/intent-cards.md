@@ -58,6 +58,23 @@ active, and open a full runbook only for the phase that needs it.
 - **Next**: activate `task-tools`. Runbook — `core/policies/external-facts.md`
   (optional catalog: `core/policies/cli-tools.md`).
 
+## upstream-contribution
+
+- **Trigger**: work hits a limitation that may require a change outside the
+  current repository, proposes an external issue or pull request, or considers
+  sending a downstream patch upstream.
+- **Must**: read `core/policies/upstream-contribution.md` before proposing the
+  external change; apply its only-we-need-it filter and ordered escalation;
+  verify the target project's contribution and security rules; reconstruct
+  public evidence without internal information.
+- **Never**: submit a third-party issue or pull request; sign a DCO or CLA;
+  publish a security defect; expose credentials, private content, local paths,
+  internal hosts, topology, or identifiers.
+- **Next**: activate `project-dev` delivery context, open the upstream policy,
+  and state the escalation rung selected and why. If a third-party draft is
+  justified, hand the de-identified draft and verified requirements to the
+  human maintainer for the submission decision.
+
 ## memory
 
 - **Trigger**: a personal-environment fact — stable setup, preference, or
