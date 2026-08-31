@@ -290,7 +290,7 @@ when = "always"
         ):
             self.assertIn(required, engineering_words)
 
-        self.assertIn("Route generated files to `agent-out`", home_words)
+        self.assertIn("Route temporary/debug/runtime evidence to `agent-out`", home_words)
         self.assertIn("provider Markdown by file", home_words)
 
     def test_home_policy_keeps_hard_boundaries_without_routine_ceremony(self) -> None:

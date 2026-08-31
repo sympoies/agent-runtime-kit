@@ -49,8 +49,9 @@ Home-scope fallback. A closer project/directory
 
 ## Files, Git, And Delivery
 
-- Follow project conventions. Route generated files to `agent-out`; pass
-  provider Markdown by file, never shell interpolation. Hooks are guardrails.
+- Follow project conventions. Route temporary/debug/runtime evidence to
+  `agent-out`; pass provider Markdown by file, never shell interpolation.
+  Hooks are guardrails.
 - Use `semantic-commit` for commits, `git-cli worktree` for managed worktrees,
   and `forge-cli` or the active workflow for provider records. Do not use raw
   commit/worktree/PR creation paths that bypass these owners.
