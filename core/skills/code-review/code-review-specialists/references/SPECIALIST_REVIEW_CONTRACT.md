@@ -15,6 +15,7 @@ Each specialist finding is one JSON object per line:
 {
   "severity": "high",
   "confidence": 0.82,
+  "actionable": true,
   "path": "src/api/users.ts",
   "line": 42,
   "category": "api-contract",
@@ -31,6 +32,7 @@ Required fields:
 
 - `severity`
 - `confidence`
+- `actionable`
 - `path`
 - `summary`
 - `evidence`
@@ -43,6 +45,18 @@ Optional fields:
 - `category`
 - `fingerprint`
 - `test_suggestion`
+
+## Actionability
+
+Every finding must set `actionable` to the JSON boolean `true` or `false`.
+Actionability is independent from severity. Severity describes impact;
+actionability describes whether the owner must change code, tests, docs, or
+configuration in the current delivery. Do not infer one from the other.
+
+An actionable finding (`true`) becomes a native GitHub review thread when the
+provider-review bundle is published on GitHub, so the owning agent can reply
+with repair evidence and resolve that same thread. A non-actionable finding
+(`false`) remains in the summary only and does not create a thread.
 
 ## Severity And Aliases
 

@@ -26,7 +26,10 @@ Scope and intent:
 Output (return as your final message, for the parent to synthesize):
 - A compact verdict: `pass`, `findings`, or `escalate`.
 - Concrete, source-grounded findings: each with a `file:line` anchor, the
-  specific problem, why it matters, and a severity. When no line anchor
+  specific problem, why it matters, a severity, and `actionable` (`true` or `false`).
+  Actionability is independent from severity. Use `true` only when the owner
+  must make a change in this delivery; use `false` for summary-only observations.
+  When no line anchor
   applies, anchor to a command, diff hunk, or supplied evidence.
 - Residual risk is optional: include only a concrete, decision-relevant
   unvalidated boundary. Mark uncertainty as residual risk, not a finding.

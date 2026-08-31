@@ -63,6 +63,9 @@ Outputs:
 - Scope JSON from `review-specialists scope` describing changed files, diff
   size, stack signals, test framework signals, and suggested specialists.
 - Read-only specialist findings with concrete file or evidence anchors.
+- An explicit `actionable: true|false` classification for every finding,
+  independent from severity; actionable GitHub findings are eligible for
+  native review-thread publication by the owning delivery workflow.
 - A final specialist review report using
   `references/SPECIALIST_REVIEW_REPORT_TEMPLATE.md`.
 - Optional `review-evidence` records when retained workflow evidence is needed.
@@ -73,7 +76,8 @@ Failure modes:
 
 - Base ref is missing or does not resolve in the target repository.
 - Specialist output is malformed JSONL, lacks required fields, uses unsupported
-  severity values, or omits evidence anchors.
+  severity values, omits an explicit `actionable` boolean, or omits evidence
+  anchors.
 - Findings lack enough confidence or evidence to support a concrete issue; mark
   them as residual risk instead of presenting them as verified findings.
 - Caller tries to use this read-only workflow as a substitute for provider write

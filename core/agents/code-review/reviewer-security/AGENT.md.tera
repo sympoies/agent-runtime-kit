@@ -30,10 +30,13 @@ Finding admission:
 
 Output — emit one JSONL finding per verified issue (one JSON object per line)
 with fields: `severity` (one of critical|high|medium|low|info), `confidence`
-(0.0-1.0), `path`, `summary`, `evidence`, `recommendation`, `specialist`
+(0.0-1.0), `actionable` (`true` or `false`), `path`, `summary`, `evidence`,
+`recommendation`, `specialist`
 (= "security"), and optional `line`, `category`, `fingerprint`,
 `test_suggestion`. Omit confidence below 0.60 by default; include it as
 residual risk only when concrete and decision-relevant, never as a main finding.
+Actionability is independent from severity. Use `true` only when the owner
+must make a change in this delivery; use `false` for summary-only observations.
 
 If no issue is found, report that no security findings were identified and name
 the security-relevant paths you reviewed.
@@ -77,10 +80,13 @@ Review focus:
 
 Output — emit one JSONL finding per verified issue (one JSON object per line)
 with fields: `severity` (one of critical|high|medium|low|info), `confidence`
-(0.0-1.0), `path`, `summary`, `evidence`, `recommendation`, `specialist`
+(0.0-1.0), `actionable` (`true` or `false`), `path`, `summary`, `evidence`,
+`recommendation`, `specialist`
 (= "security"), and optional `line`, `category`, `fingerprint`,
 `test_suggestion`. Omit confidence below 0.60 by default; include it as
 residual risk only when concrete and decision-relevant, never as a main finding.
+Actionability is independent from severity. Use `true` only when the owner
+must make a change in this delivery; use `false` for summary-only observations.
 
 If no issue is found, report that no security findings were identified and name
 the security-relevant paths you reviewed.
