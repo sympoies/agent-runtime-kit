@@ -272,6 +272,7 @@ when = "always"
             )
             self.assertIn("load `upstream-contribution`", rendered)
             self.assertIn("a human submits and signs DCO/CLA", rendered)
+            self.assertIn("before creating durable state", rendered)
 
         intent_card = " ".join(read("core/policies/intent-cards.md").split())
         policy = " ".join(
@@ -387,6 +388,7 @@ when = "always"
             "plain-text question",
             "blocked-audit contract",
             "stop prematurely",
+            "before creating durable state",
         ):
             self.assertIn(required.casefold(), policy.casefold())
         for retired in (
