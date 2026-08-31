@@ -208,6 +208,7 @@ bash scripts/ci/skill-governance-audit.sh --fixture exposure-contract
 bash scripts/ci/skill-governance-audit.sh --fixture create
 bash scripts/ci/skill-governance-audit.sh --fixture remove
 bash tests/skill-exposure-contract/run.sh
+python3 tests/ci/test_devlog.py
 
 # -----------------------------------------------------------------------------
 # Position 3 — render home prompts and codex

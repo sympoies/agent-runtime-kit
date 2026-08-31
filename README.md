@@ -146,6 +146,10 @@ Documentation placement changes can load
 which remains canonical but is optional `project-dev` context rather than
 required reading for every edit.
 
+Notable implementation history is retained in the
+[`development log`](docs/source/devlog/README.md). It is a curated narrative,
+not a substitute for current policy, architecture, or maintenance guidance.
+
 The full local validation gate is:
 
 ```bash
@@ -176,6 +180,7 @@ and coupled nils-cli debug-build guidance.
 ├── manifests/           # machine-checkable runtime inventory
 ├── docs/
 │   ├── source/          # architecture, policies, specs, and references
+│   │   └── devlog/      # retained monthly implementation narrative
 │   ├── plans/           # plan bundles and retained execution records
 │   └── discussions/     # captured discussion / implementation-readiness specs
 ├── build/               # generated render output
@@ -229,6 +234,7 @@ repo is the active project.
 
 - [`DEVELOPMENT.md`](DEVELOPMENT.md): setup, validation gates, and release boundary.
 - [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md): per-surface ship state and acceptance lanes.
+- [`docs/source/devlog/README.md`](docs/source/devlog/README.md): notable implementation history.
 - [`docs/source/macos-agent-bootstrap-prompt.md`](docs/source/macos-agent-bootstrap-prompt.md):
   copyable macOS agent prompt for clean zsh-kit / agent-runtime-kit setup.
 - [`core/skills/README.md`](core/skills/README.md): skill catalog by category and series.
