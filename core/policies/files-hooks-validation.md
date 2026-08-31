@@ -49,6 +49,11 @@ runbooks and CLIs.
 - Put temporary/debug artifacts in a project-owned output path or an
   `agent-out project --topic <topic> --mkdir` directory outside the repository.
   Never commit runtime evidence, receipts, credentials, logs, or caches.
+- Write provider-visible Markdown to an artifact file and pass it through the
+  provider command's file-backed option, such as `forge-cli ... --body-file`.
+  Never interpolate Markdown into an inline shell argument: backticks trigger
+  command substitution and metacharacters such as redirection are processed
+  before the provider CLI can validate the payload.
 - Inspect provider, container, stack, and environment objects with narrow field
   projections. Treat auth, token, password, key, secret, config, and environment
   fields as sensitive; prefer presence, count, length, or shape checks over
