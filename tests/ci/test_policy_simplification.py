@@ -268,6 +268,32 @@ when = "always"
             browser,
         )
 
+    def test_generated_artifacts_stay_outside_active_checkouts(self) -> None:
+        browser = read("core/policies/browser-test-routing.md")
+        engineering = read("core/policies/files-hooks-validation.md")
+        home = read("AGENT_HOME.md")
+        browser_words = " ".join(browser.split())
+        engineering_words = " ".join(engineering.split())
+        home_words = " ".join(home.split())
+
+        for required in (
+            "outside the repository",
+            "When using Playwright MCP",
+            "--output-dir",
+            "relative screenshot",
+        ):
+            self.assertIn(required, browser_words)
+
+        for required in (
+            "provider-visible Markdown",
+            "--body-file",
+            "command substitution",
+        ):
+            self.assertIn(required, engineering_words)
+
+        self.assertIn("Route temporary/debug/runtime evidence to `agent-out`", home_words)
+        self.assertIn("provider Markdown by file", home_words)
+
     def test_home_policy_keeps_hard_boundaries_without_routine_ceremony(self) -> None:
         policy = read("AGENT_HOME.md")
 
