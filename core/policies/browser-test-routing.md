@@ -37,11 +37,11 @@ browser window is never proof of rendered DOM state.
    chosen route.
 3. Use ordinary test output for a routine claim. Before launching a browser
    surface that can emit files, allocate one parent-owned artifact directory
-   outside the repository. Configure Playwright MCP with
-   `--output-dir <artifact-directory>` and give screenshot, trace, log, and
-   report tools absolute paths inside that directory. Never leave a relative
-   screenshot path or a tool-default output directory pointed at the active
-   checkout. A repository-owned browser fixture is the only exception.
+   outside the repository. When using Playwright MCP, configure it with
+   `--output-dir <artifact-directory>`. Give the selected screenshot, trace,
+   log, and report tools absolute paths inside that directory. Never leave a
+   relative screenshot path or a tool-default output directory pointed at the
+   active checkout. A repository-owned browser fixture is the only exception.
 4. Initialize `browser-session` only when a durable record is required, then
    execute the browser, Playwright, HTTP, or desktop path. Record only
    meaningful actions and assertions; link screenshots, traces, logs, or HTTP

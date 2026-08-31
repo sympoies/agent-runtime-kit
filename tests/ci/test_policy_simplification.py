@@ -278,6 +278,7 @@ when = "always"
 
         for required in (
             "outside the repository",
+            "When using Playwright MCP",
             "--output-dir",
             "relative screenshot",
         ):
