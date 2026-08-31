@@ -181,6 +181,7 @@ write_findings() {
   cat >"$findings" <<'JSONL'
 {"severity":"HIGH","confidence":0.82,"path":"src/api.py","line":1,"category":"api-contract","summary":"Runtime smoke finding.","evidence":"Fixture evidence anchors the changed API file.","recommendation":"Keep the fixture stable.","specialist":"api-contract","test_suggestion":"Keep a focused smoke test.","actionable":true}
 {"severity":"MEDIUM","confidence":0.78,"path":"tests/test_api.py","category":"testing","summary":"Runtime smoke file finding.","evidence":"Fixture evidence anchors a file-level test concern.","recommendation":"Keep the file-level fixture stable.","specialist":"testing","test_suggestion":"Keep a file-level smoke test.","actionable":true}
+{"severity":"LOW","confidence":0.91,"path":"README.md","category":"testing","summary":"Runtime smoke report-only finding.","evidence":"Fixture evidence anchors a non-actionable informational note.","recommendation":"Keep this finding in the report without opening a thread.","specialist":"testing","fingerprint":"runtime-smoke-report-only-finding","test_suggestion":"Keep the actionability routing assertion.","actionable":false}
 JSONL
 }
 
@@ -419,9 +420,20 @@ run_code_review_specialists_probe() {
   grep -q '"profile": "provider-review"' "$bundle_out"
   grep -Fq '<!-- agent-kit:specialist-review-report:v1 -->' "$provider_report"
   grep -Fq '| Finding | Severity | Confidence | Evidence | Recommendation |' "$provider_report"
+  grep -Fq 'Runtime smoke finding.' "$provider_report"
+  grep -Fq 'Runtime smoke file finding.' "$provider_report"
+  grep -Fq 'Runtime smoke report-only finding.' "$provider_report"
   jq -e 'length == 2
     and .[0].path == "src/api.py" and .[0].line == 1
     and .[1].path == "tests/test_api.py" and (.[1] | has("line") | not)' \
+    "$provider_threads" >/dev/null
+  jq -e 'tostring
+    | (contains("runtime-smoke-report-only-finding")
+      or contains("README.md")
+      or contains("Runtime smoke report-only finding.")
+      or contains("Fixture evidence anchors a non-actionable informational note.")
+      or contains("Keep this finding in the report without opening a thread."))
+    | not' \
     "$provider_threads" >/dev/null
   run_recording_publisher_probe "$provider_report" "$provider_threads"
 }
