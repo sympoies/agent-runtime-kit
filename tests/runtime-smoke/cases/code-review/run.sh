@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deterministic probes for code review workflow skills.
-# shellcheck disable=SC2016,SC2329
+# shellcheck disable=SC2016,SC2251,SC2317,SC2329
 
 set -euo pipefail
 
@@ -46,6 +46,47 @@ run_testing_specialist_contract_probe() {
     grep -Fiq 'deterministic fixtures' "$path"
     grep -Fiq 'residual gaps' "$path"
   done
+}
+
+run_reviewer_actionability_contract_probe() {
+  local contract="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_CONTRACT.md"
+  local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
+  local agent_name
+  local golden
+  local product
+  local rendered
+  local reviewer
+
+  grep -Fq -- '- `actionable`' "$contract"
+  grep -Fq 'Actionability is independent from severity.' "$contract"
+  grep -Fq 'native GitHub review thread' "$contract"
+  grep -Fq 'omits an explicit `actionable` boolean' "$skill"
+
+  for reviewer in "$REPO_ROOT"/core/agents/code-review/reviewer-*/AGENT.md.tera; do
+    grep -Fq '`actionable` (`true` or `false`)' "$reviewer"
+    grep -Fq 'Actionability is independent from severity.' "$reviewer"
+    agent_name="$(basename "$(dirname "$reviewer")")"
+    for product in codex claude; do
+      case "$product" in
+        codex)
+          rendered="$REPO_ROOT/build/$product/agents/$agent_name.toml"
+          golden="$REPO_ROOT/tests/golden/$product/agents/expected/$agent_name.toml"
+          ;;
+        claude)
+          rendered="$REPO_ROOT/build/$product/agents/$agent_name.md"
+          golden="$REPO_ROOT/tests/golden/$product/agents/expected/$agent_name.md"
+          ;;
+      esac
+      test -s "$rendered"
+      test -s "$golden"
+      cmp -s "$rendered" "$golden"
+      grep -Fq '`actionable` (`true` or `false`)' "$rendered"
+      grep -Fq 'Actionability is independent from severity.' "$rendered"
+    done
+  done
+
+  rendered_contract_assert_all_contain code-review code-review-specialists 'actionable: true|false'
+  rendered_contract_assert_reference code-review code-review-specialists references/SPECIALIST_REVIEW_CONTRACT.md
 }
 
 run_codex_reviewer_profile_contract_probe() {
@@ -107,8 +148,8 @@ run_portable_review_identity_contract_probe() {
   done
   grep -Fq -- '--decision comments-only' "$gate"
 
-  if sed -n '29,125p' "$REPO_ROOT/docs/source/nils-cli-surface.md" \
-    | grep -Eq 'is the compatibility minimum|remains the compatibility minimum|minimum stays where it is'; then
+  if sed -n '29,125p' "$REPO_ROOT/docs/source/nils-cli-surface.md" |
+    grep -Eq 'is the compatibility minimum|remains the compatibility minimum|minimum stays where it is'; then
     echo 'runtime-smoke code-review: historical nils entries claim a current compatibility minimum' >&2
     return 1
   fi
@@ -474,6 +515,7 @@ run_review_convergence_contract_probe() {
 
 failures=0
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
+record_case "code-review.outcome-routing.actionability-contract" "every reviewer finding explicitly classifies actionability for native thread publication" run_reviewer_actionability_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
