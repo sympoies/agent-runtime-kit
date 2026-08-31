@@ -36,7 +36,7 @@ if [ ! -e "${files[0]}" ]; then
   exit 1
 fi
 
-if ! grep -n -i -F -- "$term" "${files[@]}"; then
+if ! grep -n -i -F -- "$term" "${files[@]+"${files[@]}"}"; then
   echo "(no matches for '$term')" >&2
   exit 1
 fi
