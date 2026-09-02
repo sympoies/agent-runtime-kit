@@ -367,7 +367,13 @@ when = "always"
         ):
             self.assertIn(required, engineering_words)
 
-        self.assertIn("Route temporary/debug/runtime evidence to `agent-out`", home_words)
+        # `agent-out` is a command, not a directory. The always-on home prompt
+        # must not leave that ambiguous: an agent that reads it as a directory
+        # hand-builds `./agent-out/<topic>` inside the checkout (#90).
+        self.assertIn(
+            "Allocate temporary/debug/runtime evidence with `agent-out project`",
+            home_words,
+        )
         self.assertIn("provider Markdown by file", home_words)
 
     def test_home_policy_keeps_hard_boundaries_without_routine_ceremony(self) -> None:

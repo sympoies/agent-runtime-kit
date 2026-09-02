@@ -48,7 +48,13 @@ runbooks and CLIs.
   or clearly reusable.
 - Put temporary/debug artifacts in a project-owned output path or an
   `agent-out project --topic <topic> --mkdir` directory outside the repository.
-  Never commit runtime evidence, receipts, credentials, logs, or caches.
+  Never commit runtime evidence, receipts, credentials, logs, or caches. Never
+  create an `agent-out` directory: the command owns the path, and a directory
+  by that name is always a misroute.
+- A checkout's `.cache/` is not scratch space. Only `.cache/agent-validation/`
+  is repo-local by design, holding the validation marker each repository
+  declares in `AGENT_DOCS.toml`; route everything else to the allocated
+  artifact directory.
 - Write provider-visible Markdown to an artifact file and pass it through the
   provider command's file-backed option, such as `forge-cli ... --body-file`.
   Never interpolate Markdown into an inline shell argument: backticks trigger

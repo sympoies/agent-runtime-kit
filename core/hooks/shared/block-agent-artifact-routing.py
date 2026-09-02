@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""PreToolUse hook: keep agent artifacts on the allocated route.
+
+`agent-out` is the CLI that allocates a per-project run directory outside the
+checkout. It is not a directory name. Agents that read the routing rule as a
+directory hand-build `./agent-out/<topic>` in the checkout, or an `agent-out/`
+tree under the state or home root, which leaks artifacts into checkouts and
+splits the artifact tree across roots (sympoies/agent-runtime-kit#90).
+
+Repo-local `.cache/` picks up the same spillover. `.cache/agent-validation/` is
+the declared `agent-docs` validation marker root and stays allowed; everything
+else under a checkout's `.cache/` is scratch that belongs on the allocated
+route.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+# Codex may execute hooks through a source symlink; keep the checkout clean.
+sys.dont_write_bytecode = True
+
+from hook_common import (
+    ALLOW,
+    bash_copy_style_write_targets,
+    bash_path_creation_targets,
+    bash_write_operations,
+    command_from,
+    effective_workdir,
+    emit_block,
+    file_paths_from_payload,
+    git_toplevel,
+    read_payload,
+    tool_input_dict,
+)
+
+FORBIDDEN_SEGMENT = "agent-out"
+CACHE_SEGMENT = ".cache"
+CACHE_MARKER_SEGMENT = "agent-validation"
+
+ALLOCATION_ROUTE = """Allocate one, then write inside the path it prints:
+  agent-out project --topic <topic> --mkdir --format json
+  -> result.path, under the product state home's out/projects/<slug>/<run-id>/
+
+Do not hand-build that path and never create an `agent-out` directory:
+`agent-out` is the command that owns the path, not the directory name.
+Owner: core/policies/files-hooks-validation.md"""
+
+AGENT_OUT_REASON = f"""[agent-artifact-routing] Blocked write to an `agent-out` directory: {{path}}
+Agent artifacts must live outside the checkout, in an allocated run directory.
+
+{ALLOCATION_ROUTE}"""
+
+CACHE_REASON = f"""[agent-artifact-routing] Blocked scratch write to repo-local `.cache/`: {{path}}
+Only `.cache/agent-validation/` is repo-local by design; it holds the
+agent-docs validation marker declared in AGENT_DOCS.toml. Other scratch
+belongs on the allocated artifact route.
+
+{ALLOCATION_ROUTE}"""
+
+
+def candidate_paths(payload: dict) -> list[str]:
+    paths = file_paths_from_payload(payload)
+    # `file_paths_from_payload` does not model `notebook_path`, and NotebookEdit
+    # is a registered matcher for this rule. Sibling handlers read the key
+    # locally for the same reason.
+    notebook_path = tool_input_dict(payload).get("notebook_path")
+    if isinstance(notebook_path, str) and notebook_path:
+        paths.append(notebook_path)
+    if str(payload.get("tool_name", "")) == "Bash":
+        command = command_from(payload)
+        paths.extend(path for path, _content in bash_write_operations(command))
+        paths.extend(bash_copy_style_write_targets(command))
+        # A guard that owns *where a directory may exist* must see the commands
+        # that bring one into existence, not only those that write into it.
+        paths.extend(bash_path_creation_targets(command))
+    return paths
+
+
+def normalized(path: str, workdir: Path) -> Path:
+    expanded = os.path.expanduser(path.replace("\\", "/"))
+    candidate = Path(expanded)
+    if not candidate.is_absolute():
+        candidate = workdir / candidate
+    return Path(os.path.normpath(str(candidate)))
+
+
+def physical(path: Path) -> Path:
+    """Resolve existing components, leaving a not-yet-created tail intact.
+
+    Two distinct reasons, not only symlinked aliases into the guarded tree:
+    `git rev-parse --show-toplevel` reports the physical root, while the
+    command context reports the logical workdir, so a checkout reached through
+    a symlink would make the `.cache` comparison fail to relate two spellings
+    of the same directory and silently stop enforcing.
+    """
+    try:
+        return Path(os.path.realpath(str(path)))
+    except OSError:
+        return path
+
+
+def is_agent_out_path(path: Path) -> bool:
+    return FORBIDDEN_SEGMENT in path.parts
+
+
+def repo_local_cache_scratch(path: Path, repo_root: Path | None) -> bool:
+    """True for a checkout's `.cache/` write outside the marker subtree.
+
+    The XDG cache is not a checkout, so the rule is scoped to the repository
+    root rather than matching a bare `.cache` segment anywhere.
+    """
+    if repo_root is None:
+        return False
+    cache_root = repo_root / CACHE_SEGMENT
+    try:
+        relative = path.relative_to(cache_root)
+    except ValueError:
+        return False
+    if not relative.parts:
+        # The container itself, not scratch inside it. The sanctioned marker
+        # lives under it, so blocking its creation while allowing its child is
+        # incoherent.
+        return False
+    return relative.parts[:1] != (CACHE_MARKER_SEGMENT,)
+
+
+def main() -> int:
+    payload = read_payload()
+    paths = candidate_paths(payload)
+    if not paths:
+        return ALLOW
+
+    workdir = effective_workdir(payload)
+    # Each candidate is judged in both spellings: the lexical path the command
+    # named, and the physical path it actually reaches. A symlinked alias
+    # resolves into the guarded tree only in the latter.
+    lexical = [normalized(path, workdir) for path in paths]
+    resolved = [physical(path) for path in lexical]
+
+    for named, target in zip(lexical, resolved):
+        if is_agent_out_path(named) or is_agent_out_path(target):
+            emit_block(AGENT_OUT_REASON.format(path=named))
+            return ALLOW
+
+    # Only pay for the repository lookup when a `.cache` write is in play.
+    if not any(
+        CACHE_SEGMENT in path.parts for path in (*lexical, *resolved)
+    ):
+        return ALLOW
+
+    toplevel = git_toplevel(str(workdir))
+    repo_root = physical(Path(toplevel)) if toplevel else None
+    for path in resolved:
+        if repo_local_cache_scratch(path, repo_root):
+            emit_block(CACHE_REASON.format(path=path))
+            return ALLOW
+
+    return ALLOW
+
+
+if __name__ == "__main__":
+    sys.exit(main())

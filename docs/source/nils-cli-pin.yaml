@@ -18,18 +18,20 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # v1.27.16 is the first stable release that ships the exact-base forge
-  # delivery contract and guarded persistent integration-branch sync surface.
-  minimum_supported_tag: "v1.27.27"
+  # v1.27.35 is the first stable release whose compiled runtime-kit.handler.v1
+  # allowlist admits `block-agent-artifact-routing`. Below it this repository's
+  # policy bundle fails to load at all (`handler-id-unsupported`), so the floor
+  # is a hard compatibility retirement, not ordinary uptake.
+  minimum_supported_tag: "v1.27.35"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.27.29"
+  validated_tag: "v1.27.35"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "4a169d28032ace8e6d696c9385e3096dbea6e5e1ea17c492b9b0f4094f8b5f21"
-    linux_arm64: "cd5f6910af6416255caad7877b24735028e5d396bb2f0ec9ad639b5f6f7daf5a"
+    linux_amd64: "307870095c881d57a6b705bf09b546095c6de3bfc8d63b2228fb9e6aab3e8e37"
+    linux_arm64: "d238c8159ac6a8236e234097db0a81735dfe397e591f30b175e3a5630456c345"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -38,8 +40,8 @@ nils_cli:
 # consumed surface each binary must satisfy. Values track the
 # surface-introduction versions recorded in docs/source/nils-cli-surface.md.
 required_clis:
-  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
-    min: "1.26.4"
+  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation + block-agent-artifact-routing in the compiled runtime-kit.handler.v1 allowlist
+    min: "1.27.35"
   - bin: plan-issue       # tracking controller + execution-state sync/writeback + review evidence context gate + provider payload privacy gate + lifecycle mutation lock + unified terminal closeout rows
     min: "1.1.0"
   - bin: plan-tooling     # ledger-update / ledger-sync + exec-state-sync repair
