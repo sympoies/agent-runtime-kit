@@ -27326,6 +27326,49 @@ exit 66
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "agent-out")
 
+    def test_artifact_routing_follows_symlinks_into_the_guarded_tree(self) -> None:
+        """A lexical check alone reads the name, not the destination.
+
+        Two distinct failures, both real: an alias whose name is innocent but
+        which resolves into `agent-out`, and a checkout reached through a
+        symlink, where `git rev-parse --show-toplevel` reports the physical
+        root while the workdir is logical -- so the `.cache` comparison would
+        fail to relate two spellings of one directory and stop enforcing.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            (repo / "agent-out").mkdir()
+            (repo / "notes").symlink_to(repo / "agent-out")
+
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(repo / "notes" / "leaked.md")},
+                },
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "agent-out")
+
+            alias = Path(tmp) / "alias"
+            alias.symlink_to(repo)
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("echo scratch > .cache/i62.txt"),
+                cwd=alias,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, ".cache")
+
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("touch .cache/agent-validation/project-dev.ok"),
+                cwd=alias,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
     def test_artifact_routing_names_the_allocation_command_in_the_block(self) -> None:
         """A block must tell the agent the exact route, not just the rule.
 

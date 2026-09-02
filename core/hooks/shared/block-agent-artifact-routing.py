@@ -87,6 +87,21 @@ def normalized(path: str, workdir: Path) -> Path:
     return Path(os.path.normpath(str(candidate)))
 
 
+def physical(path: Path) -> Path:
+    """Resolve existing components, leaving a not-yet-created tail intact.
+
+    Two distinct reasons, not only symlinked aliases into the guarded tree:
+    `git rev-parse --show-toplevel` reports the physical root, while the
+    command context reports the logical workdir, so a checkout reached through
+    a symlink would make the `.cache` comparison fail to relate two spellings
+    of the same directory and silently stop enforcing.
+    """
+    try:
+        return Path(os.path.realpath(str(path)))
+    except OSError:
+        return path
+
+
 def is_agent_out_path(path: Path) -> bool:
     return FORBIDDEN_SEGMENT in path.parts
 
@@ -119,19 +134,25 @@ def main() -> int:
         return ALLOW
 
     workdir = effective_workdir(payload)
-    resolved = [normalized(path, workdir) for path in paths]
+    # Each candidate is judged in both spellings: the lexical path the command
+    # named, and the physical path it actually reaches. A symlinked alias
+    # resolves into the guarded tree only in the latter.
+    lexical = [normalized(path, workdir) for path in paths]
+    resolved = [physical(path) for path in lexical]
 
-    for path in resolved:
-        if is_agent_out_path(path):
-            emit_block(AGENT_OUT_REASON.format(path=path))
+    for named, target in zip(lexical, resolved):
+        if is_agent_out_path(named) or is_agent_out_path(target):
+            emit_block(AGENT_OUT_REASON.format(path=named))
             return ALLOW
 
     # Only pay for the repository lookup when a `.cache` write is in play.
-    if not any(CACHE_SEGMENT in path.parts for path in resolved):
+    if not any(
+        CACHE_SEGMENT in path.parts for path in (*lexical, *resolved)
+    ):
         return ALLOW
 
     toplevel = git_toplevel(str(workdir))
-    repo_root = Path(toplevel) if toplevel else None
+    repo_root = physical(Path(toplevel)) if toplevel else None
     for path in resolved:
         if repo_local_cache_scratch(path, repo_root):
             emit_block(CACHE_REASON.format(path=path))
