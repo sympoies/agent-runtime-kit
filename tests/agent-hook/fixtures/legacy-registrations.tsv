@@ -13,6 +13,7 @@ codex	PreToolUse	Bash	portable-paths-scan
 codex	PreToolUse	Bash	block-direct-pr-create
 codex	PreToolUse	Bash	forge-label-reminder
 codex	PreToolUse	Bash	finish-line-record
+codex	PreToolUse	Bash	block-agent-artifact-routing
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	block-project-memory-write
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	memory-write-principle-reminder
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	mcp-secret-scan
@@ -21,6 +22,7 @@ codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	agent-scope-lock-guard
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	pre-edit-intent-gate
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	checkout-lease-guard
 codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	finish-line-record
+codex	PreToolUse	Write|Edit|NotebookEdit|apply_patch	block-agent-artifact-routing
 codex	UserPromptSubmit	-	user-prompt-agent-docs
 codex	UserPromptSubmit	-	checkout-lease-guard
 codex	UserPromptSubmit	-	skill-usage-reminder
@@ -52,6 +54,7 @@ claude	PreToolUse	Bash	block-project-memory-write
 claude	PreToolUse	Bash	memory-write-principle-reminder
 claude	PreToolUse	Bash	portable-paths-scan
 claude	PreToolUse	Bash	finish-line-record
+claude	PreToolUse	Bash	block-agent-artifact-routing
 claude	PreToolUse	Write|Edit|NotebookEdit	mcp-secret-scan
 claude	PreToolUse	Write|Edit|NotebookEdit	block-project-memory-write
 claude	PreToolUse	Write|Edit|NotebookEdit	memory-write-principle-reminder
@@ -60,9 +63,11 @@ claude	PreToolUse	Write|Edit|NotebookEdit	portable-paths-scan
 claude	PreToolUse	Write|Edit|NotebookEdit	pre-edit-intent-gate
 claude	PreToolUse	Write|Edit|NotebookEdit	checkout-lease-guard
 claude	PreToolUse	Write|Edit|NotebookEdit	finish-line-record
+claude	PreToolUse	Write|Edit|NotebookEdit	block-agent-artifact-routing
 claude	PreToolUse	MultiEdit	block-project-memory-write
 claude	PreToolUse	MultiEdit	memory-write-principle-reminder
 claude	PreToolUse	MultiEdit	agent-scope-lock-guard
 claude	PreToolUse	MultiEdit	pre-edit-intent-gate
 claude	PreToolUse	MultiEdit	checkout-lease-guard
 claude	PreToolUse	MultiEdit	finish-line-record
+claude	PreToolUse	MultiEdit	block-agent-artifact-routing

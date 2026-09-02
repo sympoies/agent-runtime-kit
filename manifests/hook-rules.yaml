@@ -1,8 +1,8 @@
 {
   "schema_version": "agent-runtime-kit.hook-rules.v1",
   "policy_bundle": "core/policies/agent-hook/runtime-kit-v1.toml",
-  "legacy_handler_count": 21,
-  "legacy_registration_count": 67,
+  "legacy_handler_count": 22,
+  "legacy_registration_count": 72,
   "rules": [
     {
       "id": "runtime.shared.pre-tool-use.bash.read-only-shadow",
@@ -396,6 +396,32 @@
       "legacy_handler": "finish-line-record"
     },
     {
+      "id": "runtime.codex.pre-tool-use.bash.block-agent-artifact-routing",
+      "products": [
+        "codex"
+      ],
+      "events": [
+        "PreToolUse"
+      ],
+      "matcher": "Bash",
+      "capability": {
+        "id": "runtime-kit.handler.v1",
+        "handler_id": "block-agent-artifact-routing"
+      },
+      "mode": "enforce",
+      "priority": 240,
+      "failure_posture": "closed",
+      "timeout_posture": "warn",
+      "override_class": "locked",
+      "state_owner": "none",
+      "transformation": "block",
+      "recovery": "exact-capability-only",
+      "docs": "core/policies/files-hooks-validation.md",
+      "test_owner": "tests/hooks/test_shared_hooks.py",
+      "disposition": "typed-capability",
+      "legacy_handler": "block-agent-artifact-routing"
+    },
+    {
       "id": "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.block-project-memory-write",
       "products": [
         "codex"
@@ -602,6 +628,32 @@
       "test_owner": "tests/hooks/test_shared_hooks.py",
       "disposition": "typed-capability",
       "legacy_handler": "finish-line-record"
+    },
+    {
+      "id": "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.block-agent-artifact-routing",
+      "products": [
+        "codex"
+      ],
+      "events": [
+        "PreToolUse"
+      ],
+      "matcher": "Write|Edit|NotebookEdit|apply_patch",
+      "capability": {
+        "id": "runtime-kit.handler.v1",
+        "handler_id": "block-agent-artifact-routing"
+      },
+      "mode": "enforce",
+      "priority": 180,
+      "failure_posture": "closed",
+      "timeout_posture": "warn",
+      "override_class": "locked",
+      "state_owner": "none",
+      "transformation": "block",
+      "recovery": "exact-capability-only",
+      "docs": "core/policies/files-hooks-validation.md",
+      "test_owner": "tests/hooks/test_shared_hooks.py",
+      "disposition": "typed-capability",
+      "legacy_handler": "block-agent-artifact-routing"
     },
     {
       "id": "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs",
@@ -1462,6 +1514,32 @@
       "legacy_handler": "finish-line-record"
     },
     {
+      "id": "runtime.claude.pre-tool-use.bash.block-agent-artifact-routing",
+      "products": [
+        "claude"
+      ],
+      "events": [
+        "PreToolUse"
+      ],
+      "matcher": "Bash",
+      "capability": {
+        "id": "runtime-kit.handler.v1",
+        "handler_id": "block-agent-artifact-routing"
+      },
+      "mode": "enforce",
+      "priority": 250,
+      "failure_posture": "closed",
+      "timeout_posture": "warn",
+      "override_class": "locked",
+      "state_owner": "none",
+      "transformation": "block",
+      "recovery": "exact-capability-only",
+      "docs": "core/policies/files-hooks-validation.md",
+      "test_owner": "tests/hooks/test_shared_hooks.py",
+      "disposition": "typed-capability",
+      "legacy_handler": "block-agent-artifact-routing"
+    },
+    {
       "id": "runtime.claude.pre-tool-use.write-edit-notebook-edit.mcp-secret-scan",
       "products": [
         "claude"
@@ -1670,6 +1748,32 @@
       "legacy_handler": "finish-line-record"
     },
     {
+      "id": "runtime.claude.pre-tool-use.write-edit-notebook-edit.block-agent-artifact-routing",
+      "products": [
+        "claude"
+      ],
+      "events": [
+        "PreToolUse"
+      ],
+      "matcher": "Write|Edit|NotebookEdit",
+      "capability": {
+        "id": "runtime-kit.handler.v1",
+        "handler_id": "block-agent-artifact-routing"
+      },
+      "mode": "enforce",
+      "priority": 180,
+      "failure_posture": "closed",
+      "timeout_posture": "warn",
+      "override_class": "locked",
+      "state_owner": "none",
+      "transformation": "block",
+      "recovery": "exact-capability-only",
+      "docs": "core/policies/files-hooks-validation.md",
+      "test_owner": "tests/hooks/test_shared_hooks.py",
+      "disposition": "typed-capability",
+      "legacy_handler": "block-agent-artifact-routing"
+    },
+    {
       "id": "runtime.claude.pre-tool-use.multi-edit.block-project-memory-write",
       "products": [
         "claude"
@@ -1824,6 +1928,32 @@
       "test_owner": "tests/hooks/test_shared_hooks.py",
       "disposition": "typed-capability",
       "legacy_handler": "finish-line-record"
+    },
+    {
+      "id": "runtime.claude.pre-tool-use.multi-edit.block-agent-artifact-routing",
+      "products": [
+        "claude"
+      ],
+      "events": [
+        "PreToolUse"
+      ],
+      "matcher": "MultiEdit",
+      "capability": {
+        "id": "runtime-kit.handler.v1",
+        "handler_id": "block-agent-artifact-routing"
+      },
+      "mode": "enforce",
+      "priority": 160,
+      "failure_posture": "closed",
+      "timeout_posture": "warn",
+      "override_class": "locked",
+      "state_owner": "none",
+      "transformation": "block",
+      "recovery": "exact-capability-only",
+      "docs": "core/policies/files-hooks-validation.md",
+      "test_owner": "tests/hooks/test_shared_hooks.py",
+      "disposition": "typed-capability",
+      "legacy_handler": "block-agent-artifact-routing"
     },
     {
       "id": "coord.activity.prompt-stop",

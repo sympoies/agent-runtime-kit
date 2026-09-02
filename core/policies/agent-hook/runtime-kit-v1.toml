@@ -182,6 +182,18 @@ override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
 [[rules]]
+id = "runtime.codex.pre-tool-use.bash.block-agent-artifact-routing"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 240
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "warn"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-agent-artifact-routing" }
+
+[[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.block-project-memory-write"
 products = ["codex"]
 events = ["PreToolUse"]
@@ -276,6 +288,18 @@ failure_posture = "closed"
 timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.block-agent-artifact-routing"
+products = ["codex"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit|apply_patch"
+priority = 180
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "warn"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-agent-artifact-routing" }
 
 [[rules]]
 id = "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs"
@@ -660,6 +684,18 @@ override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
 [[rules]]
+id = "runtime.claude.pre-tool-use.bash.block-agent-artifact-routing"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Bash"
+priority = 250
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "warn"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-agent-artifact-routing" }
+
+[[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.mcp-secret-scan"
 products = ["claude"]
 events = ["PreToolUse"]
@@ -756,6 +792,18 @@ override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
 
 [[rules]]
+id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.block-agent-artifact-routing"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "Write|Edit|NotebookEdit"
+priority = 180
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "warn"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-agent-artifact-routing" }
+
+[[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.block-project-memory-write"
 products = ["claude"]
 events = ["PreToolUse"]
@@ -826,6 +874,18 @@ failure_posture = "closed"
 timeout_posture = "effect_gated"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" }
+
+[[rules]]
+id = "runtime.claude.pre-tool-use.multi-edit.block-agent-artifact-routing"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "MultiEdit"
+priority = 160
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "warn"
+override_class = "locked"
+capability = { id = "runtime-kit.handler.v1", handler_id = "block-agent-artifact-routing" }
 
 [[rules]]
 id = "coord.activity.prompt-stop"

@@ -27224,6 +27224,197 @@ exit 66
             self.assertFalse(hook_common.is_managed_cli_home_bin(str(other_bin)))
             self.assertEqual(hook_common.managed_cli_home_bin(), str(home_bin))
 
+    # ---- block-agent-artifact-routing (issue #90) ---------------------------
+    #
+    # `agent-out` is a command that allocates a run directory outside the
+    # checkout; it is never a directory name. Writes to any `agent-out` path
+    # segment, and repo-local `.cache/` scratch outside the sanctioned
+    # `agent-validation` marker subtree, are blocked with an actionable route.
+
+    ARTIFACT_ROUTING_HOOK = "block-agent-artifact-routing.py"
+
+    def _artifact_routing_repo(self, tmp: str) -> Path:
+        repo = Path(tmp) / "repo"
+        (repo / ".cache" / "agent-validation").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        return repo
+
+    def test_artifact_routing_blocks_repo_local_agent_out_bash_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for command in (
+                "echo notes > agent-out/progress.md",
+                "cat > agent-out/progress.md <<'EOF'\nnotes\nEOF",
+                "mkdir -p agent-out/topic && cp /tmp/source agent-out/topic",
+                "cp /tmp/source agent-out/",
+                "cd agent-out && echo notes > progress.md",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_blocks_every_known_wrong_agent_out_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for path in (
+                "/home/example/.local/state/agent-runtime-kit/agent-out/topic/x.json",
+                "~/agent-out/x.txt",
+                "/home/example/.local/state/agent-out/x.txt",
+                str(repo / "agent-out" / "x.txt"),
+            ):
+                with self.subTest(path=path):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        {"tool_name": "Write", "tool_input": {"file_path": path}},
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_names_the_allocation_command_in_the_block(self) -> None:
+        """A block must tell the agent the exact route, not just the rule.
+
+        Issue #90: the recurrence cause was an agent that knew a directory name
+        but not the command that owns it. The message also has to close off the
+        adjacent wrong answer -- hand-building `$AGENT_HOME/out/<topic>`.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("echo notes > agent-out/progress.md"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            reason = str(decision.get("reason", ""))
+            self.assertIn("agent-out project --topic", reason)
+            self.assertIn("--mkdir", reason)
+            self.assertIn("$AGENT_HOME/out/projects/", reason)
+            self.assertIn("Do not hand-build", reason)
+            self.assertIn("core/policies/files-hooks-validation.md", reason)
+
+    def test_artifact_routing_allows_canonical_allocated_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for path in (
+                "/home/example/.local/state/agent-runtime-kit/out/projects/"
+                "sympoies__agent-runtime-kit/20260902-195921-topic/notes.md",
+                # `agent-out` as a filename fragment is not a path segment.
+                "/home/example/.local/state/agent-runtime-kit/out/agent-out-plan.json",
+                "core/hooks/shared/block-agent-artifact-routing.py",
+            ):
+                with self.subTest(path=path):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        {"tool_name": "Write", "tool_input": {"file_path": path}},
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_artifact_routing_blocks_repo_local_cache_scratch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for command in (
+                "echo scratch > .cache/i62.txt",
+                "cd .cache && echo scratch > i62.txt",
+                "cp /tmp/source .cache/tmp",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, ".cache")
+
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(repo / ".cache" / "scratch.txt")},
+                },
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, ".cache")
+
+    def test_artifact_routing_allows_the_agent_validation_marker_subtree(self) -> None:
+        """`.cache/agent-validation/` is the declared agent-docs marker root.
+
+        `AGENT_DOCS.toml` owns it (`marker = ".cache/agent-validation/*.ok"`),
+        the finish-line gate reads it, and it is legitimately repo-local.
+        Blocking it would break the validation contract it exists to record.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for command in (
+                "touch .cache/agent-validation/project-dev.ok",
+                "echo x > .cache/agent-validation/session-abc/project-dev.dirty",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_artifact_routing_leaves_non_repo_cache_paths_alone(self) -> None:
+        """The XDG cache is not a checkout; only repo-local `.cache/` is scoped."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for path in ("~/.cache/pip/wheel", "/home/example/.cache/whatever"):
+                with self.subTest(path=path):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        {"tool_name": "Write", "tool_input": {"file_path": path}},
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_artifact_routing_cache_rule_needs_a_repo_to_scope_against(self) -> None:
+        """Outside a checkout there is no repo-local `.cache` to protect."""
+        with tempfile.TemporaryDirectory() as tmp:
+            plain = Path(tmp) / "plain"
+            (plain / ".cache").mkdir(parents=True)
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("echo scratch > .cache/i62.txt"),
+                cwd=plain,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_artifact_routing_ignores_read_only_and_unrelated_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            for command in (
+                "ls agent-out",
+                "cat agent-out/progress.md",
+                "agent-out project --topic release-notes --mkdir",
+                "grep -rn agent-out core/policies",
+                "printf '%s\\n' 'agent-out/progress.md'",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
 
 def _collect_test_names() -> list[str]:
     loader = unittest.TestLoader()
