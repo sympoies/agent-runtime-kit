@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
-"""Scan active docs and skill docs for machine-local home paths."""
+"""Path policy for tool calls: portable doc paths, and agent artifact routing.
+
+Two checks share this handler because a dispatch group has a hard
+executable-capability budget and the Bash group was already at it. They are
+carried together deliberately, not incidentally: both are path policy, and both
+carry the same rule posture (`failure_posture = closed`, `timeout_posture =
+warn`, `override_class = locked`), which is what a single rule can express.
+
+- Portable paths: active repo docs and skill docs must not commit
+  machine-local home paths. Also runs as a CLI over tracked/staged files.
+- Artifact routing: writes must not land in an `agent-out` directory or in
+  repo-local `.cache/` scratch outside the sanctioned marker subtree
+  (sympoies/agent-runtime-kit#90). Hook mode only.
+
+`SKIP_PORTABLE_PATH_SCAN` is an escape hatch for portable-path false positives.
+It deliberately does NOT disable artifact routing: an escape hatch must not
+silently switch off a guard it was never meant to cover.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +34,7 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    artifact_routing_block_reason,
     bash_write_operations,
     command_from,
     emit_block,
@@ -233,8 +251,17 @@ def hook_contents_to_scan(payload: dict[str, Any]) -> list[tuple[str, str]]:
     return contents
 
 
-def run_hook_mode() -> int:
-    payload = read_payload()
+def run_hook_mode(payload: dict[str, Any], *, skip_portable_paths: bool) -> int:
+    # Artifact routing runs first and is not covered by the portable-paths
+    # escape hatch; the two checks only share a process, not a switch.
+    reason = artifact_routing_block_reason(payload)
+    if reason is not None:
+        emit_block(reason)
+        return ALLOW
+
+    if skip_portable_paths:
+        return ALLOW
+
     hits: list[Hit] = []
     for file_path, content in hook_contents_to_scan(payload):
         hits.extend(scan_content(file_path, content))
@@ -338,13 +365,16 @@ def run_paths_mode(paths: list[str]) -> int:
 
 
 def main() -> int:
-    if os.environ.get("SKIP_PORTABLE_PATH_SCAN") == "1":
-        if len(sys.argv) > 1:
-            print("[skipped:portable-paths]", file=sys.stderr)
-        return 0
+    skip_portable_paths = os.environ.get("SKIP_PORTABLE_PATH_SCAN") == "1"
 
+    # Hook mode is entered before the escape hatch can short-circuit, because
+    # artifact routing is not what that hatch exists to waive.
     if len(sys.argv) == 1:
-        return run_hook_mode()
+        return run_hook_mode(read_payload(), skip_portable_paths=skip_portable_paths)
+
+    if skip_portable_paths:
+        print("[skipped:portable-paths]", file=sys.stderr)
+        return 0
 
     parser = argparse.ArgumentParser(
         description="Scan active docs and skill docs for machine-local home paths.",

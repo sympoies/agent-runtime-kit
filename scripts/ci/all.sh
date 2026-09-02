@@ -413,6 +413,12 @@ bash tests/projects/project-local-smoke/run.sh
 banner 13 "agent-hook policy + shared hook contract smoke"
 bash tests/agent-hook/run.sh
 bash tests/hooks/run.sh
+# The executable-capability budget is a per-dispatch-group cap compiled into
+# the released binary. A group at the cap accepts another rule everywhere else
+# -- policy valid, manifests consistent, unit tests green, sync dry run clean --
+# and then fails every tool call at runtime. Probe the real binary so the cliff
+# is a build failure instead of a broken developer machine (#90).
+python3 tests/ci/test_hook_dispatch_budget.py
 
 # -----------------------------------------------------------------------------
 # Position 14 — version-baseline mirror consistency (deterministic, no network)

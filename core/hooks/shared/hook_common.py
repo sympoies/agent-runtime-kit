@@ -4162,3 +4162,143 @@ def touch_marker(path: str) -> bool:
             except OSError:
                 pass
         return False
+
+
+# --- agent artifact routing ------------------------------------------------
+#
+# `agent-out` is the CLI that allocates a per-project run directory outside the
+# checkout. It is not a directory name. Agents that read the routing rule as a
+# directory hand-build `./agent-out/<topic>` in the checkout, or an `agent-out/`
+# tree under the state or home root, which leaks artifacts into checkouts and
+# splits the artifact tree across roots (sympoies/agent-runtime-kit#90).
+#
+# Repo-local `.cache/` picks up the same spillover. `.cache/agent-validation/`
+# is the declared `agent-docs` validation marker root and stays allowed;
+# everything else under a checkout's `.cache/` is scratch that belongs on the
+# allocated route.
+#
+# This lives here rather than in its own handler because a dispatch group has a
+# hard executable-capability budget, and the Bash group was already at it. It is
+# carried by `portable-paths-scan`, whose posture (closed/warn/locked) and
+# domain (path policy) both match.
+
+ARTIFACT_FORBIDDEN_SEGMENT = "agent-out"
+ARTIFACT_CACHE_SEGMENT = ".cache"
+ARTIFACT_CACHE_MARKER_SEGMENT = "agent-validation"
+
+_ARTIFACT_ALLOCATION_ROUTE = """Allocate one, then write inside the path it prints:
+  agent-out project --topic <topic> --mkdir --format json
+  -> result.path, under the product state home's out/projects/<slug>/<run-id>/
+
+Do not hand-build that path and never create an `agent-out` directory:
+`agent-out` is the command that owns the path, not the directory name.
+Owner: core/policies/files-hooks-validation.md"""
+
+ARTIFACT_AGENT_OUT_REASON = f"""[agent-artifact-routing] Blocked write to an `agent-out` directory: {{path}}
+Agent artifacts must live outside the checkout, in an allocated run directory.
+
+{_ARTIFACT_ALLOCATION_ROUTE}"""
+
+ARTIFACT_CACHE_REASON = f"""[agent-artifact-routing] Blocked scratch write to repo-local `.cache/`: {{path}}
+Only `.cache/agent-validation/` is repo-local by design; it holds the
+agent-docs validation marker declared in AGENT_DOCS.toml. Other scratch
+belongs on the allocated artifact route.
+
+{_ARTIFACT_ALLOCATION_ROUTE}"""
+
+
+def artifact_candidate_paths(payload: Mapping[str, Any]) -> list[str]:
+    paths = file_paths_from_payload(payload)
+    # `file_paths_from_payload` does not model `notebook_path`, and NotebookEdit
+    # is a registered matcher. Sibling handlers read the key locally too.
+    notebook_path = tool_input_dict(payload).get("notebook_path")
+    if isinstance(notebook_path, str) and notebook_path:
+        paths.append(notebook_path)
+    if str(payload.get("tool_name", "")) == "Bash":
+        command = command_from(payload)
+        paths.extend(path for path, _content in bash_write_operations(command))
+        paths.extend(bash_copy_style_write_targets(command))
+        # A guard that owns *where a directory may exist* must see the commands
+        # that bring one into existence, not only those that write into it.
+        paths.extend(bash_path_creation_targets(command))
+    return paths
+
+
+def artifact_normalized(path: str, workdir: Path) -> Path:
+    expanded = os.path.expanduser(path.replace("\\", "/"))
+    candidate = Path(expanded)
+    if not candidate.is_absolute():
+        candidate = workdir / candidate
+    return Path(os.path.normpath(str(candidate)))
+
+
+def artifact_physical(path: Path) -> Path:
+    """Resolve existing components, leaving a not-yet-created tail intact.
+
+    Two distinct reasons, not only symlinked aliases into the guarded tree:
+    `git rev-parse --show-toplevel` reports the physical root, while the
+    command context reports the logical workdir, so a checkout reached through
+    a symlink would make the `.cache` comparison fail to relate two spellings
+    of the same directory and silently stop enforcing.
+    """
+    try:
+        return Path(os.path.realpath(str(path)))
+    except OSError:
+        return path
+
+
+def is_agent_out_path(path: Path) -> bool:
+    return ARTIFACT_FORBIDDEN_SEGMENT in path.parts
+
+
+def repo_local_cache_scratch(path: Path, repo_root: Path | None) -> bool:
+    """True for a checkout's `.cache/` write outside the marker subtree.
+
+    The XDG cache is not a checkout, so the rule is scoped to the repository
+    root rather than matching a bare `.cache` segment anywhere.
+    """
+    if repo_root is None:
+        return False
+    cache_root = repo_root / ARTIFACT_CACHE_SEGMENT
+    try:
+        relative = path.relative_to(cache_root)
+    except ValueError:
+        return False
+    if not relative.parts:
+        # The container itself, not scratch inside it. The sanctioned marker
+        # lives under it, so blocking its creation while allowing its child is
+        # incoherent.
+        return False
+    return relative.parts[:1] != (ARTIFACT_CACHE_MARKER_SEGMENT,)
+
+
+def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
+    """Return the block reason for a misrouted artifact write, else None."""
+    paths = artifact_candidate_paths(payload)
+    if not paths:
+        return None
+
+    workdir = effective_workdir(payload)
+    # Each candidate is judged in both spellings: the lexical path the command
+    # named, and the physical path it actually reaches. A symlinked alias
+    # resolves into the guarded tree only in the latter.
+    lexical = [artifact_normalized(path, workdir) for path in paths]
+    resolved = [artifact_physical(path) for path in lexical]
+
+    for named, target in zip(lexical, resolved):
+        if is_agent_out_path(named) or is_agent_out_path(target):
+            return ARTIFACT_AGENT_OUT_REASON.format(path=named)
+
+    # Only pay for the repository lookup when a `.cache` write is in play.
+    if not any(
+        ARTIFACT_CACHE_SEGMENT in path.parts for path in (*lexical, *resolved)
+    ):
+        return None
+
+    toplevel = git_toplevel(str(workdir))
+    repo_root = artifact_physical(Path(toplevel)) if toplevel else None
+    for path in resolved:
+        if repo_local_cache_scratch(path, repo_root):
+            return ARTIFACT_CACHE_REASON.format(path=path)
+
+    return None
