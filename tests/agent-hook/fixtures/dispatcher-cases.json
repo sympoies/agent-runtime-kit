@@ -6,14 +6,14 @@
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "Bash",
-      "shadow_rule_count": 19
+      "shadow_rule_count": 20
     },
     {
       "product": "codex",
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "Write",
-      "shadow_rule_count": 12
+      "shadow_rule_count": 13
     },
     {
       "product": "codex",
@@ -41,21 +41,21 @@
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "Bash",
-      "shadow_rule_count": 20
+      "shadow_rule_count": 21
     },
     {
       "product": "claude",
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "Write",
-      "shadow_rule_count": 12
+      "shadow_rule_count": 13
     },
     {
       "product": "claude",
       "event": "PreToolUse",
       "matcher_field": "tool_name",
       "matcher": "MultiEdit",
-      "shadow_rule_count": 10
+      "shadow_rule_count": 11
     },
     {
       "product": "claude",

@@ -1,31 +1,40 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-08-31 (refreshed for `v1.27.29`)
+- Snapshot date: 2026-09-02 (refreshed for `v1.27.35`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.29`
+- Active `git describe --tags` output: `v1.27.35`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.27`,
-  `validated_tag: v1.27.29`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.35`,
+  `validated_tag: v1.27.35`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `e6f50a34`
-  (`chore(release): bump cli versions to 1.27.29`)
+- Head commit: `bf80fae0`
+  (`feat(agent-hook): admit block-agent-artifact-routing to the v1 allowlist`)
 - Release:
-  [`v1.27.29`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.29),
+  [`v1.27.35`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.35),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.29` is the validated release while `v1.27.27` remains the
-  compatibility minimum. Its delivery-mode specialist merge rejects findings
-  that omit an explicit `actionable` boolean while the advisory path remains
-  backward compatible; normalized actionable and report-only findings retain
-  their classification through provider report and native-thread routing
-  ([#1582](https://github.com/sympoies/nils-cli/pull/1582)). This validates the
-  reviewer contract now emitted by runtime-kit without retiring the existing
-  compatibility floor or moving any `required_clis[]` floor.
-- `v1.27.27` was the previous validated release and remains the compatibility
-  minimum. It provides
+- `v1.27.35` is both the validated release and the compatibility minimum. It is
+  the first release whose compiled `runtime-kit.handler.v1` allowlist admits
+  `block-agent-artifact-routing`
+  ([#1599](https://github.com/sympoies/nils-cli/pull/1599)), the handler that
+  keeps agent artifacts out of checkouts. Runtime-kit registers a policy rule
+  using that handler ID, so a host below this release cannot load the policy
+  bundle at all — `agent-hook dispatch` fails `handler-id-unsupported`, verified
+  by running `tests/agent-hook/run.sh` under `release:v1.27.27`. This adoption
+  therefore explicitly retires the `v1.27.27` floor, moves the retained minimum
+  digests to `v1.27.35`, and raises the `agent-hook` per-binary floor to
+  `>=1.27.35`. Minimum and validated coincide at this release.
+- `v1.27.29` was the previous validated release. Its delivery-mode specialist
+  merge rejects findings that omit an explicit `actionable` boolean while the
+  advisory path remains backward compatible; normalized actionable and
+  report-only findings retain their classification through provider report and
+  native-thread routing
+  ([#1582](https://github.com/sympoies/nils-cli/pull/1582)).
+- `v1.27.27` was the previous compatibility minimum, retired by this adoption.
+  It provides
   one canonical five-column provider-review renderer,
   native actionable diff-thread payloads, and a metadata-only personal review
   projection ([#1567](https://github.com/sympoies/nils-cli/pull/1567)); it also

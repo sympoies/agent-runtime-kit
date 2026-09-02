@@ -27296,9 +27296,12 @@ exit 66
             reason = str(decision.get("reason", ""))
             self.assertIn("agent-out project --topic", reason)
             self.assertIn("--mkdir", reason)
-            self.assertIn("$AGENT_HOME/out/projects/", reason)
+            self.assertIn("out/projects/", reason)
             self.assertIn("Do not hand-build", reason)
             self.assertIn("core/policies/files-hooks-validation.md", reason)
+            # The retired `$AGENT_HOME` anchor must not come back through a
+            # block message; audit-drift's agent-home-leak class owns this.
+            self.assertNotIn("$AGENT_HOME", reason)
 
     def test_artifact_routing_allows_canonical_allocated_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

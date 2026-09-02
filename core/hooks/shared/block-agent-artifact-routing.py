@@ -3,9 +3,9 @@
 
 `agent-out` is the CLI that allocates a per-project run directory outside the
 checkout. It is not a directory name. Agents that read the routing rule as a
-directory hand-build `./agent-out/<topic>`, `$AGENT_HOME/agent-out/<topic>`, or
-`~/agent-out/<topic>` instead, which leaks artifacts into checkouts and splits
-the artifact tree across roots (sympoies/agent-runtime-kit#90).
+directory hand-build `./agent-out/<topic>` in the checkout, or an `agent-out/`
+tree under the state or home root, which leaks artifacts into checkouts and
+splits the artifact tree across roots (sympoies/agent-runtime-kit#90).
 
 Repo-local `.cache/` picks up the same spillover. `.cache/agent-validation/` is
 the declared `agent-docs` validation marker root and stays allowed; everything
@@ -38,11 +38,11 @@ FORBIDDEN_SEGMENT = "agent-out"
 CACHE_SEGMENT = ".cache"
 CACHE_MARKER_SEGMENT = "agent-validation"
 
-ALLOCATION_ROUTE = """Allocate one, then write inside the returned path:
+ALLOCATION_ROUTE = """Allocate one, then write inside the path it prints:
   agent-out project --topic <topic> --mkdir --format json
-  -> $AGENT_HOME/out/projects/<owner>__<repo>/<YYYYMMDD-HHMMSS-topic>/
+  -> result.path, under the product state home's out/projects/<slug>/<run-id>/
 
-Do not hand-build $AGENT_HOME/out/<topic> or $AGENT_HOME/agent-out/<topic>;
+Do not hand-build that path and never create an `agent-out` directory:
 `agent-out` is the command that owns the path, not the directory name.
 Owner: core/policies/files-hooks-validation.md"""
 

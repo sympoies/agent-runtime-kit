@@ -127,31 +127,34 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.27")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.29")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.35")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.35")
         self.assertNotIn("pinned_tag:", manifest)
-        # Ordinary validated uptake leaves the retained compatibility lane
-        # and its archive digests unchanged.
+        # v1.27.35 retired the previous v1.27.27 floor: it is the first release
+        # whose compiled runtime-kit.handler.v1 allowlist admits
+        # `block-agent-artifact-routing`, and below it this repository's policy
+        # bundle does not load at all. Minimum and validated therefore coincide,
+        # and both lanes carry the same archive digests.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "4a169d28032ace8e6d696c9385e3096dbea6e5e1ea17c492b9b0f4094f8b5f21",
+            "307870095c881d57a6b705bf09b546095c6de3bfc8d63b2228fb9e6aab3e8e37",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "cd5f6910af6416255caad7877b24735028e5d396bb2f0ec9ad639b5f6f7daf5a",
+            "d238c8159ac6a8236e234097db0a81735dfe397e591f30b175e3a5630456c345",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.27"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.35"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "8c9fc05c37a575e639265ad11608312723d81f8cbaca19452824d995deeee2df",
+            "307870095c881d57a6b705bf09b546095c6de3bfc8d63b2228fb9e6aab3e8e37",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "db3146dd3863e243f05636912ed15f1835a80c587982f91573e66df761714cda",
+            "d238c8159ac6a8236e234097db0a81735dfe397e591f30b175e3a5630456c345",
         )
         required_entries = manifest_data["required_clis"]
         required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
@@ -162,7 +165,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["forge-cli"], "1.27.27")
         self.assertEqual(required_clis["review-specialists"], "1.27.27")
         self.assertEqual(required_clis["git-cli"], "1.27.16")
-        self.assertEqual(required_clis["agent-hook"], "1.26.4")
+        self.assertEqual(required_clis["agent-hook"], "1.27.35")
         self.assertEqual(required_clis["agent-memory"], "1.26.4")
         minimum = tuple(
             int(part)
@@ -301,7 +304,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.27.29", "v1.28.0"):
+        for candidate in ("v1.27.35", "v1.28.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -673,7 +676,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.27.29", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.27.35", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(
