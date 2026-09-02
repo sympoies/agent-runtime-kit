@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every dispatch group must stay inside the agent-hook executable budget.
+"""PreToolUse dispatch groups must stay inside the agent-hook executable budget.
 
 `agent-hook` caps how many executable capabilities one dispatch may fan out to
 (`dispatch-child-budget-exceeded`). The cap is per `(product, event, matcher)`
@@ -36,6 +36,13 @@ BUDGET_ERROR = "dispatch-child-budget-exceeded"
 
 # Matchers a real session drives constantly. A group that cannot dispatch here
 # is a group whose product is unusable.
+#
+# Scope is deliberately PreToolUse tool matchers. The UserPromptSubmit, Stop and
+# SessionStart groups carry far fewer executable rules and are nowhere near the
+# cap; extend this list if that stops being true. NotebookEdit and apply_patch
+# are omitted because a bare probe payload cannot satisfy their provider target
+# checks -- and since a non-budget outcome now fails this gate rather than
+# passing it, including them would make the gate red for the wrong reason.
 PROBES: tuple[tuple[str, str], ...] = (
     ("codex", "Bash"),
     ("codex", "Write"),
@@ -49,6 +56,11 @@ PROBES: tuple[tuple[str, str], ...] = (
 
 
 def agent_hook() -> str | None:
+    # Honor the same override the sibling agent-hook suite uses, so a CI that
+    # supplies the binary off-PATH runs this gate instead of skipping it.
+    override = os.environ.get("AGENT_HOOK_BIN", "").strip()
+    if override:
+        return override
     return shutil.which("agent-hook")
 
 
@@ -62,13 +74,13 @@ class HookDispatchBudgetTest(unittest.TestCase):
         root = Path(self.tmp.name)
         policy = root / "policy.toml"
         policy.write_bytes(POLICY.read_bytes())
-        digest = "sha256:" + hashlib.sha256(policy.read_bytes()).hexdigest()
+        self.digest = "sha256:" + hashlib.sha256(policy.read_bytes()).hexdigest()
         self.config = root / "config.toml"
         self.config.write_text(
             'schema_version = "agent-hook.config.v1"\n\n'
             "[policy]\n"
             f'path = "{policy}"\n'
-            f'digest = "{digest}"\n',
+            f'digest = "{self.digest}"\n',
             encoding="utf-8",
         )
         self.state = root / "state"
@@ -76,7 +88,7 @@ class HookDispatchBudgetTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def dispatch(self, product: str, tool: str) -> dict:
+    def dispatch(self, product: str, tool: str, *, config: Path | None = None) -> dict:
         payload = {
             "hook_event_name": "PreToolUse",
             "tool_name": tool,
@@ -87,7 +99,7 @@ class HookDispatchBudgetTest(unittest.TestCase):
             [
                 self.binary,
                 "--config",
-                str(self.config),
+                str(config or self.config),
                 "--state-dir",
                 str(self.state),
                 "dispatch",
@@ -111,14 +123,37 @@ class HookDispatchBudgetTest(unittest.TestCase):
                 f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
             )
 
+    def classify(self, envelope: dict) -> str:
+        """`ok`, the budget error, or any other outcome -- never silently green.
+
+        A probe that fails before the budget is evaluated proves nothing. If
+        such an outcome counted as a pass, this gate would be indistinguishable
+        from no gate at exactly the moment it matters.
+        """
+        if envelope.get("ok") is True:
+            return "ok"
+        code = (envelope.get("error") or {}).get("code") or "unknown"
+        return code
+
     def test_no_dispatch_group_exceeds_the_executable_budget(self) -> None:
         over: list[str] = []
+        unreached: list[str] = []
         for product, tool in PROBES:
             with self.subTest(product=product, tool=tool):
-                envelope = self.dispatch(product, tool)
-                code = (envelope.get("error") or {}).get("code")
-                if code == BUDGET_ERROR:
+                outcome = self.classify(self.dispatch(product, tool))
+                if outcome == BUDGET_ERROR:
                     over.append(f"{product}/{tool}")
+                elif outcome != "ok":
+                    unreached.append(f"{product}/{tool}={outcome}")
+
+        self.assertEqual(
+            unreached,
+            [],
+            "probe(s) never reached budget evaluation, so this gate proved "
+            f"nothing for them: {', '.join(unreached)}.\n"
+            "Fix the probe rather than accepting the pass: a non-budget "
+            "dispatch error here means the gate is vacuous.",
+        )
         self.assertEqual(
             over,
             [],
@@ -129,6 +164,29 @@ class HookDispatchBudgetTest(unittest.TestCase):
             "(matching its posture and domain), or remove a rule from it. "
             "Raising the cap is an upstream nils-cli change and costs a child "
             "process on every tool call in that group.",
+        )
+
+    def test_gate_fails_when_the_probe_cannot_reach_budget_evaluation(self) -> None:
+        """A broken probe must be loud, not green.
+
+        Pins the masking bug this gate shipped with: `dispatch` returned valid
+        JSON carrying a non-budget error, every probe was counted green, and
+        the budget was never evaluated.
+        """
+        broken = Path(self.tmp.name) / "broken-config.toml"
+        broken.write_text(
+            self.config.read_text(encoding="utf-8").replace(
+                self.digest, "sha256:" + "0" * 64
+            ),
+            encoding="utf-8",
+        )
+        outcome = self.classify(self.dispatch("claude", "Bash", config=broken))
+        self.assertNotEqual(outcome, "ok")
+        self.assertNotEqual(
+            outcome,
+            BUDGET_ERROR,
+            "the corrupted-config probe must fail for its own reason, not the "
+            "budget error, or this self-test proves nothing",
         )
 
 
