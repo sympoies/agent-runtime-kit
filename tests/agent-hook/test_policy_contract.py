@@ -28,7 +28,6 @@ LEGACY_REGISTRATIONS = (
 
 EXPECTED_HANDLERS = {
     "agent-scope-lock-guard",
-    "block-agent-artifact-routing",
     "block-claude-coauthor-trailer",
     "block-direct-git-commit",
     "block-direct-git-worktree",
@@ -53,10 +52,10 @@ EXPECTED_HANDLERS = {
 
 EXPECTED_EVENT_COUNTS = {
     "codex": Counter(
-        {"PreToolUse": 24, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
+        {"PreToolUse": 22, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
     ),
     "claude": Counter(
-        {"PreToolUse": 32, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
+        {"PreToolUse": 30, "UserPromptSubmit": 3, "Stop": 4, "SessionStart": 1}
     ),
 }
 
@@ -241,7 +240,7 @@ def load_inventory() -> dict[str, Any]:
 class AgentHookPolicyContractTests(unittest.TestCase):
     def test_baseline_inventory_is_complete_and_exact(self) -> None:
         registrations = frozen_legacy_registrations()
-        self.assertEqual(len(registrations), 72)
+        self.assertEqual(len(registrations), 68)
         self.assertEqual({row[3] for row in registrations}, EXPECTED_HANDLERS)
         for product in ("codex", "claude"):
             event_counts = Counter(row[1] for row in registrations if row[0] == product)
@@ -251,8 +250,8 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             product: {row[3] for row in registrations if row[0] == product}
             for product in ("codex", "claude")
         }
-        self.assertEqual(len(product_handlers["codex"]), 21)
-        self.assertEqual(len(product_handlers["claude"]), 22)
+        self.assertEqual(len(product_handlers["codex"]), 20)
+        self.assertEqual(len(product_handlers["claude"]), 21)
         self.assertEqual(
             product_handlers["codex"] - product_handlers["claude"],
             set(),
@@ -418,12 +417,12 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         )
         self.assertEqual(inventory["schema_version"], "agent-runtime-kit.hook-rules.v1")
         self.assertEqual(inventory["policy_bundle"], "core/policies/agent-hook/runtime-kit-v1.toml")
-        self.assertEqual(inventory["legacy_handler_count"], 22)
-        self.assertEqual(inventory["legacy_registration_count"], 72)
+        self.assertEqual(inventory["legacy_handler_count"], 21)
+        self.assertEqual(inventory["legacy_registration_count"], 68)
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
-        self.assertEqual(len(rules), 106)
+        self.assertEqual(len(rules), 102)
         ids = [rule["id"] for rule in rules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate inventory rule id")
         for rule in rules:

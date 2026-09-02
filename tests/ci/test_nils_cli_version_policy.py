@@ -130,11 +130,13 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.35")
         self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.27.35")
         self.assertNotIn("pinned_tag:", manifest)
-        # v1.27.35 retired the previous v1.27.27 floor: it is the first release
-        # whose compiled runtime-kit.handler.v1 allowlist admits
-        # `block-agent-artifact-routing`, and below it this repository's policy
-        # bundle does not load at all. Minimum and validated therefore coincide,
-        # and both lanes carry the same archive digests.
+        # v1.27.35 retired the previous v1.27.27 floor to admit the
+        # `block-agent-artifact-routing` handler id. That handler was since
+        # consolidated into `portable-paths-scan`, so the id no longer appears in
+        # the policy bundle and no longer justifies the floor by itself. The pin
+        # stays put deliberately: lowering a compatibility floor needs its own
+        # below-minimum evidence, not a hook refactor's side effect. Minimum and
+        # validated coincide, and both lanes carry the same archive digests.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
             "307870095c881d57a6b705bf09b546095c6de3bfc8d63b2228fb9e6aab3e8e37",

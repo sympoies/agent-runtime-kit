@@ -26124,6 +26124,22 @@ exit 65
         )
 
     def test_claude_multiedit_hooks_exclude_content_only_scanners(self) -> None:
+        """MultiEdit carries its content in `edits[]`, not at the top level.
+
+        A scanner that only reads `content`/`new_string` sees nothing there, so
+        registering one costs a process spawn and inspects an empty string.
+        `mcp-secret-scan` is still exactly that and stays excluded.
+
+        `portable-paths-scan` is no longer content-only: it also carries agent
+        artifact routing, which reads `file_path` -- a key MultiEdit does have,
+        and the reason MultiEdit needs this handler at all.
+
+        Its content half is *narrowed* on MultiEdit, not absent:
+        `proposed_content` returns "" here, but `patch_text_candidates` still
+        recurses into `edits[]`, so embedded apply-patch text can raise a
+        portable-path hit. `test_portable_paths_on_multiedit_scans_only_patch_text`
+        pins both sides of that boundary.
+        """
         multiedit = [
             rule
             for rule in inventory_rules(product="claude", event="PreToolUse")
@@ -26132,7 +26148,7 @@ exit 65
         self.assertTrue(multiedit)
         handlers = {rule["legacy_handler"] for rule in multiedit}
         self.assertNotIn("mcp-secret-scan", handlers)
-        self.assertNotIn("portable-paths-scan", handlers)
+        self.assertIn("portable-paths-scan", handlers)
 
     def test_provider_fragments_defer_path_resolution_to_agent_hook(self) -> None:
         codex_block = (REPO_ROOT / "targets" / "codex" / "hooks" / "config.block.toml").read_text(
@@ -27224,14 +27240,105 @@ exit 66
             self.assertFalse(hook_common.is_managed_cli_home_bin(str(other_bin)))
             self.assertEqual(hook_common.managed_cli_home_bin(), str(home_bin))
 
-    # ---- block-agent-artifact-routing (issue #90) ---------------------------
+    # ---- agent artifact routing (issue #90) ---------------------------------
     #
     # `agent-out` is a command that allocates a run directory outside the
     # checkout; it is never a directory name. Writes to any `agent-out` path
     # segment, and repo-local `.cache/` scratch outside the sanctioned
     # `agent-validation` marker subtree, are blocked with an actionable route.
+    #
+    # The check is carried by `portable-paths-scan` rather than its own handler:
+    # a dispatch group has a hard executable-capability budget and the Bash
+    # group was already at it. The two share posture and domain, which is what
+    # makes one rule able to express both.
 
-    ARTIFACT_ROUTING_HOOK = "block-agent-artifact-routing.py"
+    ARTIFACT_ROUTING_HOOK = "portable-paths-scan.py"
+
+    def test_portable_paths_on_multiedit_scans_only_patch_text(self) -> None:
+        """Registering this handler on MultiEdit made one more path reachable.
+
+        `proposed_content` returns "" for MultiEdit, so an ordinary edit raises
+        no portable-path hit. `patch_text_candidates` still recurses into
+        `edits[]` though, so embedded apply-patch text does. Both sides are
+        asserted because the registration is new here and the boundary was
+        previously described in a comment rather than owned by a test.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+
+            code, decision, stderr = run_hook(
+                "portable-paths-scan.py",
+                {
+                    "tool_name": "MultiEdit",
+                    "tool_input": {
+                        "file_path": "docs/source/y.md",
+                        "edits": [
+                            {
+                                "old_string": "a",
+                                "new_string": "/Users/example/project/notes",
+                            }
+                        ],
+                    },
+                },
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "portable-paths-scan.py",
+                {
+                    "tool_name": "MultiEdit",
+                    "tool_input": {
+                        "file_path": "src/main.py",
+                        "edits": [
+                            {
+                                "old_string": "a",
+                                "new_string": (
+                                    "*** Add File: docs/source/y.md\n"
+                                    "+/Users/example/project/notes\n"
+                                    "*** End Patch"
+                                ),
+                            }
+                        ],
+                    },
+                },
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "portable-paths")
+
+    def test_artifact_routing_is_not_waived_by_the_portable_paths_hatch(self) -> None:
+        """`SKIP_PORTABLE_PATH_SCAN` waives portable paths, not artifact routing.
+
+        The two checks share a process for budget reasons only. An escape hatch
+        documented for portable-path false positives must not silently switch
+        off a guard it was never meant to cover.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            env = {"SKIP_PORTABLE_PATH_SCAN": "1"}
+
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("echo notes > agent-out/progress.md"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "agent-out")
+
+            # The hatch still does what it exists for.
+            code, decision, stderr = run_hook(
+                "portable-paths-scan.py",
+                command_payload(
+                    "printf '/Users/example/project\\n' > docs/example.md"
+                ),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
 
     def _artifact_routing_repo(self, tmp: str) -> Path:
         repo = Path(tmp) / "repo"
@@ -27404,7 +27511,7 @@ exit 66
                 "sympoies__agent-runtime-kit/20260902-195921-topic/notes.md",
                 # `agent-out` as a filename fragment is not a path segment.
                 "/home/example/.local/state/agent-runtime-kit/out/agent-out-plan.json",
-                "core/hooks/shared/block-agent-artifact-routing.py",
+                "core/hooks/shared/portable-paths-scan.py",
             ):
                 with self.subTest(path=path):
                     code, decision, stderr = run_hook(
