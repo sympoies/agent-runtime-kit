@@ -27379,6 +27379,8 @@ exit 66
                 "echo scratch > .cache/i62.txt",
                 "cd .cache && echo scratch > i62.txt",
                 "cp /tmp/source .cache/tmp",
+                "mkdir -p .cache/scratch",
+                "touch .cache/i62.txt",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -27412,6 +27414,11 @@ exit 66
             for command in (
                 "touch .cache/agent-validation/project-dev.ok",
                 "echo x > .cache/agent-validation/session-abc/project-dev.dirty",
+                "mkdir -p .cache/agent-validation/session-abc",
+                # The container itself. Blocking its creation while allowing
+                # the marker beneath it would be incoherent, and the documented
+                # bootstrap creates both levels at once.
+                "mkdir -p .cache",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -27458,6 +27465,17 @@ exit 66
                 "agent-out project --topic release-notes --mkdir",
                 "grep -rn agent-out core/policies",
                 "printf '%s\\n' 'agent-out/progress.md'",
+                # Ordinary creation must stay allowed: the guard owns one
+                # directory name, not directory creation in general.
+                "mkdir -p build",
+                "touch README.md",
+                "mkdir -p ~/.cache/foo",
+                "mkdir -p node_modules/.cache",
+                # `-r` takes a value, so an `agent-out` reference file is a
+                # flag argument, not a creation target. This is the assertion
+                # that catches a flag-parsing regression turning one into the
+                # other.
+                "touch -r agent-out/ref.md notes.md",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(

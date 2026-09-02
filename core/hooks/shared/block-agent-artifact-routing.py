@@ -104,6 +104,11 @@ def repo_local_cache_scratch(path: Path, repo_root: Path | None) -> bool:
         relative = path.relative_to(cache_root)
     except ValueError:
         return False
+    if not relative.parts:
+        # The container itself, not scratch inside it. The sanctioned marker
+        # lives under it, so blocking its creation while allowing its child is
+        # incoherent.
+        return False
     return relative.parts[:1] != (CACHE_MARKER_SEGMENT,)
 
 
