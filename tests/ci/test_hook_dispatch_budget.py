@@ -39,10 +39,18 @@ BUDGET_ERROR = "dispatch-child-budget-exceeded"
 #
 # Scope is deliberately PreToolUse tool matchers. The UserPromptSubmit, Stop and
 # SessionStart groups carry far fewer executable rules and are nowhere near the
-# cap; extend this list if that stops being true. NotebookEdit and apply_patch
-# are omitted because a bare probe payload cannot satisfy their provider target
-# checks -- and since a non-budget outcome now fails this gate rather than
-# passing it, including them would make the gate red for the wrong reason.
+# cap; extend this list if that stops being true.
+#
+# NotebookEdit and apply_patch are omitted because a bare probe payload cannot
+# satisfy their provider target checks -- and since a non-budget outcome now
+# fails this gate rather than passing it, including them would make the gate red
+# for the wrong reason. That omission is safe only while their matched rule sets
+# stay equal to the `Write` set, which is true today but is an incidental
+# equality, not an invariant this gate asserts.
+#
+# ("codex", "MultiEdit") matches no rules at all today (codex has no MultiEdit
+# matcher; apply_patch is its edit surface). It is kept as a placeholder so the
+# probe table stays symmetric, and it cannot detect a breach on its own.
 PROBES: tuple[tuple[str, str], ...] = (
     ("codex", "Bash"),
     ("codex", "Write"),

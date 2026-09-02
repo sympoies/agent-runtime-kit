@@ -26131,10 +26131,14 @@ exit 65
         `mcp-secret-scan` is still exactly that and stays excluded.
 
         `portable-paths-scan` is no longer content-only: it also carries agent
-        artifact routing, which reads `file_path` -- a key MultiEdit does have.
-        Its content half remains a no-op here (`proposed_content` returns "" for
-        MultiEdit, so it can raise no portable-path hit), while its path half is
-        the reason MultiEdit needs it at all.
+        artifact routing, which reads `file_path` -- a key MultiEdit does have,
+        and the reason MultiEdit needs this handler at all.
+
+        Its content half is *narrowed* on MultiEdit, not absent:
+        `proposed_content` returns "" here, but `patch_text_candidates` still
+        recurses into `edits[]`, so embedded apply-patch text can raise a
+        portable-path hit. `test_portable_paths_on_multiedit_scans_only_patch_text`
+        pins both sides of that boundary.
         """
         multiedit = [
             rule
@@ -27249,6 +27253,60 @@ exit 66
     # makes one rule able to express both.
 
     ARTIFACT_ROUTING_HOOK = "portable-paths-scan.py"
+
+    def test_portable_paths_on_multiedit_scans_only_patch_text(self) -> None:
+        """Registering this handler on MultiEdit made one more path reachable.
+
+        `proposed_content` returns "" for MultiEdit, so an ordinary edit raises
+        no portable-path hit. `patch_text_candidates` still recurses into
+        `edits[]` though, so embedded apply-patch text does. Both sides are
+        asserted because the registration is new here and the boundary was
+        previously described in a comment rather than owned by a test.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+
+            code, decision, stderr = run_hook(
+                "portable-paths-scan.py",
+                {
+                    "tool_name": "MultiEdit",
+                    "tool_input": {
+                        "file_path": "docs/source/y.md",
+                        "edits": [
+                            {
+                                "old_string": "a",
+                                "new_string": "/Users/example/project/notes",
+                            }
+                        ],
+                    },
+                },
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "portable-paths-scan.py",
+                {
+                    "tool_name": "MultiEdit",
+                    "tool_input": {
+                        "file_path": "src/main.py",
+                        "edits": [
+                            {
+                                "old_string": "a",
+                                "new_string": (
+                                    "*** Add File: docs/source/y.md\n"
+                                    "+/Users/example/project/notes\n"
+                                    "*** End Patch"
+                                ),
+                            }
+                        ],
+                    },
+                },
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "portable-paths")
 
     def test_artifact_routing_is_not_waived_by_the_portable_paths_hatch(self) -> None:
         """`SKIP_PORTABLE_PATH_SCAN` waives portable paths, not artifact routing.

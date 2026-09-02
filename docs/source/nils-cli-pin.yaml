@@ -18,10 +18,14 @@ schema_version: 2
 
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
-  # v1.27.35 is the first stable release whose compiled runtime-kit.handler.v1
-  # allowlist admits `block-agent-artifact-routing`. Below it this repository's
-  # policy bundle fails to load at all (`handler-id-unsupported`), so the floor
-  # is a hard compatibility retirement, not ordinary uptake.
+  #
+  # This floor was raised from v1.27.27 to admit the `block-agent-artifact-routing`
+  # handler id. That handler has since been consolidated into
+  # `portable-paths-scan` to fit the dispatch executable budget, so the id is no
+  # longer referenced by this repository's policy bundle and no longer justifies
+  # the floor on its own. The floor is deliberately left where it is: lowering it
+  # is a compatibility decision that needs its own below-minimum evidence, not a
+  # side effect of a hook refactor. Re-evaluate before the next uptake.
   minimum_supported_tag: "v1.27.35"
   # Exact surface used by blocking validated CI and all packaged artifacts.
   validated_tag: "v1.27.35"
@@ -40,7 +44,7 @@ nils_cli:
 # consumed surface each binary must satisfy. Values track the
 # surface-introduction versions recorded in docs/source/nils-cli-surface.md.
 required_clis:
-  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation + block-agent-artifact-routing in the compiled runtime-kit.handler.v1 allowlist
+  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
     min: "1.27.35"
   - bin: plan-issue       # tracking controller + execution-state sync/writeback + review evidence context gate + provider payload privacy gate + lifecycle mutation lock + unified terminal closeout rows
     min: "1.1.0"
