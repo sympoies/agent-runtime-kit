@@ -25,6 +25,7 @@ sys.dont_write_bytecode = True
 from hook_common import (
     ALLOW,
     bash_copy_style_write_targets,
+    bash_path_creation_targets,
     bash_write_operations,
     command_from,
     effective_workdir,
@@ -32,6 +33,7 @@ from hook_common import (
     file_paths_from_payload,
     git_toplevel,
     read_payload,
+    tool_input_dict,
 )
 
 FORBIDDEN_SEGMENT = "agent-out"
@@ -61,10 +63,19 @@ belongs on the allocated artifact route.
 
 def candidate_paths(payload: dict) -> list[str]:
     paths = file_paths_from_payload(payload)
+    # `file_paths_from_payload` does not model `notebook_path`, and NotebookEdit
+    # is a registered matcher for this rule. Sibling handlers read the key
+    # locally for the same reason.
+    notebook_path = tool_input_dict(payload).get("notebook_path")
+    if isinstance(notebook_path, str) and notebook_path:
+        paths.append(notebook_path)
     if str(payload.get("tool_name", "")) == "Bash":
         command = command_from(payload)
         paths.extend(path for path, _content in bash_write_operations(command))
         paths.extend(bash_copy_style_write_targets(command))
+        # A guard that owns *where a directory may exist* must see the commands
+        # that bring one into existence, not only those that write into it.
+        paths.extend(bash_path_creation_targets(command))
     return paths
 
 

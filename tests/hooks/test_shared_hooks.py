@@ -27248,6 +27248,14 @@ exit 66
                 "mkdir -p agent-out/topic && cp /tmp/source agent-out/topic",
                 "cp /tmp/source agent-out/",
                 "cd agent-out && echo notes > progress.md",
+                # The directory itself is the leak. These create it without
+                # writing content, so a content-write-only guard misses them
+                # while the block message still promises to stop them.
+                "mkdir agent-out",
+                "mkdir -p agent-out/topic",
+                "touch agent-out/progress.md",
+                "cd agent-out && touch progress.md",
+                "mkdir -p build && mkdir -p agent-out",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -27272,6 +27280,48 @@ exit 66
                         self.ARTIFACT_ROUTING_HOOK,
                         {"tool_name": "Write", "tool_input": {"file_path": path}},
                         cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_covers_every_registered_matcher_payload(self) -> None:
+        """Each registered matcher carries the path in its own payload shape.
+
+        The rule registers Bash, Write/Edit/NotebookEdit, apply_patch, and
+        MultiEdit. Registering a matcher whose payload the handler cannot read
+        is a rule that silently does nothing, so every shape gets an assertion
+        rather than only the two that happen to share `file_path`.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_repo(tmp)
+            target = "agent-out/leaked.md"
+            payloads: tuple[dict[str, Any], ...] = (
+                {"tool_name": "Write", "tool_input": {"file_path": target}},
+                {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                {
+                    "tool_name": "MultiEdit",
+                    "tool_input": {"file_path": target, "edits": []},
+                },
+                {
+                    "tool_name": "NotebookEdit",
+                    "tool_input": {"notebook_path": "agent-out/leaked.ipynb"},
+                },
+                {
+                    "tool_name": "apply_patch",
+                    "tool_input": {
+                        "input": (
+                            "*** Begin Patch\n"
+                            f"*** Add File: {target}\n"
+                            "+leaked\n"
+                            "*** End Patch\n"
+                        )
+                    },
+                },
+            )
+            for payload in payloads:
+                with self.subTest(tool=payload["tool_name"]):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, payload, cwd=repo
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "agent-out")

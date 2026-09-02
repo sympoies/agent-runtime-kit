@@ -3775,6 +3775,66 @@ def _cd_target_from_invocation(invocation: list[str], cwd: str = "") -> str | No
     return _resolve_bash_path(target, cwd)
 
 
+def _touch_targets_from_invocation(invocation: list[str], cwd: str = "") -> list[str]:
+    if not invocation or PurePosixPath(invocation[0]).name != "touch":
+        return []
+    targets: list[str] = []
+    index = 1
+    while index < len(invocation):
+        token = invocation[index]
+        if token == "--":
+            targets.extend(_resolve_bash_path(path, cwd) for path in invocation[index + 1 :])
+            break
+        if token in {"-d", "--date", "-r", "--reference", "-t", "--time"}:
+            index += 2
+            continue
+        if token.startswith(("--date=", "--reference=", "--time=")):
+            index += 1
+            continue
+        if token.startswith("-") and token != "-":
+            index += 1
+            continue
+        targets.append(_resolve_bash_path(token, cwd))
+        index += 1
+    return targets
+
+
+def bash_path_creation_targets(command: str) -> list[str]:
+    """Return paths a command brings into existence without writing content.
+
+    ``bash_write_operations`` models content writes and
+    ``bash_copy_style_write_targets`` models ``cp``/``install``/``mv``. Neither
+    reports a bare ``mkdir`` or ``touch``, whose created path is the whole
+    point for a guard that owns *where a directory may exist* rather than what
+    lands inside it.
+    """
+    targets: list[str] = []
+    cwd = ""
+    current: list[str] = []
+
+    def flush(separator: str | None) -> None:
+        nonlocal current, cwd
+        if not current:
+            return
+        invocation = invocation_tokens(current)
+        targets.extend(_mkdir_created_dirs_from_invocation(invocation, cwd))
+        targets.extend(_touch_targets_from_invocation(invocation, cwd))
+        payload = nested_shell_payload(invocation)
+        if payload:
+            targets.extend(bash_path_creation_targets(payload))
+        if separator in {";", "&&"}:
+            cwd = _cd_target_from_invocation(invocation, cwd) or cwd
+        current = []
+
+    for token in shell_tokens(normalize_command_separators(strip_heredoc_bodies(command))):
+        if is_shell_separator(token):
+            flush(token)
+            continue
+        current.append(token)
+    flush(None)
+    return targets
+
+
 def bash_copy_style_write_targets(command: str) -> list[str]:
     targets: list[str] = []
     known_dirs: set[str] = set()
