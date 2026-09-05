@@ -66,10 +66,15 @@ their absence and substitutes `not provided` / `unspecified`, and
 is discovered only after the placeholder has been published under the reviewer's
 name. Bind all five before rendering.
 
-`--evidence-reviewed` is published verbatim in the review body, so it must be a
-portable identifier — a repository path, the validation command, or a run id —
+Every value the profile renders is published verbatim, so `--reviewable`,
+`--scope`, `--evidence-reviewed`, and each finding's `path` must be portable
+identifiers — a repository-relative path, the validation command, or a run id —
 and never an absolute local path or a `$HOME`-prefixed artifact path. Cite the
-artifact's identity, not its location on the machine that produced it.
+artifact's identity, not its location on the machine that produced it. Reviewer
+subagents run in managed worktrees under the user's home, so a finding path
+copied from a reviewer's own working directory carries the local topology into
+a public body; the reviewer contract requires repository-relative paths for
+exactly this reason.
 
 Before any GitHub publication, validate the immutable body snapshot and diff
 anchors. Add `--thread-file` only when the generated array has actionable

@@ -60,8 +60,9 @@ Outputs:
   orchestrator-owned merge after approval.
 - Every provider-visible specialist body and its actionable thread file come
   from one `review-specialists bundle --profile provider-review` artifact,
-  rendered with `--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and a
-  portable `--evidence-reviewed` value; a missing flag publishes a placeholder
+  rendered with `--mode delivery`, `--reviewable`, `--lens`, `--lens-verdict`,
+  `--scope`, and an `--evidence-reviewed` value that is a portable identifier
+  rather than an absolute local path; a missing flag publishes a placeholder
   header. In a governed environment, the owner App publishes that complete
   report exactly once and the personal identity records only
   exact-head-verified `--metadata-only` provenance without the report

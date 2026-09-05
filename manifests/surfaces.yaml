@@ -391,7 +391,7 @@ surfaces:
           - targets/codex/link-map.yaml
       claude:
         state: shipped
-        mechanism: "rendered to `build/claude/agents/<name>.md`, then `symlinked-file` `recursive: true` (`agents-tree`) into `~/.claude/agents/`; Claude discovers user subagents at `~/.claude/agents/*.md` (YAML frontmatter name / description / tools + Markdown system prompt)"
+        mechanism: "rendered to `build/claude/agents/<name>.md`, then `symlinked-file` `recursive: true` (`agents-tree`) into `~/.claude/agents/`; Claude discovers user subagents at `~/.claude/agents/*.md` (YAML frontmatter name / description / tools plus explicit model / effort + Markdown system prompt); managed reviewers all pin `model: opus` with every lens at `effort: medium`. Both keys were verified against the shipped Claude Code agent-definition schema on 2.1.261 (`effort` accepts `low`/`medium`/`high`/`max` or an integer and rejects anything else; `model` accepts a public alias or `inherit`); the recorded min_product predates that check"
         source_artifacts:
           - "core/agents/<domain>/<name>/AGENT.md.tera -> build/claude/agents/<name>.md"
         min_product: "2.1.145"

@@ -173,7 +173,15 @@ a uniform shape:
 - Source: one canonical `core/agents/<domain>/<name>/AGENT.md.tera`, rendered
   per product. The `product` Tera variable branches the Claude body — YAML
   frontmatter (`name`, `description`, read-only `tools: Read, Grep, Glob,
-  Bash`) plus the Markdown system prompt (`manifests/agents.yaml`).
+  Bash`, plus an explicit `model` and `effort`) and the Markdown system prompt
+  (`manifests/agents.yaml`). Managed reviewers pin `model: opus` and
+  `effort: medium` on every lens, so review depth does not track whichever
+  model the spawning session happens to run. Both keys were verified against
+  the shipped Claude Code agent-definition schema on 2.1.261 — `effort` takes
+  `low`, `medium`, `high`, `max`, or an integer and rejects anything else, and
+  `model` takes a public alias or `inherit` — which is later than the
+  `min_product` recorded for this surface, so a host below that build should be
+  re-checked before relying on the pin.
 - Install mechanism: rendered to `build/claude/agents/<name>.md`, then
   `symlinked-file` `recursive: true` (`id: agents-tree`) into
   `~/.claude/agents/` (`targets/claude/link-map.yaml`).
