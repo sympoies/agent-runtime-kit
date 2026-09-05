@@ -4,7 +4,7 @@
 The "version baseline" lives in several files with different owners and
 update rules:
 
-  * Product floor (codex / claude) — source of truth is
+  * Product floor (codex / claude / hermes) — source of truth is
     ``manifests/runtime-roots.yaml`` (``min_version`` /
     ``recommended_version`` / ``min_version_effective_from``). It is mirrored,
     by hand, in the ``README.md`` "Version baseline" table and the
@@ -15,16 +15,19 @@ update rules:
     ``docs/source/nils-cli-surface.md`` snapshot, and each ``harness-shape``
     doc. (Policy movement is owned by the ``meta:nils-cli-bump`` skill; this
     audit only checks that the prose mirrors agree with the manifest.)
+  * Per-surface product and nils-cli floors — source of truth is
+    ``manifests/surfaces.yaml``. The Codex and Claude harness coverage tables
+    mirror those historical minimums and must remain in lockstep.
 
 Hand-edited mirrors drift. ``check`` is a deterministic, network-free gate that
 fails closed on any mismatch so CI catches the drift. ``report`` additionally
 probes installed and latest-available versions (best effort, network) and is
 always advisory (exit 0).
 
-Per-surface ``min_product`` values in ``manifests/surfaces.yaml`` are
-intentionally NOT checked here: they are per-surface historical minimums,
-independent of the product floor (see PR #344), and move only when a surface
-gains a real dependency on a newer release.
+Per-surface floors remain independent of the product-wide floor (see PR #344)
+and move only when a surface gains a real dependency on a newer release. This
+audit checks their mirrors; it does not bulk-move them during a product-floor
+bump.
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ README = "README.md"
 NILS_PIN = "docs/source/nils-cli-pin.yaml"
 NILS_SURFACE = "docs/source/nils-cli-surface.md"
 SKILLS_MANIFEST = "manifests/skills.yaml"
+SURFACES_MANIFEST = "manifests/surfaces.yaml"
 HARNESS = {
     "codex": "docs/source/harness-shape-codex.md",
     "claude": "docs/source/harness-shape-claude.md",
@@ -121,6 +125,40 @@ def version_policy():
     }
 
 
+def surface_floors():
+    """Return {(product, ordinal): (min_product, min_nils_cli)}."""
+    text = _read(SURFACES_MANIFEST)
+    out = {}
+    blocks = re.findall(r"(?ms)^  - id:.*?(?=^  - id:|\Z)", text)
+    for block in blocks:
+        ordinal = int(
+            _search(r"(?m)^    ordinal:\s*(\d+)\s*$", block, "surface ordinal")
+        )
+        for product in ("codex", "claude"):
+            match = re.search(
+                r"(?ms)^      %s:\n(.*?)(?=^      [a-z]+:\n|\Z)" % product,
+                block,
+            )
+            if not match:
+                raise LookupError(
+                    "surface %d: missing %s block" % (ordinal, product)
+                )
+            body = match.group(1)
+            out[(product, ordinal)] = (
+                _search(
+                    r'(?m)^        min_product:\s*"([^"]+)"',
+                    body,
+                    "surface min_product",
+                ),
+                _search(
+                    r'(?m)^        min_nils_cli:\s*"([^"]+)"',
+                    body,
+                    "surface min_nils_cli",
+                ),
+            )
+    return out
+
+
 # --- mirror extractors -------------------------------------------------------
 
 
@@ -193,6 +231,28 @@ def harness_required_cli_examples(product: str):
     return re.findall(r'`([a-z][a-z0-9-]*): \">=([^\"]+)\"`', match.group(0))
 
 
+def harness_surface_floors(product: str):
+    """Return {ordinal: (min_product, min_nils_cli)} from a coverage table."""
+    text = _read(HARNESS[product])
+    match = re.search(
+        r"(?ms)^## Coverage Summary\s*$\n(.*?)(?=^## |\Z)", text
+    )
+    if not match:
+        raise LookupError("could not locate harness-shape %s coverage" % product)
+    out = {}
+    for line in match.group(1).splitlines():
+        if not re.match(r"^\|\s*\d+\s*\|", line):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 6:
+            continue
+        ordinal = int(cells[0])
+        min_product = cells[-2].replace("`", "").split()[0]
+        min_nils_cli = cells[-1].replace("`", "").split()[0]
+        out[ordinal] = (min_product, min_nils_cli)
+    return out
+
+
 def manifest_required_cli_pairs():
     """Return every exact CLI floor declared by a skill manifest entry."""
     return set(
@@ -247,6 +307,7 @@ def run_check() -> Result:
     policy = version_policy()
     readme = readme_rows()
     manifest_cli_pairs = manifest_required_cli_pairs()
+    manifest_surface_floors = surface_floors()
 
     # Product floor: runtime-roots is the source of truth.
     for product in ("codex", "claude", "hermes"):
@@ -297,6 +358,37 @@ def run_check() -> Result:
                 "required-cli-example.%s.%s" % (product, cli),
                 "documented=>=%s manifest-pair=%s"
                 % (floor, "present" if (cli, floor) in manifest_cli_pairs else "missing"),
+            )
+
+    for product in ("codex", "claude"):
+        documented = harness_surface_floors(product)
+        expected_ordinals = {
+            ordinal
+            for candidate_product, ordinal in manifest_surface_floors
+            if candidate_product == product
+        }
+        res.expect(
+            "surface-floor.%s.coverage" % product,
+            ",".join(str(value) for value in sorted(expected_ordinals)),
+            ",".join(str(value) for value in sorted(documented)),
+            "harness-ordinals",
+        )
+        for ordinal in sorted(expected_ordinals & set(documented)):
+            expected_product, expected_nils = manifest_surface_floors[
+                (product, ordinal)
+            ]
+            documented_product, documented_nils = documented[ordinal]
+            res.expect(
+                "surface-floor.%s.%d.product" % (product, ordinal),
+                expected_product,
+                documented_product,
+                "harness-shape",
+            )
+            res.expect(
+                "surface-floor.%s.%d.nils-cli" % (product, ordinal),
+                expected_nils,
+                documented_nils,
+                "harness-shape",
             )
     return res
 
@@ -380,7 +472,8 @@ def _emit(res: Result):
     if failed:
         print(
             "\nDrift detected. The source of truth is manifests/runtime-roots.yaml "
-            "(product floor) and docs/source/nils-cli-pin.yaml (version policy); update the "
+            "(product floor), docs/source/nils-cli-pin.yaml (version policy), and "
+            "manifests/surfaces.yaml (per-surface floors); update the "
             "mirrors to match, or use the project-version-baseline skill."
         )
 

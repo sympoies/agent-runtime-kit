@@ -18,12 +18,13 @@ publishes is the standalone Linux container image at
 `ghcr.io/sympoies/agent-runtime-kit`; see [`RELEASING.md`](RELEASING.md) for how
 that image is versioned and cut.
 
-The local gate stack is mature. `scripts/ci/all.sh` runs seventeen positions
-covering plan/skill governance, nils-cli pin alignment, Codex/Claude render and
-golden diff, drift audit, surface-registry acceptance, the skill-surface shape
-diagnostic, sandbox install rehearsal, runtime-smoke, project-local overlay
-smoke, the shared hook contract, version-baseline mirrors, product leakage
-audit, and deterministic memory policy/retired-reference routing.
+The local gate stack is mature. `scripts/ci/all.sh` runs an ordered gate stack
+covering plan/skill governance, nils-cli pin alignment, Codex/Claude/Hermes
+render and golden diff, drift audit, surface-registry acceptance, the
+skill-surface shape diagnostic, sandbox install rehearsal, runtime-smoke,
+project-local overlay smoke, the shared hook contract, version-baseline
+mirrors, product leakage audit, and deterministic memory
+policy/retired-reference routing.
 `scripts/setup.sh` contains the brew-first host bootstrap path for installing
 the released `agent-runtime` binary, rendering and wiring home prompt docs,
 activating Claude/Codex runtime homes and their `agent-hook`-owned provider
@@ -380,6 +381,8 @@ Regenerate product outputs from repository root:
 ```bash
 agent-runtime render --product codex
 agent-runtime render --product claude
+agent-runtime render --product hermes
+agent-runtime render --target support-matrix
 ```
 
 Refresh render-golden snapshots when the intended output changes:
@@ -387,6 +390,8 @@ Refresh render-golden snapshots when the intended output changes:
 ```bash
 agent-runtime render --product codex --update-golden
 agent-runtime render --product claude --update-golden
+agent-runtime render --product hermes --update-golden
+agent-runtime render --target support-matrix --update-golden
 git diff -- tests/golden/
 ```
 
@@ -408,9 +413,10 @@ That currently performs:
    `validated_tag`, and warns above validated before continuing downstream
 2. `plan-tooling validate --format text --explain` plus
    `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
-3. `agent-runtime render --target home-prompt` for neutral / Codex / Claude,
+3. `agent-runtime render --target home-prompt` for neutral / Codex / Claude /
+   Hermes,
    then `agent-runtime render --product codex`
-4. `agent-runtime render --product claude`
+4. `agent-runtime render --product claude` and `--product hermes`
 5. `agent-runtime render --target support-matrix`
 6. render-golden refresh plus `git diff --exit-code -- tests/golden/`
 7. `agent-runtime audit-drift` plus all fixtures under `tests/drift/`
@@ -424,10 +430,12 @@ That currently performs:
 14. `python3 scripts/ci/version-baseline-audit.py check` — deterministic,
     network-free consistency gate over the version-baseline mirrors: the
     `README.md` "Version baseline" table, each `docs/source/harness-shape-*.md`
-    "Version Floors" statement, and `docs/source/nils-cli-surface.md` must
-    agree with their sources of truth (`manifests/runtime-roots.yaml` for the
-    product floor, `docs/source/nils-cli-pin.yaml` for both nils-cli roles). Run
-    `… report` for an advisory installed-vs-latest probe.
+    "Version Floors" statement and Codex/Claude "Coverage Summary" table, and
+    `docs/source/nils-cli-surface.md` must agree with their sources of truth
+    (`manifests/runtime-roots.yaml` for the product floor,
+    `docs/source/nils-cli-pin.yaml` for both nils-cli roles, and
+    `manifests/surfaces.yaml` for per-surface floors). Run `… report` for an
+    advisory installed-vs-latest probe.
 15. `bash scripts/ci/product-leak-audit.sh --self-test` plus
     `bash scripts/ci/product-leak-audit.sh` — broad-sentinel leakage audit over
     rendered/loaded product artifacts, with documented allowlist reasons in

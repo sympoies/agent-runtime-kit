@@ -2,7 +2,7 @@
 # Deterministic probes for meta skills.
 # The probes intentionally use dynamic fixture sources, literal backtick
 # needles, and subshell-local state while exercising the generated scripts.
-# shellcheck disable=SC1090,SC2015,SC2016,SC2030,SC2031,SC2167,SC2329
+# shellcheck disable=SC1090,SC2015,SC2016,SC2030,SC2031,SC2167,SC2317,SC2329
 
 set -euo pipefail
 
@@ -548,6 +548,26 @@ run_sync_runtime_surfaces_probe() {
   grep -q "codex plugins=planned" "$out"
   grep -q "home-prompt=planned" "$out"
   grep -q "codex plugin marketplace add" "$out"
+}
+
+run_sync_runtime_surfaces_cli_contract_probe() {
+  local help_out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.help.txt"
+  local invalid_out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.invalid-product.txt"
+  local status
+
+  bash "$REPO_ROOT/scripts/sync-runtime-surfaces.sh" --help >"$help_out" 2>&1
+  grep -q "local Codex," "$help_out"
+  grep -q "Claude, and Hermes runtime homes" "$help_out"
+  grep -q "Default: both (Codex + Claude + Hermes)." "$help_out"
+
+  set +e
+  bash "$REPO_ROOT/scripts/sync-runtime-surfaces.sh" \
+    --product unsupported >"$invalid_out" 2>&1
+  status=$?
+  set -e
+
+  [ "$status" -eq 2 ]
+  grep -q "expected codex|claude|hermes|both" "$invalid_out"
 }
 
 run_sync_runtime_surfaces_home_prompt_apply_probe() {
@@ -3500,6 +3520,7 @@ record_case "meta.repo-docs-boundary" "repo docs placement contract rendered con
 record_case "meta.worktree-triage" "worktree triage scan classified safe, rescue, and protected integration worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe
 record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
+record_case "meta.sync-runtime-surfaces.cli-contract" "sync-runtime-surfaces help and validation enumerate every supported product" run_sync_runtime_surfaces_cli_contract_probe
 record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply rewires managed home prompt symlinks" run_sync_runtime_surfaces_home_prompt_apply_probe
 record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
 record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktrees and AGENT_HOME runtime-state source roots" run_sync_runtime_surfaces_worktree_guard_probe

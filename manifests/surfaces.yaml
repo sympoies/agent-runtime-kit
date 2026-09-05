@@ -108,9 +108,9 @@ surfaces:
           - AGENTS.md
       claude:
         state: shipped
-        mechanism: "repo working tree; `./CLAUDE.md` symlinks to `./AGENTS.md`"
+        mechanism: "repo working tree; `./CLAUDE.md` imports `./AGENTS.md` through Claude's `@AGENTS.md` syntax"
         source_artifacts:
-          - "CLAUDE.md -> AGENTS.md"
+          - "CLAUDE.md (@AGENTS.md import)"
         min_product: "2.1.145"
         min_nils_cli: "n/a"
         acceptance:

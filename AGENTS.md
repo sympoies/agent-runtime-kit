@@ -5,7 +5,8 @@
 - Repo-local agent policy for `agent-runtime-kit`. Global / home-scope
   defaults live in `AGENT_HOME.md`, loaded by Codex via
   `$HOME/.codex/AGENTS.md` and by Claude via `$HOME/.claude/CLAUDE.md`
-  (both symlinks point at this repo's `AGENT_HOME.md`).
+  (both symlinks point at this repo's rendered `AGENT_HOME.md`). Hermes loads
+  the rendered development-policy skill referenced by its `SOUL.md`.
 - `./CLAUDE.md` in this repo is a one-line file containing `@AGENTS.md`,
   using Claude Code's import syntax so Claude reads the same repo-local
   rules without maintaining a second copy.
@@ -13,18 +14,21 @@
 ## Project Purpose
 
 - This repo is the single canonical source for the local agent runtime layer
-  shared by Codex and Claude: skills, workflows, hooks, docs, plugin metadata,
-  install/link management, and drift auditing.
-- Codex and Claude are product targets/adapters rendered from this shared
-  source, not separate source repos that require manual porting.
+  shared by Codex, Claude, and Hermes: skills, workflows, hooks, docs, plugin
+  metadata, install/link management, and drift auditing.
+- Codex, Claude, and Hermes are product targets/adapters rendered from this
+  shared source, not separate source repos that require manual porting.
 
 ## Local Source Repositories
 
 - Single source of truth: this repo (`agent-runtime-kit`). Codex and Claude
-  read it through symlinks (`$HOME/.codex/AGENTS.md`, `$HOME/.claude/CLAUDE.md`
-  → `AGENT_HOME.md`) and through rendered targets in `targets/`.
+  read its rendered home policy through symlinks
+  (`$HOME/.codex/AGENTS.md`, `$HOME/.claude/CLAUDE.md`); Hermes reads the
+  rendered development-policy skill. All three use rendered targets in
+  `targets/`.
 - Live Codex home: `$HOME/.codex`
 - Live Claude home: `$HOME/.claude`
+- Live Hermes home: `$HERMES_HOME` (default `$HOME/.hermes`)
 
 ## Important Boundaries
 
@@ -53,10 +57,11 @@
 - Repo layout, setup, and validation: `DEVELOPMENT.md`.
 - Where docs belong and how long they live:
   `docs/source/docs-placement-retention-policy-v1.md`.
-- Per-product surface coverage (what ships into Codex / Claude today):
+- Per-product surface coverage (what ships into Codex / Claude / Hermes today):
   `SUPPORT_MATRIX.md`, with the per-product narrative in
   `docs/source/harness-shape-codex.md` and
-  `docs/source/harness-shape-claude.md`.
+  `docs/source/harness-shape-claude.md`, and
+  `docs/source/harness-shape-hermes.md`.
 
 ## Development Log
 

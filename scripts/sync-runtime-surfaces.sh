@@ -47,10 +47,10 @@ print_help() {
   cat <<EOF
 Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
 
-Refresh sympoies/agent-runtime-kit managed runtime surfaces into local Codex
-and Claude runtime homes. This is the daily runtime surface refresh entrypoint
-after source changes land. For first-time host setup, run scripts/setup.sh
-first.
+Refresh sympoies/agent-runtime-kit managed runtime surfaces into local Codex,
+Claude, and Hermes runtime homes. This is the daily runtime surface refresh
+entrypoint after source changes land. For first-time host setup, run
+scripts/setup.sh first.
 
 By default, this command is a dry-run: it prints the pull, home-prompt render /
 rewire, product render, install, prune, doctor, and optional Codex prompt-input
@@ -65,7 +65,7 @@ Options:
       present and provider state has not drifted, restore the exact legacy
       provider bytes captured before cutover.
   --product codex|claude|hermes|both
-      Limit the refresh to one product. Default: both.
+      Limit the refresh to one product. Default: both (Codex + Claude + Hermes).
   --source-root PATH
       Use a specific agent-runtime-kit checkout. Defaults to this script's
       repository root. For --apply, this must be a durable primary checkout;
@@ -222,7 +222,7 @@ parse_args() {
   case "$PRODUCT" in
     codex | claude | hermes | both) ;;
     *)
-      err "invalid --product value: $PRODUCT (expected codex|claude|both)"
+      err "invalid --product value: $PRODUCT (expected codex|claude|hermes|both)"
       exit 2
       ;;
   esac
