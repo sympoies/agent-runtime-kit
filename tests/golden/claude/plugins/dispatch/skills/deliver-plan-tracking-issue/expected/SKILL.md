@@ -71,7 +71,8 @@ Outputs:
   `review-specialists bundle --profile provider-review` artifact, rendered with
   `--mode delivery`, `--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
   an `--evidence-reviewed` value that is a portable identifier rather than an
-  absolute local path; a missing flag publishes a placeholder header.
+  absolute local path; from nils-cli v1.28.0 an absent or placeholder value for
+  any of those but `--lens-verdict` fails the render.
   A governed environment publisher posts that complete table exactly once
   through the owner App and leaves only exact-head-verified metadata through
   the personal identity.

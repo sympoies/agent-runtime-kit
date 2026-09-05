@@ -62,8 +62,9 @@ Outputs:
   from one `review-specialists bundle --profile provider-review` artifact,
   rendered with `--mode delivery`, `--reviewable`, `--lens`, `--lens-verdict`,
   `--scope`, and an `--evidence-reviewed` value that is a portable identifier
-  rather than an absolute local path; a missing flag publishes a placeholder
-  header. In a governed environment, the owner App publishes that complete
+  rather than an absolute local path; from nils-cli v1.28.0 an absent or
+  placeholder value for any of those but `--lens-verdict` fails the render.
+  In a governed environment, the owner App publishes that complete
   report exactly once and the personal identity records only
   exact-head-verified `--metadata-only` provenance without the report
   `--comment-file`.

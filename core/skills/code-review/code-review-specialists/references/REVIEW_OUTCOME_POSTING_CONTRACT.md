@@ -59,14 +59,21 @@ REVIEW_COMMENT_FILE="$REVIEW_BUNDLE_DIR/provider-review.md"
 REVIEW_THREAD_FILE="$REVIEW_BUNDLE_DIR/review-threads.json"
 ```
 
-`--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
-`--evidence-reviewed` are not optional for this profile. From nils-cli v1.28.0
-the renderer refuses to emit a publication-bound body without them, exiting 64
-with `provider-review-metadata-required` and writing nothing — and it refuses a
+Bind `--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
+`--evidence-reviewed` for this profile. Four of them — every one except
+`--lens-verdict` — are enforced from nils-cli v1.28.0: the renderer refuses to
+emit a publication-bound body without them, exiting 64 with
+`provider-review-metadata-required` and writing nothing, and it refuses a
 placeholder typed in as a value just as firmly, because typing `not provided`
 conveys no more than omitting the flag. `pr review validate
 --specialist-report` rejects those same sentinels at the publication boundary
 for a body built any other way.
+
+`--lens-verdict` stays optional at the CLI because its fallback is derived from
+the merged findings (`pass` when empty, `findings` otherwise) rather than
+invented. Bind it anyway: the derived value cannot express `blocked` or
+`follow-up-pass`, so leaving it to the fallback silently narrows the verdict
+vocabulary this contract defines.
 
 Before v1.28.0 both surfaces were permissive: the renderer substituted
 `not provided` / `unspecified` and synthesized `Evidence reviewed:` from the

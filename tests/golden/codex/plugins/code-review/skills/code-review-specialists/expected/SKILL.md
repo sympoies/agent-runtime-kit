@@ -97,9 +97,13 @@ near-complete copies that disagree are worse than one, because the shorter one
 still looks finished.
 
 The `provider-review` profile renders the five metadata values into the
-published review header. Omit one and the body ships a placeholder —
-`Reviewable: not provided`, `Lens: unspecified`, `Scope: not provided` — to
-everyone reading the PR/MR. `--mode delivery` is equally load-bearing: it is
+published review header. From nils-cli v1.28.0 the renderer refuses to emit a
+publication-bound body when `--reviewable`, `--lens`, `--scope`, or
+`--evidence-reviewed` is absent — or is a retired placeholder typed in as a
+value — exiting 64 with `provider-review-metadata-required` and writing
+nothing. `--lens-verdict` stays optional at the CLI because its fallback is
+derived from the findings, but bind it too: the fallback cannot express
+`blocked` or `follow-up-pass`. `--mode delivery` is equally load-bearing: it is
 the gate that requires stable lifecycle fingerprints, and the default
 `advisory` mode silently produces a bundle the review-loop ledger will not
 accept.

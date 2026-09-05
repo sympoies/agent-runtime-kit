@@ -46,7 +46,8 @@
   by running `tests/agent-hook/run.sh` under `release:v1.27.27`. This adoption
   therefore explicitly retires the `v1.27.27` floor, moves the retained minimum
   digests to `v1.27.35`, and raises the `agent-hook` per-binary floor to
-  `>=1.27.35`. Minimum and validated coincide at this release.
+  `>=1.27.35`. Minimum and validated coincided at that release point; `v1.28.0`
+  later advanced validated alone.
 - `v1.27.29` was the previous validated release. Its delivery-mode specialist
   merge rejects findings that omit an explicit `actionable` boolean while the
   advisory path remains backward compatible; normalized actionable and
