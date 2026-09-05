@@ -323,6 +323,11 @@ def toml_string(body: str, field: str) -> str | None:
     return match.group(1) if match else None
 
 
+def frontmatter_string(body: str, field: str) -> str | None:
+    match = re.search(rf"^{re.escape(field)}:[ \t]*(\S+)[ \t]*$", body, flags=re.MULTILINE)
+    return match.group(1) if match else None
+
+
 def codex_reviewer_profile_errors(root: Path) -> list[str]:
     manifest_path = root / "manifests" / "agents.yaml"
     if not manifest_path.is_file():
@@ -378,6 +383,28 @@ def codex_reviewer_profile_errors(root: Path) -> list[str]:
             errors.append(f"{reviewer_id}: effort {effort!r} != {expected_effort!r}")
         if sandbox != "read-only":
             errors.append(f"{reviewer_id}: sandbox {sandbox!r} != 'read-only'")
+
+        # The Claude branch needs the same fail-closed treatment. Rendered
+        # goldens cannot substitute: ci/all.sh regenerates them before diffing,
+        # so a template that drops its pin produces a matching golden and the
+        # gate stays green -- which is how the Claude branch went without a
+        # model for as long as it did.
+        claude = template_path.read_text(encoding="utf-8").split("{%- else -%}", 1)
+        if len(claude) != 2:
+            errors.append(f"{reviewer_id}: template has no Claude branch")
+            continue
+        claude_body = claude[1]
+        claude_model = frontmatter_string(claude_body, "model")
+        claude_effort = frontmatter_string(claude_body, "effort")
+        if claude_model is None or claude_effort is None:
+            errors.append(
+                f"{reviewer_id}: Claude template must explicitly set model and effort"
+            )
+            continue
+        if claude_model != "opus":
+            errors.append(f"{reviewer_id}: Claude model {claude_model!r} != 'opus'")
+        if claude_effort != "medium":
+            errors.append(f"{reviewer_id}: Claude effort {claude_effort!r} != 'medium'")
 
     skill_path = root / "core" / "skills" / "code-review" / "code-review-specialists" / "SKILL.md.tera"
     policy_path = root / "core" / "policies" / "code-review-delegation-codex.md"
@@ -2247,6 +2274,37 @@ def validate_reviewer_profile_fixture() -> None:
             ROOT / "core" / "agents" / "code-review" / "reviewer-testing" / "AGENT.md.tera",
             template,
         )
+
+        template.write_text(
+            template.read_text(encoding="utf-8").replace("\nmodel: opus\n", "\n", 1),
+            encoding="utf-8",
+        )
+        claude_missing_errors = codex_reviewer_profile_errors(fixture)
+        if not any(
+            "Claude template must explicitly set model" in error
+            for error in claude_missing_errors
+        ):
+            fail("reviewer-profile fixture did not reject a missing Claude model pin")
+
+        shutil.copy2(
+            ROOT / "core" / "agents" / "code-review" / "reviewer-testing" / "AGENT.md.tera",
+            template,
+        )
+
+        template.write_text(
+            template.read_text(encoding="utf-8").replace(
+                "\neffort: medium\n", "\neffort: low\n", 1
+            ),
+            encoding="utf-8",
+        )
+        claude_wrong_errors = codex_reviewer_profile_errors(fixture)
+        if not any("Claude effort" in error for error in claude_wrong_errors):
+            fail("reviewer-profile fixture did not reject a drifted Claude effort pin")
+
+        shutil.copy2(
+            ROOT / "core" / "agents" / "code-review" / "reviewer-testing" / "AGENT.md.tera",
+            template,
+        )
         skill_fixture = skill_target / "SKILL.md.tera"
         skill_fixture.write_text(
             skill_fixture.read_text(encoding="utf-8").replace(
@@ -2264,6 +2322,7 @@ def validate_reviewer_profile_fixture() -> None:
     print(
         "skill-governance-audit: reviewer-profile fixture OK "
         "manifest_inventory=true missing_field_rejected=true "
+        "claude_pin_missing_rejected=true claude_pin_drift_rejected=true "
         "generic_fallback_rejected=true"
     )
 

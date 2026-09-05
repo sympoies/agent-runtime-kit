@@ -99,6 +99,10 @@ run_codex_reviewer_profile_contract_probe() {
   grep -Fq 'skill-governance-audit: repo OK' "$repo_out"
   grep -Fq 'manifest_inventory=true' "$fixture_out"
   grep -Fq 'missing_field_rejected=true' "$fixture_out"
+  # The Claude branch pins are fail-closed too: a regenerated golden cannot
+  # catch their removal, so the audit must.
+  grep -Fq 'claude_pin_missing_rejected=true' "$fixture_out"
+  grep -Fq 'claude_pin_drift_rejected=true' "$fixture_out"
   grep -Fq 'generic_fallback_rejected=true' "$fixture_out"
 }
 
@@ -418,6 +422,14 @@ run_code_review_specialists_probe() {
   grep -q 'Runtime smoke finding' "$summary_out"
   grep -q 'Specialist Review Report' "$rendered_report"
   grep -q '"profile": "provider-review"' "$bundle_out"
+  # The bound metadata must reach the rendered body, not just the command line.
+  # Without these, a renderer that drops the header rows stays green while the
+  # published review reads "Reviewable: not provided" / "Lens: unspecified".
+  grep -Fq -- '- Reviewable: PR #123' "$provider_report"
+  grep -Fq -- '- Lens: api-contract' "$provider_report"
+  grep -Fq -- '- Lens verdict: findings' "$provider_report"
+  grep -Fq -- '- Scope: runtime smoke provider review contract' "$provider_report"
+  grep -Fq -- '- Evidence reviewed: deterministic fixture' "$provider_report"
   grep -Fq '<!-- agent-kit:specialist-review-report:v1 -->' "$provider_report"
   grep -Fq '| Finding | Severity | Confidence | Evidence | Recommendation |' "$provider_report"
   grep -Fq 'Runtime smoke finding.' "$provider_report"
@@ -525,11 +537,73 @@ run_review_convergence_contract_probe() {
   fi
 }
 
+# Print every fenced block in one Markdown file that contains a
+# `--profile provider-review` invocation, so assertions can target the copyable
+# command instead of prose that merely mentions the same flags.
+provider_review_command_block() {
+  awk '
+    /^```/ {
+      if (in_block) {
+        if (buf ~ /--profile provider-review/) printf "%s", buf
+        in_block = 0
+        buf = ""
+      } else {
+        in_block = 1
+        buf = ""
+      }
+      next
+    }
+    in_block { buf = buf $0 "\n" }
+  ' "$1"
+}
+
+run_provider_review_metadata_contract_probe() {
+  local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
+  local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+  local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+  local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
+  local flag owner block
+
+  # A copyable `--profile provider-review` command must carry every metadata
+  # flag the provider body renders. Omitting one publishes a placeholder
+  # header ("Reviewable: not provided", "Lens: unspecified") into a real review.
+  #
+  # Assert against the fenced command block, never the whole file: both of these
+  # files also describe the flags in prose, and a whole-file grep is satisfied by
+  # that prose while the command it guards silently loses the flag.
+  for owner in "$skill" "$posting"; do
+    block="$(provider_review_command_block "$owner")"
+    [ -n "$block" ] || return 1
+    for flag in --mode --repo --ref --reviewable --lens-verdict --scope --evidence-reviewed; do
+      printf '%s' "$block" | grep -Fq -- "$flag" || return 1
+    done
+    # `--lens` needs a delimiter or `--lens-verdict` satisfies it.
+    printf '%s' "$block" | grep -Eq -- '--lens[[:space:]]' || return 1
+  done
+
+  # The prose owners must name the same requirement, so a reader who never
+  # opens the reference contract still passes the metadata through. These are
+  # narrative, not copyable commands, so a whole-file grep is the right scope.
+  for owner in "$delivery" "$tracking" "$dispatch"; do
+    grep -Fq -- '--reviewable' "$owner" || return 1
+    grep -Fq -- '--lens-verdict' "$owner" || return 1
+    grep -Fq -- '--scope' "$owner" || return 1
+    grep -Fq -- '--evidence-reviewed' "$owner" || return 1
+  done
+
+  # `--evidence-reviewed` reaches a public review body, so an absolute local
+  # path or `$HOME` prefix is never an acceptable evidence identifier.
+  grep -Fq 'never an absolute local path' "$skill" || return 1
+  grep -Fq 'never an absolute local path' "$posting" || return 1
+}
+
 failures=0
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.actionability-contract" "every reviewer finding explicitly classifies actionability for native thread publication" run_reviewer_actionability_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
+record_case "code-review.outcome-routing.provider-review-metadata" "provider-review bundle call sites carry the report metadata the body renders" run_provider_review_metadata_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
 record_case "code-review.outcome-routing.pre-merge" "full pre-merge profile forced specialists passed" run_pre_merge_gate_probe

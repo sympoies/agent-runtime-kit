@@ -97,7 +97,11 @@ Outputs:
   `review-specialists bundle --profile provider-review` artifact. The complete
   report uses the marker and five-column table; actionable GitHub threads come
   from the same bundle. `pr-comment` is only an alias for this profile, never a
-  second bullet renderer.
+  second bullet renderer. That bundle call must bind `--mode delivery`,
+  `--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
+  `--evidence-reviewed`; a missing flag renders a placeholder header into the
+  published review, and `--evidence-reviewed` must be a portable identifier
+  rather than an absolute local path.
 - A delivery review outcome posted to the PR/MR before merge through
   `forge-cli pr review`; combined owner outcomes use the final `--decision`
   plus repeated selected lenses and own final finding dispositions. GitHub uses

@@ -2,6 +2,8 @@
 name: reviewer-api-contract
 description: Read-only API-contract specialist code reviewer. Spawn for route, controller, OpenAPI, GraphQL, protobuf, schema, SDK, CLI command, request, or response changes that can affect callers across a boundary.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

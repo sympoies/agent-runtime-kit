@@ -2,6 +2,8 @@
 name: reviewer-performance
 description: Read-only performance specialist code reviewer. Spawn for backend or frontend runtime changes touching loops, queries, caches, rendering, I/O, concurrency, memory pressure, large payloads, or hot-path code.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

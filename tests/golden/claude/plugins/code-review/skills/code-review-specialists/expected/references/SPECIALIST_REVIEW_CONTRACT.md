@@ -33,7 +33,11 @@ Required fields:
 - `severity`
 - `confidence`
 - `actionable`
-- `path`
+- `path` — repository-relative, always. A reviewer often runs in a managed
+  worktree under the user's home, and `path` is rendered verbatim into the
+  published review body and into native review threads, so an absolute path
+  leaks the local topology to everyone reading the PR/MR and cannot anchor a
+  thread. Cite `src/api/users.ts`, never the checkout that happened to hold it.
 - `summary`
 - `evidence`
 - `recommendation`

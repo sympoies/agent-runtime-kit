@@ -2,6 +2,8 @@
 name: reviewer-red-team
 description: Read-only red-team specialist code reviewer. Spawn after the other selected specialists when a material risk boundary or critical finding warrants adversarially probing their merged findings.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

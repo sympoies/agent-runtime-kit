@@ -2,6 +2,8 @@
 name: reviewer-data-migration
 description: Read-only data-migration specialist code reviewer. Spawn for database migrations, schema changes, data transforms, backfills, retention changes, index changes, or serialization format changes.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

@@ -85,8 +85,29 @@ review-specialists scope --base "$BASE_REF" --format json
 review-specialists validate --input findings.jsonl --format json
 review-specialists merge --input findings.jsonl --summary-out specialist-review.md --format json
 review-specialists render --profile report --input merged-findings.json --out specialist-review.md
-review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile provider-review --format json
+review-specialists bundle --mode delivery --input findings.jsonl --out-dir "$REVIEW_OUT" \
+  --profile provider-review --repo "$OWNER_REPO" --ref "$EXPECTED_REVIEW_HEAD" \
+  --reviewable "$REVIEWABLE" --lens "$REVIEW_LENS" --lens-verdict "$REVIEW_LENS_VERDICT" \
+  --scope "$REVIEW_SCOPE" --evidence-reviewed "$REVIEW_EVIDENCE" --format json
 ```
+
+That block is the whole publishable invocation, and it is deliberately
+identical to the canonical one in `REVIEW_OUTCOME_POSTING_CONTRACT.md` — two
+near-complete copies that disagree are worse than one, because the shorter one
+still looks finished.
+
+The `provider-review` profile renders the five metadata values into the
+published review header. Omit one and the body ships a placeholder —
+`Reviewable: not provided`, `Lens: unspecified`, `Scope: not provided` — to
+everyone reading the PR/MR. `--mode delivery` is equally load-bearing: it is
+the gate that requires stable lifecycle fingerprints, and the default
+`advisory` mode silently produces a bundle the review-loop ledger will not
+accept.
+
+Every value rendered into a provider body is published verbatim, so
+`--reviewable`, `--scope`, `--evidence-reviewed`, and each finding's `path`
+must be portable identifiers — a repository-relative path, a command, or a run
+id — and never an absolute local path or a `$HOME`-prefixed artifact path.
 
 ## Mode Selection
 

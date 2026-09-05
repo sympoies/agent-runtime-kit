@@ -68,10 +68,13 @@ Outputs:
   guarantees an identity independent from the PR author; otherwise it is an
   outcome note.
   Every specialist body and its actionable thread file come from one
-  `review-specialists bundle --profile provider-review` artifact. A governed
-  environment publisher posts that complete table exactly once through the
-  owner App and leaves only exact-head-verified metadata through the personal
-  identity.
+  `review-specialists bundle --profile provider-review` artifact, rendered with
+  `--mode delivery`, `--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
+  an `--evidence-reviewed` value that is a portable identifier rather than an
+  absolute local path; a missing flag publishes a placeholder header.
+  A governed environment publisher posts that complete table exactly once
+  through the owner App and leaves only exact-head-verified metadata through
+  the personal identity.
 - On GitHub, current-head native review summaries read through
   `forge-cli pr reviews` and semantically dispositioned before the combined
   owner outcome. GitLab retains the outcome-note flow because native snapshots
