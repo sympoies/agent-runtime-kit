@@ -2,6 +2,8 @@
 name: reviewer-testing
 description: Read-only testing specialist code reviewer. Spawn for larger diffs, behavior changes, new helper scripts, migrations, or integration boundaries where validation coverage is central to confidence.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

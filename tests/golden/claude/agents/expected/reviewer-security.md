@@ -2,6 +2,8 @@
 name: reviewer-security
 description: Read-only security specialist code reviewer. Spawn for authentication, authorization, session, credential handling, permissions, user-controlled input, network boundary, dependency, or backend changes with meaningful attack surface.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

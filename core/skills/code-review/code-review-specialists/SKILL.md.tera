@@ -94,8 +94,18 @@ review-specialists scope --base "$BASE_REF" --format json
 review-specialists validate --input findings.jsonl --format json
 review-specialists merge --input findings.jsonl --summary-out specialist-review.md --format json
 review-specialists render --profile report --input merged-findings.json --out specialist-review.md
-review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile provider-review --format json
+review-specialists bundle --input findings.jsonl --out-dir "$REVIEW_OUT" --profile provider-review \
+  --reviewable "$REVIEWABLE" --lens "$REVIEW_LENS" --lens-verdict "$REVIEW_LENS_VERDICT" \
+  --scope "$REVIEW_SCOPE" --evidence-reviewed "$REVIEW_EVIDENCE" --format json
 ```
+
+The `provider-review` profile renders those five values into the published
+review header. Omit one and the body ships a placeholder — `Reviewable: not
+provided`, `Lens: unspecified`, `Scope: not provided` — to everyone reading the
+PR/MR, so pass all five whenever the bundle is destined for a provider body.
+`--evidence-reviewed` must be a portable identifier such as a repository path,
+command, or run id, never an absolute local path or a `$HOME`-prefixed
+artifact path: the value is published verbatim.
 
 ## Mode Selection
 

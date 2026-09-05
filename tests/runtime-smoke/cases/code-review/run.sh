@@ -525,11 +525,42 @@ run_review_convergence_contract_probe() {
   fi
 }
 
+run_provider_review_metadata_contract_probe() {
+  local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
+  local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+  local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
+  local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
+  local flag owner
+
+  # A copyable `--profile provider-review` command must carry every metadata
+  # flag the provider body renders. Omitting one publishes a placeholder
+  # header ("Reviewable: not provided", "Lens: unspecified") into a real review.
+  for flag in --reviewable --lens-verdict --scope --evidence-reviewed; do
+    grep -Fq -- "$flag" "$skill" || return 1
+    grep -Fq -- "$flag" "$posting" || return 1
+  done
+
+  # The prose owners must name the same requirement, so a reader who never
+  # opens the reference contract still passes the metadata through.
+  for owner in "$delivery" "$tracking" "$dispatch"; do
+    grep -Fq -- '--reviewable' "$owner" || return 1
+    grep -Fq -- '--lens-verdict' "$owner" || return 1
+    grep -Fq -- '--evidence-reviewed' "$owner" || return 1
+  done
+
+  # `--evidence-reviewed` reaches a public review body, so an absolute local
+  # path or `$HOME` prefix is never an acceptable evidence identifier.
+  grep -Fq 'never an absolute local path' "$skill" || return 1
+  grep -Fq 'never an absolute local path' "$posting" || return 1
+}
+
 failures=0
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.actionability-contract" "every reviewer finding explicitly classifies actionability for native thread publication" run_reviewer_actionability_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
+record_case "code-review.outcome-routing.provider-review-metadata" "provider-review bundle call sites carry the report metadata the body renders" run_provider_review_metadata_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe
 record_case "code-review.outcome-routing.pre-merge" "full pre-merge profile forced specialists passed" run_pre_merge_gate_probe

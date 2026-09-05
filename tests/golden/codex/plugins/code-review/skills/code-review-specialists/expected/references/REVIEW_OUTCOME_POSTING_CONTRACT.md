@@ -59,6 +59,18 @@ REVIEW_COMMENT_FILE="$REVIEW_BUNDLE_DIR/provider-review.md"
 REVIEW_THREAD_FILE="$REVIEW_BUNDLE_DIR/review-threads.json"
 ```
 
+`--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
+`--evidence-reviewed` are not optional for this profile. The renderer accepts
+their absence and substitutes `not provided` / `unspecified`, and
+`pr review validate --specialist-report` accepts the result, so a missing flag
+is discovered only after the placeholder has been published under the reviewer's
+name. Bind all five before rendering.
+
+`--evidence-reviewed` is published verbatim in the review body, so it must be a
+portable identifier — a repository path, the validation command, or a run id —
+and never an absolute local path or a `$HOME`-prefixed artifact path. Cite the
+artifact's identity, not its location on the machine that produced it.
+
 Before any GitHub publication, validate the immutable body snapshot and diff
 anchors. Add `--thread-file` only when the generated array has actionable
 entries; a clean `[]` means omit the flag.

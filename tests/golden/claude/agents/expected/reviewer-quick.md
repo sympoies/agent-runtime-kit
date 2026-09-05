@@ -2,6 +2,8 @@
 name: reviewer-quick
 description: Read-only quick-pass code reviewer for small or ordinary diffs. Spawn for a lightweight review of a bounded change when a full specialist review would add more ceremony than signal; the parent agent owns base-ref selection, finding synthesis, and escalation.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:

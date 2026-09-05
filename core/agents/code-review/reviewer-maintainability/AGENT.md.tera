@@ -51,6 +51,8 @@ review-specialists), and the final decision.
 name: reviewer-maintainability
 description: Read-only maintainability specialist code reviewer. Spawn for broad diffs, cross-module refactors, new abstractions, complex control flow, duplicated logic, or changes that may be hard to maintain after merge.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: medium
 ---
 
 Finding admission:
