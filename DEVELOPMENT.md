@@ -430,10 +430,12 @@ That currently performs:
 14. `python3 scripts/ci/version-baseline-audit.py check` — deterministic,
     network-free consistency gate over the version-baseline mirrors: the
     `README.md` "Version baseline" table, each `docs/source/harness-shape-*.md`
-    "Version Floors" statement, and `docs/source/nils-cli-surface.md` must
-    agree with their sources of truth (`manifests/runtime-roots.yaml` for the
-    product floor, `docs/source/nils-cli-pin.yaml` for both nils-cli roles). Run
-    `… report` for an advisory installed-vs-latest probe.
+    "Version Floors" statement and Codex/Claude "Coverage Summary" table, and
+    `docs/source/nils-cli-surface.md` must agree with their sources of truth
+    (`manifests/runtime-roots.yaml` for the product floor,
+    `docs/source/nils-cli-pin.yaml` for both nils-cli roles, and
+    `manifests/surfaces.yaml` for per-surface floors). Run `… report` for an
+    advisory installed-vs-latest probe.
 15. `bash scripts/ci/product-leak-audit.sh --self-test` plus
     `bash scripts/ci/product-leak-audit.sh` — broad-sentinel leakage audit over
     rendered/loaded product artifacts, with documented allowlist reasons in
