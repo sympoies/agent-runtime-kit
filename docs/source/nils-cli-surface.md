@@ -1,22 +1,42 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-09-02 (refreshed for `v1.27.35`)
+- Snapshot date: 2026-09-05 (refreshed for `v1.28.0`)
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.27.35`
+- Active `git describe --tags` output: `v1.28.0`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.35`,
-  `validated_tag: v1.27.35`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.28.0`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `bf80fae0`
-  (`feat(agent-hook): admit block-agent-artifact-routing to the v1 allowlist`)
+- Head commit: `35b0bb5d`
+  (`chore(release): bump cli versions to 1.28.0`)
 - Release:
-  [`v1.27.35`](https://github.com/sympoies/nils-cli/releases/tag/v1.27.35),
+  [`v1.28.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.28.0),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.27.35` is both the validated release and the compatibility minimum. It is
+- `v1.28.0` is the validated release, and `v1.27.35` is the compatibility
+  minimum. This adoption moved validated only.
+- `v1.28.0` makes the publication-bound `provider-review` and `pr-comment`
+  render profiles refuse to invent report metadata: omitting `--reviewable`,
+  `--lens`, `--scope`, or `--evidence-reviewed` — or supplying one of the
+  retired placeholder strings — exits 64 with
+  `provider-review-metadata-required` and writes no body, and `forge-cli pr
+  review validate --specialist-report` rejects those same sentinels at the
+  publication boundary
+  ([#1613](https://github.com/sympoies/nils-cli/pull/1613)). The previous
+  behavior substituted `not provided` / `unspecified` and synthesized evidence
+  from the input file list, which reached a published review. That is a
+  breaking change for a caller which relied on the substitution, but nothing
+  below the floor became less usable, so the floor did not move. The
+  `review-specialists` per-binary floor also stays at `1.27.27`: a lock-step
+  floor may not exceed `minimum_supported_tag`, because those floors guard
+  against a partial release *within* the admitted range rather than raising the
+  effective minimum. A host between the floor and validated therefore still
+  renders the old permissive body — which is why the skills bind all five flags
+  regardless of host version.
+- `v1.27.35` was adopted as the floor because it is
   the first release whose compiled `runtime-kit.handler.v1` allowlist admits
   `block-agent-artifact-routing`
   ([#1599](https://github.com/sympoies/nils-cli/pull/1599)), the handler that

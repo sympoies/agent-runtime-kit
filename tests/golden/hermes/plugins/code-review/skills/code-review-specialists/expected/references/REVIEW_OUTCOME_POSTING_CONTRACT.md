@@ -60,11 +60,20 @@ REVIEW_THREAD_FILE="$REVIEW_BUNDLE_DIR/review-threads.json"
 ```
 
 `--reviewable`, `--lens`, `--lens-verdict`, `--scope`, and
-`--evidence-reviewed` are not optional for this profile. The renderer accepts
-their absence and substitutes `not provided` / `unspecified`, and
-`pr review validate --specialist-report` accepts the result, so a missing flag
-is discovered only after the placeholder has been published under the reviewer's
-name. Bind all five before rendering.
+`--evidence-reviewed` are not optional for this profile. From nils-cli v1.28.0
+the renderer refuses to emit a publication-bound body without them, exiting 64
+with `provider-review-metadata-required` and writing nothing — and it refuses a
+placeholder typed in as a value just as firmly, because typing `not provided`
+conveys no more than omitting the flag. `pr review validate
+--specialist-report` rejects those same sentinels at the publication boundary
+for a body built any other way.
+
+Before v1.28.0 both surfaces were permissive: the renderer substituted
+`not provided` / `unspecified` and synthesized `Evidence reviewed:` from the
+input file list, and the validator accepted the result — so a missing flag was
+discovered only after the placeholder had been published under the reviewer's
+name. That is the defect the guards exist to close. Bind all five before
+rendering regardless of host version.
 
 Every value the profile renders is published verbatim, so `--reviewable`,
 `--scope`, `--evidence-reviewed`, and each finding's `path` must be portable
