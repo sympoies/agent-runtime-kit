@@ -31,7 +31,7 @@ changed `--help` output, which the committed zsh completion asset mirrors. `--lo
 in `--local-fast`, and the repository's own guidance says to run the full parity checks "only when
 debugging CI" — which is precisely when it is too late.
 
-**2. `ci/all.sh` positions 8+ require a clean tree (sympoies/agent-runtime-kit).**
+**2. `ci/all.sh` position 8 requires a clean tree (sympoies/agent-runtime-kit).**
 `runtime-smoke --mode convergence` refuses to run with uncommitted changes
 (`portable source must be clean; commit or stash reviewed changes`). Every first run of a change
 therefore fails at position 8 with a message about tree state rather than about the change. The
