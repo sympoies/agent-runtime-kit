@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.247",
+    "@anthropic-ai/claude-code": "2.1.261",
     "@openai/codex": "0.150.1"
   }
 }
