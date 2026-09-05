@@ -1,11 +1,11 @@
 # Harness Shape — Codex
 
-- Date: 2026-05-31
-- Status: empirical observation; this file is the per-product
+- Status: maintained current-state description; this file is the per-product
   narrative input to the root-level `SUPPORT_MATRIX.md`. For the
-  unified Codex × Claude long-format table, see [`SUPPORT_MATRIX.md`](../../SUPPORT_MATRIX.md).
-- Companion doc:
-  `docs/source/harness-shape-claude.md`.
+  unified Codex × Claude × Hermes long-format table, see
+  [`SUPPORT_MATRIX.md`](../../SUPPORT_MATRIX.md).
+- Companion docs: `docs/source/harness-shape-claude.md` and
+  `docs/source/harness-shape-hermes.md`.
 - Update (2026-06, issue #435): Codex shipped a real plugin loader + plugin
   marketplace (`codex plugin marketplace add`;
   <https://developers.openai.com/codex/plugins/build>), and runtime-kit has now
@@ -104,7 +104,7 @@ a uniform shape:
   repo; this is why home policy uses `AGENT_HOME.md` instead of a
   source-root `AGENTS.md`.
 - Source: `./AGENTS.md` in this repo, which declares the repo-local
-  policy and notes that `./CLAUDE.md` is a symlink to it (`AGENTS.md`).
+  policy and notes that `./CLAUDE.md` imports it through `@AGENTS.md`.
 - Install mechanism: not installed by `agent-runtime`; it ships as part
   of the repo working tree.
 - Acceptance lane: covered indirectly by any Codex session opened in
@@ -406,7 +406,7 @@ a uniform shape:
 | 2 | `./AGENTS.md` (repo-local) | yes | repo working tree | 0.130.0 | n/a |
 | 3 | `.codex-plugin/plugin.json` | yes | plugin-manifest-copy; Codex loads it via the `codex-kit` marketplace (skills auto-discovered, manifest `skills` field ignored) | 0.141.0 | v0.17.5 |
 | 4 | `.agents/plugins/marketplace.json` | yes | `codex-kit` marketplace activated by `sync-runtime-surfaces.sh` / `setup.sh` | 0.141.0 | v0.17.5 |
-| 5 | `plugins/<p>/skills/<s>/` discovery | yes | bundled `skills/<skill>/SKILL.md` discovered as `<plugin>:<skill>` once installed | 0.141.0 | v0.20.0 |
+| 5 | `plugins/<p>/skills/<s>/` discovery | yes | bundled `skills/<skill>/SKILL.md` discovered as `<plugin>:<skill>` once installed | 0.141.0 | v1.21.15 |
 | 6 | `commands/<n>.md` | not-applicable | — | n/a | n/a |
 | 7 | `agents/<n>.toml` | yes | rendered + directory symlink into `$CODEX_HOME/agents` | 0.139.0 | v1.3.0 |
 | 8 | `hooks/<n>.*` scripts | yes | shared scripts materialized as owner-only regular files under `$CODEX_HOME/hooks` | 0.130.0 | v1.24.5 |
@@ -418,7 +418,7 @@ a uniform shape:
 | 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 | 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | retired; plugin-scoped discovery is row 5 | n/a | n/a |
 | 16 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.26.4 |
-| 17 | work-tier delegation policy | yes | agent-docs policy routing | 0.130.0 | v0.16.0 |
+| 17 | work-tier delegation policy | yes | agent-docs policy routing | 0.130.0 | v1.12.1 |
 
 Status legend:
 

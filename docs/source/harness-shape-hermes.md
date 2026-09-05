@@ -155,9 +155,9 @@ the acceptance lane, and the current ship state.
 - Hermes reads from: `~/.hermes` (override via the `HERMES_HOME` env var).
 - Source: `manifests/runtime-roots.yaml` hermes `state_home`.
 - Acceptance lane: sandbox install rehearsal and the shared skill-exposure
-  contract verify that Hermes renders the same 27 active IDs and no retired
-  Browser/Evidence plugin surface; runtime-kit does not claim Hermes receipt or
-  hook parity with Codex and Claude.
+  contract verify that Hermes renders its manifest-selected active set and no
+  retired Browser/Evidence plugin surface; runtime-kit does not claim Hermes
+  receipt or hook parity with Codex and Claude.
 - Support today: **shipped**.
 
 ### 15. Local and external skill roots

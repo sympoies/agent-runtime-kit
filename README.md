@@ -1,9 +1,9 @@
 # agent-runtime-kit
 
 `agent-runtime-kit` is the source repository for the local agent runtime layer
-shared by **Codex CLI** and **Claude Code**. Skills, hooks, policy docs, plugin
-metadata, manifests, and adapter templates are edited here, then rendered into
-product-specific runtime homes such as `$HOME/.codex` and `$HOME/.claude`.
+shared by **Codex CLI**, **Claude Code**, and **Hermes Agent**. Skills, hooks,
+policy docs, plugin metadata, manifests, and adapter templates are edited here,
+then rendered into product-specific runtime homes.
 
 Per-surface ship state is tracked in [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md).
 
@@ -11,11 +11,11 @@ Per-surface ship state is tracked in [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md).
 
 - Portable runtime source under `core/`: skills, hooks, policies, schemas, and
   product-independent helper content.
-- Product adapters under `targets/`: Codex and Claude link maps, templates, and
-  activation surfaces.
+- Product adapters under `targets/`: Codex, Claude, and Hermes link maps,
+  templates, and activation surfaces.
 - Machine-readable inventory under `manifests/`: skills, plugins, product
   capabilities, runtime roots, CLI floors, and labels.
-- Generated review output under `build/`, pinned by `tests/golden/`.
+- Generated product output under `build/`, pinned by `tests/golden/`.
 - Repository docs, plans, fixtures, and validation scripts.
 
 This repo does **not** ship binaries and does not track host runtime state,
@@ -41,21 +41,21 @@ writable per-host state.
 
 ```text
 core/                     manifests/         targets/
-  skills/  hooks/  docs/  *.yaml             codex/   claude/
+  skills/  hooks/  docs/  *.yaml             codex/   claude/   hermes/
   policies/                                  link-map.yaml + adapter files
         |                     |                      |
         +---------------------+----------------------+
                               |
-                              | agent-runtime render --product <codex|claude>
+                              | agent-runtime render --product <codex|claude|hermes>
                               v
                          build/<product>/      (regenerated, golden-pinned)
                               |
                               | agent-runtime install --apply
                               v
-       live_home: $HOME/.codex   $HOME/.claude       (managed runtime)
-       state_home: $XDG_STATE_HOME/agent-runtime-kit/{codex,claude}/
-                   override via CODEX_AGENT_STATE_HOME / CLAUDE_KIT_STATE_HOME
-                   (writable artifacts under <state_home>/out/ and /backups/)
+       live_home: $CODEX_HOME   $HOME/.claude   $HERMES_HOME
+                  (Codex and Hermes use their documented defaults when unset)
+       state_home: Codex / Claude use the XDG agent-runtime-kit state tree;
+                   Hermes uses HERMES_HOME (default $HOME/.hermes)
 ```
 
 Product output is manifest-selected rather than a recursive copy of `core/`.
@@ -68,7 +68,9 @@ under `build/<product>/core/policies/`.
 Live Codex skill discovery reads installed `codex-kit` plugin bundles as
 `<plugin>:<skill>` entries; live Claude discovery reads
 `$HOME/.claude/plugins/<p>/skills/`. Both are populated from this repo's
-rendered `build/` output by the runtime sync and install surfaces.
+rendered `build/` output by the runtime sync and install surfaces. Hermes reads
+the same rendered skills through its configured
+`$HERMES_HOME/external-skills/agent-runtime-kit/` tree.
 
 ## CLI boundary
 
@@ -164,7 +166,7 @@ and coupled nils-cli debug-build guidance.
 
 ```text
 .
-├── AGENT_HOME.md        # shared home-scope policy for Codex and Claude
+├── AGENT_HOME.md        # shared home-scope policy for Codex, Claude, and Hermes
 ├── AGENTS.md            # repo-local policy for this checkout
 ├── CLAUDE.md            # Claude import wrapper for AGENTS.md
 ├── AGENT_DOCS.toml      # project-local agent-docs dispatch entries
@@ -176,7 +178,7 @@ and coupled nils-cli debug-build guidance.
 │   ├── hooks/           # shared and product-specific hook sources
 │   ├── policies/        # portable runtime policies and retained records
 │   └── skills/          # portable skill source by domain
-├── targets/             # Codex and Claude adapter surfaces
+├── targets/             # Codex, Claude, and Hermes adapter surfaces
 ├── manifests/           # machine-checkable runtime inventory
 ├── docs/
 │   ├── source/          # architecture, policies, specs, and references
@@ -199,7 +201,9 @@ and coupled nils-cli debug-build guidance.
 
 ## Skills
 
-Nine skill domains are currently rendered into Codex and Claude plugins:
+The manifest-declared skill domains are rendered for Codex, Claude, and Hermes.
+Codex and Claude activate plugin bundles; Hermes discovers the rendered skills
+through its external skill root:
 
 `code-review` · `computer-use` · `conversation` · `dispatch` · `issue` ·
 `media` · `meta` · `pr` · `reporting`
@@ -220,6 +224,9 @@ AGENT_HOME.md   <- single source of global agent policy
        | symlink         | symlink
 $HOME/.codex/AGENTS.md   $HOME/.claude/CLAUDE.md
 
+AGENT_HOME.md -- render/install --> $HERMES_HOME/skills/development-policy/SKILL.md
+                                      ^ referenced by $HERMES_HOME/SOUL.md
+
 AGENTS.md       <- project-scope policy for this repo
        ^
        | @AGENTS.md import
@@ -227,8 +234,9 @@ AGENTS.md       <- project-scope policy for this repo
 ```
 
 `AGENT_HOME.md` intentionally has a different name from `AGENTS.md` and
-`CLAUDE.md`, so neither product reads the same policy twice when this source
-repo is the active project.
+`CLAUDE.md`, so Codex and Claude do not read the same policy twice when this
+source repo is the active project. Hermes consumes the rendered policy skill;
+the kit never overwrites the user's `SOUL.md`.
 
 ## Next reading
 
@@ -238,5 +246,5 @@ repo is the active project.
 - [`docs/source/macos-agent-bootstrap-prompt.md`](docs/source/macos-agent-bootstrap-prompt.md):
   copyable macOS agent prompt for clean zsh-kit / agent-runtime-kit setup.
 - [`core/skills/README.md`](core/skills/README.md): skill catalog by category and series.
-- [`AGENT_HOME.md`](AGENT_HOME.md): global agent policy loaded by both products.
+- [`AGENT_HOME.md`](AGENT_HOME.md): global agent policy rendered for all three products.
 - [`AGENTS.md`](AGENTS.md): project-scope policy and current boundaries.

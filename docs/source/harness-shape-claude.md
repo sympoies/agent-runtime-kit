@@ -1,11 +1,11 @@
 # Harness Shape — Claude
 
-- Date: 2026-05-31
-- Status: empirical observation; this file is the per-product
+- Status: maintained current-state description; this file is the per-product
   narrative input to the root-level `SUPPORT_MATRIX.md`. For the
-  unified Codex × Claude long-format table, see [`SUPPORT_MATRIX.md`](../../SUPPORT_MATRIX.md).
-- Companion doc (Codex side):
-  `docs/source/harness-shape-codex.md`.
+  unified Codex × Claude × Hermes long-format table, see
+  [`SUPPORT_MATRIX.md`](../../SUPPORT_MATRIX.md).
+- Companion docs: `docs/source/harness-shape-codex.md` and
+  `docs/source/harness-shape-hermes.md`.
 
 ## Purpose
 
@@ -77,13 +77,13 @@ a uniform shape:
 ### 2. Project-scope prompt (`./CLAUDE.md`)
 
 - Claude reads from: `<repo>/CLAUDE.md` for repo-local policy.
-- Source: `./CLAUDE.md` in this repo is a symlink to `./AGENTS.md` (the
-  project-local Codex/Claude shared file).
+- Source: `./CLAUDE.md` in this repo is a one-line `@AGENTS.md` import (the
+  project-local shared policy file).
 - Install mechanism: not installed by `agent-runtime`; it ships as part
   of the repo working tree.
 - Acceptance lane: covered indirectly by any test that opens this repo
   with Claude; no specific gate.
-- Support today: **shipped (linked, repo-local only)**.
+- Support today: **shipped (imported, repo-local only)**.
 
 ### 3. Plugin manifest (`.claude-plugin/plugin.json`)
 
@@ -110,8 +110,8 @@ a uniform shape:
   marketplace source is `$HOME/.claude/.claude-plugin/marketplace.json`
   (`manifests/product-capabilities.yaml`), but the file alone is not enough for
   live skill visibility.
-- Source: `targets/claude/.claude-plugin/marketplace.json` (lists all 10
-  plugins; `claude-kit` namespace).
+- Source: `targets/claude/.claude-plugin/marketplace.json` (lists every plugin
+  declared in `manifests/plugins.yaml`; `claude-kit` namespace).
 - Install / activation mechanism: `agent-runtime install` copy-installs the
   root marketplace file (`targets/claude/link-map.yaml`,
   `id: claude-kit.marketplace`); then
@@ -310,15 +310,33 @@ a uniform shape:
   an isolated runtime home.
 - Support today: **shipped (env var + runtime allocator)**.
 
+### 15. Codex local skill root (`$CODEX_HOME/skills/<d>/<s>/`)
+
+- This is a retired Codex-specific layout. Claude uses plugin-scoped skill
+  discovery (section 5).
+- Support today: **not-applicable**.
+
+### 16. Codex hook registration (`config.toml` managed block)
+
+- This is a Codex-specific primitive. Claude uses the `settings.json` hook
+  registration described in section 9.
+- Support today: **not-applicable**.
+
+### 17. Prompt-mode delegation policy (`AGENT_HOME.md`)
+
+- The Codex-only reviewer delegation block is omitted from the rendered Claude
+  home prompt; Claude uses its native reviewer defaults.
+- Support today: **not-applicable**.
+
 ## Coverage Summary
 
 | # | Surface | runtime-kit ships | Mechanism | Min Claude | Min nils-cli |
 |---|---|---|---|---|---|
 | 1 | `CLAUDE.md` (home) | yes | rendered home prompt symlink to `build/claude/AGENT_HOME.md` | 2.1.145 | v1.12.1 |
-| 2 | `./CLAUDE.md` (repo-local) | yes | symlink to `./AGENTS.md` | 2.1.145 | n/a |
+| 2 | `./CLAUDE.md` (repo-local) | yes | one-line `@AGENTS.md` import | 2.1.145 | n/a |
 | 3 | `.claude-plugin/plugin.json` | yes | rendered + copy-install | 2.1.145 | v0.17.5 |
 | 4 | `.claude-plugin/marketplace.json` | yes | rendered + copy-install | 2.1.145 | v0.17.5 |
-| 5 | `plugins/<p>/skills/<s>/` | yes | rendered + recursive symlink | 2.1.145 | v0.20.0 |
+| 5 | `plugins/<p>/skills/<s>/` | yes | rendered + recursive symlink | 2.1.145 | v1.21.15 |
 | 6 | `commands/<n>.md` | yes | linked directory | 2.1.145 | v0.17.5 |
 | 7 | `agents/<n>.md` | yes | rendered + directory symlink into `~/.claude/agents` | 2.1.145 | v1.3.0 |
 | 8 | `hooks/<n>.*` scripts | partial | shared scripts linked; claude adapter slot empty | 2.1.145 | v1.24.5 |
@@ -328,6 +346,9 @@ a uniform shape:
 | 12 | MCP servers | no | — | n/a | n/a |
 | 13 | Heuristic system | yes | shared policy root | 2.1.145 | v1.8.0 (heuristic-inbox) |
 | 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 2.1.145 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
+| 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | Claude uses plugin-scoped discovery (row 5) | n/a | n/a |
+| 16 | Codex `config.toml` hook ingress | not-applicable | Claude uses row 9 | n/a | n/a |
+| 17 | prompt-mode delegation policy | not-applicable | Codex-only block omitted | n/a | n/a |
 
 Status legend:
 
@@ -338,6 +359,8 @@ Status legend:
   artifact yet.
 - **no** — Claude harness primitive that runtime-kit does not target;
   not on the current roadmap unless added explicitly.
+- **not-applicable** — Codex-specific primitive or policy row with no Claude
+  runtime loader.
 
 ## Acceptance Lanes (Claude-Relevant CI Gates)
 
