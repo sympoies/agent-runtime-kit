@@ -30,9 +30,14 @@ each gate.
 `scripts/ci/all.sh` position 6 runs `agent-runtime render --product claude --update-golden` and
 *then* `git diff --exit-code -- tests/golden/`. The goldens are regenerated from the templates
 immediately before being compared. So a template that drops a field regenerates a golden that
-matches, and the gate is green. This is exactly how the eight Claude reviewer subagents went
-without a `model` pin for as long as they did, while the Codex branch — guarded separately by
-`codex_reviewer_profile_errors` in `scripts/ci/skill-governance-audit.sh` — kept its pins.
+matches it, and once both are committed — the ordinary workflow — the gate is green with the field
+gone. What the gate pins is source-against-render consistency, never a stated expectation.
+
+The eight Claude reviewer subagents had no `model` pin, while the Codex branch — guarded separately
+by `codex_reviewer_profile_errors` in `scripts/ci/skill-governance-audit.sh` — kept its pins. Note
+the limit of that observation: the Claude pin was never present, so no golden ever dropped one.
+The defensible claim is not that this gate *caused* the absence, but that it could not have
+surfaced it.
 
 The maintainability lens stated it; the red-team lens verified it against `ci/all.sh` directly.
 The author's own PR had proposed the golden refresh *as the proof* that the new pin could not

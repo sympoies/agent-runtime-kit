@@ -13,9 +13,15 @@ source and leaves everything else intact.
 Mutation: remove `model: opus` from one `core/agents/code-review/reviewer-*/AGENT.md.tera` Claude
 branch and refresh goldens the way CI does.
 
-Observed: the regenerated golden matches the mutated template, `git diff` is empty, gate green.
-The gate compares source against render, never against a stated expectation, so it detects drift
-between the two and nothing else.
+Observed: the regenerated golden matches the mutated template. `git diff --exit-code` compares the
+working tree against the index, so the refreshed golden is *dirty* at this point and the gate goes
+red — until the regenerated golden is committed alongside the template, which is exactly what a
+normal change does. Once both are committed the gate is green with the pin gone.
+
+That last step is the whole point, and stating it matters: the gate compares source against
+render, never against a stated expectation, so it detects drift between the two and nothing else.
+An author who follows the ordinary workflow — edit template, refresh goldens, commit both — ships
+the regression green.
 
 Repair: `codex_reviewer_profile_errors` in `scripts/ci/skill-governance-audit.sh` now asserts the
 Claude branch sets `model` and `effort`, with fixture cases proving the audit fails closed —
