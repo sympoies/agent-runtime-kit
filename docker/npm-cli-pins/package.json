@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.261",
-    "@openai/codex": "0.150.1"
+    "@openai/codex": "0.153.0"
   }
 }
