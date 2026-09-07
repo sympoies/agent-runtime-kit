@@ -46,8 +46,8 @@ Scope rules:
 
 ## Version Floors (Codex side)
 
-- Codex product `min_version` / `recommended_version`: **0.150.1**;
-  `min_version_effective_from`: **2026-09-01**; probe:
+- Codex product `min_version` / `recommended_version`: **0.153.0**;
+  `min_version_effective_from`: **2026-09-21**; probe:
   `codex --version` (`manifests/runtime-roots.yaml`).
 - `agent-runtime` orchestration binary (renders / installs the Codex surface)
   ships inside nils-cli; minimum supported **v1.27.35**; validated snapshot
