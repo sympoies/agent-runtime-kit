@@ -700,6 +700,357 @@ for target_product in codex claude hermes; do
   done
 done
 
+# ── Case 18: --retarget-from adopts, drops, and never clobbers ───────────
+# Cutover to a new private source cannot rely on apply or prune alone: prune
+# gates on the link resolving to the *selected* source, so a leftover from the
+# previous source is invisible to it. --retarget-from names that previous
+# source; the overlay pass then adopts what the new source still declares and
+# the drop pass removes what it does not.
+CASE18="$ARTIFACTS_DIR/case18"
+OLD18="$CASE18/old-private"
+NEW18="$CASE18/new-private"
+HOME18="$CASE18/home"
+# private-moved: in both sources, declared everywhere -> adopted.
+# private-dropped: old source only -> removed.
+# private-added: new source only -> linked by the overlay pass.
+# private-claude-only: in both, but the new source declares claude only.
+# private-nomd: in both, but the new source copy has no SKILL.md.
+make_private_home "$OLD18" private-moved private-dropped private-claude-only private-nomd
+make_private_home "$NEW18" private-moved private-added private-claude-only private-nomd
+set_skill_products "$NEW18" private-claude-only claude
+rm -f "$NEW18/.agents/skills/private-nomd/SKILL.md"
+mkdir -p "$HOME18/.hermes"
+
+OUT18_SEED="$(run_sync "$HOME18" --private-home "$OLD18" --apply 2>&1)" ||
+  fail "case18: seeding run against the old source exited non-zero: $OUT18_SEED"
+
+# Prove the pre-state the case depends on, so a seeding regression cannot make
+# the retarget assertions pass vacuously.
+for product_dir in "$HOME18/.codex/skills" "$HOME18/.claude/skills" \
+  "$HOME18/.hermes/external-skills/private"; do
+  if [ "$(readlink "$product_dir/private-dropped" 2>/dev/null || true)" = \
+    "$OLD18/.agents/skills/private-dropped" ]; then
+    pass "case18: seeded private-dropped on the old source in $product_dir"
+  else
+    fail "case18: seeding did not create private-dropped in $product_dir"
+  fi
+done
+
+# Foreign links and real directories in EVERY product home. One foreign link is
+# named after a skill the selected source declares, which is the only shape that
+# catches an ownership check relaxed to "the selected source has this name".
+mkdir -p "$CASE18/foreign/private-foreign" "$CASE18/foreign/private-moved"
+for product_dir in "$HOME18/.codex/skills" "$HOME18/.claude/skills" \
+  "$HOME18/.hermes/external-skills/private"; do
+  mkdir -p "$product_dir"
+  ln -sfn "$CASE18/foreign/private-foreign" "$product_dir/private-foreign"
+  ln -sfn "$CASE18/foreign/private-moved" "$product_dir/private-moved-alias"
+  mkdir -p "$product_dir/private-real-dir"
+done
+# An uppercase name the overlay pass refuses to publish must be left alone and
+# said out loud. The skill exists under that name in BOTH sources and the link
+# is owned by the previous one, so the drop pass really reaches its name gate
+# rather than short-circuiting on the ownership test.
+make_private_home "$OLD18" Private-Upper
+make_private_home "$NEW18" Private-Upper
+for product_dir in "$HOME18/.codex/skills" "$HOME18/.claude/skills" \
+  "$HOME18/.hermes/external-skills/private"; do
+  ln -sfn "$OLD18/.agents/skills/Private-Upper" "$product_dir/Private-Upper"
+done
+
+OUT18="$(run_sync "$HOME18" --private-home "$NEW18" --retarget-from "$OLD18" --apply 2>&1)" ||
+  fail "case18: retarget run exited non-zero: $OUT18"
+
+for product_dir in "$HOME18/.codex/skills" "$HOME18/.claude/skills" \
+  "$HOME18/.hermes/external-skills/private"; do
+  if [ "$(readlink "$product_dir/private-moved" 2>/dev/null || true)" = \
+    "$NEW18/.agents/skills/private-moved" ]; then
+    pass "case18: adopted private-moved in $product_dir"
+  else
+    fail "case18: private-moved not adopted in $product_dir"
+  fi
+
+  if [ -e "$product_dir/private-dropped" ] || [ -L "$product_dir/private-dropped" ]; then
+    fail "case18: old-source-only private-dropped survived in $product_dir"
+  else
+    pass "case18: old-source-only private-dropped removed from $product_dir"
+  fi
+
+  if [ "$(readlink "$product_dir/private-added" 2>/dev/null || true)" = \
+    "$NEW18/.agents/skills/private-added" ]; then
+    pass "case18: new-source private-added linked in $product_dir"
+  else
+    fail "case18: private-added missing in $product_dir"
+  fi
+
+  # The new source has no SKILL.md for this one, so it is not adoptable.
+  if [ -e "$product_dir/private-nomd" ] || [ -L "$product_dir/private-nomd" ]; then
+    fail "case18: private-nomd survived without a SKILL.md in the selected source ($product_dir)"
+  else
+    pass "case18: private-nomd dropped for a missing SKILL.md in $product_dir"
+  fi
+
+  # Ownership must key on the previous source, not on the name existing there.
+  if [ "$(readlink "$product_dir/private-foreign" 2>/dev/null || true)" = \
+    "$CASE18/foreign/private-foreign" ]; then
+    pass "case18: unrelated foreign link untouched in $product_dir"
+  else
+    fail "case18: unrelated foreign link changed in $product_dir"
+  fi
+  if [ "$(readlink "$product_dir/private-moved-alias" 2>/dev/null || true)" = \
+    "$CASE18/foreign/private-moved" ]; then
+    pass "case18: name-colliding foreign link untouched in $product_dir"
+  else
+    fail "case18: name-colliding foreign link was clobbered in $product_dir"
+  fi
+
+  if [ -d "$product_dir/private-real-dir" ] && [ ! -L "$product_dir/private-real-dir" ]; then
+    pass "case18: real directory untouched in $product_dir"
+  else
+    fail "case18: real directory was replaced in $product_dir"
+  fi
+
+  if [ "$(readlink "$product_dir/Private-Upper" 2>/dev/null || true)" = \
+    "$OLD18/.agents/skills/Private-Upper" ]; then
+    pass "case18: unpublishable name left on the previous source in $product_dir"
+  else
+    fail "case18: unpublishable name was moved or removed in $product_dir"
+  fi
+done
+
+# The product-declaration half of the drop condition.
+if [ "$(readlink "$HOME18/.claude/skills/private-claude-only" 2>/dev/null || true)" = \
+  "$NEW18/.agents/skills/private-claude-only" ]; then
+  pass "case18: private-claude-only adopted for its declared product"
+else
+  fail "case18: private-claude-only not adopted for claude"
+fi
+for product_dir in "$HOME18/.codex/skills" "$HOME18/.hermes/external-skills/private"; do
+  if [ -e "$product_dir/private-claude-only" ] || [ -L "$product_dir/private-claude-only" ]; then
+    fail "case18: private-claude-only survived in an undeclared product ($product_dir)"
+  else
+    pass "case18: private-claude-only dropped from an undeclared product ($product_dir)"
+  fi
+done
+
+case "$OUT18" in
+  *"invalid skill dir name 'Private-Upper'; left on the previous source"*)
+    pass "case18: the drop pass reported why the name was left alone"
+    ;;
+  *) fail "case18: the drop pass did not report the unpublishable name:\n$OUT18" ;;
+esac
+
+# The plan and the counters, not just the resulting tree: without these a
+# retarget that only deletes, or one that silently does nothing, still passes.
+case "$OUT18" in
+  *"retarget [codex]: private-moved"*)
+    pass "case18: apply announced the adoption"
+    ;;
+  *) fail "case18: apply did not announce the adoption:\n$OUT18" ;;
+esac
+case "$OUT18" in
+  *"retarget-drop [codex]: private-dropped"*)
+    pass "case18: apply announced the drop"
+    ;;
+  *) fail "case18: apply did not announce the drop:\n$OUT18" ;;
+esac
+case "$OUT18" in
+  *"linked=3 skipped=9 pruned=0 retargeted=4 retarget-dropped=8"*)
+    pass "case18: apply counters are disjoint and exact"
+    ;;
+  *) fail "case18: unexpected apply counters:\n$OUT18" ;;
+esac
+
+# ── Case 19: --retarget-from prints its plan and mutates nothing ──────────
+CASE19="$ARTIFACTS_DIR/case19"
+OLD19="$CASE19/old-private"
+NEW19="$CASE19/new-private"
+HOME19="$CASE19/home"
+make_private_home "$OLD19" private-moved private-dropped
+make_private_home "$NEW19" private-moved
+mkdir -p "$HOME19/.hermes"
+
+OUT19_SEED="$(run_sync "$HOME19" --private-home "$OLD19" --apply 2>&1)" ||
+  fail "case19: seeding run exited non-zero: $OUT19_SEED"
+
+BEFORE19="$(snapshot_runtime_home "$HOME19")"
+OUT19="$(run_sync "$HOME19" --private-home "$NEW19" --retarget-from "$OLD19" 2>&1)" ||
+  fail "case19: dry-run retarget exited non-zero: $OUT19"
+AFTER19="$(snapshot_runtime_home "$HOME19")"
+
+if [ "$AFTER19" = "$BEFORE19" ]; then
+  pass "case19: dry-run retarget mutated nothing"
+else
+  fail "case19: dry-run retarget changed the runtime tree\nbefore:\n$BEFORE19\nafter:\n$AFTER19"
+fi
+
+# The dry run is the operator's only preview of a destructive pass, so it must
+# announce the same work apply performs -- and must not refuse it.
+case "$OUT19" in
+  *"error: collision"*)
+    fail "case19: dry-run reported a collision for work apply completes:\n$OUT19"
+    ;;
+  *) pass "case19: dry-run reported no collision" ;;
+esac
+case "$OUT19" in
+  *"retarget [codex]: private-moved"*)
+    pass "case19: dry-run announced the adoption"
+    ;;
+  *) fail "case19: dry-run did not announce the adoption:\n$OUT19" ;;
+esac
+case "$OUT19" in
+  *"retarget-drop [codex]: private-dropped"*)
+    pass "case19: dry-run announced the drop"
+    ;;
+  *) fail "case19: dry-run did not announce the drop:\n$OUT19" ;;
+esac
+case "$OUT19" in
+  *"skipped=0"*) pass "case19: dry-run skipped nothing" ;;
+  *) fail "case19: dry-run inflated skipped:\n$OUT19" ;;
+esac
+
+# Apply must agree with that plan.
+OUT19_APPLY="$(run_sync "$HOME19" --private-home "$NEW19" --retarget-from "$OLD19" --apply 2>&1)" ||
+  fail "case19: apply after the dry run exited non-zero: $OUT19_APPLY"
+if [ "$(readlink "$HOME19/.codex/skills/private-moved" 2>/dev/null || true)" = \
+  "$NEW19/.agents/skills/private-moved" ]; then
+  pass "case19: apply matched the previewed plan"
+else
+  fail "case19: apply did not match the previewed plan"
+fi
+
+# ── Case 20: --retarget-from source validation fails closed ───────────────
+CASE20="$ARTIFACTS_DIR/case20"
+PRIV20="$CASE20/private"
+ALIAS20="$CASE20/alias"
+NOSKILLS20="$CASE20/no-skills"
+ALIASED_SRC20="$CASE20/aliased-source"
+HOME20="$CASE20/home"
+make_private_home "$PRIV20" private-moved
+mkdir -p "$NOSKILLS20" "$HOME20"
+ln -sfn "$PRIV20" "$ALIAS20"
+# A distinct home whose .agents/skills is a symlink into the selected source:
+# the same-home guard must not be defeatable by aliasing one level down.
+mkdir -p "$ALIASED_SRC20/.agents"
+ln -sfn "$PRIV20/.agents/skills" "$ALIASED_SRC20/.agents/skills"
+
+# expected message fragment | retarget source
+run_retarget_guard_case() {
+  local label="$1"
+  local expected="$2"
+  local source_path="$3"
+  local before after out
+
+  before="$(snapshot_runtime_home "$HOME20")"
+  if out="$(run_sync "$HOME20" --private-home "$PRIV20" --retarget-from "$source_path" --apply 2>&1)"; then
+    fail "case20-$label: run succeeded instead of failing closed: $out"
+  else
+    case "$out" in
+      *"$expected"*) pass "case20-$label: failed closed on its own guard" ;;
+      *) fail "case20-$label: failed for another reason:\n$out" ;;
+    esac
+  fi
+  after="$(snapshot_runtime_home "$HOME20")"
+  if [ "$after" = "$before" ]; then
+    pass "case20-$label: runtime tree preserved"
+  else
+    fail "case20-$label: runtime tree changed"
+  fi
+}
+
+run_retarget_guard_case same-home \
+  "retarget source is the selected private home" "$PRIV20"
+# The alias resolves to the selected home only physically, so this arm is what
+# makes the pwd -P comparison load-bearing rather than textual.
+run_retarget_guard_case aliased-home \
+  "retarget source is the selected private home" "$ALIAS20"
+run_retarget_guard_case missing \
+  "retarget source does not exist" "$CASE20/absent"
+run_retarget_guard_case no-skills \
+  "retarget source has no skills dir" "$NOSKILLS20"
+run_retarget_guard_case symlinked-skills \
+  "must not be a symlink" "$ALIASED_SRC20"
+
+# ── Case 21: --retarget-from respects --product scoping ──────────────────
+# The retarget pass is the only one that deletes, so a scoping regression here
+# removes links from product homes the operator did not select.
+CASE21="$ARTIFACTS_DIR/case21"
+OLD21="$CASE21/old-private"
+NEW21="$CASE21/new-private"
+HOME21="$CASE21/home"
+make_private_home "$OLD21" private-moved private-dropped
+make_private_home "$NEW21" private-moved
+mkdir -p "$HOME21/.hermes"
+
+OUT21_SEED="$(run_sync "$HOME21" --private-home "$OLD21" --apply 2>&1)" ||
+  fail "case21: seeding run exited non-zero: $OUT21_SEED"
+
+BEFORE21_CLAUDE="$(snapshot_tree "$HOME21/.claude" .claude)"
+BEFORE21_HERMES="$(snapshot_tree "$HOME21/.hermes" .hermes)"
+
+OUT21="$(run_sync "$HOME21" --private-home "$NEW21" --retarget-from "$OLD21" --product codex --apply 2>&1)" ||
+  fail "case21: scoped retarget exited non-zero: $OUT21"
+
+if [ "$(readlink "$HOME21/.codex/skills/private-moved" 2>/dev/null || true)" = \
+  "$NEW21/.agents/skills/private-moved" ]; then
+  pass "case21: the selected product was retargeted"
+else
+  fail "case21: the selected product was not retargeted"
+fi
+if [ -e "$HOME21/.codex/skills/private-dropped" ] || [ -L "$HOME21/.codex/skills/private-dropped" ]; then
+  fail "case21: the selected product kept an undeclared link"
+else
+  pass "case21: the selected product dropped its undeclared link"
+fi
+
+AFTER21_CLAUDE="$(snapshot_tree "$HOME21/.claude" .claude)"
+AFTER21_HERMES="$(snapshot_tree "$HOME21/.hermes" .hermes)"
+if [ "$AFTER21_CLAUDE" = "$BEFORE21_CLAUDE" ]; then
+  pass "case21: the unselected claude home was untouched"
+else
+  fail "case21: the unselected claude home changed\nbefore:\n$BEFORE21_CLAUDE\nafter:\n$AFTER21_CLAUDE"
+fi
+if [ "$AFTER21_HERMES" = "$BEFORE21_HERMES" ]; then
+  pass "case21: the unselected hermes home was untouched"
+else
+  fail "case21: the unselected hermes home changed\nbefore:\n$BEFORE21_HERMES\nafter:\n$AFTER21_HERMES"
+fi
+
+# ── Case 22: --retarget-from combined with --prune ───────────────────────
+CASE22="$ARTIFACTS_DIR/case22"
+OLD22="$CASE22/old-private"
+NEW22="$CASE22/new-private"
+HOME22="$CASE22/home"
+make_private_home "$OLD22" private-moved private-dropped
+make_private_home "$NEW22" private-moved private-stale
+mkdir -p "$HOME22/.hermes"
+
+OUT22_SEED="$(run_sync "$HOME22" --private-home "$OLD22" --apply 2>&1)" ||
+  fail "case22: old-source seeding exited non-zero: $OUT22_SEED"
+OUT22_STALE="$(run_sync "$HOME22" --private-home "$NEW22" --apply 2>&1)" ||
+  fail "case22: new-source seeding exited non-zero: $OUT22_STALE"
+rm -rf "$NEW22/.agents/skills/private-stale"
+
+OUT22="$(run_sync "$HOME22" --private-home "$NEW22" --retarget-from "$OLD22" --apply --prune 2>&1)" ||
+  fail "case22: retarget with prune exited non-zero: $OUT22"
+
+if [ "$(readlink "$HOME22/.codex/skills/private-moved" 2>/dev/null || true)" = \
+  "$NEW22/.agents/skills/private-moved" ]; then
+  pass "case22: retarget adopted while prune was enabled"
+else
+  fail "case22: retarget did not adopt while prune was enabled"
+fi
+if [ -e "$HOME22/.codex/skills/private-dropped" ] || [ -L "$HOME22/.codex/skills/private-dropped" ]; then
+  fail "case22: the previous source's leftover survived"
+else
+  pass "case22: the previous source's leftover was dropped"
+fi
+if [ -e "$HOME22/.codex/skills/private-stale" ] || [ -L "$HOME22/.codex/skills/private-stale" ]; then
+  fail "case22: prune did not remove the selected source's stale overlay"
+else
+  pass "case22: prune still removed the selected source's stale overlay"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────
 if [ "$FAILURES" -gt 0 ]; then
   printf '%s failure(s)\n' "$FAILURES" >&2
