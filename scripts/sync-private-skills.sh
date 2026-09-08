@@ -56,9 +56,12 @@ APPLY=0
 PRODUCT="all"
 PRUNE=0
 PRIVATE_HOME="${AGENT_PRIVATE_SKILLS_HOME:-}"
+RETARGET_FROM=""
+OLD_SKILLS_SRC_DIR=""
 LINKED=0
 SKIPPED=0
 PRUNED=0
+RETARGETED=0
 
 # -----------------------------------------------------------------------------
 # Help
@@ -67,6 +70,7 @@ PRUNED=0
 print_help() {
   cat <<EOF
 Usage: $PROG_NAME [--apply] [--product codex|claude|hermes|all] [--private-home PATH] [--prune]
+               [--retarget-from PATH]
 
 Overlay private project-local skills into the live Codex, Claude, and Hermes
 runtime homes by symlinking <private-home>/.agents/skills/<name> into each
@@ -112,6 +116,17 @@ Options:
       longer exists or no longer declares that product. Only ever removes
       symlinks this script owns; never touches real directories or links to a
       different private-home path.
+  --retarget-from PATH
+      Move overlay symlinks that a PREVIOUS private home created onto the
+      selected source. Neither --apply nor --prune can do this: both recognize
+      only links that already resolve to the selected source, so a link left
+      behind by an earlier source is a collision to one and invisible to the
+      other. For each product entry resolving exactly to
+      \$PATH/.agents/skills/<name>, the skill is relinked when the selected
+      source still declares it for that product, and the link is removed when it
+      does not. Real directories and links to any other path are never touched.
+      PATH must exist, must contain .agents/skills, and must not resolve to the
+      selected private home.
   -h, --help
       Print this help and exit.
 EOF
@@ -198,6 +213,18 @@ parse_args() {
         ;;
       --prune)
         PRUNE=1
+        shift
+        ;;
+      --retarget-from)
+        if [ "$#" -lt 2 ]; then
+          err "--retarget-from requires a value"
+          exit 2
+        fi
+        RETARGET_FROM="$2"
+        shift 2
+        ;;
+      --retarget-from=*)
+        RETARGET_FROM="${1#--retarget-from=}"
         shift
         ;;
       -h | --help)
@@ -421,6 +448,36 @@ resolve_private_home() {
     exit 2
   }
   SKILLS_SRC_DIR="$PRIVATE_HOME/.agents/skills"
+  return 0
+}
+
+# Resolve and bound the previous private home named by --retarget-from. It must
+# be a real, distinct source tree: retargeting from the selected home would let
+# one run both own and rewrite the same links, and the physical comparison is
+# what rules that out even when the two paths differ textually.
+resolve_retarget_source() {
+  local resolved physical
+
+  [ -n "$RETARGET_FROM" ] || return 0
+
+  if [ ! -d "$RETARGET_FROM" ]; then
+    err "retarget source does not exist: $RETARGET_FROM"
+    return 1
+  fi
+  resolved="$(abs_path "$RETARGET_FROM")"
+  physical="$(cd "$resolved" && pwd -P)" || {
+    err "cannot resolve retarget source: $RETARGET_FROM"
+    return 1
+  }
+  if [ "$physical" = "$PRIVATE_HOME_PHYSICAL" ]; then
+    err "retarget source is the selected private home: $RETARGET_FROM"
+    return 1
+  fi
+  if [ ! -d "$resolved/.agents/skills" ]; then
+    err "retarget source has no skills dir: $resolved/.agents/skills"
+    return 1
+  fi
+  OLD_SKILLS_SRC_DIR="$resolved/.agents/skills"
   return 0
 }
 
@@ -680,6 +737,37 @@ overlay_product() {
   done
 }
 
+# Move this product's links from the previous source onto the selected one.
+# Ownership is proven per entry against the OLD source, so anything the previous
+# home did not create is left exactly as it is.
+retarget_product() {
+  local product="$1"
+  local skills_dir entry name old_src new_src
+
+  [ -n "$OLD_SKILLS_SRC_DIR" ] || return 0
+
+  skills_dir="$(product_skills_dir "$product")"
+  [ -d "$skills_dir" ] || return 0
+
+  for entry in "$skills_dir"/*; do
+    [ -L "$entry" ] || continue
+    name="$(basename "$entry")"
+    old_src="$OLD_SKILLS_SRC_DIR/$name"
+    is_owned_overlay "$entry" "$old_src" || continue
+
+    new_src="$SKILLS_SRC_DIR/$name"
+    if [ -d "$new_src" ] && [ -f "$new_src/SKILL.md" ] &&
+      skill_targets_product "$new_src" "$product"; then
+      log "retarget [$product]: $name -> $new_src"
+      run_cmd ln -sfn "$new_src" "$entry"
+    else
+      log "retarget-drop [$product]: $name (absent from the selected source or not declared for this product)"
+      run_cmd rm -f "$entry"
+    fi
+    RETARGETED=$((RETARGETED + 1))
+  done
+}
+
 prune_product() {
   local product="$1"
   local skills_dir entry name expected_src
@@ -723,6 +811,11 @@ main() {
     exit 2
   fi
 
+  if ! resolve_retarget_source; then
+    err "retarget source validation failed; no runtime changes were made"
+    exit 2
+  fi
+
   if [ ! -d "$SKILLS_SRC_DIR" ]; then
     log "$PROG_NAME: no skills source at $SKILLS_SRC_DIR; nothing to overlay."
     log "  author private skills there with the create-project-skill layout:"
@@ -753,12 +846,14 @@ main() {
   [ "$APPLY" = "1" ] && mode="apply"
   log "$PROG_NAME: mode=$mode product=$PRODUCT private-home=$PRIVATE_HOME"
   log "source: $SKILLS_SRC_DIR"
+  [ -n "$OLD_SKILLS_SRC_DIR" ] && log "retarget-from: $OLD_SKILLS_SRC_DIR"
   if [ "$PRODUCT" = "all" ] && ! hermes_available; then
     log "hermes: $(hermes_home) not present; skipping hermes overlay"
   fi
   log ""
 
   for product in $selected_product_list; do
+    retarget_product "$product"
     overlay_product "$product"
     if [ "$PRUNE" = "1" ]; then
       prune_product "$product"
@@ -769,7 +864,7 @@ main() {
   done
 
   log ""
-  log "summary: mode=$mode linked=$LINKED skipped=$SKIPPED pruned=$PRUNED"
+  log "summary: mode=$mode linked=$LINKED skipped=$SKIPPED pruned=$PRUNED retargeted=$RETARGETED"
   if [ "$APPLY" = "0" ]; then
     log "dry-run only; re-run with --apply to write symlinks."
   fi

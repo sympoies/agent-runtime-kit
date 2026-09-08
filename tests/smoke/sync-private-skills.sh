@@ -700,6 +700,108 @@ for target_product in codex claude hermes; do
   done
 done
 
+# ── Case 18: --retarget-from moves links owned by a previous source ───────
+# Cutover to a new private source cannot use apply or prune: both gate on the
+# link resolving to the *new* source, so a link left by the old source is a
+# collision to one and invisible to the other. This is the explicit, bounded
+# path for exactly those links.
+CASE18="$ARTIFACTS_DIR/case18"
+OLD18="$CASE18/old-private"
+NEW18="$CASE18/new-private"
+HOME18="$CASE18/home"
+make_private_home "$OLD18" private-moved private-dropped
+make_private_home "$NEW18" private-moved private-added
+mkdir -p "$HOME18/.hermes"
+
+OUT18_SEED="$(run_sync "$HOME18" --private-home "$OLD18" --apply 2>&1)" ||
+  fail "case18: seeding run against the old source exited non-zero: $OUT18_SEED"
+
+# A foreign link and a real directory must survive untouched.
+mkdir -p "$CASE18/foreign/private-foreign" "$HOME18/.codex/skills"
+ln -sfn "$CASE18/foreign/private-foreign" "$HOME18/.codex/skills/private-foreign"
+mkdir -p "$HOME18/.codex/skills/private-real-dir"
+
+OUT18="$(run_sync "$HOME18" --private-home "$NEW18" --retarget-from "$OLD18" --apply 2>&1)" ||
+  fail "case18: retarget run exited non-zero: $OUT18"
+
+for product_dir in "$HOME18/.codex/skills" "$HOME18/.claude/skills" \
+  "$HOME18/.hermes/external-skills/private"; do
+  moved_target="$(readlink "$product_dir/private-moved" 2>/dev/null || true)"
+  if [ "$moved_target" = "$NEW18/.agents/skills/private-moved" ]; then
+    pass "case18: retargeted private-moved in $product_dir"
+  else
+    fail "case18: private-moved not retargeted in $product_dir (target: $moved_target)"
+  fi
+
+  if [ -e "$product_dir/private-dropped" ] || [ -L "$product_dir/private-dropped" ]; then
+    fail "case18: old-source-only private-dropped survived in $product_dir"
+  else
+    pass "case18: old-source-only private-dropped removed from $product_dir"
+  fi
+
+  added_target="$(readlink "$product_dir/private-added" 2>/dev/null || true)"
+  if [ "$added_target" = "$NEW18/.agents/skills/private-added" ]; then
+    pass "case18: new-source private-added linked in $product_dir"
+  else
+    fail "case18: private-added missing in $product_dir (target: $added_target)"
+  fi
+done
+
+foreign_target="$(readlink "$HOME18/.codex/skills/private-foreign" 2>/dev/null || true)"
+if [ "$foreign_target" = "$CASE18/foreign/private-foreign" ]; then
+  pass "case18: foreign link left untouched"
+else
+  fail "case18: foreign link was redirected (target: $foreign_target)"
+fi
+
+if [ -d "$HOME18/.codex/skills/private-real-dir" ] &&
+  [ ! -L "$HOME18/.codex/skills/private-real-dir" ]; then
+  pass "case18: real directory left untouched"
+else
+  fail "case18: real directory was replaced"
+fi
+
+# ── Case 19: --retarget-from is a no-op without --apply ───────────────────
+CASE19="$ARTIFACTS_DIR/case19"
+OLD19="$CASE19/old-private"
+NEW19="$CASE19/new-private"
+HOME19="$CASE19/home"
+make_private_home "$OLD19" private-moved
+make_private_home "$NEW19" private-moved
+
+OUT19_SEED="$(run_sync "$HOME19" --private-home "$OLD19" --apply 2>&1)" ||
+  fail "case19: seeding run exited non-zero: $OUT19_SEED"
+
+BEFORE19="$(snapshot_runtime_home "$HOME19")"
+OUT19="$(run_sync "$HOME19" --private-home "$NEW19" --retarget-from "$OLD19" 2>&1)" ||
+  fail "case19: dry-run retarget exited non-zero: $OUT19"
+AFTER19="$(snapshot_runtime_home "$HOME19")"
+
+if [ "$AFTER19" = "$BEFORE19" ]; then
+  pass "case19: dry-run retarget mutated nothing"
+else
+  fail "case19: dry-run retarget changed the runtime tree\nbefore:\n$BEFORE19\nafter:\n$AFTER19"
+fi
+
+# ── Case 20: --retarget-from equal to the new source fails closed ─────────
+CASE20="$ARTIFACTS_DIR/case20"
+PRIV20="$CASE20/private"
+HOME20="$CASE20/home"
+make_private_home "$PRIV20" private-moved
+
+BEFORE20="$(snapshot_runtime_home "$HOME20")"
+if OUT20="$(run_sync "$HOME20" --private-home "$PRIV20" --retarget-from "$PRIV20" --apply 2>&1)"; then
+  fail "case20: retargeting from the active source succeeded: $OUT20"
+else
+  pass "case20: retargeting from the active source failed closed"
+fi
+AFTER20="$(snapshot_runtime_home "$HOME20")"
+if [ "$AFTER20" = "$BEFORE20" ]; then
+  pass "case20: failed-closed retarget mutated nothing"
+else
+  fail "case20: failed-closed retarget changed the runtime tree"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────
 if [ "$FAILURES" -gt 0 ]; then
   printf '%s failure(s)\n' "$FAILURES" >&2
