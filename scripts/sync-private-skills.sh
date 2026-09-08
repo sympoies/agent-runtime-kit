@@ -62,6 +62,7 @@ LINKED=0
 SKIPPED=0
 PRUNED=0
 RETARGETED=0
+RETARGET_DROPPED=0
 
 # -----------------------------------------------------------------------------
 # Help
@@ -124,9 +125,14 @@ Options:
       other. For each product entry resolving exactly to
       \$PATH/.agents/skills/<name>, the skill is relinked when the selected
       source still declares it for that product, and the link is removed when it
-      does not. Real directories and links to any other path are never touched.
-      PATH must exist, must contain .agents/skills, and must not resolve to the
-      selected private home.
+      does not. Real directories and links to any other path are never touched,
+      and a link whose name this script would refuse to publish is left on the
+      previous source instead of being moved.
+      The drop pass runs before the overlay pass for each product, and the
+      overlay pass performs the relink, so this flag obeys the global dry-run
+      default: without --apply it only prints the plan.
+      PATH must exist, must contain a real .agents/skills at its canonical
+      location, and must not resolve to the selected private home.
   -h, --help
       Print this help and exit.
 EOF
@@ -456,7 +462,7 @@ resolve_private_home() {
 # one run both own and rewrite the same links, and the physical comparison is
 # what rules that out even when the two paths differ textually.
 resolve_retarget_source() {
-  local resolved physical
+  local resolved physical old_skills_physical
 
   [ -n "$RETARGET_FROM" ] || return 0
 
@@ -473,8 +479,28 @@ resolve_retarget_source() {
     err "retarget source is the selected private home: $RETARGET_FROM"
     return 1
   fi
+  if [ -L "$resolved/.agents" ]; then
+    err "invalid retarget source: $resolved/.agents must not be a symlink"
+    return 1
+  fi
+  if [ -L "$resolved/.agents/skills" ]; then
+    err "invalid retarget source: $resolved/.agents/skills must not be a symlink"
+    return 1
+  fi
   if [ ! -d "$resolved/.agents/skills" ]; then
     err "retarget source has no skills dir: $resolved/.agents/skills"
+    return 1
+  fi
+  # The same canonical-containment rule the selected home gets: without it the
+  # same-home guard above can be aliased around by pointing .agents/skills at
+  # the selected source.
+  old_skills_physical="$(cd "$resolved/.agents/skills" && pwd -P)" || {
+    err "cannot resolve retarget skills source: $resolved/.agents/skills"
+    return 1
+  }
+  if ! path_is_within "$old_skills_physical" "$physical" ||
+    [ "$old_skills_physical" != "$physical/.agents/skills" ]; then
+    err "invalid retarget source: $resolved/.agents/skills escapes its canonical location"
     return 1
   fi
   OLD_SKILLS_SRC_DIR="$resolved/.agents/skills"
@@ -679,7 +705,8 @@ link_one() {
   local name="$1"
   local src="$2"
   local product="$3"
-  local skills_dir target
+  local skills_dir target adopted
+  adopted=0
 
   skills_dir="$(product_skills_dir "$product")"
   target="$skills_dir/$name"
@@ -687,9 +714,19 @@ link_one() {
   # Refuse to clobber anything we do not own: a real directory or a foreign
   # symlink at the target path is a collision (e.g. a runtime-kit domain dir
   # such as $CODEX_HOME/skills/meta). Skip it loudly.
+  #
+  # A link left by the private home named in --retarget-from also counts as
+  # ours. Adopting it here, rather than rewriting it in a separate pass, keeps
+  # one writer for the link and makes the dry-run plan match what --apply does:
+  # dry-run performs no write, so the entry still resolves to the previous
+  # source when this runs, and treating that as a collision would print a
+  # refusal for work --apply completes.
   if [ -e "$target" ] || [ -L "$target" ]; then
     if is_owned_overlay "$target" "$src"; then
       : # ours; refresh below (ln -sfn is idempotent)
+    elif [ -n "$OLD_SKILLS_SRC_DIR" ] &&
+      is_owned_overlay "$target" "$OLD_SKILLS_SRC_DIR/$name"; then
+      adopted=1
     else
       err "collision [$product]: $target exists and is not a private overlay; skipping '$name'"
       SKIPPED=$((SKIPPED + 1))
@@ -697,9 +734,19 @@ link_one() {
     fi
   fi
 
-  log "link [$product]: $name -> $src"
+  # One write, and one counter: an adopted link is reported as retargeted
+  # instead of linked so the two totals stay disjoint.
+  if [ "$adopted" = "1" ]; then
+    log "retarget [$product]: $name -> $src"
+  else
+    log "link [$product]: $name -> $src"
+  fi
   run_cmd ln -sfn "$src" "$target"
-  LINKED=$((LINKED + 1))
+  if [ "$adopted" = "1" ]; then
+    RETARGETED=$((RETARGETED + 1))
+  else
+    LINKED=$((LINKED + 1))
+  fi
 }
 
 overlay_product() {
@@ -737,12 +784,20 @@ overlay_product() {
   done
 }
 
-# Move this product's links from the previous source onto the selected one.
+# Drop this product's links that the previous source created and the selected
+# source will not adopt. Relinking is deliberately NOT done here: the overlay
+# pass owns every link write, and link_one now recognizes a previous-source link
+# as ours. This function exists only for the leftovers that pass has no reason
+# to visit, which is the one case neither the overlay nor the prune pass covers.
+#
+# It must run before the overlay pass for that product, so the overlay never
+# sees an entry that is about to be removed.
+#
 # Ownership is proven per entry against the OLD source, so anything the previous
 # home did not create is left exactly as it is.
-retarget_product() {
+retarget_drop_product() {
   local product="$1"
-  local skills_dir entry name old_src new_src
+  local skills_dir entry name new_src
 
   [ -n "$OLD_SKILLS_SRC_DIR" ] || return 0
 
@@ -752,19 +807,28 @@ retarget_product() {
   for entry in "$skills_dir"/*; do
     [ -L "$entry" ] || continue
     name="$(basename "$entry")"
-    old_src="$OLD_SKILLS_SRC_DIR/$name"
-    is_owned_overlay "$entry" "$old_src" || continue
+    is_owned_overlay "$entry" "$OLD_SKILLS_SRC_DIR/$name" || continue
+
+    # A name the overlay pass would refuse to publish is left exactly as it is,
+    # rather than moved onto the selected source under a name nothing later
+    # manages.
+    case "$name" in
+      [a-z0-9]*) ;;
+      *)
+        err "skip [$product]: invalid skill dir name '$name'; left on the previous source"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+        ;;
+    esac
 
     new_src="$SKILLS_SRC_DIR/$name"
     if [ -d "$new_src" ] && [ -f "$new_src/SKILL.md" ] &&
       skill_targets_product "$new_src" "$product"; then
-      log "retarget [$product]: $name -> $new_src"
-      run_cmd ln -sfn "$new_src" "$entry"
-    else
-      log "retarget-drop [$product]: $name (absent from the selected source or not declared for this product)"
-      run_cmd rm -f "$entry"
+      continue # the overlay pass adopts it
     fi
-    RETARGETED=$((RETARGETED + 1))
+    log "retarget-drop [$product]: $name (absent from the selected source or not declared for this product)"
+    run_cmd rm -f "$entry"
+    RETARGET_DROPPED=$((RETARGET_DROPPED + 1))
   done
 }
 
@@ -853,7 +917,7 @@ main() {
   log ""
 
   for product in $selected_product_list; do
-    retarget_product "$product"
+    retarget_drop_product "$product"
     overlay_product "$product"
     if [ "$PRUNE" = "1" ]; then
       prune_product "$product"
@@ -864,7 +928,7 @@ main() {
   done
 
   log ""
-  log "summary: mode=$mode linked=$LINKED skipped=$SKIPPED pruned=$PRUNED retargeted=$RETARGETED"
+  log "summary: mode=$mode linked=$LINKED skipped=$SKIPPED pruned=$PRUNED retargeted=$RETARGETED retarget-dropped=$RETARGET_DROPPED"
   if [ "$APPLY" = "0" ]; then
     log "dry-run only; re-run with --apply to write symlinks."
   fi
