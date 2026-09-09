@@ -37,7 +37,7 @@ path = "DEVELOPMENT.md"
 required = false
 when = "path-exists:Cargo.toml || path-exists:package.json || path-exists:src/** || path-exists:scripts/ci/all.sh"
 phase = ["edit", "delivery"]
-notes = "Canonical repository orientation and contributor detail; read on demand when setup, CI structure, release boundaries, or unfamiliar repository conventions matter."
+notes = "Concise contributor principles, maintenance workflow, finish-line validation, and routing to the on-demand development reference."
 
 [[document]]
 context = "project-dev"
