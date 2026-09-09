@@ -54,7 +54,9 @@
 
 ## Orientation
 
-- Repo layout, setup, and validation: `DEVELOPMENT.md`.
+- Contributor principles and the routine finish-line: `DEVELOPMENT.md`.
+- Setup, render, hook, targeted validation, coupled dependency, and release
+  detail: `docs/source/development-reference.md`.
 - Where docs belong and how long they live:
   `docs/source/docs-placement-retention-policy-v1.md`.
 - Per-product surface coverage (what ships into Codex / Claude / Hermes today):

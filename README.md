@@ -7,6 +7,11 @@ then rendered into product-specific runtime homes.
 
 Per-surface ship state is tracked in [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md).
 
+For repository maintenance, start with [`DEVELOPMENT.md`](DEVELOPMENT.md).
+Detailed setup, render, hook, validation, coupled dependency, and release
+procedures are in the
+[`development reference`](docs/source/development-reference.md).
+
 ## What this repo owns
 
 - Portable runtime source under `core/`: skills, hooks, policies, schemas, and
@@ -158,9 +163,10 @@ The full local validation gate is:
 bash scripts/ci/all.sh
 ```
 
-See [`DEVELOPMENT.md`](DEVELOPMENT.md) for setup details, render and golden
-refresh commands, drift audit, sandbox install rehearsal, runtime-smoke checks,
-and coupled nils-cli debug-build guidance.
+See [`DEVELOPMENT.md`](DEVELOPMENT.md) for contributor principles and the
+routine finish-line. The
+[`development reference`](docs/source/development-reference.md) owns setup,
+render, drift-audit, smoke-test, and coupled `nils-cli` detail.
 
 ## Repository map
 
@@ -170,7 +176,7 @@ and coupled nils-cli debug-build guidance.
 ├── AGENTS.md            # repo-local policy for this checkout
 ├── CLAUDE.md            # Claude import wrapper for AGENTS.md
 ├── AGENT_DOCS.toml      # project-local agent-docs dispatch entries
-├── DEVELOPMENT.md       # maintenance/dev guide: setup, validation, release boundary
+├── DEVELOPMENT.md       # concise contributor principles and finish-line routing
 ├── RELEASING.md         # how the GHCR container image is versioned and cut
 ├── SUPPORT_MATRIX.md    # per-surface ship state
 ├── core/
@@ -240,7 +246,9 @@ the kit never overwrites the user's `SOUL.md`.
 
 ## Next reading
 
-- [`DEVELOPMENT.md`](DEVELOPMENT.md): setup, validation gates, and release boundary.
+- [`DEVELOPMENT.md`](DEVELOPMENT.md): contributor principles and routine workflow.
+- [`docs/source/development-reference.md`](docs/source/development-reference.md):
+  setup, render, hook, targeted validation, and dependency/release detail.
 - [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md): per-surface ship state and acceptance lanes.
 - [`docs/source/devlog/README.md`](docs/source/devlog/README.md): notable implementation history.
 - [`docs/source/macos-agent-bootstrap-prompt.md`](docs/source/macos-agent-bootstrap-prompt.md):
