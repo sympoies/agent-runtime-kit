@@ -27,9 +27,11 @@ publication.
 
 Reviewer subagents remain read-only. The owning parent, dispatch, or delivery
 workflow writes every provider-visible comment. Quick-finding and specialist
-review comments are pre-disposition `comments-only` reports posted after one
-lens returns. A clean quick pass skips that redundant progress post and appears
-once in the final outcome with `--lens quick`. Combined
+review comments are pre-disposition `comments-only` reports. The portable route
+may post one after its lens returns; the governed GitHub route retains every
+selected lens and posts one combined owner-App report after the wave. A clean
+quick pass skips that redundant progress post and appears once in the final
+outcome with `--lens quick`. Combined
 delivery-owner outcomes are post-disposition comments posted after the owner has
 synthesized findings, decided repairs or tradeoffs, and chosen the final review
 decision.
@@ -151,10 +153,12 @@ suppress the post: the finding re-posts fresh, because a resolved or outdated
 match carries no live conversation to duplicate.
 
 This is a cross-run property; it does not weaken the within-run ordering below.
-The first run still posts each finding the moment its lens returns. Idempotency
-only stops a *later* re-run — a retry after a transient failure, or a follow-up
-pass on the same head — from duplicating threads that already exist. It relieves
-the workflow of hand-guarding against duplicate posts on retry.
+On the first run, the portable route posts a finding when its lens returns; the
+governed GitHub route waits for its selected wave and posts one combined App
+report. Idempotency only stops a *later* re-run — a retry after a transient
+failure, or a follow-up pass on the same head — from duplicating threads that
+already exist. It relieves the workflow of hand-guarding against duplicate posts
+on retry.
 
 ## Posting order is non-negotiable
 
@@ -175,8 +179,8 @@ finding existed before anyone acted on it.
 
 Only the final combined delivery-owner outcome — the disposition (`approve` or
 `request-changes`) — is posted after repairs, because a disposition can only be
-decided once the findings it resolves exist. Findings post first as they return;
-the disposition posts last.
+decided once the findings it resolves exist. Finding evidence posts first under
+the selected governed or portable ordering; the disposition posts last.
 
 For a clean quick pass, the parent posts only the final delivery-owner outcome
 with `--lens quick`; there is no finding to preserve before repair. For quick
@@ -189,8 +193,9 @@ findings and full-profile review, the required posting order is:
    it never publishes the report body through the personal identity.
 2. If the lens blocks delivery, the parent repairs in the delivery branch,
    commits, reruns validation, and reruns the affected lens.
-3. The parent posts the follow-up review comment with the same
-   semantic lens.
+3. The parent publishes the follow-up through the same route: a compact
+   same-lens comment for portable delivery, or one combined owner-App report
+   after the governed closure wave.
 4. After all selected lenses pass or are explicitly dispositioned, the parent
    posts one combined delivery-owner outcome with the selected lenses and final
    `--decision`.
@@ -248,12 +253,82 @@ as the owner App's native review, including actionable diff threads, then uses
 the canonical personal identity only for a concise `--metadata-only`
 breadcrumb. That personal invocation must not pass `--comment-file`; it binds
 `--expected-head`, `--native-review-url`, and `--native-review-author` and
-verifies the native review before mutation. Without the governed publisher,
-runtime-kit posts the combined decision as an outcome note instead of
-attempting native self-approval.
+verifies the native review before mutation. A portable installation that does
+not require the governed identity or publisher posts the combined decision as
+an outcome note instead of attempting native self-approval.
 
 Do not let a reviewer subagent post directly. If the active provider identity
 cannot write the review, stop and surface the provider error.
+
+Resolve one workflow-local publication mode before any provider write. Do not
+accept an ambient mode or authorization value as a maintainer decision:
+
+- `governed`: GitHub owner-App publication is available and required.
+- `portable`: the installation has no governed identity capability or publisher.
+- `personal-escape`: a governed attempt failed before any native mutation and a
+  maintainer explicitly authorized one reasoned personal-identity delivery.
+
+`AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED=1` or the pre-existing
+`AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED=1` makes GitHub publication
+governed-required. If `forge-review-publish` is then missing or non-executable,
+that is a configured-publisher failure, not a portable installation. Ambient
+escape inputs never bypass a healthy publisher. After an observed failure, the
+parent may set the three workflow-local escape inputs below for one attempt;
+absent authorization remains fail-closed:
+
+```bash
+REVIEW_PUBLICATION_MODE=portable
+REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN=0
+is_truthy() {
+  case "$1" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+select_personal_escape_after_failure() {
+  [ "$REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN" = 1 ] || {
+    echo "personal review escape requires an observed publisher failure" >&2
+    return 69
+  }
+  [ "${REVIEW_PERSONAL_ESCAPE_AUTHORIZED:-0}" = 1 ] || {
+    echo "governed review publisher is required but unavailable; explicit escape authorization is required" >&2
+    return 69
+  }
+  [ -n "${REVIEW_PERSONAL_ESCAPE_REASON:-}" ] || {
+    echo "personal review escape requires a non-empty reason" >&2
+    return 64
+  }
+  [ "${REVIEW_PUBLISHER_FAILURE_STATE:-}" = no-native-mutation ] || {
+    echo "personal review escape requires a proven no-native-mutation failure" >&2
+    return 69
+  }
+  REVIEW_PUBLICATION_MODE=personal-escape
+  unset REVIEW_PERSONAL_ESCAPE_AUTHORIZED
+}
+if [ "$PROVIDER" = github ]; then
+  if command -v forge-review-publish >/dev/null 2>&1; then
+    REVIEW_PUBLICATION_MODE=governed
+  elif is_truthy "${AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED:-}" ||
+    is_truthy "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}"; then
+    REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN=1
+    REVIEW_PUBLISHER_FAILURE_STATE=no-native-mutation
+    select_personal_escape_after_failure || exit $?
+  fi
+fi
+```
+
+Classify `REVIEW_PUBLISHER_FAILURE_STATE` from the failed publisher result and
+receipt before asking for escape authorization. `indeterminate-native-mutation`
+and `pending-receipt` are terminal for the escape branch: resume or verify the
+governed operation instead. The report bundle for `personal-escape` must include
+the reason and `independent review identity: unavailable` in `Evidence reviewed`
+so the native `comments-only` report itself preserves that provenance. When an
+available governed publisher fails, set
+`REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN=1` only from that command result,
+classify its receipt, and then call `select_personal_escape_after_failure`.
+Freeze the final mode, reason, and failure classification before any direct
+provider write. The helper consumes the one-attempt authorization; never reuse
+it for another PR, head, or retry generation.
 
 The governed publisher's semantic interface follows. Issue mirroring is added only
 for a workflow that actually owns a tracking or dispatch issue:
@@ -277,42 +352,32 @@ forge-review-publish --provider github --repo "$OWNER_REPO" \
 
 The adapter owns credentials, native-review read-back, receipt/resume, and the
 personal metadata-only call. Public skills never set its private identity
-profiles. If the adapter is unavailable, use the portable direct commands below
-and do not claim the two-identity publication contract was exercised.
+profiles. Use the portable direct commands automatically only when the resolved
+mode is `portable`; a missing adapter in governed-required mode is an error.
+Never claim the two-identity publication contract was exercised outside
+`governed` mode.
 
 A configured publisher failure is not publisher absence. The default response
 is to stop and surface the error; never silently rerun the complete report under
-the personal identity. After that error, a maintainer may explicitly authorize
-one personal-identity escape for the same expected head with a non-empty reason.
-Use the portable direct commands only after that decision, record the reason and
-the lack of independent review identity in provider-visible delivery evidence,
-and keep a combined approval decision as an outcome note rather than a native
-self-approval. Never take the escape after an indeterminate native mutation or
-when the governed publisher retained a pending/resumable receipt; resume and
-verify that operation instead. Identity selection for the authorized escape
-remains environment-owned and outside this public skill.
+the personal identity. The guarded `personal-escape` mode above is the only
+exception. It posts the combined report as an exact-head native `comments-only`
+review, then posts the final semantic decision as a non-native outcome note.
+Identity selection for that authorized escape remains environment-owned and
+outside this public skill.
 
 ## Command
 
-Native finding/specialist review events and `--thread-file` are GitHub-only. A combined
-native approval additionally requires the environment capability that promises
-an independent review identity. Without it, the final semantic decision is an
-outcome note, which keeps ambient-identity workflows usable without asking a PR
-author to approve their own change:
+Native finding/specialist review events and `--thread-file` are GitHub-only. A
+combined native approval is issued only by the `governed` publisher. Portable
+and `personal-escape` final decisions are outcome notes, which keeps the ambient
+PR author from self-approving:
 
 ```bash
 EXPECTED_REVIEW_HEAD="$(git rev-parse HEAD)"
 SUBMIT_REVIEW=()
-FINAL_SUBMIT_REVIEW=()
 THREAD_FILE_ARGS=()
 [ "$PROVIDER" = github ] &&
   SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
-case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
-  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
-    [ "$PROVIDER" = github ] &&
-      FINAL_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
-    ;;
-esac
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
 fi
@@ -322,6 +387,10 @@ Portable fallback only — single quick-finding or specialist-lens report. A
 governed GitHub workflow does not post a per-lens full report through the personal identity:
 
 ```bash
+[ "$REVIEW_PUBLICATION_MODE" = portable ] || {
+  echo "single-lens direct publication requires portable mode" >&2
+  exit 64
+}
 forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision comments-only \
@@ -347,11 +416,59 @@ REVIEW_LENS_ARGS=()
 for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
   REVIEW_LENS_ARGS+=(--lens "$selected_lens")
 done
+```
 
+In `personal-escape` mode, publish the merged report as an exact-head native
+`comments-only` review. The environment-owned identity route selects the
+maintainer account; the public workflow does not name or configure it:
+
+```bash
+if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  forge-cli --provider github pr review "$PR_NUMBER" \
+    --repo "$OWNER_REPO" \
+    --decision comments-only \
+    --submit-review \
+    --expected-head "$EXPECTED_REVIEW_HEAD" \
+    "${THREAD_FILE_ARGS[@]}" \
+    --comment-file "$REVIEW_COMMENT_FILE" \
+    "${REVIEW_LENS_ARGS[@]}" \
+    --format json
+fi
+```
+
+For the final direct outcome note, first re-read the head when using the escape
+route, require the body to carry the authorized reason and identity limitation,
+and never pass `--submit-review` or `--expected-head`:
+
+```bash
+if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  ESCAPE_PR="$(
+    forge-cli --provider github --repo "$OWNER_REPO" \
+      --format json pr view "$PR_NUMBER"
+  )"
+  ESCAPE_HEAD="$(
+    printf '%s\n' "$ESCAPE_PR" |
+      jq -er 'select(.ok == true) | .data.head_sha'
+  )" || exit $?
+  [ "$ESCAPE_HEAD" = "$EXPECTED_REVIEW_HEAD" ] || {
+    echo "pull request head changed before personal escape outcome" >&2
+    exit 65
+  }
+  grep -Fq -- "$REVIEW_PERSONAL_ESCAPE_REASON" "$REVIEW_COMMENT_FILE" &&
+    grep -Fq -- 'independent review identity: unavailable' "$REVIEW_COMMENT_FILE" || {
+      echo "personal escape outcome lacks required provenance" >&2
+      exit 65
+    }
+fi
+
+[ "$REVIEW_PUBLICATION_MODE" = portable ] ||
+  [ "$REVIEW_PUBLICATION_MODE" = personal-escape ] || {
+    echo "governed final outcomes use forge-review-publish" >&2
+    exit 64
+  }
 forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision "$REVIEW_DECISION" \
-  "${FINAL_SUBMIT_REVIEW[@]}" \
   --comment-file "$REVIEW_COMMENT_FILE" \
   "${REVIEW_LENS_ARGS[@]}" \
   --format json

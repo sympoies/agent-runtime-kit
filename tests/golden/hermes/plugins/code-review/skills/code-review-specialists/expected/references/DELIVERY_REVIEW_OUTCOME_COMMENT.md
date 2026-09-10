@@ -18,8 +18,9 @@ combined approval summary.
 
 ## Ownership
 
-- `deliver-pr` posts the outcome on the PR/MR before merging through
-  `forge-cli pr review`.
+- `deliver-pr` posts the outcome on the PR/MR before merging through the
+  governed publisher or the guarded portable/personal direct route selected in
+  `REVIEW_OUTCOME_POSTING_CONTRACT.md`.
 - `deliver-plan-tracking-issue` records the PR/MR outcome comment URL in
   issue-hosted session or validation evidence instead of duplicating the full
   report.
@@ -46,24 +47,19 @@ Use the provider-aware primitive for GitHub and GitLab. Follow
 `references/REVIEW_OUTCOME_POSTING_CONTRACT.md` for the parent-owned posting
 flow, portable identity boundary, and optional issue mirroring:
 
-On GitHub with a governed `forge-review-publish` adapter, the final native
+On GitHub in `governed` mode, the final native
 review body is the canonical `provider-review` table rendered with the combined
 lens. Do not publish this delivery-outcome body as a second personal comment.
 The App review carries the complete report once; the personal identity records
 only verified metadata, while dispositions remain in the review-loop and
-tracking evidence. The outcome-note body below remains the portable GitLab and
-no-governed-publisher fallback.
+tracking evidence. The outcome-note body below remains the `portable` and
+authorized `personal-escape` fallback.
 
 ```bash
-# Native combined approval requires an environment-owned executable router that
-# guarantees a GitHub review identity independent from the PR author. Other
-# paths post an outcome note with the same semantic decision and lenses.
-FINAL_SUBMIT_REVIEW=()
-case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
-  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
-    [ "$PROVIDER" = github ] && FINAL_SUBMIT_REVIEW=(--submit-review)
-    ;;
-esac
+# Governed native outcomes use forge-review-publish. This direct command is
+# only for portable or authorized personal-escape outcome notes.
+[ "$REVIEW_PUBLICATION_MODE" = portable ] ||
+  [ "$REVIEW_PUBLICATION_MODE" = personal-escape ] || exit 64
 case "$REVIEW_PROFILE" in
   quick) SELECTED_REVIEW_LENSES=(quick) ;;
   full) SELECTED_REVIEW_LENSES=(testing maintainability) ;;
@@ -76,21 +72,18 @@ done
 
 forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --decision "$REVIEW_DECISION" \
-  "${FINAL_SUBMIT_REVIEW[@]}" \
   --comment-file comment.md \
   "${REVIEW_LENS_ARGS[@]}"
 ```
 
 Set `REVIEW_DECISION=approve` for `proceed-to-merge` or
 `proceed-with-accepted-residual`, and `request-changes` for `blocked`. Use
-provider repository flags when local remotes are ambiguous. When the independent
-identity capability adds `--submit-review` on GitHub, the decision maps to a
-native pull request review event
-(`approve`→`APPROVE`, `request-changes`→`REQUEST_CHANGES`,
-`comments-only`→`COMMENT`) authored by the active provider identity; on GitLab the
-decision is recorded as outcome-note metadata only (no native approval state).
-GitHub without that capability also uses the outcome-note path so the ambient
-PR author is not asked to self-approve.
+provider repository flags when local remotes are ambiguous. When the governed
+publisher submits on GitHub, the decision maps to a native pull request review
+event (`approve`→`APPROVE`, `request-changes`→`REQUEST_CHANGES`,
+`comments-only`→`COMMENT`) authored by the independent App identity. Direct
+portable and personal-escape outcomes remain notes with no native approval
+state, so the ambient PR author is not asked to self-approve.
 Use `SPECIALIST_REVIEW_COMMENT.md` with `--decision comments-only` for
 non-decisional quick-finding or specialist notes, adding `--thread-file` only when that note
 surfaces actionable findings that need owner changes.

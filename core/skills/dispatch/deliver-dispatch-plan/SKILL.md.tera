@@ -64,7 +64,7 @@ Outputs:
   `--scope`, and an `--evidence-reviewed` value that is a portable identifier
   rather than an absolute local path; from nils-cli v1.28.0 an absent or
   placeholder value for any of those but `--lens-verdict` fails the render.
-  In a governed environment, the owner App publishes that complete
+  In `governed` mode, the owner App publishes that complete
   report exactly once and the personal identity records only
   exact-head-verified `--metadata-only` provenance without the report
   `--comment-file`.
@@ -438,7 +438,7 @@ Replace `area::docs` with the dispatch plan's primary `area::` label.
    GitHub, render the canonical five-column body and actionable thread artifact
    together with `review-specialists bundle --profile provider-review`, then
    validate the body with `forge-cli pr review validate --specialist-report`
-   before publication. When a governed environment publisher is available, its
+   before publication. In `governed` mode, the publisher's
    personal step must use `--metadata-only`, the exact reviewed head, native
    review URL, and expected App author, and must not receive the report body or
    `--comment-file`. On

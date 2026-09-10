@@ -104,21 +104,21 @@ Use the full profile for every L2/L3 PR and whenever quick eligibility fails.
    lifecycle, the full review may be a short testing/maintainability pass that
    records "no concrete findings" plus why broader lenses were not selected.
 5. The reviewer subagents remain read-only and return their findings to the
-   owning parent; they never post directly. When `forge-review-publish` is
-   available on GitHub, wait for the selected lens wave, merge the findings,
-   and publish one combined pre-repair report through the governed publisher.
+   owning parent; they never post directly. Resolve `REVIEW_PUBLICATION_MODE`
+   before any provider write using `REVIEW_OUTCOME_POSTING_CONTRACT.md`. In
+   `governed` mode, wait for the selected lens wave, merge the findings, and
+   publish one combined pre-repair report through `forge-review-publish`.
    The owner App carries the complete native review exactly once and the
    personal identity records metadata-only provenance. Do not send a per-lens
    full report through `forge-cli pr review` on this path. Select this governed
-   branch before publication; if its configured publisher or bot identity fails,
-   stop and surface the error instead of automatically downgrading. Only after
-   explicit maintainer authorization may the owning workflow deliberately select
-   a personal-identity fallback for the same expected head and a non-empty
-   reason. Never fallback after an indeterminate native mutation or while the
-   publisher has a pending/resumable receipt; recover that operation instead.
-   Record the reason and the lack of independent review identity in
-   provider-visible delivery evidence. The portable fallback is the only branch
-   that posts one report per lens: after each selected lens returns, use
+   branch before publication. A required but missing publisher and a configured
+   publisher or bot failure both fail closed. Only the guarded
+   `personal-escape` state may use the ambient maintainer identity: it requires
+   explicit authorization, the same expected head, a non-empty reason, and
+   proof that no native mutation occurred. A pending/resumable receipt or
+   indeterminate mutation must be recovered instead. Record the reason and the
+   lack of independent review identity in provider-visible delivery evidence.
+   Only `portable` mode posts one report per lens: after each selected lens returns, use
    `forge-cli pr review` with `--decision comments-only`, the same semantic
    `--lens`, and, on GitHub, `--submit-review` plus `--thread-file` when the lens
    surfaces actionable findings that require owner changes.
