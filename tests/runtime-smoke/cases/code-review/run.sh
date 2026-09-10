@@ -109,6 +109,8 @@ run_codex_reviewer_profile_contract_probe() {
 run_portable_review_identity_contract_probe() {
   local gate="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
   local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+  local specialist="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_COMMENT.md"
+  local outcome="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_REVIEW_OUTCOME_COMMENT.md"
   local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
   local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
   local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
@@ -117,8 +119,18 @@ run_portable_review_identity_contract_probe() {
     "$REPO_ROOT/core/skills"; then
     return 1
   fi
-  grep -Fq 'FINAL_SUBMIT_REVIEW' "$posting"
   grep -Fq 'AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED' "$posting"
+  grep -Fq 'AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED' "$posting"
+  grep -Fq 'REVIEW_PUBLICATION_MODE=personal-escape' "$posting"
+  grep -Fq 'REVIEW_PERSONAL_ESCAPE_REASON' "$posting"
+  grep -Fq 'REVIEW_PUBLISHER_FAILURE_STATE' "$posting"
+  grep -Fq 'REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN' "$posting"
+  grep -Fq 'is_truthy "${AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED:-}"' "$posting"
+  grep -Fq 'is_truthy "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}"' "$posting"
+  grep -Fq 'no-native-mutation' "$posting"
+  grep -Fq 'indeterminate-native-mutation' "$posting"
+  grep -Fq 'pending-receipt' "$posting"
+  grep -Fq 'governed review publisher is required but unavailable' "$posting"
   grep -Fq -- '--profile provider-review' "$posting"
   grep -Fq -- '--specialist-report' "$posting"
   grep -Fq -- '--metadata-only' "$posting"
@@ -132,25 +144,126 @@ run_portable_review_identity_contract_probe() {
   bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
   ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
   grep -Fq 'does not post a per-lens full report through the personal identity' "$posting"
+  grep -Fq 'Resolve `REVIEW_PUBLICATION_MODE`' "$gate"
+  grep -Fq 'A required but missing publisher' "$gate"
+  grep -Fq 'Only `portable` mode posts one report per lens' "$gate"
+  grep -Fq 'A configured publisher failure is not publisher absence' "$posting"
+  grep -Fq 'independent review identity: unavailable' "$delivery"
   grep -Fq 'For a clean quick pass' "$posting"
   grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
-  grep -Fq 'FINAL_SUBMIT_REVIEW' "$delivery"
+  ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$posting"
+  ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
   grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
   grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
-  grep -Fq 'In the portable fallback, post one compact review comment' "$tracking"
-  grep -Fq 'In a governed GitHub environment, do not post per-lens full reports through the personal identity.' "$tracking"
+  grep -Fq '`portable` posts one compact review comment' "$tracking"
+  grep -Fq 'In `governed` GitHub mode, do not post per-lens full reports through the personal identity.' "$tracking"
   grep -Fq 'one combined pre-repair report through `forge-review-publish`' "$tracking"
   for owner in "$delivery" "$tracking" "$dispatch"; do
     grep -Fq -- '--profile provider-review' "$owner"
     grep -Fq -- '--metadata-only' "$owner"
     grep -Fq -- '--comment-file' "$owner"
+    ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$owner"
   done
   grep -Fq -- '--decision comments-only' "$gate"
+  for owner in "$delivery" "$tracking"; do
+    grep -Fq 'pull request head changed before personal escape outcome' "$owner"
+    grep -Fq 'pr view "$PR_NUMBER"' "$owner"
+  done
+
+  for contract in "$posting" "$specialist" "$outcome" "$delivery"; do
+    ! grep -Fq 'posts each finding the moment its lens returns' "$contract"
+    ! grep -Fq 'post a compact specialist review comment after each reviewer lens returns' "$contract"
+    ! grep -Fq 'posts the follow-up review comment with the same' "$contract"
+  done
+
+  # Exercise the tri-state route and record both personal-escape provider argv
+  # shapes independently of provider access.
+  bash -u -c '
+    resolve_mode() {
+      local provider="$1" publisher="$2" publisher_required="$3"
+      local router_required="$4" authorized="$5" reason="$6"
+      local failure_state="$7"
+      local mode=portable observed=0
+      if [[ "$provider" == github ]]; then
+        if [[ "$publisher" == 1 ]]; then
+          mode=governed
+        elif [[ "$publisher_required" == 1 || "$router_required" == 1 ]]; then
+          observed=1
+          [[ "$observed" == 1 && "$authorized" == 1 ]] || return 69
+          [[ -n "$reason" ]] || return 64
+          [[ "$failure_state" == no-native-mutation ]] || return 69
+          mode=personal-escape
+          unset authorized
+        fi
+      fi
+      printf "%s" "$mode"
+    }
+    record_argv() {
+      local tag="$1" arg
+      shift
+      for arg in "$@"; do printf "%s\t%s\n" "$tag" "$arg"; done
+    }
+    has_arg() {
+      awk -F "\t" -v tag="$1" -v value="$2" \
+        '\''$1 == tag && $2 == value { found=1 } END { exit !found }'\'' "$3"
+    }
+    has_pair() {
+      awk -F "\t" -v tag="$1" -v first="$2" -v second="$3" '\''
+        $1 != tag { next }
+        previous == first && $2 == second { found=1 }
+        { previous=$2 }
+        END { exit !found }
+      '\'' "$4"
+    }
+    plan_escape_delivery() {
+      local inspected_head="$1" refreshed_head="$2" expected_head="$3"
+      local semantic_decision="$4" reason="$5" body="$6" record="$7"
+      local native_decision=comments-only
+      local -a native_submit=(--submit-review --expected-head "$expected_head")
+      local -a native outcome
+      [[ "$inspected_head" == "$expected_head" ]] || return 65
+      [[ "$body" == *"$reason"* ]] || return 65
+      [[ "$body" == *"independent review identity: unavailable"* ]] || return 65
+      native=(forge-cli pr review 107 --decision "$native_decision"
+        "${native_submit[@]}" "--comment=$body")
+      record_argv native "${native[@]}" >>"$record"
+      [[ "$refreshed_head" == "$expected_head" ]] || return 65
+      outcome=(forge-cli pr review 107 --decision "$semantic_decision"
+        "--comment=$body")
+      record_argv outcome "${outcome[@]}" >>"$record"
+    }
+
+    record="$1"
+    body="publisher outage; independent review identity: unavailable"
+    head=215dc45f08007e4ba1a3c0498e87fa66738760b2
+    [[ "$(resolve_mode github 1 1 1 1 outage no-native-mutation)" == governed ]]
+    [[ "$(resolve_mode github 0 0 0 0 "" "")" == portable ]]
+    ! resolve_mode github 0 1 0 0 "" "" >/dev/null
+    ! resolve_mode github 0 0 1 0 "" "" >/dev/null
+    [[ "$(resolve_mode github 0 1 0 1 outage no-native-mutation)" == personal-escape ]]
+    ! resolve_mode github 0 1 0 1 "" no-native-mutation >/dev/null
+    ! resolve_mode github 0 1 0 1 outage pending-receipt >/dev/null
+    ! resolve_mode github 0 1 0 1 outage indeterminate-native-mutation >/dev/null
+
+    : >"$record"
+    plan_escape_delivery "$head" "$head" "$head" approve outage "$body" "$record"
+    has_pair native --decision comments-only "$record"
+    has_arg native --submit-review "$record"
+    has_pair native --expected-head "$head" "$record"
+    has_pair outcome --decision approve "$record"
+    ! has_arg outcome --submit-review "$record"
+    ! has_arg outcome --expected-head "$record"
+
+    : >"$record"
+    ! plan_escape_delivery "$head" deadbeef "$head" approve outage "$body" "$record"
+    has_arg native --submit-review "$record"
+    ! grep -q "^outcome	" "$record"
+  ' bash "$CODE_REVIEW_ARTIFACTS_DIR/personal-escape-argv.txt"
 
   if sed -n '29,125p' "$REPO_ROOT/docs/source/nils-cli-surface.md" |
     grep -Eq 'is the compatibility minimum|remains the compatibility minimum|minimum stays where it is'; then

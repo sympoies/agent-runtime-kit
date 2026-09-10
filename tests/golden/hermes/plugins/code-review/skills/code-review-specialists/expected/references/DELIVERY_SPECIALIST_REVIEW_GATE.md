@@ -103,14 +103,29 @@ Use the full profile for every L2/L3 PR and whenever quick eligibility fails.
    reviewables that are ineligible for quick only because of their outer
    lifecycle, the full review may be a short testing/maintainability pass that
    records "no concrete findings" plus why broader lenses were not selected.
-5. The owning parent posts a compact specialist review comment through
-   `forge-cli pr review` after each selected lens returns — on GitHub a native
-   `COMMENT` review event via `--submit-review`, plus `--thread-file` when the
-   lens surfaces actionable findings that require owner changes. Use
-   `--decision comments-only`, the same semantic `--lens`, and the
-   provider-guarded command from `REVIEW_OUTCOME_POSTING_CONTRACT.md`. The
-   reviewer subagent remains read-only and does not post directly. Specialist
-   comments report findings only; the parent records final dispositions later.
+5. The reviewer subagents remain read-only and return their findings to the
+   owning parent; they never post directly. Resolve `REVIEW_PUBLICATION_MODE`
+   before any provider write using `REVIEW_OUTCOME_POSTING_CONTRACT.md`. In
+   `governed` mode, wait for the selected lens wave, merge the findings, and
+   publish one combined pre-repair report through `forge-review-publish`.
+   The owner App carries the complete native review exactly once and the
+   personal identity records metadata-only provenance. Do not send a per-lens
+   full report through `forge-cli pr review` on this path. Select this governed
+   branch before publication. A required but missing publisher and a configured
+   publisher or bot failure both fail closed. Only the guarded
+   `personal-escape` state may use the ambient maintainer identity: it requires
+   explicit authorization, the same expected head, a non-empty reason, and
+   proof that no native mutation occurred. A pending/resumable receipt or
+   indeterminate mutation must be recovered instead. Record the reason and the
+   lack of independent review identity in provider-visible delivery evidence.
+   Only `portable` mode posts one report per lens: after each selected lens returns, use
+   `forge-cli pr review` with `--decision comments-only`, the same semantic
+   `--lens`, and, on GitHub, `--submit-review` plus `--thread-file` when the lens
+   surfaces actionable findings that require owner changes.
+   Follow the provider-guarded commands in
+   `REVIEW_OUTCOME_POSTING_CONTRACT.md`. In either branch, provider-visible
+   finding evidence must exist before repair; the parent records final
+   dispositions later.
 
 ## CLI Command-Block Contract Check
 
@@ -165,7 +180,8 @@ command block containing a `forge-cli`, `gh`, or `glab` invocation:
   affected quick or specialist review as a closed-set closure pass. Re-check the
   supplied findings, repair hunks, and their direct regression surface; do not
   restart full-diff discovery or add unrelated lenses. Post the focused follow-up
-  review comment with the same semantic lens before continuing to the next gate step.
+  review through the same governed-publisher or portable-fallback branch, with
+  the same semantic lens, before continuing to the next gate step.
   Resolve the original GitHub review threads after the fix is verified; follow-up
   pass comments normally omit `--thread-file`.
 - At the merge gate, `forge-cli pr merge` counts only unresolved threads that are

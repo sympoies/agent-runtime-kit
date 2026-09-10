@@ -61,8 +61,8 @@ Outputs:
 - Provider review activity through the portable `forge-cli pr review` fallback:
   one native GitHub `COMMENT` per specialist lens and one combined semantic
   outcome, expressed only through portable provider / decision / lens flags,
-  with a `--mirror-issue` breadcrumb to the tracking issue. In a governed GitHub
-  environment, the workflow instead publishes one combined report through
+  with a `--mirror-issue` breadcrumb to the tracking issue. In `governed` GitHub
+  mode, the workflow instead publishes one combined report through
   `forge-review-publish`; its personal phase is metadata-only. The combined
   outcome is a native GitHub approval only when an environment-owned router
   guarantees an identity independent from the PR author; otherwise it is an
@@ -73,7 +73,7 @@ Outputs:
   an `--evidence-reviewed` value that is a portable identifier rather than an
   absolute local path; from nils-cli v1.28.0 an absent or placeholder value for
   any of those but `--lens-verdict` fails the render.
-  A governed environment publisher posts that complete table exactly once
+  A `governed` publisher posts that complete table exactly once
   through the owner App and leaves only exact-head-verified metadata through
   the personal identity.
 - On GitHub, current-head native review summaries read through
@@ -220,10 +220,9 @@ forge-cli pr deliver --repo "$OWNER_REPO" \
 # Shared read-only specialist gate (min testing + maintainability).
 review-specialists scope --base "$BASE_REF" --testing --maintainability --format json
 
-# Native review events (GitHub) per REVIEW_OUTCOME_POSTING_CONTRACT.md: one
-# COMMENT per semantic lens as each lens returns, then the combined
-# APPROVE/REQUEST_CHANGES outcome. The local head is the reviewed specialist
-# diff; forge-cli rejects the write if the provider head has drifted.
+# Resolve the tri-state mode in REVIEW_OUTCOME_POSTING_CONTRACT.md first.
+# Portable GitHub posts one COMMENT per lens; governed and personal-escape
+# publish one combined exact-head report after the selected wave.
 REVIEWED_PR="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
     --format json pr view "$PR_NUMBER"
@@ -236,7 +235,6 @@ readonly REVIEWED_HEAD
 SUBMIT_REVIEW=()
 [ "$PROVIDER" = github ] &&
   SUBMIT_REVIEW=(--submit-review --expected-head "$REVIEWED_HEAD")
-FINAL_SUBMIT_REVIEW=()
 REVIEW_CONVERGENCE_ARGS=()
 [ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
 
@@ -251,13 +249,17 @@ done
 
 # Portable fallback only: repeat this specialist block once for each returned
 # lens: testing, maintainability, plus any risk lens selected by the full
-# pre-merge review. In a governed GitHub environment, do not execute this block;
+# pre-merge review. In `governed` GitHub mode, do not execute this block;
 # publish one combined pre-repair report through forge-review-publish after the
 # selected lens wave, with a metadata-only personal phase.
 THREAD_FILE_ARGS=()
 if [ "$PROVIDER" = github ] && [ -n "${REVIEW_THREAD_FILE:-}" ]; then
   THREAD_FILE_ARGS=(--thread-file "$REVIEW_THREAD_FILE")
 fi
+[ "$REVIEW_PUBLICATION_MODE" = portable ] || {
+  echo "single-lens direct publication requires portable mode" >&2
+  exit 64
+}
 forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision comments-only \
@@ -368,12 +370,24 @@ if [ "$PROVIDER" = github ]; then
       '.ok == true and .data.head_sha == $head' >/dev/null
 fi
 
-# Bind a routed combined native outcome to the provider head just inspected.
-case "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}" in
-  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
-    [ "$PROVIDER" = github ] &&
-      FINAL_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
+# Governed native outcomes use forge-review-publish. The direct path is an
+# outcome note for portable or guarded personal-escape delivery only.
+NATIVE_REVIEW_DECISION="$REVIEW_DECISION"
+PERSONAL_ESCAPE_SUBMIT_REVIEW=()
+case "${REVIEW_PUBLICATION_MODE:-}" in
+  portable) ;;
+  personal-escape)
+    : "${REVIEW_PERSONAL_ESCAPE_REASON:?personal escape needs a reason}"
+    [ "${REVIEW_PUBLISHER_FAILURE_STATE:-}" = no-native-mutation ] || exit 69
+    [ "$(git rev-parse HEAD)" = "$EXPECTED_REVIEW_HEAD" ] || exit 65
+    NATIVE_REVIEW_DECISION=comments-only
+    PERSONAL_ESCAPE_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
     ;;
+  governed)
+    echo "governed final outcomes use forge-review-publish" >&2
+    exit 64
+    ;;
+  *) echo "review publication mode was not resolved" >&2; exit 64 ;;
 esac
 
 # Capture the outcome bytes once. Initial submission, guarded recovery, and
@@ -382,11 +396,17 @@ esac
 # use `--option=value` below so hyphen-leading Markdown remains one argv value.
 EXPECTED_REVIEW_BODY="$(cat "$DELIVERY_REVIEW_OUTCOME")" || exit $?
 readonly EXPECTED_REVIEW_BODY
+if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  printf '%s\n' "$EXPECTED_REVIEW_BODY" |
+    grep -Fq -- "$REVIEW_PERSONAL_ESCAPE_REASON" &&
+    printf '%s\n' "$EXPECTED_REVIEW_BODY" |
+      grep -Fq -- 'independent review identity: unavailable' || exit 65
+fi
 NATIVE_REVIEW_CMD=(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
   pr review "$PR_NUMBER"
-  --decision "$REVIEW_DECISION"
-  "${FINAL_SUBMIT_REVIEW[@]}"
+  --decision "$NATIVE_REVIEW_DECISION"
+  "${PERSONAL_ESCAPE_SUBMIT_REVIEW[@]}"
   --comment="$EXPECTED_REVIEW_BODY"
   "${REVIEW_LENS_ARGS[@]}"
   --issue "$ISSUE" --mirror-issue
@@ -461,6 +481,29 @@ if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
   fi
 fi
 
+if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  printf '%s\n' "$NATIVE_REVIEW_JSON"
+  PERSONAL_ESCAPE_PR="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr view "$PR_NUMBER"
+  )" || exit $?
+  PERSONAL_ESCAPE_HEAD="$(
+    printf '%s\n' "$PERSONAL_ESCAPE_PR" |
+      jq -er 'select(.ok == true) | .data.head_sha'
+  )" || exit $?
+  [ "$PERSONAL_ESCAPE_HEAD" = "$EXPECTED_REVIEW_HEAD" ] || {
+    echo "pull request head changed before personal escape outcome" >&2
+    exit 65
+  }
+  NATIVE_REVIEW_JSON="$(
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review "$PR_NUMBER" \
+      --decision "$REVIEW_DECISION" \
+      --comment="$EXPECTED_REVIEW_BODY" \
+      "${REVIEW_LENS_ARGS[@]}" \
+      --issue "$ISSUE" --mirror-issue
+  )" || exit $?
+fi
 printf '%s\n' "$NATIVE_REVIEW_JSON"
 REVIEW_OUTCOME_COMMENT="$(
   printf '%s\n' "$NATIVE_REVIEW_JSON" | jq -er '.data.pr_comment_url'
@@ -551,11 +594,12 @@ re-creating it, and record the ref with `tracking run update --linked-pr`.
 Observed convergence is GitHub-only in v1, so GitLab merge calls explicitly pass
 `--review-convergence=false` to neutralize any user-global GitHub policy.
 
-In the portable fallback, post one compact review comment per specialist lens
+After resolving the tri-state mode in `REVIEW_OUTCOME_POSTING_CONTRACT.md`,
+`portable` posts one compact review comment per specialist lens
 as it returns — before any repair — using `--decision comments-only` plus the
 semantic `--lens`, with `--thread-file "$REVIEW_THREAD_FILE"` for actionable
 GitHub findings; the combined delivery outcome posts last with the final
-decision and selected lenses. In a governed GitHub environment, do not post per-lens full reports through the personal identity.
+decision and selected lenses. In `governed` GitHub mode, do not post per-lens full reports through the personal identity.
 After the selected lens wave completes and before repair, publish one combined pre-repair report through `forge-review-publish`;
 its personal phase is metadata-only. The parent tracking workflow posts, and
 reviewer subagents never call the provider. In either route, provider-visible
@@ -607,11 +651,11 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    verify `LINKED_PR` through `pr deliver` existing-PR adoption). Do not merge
    yet; the review gate runs first.
 4. **Review gate** — run the generic code-review outcome in pre-merge context with the full profile (min `testing` +
-   `maintainability`; add risk lenses per scope). In the portable fallback,
+   `maintainability`; add risk lenses per scope). In `portable` mode,
    post each lens's specialist review comment through `forge-cli pr review` as
    it returns (native `COMMENT` on GitHub via `--submit-review`, semantic
-   `--lens`; `--thread-file` for actionable findings). In a governed GitHub
-   environment, publish one combined pre-repair report through
+   `--lens`; `--thread-file` for actionable findings). In `governed` GitHub
+   mode, publish one combined pre-repair report through
    `forge-review-publish` and keep its personal phase metadata-only; do not post
    per-lens full reports through the personal identity. Render the canonical five-column body and thread
    artifact together, and pass `--specialist-report` during validation before
@@ -629,7 +673,7 @@ directory the policy-owned `test-first-evidence` CLI flow produces — or it fai
    new-generation conditions may reopen discovery. A pending native draft uses
    only the exact-node recovery above; never delete an ambiguous draft or
    replace the requested native outcome with a note.
-   When a governed environment publisher is available, its personal metadata
+   In `governed` mode, the publisher's personal metadata
    step must use `--metadata-only`, the exact reviewed head, native review URL,
    and expected App author, and must not receive the report body.
 5. **Review + final checkpoint** — set `phase=ready-for-close`, record the linked

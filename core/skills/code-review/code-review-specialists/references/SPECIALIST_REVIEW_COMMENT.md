@@ -20,12 +20,14 @@ the provider-guarded command.
 
 ## Timing
 
-- Post one specialist review comment after each reviewer lens returns when the
-  delivery workflow has provider write access and provider-visible progress is
-  desired.
+- In `portable` mode, post one specialist review comment after its lens returns
+  when provider-visible progress is desired. In `governed` mode, retain the
+  selected lens wave and publish one combined owner-App report. The guarded
+  `personal-escape` mode likewise publishes one combined exact-head report.
 - If the lens reports findings, repair and commit in the owning workflow, rerun
-  focused validation and that lens, then post a follow-up specialist review
-  comment for the rerun.
+  focused validation and that lens, then publish the follow-up through the same
+  route: per-lens only for `portable`, combined after the closure wave for
+  `governed` or `personal-escape`.
 - Create GitHub review threads only for actionable findings in the first report
   that surfaces them. Follow-up pass comments should normally omit
   `--thread-file` and resolve the existing threads after the repair is verified.
