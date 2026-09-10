@@ -280,6 +280,18 @@ personal metadata-only call. Public skills never set its private identity
 profiles. If the adapter is unavailable, use the portable direct commands below
 and do not claim the two-identity publication contract was exercised.
 
+A configured publisher failure is not publisher absence. The default response
+is to stop and surface the error; never silently rerun the complete report under
+the personal identity. After that error, a maintainer may explicitly authorize
+one personal-identity escape for the same expected head with a non-empty reason.
+Use the portable direct commands only after that decision, record the reason and
+the lack of independent review identity in provider-visible delivery evidence,
+and keep a combined approval decision as an outcome note rather than a native
+self-approval. Never take the escape after an indeterminate native mutation or
+when the governed publisher retained a pending/resumable receipt; resume and
+verify that operation instead. Identity selection for the authorized escape
+remains environment-owned and outside this public skill.
+
 ## Command
 
 Native finding/specialist review events and `--thread-file` are GitHub-only. A combined

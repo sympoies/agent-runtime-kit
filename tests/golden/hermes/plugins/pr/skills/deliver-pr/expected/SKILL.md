@@ -811,6 +811,14 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    canonical body exactly once through the owner App and records only
    exact-head-verified `--metadata-only` provenance through the personal
    identity; the personal call never receives the report `--comment-file`.
+   A configured publisher failure blocks by default and is not the portable
+   fallback. Only after explicit maintainer authorization may delivery retry the
+   same expected head through the personal-identity portable path; record the
+   fallback reason and the lack of independent review identity in
+   provider-visible delivery evidence. Keep the final combined decision as an
+   outcome note rather than native self-approval, and never take this escape
+   after an indeterminate native mutation or a pending/resumable publisher
+   receipt.
 16. Before merge, if the PR/MR references a linked tracking or dispatch issue,
     audit it and confirm lifecycle readiness: source/plan snapshots, complete
     state, latest `role=session`, validation, review, and dashboard links are

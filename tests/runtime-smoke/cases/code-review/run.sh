@@ -132,6 +132,11 @@ run_portable_review_identity_contract_probe() {
   bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
   ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
   grep -Fq 'does not post a per-lens full report through the personal identity' "$posting"
+  grep -Fq 'available on GitHub, wait for the selected lens wave' "$gate"
+  grep -Fq 'explicit maintainer authorization may the owning workflow deliberately select' "$gate"
+  grep -Fq 'The portable fallback is the only branch' "$gate"
+  grep -Fq 'A configured publisher failure is not publisher absence' "$posting"
+  grep -Fq 'fallback reason and the lack of independent review identity' "$delivery"
   grep -Fq 'For a clean quick pass' "$posting"
   grep -Fq 'with `--lens quick`; there is no finding to preserve before repair' "$posting"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$posting"
