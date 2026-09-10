@@ -1889,18 +1889,36 @@ def semantic_commit_block_reason(
     if arguments[0] not in {"commit", "fixup", "squash"}:
         return ""
     branch = current_branch(probe, cwd)
-    expected = default_branch(probe, cwd)
+    # This check only ever needs to disprove that `branch` is the default, so
+    # it reads the resolution directly rather than through `default_branch`,
+    # which withholds an uncorroborated name from callers that need proof in
+    # both directions. Collapsing uncorroborated to "unreadable" here refused
+    # every managed worktree on a repository whose primary checkout was parked
+    # off the default branch.
+    resolution = resolve_default_branch(probe, cwd)
     evidence = classification_evidence(
         "governed-authoring-target",
         f"semantic-commit {arguments[0]}",
         context_source=source,
     )
-    if not branch or not expected:
+    if not branch or resolution.unknown:
         return unresolved(
             f"{evidence} {location} Its checked-out branch or cached default "
             f"branch could not be read. {REPO_HINT}"
         )
-    if branch == expected:
+    if not resolution.corroborated:
+        # The default is one of the candidate names. That is enough to clear a
+        # branch which is none of them, and never enough to condemn one.
+        if branch not in resolution.candidates:
+            return ""
+        return unresolved(
+            f"{evidence} {location} The cached default branch is not "
+            "corroborated by the primary worktree, and this branch is one of "
+            "the candidate names. Return the primary checkout to the default "
+            "branch, or refresh the cache with `git remote set-head origin "
+            f"--auto`. {REPO_HINT}"
+        )
+    if branch == resolution.name:
         return f"{MARK_BLOCKED} {evidence} {location} {POLICY}"
     return ""
 
