@@ -21610,6 +21610,135 @@ exit 65
         finally:
             sys.modules.pop(spec.name, None)
 
+    def test_default_delivery_hook_authors_commits_without_a_corroborated_default(
+        self,
+    ) -> None:
+        """A commit branch that is provably not the default must not be refused.
+
+        The authoring check only ever needs to disprove that the checked-out
+        branch is the default, and an uncorroborated cache already narrows the
+        default to two candidate names. Routing the question through
+        `default_branch`, which withholds an uncorroborated name, refused every
+        managed worktree on a repository whenever the primary checkout was
+        parked off the default branch — including the delivery workflows that
+        park it deliberately and then cannot commit their own follow-up work.
+
+        These are the push-side rules of
+        `test_default_delivery_hook_classifies_pushes_without_a_corroborated_default`
+        applied to the authoring surface.
+        """
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "default_delivery_uncorroborated_authoring_test",
+            HOOK_DIR / "block-unsafe-default-delivery.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+
+            class DefaultBranchProbe:
+                """Answer only the local probes the classifier is allowed to make."""
+
+                def __init__(
+                    self,
+                    *,
+                    cached_ref: str = "origin/main\n",
+                    primary_ref: str = "main",
+                    current_ref: str = "feat/tiny-repair\n",
+                ) -> None:
+                    self.cached_ref = cached_ref
+                    self.primary_ref = primary_ref
+                    self.current_ref = current_ref
+
+                def run(
+                    self, _cwd: Path, *arguments: str
+                ) -> subprocess.CompletedProcess[str] | None:
+                    if "ls-remote" in arguments or arguments[:2] == (
+                        "remote",
+                        "get-url",
+                    ):
+                        raise AssertionError(f"network probe attempted: {arguments!r}")
+                    if arguments[-1] == "refs/remotes/origin/HEAD":
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments],
+                            0 if self.cached_ref else 1,
+                            self.cached_ref,
+                            "",
+                        )
+                    if arguments[-2:] == ("list", "--porcelain"):
+                        branch = (
+                            f"branch refs/heads/{self.primary_ref}\n"
+                            if self.primary_ref
+                            else ""
+                        )
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments],
+                            0,
+                            f"worktree /repo\nHEAD deadbeef\n{branch}\n",
+                            "",
+                        )
+                    if arguments[-1] == "HEAD":
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 0, self.current_ref, ""
+                        )
+                    if "config" in arguments and "--get" in arguments:
+                        return subprocess.CompletedProcess(
+                            ["git", *arguments], 1, "", ""
+                        )
+                    raise AssertionError(f"unexpected git probe: {arguments!r}")
+
+            def verdict(probe: object) -> str:
+                return module.semantic_commit_block_reason(
+                    probe,
+                    ["commit", "--message", "fix(agent): tighten hook parser"],
+                    Path("."),
+                    "the tool workdir",
+                )
+
+            # A primary checkout parked off the default leaves two candidate
+            # names. A commit branch that is neither is provably not the
+            # default, under either hypothesis.
+            self.assertEqual(
+                verdict(DefaultBranchProbe(primary_ref="dependabot/cargo/bump")), ""
+            )
+
+            # Either candidate stays unproven, so neither is cleared. This is
+            # the half that keeps an over-correction from opening up `main`.
+            for current in ("main\n", "dependabot/cargo/bump\n"):
+                with self.subTest(uncorroborated_candidate=current):
+                    self.assertIn(
+                        module.MARK_UNVERIFIED,
+                        verdict(
+                            DefaultBranchProbe(
+                                primary_ref="dependabot/cargo/bump",
+                                current_ref=current,
+                            )
+                        ),
+                    )
+
+            # No cached head at all leaves the default's name unknown, so no
+            # commit branch can be cleared.
+            self.assertIn(
+                module.MARK_UNVERIFIED, verdict(DefaultBranchProbe(cached_ref=""))
+            )
+            # An unreadable checked-out branch is undecidable for the same
+            # reason, whatever the default resolves to.
+            self.assertIn(
+                module.MARK_UNVERIFIED, verdict(DefaultBranchProbe(current_ref=""))
+            )
+
+            # A corroborated default still blocks authoring on it, and still
+            # clears every other branch.
+            self.assertIn(
+                module.MARK_BLOCKED, verdict(DefaultBranchProbe(current_ref="main\n"))
+            )
+            self.assertEqual(verdict(DefaultBranchProbe()), "")
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_default_delivery_hook_allows_feature_governed_and_read_only_routes(
         self,
     ) -> None:
