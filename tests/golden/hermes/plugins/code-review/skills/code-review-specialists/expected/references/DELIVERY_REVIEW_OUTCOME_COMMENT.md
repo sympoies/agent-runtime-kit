@@ -60,6 +60,9 @@ authorized `personal-escape` fallback.
 # only for portable or authorized personal-escape outcome notes.
 [ "$REVIEW_PUBLICATION_MODE" = portable ] ||
   [ "$REVIEW_PUBLICATION_MODE" = personal-escape ] || exit 64
+FINAL_REVIEW_IDENTITY=()
+[ "$REVIEW_PUBLICATION_MODE" = personal-escape ] &&
+  FINAL_REVIEW_IDENTITY=(env FORGE_AS=user)
 case "$REVIEW_PROFILE" in
   quick) SELECTED_REVIEW_LENSES=(quick) ;;
   full) SELECTED_REVIEW_LENSES=(testing maintainability) ;;
@@ -70,7 +73,7 @@ for selected_lens in "${SELECTED_REVIEW_LENSES[@]}"; do
   REVIEW_LENS_ARGS+=(--lens "$selected_lens")
 done
 
-forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+"${FINAL_REVIEW_IDENTITY[@]}" forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --decision "$REVIEW_DECISION" \
   --comment-file comment.md \
   "${REVIEW_LENS_ARGS[@]}"

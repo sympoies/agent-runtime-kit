@@ -125,6 +125,14 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'REVIEW_PERSONAL_ESCAPE_REASON' "$posting"
   grep -Fq 'REVIEW_PUBLISHER_FAILURE_STATE' "$posting"
   grep -Fq 'REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN' "$posting"
+  [[ "$(grep -Fc 'NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)' "$posting")" == 1 ]]
+  [[ "$(grep -Fc 'NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)' "$delivery")" == 1 ]]
+  [[ "$(grep -Fc 'NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)' "$tracking")" == 1 ]]
+  [[ "$(grep -Fc 'env FORGE_AS=user forge-cli' "$posting")" == 1 ]]
+  [[ "$(grep -Fc 'FINAL_REVIEW_IDENTITY=(env FORGE_AS=user)' "$posting")" == 1 ]]
+  [[ "$(grep -Fc 'env FORGE_AS=user forge-cli' "$delivery")" == 1 ]]
+  [[ "$(grep -Fc 'env FORGE_AS=user forge-cli' "$tracking")" == 1 ]]
+  [[ "$(grep -Fc 'FINAL_REVIEW_IDENTITY=(env FORGE_AS=user)' "$outcome")" == 1 ]]
   grep -Fq 'is_truthy "${AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED:-}"' "$posting"
   grep -Fq 'is_truthy "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}"' "$posting"
   grep -Fq 'no-native-mutation' "$posting"
@@ -225,17 +233,22 @@ run_portable_review_identity_contract_probe() {
       local semantic_decision="$4" reason="$5" body="$6" record="$7"
       local native_decision=comments-only
       local -a native_submit=(--submit-review --expected-head "$expected_head")
-      local -a native outcome
+      local -a native native_retry outcome portable
       [[ "$inspected_head" == "$expected_head" ]] || return 65
       [[ "$body" == *"$reason"* ]] || return 65
       [[ "$body" == *"independent review identity: unavailable"* ]] || return 65
-      native=(forge-cli pr review 107 --decision "$native_decision"
+      native=(env FORGE_AS=user forge-cli pr review 107 --decision "$native_decision"
         "${native_submit[@]}" "--comment=$body")
       record_argv native "${native[@]}" >>"$record"
+      native_retry=("${native[@]}")
+      record_argv native-retry "${native_retry[@]}" >>"$record"
       [[ "$refreshed_head" == "$expected_head" ]] || return 65
-      outcome=(forge-cli pr review 107 --decision "$semantic_decision"
+      outcome=(env FORGE_AS=user forge-cli pr review 107 --decision "$semantic_decision"
         "--comment=$body")
       record_argv outcome "${outcome[@]}" >>"$record"
+      portable=(forge-cli pr review 107 --decision "$semantic_decision"
+        "--comment=$body")
+      record_argv portable "${portable[@]}" >>"$record"
     }
 
     record="$1"
@@ -253,11 +266,15 @@ run_portable_review_identity_contract_probe() {
     : >"$record"
     plan_escape_delivery "$head" "$head" "$head" approve outage "$body" "$record"
     has_pair native --decision comments-only "$record"
+    has_arg native FORGE_AS=user "$record"
+    has_arg native-retry FORGE_AS=user "$record"
     has_arg native --submit-review "$record"
     has_pair native --expected-head "$head" "$record"
     has_pair outcome --decision approve "$record"
+    has_arg outcome FORGE_AS=user "$record"
     ! has_arg outcome --submit-review "$record"
     ! has_arg outcome --expected-head "$record"
+    ! has_arg portable FORGE_AS=user "$record"
 
     : >"$record"
     ! plan_escape_delivery "$head" deadbeef "$head" approve outage "$body" "$record"

@@ -419,12 +419,12 @@ done
 ```
 
 In `personal-escape` mode, publish the merged report as an exact-head native
-`comments-only` review. The environment-owned identity route selects the
-maintainer account; the public workflow does not name or configure it:
+`comments-only` review. Select the environment-owned personal route explicitly;
+the public workflow does not name or configure the maintainer account:
 
 ```bash
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
-  forge-cli --provider github pr review "$PR_NUMBER" \
+  env FORGE_AS=user forge-cli --provider github pr review "$PR_NUMBER" \
     --repo "$OWNER_REPO" \
     --decision comments-only \
     --submit-review \
@@ -461,12 +461,15 @@ if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
     }
 fi
 
+FINAL_REVIEW_IDENTITY=()
 [ "$REVIEW_PUBLICATION_MODE" = portable ] ||
   [ "$REVIEW_PUBLICATION_MODE" = personal-escape ] || {
     echo "governed final outcomes use forge-review-publish" >&2
     exit 64
   }
-forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
+[ "$REVIEW_PUBLICATION_MODE" = personal-escape ] &&
+  FINAL_REVIEW_IDENTITY=(env FORGE_AS=user)
+"${FINAL_REVIEW_IDENTITY[@]}" forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
   --repo "$OWNER_REPO" \
   --decision "$REVIEW_DECISION" \
   --comment-file "$REVIEW_COMMENT_FILE" \
@@ -484,8 +487,10 @@ compact activity breadcrumb:
 The issue mirror records the PR/MR review URL and metadata. It does not
 duplicate the full review body.
 
-Keep identity selection out of the command. Single-lens and combined-owner posts
-are distinguished by semantic `--lens` cardinality and `--decision`.
+Keep account names and credentials out of the command. The authorized escape
+selects the environment-owned `user` route explicitly; single-lens and
+combined-owner posts are distinguished by semantic `--lens` cardinality and
+`--decision`.
 
 ## Pending Draft Recovery
 
@@ -530,7 +535,12 @@ printf '%s\n' "$PRE_SUBMIT_REVIEWS" |
 # freezing it; use `--option=value` so hyphen-leading Markdown remains data.
 EXPECTED_REVIEW_BODY="$(cat "$REVIEW_COMMENT_FILE")" || exit $?
 readonly EXPECTED_REVIEW_BODY
+NATIVE_REVIEW_IDENTITY=()
+if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)
+fi
 NATIVE_REVIEW_CMD=(
+  "${NATIVE_REVIEW_IDENTITY[@]}"
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
   pr review "$PR_NUMBER"
   --decision "$REVIEW_DECISION"

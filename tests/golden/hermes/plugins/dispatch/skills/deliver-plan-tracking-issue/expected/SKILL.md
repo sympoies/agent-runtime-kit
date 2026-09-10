@@ -402,7 +402,12 @@ if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
     printf '%s\n' "$EXPECTED_REVIEW_BODY" |
       grep -Fq -- 'independent review identity: unavailable' || exit 65
 fi
+NATIVE_REVIEW_IDENTITY=()
+if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)
+fi
 NATIVE_REVIEW_CMD=(
+  "${NATIVE_REVIEW_IDENTITY[@]}"
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
   pr review "$PR_NUMBER"
   --decision "$NATIVE_REVIEW_DECISION"
@@ -496,7 +501,8 @@ if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
     exit 65
   }
   NATIVE_REVIEW_JSON="$(
-    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    env FORGE_AS=user forge-cli \
+      --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
       pr review "$PR_NUMBER" \
       --decision "$REVIEW_DECISION" \
       --comment="$EXPECTED_REVIEW_BODY" \
