@@ -60,6 +60,13 @@ WAIVER_ENVS = (
     "AGENT_KIT_VALIDATION_WAIVER",
     "CLAUDE_KIT_VALIDATION_WAIVER",
 )
+_RECOVERY_LANE_RELATIVE = os.path.join("scripts", "validation-recovery.py")
+# `core/hooks/shared/<this file>` -> the kit root that also holds `scripts/`.
+# `realpath` first because Codex may execute this hook through a source symlink.
+_KIT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+)
+
 PENDING_SCHEMA = "agent-runtime-validation.pending.v1"
 TOMBSTONE_SCHEMA = "agent-runtime-validation.tombstone.v1"
 TOMBSTONE_MAX_BYTES = 64 * 1024
@@ -533,6 +540,14 @@ def reason(
             "Do not create a provider issue automatically; L1+ provider mutation "
             "still requires the user's decision."
         )
+    # This text is read inside the repository being validated, which is normally
+    # not this kit. A bare `scripts/...` spelling therefore reads as a path in
+    # *that* repository, sending a blocked agent to a tree that does not hold the
+    # lane. Name it absolutely, and keep the relative spelling only for a layout
+    # where the script cannot be found next to this hook.
+    lane = os.path.join(_KIT_ROOT, _RECOVERY_LANE_RELATIVE)
+    if not os.path.isfile(lane):
+        lane = _RECOVERY_LANE_RELATIVE
     return (
         f"Code was edited in {name} but its declared validation has "
         "not passed since the last edit.\n"
@@ -549,9 +564,9 @@ def reason(
         "or other setup command in the same shell payload can make executable "
         "resolution fail closed.\n"
         "If the shell itself is blocked, the recovery lane is out-of-band and "
-        "does not need it: `scripts/validation-recovery.py run --repo <path>` "
+        f"does not need it: `{lane} run --repo <path>` "
         "executes only the declared command shape, and "
-        "`scripts/validation-recovery.py waive --repo <path> --reason <text>` "
+        f"`{lane} waive --repo <path> --reason <text>` "
         "records a structured waiver bound to this edit generation. Setting "
         "AGENT_RUNTIME_VALIDATION_WAIVER=1 with a stated reason remains "
         f"supported.{failure_guidance}"

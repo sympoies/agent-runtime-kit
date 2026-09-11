@@ -3257,6 +3257,40 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_finish_line_gate_names_the_recovery_lane_by_absolute_path(self) -> None:
+        # The block text is read inside the repository being validated, which is
+        # normally not this one. A bare `scripts/validation-recovery.py` reads as
+        # a path in that repository, where it does not exist, so a blocked agent
+        # looks in the wrong tree and concludes the lane is unavailable.
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            assert decision is not None
+            reason = str(decision.get("reason", ""))
+
+            lane = REPO_ROOT / "scripts" / "validation-recovery.py"
+            self.assertTrue(lane.is_file(), f"missing recovery lane: {lane}")
+            self.assertIn(f"{lane} run --repo", reason)
+            self.assertIn(f"{lane} waive --repo", reason)
+            # The relative spelling must not survive as the named command.
+            self.assertNotIn("`scripts/validation-recovery.py", reason)
+            # The lane must not be described as a path inside the validated repo.
+            self.assertFalse((Path(repo) / "scripts" / "validation-recovery.py").exists())
+
     def test_finish_line_dirty_state_is_scoped_per_session(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
