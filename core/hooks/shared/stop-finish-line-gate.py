@@ -63,7 +63,11 @@ WAIVER_ENVS = (
 _RECOVERY_LANE_RELATIVE = os.path.join("scripts", "validation-recovery.py")
 # `core/hooks/shared/<this file>` -> the kit root that also holds `scripts/`.
 # `realpath` first because Codex may execute this hook through a source symlink.
-_KIT_ROOT = os.path.dirname(
+# This only locates the kit when the hook runs from a checkout; `agent-hook
+# setup` materializes flat copies under the provider home, where walking up
+# lands outside the kit entirely. `recovery_lane` tries the docs-home env first
+# for that reason.
+_SOURCE_KIT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 )
 
@@ -74,6 +78,30 @@ SESSION_PRODUCTS = ("codex", "claude", "shared")
 SESSION_COMMAND_STATE_SUFFIX = re.compile(
     r"(?:cmd[0-9]+\.(?:ran|failed\.json)|pending\.[0-9a-f]+\.json|routing-reviewed)"
 )
+
+
+def recovery_lane() -> str:
+    """Name the out-of-band recovery lane so it resolves where it is read.
+
+    The block text reaches an agent working in some other repository, so a bare
+    `scripts/...` spelling reads as a path in *that* repository and sends it to a
+    tree that does not hold the lane. The docs-home env is the documented anchor
+    for this kit and is the only one that survives `agent-hook setup`, which
+    installs hooks as flat copies outside the checkout. Fall back to the hook's
+    own location for a source checkout, then to the relative spelling, so a
+    layout that has neither degrades instead of naming a path that is not there.
+    """
+    for root in (
+        os.environ.get("AGENT_RUNTIME_DOCS_HOME"),
+        os.environ.get("AGENT_DOCS_HOME"),
+        _SOURCE_KIT_ROOT,
+    ):
+        if not root:
+            continue
+        candidate = os.path.join(root, _RECOVERY_LANE_RELATIVE)
+        if os.path.isfile(candidate):
+            return candidate
+    return _RECOVERY_LANE_RELATIVE
 
 
 def env_enabled(names: Iterable[str]) -> bool:
@@ -540,14 +568,7 @@ def reason(
             "Do not create a provider issue automatically; L1+ provider mutation "
             "still requires the user's decision."
         )
-    # This text is read inside the repository being validated, which is normally
-    # not this kit. A bare `scripts/...` spelling therefore reads as a path in
-    # *that* repository, sending a blocked agent to a tree that does not hold the
-    # lane. Name it absolutely, and keep the relative spelling only for a layout
-    # where the script cannot be found next to this hook.
-    lane = os.path.join(_KIT_ROOT, _RECOVERY_LANE_RELATIVE)
-    if not os.path.isfile(lane):
-        lane = _RECOVERY_LANE_RELATIVE
+    lane = recovery_lane()
     return (
         f"Code was edited in {name} but its declared validation has "
         "not passed since the last edit.\n"

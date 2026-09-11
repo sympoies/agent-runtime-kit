@@ -3265,7 +3265,13 @@ exit 64
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
-            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            # Pin the kit anchor: the validated repo carries no lane of its own,
+            # so without this the assertion would follow whatever docs-home the
+            # ambient environment happens to export.
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_DOCS_HOME": str(REPO_ROOT),
+            }
 
             code, _, stderr = run_hook(
                 "finish-line-record.py",
@@ -3290,6 +3296,51 @@ exit 64
             self.assertNotIn("`scripts/validation-recovery.py", reason)
             # The lane must not be described as a path inside the validated repo.
             self.assertFalse((Path(repo) / "scripts" / "validation-recovery.py").exists())
+
+    def test_finish_line_gate_names_the_lane_from_an_installed_copy(self) -> None:
+        # `agent-hook setup` materializes hooks as flat copies under the provider
+        # home (`~/.claude/hooks/`), not symlinks into this checkout. Walking up
+        # from `__file__` there lands outside the kit entirely, so a location-only
+        # resolution silently degrades to the relative spelling in exactly the
+        # layout every real session uses. Resolve through the documented
+        # docs-home env instead, and prove it from a copy.
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            installed = Path(tmp) / "provider-home" / "hooks"
+            installed.mkdir(parents=True)
+            for name in ("stop-finish-line-gate.py", "hook_common.py"):
+                shutil.copy2(REPO_ROOT / "core" / "hooks" / "shared" / name, installed / name)
+
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                cwd=repo,
+                env={"AGENT_RUNTIME_DOCS_HOME": str(repo)},
+            )
+            self.assertEqual(code, 0, stderr)
+
+            # The copy sits four levels below a directory that holds no `scripts/`.
+            self.assertFalse((installed.parents[2] / "scripts").exists())
+
+            completed = subprocess.run(
+                [sys.executable, str(installed / "stop-finish-line-gate.py")],
+                input=json.dumps({}),
+                capture_output=True,
+                text=True,
+                cwd=repo,
+                env={
+                    **os.environ,
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_DOCS_HOME": str(REPO_ROOT),
+                },
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            reason = str(json.loads(completed.stdout).get("reason", ""))
+
+            lane = REPO_ROOT / "scripts" / "validation-recovery.py"
+            self.assertIn(f"{lane} run --repo", reason)
+            self.assertNotIn("`scripts/validation-recovery.py", reason)
 
     def test_finish_line_dirty_state_is_scoped_per_session(self) -> None:
         self._require_agent_docs()
