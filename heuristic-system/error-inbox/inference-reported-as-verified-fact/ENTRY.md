@@ -19,6 +19,8 @@ concluded X" from "I ran this and observed X", so the user had no way to price t
 
 ## Evidence
 
+- Raw record: not captured (manual reconstruction from the 2026-09-02 delivery review)
+
 Two instances with exact text retained:
 
 1. **`normpath` was defensible.** The user was told twice that resolving candidate paths with
