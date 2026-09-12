@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-09-02
 - Area: cli
 - Severity: medium
@@ -30,6 +30,9 @@ reported fix both mislead.
   `Refs:` trailer.
 - Resolution both times was to fold the prose into additional bullets. Nothing about the trailer
   changed.
+- Tracked as sympoies/nils-cli#1697 and fixed by sympoies/nils-cli#1699 (merge
+  `4bebd0eadecf44818d38966f02526dc8d3b12aff`). Regression coverage now distinguishes prose
+  before any valid trailer from malformed content after a valid trailer.
 
 ## Impact
 
@@ -44,25 +47,32 @@ This is not repo-specific: it applies to every repository that authors commits t
 
 ## Current Workaround
 
-Write the commit body as bullets only, folding any explanation into additional bullets, and keep
-`Refs:`/`Closes:` trailers in their own block at the end. When the trailer error appears, look at
-the reported line rather than at the trailer.
+No workaround is needed on the nils-cli default branch after sympoies/nils-cli#1699. Until a
+release containing that merge is installed, write the commit body as bullets only, folding any
+explanation into additional bullets, and keep `Refs:`/`Closes:` trailers in their own block at the
+end.
 
 ## Promotion Criteria
 
-Promote once `semantic-commit` reports this case as a body-shape violation that names the offending
-line and the bullets-only rule, or once the body grammar is documented where message authors will
-see it before the failure.
+Met by sympoies/nils-cli#1699: `semantic-commit` reports this case as a body-shape violation that
+names the offending line and the bullets-only rule, while malformed content after a valid trailer
+retains the trailer diagnostic.
 
 ## Next Action
 
-Issue https://github.com/sympoies/nils-cli/issues/1697 now tracks the defect. A regression-first
-implementation distinguishes a body/trailer separator from an actual trailer start, reports the
-prose line as a body-shape violation, and preserves the trailer diagnostic after a valid trailer.
-Deliver that implementation through the normal nils-cli PR workflow, then mark this case promoted
-after the fix lands and is validated.
+None. Fixed and validated by https://github.com/sympoies/nils-cli/pull/1699; tracking issue
+https://github.com/sympoies/nils-cli/issues/1697 is closed.
+
+Lifecycle link: `https://github.com/sympoies/nils-cli/pull/1699`
 
 ## Links
 
 - Observed while delivering sympoies/agent-runtime-kit#90 and sympoies/nils-cli#1599.
 - Tracking issue: https://github.com/sympoies/nils-cli/issues/1697.
+- Fix: https://github.com/sympoies/nils-cli/pull/1699.
+
+## Archive
+
+- Archived: 2026-09-13
+- Reason: Fixed and validated in nils-cli PR #1699.
+- Durable link: `https://github.com/sympoies/nils-cli/pull/1699`
