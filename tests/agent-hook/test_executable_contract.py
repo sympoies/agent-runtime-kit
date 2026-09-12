@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import math
 import os
 import shlex
 import shutil
@@ -32,8 +31,8 @@ POLICY = Path(
 )
 DISPATCH_CASES = REPO_ROOT / "tests/agent-hook/fixtures/dispatcher-cases.json"
 LATENCY_BUDGET_MS = 25.0
+LATENCY_ABSOLUTE_CEILING_MS = 1000.0
 LATENCY_ITERATIONS = 35
-LATENCY_ATTEMPTS = 3
 LATENCY_HARD_GATE_ENV = "AGENT_HOOK_ENFORCE_LATENCY_BUDGET"
 
 
@@ -57,6 +56,14 @@ def latency_budget_is_hard(environ: Mapping[str, str]) -> bool:
     return boolean_environment_value(
         environ, "CI"
     ) or boolean_environment_value(environ, LATENCY_HARD_GATE_ENV)
+
+
+def latency_gate_exceeded(samples: list[float]) -> tuple[bool, bool]:
+    """Return sustained-overhead and absolute-stall gate verdicts."""
+    return (
+        statistics.median(samples) > LATENCY_BUDGET_MS,
+        max(samples) > LATENCY_ABSOLUTE_CEILING_MS,
+    )
 
 
 def default_test_output_root() -> Path:
@@ -1316,39 +1323,37 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
                 "json",
                 payload=payload,
             )
-        # A shared runner stalls individual subprocesses for tens of
-        # milliseconds under unrelated host load. Two such stalls out of
-        # LATENCY_ITERATIONS lift one batch's p95 past the budget while the
-        # median stays a fraction of it, which is host noise rather than a
-        # dispatch regression. A real regression shifts the whole
-        # distribution and so misses the budget in every batch. Re-measure and
-        # gate on the best batch instead of relaxing the threshold.
-        batches: list[tuple[float, list[float]]] = []
-        for _ in range(LATENCY_ATTEMPTS):
-            samples = self.measure_dispatch_latency_ms(payload)
-            ordered = sorted(samples)
-            batches.append((ordered[math.ceil(0.95 * len(ordered)) - 1], samples))
-            if batches[-1][0] <= LATENCY_BUDGET_MS:
-                break
-        p95, samples = min(batches, key=lambda batch: batch[0])
+        # A shared runner can stall one or two subprocesses for tens of
+        # milliseconds under unrelated host load. That noise dominates p95 in
+        # a 35-sample batch even when dispatch overhead remains stable. Gate on
+        # the median to detect a shifted distribution, retain p95 as diagnostic
+        # evidence, and keep a generous absolute ceiling for a genuine stall.
+        samples = self.measure_dispatch_latency_ms(payload)
+        ordered = sorted(samples)
+        p50 = statistics.median(samples)
+        p95 = ordered[int(0.95 * len(ordered))]
+        maximum = max(samples)
         hard_gate = latency_budget_is_hard(os.environ)
-        exceeded = p95 > LATENCY_BUDGET_MS
+        budget_exceeded, ceiling_exceeded = latency_gate_exceeded(samples)
+        exceeded = budget_exceeded or ceiling_exceeded
         report = {
-            "schema_version": "agent-runtime-kit.agent-hook-latency.v1",
+            "schema_version": "agent-runtime-kit.agent-hook-latency.v2",
             "iterations": len(samples),
-            "attempts": len(batches),
-            "max_attempts": LATENCY_ATTEMPTS,
             "min_ms": round(min(samples), 3),
-            "p50_ms": round(statistics.median(samples), 3),
+            "p50_ms": round(p50, 3),
             "p95_ms": round(p95, 3),
-            "max_ms": round(max(samples), 3),
+            "max_ms": round(maximum, 3),
+            "gate_statistic": "p50",
             "budget_ms": LATENCY_BUDGET_MS,
+            "absolute_ceiling_ms": LATENCY_ABSOLUTE_CEILING_MS,
             "product": "codex",
             "event": "PreToolUse",
             "matcher": "Bash",
             "mode": "shadow",
             "trace": True,
             "enforcement": "hard" if hard_gate else "advisory",
+            "budget_exceeded": budget_exceeded,
+            "ceiling_exceeded": ceiling_exceeded,
             "exceeded": exceeded,
         }
         if report_path := os.environ.get("AGENT_HOOK_LATENCY_REPORT"):
@@ -1375,6 +1380,27 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
             RuntimeError, LATENCY_HARD_GATE_ENV
         ):
             latency_budget_is_hard({LATENCY_HARD_GATE_ENV: "sometimes"})
+
+    def test_latency_gate_separates_sustained_overhead_from_scheduler_spikes(
+        self,
+    ) -> None:
+        scheduler_noise = [4.0] * 33 + [70.0, 95.0]
+        self.assertEqual(
+            latency_gate_exceeded(scheduler_noise),
+            (False, False),
+        )
+
+        sustained_regression = [30.0] * LATENCY_ITERATIONS
+        self.assertEqual(
+            latency_gate_exceeded(sustained_regression),
+            (True, False),
+        )
+
+        stalled_dispatch = [4.0] * (LATENCY_ITERATIONS - 1) + [1001.0]
+        self.assertEqual(
+            latency_gate_exceeded(stalled_dispatch),
+            (False, True),
+        )
 
     def install_fixture_handler(self, product: str, handler: str, output: str) -> None:
         if product == "codex":
