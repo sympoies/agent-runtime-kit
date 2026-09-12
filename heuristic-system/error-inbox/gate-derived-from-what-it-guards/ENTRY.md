@@ -118,6 +118,10 @@ sympoies/agent-runtime-kit#96; no upstream tool defect is implied, because the g
 exactly what they were written to do. The signal to watch is whether new gates arrive with a
 recorded red, or only with a green.
 
+Retirement observation: `1/2`. The multi-round delivery ending in
+sympoies/agent-runtime-kit#115 produced no reviewer finding of this shape. One more consecutive
+qualifying delivery without recurrence is required before retirement.
+
 Worth a separate look, not yet filed: the golden-regeneration property is a repository-wide
 characteristic of `ci/all.sh` position 6, not a one-off. Every surface whose only guard is a
 regenerated golden has the same hole. The Claude reviewer pins now have a fail-closed audit; no
@@ -126,6 +130,7 @@ survey has been done of what else relies on goldens alone.
 ## Links
 
 - Observed while delivering sympoies/agent-runtime-kit#96.
+- First clean retirement observation: sympoies/agent-runtime-kit#115.
 - Repairs: block-scoped probe assertions and `claude_pin_missing_rejected` /
   `claude_pin_drift_rejected` in the reviewer-profile fixture.
 - Related: `inference-reported-as-verified-fact` — the same delivery offered the golden refresh as

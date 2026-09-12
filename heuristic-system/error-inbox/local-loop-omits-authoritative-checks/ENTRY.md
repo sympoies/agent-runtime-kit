@@ -99,9 +99,16 @@ Retain and observe. Both instances are understood and neither is a defect in the
 the completion audit and the clean-tree requirement are both correct. The signal to watch is
 whether local-validation claims in this session's style start carrying their own coverage caveat.
 
+Retirement observation: `0/2`. The multi-repository delivery ending in nils-cli#1699 and
+agent-runtime-kit#115 does not count as a clean sample: the first provider coverage run surfaced an
+unrelated `nils-agent-session` concurrency failure outside the documented affected-package fast
+loop. Its retry and the later full local coverage run passed, but the event still demonstrates the
+structural coverage difference this entry tracks.
+
 ## Links
 
 - Observed while delivering sympoies/nils-cli#1613 and sympoies/agent-runtime-kit#96, #99, #101.
+- Non-qualifying observation: sympoies/nils-cli#1699 and sympoies/agent-runtime-kit#115.
 - Related: `gate-derived-from-what-it-guards` — a gate that cannot fail, versus this one, a correct
   gate that is not in the loop.
 - Related: `inference-reported-as-verified-fact` — the reporting half of the same problem.

@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: open
+- Status: promoted
 - First observed: 2026-09-02
 - Area: agent-behavior
 - Severity: medium
@@ -20,6 +20,9 @@ concluded X" from "I ran this and observed X", so the user had no way to price t
 ## Evidence
 
 - Raw record: not captured (manual reconstruction from the 2026-09-02 delivery review)
+- Promotion observation: sympoies/agent-runtime-kit#115 completed a comparable multi-repository,
+  multi-round delivery with local and provider checks named separately. Its current-head automated,
+  testing, and maintainability reviews reported no unverified-reason finding.
 
 Two instances with exact text retained:
 
@@ -60,7 +63,8 @@ a detour.
 
 ## Current Workaround
 
-Two habits, in order of cost:
+No active workaround remains after the clean comparison delivery. The two habits that produced the
+observed result remain useful operating practice, in order of cost:
 
 - Before asserting behavior of code under change, run it. All three instances were cheap to check;
   the MultiEdit case took one direct invocation. "I read the source" is a hypothesis, not evidence.
@@ -74,18 +78,27 @@ has no way to re-derive whether it was checked.
 
 ## Promotion Criteria
 
-Promote when a session completes work of comparable scope with no reviewer finding of the form
-"the conclusion holds but the stated reason is unverified", or when a durable practice exists that
-makes the inference/observation distinction visible by default rather than by recall.
+Met by sympoies/agent-runtime-kit#115. That session completed work of comparable scope and kept
+inferences distinct from executed checks in its user report, issue closeout, development log, and
+PR evidence. The current-head automated, testing, and maintainability reviews produced no finding
+of the form "the conclusion holds but the stated reason is unverified".
 
 ## Next Action
 
-Retain and observe. This is a behavioral pattern, not a tool defect, so there is no upstream fix to
-file. Re-check on the next multi-round delivery in this repository: the signal to watch is whether
-justifications offered in review responses and in committed comments name something that ran.
+None. The comparison delivery met the observation-based promotion criterion; this remains a
+behavioral practice rather than a claimed tool-level enforcement.
+
+Lifecycle link: `https://github.com/sympoies/agent-runtime-kit/pull/115`
 
 ## Links
 
 - Observed while delivering sympoies/agent-runtime-kit#90, #91, #94.
+- Promotion observation: https://github.com/sympoies/agent-runtime-kit/pull/115.
 - Related: `semantic-commit-body-error-mislabel` was filed in the same session; that one is a
   genuine tool defect and is not an instance of this pattern.
+
+## Archive
+
+- Archived: 2026-09-13
+- Reason: Promotion criterion met by a comparable clean delivery with evidence-grounded reporting.
+- Durable link: `https://github.com/sympoies/agent-runtime-kit/pull/115`
