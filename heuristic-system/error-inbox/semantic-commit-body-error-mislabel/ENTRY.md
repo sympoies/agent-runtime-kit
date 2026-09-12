@@ -56,12 +56,13 @@ see it before the failure.
 
 ## Next Action
 
-Route to `sympoies/nils-cli` as a `semantic-commit` message-quality defect. The fix is in the error
-path, not the grammar: the parser already knows it transitioned from body to trailer at a line the
-author intended as body, so it can say so. Confirm whether the bullets-only body rule is documented
-anywhere an author reads before hitting the error, and file the upstream issue with the two
-observed message shapes as the reproduction.
+Issue https://github.com/sympoies/nils-cli/issues/1697 now tracks the defect. A regression-first
+implementation distinguishes a body/trailer separator from an actual trailer start, reports the
+prose line as a body-shape violation, and preserves the trailer diagnostic after a valid trailer.
+Deliver that implementation through the normal nils-cli PR workflow, then mark this case promoted
+after the fix lands and is validated.
 
 ## Links
 
 - Observed while delivering sympoies/agent-runtime-kit#90 and sympoies/nils-cli#1599.
+- Tracking issue: https://github.com/sympoies/nils-cli/issues/1697.
