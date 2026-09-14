@@ -1,50 +1,180 @@
 # Plan: Close the remaining Main Agent Mode blockers
 
-- Source document: `docs/plans/2026-07-27-main-agent-mode-blockers/main-agent-mode-blockers-discussion-source.md`
-- Date: 2026-07-27 (promoted to a plan bundle 2026-09-14)
-- Tracking issue: not yet opened
+## Overview
 
-## Why this is a plan and not an issue
+Close the Main Agent Mode items that the blocker inventory still lists as open:
+C06 dependency wait, C07 account behavior, the residual C08 recovery
+classifications, Phase D parity on native Claude, and F34's integration with the
+runtime F47 consumer.
 
 The source is a 2044-line running inventory with a repair log, an execution
-matrix, and per-item field-closure evidence for B1-B8, F25, F30, F36 and F37.
-That volume is a plan bundle, not an issue body. It was written into
-`docs/discussions/` and never left, so this promotion gives it the tracked home
-it always needed. Opening the tracking issue is deferred to whoever picks the
-work up, through `deliver-plan-tracking-issue`.
+matrix, and per-item field-closure evidence. That volume is a plan bundle, not
+an issue body. It sat in `docs/discussions/` from 2026-07-27 with no tracked
+home; this bundle gives it one.
 
-## Remaining scope
+## Read First
 
-Everything below is quoted from the source's own execution matrix. Closed items
-are explicitly out of scope and must not be re-run or re-used as evidence.
+- Primary source:
+  `docs/plans/2026-07-27-main-agent-mode-blockers/main-agent-mode-blockers-discussion-source.md`
+- Source type: discussion-to-implementation-doc
+- Open questions carried into execution: whether the source's 2026-08-01 status
+  still holds, since nothing was re-verified when the bundle was promoted
+- Also read: `docs/source/main-agent-closeout-contract.md`, the run-wide closeout
+  contract promoted from the same sweep.
+
+## Scope
+
+Only the items the source's own execution matrix still marks open:
 
 | Area | Status at promotion | Remaining acceptance |
 | --- | --- | --- |
-| C06 dependency wait | field-open; the dependency gate has deterministic integration coverage | Prove an intentional dependency wait, authenticated dependency delivery, and same-session continuation on both products |
+| C06 dependency wait | field-open; deterministic integration coverage exists | An intentional dependency wait, authenticated dependency delivery, and same-session continuation on both products |
 | C07 account behavior | field-open | Codex: typed account-next binding and same-worker continuation without logout. Claude: clear unsupported behavior without damaging recovery |
-| Residual C08 recovery | partly closed | Exercise the residual classifications the source enumerates, without reusing B2 or B3 evidence |
-| Phase D parity | open | Repeat applicable A/B/C behavior on native Claude and disposition the remaining F-items |
-| F34 | local topic candidate | Not integrated, installed, released, or field-closed; govern integration together with the runtime F47 consumer after final F47 acceptance |
+| Residual C08 recovery | partly closed | The residual classifications the source enumerates, without reusing B2 or B3 evidence |
+| Phase D parity | open | Applicable A/B/C behavior on native Claude, and disposition of the remaining F-items |
+| F34 | local topic candidate | Integration governed together with the runtime F47 consumer after final F47 acceptance |
 
-## Non-scope
+Out of scope: B1-B8, F25, F30, F36 and F37 are field-closed; C01-C05 and C09 are
+closed on both products. The B2 claim-absent, claim-active-at-stage-1, and
+process-dead/tmux-live recovery forms must not be counted again toward C08.
 
-- B1-B8, F25, F30, F36 and F37 are field-closed. Do not re-open or re-prove.
-- C01-C05 and C09 are closed on both products.
-- The B2 claim-absent, claim-active-at-stage-1, and process-dead/tmux-live
-  recovery forms are closed and must not be counted again toward C08.
+## Assumptions
 
-## Execution boundaries
+- The source's 2026-08-01 status is still accurate. Nothing was re-verified when
+  the bundle was promoted on 2026-09-14.
+- The historical governed local-main authorization exercised for B2 is not
+  standing authority. Any delivery here needs a fresh explicit user selection and
+  must retain compare-and-swap, hooks, signing, and outside-repository receipts.
+- Provider restart and resume canaries need explicit authority. A canary is never
+  launched merely to probe provider capacity.
 
-- The historical governed local-main authorization exercised for B2 is **not**
-  standing authority. Any later delivery needs a fresh explicit user selection
-  and must retain compare-and-swap, hooks, signing, and outside-repository
-  receipts.
-- Provider restart and resume canaries require explicit authority. Do not launch
-  a canary merely to probe provider capacity.
-- Prefer non-provider source and test work while provider capacity is unknown.
+## Sprint 1: Non-provider closure
 
-## Validation
+Work that can proceed without provider capacity or account authority.
 
-- Local deterministic coverage may proceed for residual C08 classifications.
-- Field closure for C06 and C07 requires real provider lanes on both products,
-  which is gated on the authority and capacity notes above.
+### Task 1.1: Exercise the residual C08 recovery classifications
+
+- **Location**:
+  - `tests/runtime-smoke/`
+  - `core/policies/`
+- **Description**: Cover the residual C08 recovery classifications the source
+  enumerates with local deterministic coverage, without reusing B2 or B3
+  evidence for any of them.
+- **Dependencies**:
+  - none
+- **Complexity**: 5
+- **Acceptance criteria**:
+  - Every residual classification named in the source has its own deterministic
+    case, and none of them cites B2 or B3 evidence.
+  - The closed B2 forms — claim-absent, claim-active-at-stage-1, and
+    process-dead/tmux-live — are not re-run.
+- **Validation**:
+  - `bash scripts/ci/all.sh`
+
+### Task 1.2: Advance Phase D parity by source and test work
+
+- **Location**:
+  - `core/skills/conversation/main-agent-mode/`
+  - `tests/runtime-smoke/`
+- **Description**: Repeat the applicable A/B/C behavior on native Claude
+  wherever it can be proven without a provider lane, and disposition the
+  remaining F-items the source lists.
+- **Dependencies**:
+  - none
+- **Complexity**: 5
+- **Acceptance criteria**:
+  - Each applicable A/B/C behavior is either proven on native Claude or recorded
+    as provider-gated with the reason.
+  - Every remaining F-item has an explicit disposition.
+- **Validation**:
+  - `bash scripts/ci/all.sh`
+
+### Task 1.3: Prepare F34 for governed integration
+
+- **Location**:
+  - `core/policies/`
+- **Description**: F34 is a signed local topic candidate that is not integrated,
+  installed, released, or field-closed. Keep its exact proof, revision-floor,
+  owner, outcome, expiry, replay, and registry-access fencing intact, and stage
+  it to land with the runtime F47 consumer rather than on its own.
+- **Dependencies**:
+  - none
+- **Complexity**: 3
+- **Acceptance criteria**:
+  - F34's fencing is unchanged and its topic proof still verifies.
+  - The integration is staged against F47 rather than delivered alone.
+- **Validation**:
+  - `bash scripts/ci/all.sh`
+
+## Sprint 2: Provider-gated field closure
+
+Blocked until provider capacity and account authority are available.
+
+### Task 2.1: Close C06 in the field
+
+- **Location**:
+  - `core/skills/conversation/main-agent-mode/`
+- **Description**: Prove an intentional dependency wait, authenticated
+  dependency delivery, and same-session continuation on both products.
+- **Dependencies**:
+  - Task 1.1
+- **Complexity**: 8
+- **Acceptance criteria**:
+  - A dependency wait is entered intentionally, its delivery is authenticated,
+    and the same session continues afterwards on both products.
+  - No canary is launched merely to probe provider capacity.
+- **Validation**:
+  - Field evidence from a real provider lane on both products.
+
+### Task 2.2: Close C07 in the field
+
+- **Location**:
+  - `core/skills/conversation/main-agent-mode/`
+- **Description**: On Codex, prove typed account-next binding and same-worker
+  continuation without logout. On Claude, prove clear unsupported behavior that
+  does not damage recovery.
+- **Dependencies**:
+  - Task 1.1
+- **Complexity**: 8
+- **Acceptance criteria**:
+  - Codex binds account-next with a typed result and the same worker continues
+    without a logout.
+  - Claude reports the unsupported behavior clearly and recovery is undamaged.
+  - Explicit account and provider authority was obtained first.
+- **Validation**:
+  - Field evidence from a real provider lane on both products.
+
+### Task 2.3: Integrate F34 with the F47 consumer
+
+- **Location**:
+  - `core/policies/`
+- **Description**: After final F47 acceptance, govern the F34 topic and the
+  runtime F47 consumer together through one integration.
+- **Dependencies**:
+  - Task 1.3
+- **Complexity**: 5
+- **Acceptance criteria**:
+  - F34 and F47 land through a single governed integration with F34's fencing
+    retained.
+  - A fresh explicit user selection authorized the delivery; the historical B2
+    local-main authorization is not reused.
+- **Validation**:
+  - `bash scripts/ci/all.sh`
+
+## Testing Strategy
+
+Local deterministic coverage carries Sprint 1. Sprint 2 requires real provider
+lanes on both products, so its acceptance is field evidence rather than a suite.
+Prefer non-provider source and test work while provider capacity is unknown.
+
+## Risks & gotchas
+
+- Re-proving a closed item wastes a provider lane and pollutes the evidence
+  record. Check the source's closed list before starting anything.
+- B3 evidence must not be counted as B2 evidence, and neither may be counted
+  toward residual C08.
+
+## Rollback plan
+
+Nothing here mutates a shipped surface on its own; each task lands through its
+own reviewed delivery and rolls back with that delivery.
