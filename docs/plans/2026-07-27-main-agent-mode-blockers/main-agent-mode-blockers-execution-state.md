@@ -26,7 +26,7 @@
 
 ## Validation Log
 
-- 2026-09-14: promoted from `docs/discussions/2026-07-27-main-agent-mode-blocker-inventory.md`
+- 2026-09-14: promoted from the main-agent-mode blocker-inventory capture
   during the docs/discussions lifecycle sweep. No scope was re-verified in this
   pass; every status above is carried over verbatim from the source's own
   execution matrix as of its 2026-08-01 update.

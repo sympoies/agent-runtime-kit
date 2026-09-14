@@ -19,8 +19,10 @@ home; this bundle gives it one.
 - Source type: discussion-to-implementation-doc
 - Open questions carried into execution: whether the source's 2026-08-01 status
   still holds, since nothing was re-verified when the bundle was promoted
-- Also read: `docs/source/main-agent-closeout-contract.md`, the run-wide closeout
-  contract promoted from the same sweep.
+- Also read: `docs/discussions/2026-07-29-main-agent-closeout-macro.md`, the
+  run-wide closeout contract. It is still a capture only because the
+  conversation runtime-smoke probe reads it; it is canon by use and should move
+  to `docs/source/` once that probe can be repointed.
 
 ## Scope
 
