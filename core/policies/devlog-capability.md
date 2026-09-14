@@ -40,11 +40,39 @@ not expected to move its log to satisfy the capability.
 The `devlog` CLI is looser: it resolves the two directories, in the order above,
 and will happily write into one that has no index. That difference is not a
 licence to treat a bare directory as a log. A repository in that state has a
-half-built log, and the fix is to add the index — `devlog index` writes the
-month list into an existing `README.md` — after which the capability routes
-there like anywhere else. Until then, do not search it and do not append to it.
+half-built log: someone already decided it should have one. Say so, and offer
+the repair — author the `README.md`, then `devlog index` writes the month list
+into it — after which the capability routes there like anywhere else. Until the
+index exists, do not search it and do not append to it.
+
+That is the one case where naming a missing index is right, and it is right
+because the log already exists. It is not the case the next section is about.
 
 Detect; never assume.
+
+## Enabling a log is the user's decision
+
+This section is about a repository with neither log directory — not the
+half-built log above, which already has one.
+
+There, detection failing is a complete answer, not a gap to fill. The
+repository has no development log and this capability does nothing in it: do
+not create a log directory, do not write an index, and do not raise either as a
+follow-up or a finding. Most repositories will never have a log, and that is a
+finished state rather than a backlog item.
+
+Add one only when the user asks for that repository. Enabling it is writing the
+index, in whichever of the two directories the detection table says this
+repository's layout calls for:
+
+```bash
+mkdir -p docs/devlog          # docs/source/devlog for a source/render split
+# author README.md there: what this log is for, and the entry shape
+devlog index    # keep the month list in the index in sync from then on
+```
+
+Detection picks it up from there. Nothing else has to be declared — not in the
+repository, and not in this policy.
 
 Everything below applies only when detection succeeds.
 
@@ -103,9 +131,13 @@ devlog new --title '<title>' \
   --result '<what now exists>' \
   --why '<why it was shaped this way>' \
   --evidence '<command or observation that actually ran>' \
-  --link '<commit, PR, or issue>'
+  --link '<commit, PR, or issue>'        # optional
 devlog check
 ```
+
+`--result`, `--why` and `--evidence` are what an entry must carry. `--link` and
+`--follow-up` are optional and are omitted rather than filled with a
+placeholder; an entry whose author had nothing to link is complete.
 
 `devlog check` reports structural problems and exits `65`; run it after writing.
 
