@@ -69,7 +69,7 @@ Scope rules:
 - Live Codex Desktop acceptance is separate from the deterministic
   version floor: `codex debug prompt-input` must show required skills
   in a fresh session
-  (`docs/plans/2026-06-20-codex-plugin-marketplace-adoption/`).
+  (archived as `plans/github.com/sympoies/agent-runtime-kit/2026-06-20-codex-plugin-marketplace-adoption/` in `serenvia/agent-plan-archive`).
 
 ## Surface-By-Surface Shape
 
@@ -492,7 +492,7 @@ Live Codex acceptance:
   `- <name>: ...` entry in the `<skills_instructions>` block with a
   file path under
   `agent-runtime-kit/build/codex/plugins/<domain>/skills/<skill>/SKILL.md`
-  (`docs/plans/2026-06-20-codex-plugin-marketplace-adoption/`).
+  (archived as `plans/github.com/sympoies/agent-runtime-kit/2026-06-20-codex-plugin-marketplace-adoption/` in `serenvia/agent-plan-archive`).
 
 ## Open Items For Schema Design
 
