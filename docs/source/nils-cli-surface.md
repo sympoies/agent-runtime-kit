@@ -4,7 +4,7 @@
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.28.0`
+- Active `git describe --tags` output: `v1.28.28`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.35`,
   `validated_tag: v1.28.28`), consumed by `scripts/ci/all.sh` Position 1 via
