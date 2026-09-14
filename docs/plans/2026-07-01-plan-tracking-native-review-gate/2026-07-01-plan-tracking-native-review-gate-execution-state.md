@@ -4,10 +4,10 @@
 
 - Source document: docs/plans/2026-07-01-plan-tracking-native-review-gate/2026-07-01-plan-tracking-native-review-gate-plan.md
 - Tracking issue: <https://github.com/graysurf/agent-runtime-kit/issues/491>
-- Current sprint: Sprint 2 (near complete)
-- Status: implementation complete; PR #492 open with full gate green on-pin; testbed native-review confirmed; pending merge decision + #491 closeout
+- Current sprint: Sprint 2 (complete)
+- Status: complete; shipped into the tracking skill
 - Branch: feat/plan-tracking-native-review-gate
-- Last updated: 2026-07-01
+- Last updated: 2026-09-14
 
 ## Task Ledger
 
@@ -33,3 +33,22 @@
 - 2026-07-01: Confirmed no CLI capability gap — pin `v1.20.1` / `forge-cli 1.17.0` already exposes every surface `deliver-pr` uses; `review-dispatch-lane-pr` is the proven native-review template. Shape 1 chosen because it sidesteps `deliver-pr`'s pre-merge linked-issue audit ordering tension (`forge-cli pr merge` only fails closed on unresolved threads / unchecked tasks, not on the lifecycle audit).
 - 2026-07-01: Host toolchain observed off-pin at authoring time (`agent-runtime 1.20.5`, `plan-tooling 1.20.3` vs pin `v1.20.1`); must be brought on-pin before the position-2 version-alignment gate in `scripts/ci/all.sh`. All on-pin content gates were run via the `with-nils-version.sh release:v1.20.1` wrapper.
 - 2026-07-01: Sprint 1 (1.1-1.3) + Task 2.1 implemented on branch `feat/plan-tracking-native-review-gate` in two commits (b4adf4d4 tracking review gate; 6e7350ba dispatch floor bump). Next: bring host on-pin for the full gate (Task 2.2), then the testbed live run (Task 2.3), then PR delivery through the newly-aligned deliver-plan-tracking-issue itself.
+
+## Closeout
+
+- 2026-09-14: reconciled during the plan-archive sweep. The tracking issue
+  `graysurf/agent-runtime-kit#491` and PR #492 are unrecoverable — that
+  repository was retired and the project was re-created as
+  `sympoies/agent-runtime-kit` with restarted issue numbering, so no provider
+  closeout record can be read back. Completion is established from the shipped
+  tree instead:
+  `core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera` now carries
+  the Shape 1 flow this plan specified — `forge-cli pr deliver --no-merge`,
+  then the review gate, then `forge-cli pr merge` — together with the
+  `review-specialists` floor and the review-outcome posting contract.
+- Task 2.2 (full `scripts/ci/all.sh` on-pin) was blocked at authoring time only
+  by an off-pin host; the on-pin pre-push gate recorded in the Validation Log
+  is the authoritative pass, and the pin has since moved on many times.
+- Task 2.3 shipped its core outcome (native review events confirmed on the
+  testbed). The deferred native-URL round trip and record-audit ordering were
+  explicitly scoped out of this plan and were not blockers for Shape 1.
