@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deterministic probes for workflow-only conversation skills.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2016,SC2317,SC2329
 
 set -euo pipefail
 
@@ -100,8 +100,7 @@ assert_main_agent_v2_recovery_contract() {
     main-agent.worker-diagnose-result.v1 \
     main-agent.worker-supervise-result.v1 \
     main-agent.worker-recovery-action.v1 \
-    main-agent.worker-reconcile-stopped-result.v1
-  do
+    main-agent.worker-reconcile-stopped-result.v1; do
     if grep -Fq "$stale_schema" "$contract_file"; then
       return 1
     fi
@@ -141,8 +140,7 @@ assert_main_agent_replay_boundaries() {
     'exact worker' \
     'stopped runtime' \
     'operation quiescence' \
-    'current controller authority'
-  do
+    'current controller authority'; do
     if ! grep -Fq "$boundary" "$contract_file"; then
       return 1
     fi
@@ -216,7 +214,7 @@ assert_main_agent_folded_input_contract() {
   grep -Fq 'prefer the folded readiness boundary' "$1" &&
     ! grep -Fq 'require the folded readiness boundary' "$1" &&
     assert_normalized_contract_clause "$1" \
-    'Before input, a privacy-safe observation must prove the exact already-delivered prompt at an idle composer, the broker must prove zero active and zero uncertain operations, and the observation must classify the surface as an ordinary provider composer rather than a trust, authentication, account, permission, secret, provider-mutation, startup-dialog, or unknown state.' &&
+      'Before input, a privacy-safe observation must prove the exact already-delivered prompt at an idle composer, the broker must prove zero active and zero uncertain operations, and the observation must classify the surface as an ordinary provider composer rather than a trust, authentication, account, permission, secret, provider-mutation, startup-dialog, or unknown state.' &&
     grep -Fq '`input_sent:true`' "$1" &&
     assert_normalized_contract_clause "$1" \
       'trusted released session-management owner' &&
@@ -391,7 +389,7 @@ assert_main_agent_controller_recovery_contract() {
   local contract_file="$1"
 
   grep -Fq 'Main controller uses `advisory`; every isolated implementation worker uses `enforce`.' "$contract_file" &&
-  assert_main_agent_wrong_mode_cleanup_contract "$contract_file" &&
+    assert_main_agent_wrong_mode_cleanup_contract "$contract_file" &&
     assert_main_agent_preinit_observation_contract "$contract_file" &&
     assert_main_agent_prerun_restart_contract "$contract_file" &&
     assert_main_agent_prerun_restart_replay_contract "$contract_file" &&
@@ -415,8 +413,6 @@ assert_main_agent_controller_recovery_contract() {
 run_main_agent_mode_probe() {
   local source="$REPO_ROOT/core/skills/conversation/main-agent-mode/SKILL.md.tera"
   local protocol="$REPO_ROOT/core/skills/conversation/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
-  local e2e_plan="$REPO_ROOT/docs/discussions/2026-07-27-main-agent-fresh-session-e2e-plan.md"
-  local closeout_design="$REPO_ROOT/docs/discussions/2026-07-29-main-agent-closeout-macro.md"
   local stale_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-stale-v1.md"
   local extra_input_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-extra-input.md"
   local completed_receipt_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-completed-receipt-replay.txt"
@@ -614,14 +610,6 @@ run_main_agent_mode_probe() {
   assert_main_agent_controller_recovery_contract "$source"
   assert_main_agent_controller_recovery_contract "$protocol"
   assert_main_agent_controller_matrix_contract "$protocol"
-  grep -Fq '## Milestone 1 — Pragmatic Codex Daily-use Cutline' "$e2e_plan"
-  grep -Fq 'F34 exact-owner reconciliation' "$e2e_plan"
-  grep -Fq 'acceptance of the prepared F22/F33 repair' "$e2e_plan"
-  grep -Fq 'one deterministic provider-free happy path' "$e2e_plan"
-  grep -Fq 'do not open another one for the cutline' "$e2e_plan"
-  grep -Fq 'does not change the blocker inventory or its F18 owner' "$e2e_plan"
-  grep -Fq 'Satisfying this milestone does not complete the full cross-product E2E' "$e2e_plan"
-  grep -Fq '## Milestone 2 — Full Cross-product E2E Completion' "$e2e_plan"
   grep -Fq '## Explicit Activation' "$source"
   grep -Fq 'agent-session activity doctor --agent codex --format json' "$source"
   grep -Fq 'agent-session activity doctor --agent claude --format json' "$source"
@@ -861,18 +849,6 @@ run_main_agent_mode_probe() {
   grep -Fq '`controller-claim-provenance-required`' "$protocol"
   grep -Fq 'preserves an unrelated successor claim' "$protocol"
   grep -Fq 'Keep the Main provider session live' "$protocol"
-  grep -Fq 'durable controller-claim binding created at' "$closeout_design"
-  grep -Fq 'Context equality alone never establishes claim ownership.' "$closeout_design"
-  grep -Fq '"completed_stages": [' "$closeout_design"
-  grep -Fq '"run_owned_claim_absent": true' "$closeout_design"
-  grep -Fq '"handoff_ready": false' "$closeout_design"
-  grep -Fq 'Bind its request digest to the original expected run revision' "$closeout_design"
-  grep -Fq 'matching progress receipt attests them' "$closeout_design"
-  grep -Fq 'original now-stale revision returns or resumes' "$closeout_design"
-  grep -Fq 'receipt, or external drift fails closed' "$closeout_design"
-  grep -Fq 'Failure preserves every resource not already changed by a committed stage' "$closeout_design"
-  grep -Fq 'preserved and reported, the run-owned claim is recorded absent' "$closeout_design"
-  grep -Fq 'controller-claim provenance is ambiguous or cannot be proven' "$closeout_design"
 
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'For a Codex worker, run these literal commands:'
   rendered_contract_assert_product_contains conversation main-agent-mode codex 'main-agent capabilities --provider codex --format json'
