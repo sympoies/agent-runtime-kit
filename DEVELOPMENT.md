@@ -84,7 +84,5 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 - Keep cross-cutting architecture, policies, and detailed maintenance
   references under `docs/source/`; keep domain-specific material with its
   owning skill, hook, target, script, or fixture.
-- Update current documentation before appending a newest-first, public-safe
-  devlog entry for a non-trivial durable outcome.
 
 All committed repository content is written in English.
