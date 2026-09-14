@@ -12,7 +12,7 @@
 Local tracker (GitHub unavailable — 403 on the write path, so provider issues
 cannot be opened) for the flow-improvement backlog surfaced by the main-agent-mode
 simplified-flow acceptance run (2026-07-24, baseline `v1.25.9-39-g662b5479`). Full
-analysis + rationale: `docs/discussions/2026-07-23-main-agent-mode-simplification-acceptance-test-plan.md`
+analysis + rationale were captured in the simplified-flow acceptance test plan
 Part F. Each item is fixed locally and checked off here; the entry is promoted
 when the backlog is drained.
 
@@ -117,7 +117,8 @@ Optional (non-blocking): run the full `scripts/ci/all.sh` gate on the landed
 runtime-kit tip for final acceptance (`deliver-rk-f6-f7-sync.sh --full-ci` runs
 it on the clean branch before landing).
 
-Lifecycle link: `docs/discussions/2026-07-23-main-agent-mode-simplification-acceptance-test-plan.md`
+Lifecycle: the source capture was retired on 2026-09-14; this entry is the
+retained record of the backlog it surfaced.
 
 ## Archive
 

@@ -54,8 +54,9 @@ Outputs:
 - An `Execution` section with stable `Recommended plan` and
   `Recommended execution state` lines only for the L2 plan-source case; omit
   them for a `docs/discussions/` capture and for promoted canon.
-- Updated local docs index or README only when the document is intentionally promoted as retained knowledge and should be discoverable
-  outside the plan.
+- Updated local docs index or README only when the document is promoted into
+  canon; never for a `docs/discussions/` capture, which no file outside that
+  directory may link to.
 - When following the evidence-control-plane recording convention, a `skill-usage.record.v1` envelope that links the created document and validation
   evidence.
 - A short response linking the document path, listing validation run, and
@@ -181,6 +182,14 @@ Failure modes:
      - `Recommended plan: docs/plans/<YYYY-MM-DD>-<slug>/<slug>-plan.md`
      - `Recommended execution state: docs/plans/<YYYY-MM-DD>-<slug>/<slug>-execution-state.md`
      Omit the `Execution` plan lines for a `docs/discussions/` capture.
+   - For a `docs/discussions/` capture, the header must carry one
+     `Exit: open-issue | promote-to-plan | canonise | retire` line. There is no
+     fifth value and no "keep" state. Never write `Retention: Keep`,
+     `retained as the acceptance source`, or any other self-declared retention:
+     content worth keeping takes the `canonise` exit, which moves it out of
+     `docs/discussions/`. `open-issue` is complete on its own — an ordinary
+     issue retires the capture, so do not manufacture an L1 or L2 plan merely to
+     justify deleting it. See `core/policies/work-tier-levels.md`.
    - When a plan's `Read First` section links a document produced by this
      skill, use `Source type: discussion-to-implementation-doc` for both
      `*-discussion-source.md` and `*-review-source.md`; do not use the retired
@@ -204,7 +213,10 @@ Failure modes:
      `Read First` section as the discoverability path; for a `docs/discussions/`
      capture, link it from the PR or issue that acts on it. Do not update broad
      indexes by default.
-   - Update the nearest docs index or README only when the document is promoted or intentionally retained after execution.
+   - Update the nearest docs index or README only when the document is promoted
+     into canon. Never index or link a `docs/discussions/` capture from outside
+     that directory: an inbound link turns staging into storage and blocks the
+     capture's exit. Quote the conclusion in the devlog, issue, or PR instead.
    - Link from broader docs entrypoints only when future maintainers should find the document without prior plan/session context.
    - If no index exists, mention that in the final response rather than inventing broad navigation.
 

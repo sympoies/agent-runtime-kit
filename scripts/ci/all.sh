@@ -210,6 +210,23 @@ bash scripts/ci/skill-governance-audit.sh --fixture remove
 bash tests/skill-exposure-contract/run.sh
 python3 tests/ci/test_devlog_capability.py
 
+# docs/discussions is staging, not storage: a capture must stay deletable, so no
+# file outside that directory may reference one. The directory's own README and
+# a bare `docs/discussions/` mention are exempt because neither pins a capture.
+# Contract: core/policies/work-tier-levels.md, "Doc Lifecycle At L0 / L1".
+discussions_inbound="$(
+  grep -rIl --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
+    'docs/discussions/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-' . 2>/dev/null |
+    grep -v '^\./docs/discussions/' || true
+)"
+if [ -n "$discussions_inbound" ]; then
+  echo "ci/all.sh: files outside docs/discussions/ reference a capture:" >&2
+  printf '  %s\n' "$discussions_inbound" >&2
+  echo "  Quote the conclusion instead of linking the capture, or promote it to canon." >&2
+  exit 1
+fi
+echo "ci/all.sh: no inbound links to docs/discussions/ captures"
+
 # -----------------------------------------------------------------------------
 # Position 3 — render home prompts and codex
 # -----------------------------------------------------------------------------
@@ -309,10 +326,11 @@ CODEX_HOME="$ACCEPTANCE_CODEX_HOME" bash scripts/ci/validate-surfaces-manifest.s
 # Position 9 — Codex skill-surface shape diagnostic (preflight, not live)
 #
 # Shape validation only. Live Codex Desktop discovery still requires
-# `codex debug prompt-input` in a fresh session — see
-# docs/plans/2026-06-20-codex-plugin-marketplace-adoption/ for the live acceptance
-# protocol. The expected check count is documented in that plan's execution
-# state; bump SHAPE_EXPECTED_MIN_CHECKS together with a recorded reason.
+# `codex debug prompt-input` in a fresh session — see the archived bundle
+# plans/github.com/sympoies/agent-runtime-kit/2026-06-20-codex-plugin-marketplace-adoption/
+# in serenvia/agent-plan-archive for the live acceptance protocol. The expected
+# check count is documented in that plan's execution state; bump
+# SHAPE_EXPECTED_MIN_CHECKS together with a recorded reason.
 # -----------------------------------------------------------------------------
 SHAPE_EXPECTED_MIN_CHECKS=20
 SHAPE_OUT_DIR="${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}/out/ci-all"
@@ -356,9 +374,10 @@ if not isinstance(checks, int) or checks < expected_min:
     errors.append(
         "checks=%r below documented baseline %d "
         "(bump SHAPE_EXPECTED_MIN_CHECKS in scripts/ci/all.sh "
-        "and record the reason in "
-        "docs/plans/2026-06-20-codex-plugin-marketplace-adoption/"
-        "2026-06-20-codex-plugin-marketplace-adoption-execution-state.md)"
+        "and record the reason in the archived bundle "
+        "plans/github.com/sympoies/agent-runtime-kit/"
+        "2026-06-20-codex-plugin-marketplace-adoption/ "
+        "in serenvia/agent-plan-archive)"
         % (checks, expected_min)
     )
 if ok != checks:

@@ -98,7 +98,9 @@ Several concepts ride alongside the ladder and must not be mistaken for tiers:
   the PR body at L0, linked from the issue / `Read First` at L1/L2. It does not
   set the tier; the execution tier is chosen by the judge below when the work is
   picked up. A doc captured but not yet scheduled is simply tier-undecided
-  backlog.
+  backlog. Retiring such a doc does not require a tier either: opening an
+  ordinary issue for the outstanding work is a complete exit, and no L1 or L2
+  plan should be manufactured merely to justify deleting a capture.
 - **Subagents = an execution mode, not automatically L3.** Parallel or
   orchestrated subagent execution can help execute L0-L2 work when the user explicitly
   asks for subagents and no additional shared coordination record is needed.
@@ -203,11 +205,50 @@ already provides enough tracking, keep the lower tier and use
 
 ### Doc Lifecycle At L0 / L1
 
-L2 retires its bundle through its internal closeout plus `plan-archive migrate`. An L0/L1
-spec lives in `docs/discussions/` and has **no** automatic retirement step, so
-when it is executed, close its loop by hand: link it from the PR or issue, mark
-it done, and retire or promote it per its retention intent. Otherwise
-`docs/discussions/` fills with shipped-but-still-"to do" orphan source docs.
+L2 retires its bundle through its internal closeout plus `plan-archive migrate`.
+
+`docs/discussions/` is **staging, not storage**. It holds a capture only while
+that capture has not yet reached an exit. Every capture leaves by one of four
+exits, and **all four are a move or a delete** — none of them leaves the file
+where it is. A capture that is part durable canon and part outstanding backlog
+takes two: `canonise` the durable half, then open a record for the remainder and
+delete what is left.
+
+| `Exit:` | Action | When |
+| --- | --- | --- |
+| `open-issue` | Open a tracked record carrying the outstanding work, then `git rm` the capture | The work is real but not finished now. Any tier — an ordinary issue is enough, do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, an in-repo `core/policies/heuristic-system/error-inbox/<slug>/ENTRY.md` is the accepted form |
+| `promote-to-plan` | `git mv` into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` | The work becomes a tracked L2 plan |
+| `canonise` | `git mv` into the owning domain doc or `docs/source/` | The content is durable canon that outlives the change |
+| `retire` | `git rm` | Shipped or abandoned — the default |
+
+Rules that keep this true:
+
+- **There is no "keep" state.** `Retention: Keep`, `retained as the acceptance
+  source`, and every other self-declared retention is prohibited. A capture that
+  is worth keeping is worth `canonise`, which moves it out. Treat any such
+  declaration as a `canonise` that was never executed.
+- **No file outside `docs/discussions/` may link to a capture inside it.** The
+  invariant is exactly: nothing outside the directory may reference a
+  `docs/discussions/<YYYY-MM-DD>-<slug>.md` path. A devlog entry, an error-inbox
+  `ENTRY.md`, a README, or a test that points at a capture turns staging into
+  storage, because deleting the capture then breaks a reference. Quote the
+  conclusion instead of linking the file. The directory's own `README.md` and a
+  bare `docs/discussions/` directory mention are both exempt — neither pins a
+  capture. This invariant is what makes `retire` always safe, and it is one grep:
+
+  ```sh
+  grep -rIl --exclude-dir=.git 'docs/discussions/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-' . \
+    | grep -v '^\./docs/discussions/'
+  ```
+- **The exit is chosen when the capture is written**, recorded in its `Exit:`
+  header, and executed by the same PR that ships the work.
+- **Do not delete on the strength of a provider record alone.** Provider history
+  is destructible: a repository that is transferred keeps its issue numbers, but
+  one that is deleted and re-created does not, and its issues and PRs become
+  unreachable. Before `retire`, the reasoning must already exist inside the
+  repository — an entry in the repository's development log (`docs/devlog/` or
+  `docs/source/devlog/`, whichever that repository uses), or promoted canon. A
+  repository with no development log must add one before retiring captures.
 
 ## Agent Behavior
 
