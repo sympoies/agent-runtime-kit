@@ -1,16 +1,24 @@
-# Main Agent Run-Wide Closeout Macro
+# Main Agent Run-Wide Closeout Contract
 
-## Status
+Canonical contract for the `main-agent closeout` orchestration primitive and the
+`conversation:main-agent-mode` surface that consumes it. Promoted from a
+`docs/discussions/` capture on 2026-09-14 because its interface, result
+contract, idempotency rules, and failure boundaries describe current behaviour
+rather than a one-off change.
 
-- Lifecycle: implemented design record
-- Scope: `nils-cli` orchestration primitive plus the consuming
-  `conversation:main-agent-mode` contract
-- Current behavior: capability-gated `main-agent closeout` is the normal path;
-  the explicit primitives remain diagnostic and intentional recovery actions
-- Local implementation: nils-cli local `main` `9ebbc922` and installed
-  `main-agent 1.25.11 (v1.25.9-94-g9ebbc922)` on 2026-07-31
-- Runtime-kit adoption: this change deploys the consuming Codex and Claude
-  surfaces locally; no public nils-cli release or provider PR is claimed
+## Scope
+
+- `nils-cli` orchestration primitive plus the consuming
+  `conversation:main-agent-mode` contract.
+- Capability-gated `main-agent closeout` is the normal path; the explicit
+  primitives remain diagnostic and intentional recovery actions.
+
+## Provenance
+
+- First implemented at nils-cli local `main` `9ebbc922`, installed as
+  `main-agent 1.25.11 (v1.25.9-94-g9ebbc922)` on 2026-07-31.
+- Runtime-kit adoption deployed the consuming Codex and Claude surfaces locally;
+  no public nils-cli release or provider PR was claimed at that point.
 
 ## Problem
 
