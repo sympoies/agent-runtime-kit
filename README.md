@@ -153,10 +153,6 @@ Documentation placement changes can load
 which remains canonical but is optional `project-dev` context rather than
 required reading for every edit.
 
-Notable implementation history is retained in the
-[`development log`](docs/source/devlog/README.md). It is a curated narrative,
-not a substitute for current policy, architecture, or maintenance guidance.
-
 The full local validation gate is:
 
 ```bash
