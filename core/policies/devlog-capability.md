@@ -46,6 +46,26 @@ there like anywhere else. Until then, do not search it and do not append to it.
 
 Detect; never assume.
 
+## Enabling a log is the user's decision
+
+Detection failing is a complete answer, not a gap to fill. A repository with no
+index has no development log, and this capability does nothing there: do not
+create `docs/devlog/`, do not write an index, and do not raise either as a
+follow-up or a finding. Most repositories will never have a log, and that is a
+finished state rather than a backlog item.
+
+Add one only when the user asks for that repository. Enabling it is writing the
+index:
+
+```bash
+mkdir -p docs/devlog
+# author docs/devlog/README.md: what this log is for, and the entry shape
+devlog index    # keep the month list in the index in sync from then on
+```
+
+Detection picks it up from there. Nothing else has to be declared — not in the
+repository, and not in this policy.
+
 Everything below applies only when detection succeeds.
 
 ## Read: consult the log when it would answer the question
@@ -103,9 +123,13 @@ devlog new --title '<title>' \
   --result '<what now exists>' \
   --why '<why it was shaped this way>' \
   --evidence '<command or observation that actually ran>' \
-  --link '<commit, PR, or issue>'
+  --link '<commit, PR, or issue>'        # optional
 devlog check
 ```
+
+`--result`, `--why` and `--evidence` are what an entry must carry. `--link` and
+`--follow-up` are optional and are omitted rather than filled with a
+placeholder; an entry whose author had nothing to link is complete.
 
 `devlog check` reports structural problems and exits `65`; run it after writing.
 

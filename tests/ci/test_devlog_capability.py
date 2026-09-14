@@ -158,5 +158,33 @@ class DevlogCapabilityReadHalfTests(unittest.TestCase):
                 self.assertIn(required, card)
 
 
+class DevlogEnablementTests(unittest.TestCase):
+    """Detection failing closed is an answer, not a gap to fill.
+
+    `test_a_repository_without_a_log_is_unaffected` pins the routing half: the
+    policy is not required reading in a repository with no log. That leaves the
+    behavioral half, which routing cannot express — an agent that reads the
+    policy anyway, or that carries the card into a repository without a log,
+    must not respond to the absence by creating one. Enabling a log is the
+    user's call for their repository. Nothing else in this kit says so, so
+    losing these sentences would quietly turn a conditional capability into a
+    mandate to add `docs/devlog/` everywhere it is not found.
+    """
+
+    def test_the_policy_refuses_to_create_a_log_and_names_its_owner(self) -> None:
+        policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
+
+        for required in (
+            "do not create `docs/devlog/`",
+            "Add one only when the user asks",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, policy)
+
+    def test_the_project_dev_card_carries_the_same_refusal(self) -> None:
+        card = " ".join((REPO_ROOT / "core/policies/intent-cards.md").read_text().split())
+        self.assertIn("create a log in a repository that has none", card)
+
+
 if __name__ == "__main__":
     unittest.main()
