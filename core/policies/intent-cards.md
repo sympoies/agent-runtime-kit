@@ -22,6 +22,22 @@ active, and open a full runbook only for the phase that needs it.
   `core/policies/files-hooks-validation.md`; load tier, Git, evidence, and
   review runbooks only for delivery/review or an explicit gate.
 
+### Development log
+
+Applies in a repository that has `docs/devlog/` or `docs/source/devlog/`; a
+repository with neither carries none of this.
+
+- **Must**: search the log before changing a contract, schema, guardrail, or
+  default that an entry may explain, and before acting on a behavior that looks
+  arbitrary; append one entry at the finish line for a durable outcome.
+- **Never**: write an entry for trivial, transient, or same-turn work; treat the
+  log as authority over current source, schemas, policy, or a runbook; record a
+  credential or any other value the runbook's privacy boundary excludes.
+- **Next**: `core/policies/devlog-capability.md`. `AGENT_DOCS.toml` declares it
+  as required `delivery` reading when the log exists; open it from here as soon
+  as the read trigger fires, which is usually before any of that. The mechanism
+  is the `devlog` CLI.
+
 ## browser-test
 
 - **Trigger**: browser-based acceptance or end-to-end UI verification.
