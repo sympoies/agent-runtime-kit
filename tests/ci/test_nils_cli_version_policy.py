@@ -128,7 +128,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.35")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.28.0")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.28.28")
         self.assertNotIn("pinned_tag:", manifest)
         # v1.27.35 retired the previous v1.27.27 floor to admit the
         # `block-agent-artifact-routing` handler id. That handler was since
@@ -141,13 +141,21 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         # provider-review profiles refuse to invent report metadata. Nothing
         # below v1.27.35 became less usable, so minimum stays where it is and
         # the two lanes no longer share archive digests.
+        #
+        # v1.28.28 advanced validated only again, for the devlog binary.
+        # core/policies/devlog-capability.md names that CLI as the mechanism for
+        # the development-log capability, and before this pin the validated
+        # release did not ship it, so the policy described a command the pinned
+        # surface did not have. Minimum stays at v1.27.35: nothing below it
+        # became less usable, and a host there simply has no devlog and falls
+        # back to the prose the policy already documents.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "dccc8de148fee1c72ad7797c935a7bb601e2f8c4ff91ffdb19842d5a6a6fa20e",
+            "38220c4328eb8168e012110e164f2ea406c89f53086a3459d60687433ade4b1c",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "5154d87aeb9a7dabc7f71f90803931f2ca4c416010c20fcd06531a614419f878",
+            "a03aec2ba05c6d135d2ee9de57f7097677519282394797f61d2f7e62da668556",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
@@ -310,7 +318,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.28.0", "v1.29.0"):
+        for candidate in ("v1.28.28", "v1.29.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -682,7 +690,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.28.0", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.28.28", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(
