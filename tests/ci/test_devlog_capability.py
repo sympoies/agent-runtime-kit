@@ -175,15 +175,34 @@ class DevlogEnablementTests(unittest.TestCase):
         policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
 
         for required in (
-            "do not create `docs/devlog/`",
+            "do not create a log directory",
+            # The clause that stops the realistic failure: not creating the log
+            # but filing its absence as work to be done.
+            "do not raise either as a follow-up or a finding",
             "Add one only when the user asks",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, policy)
 
+    def test_the_half_built_log_stays_carved_out(self) -> None:
+        # A log directory with no index is a log someone already decided to
+        # have. Naming its missing index is right there and wrong everywhere
+        # else, so the two cases have to stay distinguishable in the prose.
+        policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
+
+        self.assertIn("This section is about a repository with neither log directory", policy)
+        self.assertIn("It is not the case the next section is about", policy)
+
     def test_the_project_dev_card_carries_the_same_refusal(self) -> None:
         card = " ".join((REPO_ROOT / "core/policies/intent-cards.md").read_text().split())
-        self.assertIn("create a log in a repository that has none", card)
+
+        for required in (
+            "create a log in a repository that has none",
+            "report its absence as a gap",
+            "enabling one is the user's call",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, card)
 
 
 if __name__ == "__main__":
