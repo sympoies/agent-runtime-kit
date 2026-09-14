@@ -208,13 +208,15 @@ already provides enough tracking, keep the lower tier and use
 L2 retires its bundle through its internal closeout plus `plan-archive migrate`.
 
 `docs/discussions/` is **staging, not storage**. It holds a capture only while
-that capture has not yet reached an exit. Every capture leaves by exactly one of
-four exits, and **all four are a move or a delete** — none of them leaves the
-file where it is:
+that capture has not yet reached an exit. Every capture leaves by one of four
+exits, and **all four are a move or a delete** — none of them leaves the file
+where it is. A capture that is part durable canon and part outstanding backlog
+takes two: `canonise` the durable half, then open a record for the remainder and
+delete what is left.
 
 | `Exit:` | Action | When |
 | --- | --- | --- |
-| `open-issue` | Open an issue carrying the outstanding work, then `git rm` the capture | The work is real but not finished now. Any tier — an ordinary issue is enough, do not manufacture an L1/L2 plan to justify the exit |
+| `open-issue` | Open a tracked record carrying the outstanding work, then `git rm` the capture | The work is real but not finished now. Any tier — an ordinary issue is enough, do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, an in-repo `core/policies/heuristic-system/error-inbox/<slug>/ENTRY.md` is the accepted form |
 | `promote-to-plan` | `git mv` into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` | The work becomes a tracked L2 plan |
 | `canonise` | `git mv` into the owning domain doc or `docs/source/` | The content is durable canon that outlives the change |
 | `retire` | `git rm` | Shipped or abandoned — the default |
@@ -225,11 +227,19 @@ Rules that keep this true:
   source`, and every other self-declared retention is prohibited. A capture that
   is worth keeping is worth `canonise`, which moves it out. Treat any such
   declaration as a `canonise` that was never executed.
-- **Nothing outside `docs/discussions/` may link into `docs/discussions/`.**
-  A devlog entry, an error-inbox `ENTRY.md`, a README, or a test that points at a
-  capture turns staging into storage, because deleting the capture then breaks a
-  reference. Quote the conclusion instead of linking the file. This invariant is
-  what makes `retire` always safe.
+- **No file outside `docs/discussions/` may link to a capture inside it.** The
+  invariant is exactly: nothing outside the directory may reference a
+  `docs/discussions/<YYYY-MM-DD>-<slug>.md` path. A devlog entry, an error-inbox
+  `ENTRY.md`, a README, or a test that points at a capture turns staging into
+  storage, because deleting the capture then breaks a reference. Quote the
+  conclusion instead of linking the file. The directory's own `README.md` and a
+  bare `docs/discussions/` directory mention are both exempt — neither pins a
+  capture. This invariant is what makes `retire` always safe, and it is one grep:
+
+  ```sh
+  grep -rIl --exclude-dir=.git 'docs/discussions/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-' . \
+    | grep -v '^\./docs/discussions/'
+  ```
 - **The exit is chosen when the capture is written**, recorded in its `Exit:`
   header, and executed by the same PR that ships the work.
 - **Do not delete on the strength of a provider record alone.** Provider history

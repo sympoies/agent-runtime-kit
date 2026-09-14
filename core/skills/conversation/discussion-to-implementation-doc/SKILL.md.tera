@@ -54,8 +54,9 @@ Outputs:
 - An `Execution` section with stable `Recommended plan` and
   `Recommended execution state` lines only for the L2 plan-source case; omit
   them for a `docs/discussions/` capture and for promoted canon.
-- Updated local docs index or README only when the document is intentionally promoted as retained knowledge and should be discoverable
-  outside the plan.
+- Updated local docs index or README only when the document is promoted into
+  canon; never for a `docs/discussions/` capture, which no file outside that
+  directory may link to.
 - When following the evidence-control-plane recording convention, a `skill-usage.record.v1` envelope that links the created document and validation
   evidence.
 - A short response linking the document path, listing validation run, and

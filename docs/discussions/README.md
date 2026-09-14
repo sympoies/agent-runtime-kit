@@ -18,7 +18,7 @@ Exactly one of four, and all four move or delete the file:
 
 | `Exit:` | Action |
 | --- | --- |
-| `open-issue` | Open an issue for the outstanding work, then delete the capture. An ordinary issue is enough — do not manufacture an L1/L2 plan to justify the exit. |
+| `open-issue` | Open a tracked record for the outstanding work, then delete the capture. An ordinary issue is enough — do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, an in-repo error-inbox `ENTRY.md` is the accepted form. |
 | `promote-to-plan` | Move into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` and author the plan bundle. |
 | `canonise` | Move into the owning domain doc, or `docs/source/` for repo-wide architecture, specs, and policy. |
 | `retire` | Delete. The default once the work ships or is abandoned. |
@@ -28,9 +28,11 @@ Exactly one of four, and all four move or delete the file:
 - **No "keep" state.** `Retention: Keep`, `retained as the acceptance source`,
   and any other self-declared retention are prohibited. Content worth keeping is
   worth `canonise`, which moves it out of this directory.
-- **No inbound links.** Nothing outside `docs/discussions/` may link to a file
-  inside it — not a devlog entry, not an error-inbox `ENTRY.md`, not a README,
-  not a test. Quote the conclusion instead. This is the invariant that keeps
+- **No inbound links to a capture.** No file outside this directory may
+  reference a `docs/discussions/<YYYY-MM-DD>-<slug>.md` path — not a devlog
+  entry, not an error-inbox `ENTRY.md`, not a README, not a test. Quote the
+  conclusion instead. This README and a bare `docs/discussions/` directory
+  mention are exempt; neither pins a capture. This is the invariant that keeps
   `retire` safe.
 - **No deletion on a provider record alone.** Repositories get deleted and
   re-created, taking their issue and PR history with them. Before `retire`, the

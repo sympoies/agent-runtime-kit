@@ -28,7 +28,7 @@ Use the narrowest owner that can maintain the document.
 | `DEVELOPMENT.md` | Current setup, edit preflight, validation, and release boundaries | Canonical |
 | `docs/source/` | Repository-wide, cross-cutting architecture, specs, source-of-truth references, and policies — not a single domain's feature definition (those live with the owning domain; see the `core/skills/<domain>/<shared-spec>/` row) | Canonical until superseded |
 | `docs/plans/<YYYY-MM-DD>-<slug>/` | L2 plan bundles that will be executed and archived: discussion/review source, plan, and execution state. New bundles use the date prefix; pre-v1 `docs/plans/<slug>/` folders remain valid (see Naming) | Coordination; `plan-archive` retires after execution unless promoted |
-| `docs/discussions/<YYYY-MM-DD>-<slug>.md` | Captured discussion / implementation-readiness specs that are not (yet) an executed-and-archived plan bundle — the `discussion-to-implementation-doc` default | Coordination; cleanup-eligible after the described work ships or is abandoned; promote to canon if authoritative |
+| `docs/discussions/<YYYY-MM-DD>-<slug>.md` | Captured discussion / implementation-readiness specs that are not (yet) an executed-and-archived plan bundle — the `discussion-to-implementation-doc` default | Staging only, never storage. Every capture leaves by one of the four exits in [`core/policies/work-tier-levels.md`](../../core/policies/work-tier-levels.md); there is no retained state |
 | `core/docs/` | Product-independent schemas, ADRs, contributor guides, and policy explainers used by runtime source | Canonical source content |
 | `core/policies/` | Portable agent/runtime policy consumed by product adapters | Canonical source content |
 | `core/skills/<domain>/<skill>/` | Skill-owned docs, examples, references, assets, and local helper notes | Domain-local |
@@ -88,7 +88,9 @@ work unless the user explicitly asks for a cleanup pass.
 - Discussion captures use `docs/discussions/<YYYY-MM-DD>-<slug>.md` — a single
   dated file (no bundle, and no `-discussion-source` suffix, since there are no
   plan siblings). The date prefix gives the same chronological ordering as plan
-  bundles. These files are not scanned by `plan-tooling` / `plan-archive`.
+  bundles. These files are not scanned by `plan-tooling` / `plan-archive`, and
+  they are never archived: each one carries an `Exit:` header and leaves through
+  it. `core/policies/work-tier-levels.md` owns that lifecycle.
 - Root entrypoints may keep established uppercase names such as `README.md` and
   `DEVELOPMENT.md`.
 - Generated or fixture files may follow the naming required by the renderer,
