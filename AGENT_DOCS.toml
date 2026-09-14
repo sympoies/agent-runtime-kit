@@ -130,6 +130,24 @@ phase = "review"
 product = "codex"
 notes = "Codex-only reviewer delegation requirement inherited by project-dev preflight; AGENT_HOME carries the concise always-on rendered Codex prompt policy, and Claude omits this doc."
 
+# Devlog capability (#120): conditional on the repository actually having a
+# development log, so a repo without one carries none of this context. Declared
+# for `delivery` only, because the `edit` phase is pinned to a single required
+# document by `tests/ci/test_policy_simplification.py` and that budget belongs
+# to the edit contract. The read half is not lost: the `project-dev` intent card
+# carries the search trigger, and this policy is the detail it routes to. The
+# detection predicate covers both directory conventions; see the policy for why
+# neither is expected to move.
+[[document]]
+context = "project-dev"
+scope = "home"
+path = "core/policies/devlog-capability.md"
+product = ["codex", "claude", "hermes"]
+required = true
+when = "path-exists:docs/devlog/README.md || path-exists:docs/source/devlog/README.md"
+phase = "delivery"
+notes = "Development log as a default capability: detect docs/devlog or docs/source/devlog, consult the log before changing something an entry may explain, append at the finish line for durable outcomes only, and use the devlog CLI as the mechanism. Home-scoped so every repository with a log inherits the same behavior instead of restating it locally."
+
 # task-tools intent: external-fact awareness plus optional CLI-tooling catalog.
 # Docs-only (no [[validation]] contract). Durable session-aware hooks expand it
 # only after activation; older agent-docs releases retain the all-intents cue.
