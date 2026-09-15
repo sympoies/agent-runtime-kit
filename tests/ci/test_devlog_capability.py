@@ -205,5 +205,74 @@ class DevlogEnablementTests(unittest.TestCase):
                 self.assertIn(required, card)
 
 
+class DevlogRepairTests(unittest.TestCase):
+    """The repair half of the mechanism.
+
+    Thirteen repositories in this organization kept a log before the contract
+    existed, and every one of them fails `devlog check` on adoption. Without a
+    named command the reader's options are to hand-edit months of history or to
+    leave the log permanently failing its own checker, and the second teaches
+    everyone to ignore the exit code. What the section must keep saying is both
+    halves: that the repair exists, and that it stops where guessing would
+    start.
+    """
+
+    def test_the_policy_names_the_repair_and_its_limit(self) -> None:
+        policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
+
+        self.assertIn("devlog fix", policy)
+        for required in (
+            # The limit matters more than the capability: a repair that guessed
+            # would put invented history into a log meant to be trusted.
+            "Everything else it reports and leaves alone",
+            "belongs to whoever owns the repository",
+            # Repair must not become a way around the enablement decision.
+            "does not create a log, and does not create an index",
+            # Adoption, not the write path. `new` already emits the right shape.
+            "It is not part of the write path",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, policy)
+
+    def test_repair_is_carved_out_of_the_never_rewrite_rule(self) -> None:
+        # Without this, the rule against rewriting an older entry reads as a
+        # ban on the repair, and a reader following the policy literally would
+        # leave thirteen logs broken.
+        policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
+
+        self.assertIn("never alters what an entry says", policy)
+
+    def test_the_card_routes_a_broken_log_to_the_repair(self) -> None:
+        # An agent that hits a failing `check` and has not been told the repair
+        # exists will reach for an editor, which is the behaviour this whole
+        # crate was built to remove.
+        card = " ".join((REPO_ROOT / "core/policies/intent-cards.md").read_text().split())
+
+        self.assertIn("hand-edit a log into shape when `devlog fix` would repair it", card)
+
+    def test_the_shapes_fix_refuses_are_named(self) -> None:
+        # Each of these is a case where `fix` writes nothing and reports
+        # instead. A reader who does not know that reads a non-zero exit on a
+        # log `fix` just ran over as a failure of the command rather than as
+        # the log telling them something.
+        policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
+
+        for required in (
+            "an entry whose fence is never closed",
+            "a file that mixes line endings",
+            "a month file or index that is a symlink",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, policy)
+
+    def test_fenced_examples_are_named_as_not_structure(self) -> None:
+        # The entry documenting this format quotes headings and labels. If the
+        # policy did not say they are examples, a reader would expect `check`
+        # to report them and `fix` to rewrite them.
+        policy = " ".join((REPO_ROOT / "core/policies" / POLICY).read_text().split())
+
+        self.assertIn("Nothing inside a fenced code block is structure", policy)
+
+
 if __name__ == "__main__":
     unittest.main()

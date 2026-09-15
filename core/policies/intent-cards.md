@@ -33,7 +33,8 @@ applies: that repository is not missing anything.
   arbitrary; append one entry at the finish line for a durable outcome.
 - **Never**: create a log in a repository that has none, or report its absence
   as a gap — enabling one is the user's call; write an entry for trivial,
-  transient, or same-turn work; treat
+  transient, or same-turn work; hand-edit a log into shape when `devlog fix`
+  would repair it; treat
   the log as authority over current source, schemas, policy, or a runbook;
   record a credential or any other value the runbook's privacy boundary
   excludes.
