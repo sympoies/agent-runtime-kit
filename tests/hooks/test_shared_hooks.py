@@ -172,6 +172,23 @@ def scrub_ambient_envs(full_env: dict[str, str]) -> None:
         full_env.pop(name, None)
 
 
+def gate_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Inherited environment with the gate's own ambient switches removed.
+
+    A test that spawns a gate with a bare ``**os.environ`` is not testing the
+    gate, it is testing whatever the developer happens to export: the finish-line
+    gate reads AMBIENT_GATE_ENVS, so an operator who has
+    `AGENT_RUNTIME_VALIDATION_WAIVER` set in their shell makes the gate take its
+    waiver branch and the assertion fails deterministically -- locally and in
+    every pre-push hook, while CI stays green.
+    """
+    full_env = dict(os.environ)
+    scrub_ambient_envs(full_env)
+    if overrides:
+        full_env.update(overrides)
+    return full_env
+
+
 
 def run_controller(
     arguments: list[str], *, env: dict[str, str] | None = None
@@ -3329,11 +3346,10 @@ exit 64
                 capture_output=True,
                 text=True,
                 cwd=repo,
-                env={
-                    **os.environ,
+                env=gate_env({
                     "AGENT_RUNTIME_DOCS_HOME": str(repo),
                     "AGENT_DOCS_HOME": str(REPO_ROOT),
-                },
+                }),
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             reason = str(json.loads(completed.stdout).get("reason", ""))

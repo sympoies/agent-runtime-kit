@@ -472,9 +472,13 @@ bash tests/memory-runtime/run.sh
 # growth is a reviewable decision rather than invisible drift. The rendered
 # build/<product>/AGENT_HOME.md artifacts measured here are produced by
 # positions 3-6 above; --self-test proves the classifier before the real gate.
+# #140 adds the on-demand half: every rendered skill body is discovered from
+# that same build tree and budgeted, so a triggered skill's context cost is
+# measured rather than assumed small.
 # -----------------------------------------------------------------------------
-banner 17 "context budget audit (#601 P1)"
+banner 17 "context budget audit (#601 P1, #140 skill bodies)"
 python3 tests/ci/test_policy_simplification.py
+python3 tests/ci/test_context_budget_skill_bodies.py
 python3 scripts/ci/context-budget-audit.py --self-test
 python3 scripts/ci/context-budget-audit.py check
 

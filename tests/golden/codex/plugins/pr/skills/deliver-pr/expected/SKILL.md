@@ -11,22 +11,12 @@ description: >
 Prereqs:
 
 - `agent-runtime`, `forge-cli >=1.27.27`, `git-cli >=1.25.13`,
-  `plan-issue >=1.1.0`, and `review-specialists >=1.27.27` are installed from the released
-  nils-cli package and available on `PATH`. `git-cli` 1.25.13 is the floor for
-  the `push` and `sync-default` surfaces this workflow publishes and syncs
-  through. The generic code-review outcome uses a quick or full
-  profile in pre-merge context; native review summaries and observed
-  convergence need `forge-cli` 1.21.34, guarded pending-review recovery needs
-  1.22.12, the review-thread merge gate needs 1.0.16, the task-list merge gate
-  needs 1.0.17, and
-  existing-PR adoption in `pr deliver` needs 1.1.0. The durable review-loop
-  ledger was introduced in 1.25.0, and this workflow needs 1.25.13 for its
-  faithful non-mutating `review-loop observe --dry-run` preflight. From 1.25.0,
-  `pr merge` fails closed with
-  `review_state_conflict` ("bounded review delivery requires an explicit genesis
-  ledger observation") unless the loop was recorded, so the Workflow below
-  cannot merge without it. Linked issue closeout
-  relies on the unified terminal task-row contract in `plan-issue` 1.1.0.
+  `plan-issue >=1.1.0`, and `review-specialists >=1.27.27` are installed from the
+  released nils-cli package and available on `PATH`.
+- `pr merge` fails closed with `review_state_conflict` ("bounded review delivery
+  requires an explicit genesis ledger observation") unless the review loop was
+  recorded, so the Workflow below cannot merge without it. This workflow relies
+  on the faithful non-mutating `review-loop observe --dry-run` preflight.
 - Shared provider, branch, body, and label rules in
   `references/pr-lifecycle.md` are satisfied.
 - The working tree contains only the intended delivery changes.
@@ -111,8 +101,7 @@ Outputs:
   the outcome-note form.
 - On GitHub, current-head native review summaries inspected through
   `forge-cli pr reviews` and semantically dispositioned before the final owner
-  outcome. Stale-head reviews remain informational. GitLab retains its outcome
-  note flow because native review snapshots are GitHub-only in v1.
+  outcome. Stale-head reviews remain informational.
 - On GitHub, a durable `forge-cli.review-loop.v1` chain recording each reviewed head and
   its finding dispositions, appended through `forge-cli pr review-loop observe`
   before each repair is pushed.
@@ -229,8 +218,8 @@ expected-head, linked-lifecycle, or terminal cleanup gates.
 On GitHub, `forge-cli pr merge` fails closed unless the repair loop was recorded
 in the durable `forge-cli.review-loop.v1` chain. GitLab has neither the ledger
 surface nor this merge gate in v1; it keeps the outcome-note flow and passes
-`--review-convergence=false` without calling `pr review-loop`. Two GitHub rules interact, and getting
-the order wrong is unrecoverable:
+`--review-convergence=false` without calling `pr review-loop`. Two GitHub rules
+interact, and getting the order wrong is unrecoverable:
 
 - an observation can only be appended at the **current provider head**, so
   history cannot be backfilled — a past head is rejected with `the provider
@@ -269,8 +258,7 @@ not hand-author a lookalike empty payload for a clean quick pass:
 
 A finding that reappears is submitted as `open`, not `reopened`. The state
 machine decides whether that transition is a reopen and may stop with the typed
-`review_finding_reopened` gate; `reopened` is not an input disposition in
-forge-cli 1.25.13.
+`review_finding_reopened` gate; `reopened` is not an input disposition.
 
 Before every round, inspect the provider-visible chain and pass its current
 `state_tip_digest` as `--expected-state` when non-null. Replace the local tip
@@ -414,8 +402,7 @@ fi
 
 # On GitHub, stop here when findings are open. Repair them, publish with
 # `git-cli push --format json`, rerun validation and affected review, then
-# produce REVIEW_LEDGER_DISPOSITIONS as a
-# bare array. GitLab retains its outcome-note path without ledger calls.
+# produce REVIEW_LEDGER_DISPOSITIONS as a bare array.
 # Read native review bodies after specialist posting and repair. Current-head
 # summaries are semantic evidence; stale-head summaries are informational.
 PRE_SUBMIT_PR="$(
@@ -686,17 +673,12 @@ machine verdict. Apply the closed-set admission rule: repair admitted feedback,
 accept it with rationale, or move it to a follow-up; a non-admitted critical
 concern requires an explicit handoff rather than another repair round. Do this
 before posting the final combined owner outcome. Stale-head reviews are
-informational. GitLab has no native snapshot in v1 and keeps the existing
-specialist/outcome-note flow. If `summary_truncated` is true, retrieve the full
+informational. If `summary_truncated` is true, retrieve the full
 review body through provider read tooling before disposition; stop if the full
 body cannot be read. Do not poll or sleep in agent instructions; the released
 `forge-cli pr merge` owns the configured observed-bot quiet period, timeout,
 complete snapshot, final recheck, native `CHANGES_REQUESTED`, unresolved-thread,
 unchecked-task, and provider-head gates.
-
-Observed convergence is GitHub-only in v1. On GitLab, pass
-`--review-convergence=false` explicitly so a user-global GitHub policy does not
-turn a supported MR delivery into `provider_unsupported`.
 
 If merge returns `review_convergence_activity_changed`, read `pr reviews`
 again, disposition the new current-head evidence under the closed-set admission
@@ -841,8 +823,7 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     follow-up or an explicit critical-risk handoff; it does not extend the
     current repair loop. Stale-head reviews are informational. When
     `summary_truncated` is true, obtain the full review body and
-    stop if it is unavailable. On GitLab, retain the outcome-note path and
-    do not invoke the unsupported snapshot. Do not implement a polling or sleep loop in the
+    stop if it is unavailable. Do not implement a polling or sleep loop in the
     workflow.
 15. Post the final combined delivery review outcome body produced by the
    selected pre-merge profile through the same governed-vs-portable publication
