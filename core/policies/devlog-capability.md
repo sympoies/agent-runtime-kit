@@ -139,7 +139,56 @@ devlog check
 `--follow-up` are optional and are omitted rather than filled with a
 placeholder; an entry whose author had nothing to link is complete.
 
+A URL passed to any bullet flag is written as an autolink, so what the CLI
+produces passes `MD034` in a repository that lints its log. A URL that is
+already `<url>`, either half of a `[text](url)` link, or inside a code span is
+written exactly as given.
+
 `devlog check` reports structural problems and exits `65`; run it after writing.
+
+## Repair: bring an existing log under the contract
+
+A repository whose log predates this capability fails `devlog check` on its
+first run, usually in bulk, and that is expected rather than alarming. It is
+not a reason to hand-edit months of history:
+
+```bash
+devlog fix      # repair what has one correct repair, then report the rest
+devlog check
+```
+
+`fix` promotes a bold section label to a heading, replaces an em dash
+separating a heading's halves with the hyphen the parser splits on, brings a
+month heading back into agreement with its filename, restores newest-first
+order, adds a required section an entry never had with a bullet recording that
+it was not recorded, and links a month the index had lost.
+
+Everything else it reports and leaves alone, exiting `65` as `check` would — a
+file that is not a month, an entry heading with no readable date, a section
+outside the template, a date in the wrong month. Each of those needs a decision
+about what its author meant, and that decision belongs to whoever owns the
+repository.
+
+Nothing inside a fenced code block is structure. An entry documenting this
+format quotes headings and labels as examples; neither `check` nor `fix` reads
+them as real.
+
+Three shapes make `fix` leave a whole file or entry untouched rather than guess
+at it, and each is reported instead:
+
+- an entry whose fence is never closed — there is no knowing where its content
+  ends, so there is nowhere in it a section can be placed;
+- a file that mixes line endings — rebuilding it would rewrite every line that
+  used the other ending, and which one it meant is not knowable;
+- a month file or index that is a symlink — the repair would land outside the
+  log while the link itself looked untouched in review.
+
+`fix` does not create a log, and does not create an index for a log that has
+none. Both are the user's decision, for the reason the section above gives.
+
+Run it once when a repository adopts this capability, and afterwards only when
+`check` reports something. It is not part of the write path: `new` already
+produces the shape `check` accepts.
 
 When the CLI is not installed, fall back to the repository's
 `docs/devlog/README.md` (or `docs/source/devlog/README.md`) conventions and edit
@@ -156,4 +205,6 @@ the result is identical; the CLI exists so it does not depend on care.
 - Never restate a diff or a normative document without adding context,
   evidence, or a link that makes the entry worth finding later.
 - Never rewrite an older entry, except to correct a factual error in the same
-  change.
+  change. A `devlog fix` run is not an exception to that rule but a different
+  act: it repairs structure the parser reads and never alters what an entry
+  says, apart from adding a section that records it was never recorded.
