@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Deterministic probes for PR/MR skills.
-# shellcheck disable=SC2329
+# Probe functions are invoked indirectly by `record_case`, which shellcheck
+# cannot see, so it reports every line inside them as unreachable (SC2317) and
+# the functions themselves as uncalled (SC2329). Both are false here.
+# SC2016 is likewise intended: the single-quoted strings are literal needles
+# searched for in skill bodies, so expanding them would defeat the assertion.
+# shellcheck disable=SC2329,SC2317,SC2016
 
 set -euo pipefail
 
@@ -121,13 +126,13 @@ assert_delivery_skills_own_terminal_worktree_cleanup() {
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
-    if ! grep -q 'core/policies/git-delivery.md' "$REPO_ROOT/$skill" || \
-      ! grep -q 'git-cli worktree remove <path-or-slug> --format json' "$REPO_ROOT/$skill" || \
+    if ! grep -q 'core/policies/git-delivery.md' "$REPO_ROOT/$skill" ||
+      ! grep -q 'git-cli worktree remove <path-or-slug> --format json' "$REPO_ROOT/$skill" ||
       ! grep -q 'provider-confirmed delivered head' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill omits safe terminal worktree cleanup" >&2
       rc=1
     fi
-    if ! grep -Eqi 'retain|do not force|never force' "$REPO_ROOT/$skill" || \
+    if ! grep -Eqi 'retain|do not force|never force' "$REPO_ROOT/$skill" ||
       ! grep -Eqi 'dirty|unsafe|ambiguous|unverifiable' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill omits unsafe-state retention" >&2
       rc=1
@@ -152,7 +157,7 @@ assert_delivery_skills_use_native_review_convergence() {
     --format json pr reviews 1 2>&1)"
   gitlab_reviews_status=$?
   set -e
-  if [ "$gitlab_reviews_status" -ne 64 ] || \
+  if [ "$gitlab_reviews_status" -ne 64 ] ||
     ! grep -q '"code":"provider_unsupported"' <<<"$gitlab_reviews_output"; then
     echo "runtime-smoke pr: GitLab pr reviews did not preserve its v1 provider boundary" >&2
     rc=1
@@ -190,7 +195,7 @@ assert_delivery_skills_use_native_review_convergence() {
   )"
   capture_failure_status=$?
   set -e
-  if [ "$capture_failure_status" -eq 0 ] || \
+  if [ "$capture_failure_status" -eq 0 ] ||
     grep -q 'sentinel reached' <<<"$capture_failure_output"; then
     echo "runtime-smoke pr: fallible review capture reached its sentinel" >&2
     rc=1
@@ -207,7 +212,7 @@ assert_delivery_skills_use_native_review_convergence() {
   )"
   head_capture_failure_status=$?
   set -e
-  if [ "$head_capture_failure_status" -eq 0 ] || \
+  if [ "$head_capture_failure_status" -eq 0 ] ||
     grep -q 'head sentinel reached' <<<"$head_capture_failure_output"; then
     echo "runtime-smoke pr: multiline provider-head capture reached its sentinel" >&2
     rc=1
@@ -217,8 +222,8 @@ assert_delivery_skills_use_native_review_convergence() {
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
-    if ! grep -q 'forge-cli >=1.27.27' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not require forge-cli 1.27.27" >&2
+    if ! grep -q 'forge-cli >=1.28.30' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill does not require forge-cli 1.28.30" >&2
       rc=1
     fi
     if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
@@ -229,30 +234,28 @@ assert_delivery_skills_use_native_review_convergence() {
       echo "runtime-smoke pr: $skill omits typed late-activity retry routing" >&2
       rc=1
     fi
-    if ! grep -q 'github_pending_review_exists' "$REPO_ROOT/$skill" || \
-      ! grep -q -- '--expected-head' "$REPO_ROOT/$skill" || \
-      ! grep -q '^EXPECTED_REVIEW_HEAD=' "$REPO_ROOT/$skill" || \
-      ! grep -q '^readonly EXPECTED_REVIEW_HEAD$' "$REPO_ROOT/$skill" || \
-      ! grep -q '^EXPECTED_REVIEW_BODY=' "$REPO_ROOT/$skill" || \
-      ! grep -q '^readonly EXPECTED_REVIEW_BODY$' "$REPO_ROOT/$skill" || \
-      ! grep -q -- '--comment="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill" || \
-      ! grep -q -- '--expected-body="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill" || \
-      ! grep -q '.commit_sha == \$head' "$REPO_ROOT/$skill" || \
-      ! grep -q 'pending_reviews' "$REPO_ROOT/$skill" || \
-      ! grep -q 'pr pending-review delete' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill omits guarded pending-review recovery" >&2
+    if ! grep -q 'github_pending_review_exists' "$REPO_ROOT/$skill" ||
+      ! grep -q -- '--expected-head' "$REPO_ROOT/$skill" ||
+      ! grep -q -- '--recover-pending' "$REPO_ROOT/$skill" ||
+      ! grep -q 'pending_review_body_mismatch' "$REPO_ROOT/$skill" ||
+      ! grep -q '^EXPECTED_REVIEW_HEAD=' "$REPO_ROOT/$skill" ||
+      ! grep -q '^readonly EXPECTED_REVIEW_HEAD$' "$REPO_ROOT/$skill" ||
+      ! grep -q '^EXPECTED_REVIEW_BODY=' "$REPO_ROOT/$skill" ||
+      ! grep -q '^readonly EXPECTED_REVIEW_BODY$' "$REPO_ROOT/$skill" ||
+      ! grep -q -- '--comment="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill"; then
+      echo "runtime-smoke pr: $skill omits delegated pending-review recovery" >&2
       rc=1
     fi
-    if ! grep -q 'review_convergence_head_changed' "$REPO_ROOT/$skill" || \
-      ! grep -q 're-run validation and affected review' "$REPO_ROOT/$skill" || \
-      ! grep -Eq 'requires rebinding (lane )?delivery' "$REPO_ROOT/$skill" || \
-      ! grep -q 'the new head' "$REPO_ROOT/$skill" || \
+    if ! grep -q 'review_convergence_head_changed' "$REPO_ROOT/$skill" ||
+      ! grep -q 're-run validation and affected review' "$REPO_ROOT/$skill" ||
+      ! grep -Eq 'requires rebinding (lane )?delivery' "$REPO_ROOT/$skill" ||
+      ! grep -q 'the new head' "$REPO_ROOT/$skill" ||
       ! grep -q 'new owner outcome' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill can reuse stale validation or approval after head drift" >&2
       rc=1
     fi
-    if ! grep -q 'summary_truncated' "$REPO_ROOT/$skill" || \
-      ! grep -q 'full review body' "$REPO_ROOT/$skill" || \
+    if ! grep -q 'summary_truncated' "$REPO_ROOT/$skill" ||
+      ! grep -q 'full review body' "$REPO_ROOT/$skill" ||
       ! grep -q 'stop if it is unavailable' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill can semantically disposition a truncated review summary" >&2
       rc=1
@@ -261,7 +264,7 @@ assert_delivery_skills_use_native_review_convergence() {
       echo "runtime-smoke pr: $skill does not preserve GitLab delivery under a user-global GitHub convergence policy" >&2
       rc=1
     fi
-    if ! grep -q 'do not require ledger artifacts' "$REPO_ROOT/$skill" || \
+    if ! grep -q 'do not require ledger artifacts' "$REPO_ROOT/$skill" ||
       ! grep -q 'outcome-note path' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill does not state the GitLab ledger alternative at the normative workflow boundary" >&2
       rc=1
@@ -276,22 +279,36 @@ assert_delivery_skills_use_native_review_convergence() {
   if ! python3 - "$REPO_ROOT" \
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
-    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera <<'PY'
+    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera <<'PY'; then
 from pathlib import Path
 import re
 import sys
 
 root = Path(sys.argv[1])
 
-RECOVERY_MARKER = "# Fetch a fresh post-conflict pr reviews snapshot."
-GENESIS_MARKER = "# Review-loop genesis: dry-run before live append and before any repair."
+GENESIS_MARKER = "# Review-loop genesis: before any repair, with the CLI-owned preflight sweep."
 CLOSING_MARKER = "# Review-loop closing observation: after repair/push and before merge."
 LEDGER_GITHUB_MARKER = "# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate."
 LEDGER_CLOSING_GUARD = 'if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then'
 CLOSING_DISPOSITIONS_REQUIREMENT = ': "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"'
 GITLAB_CONVERGENCE_OVERRIDE = '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)'
 GITHUB_GUARD = 'if [ "$PROVIDER" = github ]; then'
-ID_GUARD = 'if [ -n "${PENDING_REVIEW_ID:-}" ]; then'
+
+# forge-cli >=1.28.30 owns the review-loop compare-and-swap and the
+# pending-review recovery these skills used to hand-roll. What is pinned below
+# is therefore no longer the shape of that machinery, but that the skills
+# DELEGATE it and cannot quietly grow a second copy: the flags must be bound,
+# and the primitives the old state machine drove must not reappear.
+RECOVER_PENDING = "--recover-pending"
+AUTO_STATE = "--auto-state"
+PREFLIGHT = "--preflight"
+# Re-implementing recovery in a skill means reaching for one of these again.
+FORBIDDEN_RECOVERY_PRIMITIVES = (
+    "pr pending-review delete",
+    "PENDING_REVIEW_ID",
+    ".data.pending_reviews[",
+    "--confirm-abandoned",
+)
 
 
 def executable(line, token):
@@ -317,13 +334,27 @@ def validate(relative, text):
             raise ValueError("deliver-pr must document the exact released disposition set once")
         if "(`open`, `fixed`, `accepted`, `reopened`)" in text:
             raise ValueError("deliver-pr documents reopened as an input disposition")
-    deletes = [
+    # Recovery is delegated, so re-growing a hand-rolled copy is the regression
+    # this guards, not a missing one.
+    for primitive in FORBIDDEN_RECOVERY_PRIMITIVES:
+        reintroduced = [
+            index for index, line in enumerate(lines)
+            if executable(line, primitive)
+        ]
+        if reintroduced:
+            raise ValueError(
+                f"pending-review recovery is owned by --recover-pending; "
+                f"{primitive!r} reappeared at line {reintroduced[0] + 1}"
+            )
+    recovers = [
         index for index, line in enumerate(lines)
-        if executable(line, "pr pending-review delete")
+        if executable(line, RECOVER_PENDING)
     ]
-    if len(deletes) != 1:
-        raise ValueError(f"expected one executable pending-review delete, found {len(deletes)}")
-    delete_index = deletes[0]
+    if len(recovers) != 1:
+        raise ValueError(
+            f"expected one executable {RECOVER_PENDING} binding, found {len(recovers)}"
+        )
+    recover_index = recovers[0]
     merges = [
         index for index, line in enumerate(lines)
         if executable(line, "pr merge")
@@ -385,10 +416,13 @@ def validate(relative, text):
         index for index in range(closing[0], merge_index)
         if executable(lines[index], "pr review-loop observe")
     ]
-    if len(genesis_observes) != 2 or len(closing_observes) != 2:
-        raise ValueError("each review-loop phase must have one dry-run and one live observe")
-    if not closing_guards[0] < closing_observes[0] < closing_observes[-1] < closing_guard_end:
-        raise ValueError("review-loop closing observations escape the GitHub-only branch")
+    if len(genesis_observes) != 1 or len(closing_observes) != 1:
+        raise ValueError(
+            "each review-loop phase must be exactly one observe; --preflight "
+            "replaced the separate --dry-run call"
+        )
+    if not closing_guards[0] < closing_observes[0] < closing_guard_end:
+        raise ValueError("review-loop closing observation escapes the GitHub-only branch")
     disposition_requirements = [
         index for index in range(closing_guards[0] + 1, closing_guard_end)
         if lines[index].strip() == CLOSING_DISPOSITIONS_REQUIREMENT
@@ -396,121 +430,53 @@ def validate(relative, text):
     if len(disposition_requirements) != 1:
         raise ValueError("GitHub ledger dispositions input must be required inside its closing branch")
     if disposition_requirements[0] >= closing_observes[0]:
-        raise ValueError("GitHub ledger dispositions input must be required before both closing observations")
-    genesis_blocks = [observe_block(lines, index) for index in genesis_observes]
-    closing_blocks = [observe_block(lines, index) for index in closing_observes]
-    for label, blocks, bindings in (
+        raise ValueError("GitHub ledger dispositions input must be required before the closing observation")
+    genesis_block = observe_block(lines, genesis_observes[0])
+    closing_block = observe_block(lines, closing_observes[0])
+    # The two phases name the chain tip differently, and the asymmetry is the
+    # point. Genesis has no digest from an earlier round, so --auto-state costs
+    # nothing. The closing observation holds the digest the genesis append
+    # returned — a claim about a tip this workflow already saw, and the only
+    # thing that catches a resumed shell reusing genesis state. Swapping it for
+    # --auto-state would re-read and silently accept an advanced chain, so the
+    # forbidden token below is as load-bearing as the required ones.
+    for label, block, required, forbidden in (
         (
             "genesis",
-            genesis_blocks,
+            genesis_block[1],
             (
                 '--expected-head "$REVIEWED_HEAD"',
-                '"${REVIEW_LEDGER_STATE_ARGS[@]}"',
+                AUTO_STATE,
+                PREFLIGHT,
                 '--findings-file "$REVIEW_LEDGER_FINDINGS"',
             ),
+            ("--expected-state", "--dry-run"),
         ),
         (
             "closing",
-            closing_blocks,
+            closing_block[1],
             (
                 '--expected-head "$EXPECTED_REVIEW_HEAD"',
                 '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+                PREFLIGHT,
                 '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
             ),
+            (AUTO_STATE, "--dry-run"),
         ),
     ):
-        dry_block = blocks[0][1]
-        live_block = blocks[1][1]
-        if dry_block.count("--dry-run") != 1:
-            raise ValueError(f"{label} preflight must be exactly one dry-run")
-        if "--dry-run" in live_block:
-            raise ValueError(f"{label} live append must not carry --dry-run")
-        for token in bindings:
-            if token not in dry_block or token not in live_block:
-                raise ValueError(f"both {label} observations must bind {token}")
-    genesis_between = "\n".join(
-        lines[genesis_blocks[0][0] + 1:genesis_observes[1]]
-    )
-    if ".data.preflight_ok == true" not in genesis_between:
-        raise ValueError("genesis dry-run verdict is not checked before live append")
-    genesis_after_live = "\n".join(
-        lines[genesis_blocks[1][0] + 1:closing[0]]
-    )
+        for token in required:
+            if token not in block:
+                raise ValueError(f"the {label} observation must bind {token}")
+        for token in forbidden:
+            if token in block:
+                raise ValueError(f"the {label} observation must not carry {token}")
+    genesis_after_live = "\n".join(lines[genesis_block[0] + 1:closing[0]])
     if ".data.state_tip_digest" not in genesis_after_live:
-        raise ValueError("genesis live append does not provide the closing state tip")
-    closing_between = "\n".join(
-        lines[closing_blocks[0][0] + 1:closing_observes[1]]
-    )
-    if ".data.preflight_ok == true" not in closing_between:
-        raise ValueError("closing dry-run verdict is not checked before live append")
-    closing_after_live = "\n".join(
-        lines[closing_blocks[1][0] + 1:merge_index]
-    )
+        raise ValueError("genesis append does not provide the closing state tip")
+    closing_after_live = "\n".join(lines[closing_block[0] + 1:merge_index])
     if ".data.state_tip_digest" not in closing_after_live:
-        raise ValueError("closing live append does not refresh the state tip")
+        raise ValueError("closing append does not refresh the state tip")
 
-    markers = [
-        index for index, line in enumerate(lines[:delete_index])
-        if line.strip() == RECOVERY_MARKER
-    ]
-    if len(markers) != 1:
-        raise ValueError("missing unique fresh post-conflict snapshot marker")
-    marker_index = markers[0]
-
-    pre_reads = [
-        index for index in range(marker_index + 1, delete_index)
-        if executable(lines[index], "pr reviews")
-    ]
-    post_reads = [
-        index for index in range(delete_index + 1, len(lines))
-        if executable(lines[index], "pr reviews")
-    ]
-    if len(pre_reads) != 1:
-        raise ValueError("recovery must read one fresh post-conflict snapshot before delete")
-    if not post_reads:
-        raise ValueError("recovery must read back pr reviews after delete")
-
-    stack = []
-    stacks = {}
-    for index in range(marker_index + 1, post_reads[0] + 1):
-        stripped = lines[index].strip()
-        if stripped.startswith("if ") and stripped.endswith("; then"):
-            stack.append(stripped)
-        stacks[index] = tuple(stack)
-        if stripped == "fi":
-            if not stack:
-                raise ValueError("unbalanced recovery guard")
-            stack.pop()
-
-    for index, label in ((delete_index, "delete"), (post_reads[0], "read-back")):
-        if GITHUB_GUARD not in stacks.get(index, ()):
-            raise ValueError(f"{label} is outside the GitHub guard")
-        if ID_GUARD not in stacks.get(index, ()):
-            raise ValueError(f"{label} is outside the non-empty review-id guard")
-
-    id_guard_index = next(
-        (
-            index for index in range(pre_reads[0] + 1, delete_index)
-            if lines[index].strip() == ID_GUARD
-        ),
-        None,
-    )
-    if id_guard_index is None:
-        raise ValueError("review-id guard must follow the fresh snapshot selection")
-
-    delete_window = lines[delete_index:post_reads[0]]
-    required_delete_bindings = (
-        '--review "$PENDING_REVIEW_ID"',
-        '--expected-head "$EXPECTED_REVIEW_HEAD"',
-        '--expected-commit "$EXPECTED_REVIEW_HEAD"',
-        '--confirm-abandoned',
-    )
-    for binding in required_delete_bindings:
-        matches = [line for line in delete_window if executable(line, binding)]
-        if len(matches) != 1:
-            raise ValueError(
-                f"delete must have one executable {binding!r} binding"
-            )
     merge_window = lines[merge_index:merge_index + 6]
     merge_head_bindings = [
         line for line in merge_window
@@ -519,75 +485,51 @@ def validate(relative, text):
     if len(merge_head_bindings) != 1:
         raise ValueError("final merge must bind the reviewed provider head")
 
-    body_bindings = [
-        line for line in delete_window
-        if executable(line, '--expected-body="$EXPECTED_REVIEW_BODY"')
-    ]
-    if len(body_bindings) != 1:
-        raise ValueError("delete must bind one captured intended review body")
-
-    unsets = [
-        index for index, line in enumerate(lines[:marker_index])
-        if line.strip() == "unset PENDING_REVIEW_ID"
-    ]
-    if not unsets:
-        raise ValueError("stale PENDING_REVIEW_ID is not cleared before native submission")
-
+    # The skill must still SAY what it delegates and why a refusal is an answer
+    # rather than an obstacle. Without this a future edit could keep the flag and
+    # lose the instruction not to work around it by hand.
     required_contract = (
         "github_pending_review_exists",
-        "preserve the failed command status and JSON",
+        RECOVER_PENDING,
+        "pending_review_body_mismatch",
         "binds the native review to the inspected head",
-        "data.pending_reviews[]",
-        "exactly one",
-        "current-viewer",
-        "intended body, decision, and head",
-        "retry the unchanged",
-        "second rejection",
     )
     missing = [token for token in required_contract if token not in text]
     if missing:
         raise ValueError(f"missing fail-closed contract text: {', '.join(missing)}")
-    if not re.search(r"retry the unchanged.{0,80}\bonce\b", text, flags=re.IGNORECASE | re.DOTALL):
-        raise ValueError("recovery does not constrain the unchanged retry to once")
+    if not re.search(
+        r"(never|not|do not|never select).{0,120}by hand",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        raise ValueError("recovery contract does not forbid selecting a node by hand")
 
-    executable_transitions = (
-        "NATIVE_REVIEW_CMD=(",
-        'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
-        "NATIVE_REVIEW_STATUS=$?",
-        '[ "$NATIVE_REVIEW_STATUS" -ne 0 ]',
-        '.error.code == "github_pending_review_exists"',
-        'PENDING_REVIEW_ID="$(',
-        "select(.ok == true and .data.head_sha == $head)",
-        "| [.data.pending_reviews[]",
-        '.state == "PENDING"',
-        ".commit_sha == $head",
-        ".summary_truncated == false",
-        "length == 1",
-        'POST_DELETE_REVIEWS="$(',
-        "index($id) | not",
-        'NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
-        "NATIVE_REVIEW_RETRY_STATUS=$?",
-        '[ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]',
-    )
-    transition_indexes = []
-    for token in executable_transitions:
-        indexes = [
-            index for index, line in enumerate(lines)
-            if executable(line, token)
-        ]
-        if len(indexes) != 1:
-            raise ValueError(
-                f"expected one executable transition {token!r}, found {len(indexes)}"
-            )
-        transition_indexes.append(indexes[0])
-    if transition_indexes != sorted(transition_indexes):
-        raise ValueError("pending-review state-machine transitions are out of order")
-    if not (transition_indexes[3] < marker_index < pre_reads[0]):
-        raise ValueError("fresh snapshot does not follow the typed failure gate")
-    if not (pre_reads[0] < transition_indexes[5] < id_guard_index < delete_index):
-        raise ValueError("fresh snapshot is not parsed into one guarded exact id")
+    # The submission is now one fallible call, so there is no status variable to
+    # branch on and no retry to order. What remains worth pinning is that the
+    # single call still propagates failure instead of swallowing it.
+    submissions = [
+        index for index, line in enumerate(lines)
+        if executable(line, 'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}"')
+    ]
+    if len(submissions) != 1:
+        raise ValueError(
+            f"expected one native review submission, found {len(submissions)}"
+        )
+    submission_index = submissions[0]
+    if "|| exit $?" not in lines[submission_index]:
+        raise ValueError("native review submission must propagate command failure")
+    command_assemblies = [
+        index for index, line in enumerate(lines)
+        if executable(line, "NATIVE_REVIEW_CMD=(")
+    ]
+    if len(command_assemblies) != 1:
+        raise ValueError("expected one native review command assembly")
+    if not (recover_index < command_assemblies[0] < submission_index < merge_index):
+        raise ValueError(
+            "--recover-pending must be bound before the command is assembled and run"
+        )
     provider_head_captures = [
-        index for index in range(transition_indexes[0])
+        index for index in range(command_assemblies[0])
         if lines[index].strip() == "EXPECTED_REVIEW_HEAD=\"$("
     ]
     if len(provider_head_captures) != 1:
@@ -651,7 +593,7 @@ def validate(relative, text):
         < provider_head_readonly[0]
         < review_body_assignments[0]
         < review_body_readonly[0]
-        < transition_indexes[0]
+        < command_assemblies[0]
     ):
         raise ValueError("fallible captures must precede standalone readonly bindings")
     provider_pr_reads = [
@@ -661,76 +603,67 @@ def validate(relative, text):
     if len(provider_pr_reads) != 1:
         raise ValueError("provider PR snapshot must read the reviewed head once")
     provider_head_parsers = [
-        index for index in range(provider_head_captures[0], transition_indexes[0])
+        index for index in range(provider_head_captures[0], command_assemblies[0])
         if executable(lines[index], "| .data.head_sha")
     ]
     if len(provider_head_parsers) != 1:
         raise ValueError("provider PR snapshot head must be parsed once")
     provider_review_head_checks = [
-        index for index in range(provider_head_captures[0], transition_indexes[0])
+        index for index in range(provider_head_captures[0], command_assemblies[0])
         if executable(lines[index], ".data.head_sha == $head")
     ]
     if len(provider_review_head_checks) != 1:
         raise ValueError("GitHub review snapshot must match the provider PR head")
     review_body_bindings = [
-        index for index in range(provider_head_captures[0], transition_indexes[1])
+        index for index in range(provider_head_captures[0], submission_index)
         if executable(lines[index], '--comment="$EXPECTED_REVIEW_BODY"')
     ]
     if len(review_body_bindings) != 1:
         raise ValueError("native review command must bind one captured body value")
+    # The submit-review flags are now a multi-line array, so the expected-head
+    # binding and the array opener no longer share a line. Bound the search by
+    # the assembly instead of matching them together.
+    # Match only the populated opener: the same name is also initialised empty
+    # (`SUBMIT_REVIEW=()`) above, and that line carries no flags.
+    submit_review_arrays = [
+        index for index in range(closing_observes[-1] + 1, command_assemblies[0])
+        if executable(lines[index], "SUBMIT_REVIEW=(")
+        and lines[index].strip().endswith("SUBMIT_REVIEW=(")
+    ]
+    if len(submit_review_arrays) != 1:
+        raise ValueError("expected one native submit-review flag array")
     expected_head_bindings = [
-        index for index in range(closing_observes[-1] + 1, transition_indexes[0])
-        if "SUBMIT_REVIEW=(" in lines[index]
-        and executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
+        index for index in range(submit_review_arrays[0], command_assemblies[0])
+        if executable(lines[index], '--expected-head "$EXPECTED_REVIEW_HEAD"')
     ]
     if len(expected_head_bindings) != 1:
         raise ValueError(
             "native review command must have one executable expected-head binding"
         )
-    if not (expected_head_bindings[0] < transition_indexes[0]):
-        raise ValueError("expected-head binding must precede native command capture")
-    if not (delete_index < transition_indexes[12] <= post_reads[0]):
-        raise ValueError("post-delete read-back is not captured")
-    if not (post_reads[0] < transition_indexes[13] < transition_indexes[14]):
-        raise ValueError("absence proof does not precede the unchanged retry")
+    if not (submit_review_arrays[0] < recover_index < command_assemblies[0]):
+        raise ValueError(
+            "--recover-pending must be bound inside the native submit-review array"
+        )
 
 
-def remove_first_executable(text, token, *, before_delete):
+def replace_observe_flag(text, marker, token, replacement):
+    """Rewrite one flag inside the observe block that follows `marker`."""
     lines = text.splitlines()
     marker_index = next(
         index for index, line in enumerate(lines)
-        if line.strip() == RECOVERY_MARKER
+        if line.strip() == marker
     )
-    delete_index = next(
-        index for index, line in enumerate(lines)
-        if executable(line, "pr pending-review delete")
+    observe_index = next(
+        index for index in range(marker_index + 1, len(lines))
+        if executable(lines[index], "pr review-loop observe")
     )
-    indexes = (
-        range(marker_index + 1, delete_index)
-        if before_delete
-        else range(delete_index + 1, len(lines))
-    )
-    target = next(index for index in indexes if executable(lines[index], token))
-    lines[target] = lines[target].replace(token, f"removed-{token.replace(' ', '-')}")
-    return "\n".join(lines)
-
-
-def replace_delete_binding(text, token, replacement):
-    lines = text.splitlines()
-    delete_index = next(
-        index for index, line in enumerate(lines)
-        if executable(line, "pr pending-review delete")
-    )
-    post_read_index = next(
-        index for index in range(delete_index + 1, len(lines))
-        if executable(lines[index], "pr reviews")
-    )
+    end, _ = observe_block(lines, observe_index)
     indexes = [
-        index for index in range(delete_index, post_read_index)
+        index for index in range(observe_index, end + 1)
         if executable(lines[index], token)
     ]
     if len(indexes) != 1:
-        raise ValueError(f"expected one delete binding {token!r}")
+        raise ValueError(f"expected one {token!r} in the {marker!r} observe")
     lines[indexes[0]] = lines[indexes[0]].replace(token, replacement)
     return "\n".join(lines)
 
@@ -759,18 +692,18 @@ def replace_expected_head_parser(text):
     return text[:index] + ".data.removed_head_sha" + text[index + len(token):]
 
 
-def add_dry_run_to_live_observe(text, marker):
+def add_dry_run_to_observe(text, marker):
     lines = text.splitlines()
     marker_index = next(
         index for index, line in enumerate(lines)
         if line.strip() == marker
     )
-    observes = [
+    observe_index = next(
         index for index in range(marker_index + 1, len(lines))
         if executable(lines[index], "pr review-loop observe")
-    ]
-    live_end, _ = observe_block(lines, observes[1])
-    lines.insert(live_end, "      --dry-run")
+    )
+    end, _ = observe_block(lines, observe_index)
+    lines.insert(end, "      --dry-run")
     return "\n".join(lines)
 
 
@@ -849,11 +782,25 @@ for relative in sys.argv[2:]:
             GITLAB_CONVERGENCE_OVERRIDE.replace("gitlab", "github"),
             1,
         ),
-        "live genesis append": add_dry_run_to_live_observe(text, GENESIS_MARKER),
-        "live closing append": add_dry_run_to_live_observe(text, CLOSING_MARKER),
-        "genesis expected state": text.replace(
-            '"${REVIEW_LEDGER_STATE_ARGS[@]}"',
-            '"${OTHER_STATE_ARGS[@]}"',
+        "genesis dry-run split": add_dry_run_to_observe(text, GENESIS_MARKER),
+        "closing dry-run split": add_dry_run_to_observe(text, CLOSING_MARKER),
+        "genesis auto-state": replace_observe_flag(
+            text, GENESIS_MARKER, AUTO_STATE, '--expected-state "$OTHER_STATE_TIP"'
+        ),
+        "genesis preflight": replace_observe_flag(
+            text, GENESIS_MARKER, PREFLIGHT, "--no-preflight"
+        ),
+        # The one a future edit is most likely to get wrong: the closing
+        # observation asserts a tip this workflow already saw, and only that
+        # catches a resumed shell reusing genesis state.
+        "closing tip claim downgraded to a self-read": replace_observe_flag(
+            text,
+            CLOSING_MARKER,
+            '--expected-state "$REVIEW_LEDGER_STATE_TIP"',
+            AUTO_STATE,
+        ),
+        "closing preflight": replace_observe_flag(
+            text, CLOSING_MARKER, PREFLIGHT, "--no-preflight"
         ),
         "genesis findings binding": text.replace(
             '--findings-file "$REVIEW_LEDGER_FINDINGS"',
@@ -867,64 +814,29 @@ for relative in sys.argv[2:]:
             '--findings-file "$REVIEW_LEDGER_DISPOSITIONS"',
             '--findings-file "$OTHER_DISPOSITIONS"',
         ),
-        "review-loop preflight verdict": text.replace(
-            ".data.preflight_ok == true",
-            ".data.preflight_ok == false",
-        ),
         "github guard": text.replace(GITHUB_GUARD, "# removed github guard"),
-        "review-id guard": text.replace(ID_GUARD, "# removed review-id guard"),
-        "exact review id": text.replace(
-            '--review "$PENDING_REVIEW_ID"',
-            '--review "$OTHER_REVIEW_ID"',
+        "recover-pending binding": text.replace(RECOVER_PENDING, "--no-recover-pending"),
+        # Delegation is the contract, so hand-rolling it again must fail even
+        # though the flag is still present.
+        "hand-rolled recovery reintroduced": text.replace(
+            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")" || exit $?',
+            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")" || exit $?\n'
+            '        forge-cli pr pending-review delete "$PR_NUMBER" \\\n'
+            '          --review "$PENDING_REVIEW_ID" --confirm-abandoned',
+            1,
         ),
-        "delete expected head": replace_delete_binding(
-            text,
-            '--expected-head "$EXPECTED_REVIEW_HEAD"',
-            '--expected-head "$OTHER_REVIEW_HEAD"',
+        "by-hand prohibition": text.replace("by hand", "as needed"),
+        "body-mismatch guidance": text.replace(
+            "pending_review_body_mismatch", "some_other_code"
         ),
-        "delete expected commit": text.replace(
-            '--expected-commit "$EXPECTED_REVIEW_HEAD"',
-            '--expected-commit "$OTHER_REVIEW_HEAD"',
-        ),
-        "delete expected body": text.replace(
-            '--expected-body="$EXPECTED_REVIEW_BODY"',
-            '--expected-body="$OTHER_REVIEW_BODY"',
-        ),
-        "delete abandonment confirmation": text.replace(
-            '--confirm-abandoned',
-            '--skip-abandonment-confirmation',
-        ),
-        "post-conflict read": remove_first_executable(
-            text, "pr reviews", before_delete=True
-        ),
-        "post-delete read-back": remove_first_executable(
-            text, "pr reviews", before_delete=False
-        ),
-        "exactly-one selection": text.replace("exactly one", "one"),
-        "current-viewer ownership": text.replace("current-viewer", "viewer"),
-        "body/decision/head freshness": text.replace(
-            "intended body, decision, and head",
-            "intended outcome",
-        ),
-        "retry-once": text.replace("retry the unchanged", "retry"),
-        "second-rejection stop": text.replace("second rejection", "repeat"),
-        "failed-command evidence": text.replace(
-            "preserve the failed command status and JSON",
-            "inspect the failure",
+        "submission failure propagation": text.replace(
+            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")" || exit $?',
+            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")"',
         ),
         "native command array": text.replace("NATIVE_REVIEW_CMD=(", "REMOVED_CMD=("),
-        "first result capture": text.replace(
-            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
-            'NATIVE_REVIEW_JSON=""',
-        ),
-        "first status capture": text.replace("NATIVE_REVIEW_STATUS=$?", "NATIVE_REVIEW_STATUS=0"),
-        "first failure branch": text.replace(
-            '[ "$NATIVE_REVIEW_STATUS" -ne 0 ]',
-            '[ "$NATIVE_REVIEW_STATUS" -eq 0 ]',
-        ),
         "typed error gate": text.replace(
-            '.error.code == "github_pending_review_exists"',
-            ".error.code == \"other\"",
+            "github_pending_review_exists",
+            "github_other_error",
         ),
         "expected-head binding": text.replace(
             '--expected-head "$EXPECTED_REVIEW_HEAD"',
@@ -948,10 +860,6 @@ for relative in sys.argv[2:]:
             '--comment="$EXPECTED_REVIEW_BODY"',
             '--comment "$EXPECTED_REVIEW_BODY"',
         ),
-        "hyphen-safe delete body binding": text.replace(
-            '--expected-body="$EXPECTED_REVIEW_BODY"',
-            '--expected-body "$EXPECTED_REVIEW_BODY"',
-        ),
         "final merge expected head": replace_merge_binding(
             text,
             '--expected-head "$EXPECTED_REVIEW_HEAD"',
@@ -964,7 +872,7 @@ for relative in sys.argv[2:]:
         ),
         "captured review body reassignment": insert_before_executable(
             text,
-            "pr pending-review delete",
+            'NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")"',
             'EXPECTED_REVIEW_BODY="$OTHER_REVIEW_BODY"',
         ),
         "reviewed head readonly binding": text.replace(
@@ -984,33 +892,6 @@ for relative in sys.argv[2:]:
             text,
             "EXPECTED_REVIEW_BODY",
         ),
-        "pending selector": text.replace('PENDING_REVIEW_ID="$(', 'REMOVED_REVIEW_ID="$('),
-        "pending snapshot source": text.replace(
-            "| [.data.pending_reviews[]",
-            "| []",
-        ),
-        "pending commit-head selector": text.replace(
-            ".commit_sha == $head",
-            ".commit_sha == $other",
-        ),
-        "exactly-one executable selector": text.replace("length == 1", "length > 0"),
-        "post-delete capture": text.replace(
-            'POST_DELETE_REVIEWS="$(',
-            'POST_DELETE_RESULT="$(',
-        ),
-        "post-delete absence proof": text.replace("index($id) | not", "index($id)"),
-        "retry result capture": text.replace(
-            'NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"',
-            'NATIVE_REVIEW_RETRY_JSON=""',
-        ),
-        "retry status capture": text.replace(
-            "NATIVE_REVIEW_RETRY_STATUS=$?",
-            "NATIVE_REVIEW_RETRY_STATUS=0",
-        ),
-        "second-failure branch": text.replace(
-            '[ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]',
-            '[ "$NATIVE_REVIEW_RETRY_STATUS" -eq 0 ]',
-        ),
     }
     for mutation, candidate in mutations.items():
         try:
@@ -1019,7 +900,6 @@ for relative in sys.argv[2:]:
             continue
         raise SystemExit(f"{relative}: validator accepted missing {mutation}")
 PY
-  then
     echo "runtime-smoke pr: delivery skills weaken guarded pending-review recovery" >&2
     rc=1
   fi
@@ -1675,7 +1555,7 @@ run_pr_outcome_routing_probe() {
   rendered_contract_assert_all_contain pr deliver-pr '(`open`, `fixed`, `accepted`, `preference`, `follow-up`)'
   rendered_contract_assert_all_omit pr deliver-pr '(`open`, `fixed`, `accepted`, `reopened`)'
   rendered_contract_assert_all_contain pr deliver-pr '`review_finding_reopened`'
-  rendered_contract_assert_all_contain pr deliver-pr 'faithful non-mutating `review-loop observe --dry-run` preflight'
+  rendered_contract_assert_all_contain pr deliver-pr 'faithful non-mutating `review-loop observe --preflight` sweep'
   rendered_contract_assert_all_contain pr deliver-pr 'GitLab has neither the ledger'
   rendered_contract_assert_all_contain pr deliver-pr '`--review-convergence=false` without calling `pr review-loop`'
   rendered_contract_assert_all_contain pr deliver-pr '**Quick merge**'

@@ -193,23 +193,26 @@ SKILL_BODY_TARGET = 16 * KIB
 # or a documented budget decision. Keyed by surface id.
 SKILL_BODY_OVERRIDES = {
     "skill-body.pr.deliver-pr": {
-        "allow": 47 * KIB,
+        "allow": 46 * KIB,
         "reason": (
-            "One 284-line fence drives the review-loop ledger state machine "
-            "(genesis observe -> repair/push -> closing observe -> publication "
-            "-> merge on the inspected head) because forge-cli exposes only "
-            "review-loop primitives and no macro to hold it. #140 removed the "
-            "reachable dead weight -- version floors unreachable under the "
-            "body's own >=1.27.27 prereq -- for 1,198 bytes. Redundant GitLab "
-            "v1 narrative was also removed, but the GitLab statements that "
-            "tests/runtime-smoke/cases/pr pins by exact phrase stay: an agent "
-            "delivering an MR must not be able to miss them by skipping a "
-            "reference, so that set is not available as a byte saving. The "
-            "remaining overage is the fence, and removing it needs an upstream "
-            "nils-cli macro, not a prompt edit. The ceiling is one KiB above "
-            "the measured size, so this body cannot drift upward unnoticed."
+            "The review-loop fence that drove this body is now delegated: "
+            "nils-cli 1.28.30 (sympoies/nils-cli#1740) added `observe "
+            "--auto-state` / `--preflight` and `pr review --recover-pending`, "
+            "so the genesis dance, the dry-run/live pair, and the 122-line "
+            "pending-review recovery state machine are gone. That removed 67 "
+            "lines but only 1,422 bytes, because the bash was replaced with "
+            "prose explaining what the CLI now guarantees and, in particular, "
+            "why the closing observation must keep `--expected-state` rather "
+            "than `--auto-state`. That explanation is the part a future editor "
+            "would otherwise get wrong, so it is not a candidate for removal. "
+            "What remains above target is the lifecycle/review/publication "
+            "contract itself. GitLab v1 statements that "
+            "tests/runtime-smoke/cases/pr pins by exact phrase also stay: an "
+            "agent delivering an MR must not be able to miss them by skipping "
+            "a reference. The ceiling is one KiB above the measured size, so "
+            "this body cannot drift upward unnoticed."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (P0, upstream nils-cli)",
+        "tracking": "graysurf/agent-runtime-kit#140 (upstream delegation landed; residue is contract prose)",
     },
     "skill-body.conversation.main-agent-mode": {
         "allow": 47 * KIB,
@@ -222,22 +225,28 @@ SKILL_BODY_OVERRIDES = {
         "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
     },
     "skill-body.dispatch.deliver-plan-tracking-issue": {
-        "allow": 36 * KIB,
+        "allow": 34 * KIB,
         "reason": (
             "Plan bundle + issue lifecycle + strict closeout + archive handoff "
-            "in one body. First measured by #140; no reduction designed, ceiling is "
-            "the measured size and #140 owns the decision."
+            "in one body. The review-loop and pending-review machinery this "
+            "shared with deliver-pr is now delegated to nils-cli 1.28.30, "
+            "which took 2,162 bytes off. The remainder is the lifecycle "
+            "contract, and no further reduction is designed; the ceiling is "
+            "the measured size rounded up one KiB and #140 owns the decision."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
+        "tracking": "graysurf/agent-runtime-kit#140 (delegation landed; no further reduction scheduled)",
     },
     "skill-body.dispatch.deliver-dispatch-plan": {
-        "allow": 25 * KIB,
+        "allow": 23 * KIB,
         "reason": (
-            "Shared dispatch spine plus per-lane delivery and closeout. "
-            "First measured by #140; no reduction designed, ceiling is the "
-            "measured size rounded up one KiB and #140 owns the decision."
+            "Shared dispatch spine plus per-lane delivery and closeout. The "
+            "review-loop and pending-review machinery is now delegated to "
+            "nils-cli 1.28.30, which took 2,326 bytes off. The remainder is "
+            "the lane/orchestrator contract, and no further reduction is "
+            "designed; the ceiling is the measured size rounded up one KiB "
+            "and #140 owns the decision."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
+        "tracking": "graysurf/agent-runtime-kit#140 (delegation landed; no further reduction scheduled)",
     },
     "skill-body.computer-use.macos-desktop": {
         "allow": 22 * KIB,
