@@ -19,23 +19,32 @@ schema_version: 2
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
   #
-  # This floor was raised from v1.27.27 to admit the `block-agent-artifact-routing`
-  # handler id. That handler has since been consolidated into
-  # `portable-paths-scan` to fit the dispatch executable budget, so the id is no
-  # longer referenced by this repository's policy bundle and no longer justifies
-  # the floor on its own. The floor is deliberately left where it is: lowering it
-  # is a compatibility decision that needs its own below-minimum evidence, not a
-  # side effect of a hook refactor. Re-evaluate before the next uptake.
-  minimum_supported_tag: "v1.27.35"
+  # Raised from v1.27.35 to v1.28.30 as an explicit compatibility retirement,
+  # not ordinary uptake. The three delivery skills now delegate their
+  # review-loop compare-and-swap and their pending-review recovery to
+  # `pr review-loop observe --auto-state` / `--preflight` and
+  # `pr review --recover-pending` (sympoies/nils-cli#1740, #1741). A host below
+  # v1.28.30 rejects all three at parse time, so those skills cannot be followed
+  # on it at all — this is not a degraded mode, it is an unrunnable one.
+  #
+  # Below-minimum evidence, captured against the released v1.27.35 surface via
+  # scripts/dev/with-nils-version.sh:
+  #   forge-cli pr review-loop observe … --auto-state
+  #     -> unknown-subcommand: unexpected argument '--auto-state' found
+  #   forge-cli pr review-loop observe … --preflight
+  #     -> unknown-subcommand: unexpected argument '--preflight' found
+  #   forge-cli pr review … --recover-pending
+  #     -> unknown-subcommand: unexpected argument '--recover-pending' found
+  minimum_supported_tag: "v1.28.30"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.28.29"
+  validated_tag: "v1.28.30"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "971025d15aad771a0851476ab6784a624e07e57670c8e29aa82507a5e38bdd25"
-    linux_arm64: "b8a2c11358bac81876b1fb5e575651817f90469a1d14c0d8b776a0e735685ab8"
+    linux_amd64: "47b240c0bda266d0e9687ebc7ea76cc8138152e41d5280d4b2bc1347ab1813a5"
+    linux_arm64: "1b31827b822d4c3e148d45c895fe509b95ac1349da933154d2427a919f34ef2f"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -52,8 +61,8 @@ required_clis:
     min: "1.0.1"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
-  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + exact requested-base binding across lookup/adopt/create readback/ready/merge + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery + durable review-loop ledger with faithful observe dry-run preflight
-    min: "1.27.27"
+  - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + exact requested-base binding across lookup/adopt/create readback/ready/merge + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery + durable review-loop ledger with faithful observe dry-run preflight + CLI-owned review-loop compare-and-swap (`observe --auto-state` / `--preflight`) and guarded pending-review recovery (`pr review --recover-pending`)
+    min: "1.28.30"
   - bin: review-specialists # canonical provider-review report bundle and native-thread finding transport
     min: "1.27.27"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics

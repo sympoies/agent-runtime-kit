@@ -127,8 +127,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.27.35")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.28.29")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.28.30")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.28.30")
         self.assertNotIn("pinned_tag:", manifest)
         # v1.27.35 retired the previous v1.27.27 floor to admit the
         # `block-agent-artifact-routing` handler id. That handler was since
@@ -152,29 +152,40 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         # now names a repair path, and thirteen logs across this organization
         # failed `devlog check` until it existed; before this pin the policy
         # described a second command the pinned surface did not have. Minimum
-        # stays at v1.27.35 throughout: nothing below it became less usable, and
-        # a host there simply has no devlog and falls back to the prose the
-        # policy already documents.
+        # stayed at v1.27.35 throughout that run of validated-only bumps:
+        # nothing below it became less usable, and a host there simply has no
+        # devlog and falls back to the prose the policy already documents.
+        #
+        # v1.28.30 is the first bump since v1.27.35 to move BOTH roles, and the
+        # distinction is the point. The three delivery skills now delegate their
+        # review-loop compare-and-swap and their pending-review recovery to
+        # `pr review-loop observe --auto-state` / `--preflight` and
+        # `pr review --recover-pending` (sympoies/nils-cli#1740, #1741). A host
+        # below v1.28.30 rejects all three at parse time, so those skills are
+        # not degraded there — they cannot be followed at all, and admitting
+        # such a host would mean admitting one that cannot run the contract.
+        # That is what a compatibility retirement means, and the below-minimum
+        # evidence for it is recorded beside the floor in nils-cli-pin.yaml.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "971025d15aad771a0851476ab6784a624e07e57670c8e29aa82507a5e38bdd25",
+            "47b240c0bda266d0e9687ebc7ea76cc8138152e41d5280d4b2bc1347ab1813a5",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "b8a2c11358bac81876b1fb5e575651817f90469a1d14c0d8b776a0e735685ab8",
+            "1b31827b822d4c3e148d45c895fe509b95ac1349da933154d2427a919f34ef2f",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.27.35"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.28.30"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "307870095c881d57a6b705bf09b546095c6de3bfc8d63b2228fb9e6aab3e8e37",
+            "47b240c0bda266d0e9687ebc7ea76cc8138152e41d5280d4b2bc1347ab1813a5",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "d238c8159ac6a8236e234097db0a81735dfe397e591f30b175e3a5630456c345",
+            "1b31827b822d4c3e148d45c895fe509b95ac1349da933154d2427a919f34ef2f",
         )
         required_entries = manifest_data["required_clis"]
         required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
@@ -182,7 +193,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["agent-session"], "1.25.11")
         self.assertEqual(required_clis["semantic-commit"], "1.25.11")
         self.assertEqual(required_clis["main-agent"], "1.25.11")
-        self.assertEqual(required_clis["forge-cli"], "1.27.27")
+        self.assertEqual(required_clis["forge-cli"], "1.28.30")
         self.assertEqual(required_clis["review-specialists"], "1.27.27")
         self.assertEqual(required_clis["git-cli"], "1.27.16")
         self.assertEqual(required_clis["agent-hook"], "1.27.35")
@@ -324,7 +335,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.28.29", "v1.29.0"):
+        for candidate in ("v1.28.30", "v1.29.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -696,7 +707,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.28.29", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.28.30", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(

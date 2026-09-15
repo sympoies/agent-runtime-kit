@@ -4,10 +4,10 @@
 - Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (main)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.28.29`
+- Active `git describe --tags` output: `v1.28.30`
 - Machine-readable version policy for CI and packaging:
-  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.27.35`,
-  `validated_tag: v1.28.29`), consumed by `scripts/ci/all.sh` Position 1 via
+  `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.28.30`,
+  `validated_tag: v1.28.30`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
 - Head commit: `35b0bb5d`
@@ -16,8 +16,26 @@
   [`v1.28.0`](https://github.com/sympoies/nils-cli/releases/tag/v1.28.0),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
-- `v1.28.29` is the validated release, and `v1.27.35` is the compatibility
-  minimum. This adoption moved validated only.
+- `v1.28.30` is both the validated release and the compatibility minimum. This
+  adoption moved BOTH roles, which ordinary uptake must not do. It is an
+  explicit compatibility retirement: the three delivery skills now delegate
+  their review-loop compare-and-swap and their pending-review recovery to
+  `pr review-loop observe --auto-state` / `--preflight` and
+  `pr review --recover-pending`, and a host below `v1.28.30` rejects all three
+  at parse time. The skills cannot be followed at all on an older host, so
+  admitting one would mean admitting a host that cannot run the contract. The
+  below-minimum evidence is recorded in `nils-cli-pin.yaml` beside the floor.
+- `v1.28.30` is what made that delegation possible
+  ([#1740](https://github.com/sympoies/nils-cli/issues/1740),
+  [#1741](https://github.com/sympoies/nils-cli/pull/1741)). `observe
+  --preflight` runs the `--dry-run` verdict sweep in front of a live append and
+  names every failing rule; `--auto-state` reads the chain tip instead of being
+  handed one, and is deliberately weaker than `--expected-state`, which is why
+  only the genesis observation uses it. `pr review --recover-pending` deletes
+  the one abandoned viewer-owned pending review a submission would have
+  replaced, through the same guards, lease, and read-back as
+  `pr pending-review delete --confirm-abandoned` — moving the safety argument
+  for an unundoable delete out of caller-side `jq` in a prompt.
 - `v1.28.29` adds `devlog fix`, which is why this adoption happened. Of the
   eleven problems `devlog check` reports, six have exactly one correct repair;
   `fix` applies those and reports the rest, exiting `65` as `check` would
