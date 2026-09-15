@@ -193,55 +193,61 @@ SKILL_BODY_TARGET = 16 * KIB
 # or a documented budget decision. Keyed by surface id.
 SKILL_BODY_OVERRIDES = {
     "skill-body.pr.deliver-pr": {
-        "allow": 46 * KIB,
+        "allow": 47 * KIB,
         "reason": (
             "One 284-line fence drives the review-loop ledger state machine "
             "(genesis observe -> repair/push -> closing observe -> publication "
             "-> merge on the inspected head) because forge-cli exposes only "
             "review-loop primitives and no macro to hold it. #140 removed the "
             "reachable dead weight -- version floors unreachable under the "
-            "body's own >=1.27.27 prereq -- for 1,198 bytes. The GitLab v1 "
-            "statements are NOT removable here: tests/runtime-smoke/cases/pr "
-            "pins them in the body by exact phrase, deliberately, so an agent "
-            "delivering an MR cannot miss them by skipping a reference. The "
+            "body's own >=1.27.27 prereq -- for 1,198 bytes. Redundant GitLab "
+            "v1 narrative was also removed, but the GitLab statements that "
+            "tests/runtime-smoke/cases/pr pins by exact phrase stay: an agent "
+            "delivering an MR must not be able to miss them by skipping a "
+            "reference, so that set is not available as a byte saving. The "
             "remaining overage is the fence, and removing it needs an upstream "
-            "nils-cli macro, not a prompt edit. The ceiling sits just above "
-            "actual so this body can only shrink."
+            "nils-cli macro, not a prompt edit. The ceiling is one KiB above "
+            "the measured size, so this body cannot drift upward unnoticed."
         ),
         "tracking": "graysurf/agent-runtime-kit#140 (P0, upstream nils-cli)",
     },
     "skill-body.conversation.main-agent-mode": {
-        "allow": 48 * KIB,
+        "allow": 47 * KIB,
         "reason": (
             "Lane/worker orchestration contract carried entirely in prose. "
-            "Untriaged inheritance: #140 is the first surface to measure it, "
-            "and no reduction has been designed yet."
+            "#140 is the first gate to measure it; the ceiling is the measured "
+            "size rounded up one KiB, and no reduction has been "
+            "designed. #140 owns the decision."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (untriaged)",
+        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
     },
     "skill-body.dispatch.deliver-plan-tracking-issue": {
         "allow": 36 * KIB,
         "reason": (
             "Plan bundle + issue lifecycle + strict closeout + archive handoff "
-            "in one body. Untriaged inheritance measured first by #140."
+            "in one body. First measured by #140; no reduction designed, ceiling is "
+            "the measured size and #140 owns the decision."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (untriaged)",
+        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
     },
     "skill-body.dispatch.deliver-dispatch-plan": {
         "allow": 25 * KIB,
         "reason": (
             "Shared dispatch spine plus per-lane delivery and closeout. "
-            "Untriaged inheritance measured first by #140."
+            "First measured by #140; no reduction designed, ceiling is the "
+            "measured size rounded up one KiB and #140 owns the decision."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (untriaged)",
+        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
     },
     "skill-body.computer-use.macos-desktop": {
         "allow": 22 * KIB,
         "reason": (
             "AX-first action vocabulary, guarded replay, and privacy-preserving "
-            "journal rules. Untriaged inheritance measured first by #140."
+            "journal rules. First measured by #140; no reduction designed, "
+            "ceiling is the measured size rounded up one KiB and #140 "
+            "owns the decision."
         ),
-        "tracking": "graysurf/agent-runtime-kit#140 (untriaged)",
+        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
     },
 }
 
@@ -276,14 +282,22 @@ def discover_skill_bodies(repo_root=None):
 
 
 def discover_skill_body_budgets(repo_root=None):
-    """Expand discovered skill bodies into budget specs."""
+    """Expand discovered skill bodies into budget specs.
+
+    The discovery root travels inside the measure tuple. Without it a spec
+    discovered under a fixture root would be measured against ``REPO_ROOT``,
+    which either raises or -- worse -- silently returns the size of a
+    same-named real file, so the gate could not be tested against a synthetic
+    tree at all.
+    """
+    root = repo_root or REPO_ROOT
     specs = []
-    for sid, rels in sorted(discover_skill_bodies(repo_root).items()):
+    for sid, rels in sorted(discover_skill_bodies(root).items()):
         specs.append({
             "id": sid,
             "description": "Rendered skill body loaded when %s triggers." % (
                 sid[len("skill-body."):]),
-            "measure": ("skill-body", sorted(rels)),
+            "measure": ("skill-body", root, sorted(rels)),
             "target": SKILL_BODY_TARGET,
             "override": SKILL_BODY_OVERRIDES.get(sid),
         })
@@ -371,8 +385,8 @@ def measure_bytes(measure):
             % (intent, phase, len(paths))
         )
     if kind == "skill-body":
-        rels = measure[1]
-        sizes = [(os.path.getsize(os.path.join(REPO_ROOT, rel)), rel)
+        _, root, rels = measure
+        sizes = [(os.path.getsize(os.path.join(root, rel)), rel)
                  for rel in rels]
         largest, where = max(sizes)
         if len(sizes) == 1:
@@ -391,6 +405,14 @@ def measure_bytes(measure):
 # Fraction of target at or above which an in-budget surface is reported as
 # near-limit. Advisory only; it never fails the gate.
 WARN_RATIO = 0.90
+
+# Remaining bytes below ``override.allow`` at or under which a waived surface is
+# reported as running out of room. A waived body sits above target, so the
+# near-limit band above can never reach it; without this a tight ratchet gives no
+# warning and the next routine edit is a hard FAIL on work already written.
+# Override ceilings are set one KiB above the measured size (two when that would
+# leave under this much room), so this fires only on real growth.
+WAIVED_HEADROOM_WARN_BYTES = 512
 
 
 def classify(target, actual, override):
@@ -420,8 +442,18 @@ def classify(target, actual, override):
         return "ok", ""
     # actual > target
     if override is not None and actual <= override["allow"]:
-        return "waived", "allow=%d over target by %d; tracking %s" % (
+        note = "allow=%d over target by %d; tracking %s" % (
             override["allow"], actual - target, override["tracking"])
+        # A waived surface sits above target, so the near-limit band below can
+        # never reach it. Without this, a ratchet set just above actual gives no
+        # warning at all -- the next routine edit is a hard FAIL on work that is
+        # already written, which is exactly what near-limit exists to prevent.
+        headroom = override["allow"] - actual
+        if headroom <= WAIVED_HEADROOM_WARN_BYTES:
+            note += ("; only %d byte(s) of waived headroom left -- trim this "
+                     "surface or revisit the override before adding to it"
+                     % headroom)
+        return "waived", note
     if override is not None:
         return "FAIL", "actual %d exceeds override.allow %d (tracking %s)" % (
             actual, override["allow"], override["tracking"])
@@ -441,8 +473,13 @@ def evaluate(budgets):
     return rows
 
 
-def coverage_errors(budgets):
+def coverage_errors(budgets, skill_overrides=None, require_skill_bodies=False):
     """Return coverage-integrity errors (empty list == ok); fail-closed.
+
+    ``skill_overrides`` / ``require_skill_bodies`` add the skill-body rules
+    (#140). They are opt-in so the synthetic self-test cases, which carry no
+    discovered bodies, stay valid -- but the real gate passes both, so every
+    coverage rule has one owner and one entry point.
 
     The classifier self-test proves verdicts are correct, but a gate that
     silently loses surfaces is worse than a wrong verdict: an emptied BUDGETS,
@@ -480,6 +517,16 @@ def coverage_errors(budgets):
         if not str(ov.get("tracking", "")).strip():
             errors.append(
                 "surface %r override is missing a tracking ref." % spec["id"])
+    discovered = [s for s in budgets if s["id"].startswith("skill-body.")]
+    if require_skill_bodies and not discovered:
+        # A render that did not run would otherwise drop every skill body from
+        # the measured set and still exit 0.
+        errors.append(
+            "no rendered skill bodies were discovered under %s/; run "
+            "`agent-runtime render --product <product>` before this gate."
+            % BUILD_DIR)
+    if skill_overrides is not None:
+        errors.extend(skill_body_override_errors(skill_overrides, discovered))
     return errors
 
 
@@ -573,7 +620,6 @@ def run_self_test():
         ("override-allow-not-above-target", bad_allow, True),
         ("override-blank-reason", blank_reason, True),
         ("shipped-BUDGETS", BUDGETS, False),
-        ("shipped-BUDGETS+discovered-skill-bodies", all_budgets(), False),
     ]
     for name, budgets, expect_errors in cov_cases:
         errs = coverage_errors(budgets)
@@ -585,18 +631,26 @@ def run_self_test():
         if not ok:
             failures.append("coverage:" + name)
 
-    # Skill-body coverage (#140): discovery must find the real build tree, and a
-    # dangling override must be an error rather than a silent exemption.
-    discovered = discover_skill_body_budgets()
+    # Skill-body coverage (#140), against SYNTHETIC surfaces so --self-test stays
+    # render-independent: a fresh checkout with no build/ must not report a
+    # missing render as a classifier bug. `check` owns the live-tree verdict and
+    # already fails closed on an absent render with the correct remediation.
+    synthetic = [_spec("skill-body.demo.alpha"), _spec("skill-body.demo.beta")]
+    ok_override = {"skill-body.demo.alpha": {"allow": 2, "reason": "r",
+                                             "tracking": "t"}}
+    dangling = {"skill-body.demo.gone": {"allow": 2, "reason": "r",
+                                         "tracking": "t"}}
     skill_cases = [
-        ("discovery-non-empty", bool(discovered), True),
-        ("shipped-skill-overrides-resolve",
-         not skill_body_override_errors(SKILL_BODY_OVERRIDES, discovered), True),
-        ("dangling-skill-override-detected",
-         bool(skill_body_override_errors(
-             {"skill-body.nonexistent.skill": {"allow": 1, "reason": "r",
-                                               "tracking": "t"}},
-             discovered)), True),
+        ("resolving-override-accepted",
+         not skill_body_override_errors(ok_override, synthetic), True),
+        ("dangling-override-detected",
+         bool(skill_body_override_errors(dangling, synthetic)), True),
+        ("empty-discovery-is-a-coverage-error",
+         any("no rendered skill bodies" in e for e in coverage_errors(
+             healthy_required, require_skill_bodies=True)), True),
+        ("discovered-bodies-satisfy-the-requirement",
+         not any("no rendered skill bodies" in e for e in coverage_errors(
+             healthy_required + synthetic, require_skill_bodies=True)), True),
     ]
     for name, observed, expected in skill_cases:
         ok = observed == expected
@@ -636,17 +690,12 @@ def main(argv=None) -> int:
     if args.self_test:
         return run_self_test()
 
-    discovered = discover_skill_body_budgets()
-    budgets = list(BUDGETS) + discovered
-    cov = coverage_errors(budgets)
-    if not discovered:
-        # A render that did not run would otherwise drop every skill body from
-        # the measured set and still exit 0.
-        cov.append(
-            "no rendered skill bodies were discovered under %s/; run "
-            "`agent-runtime render --product <product>` before this gate."
-            % BUILD_DIR)
-    cov.extend(skill_body_override_errors(SKILL_BODY_OVERRIDES, discovered))
+    budgets = all_budgets()
+    cov = coverage_errors(
+        budgets,
+        skill_overrides=SKILL_BODY_OVERRIDES,
+        require_skill_bodies=True,
+    )
     rows = evaluate(budgets)
     failing = _emit(rows)
     if cov:
