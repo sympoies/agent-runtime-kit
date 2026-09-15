@@ -442,9 +442,15 @@ That currently performs:
     `scripts/ci/product-leak-allow.yaml`.
 16. `bash tests/memory-runtime/run.sh` — memory policy, retired-reference, and
     product-routing acceptance.
-17. `python3 tests/ci/test_policy_simplification.py` plus the context-budget
-    audit self-test/check — rendered home prompts, resolved edit requirements,
-    intent routing, validation deduplication, and unchanged-prompt budgets.
+17. `python3 tests/ci/test_policy_simplification.py` and
+    `python3 tests/ci/test_context_budget_skill_bodies.py` plus the
+    context-budget audit self-test/check — rendered home prompts, resolved edit
+    requirements, intent routing, validation deduplication, unchanged-prompt
+    budgets, and per-skill rendered body budgets. Skill-body surfaces are
+    discovered from `build/<product>/plugins/*/skills/*/SKILL.md` rather than
+    listed inline, so a new oversized skill fails the gate on the commit that
+    adds it; a body over target needs an `allow`/`reason`/`tracking` override in
+    `SKILL_BODY_OVERRIDES`.
 
 Position 1 retains the silent-drift protection while separating admission from
 reproducibility. As of nils-cli v1.25.0 the schema-v2 doctor owns stable-version
