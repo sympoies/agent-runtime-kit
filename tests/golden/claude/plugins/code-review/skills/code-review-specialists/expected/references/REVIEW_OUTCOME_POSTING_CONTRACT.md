@@ -547,85 +547,30 @@ NATIVE_REVIEW_CMD=(
   --submit-review
   --expected-head "$EXPECTED_REVIEW_HEAD"
   --comment="$EXPECTED_REVIEW_BODY"
+  --recover-pending
   "${REVIEW_LENS_ARGS[@]}"
 )
-unset PENDING_REVIEW_ID
-set +e
-NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
-NATIVE_REVIEW_STATUS=$?
-set -e
-if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
-  if [ "$PROVIDER" != github ] || ! printf '%s\n' "$NATIVE_REVIEW_JSON" |
-    jq -e '.ok == false and .error.code == "github_pending_review_exists"' \
-      >/dev/null; then
-    printf '%s\n' "$NATIVE_REVIEW_JSON" >&2
-    exit "$NATIVE_REVIEW_STATUS"
-  fi
-
-  # Fetch a fresh post-conflict pr reviews snapshot.
-  if [ "$PROVIDER" = github ]; then
-    POST_CONFLICT_REVIEWS="$(
-      forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-        --format json pr reviews "$PR_NUMBER"
-    )"
-    PENDING_REVIEW_ID="$(
-      printf '%s\n' "$POST_CONFLICT_REVIEWS" |
-        jq -er --arg head "$EXPECTED_REVIEW_HEAD" \
-          --arg body "$EXPECTED_REVIEW_BODY" '
-            select(.ok == true and .data.head_sha == $head)
-            | [.data.pending_reviews[]
-                | select(.state == "PENDING")
-                | select(.commit_sha == $head)
-                | select(.summary_truncated == false)
-                | select((.summary | rtrimstr("\n")) == ($body | rtrimstr("\n")))]
-            | select(length == 1)
-            | .[0].id
-          '
-    )"
-    if [ -n "${PENDING_REVIEW_ID:-}" ]; then
-      DELETE_REVIEW_JSON="$(
-        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-          --format json pr pending-review delete "$PR_NUMBER" \
-          --review "$PENDING_REVIEW_ID" \
-          --expected-head "$EXPECTED_REVIEW_HEAD" \
-          --expected-commit "$EXPECTED_REVIEW_HEAD" \
-          --expected-body="$EXPECTED_REVIEW_BODY" \
-          --confirm-abandoned
-      )"
-      POST_DELETE_REVIEWS="$(
-        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-          --format json pr reviews "$PR_NUMBER"
-      )"
-      printf '%s\n' "$POST_DELETE_REVIEWS" |
-        jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
-          --arg id "$PENDING_REVIEW_ID" '
-            .ok == true
-            and .data.head_sha == $head
-            and (.data.pending_reviews | map(.id) | index($id) | not)
-          ' >/dev/null
-
-      set +e
-      NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
-      NATIVE_REVIEW_RETRY_STATUS=$?
-      set -e
-      [ "$NATIVE_REVIEW_RETRY_STATUS" -eq 0 ] || {
-        printf '%s\n' "$NATIVE_REVIEW_RETRY_JSON" >&2
-        exit "$NATIVE_REVIEW_RETRY_STATUS"
-      }
-      NATIVE_REVIEW_JSON="$NATIVE_REVIEW_RETRY_JSON"
-    fi
-  fi
-fi
-
+NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")" || exit $?
 printf '%s\n' "$NATIVE_REVIEW_JSON"
 ```
 
-The primitive verifies PR membership, pending state, current-viewer authorship,
-and delete permission before mutation. Retry the unchanged failed review once
-only after read-back confirms the node is absent. Stop on multiple candidates,
-an ownership/permission failure, head or outcome drift, refresh failure, or a
-second rejection. Never delete submitted reviews, sweep pending drafts, or
-downgrade a requested native review to an outcome note.
+`--recover-pending` (forge-cli >=1.28.30) makes
+`github_pending_review_exists` recoverable inside the command: the one
+abandoned viewer-owned pending review this submission would have replaced is
+deleted, then the submission proceeds. The conflict is raised by a preflight,
+before any provider mutation, so there is nothing half-applied to reconcile and
+no retry to sequence.
+
+Do not reconstruct that recovery here. The guard wraps an unundoable delete and
+the command owns it end to end: exactly one viewer-authored pending review the
+viewer may delete, re-proved under a cross-process lease to be still bound to
+`--expected-head`, free of inline draft comments, and byte-identical to the body
+being submitted, then confirmed gone by read-back. A refusal names the guard
+that rejected it — `pending_review_body_mismatch` means the pending review is
+not the attempt this submission would have replaced — and only the absence of a
+single nameable candidate returns `github_pending_review_exists` unchanged.
+Read the refusal; never select a node by hand, delete submitted reviews, sweep
+pending drafts, or downgrade a requested native review to an outcome note.
 
 ## Read-Back
 

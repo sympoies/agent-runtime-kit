@@ -13,7 +13,10 @@ Prereqs:
 
 - Profile: `tracking`.
 - CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.27.27`, `git-cli >=1.25.13`, `review-specialists >=1.27.27`.
+  `forge-cli >=1.28.30`, `git-cli >=1.25.13`, `review-specialists >=1.27.27`.
+  The `forge-cli` floor is 1.28.30 because review-loop compare-and-swap and
+  pending-review recovery are delegated to `--auto-state`, `--preflight`, and
+  `--recover-pending`; an older host rejects all three at parse time.
 - The tracking issue is absent and ready to open, or open, visible, and
   reconcilable with `run-state.json`; FSM is not blocked or stale.
 - PR delivery runs the generic code-review outcome in pre-merge context with the
@@ -104,9 +107,10 @@ Failure modes:
 - Stop on provider payload privacy failures such as `local_path_present`; rewrite
   useful evidence paths to `$HOME/...` and omit remote-useless local artifact
   paths before retrying.
-- Stop when `github_pending_review_exists` reports an existing pending draft
-  but `data.pending_reviews[]` does not identify exactly one abandoned
-  current-viewer review for this PR; never delete ambiguous review state.
+- Stop when `--recover-pending` refuses. `github_pending_review_exists` means no
+  single viewer-owned deletable node could be named for this PR; a
+  `pending_review_*` code names the guard that rejected the one candidate. Read
+  it; never delete review state by hand.
 - Stop on `ledger-rows-pending`; repair the named task rows with
   `plan-tooling ledger-update` before retrying the gate.
 - Stop when `pr merge` fails closed on review convergence, native change
@@ -272,34 +276,17 @@ forge-cli --provider "$PROVIDER" pr review "$PR_NUMBER" \
 # GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate.
 if [ "$PROVIDER" = github ]; then
 : "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
-REVIEW_LEDGER_INSPECT="$(
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-    pr review-loop inspect "$PR_NUMBER"
-)" || exit $?
-REVIEW_LEDGER_STATE_TIP="$(
-  printf '%s\n' "$REVIEW_LEDGER_INSPECT" |
-    jq -er 'if .ok == true then (.data.state_tip_digest // "") else error("inspect failed") end'
-)" || exit $?
-REVIEW_LEDGER_STATE_ARGS=()
-[ -n "$REVIEW_LEDGER_STATE_TIP" ] &&
-  REVIEW_LEDGER_STATE_ARGS=(--expected-state "$REVIEW_LEDGER_STATE_TIP")
-
-# Review-loop genesis: dry-run before live append and before any repair.
-REVIEW_LEDGER_GENESIS_DRY_RUN="$(
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-    pr review-loop observe "$PR_NUMBER" \
-    --expected-head "$REVIEWED_HEAD" \
-    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
-    --findings-file "$REVIEW_LEDGER_FINDINGS" \
-    --dry-run
-)" || exit $?
-printf '%s\n' "$REVIEW_LEDGER_GENESIS_DRY_RUN" |
-  jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+# Review-loop genesis: before any repair, with the CLI-owned preflight sweep.
+# `--preflight` runs the full non-mutating sweep and fails with every rejecting
+# rule named, so no separate `--dry-run` call is needed. `--auto-state` reads the
+# tip: genesis holds no digest from an earlier round, so there is no claim for
+# `--expected-state` to make here. The closing observation is the opposite case.
 REVIEW_LEDGER_GENESIS="$(
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
     pr review-loop observe "$PR_NUMBER" \
     --expected-head "$REVIEWED_HEAD" \
-    "${REVIEW_LEDGER_STATE_ARGS[@]}" \
+    --auto-state \
+    --preflight \
     --findings-file "$REVIEW_LEDGER_FINDINGS"
 )" || exit $?
 REVIEW_LEDGER_STATE_TIP="$(
@@ -334,21 +321,17 @@ readonly EXPECTED_REVIEW_HEAD
 # Review-loop closing observation: after repair/push and before merge.
 if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then
   : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
-  REVIEW_LEDGER_CLOSE_DRY_RUN="$(
-    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-      pr review-loop observe "$PR_NUMBER" \
-      --expected-head "$EXPECTED_REVIEW_HEAD" \
-      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
-      --findings-file "$REVIEW_LEDGER_DISPOSITIONS" \
-      --dry-run
-  )" || exit $?
-  printf '%s\n' "$REVIEW_LEDGER_CLOSE_DRY_RUN" |
-    jq -e '.ok == true and .data.preflight_ok == true' >/dev/null
+  # Keep `--expected-state` here and do NOT use `--auto-state`. This digest came
+  # back from the genesis append, so it is a claim about a tip this workflow
+  # already saw, and it is the only thing that catches a resumed shell reusing
+  # genesis state. `--auto-state` re-reads and would silently accept a chain
+  # someone else advanced in between.
   REVIEW_LEDGER_CLOSE="$(
     forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
       pr review-loop observe "$PR_NUMBER" \
       --expected-head "$EXPECTED_REVIEW_HEAD" \
       --expected-state "$REVIEW_LEDGER_STATE_TIP" \
+      --preflight \
       --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
   )" || exit $?
   REVIEW_LEDGER_STATE_TIP="$(
@@ -381,7 +364,17 @@ case "${REVIEW_PUBLICATION_MODE:-}" in
     [ "${REVIEW_PUBLISHER_FAILURE_STATE:-}" = no-native-mutation ] || exit 69
     [ "$(git rev-parse HEAD)" = "$EXPECTED_REVIEW_HEAD" ] || exit 65
     NATIVE_REVIEW_DECISION=comments-only
-    PERSONAL_ESCAPE_SUBMIT_REVIEW=(--submit-review --expected-head "$EXPECTED_REVIEW_HEAD")
+    # `--recover-pending` clears one exact abandoned viewer-owned pending review
+    # from an earlier attempt of this same submission. The CLI owns the guard:
+    # exactly one viewer-authored deletable node, still bound to this head, with
+    # no inline drafts and a byte-identical body, deleted under its own lease and
+    # confirmed gone. Do not re-implement that guard here — a defect in it
+    # deletes somebody else's review, and it is not undoable.
+    PERSONAL_ESCAPE_SUBMIT_REVIEW=(
+      --submit-review
+      --expected-head "$EXPECTED_REVIEW_HEAD"
+      --recover-pending
+    )
     ;;
   governed)
     echo "governed final outcomes use forge-review-publish" >&2
@@ -416,75 +409,12 @@ NATIVE_REVIEW_CMD=(
   "${REVIEW_LENS_ARGS[@]}"
   --issue "$ISSUE" --mirror-issue
 )
-# Clear stale selector state, then preserve the failed command status and JSON.
-unset PENDING_REVIEW_ID
-set +e
-NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
-NATIVE_REVIEW_STATUS=$?
-set -e
-
-if [ "$NATIVE_REVIEW_STATUS" -ne 0 ]; then
-  if [ "$PROVIDER" != github ] || ! printf '%s\n' "$NATIVE_REVIEW_JSON" |
-    jq -e '.ok == false and .error.code == "github_pending_review_exists"' \
-      >/dev/null; then
-    printf '%s\n' "$NATIVE_REVIEW_JSON" >&2
-    exit "$NATIVE_REVIEW_STATUS"
-  fi
-
-  # Fetch a fresh post-conflict pr reviews snapshot.
-  if [ "$PROVIDER" = github ]; then
-    POST_CONFLICT_REVIEWS="$(
-      forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-        --format json pr reviews "$PR_NUMBER"
-    )"
-    PENDING_REVIEW_ID="$(
-      printf '%s\n' "$POST_CONFLICT_REVIEWS" |
-        jq -er --arg head "$EXPECTED_REVIEW_HEAD" \
-          --arg body "$EXPECTED_REVIEW_BODY" '
-            select(.ok == true and .data.head_sha == $head)
-            | [.data.pending_reviews[]
-                | select(.state == "PENDING")
-                | select(.commit_sha == $head)
-                | select(.summary_truncated == false)
-                | select((.summary | rtrimstr("\n")) == ($body | rtrimstr("\n")))]
-            | select(length == 1)
-            | .[0].id
-          '
-    )"
-    if [ -n "${PENDING_REVIEW_ID:-}" ]; then
-      DELETE_REVIEW_JSON="$(
-        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-          --format json pr pending-review delete "$PR_NUMBER" \
-          --review "$PENDING_REVIEW_ID" \
-          --expected-head "$EXPECTED_REVIEW_HEAD" \
-          --expected-commit "$EXPECTED_REVIEW_HEAD" \
-          --expected-body="$EXPECTED_REVIEW_BODY" \
-          --confirm-abandoned
-      )"
-      POST_DELETE_REVIEWS="$(
-        forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-          --format json pr reviews "$PR_NUMBER"
-      )"
-      printf '%s\n' "$POST_DELETE_REVIEWS" |
-        jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
-          --arg id "$PENDING_REVIEW_ID" '
-            .ok == true
-            and .data.head_sha == $head
-            and (.data.pending_reviews | map(.id) | index($id) | not)
-          ' >/dev/null
-
-      set +e
-      NATIVE_REVIEW_RETRY_JSON="$("${NATIVE_REVIEW_CMD[@]}" 2>&1)"
-      NATIVE_REVIEW_RETRY_STATUS=$?
-      set -e
-      if [ "$NATIVE_REVIEW_RETRY_STATUS" -ne 0 ]; then
-        printf '%s\n' "$NATIVE_REVIEW_RETRY_JSON" >&2
-        exit "$NATIVE_REVIEW_RETRY_STATUS"
-      fi
-      NATIVE_REVIEW_JSON="$NATIVE_REVIEW_RETRY_JSON"
-    fi
-  fi
-fi
+# `--recover-pending` above makes `github_pending_review_exists` recoverable
+# inside the command, so there is no conflict branch, no jq node selection, and
+# no retry to sequence here. A refusal names the guard that rejected it
+# (`pending_review_body_mismatch` means the pending review is not the one this
+# submission would have replaced) and must be read, not worked around.
+NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")" || exit $?
 
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
   printf '%s\n' "$NATIVE_REVIEW_JSON"
@@ -614,14 +544,12 @@ On GitHub, read native summaries before the combined outcome; on GitLab, retain
 the outcome-note path and do not invoke the unsupported snapshot. A
 `summary_truncated` item requires the full review body before disposition; stop
 if it cannot be read. If native submission returns
-`github_pending_review_exists`, preserve the failed command status and JSON and
-fetch a fresh post-conflict snapshot.
+a `pending_review_*` refusal from `--recover-pending`, stop and read it: the
+command already tried to clear an abandoned draft from an earlier attempt of
+this same submission, under its own guard, and the code names which assumption
+did not hold. Never select a node by hand.
 The command binds the native review to the inspected head with
-`--expected-head`. Choose a recovery id only when
-`data.pending_reviews[]` identifies exactly one current-viewer abandoned node
-for this PR and the intended body, decision, and head remain current. Run `pr
-pending-review delete`, refresh `pr reviews`, and retry the unchanged outcome
-once; stop on an ambiguous node, a failed guard, or a second rejection. The generic review
+`--expected-head`. The generic review
 outcome owns the read-only lenses and
 mode selection; this
 skill owns the provider writes, semantic disposition,
