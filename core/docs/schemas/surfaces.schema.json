@@ -33,7 +33,7 @@
     "surfaces": {
       "type": "array",
       "description": "Canonical SUPPORT_MATRIX surfaces. The active registry carries 16 surfaces after retirement of the heuristic retained-record system.",
-      "minItems": 17,
+      "minItems": 16,
       "items": { "$ref": "#/$defs/surface" }
     }
   },

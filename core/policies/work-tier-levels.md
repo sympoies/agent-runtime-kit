@@ -229,8 +229,8 @@ Rules that keep this true:
   declaration as a `canonise` that was never executed.
 - **No file outside `docs/discussions/` may link to a capture inside it.** The
   invariant is exactly: nothing outside the directory may reference a
-  `docs/discussions/<YYYY-MM-DD>-<slug>.md` path. A devlog entry, an error-inbox
-  provider issue, a README, or a test that points at a capture turns staging into
+  `docs/discussions/<YYYY-MM-DD>-<slug>.md` path. A devlog entry, a provider
+  issue, a README, or a test that points at a capture turns staging into
   storage, because deleting the capture then breaks a reference. Quote the
   conclusion instead of linking the file. The directory's own `README.md` and a
   bare `docs/discussions/` directory mention are both exempt — neither pins a

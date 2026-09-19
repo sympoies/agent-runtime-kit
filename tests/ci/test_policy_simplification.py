@@ -19,6 +19,8 @@ HOME_PRODUCT_EXCEPTIONS = {
 }
 HOME_BUDGET_BYTES = 4 * 1024
 EDIT_DOC_BUDGET_BYTES = 20 * 1024
+PRE_REPLACEMENT_EDIT_CONTEXT_BYTES = 8135
+PROJECT_SKILL_CONTEXT_DELTA_BYTES = 2 * 1024
 
 
 def read(relative: str) -> str:
@@ -591,9 +593,41 @@ when = "always"
         self.assertIn("earliest owning", project_skill)
         self.assertIn("issue and public-safe devlog", project_skill)
         self.assertIn("does not grant automatic issue creation", project_skill)
-        self.assertLessEqual(len(project_skill.encode("utf-8")), 8192)
+        edit_required = required_relative_paths(preflight("project-dev", phase="edit"))
+        required_bytes = sum((ROOT / path).stat().st_size for path in edit_required)
+        project_skill_bytes = len(project_skill.encode("utf-8"))
+        self.assertLessEqual(project_skill_bytes, PROJECT_SKILL_CONTEXT_DELTA_BYTES)
+        self.assertLessEqual(
+            required_bytes + project_skill_bytes,
+            PRE_REPLACEMENT_EDIT_CONTEXT_BYTES
+            + PROJECT_SKILL_CONTEXT_DELTA_BYTES,
+        )
         self.assertFalse((ROOT / "core/policies/heuristic-system").exists())
         self.assertNotIn("heuristic-inbox", evidence)
+
+    def test_retired_heuristic_routes_have_no_active_consumers(self) -> None:
+        dispositions = read("manifests/skill-dispositions.yaml")
+        for skill_id in (
+            "meta.heuristic-inbox",
+            "meta.heuristic-session-closeout",
+        ):
+            marker = f"  - id: {skill_id}\n"
+            block = dispositions.split(marker, 1)[1].split("\n  - id:", 1)[0]
+            with self.subTest(skill_id=skill_id):
+                self.assertNotIn("heuristic-inbox", block)
+                self.assertNotIn("heuristic-system", block)
+
+        discussions = read("docs/discussions/README.md")
+        work_tiers = read("core/policies/work-tier-levels.md")
+        evidence_archive = read("core/policies/evidence-archive/EVIDENCE_ARCHIVE.md")
+        nils_surface = read("docs/source/nils-cli-surface.md")
+        self.assertNotIn("error-inbox", discussions)
+        self.assertNotIn("error-inbox", work_tiers)
+        self.assertNotIn("session closeout procedure", evidence_archive.casefold())
+        self.assertIn(
+            "Agent-runtime-kit no longer consumes or pins `heuristic-inbox`",
+            nils_surface,
+        )
 
     def test_context_audit_reports_agent_docs_resolution(self) -> None:
         result = subprocess.run(

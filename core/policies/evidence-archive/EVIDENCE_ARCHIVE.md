@@ -17,24 +17,20 @@ policy is the map, not a re-implementation of any of them.
    machine that never archives. Each record carries a
    `producer { tool, nils_cli_version }` block so an archived record is
    attributable to the surface and CLI version that wrote it.
-2. **Surface** — at session end, the parent session closeout procedure
-   enumerates the **session's** records (read-only) and flags non-pass outcomes
-   for owner routing. This is awareness, not durability:
+2. **Surface** — when the outermost workflow has a durable retention duty, its
+   evidence-control-plane closeout reviews the exact candidate records and
+   flags non-pass outcomes for owner routing. This is awareness, not durability:
    the runtime tree is scratch space that is **not** auto-reaped — records
    persist there until manually cleaned (`agent-out`) or migrated.
 3. **Migrate** — the direct `evidence migrate` CLI copies
    records out of the runtime tree into the archive repository. Dry-run is the
    default; `--apply` writes, commits, and pushes. Migration is the durability
    boundary: once a record is archived and pushed, it survives any later cleanup
-   of the runtime tree. **The session closeout procedure drives this stage**
-   (whole-tree, not session-scoped): it runs the dry-run, and when it
-   is clean — `eligible > 0` and every `blocked` entry is an expected
-   host-classification block or an unresolvable/old-`cwd`
-   record — it auto-`--apply`s; anything off (an unexpected block, a surprising
-   scrub volume, an unrecognized host, a dry-run error) is surfaced for the
-   operator instead of applied. The parent never re-implements the migration; it
-   only invokes the CLI. Manual `evidence migrate` remains available for
-   out-of-closeout drains.
+   of the runtime tree. The outermost workflow runs the dry-run and applies only
+   the reviewed, approved candidate set. Unexpected blocks, scrub volume,
+   unrecognized hosts, or dry-run errors stop the apply. The parent never
+   re-implements migration; it only invokes the CLI. Manual `evidence migrate`
+   remains available for event-driven drains.
 4. **Store** — the archive repository holds the rollups, their `metadata.yaml`,
    scrubbed linked evidence, scrub logs, and a derived `catalog.json` (see
    Layout).
@@ -42,9 +38,9 @@ policy is the map, not a re-implementation of any of them.
    removes local agent-out source run directories
    only after their raw `skill-usage.record.json` digest already exists in the
    archive `catalog.json`. Dry-run is the default; direct use requires explicit
-   confirmation before `--apply`. The session closeout procedure drives this
-   after migration and auto-applies only when the dry-run is clean and every
-   prunable source path is expected. The archive remains read-only for this command.
+   confirmation before `--apply`. The outermost workflow may drive this after
+   verified migration, but applies only the reviewed, approved source set. The
+   archive remains read-only for this command.
 6. **Query** — `evidence discover` / `query` / `search` / `catalog` read the
    archive. These are read-only and are driven directly from the CLI.
 
@@ -134,20 +130,15 @@ pruning later bounds local runtime state without deleting archive evidence.
 
 ## When to migrate
 
-The default trigger is the policy-owned session closeout procedure: after a
-session's goal is achieved, closeout invokes `evidence migrate` and
-`evidence prune-source` directly, drives a migration dry-run, and auto-applies it
-when clean, then runs a prune-source dry-run and auto-applies source cleanup only
-when that dry-run is clean (see the Migrate and Prune source stages above). So
-under normal operation retention and already-archived source cleanup are
-hands-off, and the archive tracks the runtime tree session by session without
-leaving archived source records to accumulate forever.
+The trigger is event-driven and owned by
+`core/policies/evidence-control-plane.md#closeout-and-retention`. When evidence
+must survive the session, the outermost workflow reviews exact candidates,
+runs `evidence migrate` dry-run-first, applies only the approved set, verifies
+the archive, then may run `evidence prune-source --archived-only` through the
+same review-before-apply sequence.
 
-Run `evidence migrate` or `evidence prune-source` **manually** only outside that
-flow — to drain or clean the tree between closeouts, to re-review after the
-closeout surfaced (rather than applied) a risky dry-run, or on a host where
-closeout has not run. The tree is not auto-reaped until prune-source applies, so
-timing is not load-bearing: nothing is lost by migrating or pruning later, and
-draining/cleaning mainly keeps the tree bounded. Migration and pruning are not
-per-task steps. Whether driven by closeout or run by hand, always review the
-dry-run before `--apply`; for pruning, always keep `--archived-only`.
+The runtime tree is not auto-reaped, so timing is not load-bearing: nothing is
+lost by migrating or pruning later. Migration and pruning are not automatic
+session-end or per-task steps. Whether driven by an owning workflow or run
+manually, always review the dry-run before `--apply`; for pruning, always keep
+`--archived-only`.

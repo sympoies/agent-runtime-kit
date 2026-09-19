@@ -18,7 +18,7 @@ Exactly one of four, and all four move or delete the file:
 
 | `Exit:` | Action |
 | --- | --- |
-| `open-issue` | Open a tracked record for the outstanding work, then delete the capture. An ordinary issue is enough — do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, an in-repo error-inbox `ENTRY.md` is the accepted form. |
+| `open-issue` | Open a tracked record for the outstanding work, then delete the capture. An ordinary issue is enough — do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, keep the capture staged until it can take a valid exit. |
 | `promote-to-plan` | Move into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` and author the plan bundle. |
 | `canonise` | Move into the owning domain doc, or `docs/source/` for repo-wide architecture, specs, and policy. |
 | `retire` | Delete. The default once the work ships or is abandoned. |
@@ -30,7 +30,7 @@ Exactly one of four, and all four move or delete the file:
   worth `canonise`, which moves it out of this directory.
 - **No inbound links to a capture.** No file outside this directory may
   reference a `docs/discussions/<YYYY-MM-DD>-<slug>.md` path — not a devlog
-  entry, not an error-inbox `ENTRY.md`, not a README, not a test. Quote the
+  entry, not a provider issue, not a README, not a test. Quote the
   conclusion instead. This README and a bare `docs/discussions/` directory
   mention are exempt; neither pins a capture. This is the invariant that keeps
   `retire` safe.

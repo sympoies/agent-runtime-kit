@@ -16,6 +16,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT/manifests/surfaces.yaml"
+SCHEMA="$ROOT/core/docs/schemas/surfaces.schema.json"
 EXECUTE_ACCEPTANCE=0
 
 for arg in "$@"; do
@@ -33,13 +34,15 @@ for arg in "$@"; do
   esac
 done
 
-ruby - "$MANIFEST" "$ROOT" "$EXECUTE_ACCEPTANCE" <<'RUBY'
+ruby - "$MANIFEST" "$ROOT" "$EXECUTE_ACCEPTANCE" "$SCHEMA" <<'RUBY'
+require "json"
 require "open3"
 require "yaml"
 
 path = ARGV.fetch(0)
 root = ARGV.fetch(1)
 execute_acceptance = ARGV.fetch(2) == "1"
+schema_path = ARGV.fetch(3)
 
 STATE_VALUES = %w[
   shipped
@@ -160,6 +163,11 @@ begin
 
   surfaces = data["surfaces"]
   fail_with("surfaces must be an array") unless surfaces.is_a?(Array)
+  schema = JSON.parse(File.read(schema_path))
+  schema_min_items = schema.dig("properties", "surfaces", "minItems")
+  unless schema_min_items == surfaces.length
+    fail_with("surface schema minItems #{schema_min_items.inspect} does not match canonical count #{surfaces.length}")
+  end
 
   ids = {}
   ordinals = {}
@@ -210,8 +218,8 @@ begin
   end
   fail_with("expected 16 surfaces, got #{surfaces.length}") unless surfaces.length == 16
   run_acceptance!(executable_entries, root) if execute_acceptance
-rescue Psych::Exception => e
-  fail_with("YAML parse failed: #{e.message}")
+rescue Psych::Exception, JSON::ParserError => e
+  fail_with("manifest/schema parse failed: #{e.message}")
 end
 
 puts "validate-surfaces-manifest: ok #{path}"
