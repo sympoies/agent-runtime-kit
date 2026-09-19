@@ -577,17 +577,23 @@ when = "always"
         )
         self.assertTrue((ROOT / capsule_path).read_text(encoding="utf-8"))
 
-    def test_evidence_and_closeout_are_event_driven(self) -> None:
+    def test_issue_backed_project_improvement_is_event_driven(self) -> None:
         evidence = read("core/policies/evidence-control-plane.md")
-        heuristic = read("core/policies/heuristic-system/HEURISTIC_SYSTEM.md")
+        project_skill = read(
+            ".agents/skills/project-runtime-development/SKILL.md"
+        )
 
         self.assertIn("Evidence is conditional", evidence)
         self.assertNotIn(
             "For testable behavior, initialize the record before production edits",
             evidence,
         )
-        self.assertIn("Close out only when durable state exists", heuristic)
-        self.assertNotIn("After the session goal is achieved", heuristic)
+        self.assertIn("earliest owning", project_skill)
+        self.assertIn("issue and public-safe devlog", project_skill)
+        self.assertIn("does not grant automatic issue creation", project_skill)
+        self.assertLessEqual(len(project_skill.encode("utf-8")), 8192)
+        self.assertFalse((ROOT / "core/policies/heuristic-system").exists())
+        self.assertNotIn("heuristic-inbox", evidence)
 
     def test_context_audit_reports_agent_docs_resolution(self) -> None:
         result = subprocess.run(

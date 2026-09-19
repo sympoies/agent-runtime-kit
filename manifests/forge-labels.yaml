@@ -274,9 +274,3 @@ labels:
     color: fef2c0
     description: Follow-up issue or unresolved investigation timeline.
     applies_to: [issue]
-
-  - name: "workflow::heuristic-records"
-    group: workflow
-    color: c2e0c6
-    description: Heuristic-system retained-records writeback PR (heuristic-inbox deliver).
-    applies_to: [pr]

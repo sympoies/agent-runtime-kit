@@ -2693,7 +2693,7 @@ preflight_selected_product_activation() {
 # removes provably owned symlinks and empty directories; a retired recursive-file
 # managed skill directory (real files, non-empty dir) is reported as skipped and
 # left in place, so a blind prune=ok is misleading. See the inbox case
-# core/policies/heuristic-system/error-inbox/sync-runtime-surfaces-prune-stale-dir-gap.
+# Historical prune regression coverage.
 # Sets PRUNE_LAST_SKIPPED and bumps PRUNE_SKIPPED_TOTAL.
 account_prune_skipped() {
   local product="$1"
@@ -4499,10 +4499,10 @@ print_summary() {
   if [ "$prune_status" = "review-needed" ]; then
     case "$PRODUCT" in
       hermes | both)
-        log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. Hermes runtime-kit skills are expected under external-skills/agent-runtime-kit. Any leftover local skills/<domain> entries are Hermes-native or historical content and must be reviewed before deletion; do not remove them blindly. Background: heuristic-system case sync-runtime-surfaces-prune-stale-dir-gap (archived)."
+        log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. Hermes runtime-kit skills are expected under external-skills/agent-runtime-kit. Any leftover local skills/<domain> entries are Hermes-native or historical content and must be reviewed before deletion; do not remove them blindly."
         ;;
       *)
-        log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. Review the paths above and remove any retired managed skill directory by hand. Background: heuristic-system case sync-runtime-surfaces-prune-stale-dir-gap (archived)."
+        log "note: prune-stale left $PRUNE_SKIPPED_TOTAL path(s) it does not own (real files / non-empty dirs that are not kit-owned symlinks); they were left untouched. Review the paths above and remove any retired managed skill directory by hand."
         ;;
     esac
   fi

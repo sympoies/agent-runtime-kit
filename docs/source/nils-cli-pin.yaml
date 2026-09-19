@@ -83,8 +83,6 @@ required_clis:
     min: "1.25.11"
   - bin: main-agent       # authenticated main-agent controller and worker lifecycle facade
     min: "1.25.11"
-  - bin: heuristic-inbox  # deliver + --label: records-branch PR writeback + default slug auto-suffixing + operation-record lifecycle + normalized skill/workflow/intent usage owners for closeout promotion
-    min: "1.21.17"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos
     min: "1.0.9"
   - bin: agent-runtime    # schema-v2 version policy + home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning

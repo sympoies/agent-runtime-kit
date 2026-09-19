@@ -80,8 +80,7 @@ the same rendered skills through its configured
 ## CLI boundary
 
 The `agent-runtime` command and the rest of the runtime surface
-(`agent-docs`, `agent-out`, `plan-tooling`, `forge-cli`,
-`heuristic-inbox`, and related tools) live in
+(`agent-docs`, `agent-out`, `plan-tooling`, `forge-cli`, and related tools) live in
 [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) and install via
 Homebrew.
 

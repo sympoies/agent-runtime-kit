@@ -631,7 +631,7 @@ run_tracking_closeout_gate_prereq_blockers_probe() {
   # locks the close-ready gate contract that the
   # deliver-plan-tracking-issue → plan-tracking-issue-closeout handoff
   # depends on; see
-  # core/policies/heuristic-system/error-inbox/tracking-closeout-review-state-complete-gap/.
+  # Historical tracking closeout regression.
   # Stays valid through the `tracking checkpoint --live` posting-path
   # change in `sympoies/nils-cli` because that change moved the posting
   # path, not the gate's blocker codes.

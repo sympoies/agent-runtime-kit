@@ -37,7 +37,7 @@ Outputs:
   `repo-retro.report.v2` result payload.
 - Top-level primary themes or through-lines that answer what the selected window was mainly about, synthesized from deterministic signals
   and clearly marked as inference when they go beyond direct CLI fields.
-- Traceable summary of repo identity, window metadata, commit type mix, authors, hotspots, validation signals, HEURISTIC_SYSTEM movement,
+- Traceable summary of repo identity, window metadata, commit type mix, authors, hotspots, validation signals, archival movement,
   optional input summaries, warnings, and source commands.
 - Optional local history records only when `repo-retro report --history-dir <dir> --write` is explicitly requested.
 - Clear note when no history was written, optional inputs were absent, the selected window had no commits, or the installed command is missing.
@@ -116,7 +116,7 @@ Then pass that explicit path with `--history-dir <dir> --write` only if the user
    - Confirm `schema_version` is `cli.repo-retro.report.v2`.
    - Confirm `result.schema` is `repo-retro.report.v2`.
    - Use `result.window`, `result.git.summary`, `result.git.commitTypes`, `result.git.authors`, `result.git.churnByClass`,
-     `result.git.archival`, `result.git.fileHotspots`, `result.git.testSignals`, `result.analysis`, `result.heuristicSystem`,
+     `result.git.archival`, `result.git.fileHotspots`, `result.git.testSignals`, `result.analysis`,
      `result.optionalInputs`, `result.warnings`, and `result.sources.commands`.
    - Lead the churn read with `result.git.churnByClass` (source / tests / productDocs / processArtifacts) rather than raw line totals, so
      process-doc authoring and archival do not dominate; `result.git.fileHotspots.topFiles` is commit-frequency ranked and each entry carries
@@ -127,11 +127,9 @@ Then pass that explicit path with `--history-dir <dir> --write` only if the user
 5. Synthesize the retrospective.
    - Lead with 1-3 primary themes or through-lines before detailed metrics.
    - Synthesize those themes from the CLI signals, such as commit type mix, file hotspots, recent commit subjects, validation signals,
-     HEURISTIC_SYSTEM movement, and optional typed inputs when provided.
+     archival movement, and optional typed inputs when provided.
    - Mark theme statements as inference when they connect multiple deterministic signals into a narrative about the work.
-   - Keep commit-type mix, hotspots, author summaries, validation signals, and HEURISTIC_SYSTEM movement compact.
-   - Treat Heuristic System records as read-only operational evidence. Do not create, mutate, promote, or archive inbox entries from this
-     workflow; session closeout policy owns that lifecycle through the direct CLI.
+   - Keep commit-type mix, hotspots, author summaries, validation signals, and archival movement compact.
    - Mark inference explicitly when connecting several deterministic signals into a habit, risk, or follow-up recommendation.
 
 6. Handle typed JSONL inputs.
@@ -149,12 +147,10 @@ Then pass that explicit path with `--history-dir <dir> --write` only if the user
 
 - `project-retro` is distinct from `daily-brief`: it reviews local repo engineering activity, while `daily-brief` synthesizes external source
   signals through `topic-radar`.
-- `project-retro` consumes the released `repo-retro` CLI. It does not own a duplicate git parser, HEURISTIC_SYSTEM parser, history writer, or
+- `project-retro` consumes the released `repo-retro` CLI. It does not own a duplicate git parser, history writer, or
   report schema implementation.
 - `project-retro` may summarize `skill-usage` or other workflow evidence only when it is provided as an explicit JSONL/path input or appears
   in local git history.
-- `project-retro` reads Heuristic System records but never replaces the
-  policy-owned heuristic lifecycle.
 - The CLI owns deterministic data collection and path-safe writes; the skill owns user-facing judgment, primary-theme synthesis, and
   follow-up framing.
 

@@ -1,11 +1,9 @@
 # Evidence Archive
 
 The evidence archive makes skill-usage evidence durable and queryable beyond
-the local agent-out runtime tree. It is the durability-and-query lane that
-sits beside the curated-lesson lane in
-[`heuristic-system/HEURISTIC_SYSTEM.md`](../heuristic-system/HEURISTIC_SYSTEM.md):
-the heuristic system retains hand-written lessons; the evidence archive retains
-the machine-emitted `skill-usage` records those lessons are drawn from.
+the local agent-out runtime tree. It retains machine-emitted `skill-usage`
+records; ordinary owner issues and the public-safe development log retain any
+human-readable chronology that must survive the session.
 
 ## Lifecycle
 
@@ -21,7 +19,7 @@ policy is the map, not a re-implementation of any of them.
    attributable to the surface and CLI version that wrote it.
 2. **Surface** — at session end, the parent session closeout procedure
    enumerates the **session's** records (read-only) and flags non-pass outcomes
-   as promotion candidates for the curated-lesson lane. This is awareness, not durability:
+   for owner routing. This is awareness, not durability:
    the runtime tree is scratch space that is **not** auto-reaped — records
    persist there until manually cleaned (`agent-out`) or migrated.
 3. **Migrate** — the direct `evidence migrate` CLI copies
@@ -133,20 +131,6 @@ record digest, and prunes only matching local run directories. Unarchived,
 unreadable, or non-record directories are retained and reported. This keeps the
 durability boundary unambiguous: migration proves archive retention first;
 pruning later bounds local runtime state without deleting archive evidence.
-
-## Promotion linkage
-
-A `skill-usage` record can link a heuristic-inbox promotion case
-(`promotion.heuristic_inbox_case`). This is the join between the two retention
-lanes:
-
-- `evidence migrate --promotion-only` migrates just the records that link a
-  case.
-- `evidence catalog --case-id <id>` and `evidence query` surface archived
-  records by case.
-
-Use this to trace a retained heuristic lesson back to the machine evidence that
-motivated it, and vice versa.
 
 ## When to migrate
 

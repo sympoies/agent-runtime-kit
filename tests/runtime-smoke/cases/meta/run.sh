@@ -291,67 +291,24 @@ run_agent_scope_lock_probe() {
   grep -q '"ok": true' "$validate_out"
 }
 
-run_heuristic_inbox_probe() {
-  local shared_root="$REPO_ROOT/core/policies/heuristic-system"
-  local inbox_dir="$shared_root/error-inbox"
-  local archived_case="$inbox_dir/archive/2026/deliver-gitlab-mr-skipped-pipeline-and-cleanup"
-  local operation_record="$shared_root/operation-records/ci-watch-exact-commit-keying"
-  local archived_record="$shared_root/operation-records/archive/2026/github-pr-required-check-gating"
-  local product out
-  require_meta_bin heuristic-inbox || return 1
-  test -f "$shared_root/HEURISTIC_SYSTEM.md"
-  test -d "$inbox_dir"
-  test -d "$archived_case"
-  test -d "$operation_record"
-  test -d "$archived_record"
-
-  for product in codex claude; do
-    out="$META_ARTIFACTS_DIR/heuristic-inbox.${product}.json"
-    (
-      cd "$META_WORKSPACE"
-      export AGENT_RUNTIME_PRODUCT="$product"
-      export AGENT_RUNTIME_HEURISTIC_SYSTEM_ROOT="$shared_root"
-      heuristic-inbox list \
-        --inbox-dir "$AGENT_RUNTIME_HEURISTIC_SYSTEM_ROOT/error-inbox" \
-        --include-archived \
-        --format json
-    ) >"$out" 2>&1
-    grep -q '"schema_version": "cli.heuristic-inbox.list.v1"' "$out"
-    grep -q '"ok": true' "$out"
-    grep -q 'Deliver GitLab MR Skipped Pipeline And Cleanup Gaps' "$out"
-  done
-
-  heuristic-inbox verify "$archived_case" --strict --format json \
-    >"$META_ARTIFACTS_DIR/heuristic-inbox.archived-case.verify.json"
-  grep -q '"ok": true' "$META_ARTIFACTS_DIR/heuristic-inbox.archived-case.verify.json"
-
-  heuristic-inbox verify "$operation_record" --strict --format json \
-    >"$META_ARTIFACTS_DIR/heuristic-inbox.operation-record.verify.json"
-  grep -q '"ok": true' "$META_ARTIFACTS_DIR/heuristic-inbox.operation-record.verify.json"
-
-  heuristic-inbox verify "$archived_record" --strict --format json \
-    >"$META_ARTIFACTS_DIR/heuristic-inbox.archived-record.verify.json"
-  grep -q '"ok": true' "$META_ARTIFACTS_DIR/heuristic-inbox.archived-record.verify.json"
-}
-
-run_heuristic_session_closeout_probe() {
-  local body="$REPO_ROOT/core/policies/heuristic-system/HEURISTIC_SYSTEM.md"
-  local shared_root="$REPO_ROOT/core/policies/heuristic-system"
-  local out="$META_ARTIFACTS_DIR/heuristic-session-closeout.contract.txt"
+run_project_runtime_development_probe() {
+  local body="$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
+  local retired_root="$REPO_ROOT/core/policies/heuristic-system"
+  local out="$META_ARTIFACTS_DIR/project-runtime-development.contract.txt"
+  local bytes
 
   test -f "$body"
-  test -d "$shared_root/error-inbox"
-  test -d "$shared_root/operation-records"
-  grep -q "Close out only when durable state exists" "$body"
-  grep -q "ordinary successful session" "$body"
-  grep -q "invoke \`heuristic-inbox\` directly" "$body"
-  grep -q "archive migration dry-run" "$body"
-  grep -q "Prune source evidence only after verified migration" "$body"
-  grep -q "Report retained, archived, skipped, and blocked records" "$body"
+  test ! -e "$retired_root"
+  bytes="$(wc -c <"$body" | tr -d ' ')"
+  test "$bytes" -le 8192
+  grep -Fq 'earliest owning layer' "$body"
+  grep -Fq 'issue and public-safe devlog' "$body"
+  grep -Fq 'does not grant automatic issue creation' "$body"
+  grep -Fq 'do not create a parallel inbox' "$body"
   {
     printf 'body=%s\n' "$body"
-    printf 'shared_root=%s\n' "$shared_root"
-    printf 'verified=session-goal-trigger commit-boundary retained-record-routing\n'
+    printf 'bytes=%s\n' "$bytes"
+    printf 'verified=owner-routing issue-boundary compact-context retired-root-absent\n'
   } >"$out"
 }
 
@@ -3386,7 +3343,7 @@ PY
 run_meta_outcome_routing_probe() {
   local files_policy="$REPO_ROOT/core/policies/files-hooks-validation.md"
   local git_policy="$REPO_ROOT/core/policies/git-delivery.md"
-  local heuristic_policy="$REPO_ROOT/core/policies/heuristic-system/HEURISTIC_SYSTEM.md"
+  local project_skill="$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
   local evidence_policy="$REPO_ROOT/core/policies/evidence-archive/EVIDENCE_ARCHIVE.md"
 
   grep -Fq '## Parent Workflow Routing' "$files_policy" || {
@@ -3406,12 +3363,13 @@ run_meta_outcome_routing_probe() {
     echo "runtime-smoke meta: git policy missing pre-PR dispatcher routing" >&2
     return 1
   }
-  grep -Fq '## Session Closeout Procedure' "$heuristic_policy" || {
-    echo "runtime-smoke meta: heuristic policy missing session closeout procedure" >&2
+  grep -Fq '## Self-Improvement Loop' "$project_skill" || {
+    echo "runtime-smoke meta: project skill missing self-improvement loop" >&2
     return 1
   }
-  grep -Fq 'invoke `heuristic-inbox` directly' "$heuristic_policy" || {
-    echo "runtime-smoke meta: heuristic policy missing direct inbox routing" >&2
+  grep -Fq 'earliest owning layer' "$project_skill" &&
+    grep -Fq 'does not grant automatic issue creation' "$project_skill" || {
+    echo "runtime-smoke meta: project skill missing owner and provider boundaries" >&2
     return 1
   }
   grep -Fq 'session closeout procedure' "$evidence_policy" &&
@@ -3498,8 +3456,7 @@ record_case "meta.outcome-routing.scope-lock" "scope lock create and validate pa
 record_case "meta.bootstrap" "project-local bootstrap shim executed fixture script" run_project_local_shim_probe bootstrap
 record_case "meta.deploy" "project-local deploy shim executed fixture script" run_project_local_shim_probe deploy
 record_case "meta.execution-capsule" "execution capsule workflow rendered with direct supervised and host-access boundaries" run_execution_capsule_probe
-record_case "meta.outcome-routing.heuristic-inbox" "heuristic inbox shared-root list and strict verification passed" run_heuristic_inbox_probe
-record_case "meta.outcome-routing.session-closeout" "session closeout contract preserves retained heuristic records on main" run_heuristic_session_closeout_probe
+record_case "meta.project-runtime-development" "project development owner routing is compact and the retired heuristic root is absent" run_project_runtime_development_probe
 record_case "meta.create-skill" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
 record_case "meta.create-project-skill" "project skill lifecycle create surface and fixture passed" run_create_project_skill_probe
 record_case "meta.remove-skill" "skill lifecycle removal surface and governance fixture passed" run_remove_skill_probe

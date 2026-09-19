@@ -53,7 +53,6 @@ ACTIVE_BASENAMES = {
     "AGENTS.md",
     "AGENT_HOME.md",
     "DEVELOPMENT.md",
-    "HEURISTIC_SYSTEM.md",
     "README.md",
     "SKILL.md",
 }

@@ -10,6 +10,8 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 
 - Read [`AGENTS.md`](AGENTS.md), the canonical repository policy.
   [`CLAUDE.md`](CLAUDE.md) imports it for Claude Code.
+- Use [`.agents/skills/project-runtime-development/SKILL.md`](.agents/skills/project-runtime-development/SKILL.md)
+  for the repository-specific validation and self-improvement loop.
 - Identify the source owner and every rendered, manifest, fixture, golden, and
   product-adapter surface affected by the change.
 - Inspect the active edit contract and declared finish-line:
@@ -67,7 +69,8 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 | Change | Canonical guidance |
 | --- | --- |
 | Host setup, runtime sync, private overlays, hooks | [`Development reference`](docs/source/development-reference.md#setup) |
-| Skill creation or removal | Managed `meta:create-skill` / `meta:remove-skill` workflows and [`Skill lifecycle changes`](docs/source/development-reference.md#skill-lifecycle-changes) |
+| Managed runtime skill creation or removal | Managed `meta:create-skill` / `meta:remove-skill` workflows and [`Skill lifecycle changes`](docs/source/development-reference.md#skill-lifecycle-changes) |
+| Project-local skill creation or removal | Managed `meta:create-project-skill` / `meta:remove-project-skill` workflows |
 | Coupled or pinned `nils-cli` work | [`nils-cli version workflows`](docs/source/nils-cli-version-workflows.md) |
 | Render and golden refresh | [`Build and render`](docs/source/development-reference.md#build-and-render) |
 | Targeted validation and smoke modes | [`Validation reference`](docs/source/development-reference.md#validation) |

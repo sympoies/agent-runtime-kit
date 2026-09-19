@@ -2,7 +2,7 @@
 # Validate the SUPPORT_MATRIX surface registry shape.
 #
 # This focused smoke check covers the schema constraints that matter for
-# `agent-runtime render --target support-matrix`: 17 canonical surfaces, all
+# `agent-runtime render --target support-matrix`: 16 canonical surfaces, all
 # three products (codex, claude, hermes) present, typed acceptance entries,
 # exactly one command/note per entry, and exit-status-only success predicates.
 #
@@ -208,7 +208,7 @@ begin
       end
     end
   end
-  fail_with("expected 17 surfaces, got #{surfaces.length}") unless surfaces.length == 17
+  fail_with("expected 16 surfaces, got #{surfaces.length}") unless surfaces.length == 16
   run_acceptance!(executable_entries, root) if execute_acceptance
 rescue Psych::Exception => e
   fail_with("YAML parse failed: #{e.message}")
