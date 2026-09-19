@@ -294,11 +294,13 @@ run_agent_scope_lock_probe() {
 run_project_runtime_development_probe() {
   local body="$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
   local retired_root="$REPO_ROOT/core/policies/heuristic-system"
+  local retired_legacy_root="$REPO_ROOT/heuristic-system"
   local out="$META_ARTIFACTS_DIR/project-runtime-development.contract.txt"
   local bytes
 
   test -f "$body"
   test ! -e "$retired_root"
+  test ! -e "$retired_legacy_root"
   bytes="$(wc -c <"$body" | tr -d ' ')"
   test "$bytes" -le 2048
   grep -Fq 'earliest owning' "$body"

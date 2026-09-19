@@ -603,6 +603,7 @@ when = "always"
             + PROJECT_SKILL_CONTEXT_DELTA_BYTES,
         )
         self.assertFalse((ROOT / "core/policies/heuristic-system").exists())
+        self.assertFalse((ROOT / "heuristic-system").exists())
         self.assertNotIn("heuristic-inbox", evidence)
 
     def test_retired_heuristic_routes_have_no_active_consumers(self) -> None:
