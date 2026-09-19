@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -165,6 +166,46 @@ puts JSON.generate(entries)
             ["ci", "bash tests/runtime-smoke/run.sh --mode convergence"],
             manifest_acceptance,
         )
+
+    def test_position_eight_executes_and_gates_the_convergence_entry(self) -> None:
+        canonical = (ROOT / "manifests/surfaces.yaml").read_text(encoding="utf-8")
+        convergence_command = (
+            'command: "bash tests/runtime-smoke/run.sh --mode convergence"'
+        )
+        self.assertEqual(canonical.count(convergence_command), 1)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            sentinel = temporary_root / "convergence-executed"
+            replacement = (
+                'command: "printf convergence-executed > '
+                f'{shlex.quote(str(sentinel))}; exit 73"'
+            )
+            manifest = temporary_root / "surfaces.yaml"
+            manifest.write_text(
+                canonical.replace(convergence_command, replacement),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    "scripts/ci/validate-surfaces-manifest.sh",
+                    "--execute-acceptance",
+                    str(manifest),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(
+                sentinel.read_text(encoding="utf-8"), "convergence-executed"
+            )
+            self.assertIn("exited 73, expected 0", result.stderr)
 
 
 if __name__ == "__main__":
