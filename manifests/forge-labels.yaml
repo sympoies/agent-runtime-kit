@@ -274,3 +274,9 @@ labels:
     color: fef2c0
     description: Follow-up issue or unresolved investigation timeline.
     applies_to: [issue]
+
+  - name: "workflow::heuristic-records"
+    group: workflow
+    color: c2e0c6
+    description: Deprecated compatibility label for historical retained-record PRs; do not use for new work.
+    applies_to: [pr]

@@ -545,10 +545,10 @@ dispositions:
     status: reviewed
     user_outcome: no
     destination: internal-workflow
-    parent_intents: [session-closeout]
+    parent_intents: [project-dev, delivery]
     current_clis: [skill-usage]
     current_hooks: [skill usage reminder]
-    enforcement_point: "Outermost workflow and closeout own one linked usage record."
+    enforcement_point: "Outermost retained workflow owns one linked usage record."
     migration_path: "Keep the v2 CLI record and remove nested user-facing invocation."
     compatibility_required: false
     live_cleanup_required: true
