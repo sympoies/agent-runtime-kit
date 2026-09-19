@@ -142,15 +142,7 @@ the acceptance lane, and the current ship state.
   server configuration today (the same stance as codex / claude).
 - Support today: **not-shipped**.
 
-### 13. Heuristic system (curated retained records)
-
-- Hermes reads from: the shared policy root
-  `core/policies/heuristic-system/`, referenced through `SOUL.md` and the
-  rendered skills.
-- Source / install mechanism: shared policy root (no per-product render).
-- Support today: **shipped**.
-
-### 14. Runtime state (`state_home`)
+### 13. Runtime state (`state_home`)
 
 - Hermes reads from: `~/.hermes` (override via the `HERMES_HOME` env var).
 - Source: `manifests/runtime-roots.yaml` hermes `state_home`.
@@ -160,7 +152,7 @@ the acceptance lane, and the current ship state.
   receipt or hook parity with Codex and Claude.
 - Support today: **shipped**.
 
-### 15. Local and external skill roots
+### 14. Local and external skill roots
 
 - Hermes reads from: `~/.hermes/skills/<domain>/<skill>/SKILL.md` and every
   configured `skills.external_dirs` root (nested filesystem discovery), the
@@ -180,12 +172,12 @@ the acceptance lane, and the current ship state.
   and return `review-needed` for manual migration instead of being mutated.
 - Support today: **shipped**.
 
-### 16. Codex hook registration (`config.toml` managed block)
+### 15. Codex hook registration (`config.toml` managed block)
 
 - The Codex `config.toml` managed block is a Codex-specific primitive.
 - Support today: **not-applicable**.
 
-### 17. Prompt-mode delegation policy (`AGENT_HOME.md`)
+### 16. Prompt-mode delegation policy (`AGENT_HOME.md`)
 
 - Hermes reads no prompt-mode delegation policy from `AGENT_HOME.md`; the
   Codex-only delegation block is omitted from
@@ -210,8 +202,7 @@ the acceptance lane, and the current ship state.
 | 10 | Output styles | not-applicable |
 | 11 | Status line | not-applicable |
 | 12 | MCP servers | not-shipped |
-| 13 | Heuristic system | shipped |
-| 14 | Runtime state | shipped |
-| 15 | Local skill root | shipped |
-| 16 | Codex hook registration | not-applicable |
-| 17 | Prompt-mode delegation policy | not-applicable |
+| 13 | Runtime state | shipped |
+| 14 | Local skill root | shipped |
+| 15 | Codex hook registration | not-applicable |
+| 16 | Prompt-mode delegation policy | not-applicable |

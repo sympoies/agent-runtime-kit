@@ -281,21 +281,7 @@ a uniform shape:
 - Support today: **not shipped**. Out-of-scope by design (secret
   boundary).
 
-### 13. Heuristic system (curated retained records)
-
-- Claude reads from: `$HOME/.claude/HEURISTIC_SYSTEM.md` plus
-  `heuristic-system/operation-records/`,
-  `heuristic-system/error-inbox/`.
-- Source: shared root under `core/policies/heuristic-system/`
-  (HEURISTIC_SYSTEM.md + error-inbox + operation-records).
-- Install mechanism: currently a docs surface; consumed via the
-  `heuristic-inbox` nils-cli binary with explicit `--inbox-dir`
-  arguments rather than a fixed install path.
-- Acceptance lane: runtime-smoke deterministic mode exercises the
-  policy-owned `heuristic-inbox` CLI path (position 8 / meta domain).
-- Support today: **shipped (shared policy root)**.
-
-### 14. Runtime state (`state_home`)
+### 13. Runtime state (`state_home`)
 
 - Claude reads from: not directly — `state_home` is owned by parent workflows
   and hooks via the `agent-out` CLI and product-specific env vars
@@ -310,19 +296,19 @@ a uniform shape:
   an isolated runtime home.
 - Support today: **shipped (env var + runtime allocator)**.
 
-### 15. Codex local skill root (`$CODEX_HOME/skills/<d>/<s>/`)
+### 14. Codex local skill root (`$CODEX_HOME/skills/<d>/<s>/`)
 
 - This is a retired Codex-specific layout. Claude uses plugin-scoped skill
   discovery (section 5).
 - Support today: **not-applicable**.
 
-### 16. Codex hook registration (`config.toml` managed block)
+### 15. Codex hook registration (`config.toml` managed block)
 
 - This is a Codex-specific primitive. Claude uses the `settings.json` hook
   registration described in section 9.
 - Support today: **not-applicable**.
 
-### 17. Prompt-mode delegation policy (`AGENT_HOME.md`)
+### 16. Prompt-mode delegation policy (`AGENT_HOME.md`)
 
 - The Codex-only reviewer delegation block is omitted from the rendered Claude
   home prompt; Claude uses its native reviewer defaults.
@@ -344,11 +330,10 @@ a uniform shape:
 | 10 | `output-styles/<n>.md` | no | — | n/a | n/a |
 | 11 | `statusLine` | no | — | n/a | n/a |
 | 12 | MCP servers | no | — | n/a | n/a |
-| 13 | Heuristic system | yes | shared policy root | 2.1.145 | v1.8.0 (heuristic-inbox) |
-| 14 | `state_home` | yes | env var + `agent-out` CLI allocation | 2.1.145 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
-| 15 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | Claude uses plugin-scoped discovery (row 5) | n/a | n/a |
-| 16 | Codex `config.toml` hook ingress | not-applicable | Claude uses row 9 | n/a | n/a |
-| 17 | prompt-mode delegation policy | not-applicable | Codex-only block omitted | n/a | n/a |
+| 13 | `state_home` | yes | env var + `agent-out` CLI allocation | 2.1.145 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
+| 14 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | Claude uses plugin-scoped discovery (row 5) | n/a | n/a |
+| 15 | Codex `config.toml` hook ingress | not-applicable | Claude uses row 9 | n/a | n/a |
+| 16 | prompt-mode delegation policy | not-applicable | Codex-only block omitted | n/a | n/a |
 
 Status legend:
 

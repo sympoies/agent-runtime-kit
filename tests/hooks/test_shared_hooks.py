@@ -4685,7 +4685,7 @@ exit 64
             assert decision is not None
             failure_reason = str(decision.get("reason", ""))
             self.assertIn("L1 issue-follow-up", failure_reason)
-            self.assertIn("heuristic-inbox", failure_reason)
+            self.assertIn("earliest owning repository", failure_reason)
             self.assertIn("Do not create", failure_reason)
 
             waiver_env = {

@@ -126,27 +126,27 @@ dispositions:
   - id: meta.heuristic-inbox
     status: reviewed
     user_outcome: no
-    destination: internal-workflow
-    parent_intents: [session-closeout]
-    current_clis: [heuristic-inbox]
+    destination: remove
+    parent_intents: [project-dev]
+    current_clis: []
     current_hooks: []
-    enforcement_point: "Heuristic-system policy and typed inbox transitions."
-    migration_path: "Invoke directly only when parent closeout identifies a warranted durable gap."
+    enforcement_point: "Project runtime development routes authorized durable gaps to ordinary canonical issues."
+    migration_path: "Retire the dedicated inbox; use issue-follow-up only when durable cross-session work remains."
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Curated lesson routing is an internal closeout decision."
+    rationale: "The parallel retained-record inbox is replaced by ordinary owner issues and the public-safe devlog."
   - id: meta.heuristic-session-closeout
     status: reviewed
     user_outcome: no
-    destination: policy
-    parent_intents: [session-closeout]
-    current_clis: [heuristic-inbox, evidence, agent-out]
+    destination: merge
+    parent_intents: [project-dev]
+    current_clis: [evidence, agent-out]
     current_hooks: []
-    enforcement_point: "Session-closeout policy owns ordering and promotion judgment."
-    migration_path: "Run the ordered closeout procedure from the outermost session workflow."
+    enforcement_point: "Evidence-control-plane closeout is conditional and event-driven; project follow-up uses ordinary issues."
+    migration_path: "Merge warranted retention into the outermost owning workflow; perform no automatic session-end bookkeeping."
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Session bookkeeping should happen after the user outcome without a separate skill choice."
+    rationale: "The dedicated closeout lifecycle is removed; surviving evidence retention remains conditional."
   - id: meta.create-skill
     status: reviewed
     example_request: "Add a new governed runtime-kit skill"
@@ -307,11 +307,11 @@ dispositions:
     status: reviewed
     user_outcome: no
     destination: internal-workflow
-    parent_intents: [session-closeout]
+    parent_intents: [project-dev]
     current_clis: [evidence]
     current_hooks: []
     enforcement_point: "Evidence-archive policy and typed migration transaction."
-    migration_path: "Run dry-run-first from the outermost session closeout."
+    migration_path: "Run dry-run-first from the outermost workflow only when reviewed evidence needs durable retention."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Evidence migration is retention bookkeeping."
@@ -319,11 +319,11 @@ dispositions:
     status: reviewed
     user_outcome: no
     destination: internal-workflow
-    parent_intents: [session-closeout]
+    parent_intents: [project-dev]
     current_clis: [evidence]
     current_hooks: []
     enforcement_point: "Archived-digest verification and source-prune transaction."
-    migration_path: "Run only after verified migration from the outermost session closeout."
+    migration_path: "Run only for an approved set after verified migration from the outermost owning workflow."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Source pruning is internal retention maintenance."
@@ -545,10 +545,10 @@ dispositions:
     status: reviewed
     user_outcome: no
     destination: internal-workflow
-    parent_intents: [session-closeout]
+    parent_intents: [project-dev, delivery]
     current_clis: [skill-usage]
     current_hooks: [skill usage reminder]
-    enforcement_point: "Outermost workflow and closeout own one linked usage record."
+    enforcement_point: "Outermost retained workflow owns one linked usage record."
     migration_path: "Keep the v2 CLI record and remove nested user-facing invocation."
     compatibility_required: false
     live_cleanup_required: true

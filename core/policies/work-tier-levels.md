@@ -216,7 +216,7 @@ delete what is left.
 
 | `Exit:` | Action | When |
 | --- | --- | --- |
-| `open-issue` | Open a tracked record carrying the outstanding work, then `git rm` the capture | The work is real but not finished now. Any tier — an ordinary issue is enough, do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, an in-repo `core/policies/heuristic-system/error-inbox/<slug>/ENTRY.md` is the accepted form |
+| `open-issue` | Open a tracked record carrying the outstanding work, then `git rm` the capture | The work is real but not finished now. Any tier — an ordinary issue is enough; do not manufacture an L1/L2 plan to justify the exit. If the provider cannot accept the record, keep the capture staged until it can take a valid exit instead of creating a second tracker. |
 | `promote-to-plan` | `git mv` into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` | The work becomes a tracked L2 plan |
 | `canonise` | `git mv` into the owning domain doc or `docs/source/` | The content is durable canon that outlives the change |
 | `retire` | `git rm` | Shipped or abandoned — the default |
@@ -229,8 +229,8 @@ Rules that keep this true:
   declaration as a `canonise` that was never executed.
 - **No file outside `docs/discussions/` may link to a capture inside it.** The
   invariant is exactly: nothing outside the directory may reference a
-  `docs/discussions/<YYYY-MM-DD>-<slug>.md` path. A devlog entry, an error-inbox
-  `ENTRY.md`, a README, or a test that points at a capture turns staging into
+  `docs/discussions/<YYYY-MM-DD>-<slug>.md` path. A devlog entry, a provider
+  issue, a README, or a test that points at a capture turns staging into
   storage, because deleting the capture then breaks a reference. Quote the
   conclusion instead of linking the file. The directory's own `README.md` and a
   bare `docs/discussions/` directory mention are both exempt — neither pins a

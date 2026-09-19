@@ -684,64 +684,8 @@ surfaces:
             descriptive_only: true
         source_manifest:
           - "docs/source/harness-shape-hermes.md#12-mcp-servers-per-user-mcp-config"
-  - id: heuristic-system
-    ordinal: 13
-    name: "heuristic system (curated retained records)"
-    products:
-      codex:
-        state: shipped
-        mechanism: "shared policy root; consumed by `heuristic-inbox` binary (`--inbox-dir` case mechanics, `deliver --label` records-branch PR writeback, and operation-record archival)"
-        source_artifacts:
-          - core/policies/heuristic-system/
-        min_product: "0.130.0"
-        min_nils_cli: "v1.8.0"
-        acceptance:
-          - kind: ci
-            note: "gate 8 (runtime-smoke deterministic, meta domain)"
-            descriptive_only: true
-          - kind: live
-            note: "—"
-            descriptive_only: true
-        source_manifest:
-          - "docs/source/harness-shape-codex.md#13-heuristic-system-curated-retained-records"
-          - core/policies/heuristic-system/
-      claude:
-        state: shipped
-        mechanism: "same shared policy root"
-        source_artifacts:
-          - core/policies/heuristic-system/
-        min_product: "2.1.145"
-        min_nils_cli: "v1.8.0"
-        acceptance:
-          - kind: ci
-            note: "gate 8 (runtime-smoke deterministic, meta domain)"
-            descriptive_only: true
-          - kind: live
-            note: "—"
-            descriptive_only: true
-        source_manifest:
-          - "docs/source/harness-shape-claude.md#13-heuristic-system-curated-retained-records"
-          - core/policies/heuristic-system/
-
-      hermes:
-        state: shipped
-        mechanism: "shared policy root; Hermes references `core/policies/heuristic-system/` through SOUL.md and the rendered skills"
-        source_artifacts:
-          - "core/policies/heuristic-system/"
-        min_product: "0.17.0"
-        min_nils_cli: "v1.20.0"
-        acceptance:
-          - kind: ci
-            note: "--"
-            descriptive_only: true
-          - kind: live
-            note: "--"
-            descriptive_only: true
-        source_manifest:
-          - "docs/source/harness-shape-hermes.md#13-heuristic-system-curated-retained-records"
-          - "core/policies/heuristic-system/HEURISTIC_SYSTEM.md"
   - id: runtime-state
-    ordinal: 14
+    ordinal: 13
     name: "runtime state (`state_home`)"
     products:
       codex:
@@ -760,7 +704,7 @@ surfaces:
             note: "—"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#14-runtime-state-statehome"
+          - "docs/source/harness-shape-codex.md#13-runtime-state-statehome"
           - manifests/runtime-roots.yaml
           - manifests/product-capabilities.yaml
       claude:
@@ -778,7 +722,7 @@ surfaces:
             note: "—"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-claude.md#14-runtime-state-statehome"
+          - "docs/source/harness-shape-claude.md#13-runtime-state-statehome"
           - manifests/runtime-roots.yaml
           - manifests/product-capabilities.yaml
 
@@ -797,10 +741,10 @@ surfaces:
             note: "--"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-hermes.md#14-runtime-state-statehome"
+          - "docs/source/harness-shape-hermes.md#13-runtime-state-statehome"
           - "manifests/runtime-roots.yaml#hermes"
   - id: codex-local-skill-root
-    ordinal: 15
+    ordinal: 14
     name: "Codex local skill root (`$CODEX_HOME/skills/<d>/<s>/`)"
     products:
       codex:
@@ -817,7 +761,7 @@ surfaces:
             note: "—"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#15-codex-local-skill-root-skillsdomainskillskillmd"
+          - "docs/source/harness-shape-codex.md#14-codex-local-skill-root-skillsdomainskillskillmd"
           - targets/codex/link-map.yaml
           - manifests/product-capabilities.yaml
       claude:
@@ -852,10 +796,10 @@ surfaces:
             note: "--"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-hermes.md#15-local-and-external-skill-roots"
+          - "docs/source/harness-shape-hermes.md#14-local-and-external-skill-roots"
           - "targets/hermes/link-map.yaml"
   - id: codex-hook-registration
-    ordinal: 16
+    ordinal: 15
     name: "Codex hook registration (`config.toml` setup-owned ingress)"
     products:
       codex:
@@ -876,7 +820,7 @@ surfaces:
             note: "—"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#16-codex-hook-registration-configtoml-managed-block"
+          - "docs/source/harness-shape-codex.md#15-codex-hook-registration-configtoml-managed-block"
           - targets/codex/link-map.yaml
       claude:
         state: not-applicable
@@ -909,9 +853,9 @@ surfaces:
             note: "--"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-hermes.md#16-codex-hook-registration-configtoml-managed-block"
+          - "docs/source/harness-shape-hermes.md#15-codex-hook-registration-configtoml-managed-block"
   - id: prompt-mode-delegation-policy
-    ordinal: 17
+    ordinal: 16
     name: "prompt-mode delegation policy (`AGENT_HOME.md`)"
     products:
       codex:
@@ -930,7 +874,7 @@ surfaces:
             note: "live Codex session"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#17-work-tier-delegation-policy-corepolicieswork-tier-levelsmd"
+          - "docs/source/harness-shape-codex.md#16-work-tier-delegation-policy-corepolicieswork-tier-levelsmd"
           - AGENT_HOME.md
       claude:
         state: not-applicable
@@ -962,5 +906,5 @@ surfaces:
             note: "--"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-hermes.md#17-prompt-mode-delegation-policy-agenthomemd"
+          - "docs/source/harness-shape-hermes.md#16-prompt-mode-delegation-policy-agenthomemd"
           - "AGENT_HOME.md"

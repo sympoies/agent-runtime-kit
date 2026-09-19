@@ -75,6 +75,14 @@
   here; a second copy is how the instruction drifted across repositories in the
   first place.
 
+## Project Development Workflow
+
+- For material repository changes, use
+  `.agents/skills/project-runtime-development/SKILL.md` together with the
+  `project-dev` intent. It routes recurring gaps to the earliest owning test,
+  diagnostic, policy, skill, or ordinary issue instead of a parallel retained
+  record system.
+
 ## Project Skills
 
 - Project-local skills live under `.agents/skills/<name>/`.

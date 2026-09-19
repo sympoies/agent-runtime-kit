@@ -99,9 +99,9 @@ Closeout is event-driven:
 - If evidence must survive the session, review the exact candidates, run the
   governed migration dry-run, apply only the approved set, then verify before
   any source prune.
-- Route reusable runtime-kit workflow gaps to `heuristic-inbox`; route product,
-  test, or CI defects to their repository owner. Creating provider state still
-  requires the active tier and user authority.
+- Route a reusable gap to the earliest owning test, diagnostic, policy, skill,
+  or ordinary issue in its canonical repository. Creating provider state still
+  requires the active tier and user authority; do not create a parallel inbox.
 
 - Never create a duplicate closeout-owned usage record.
 - Retention excludes empty, transient, failed-setup, or unreviewed artifacts and

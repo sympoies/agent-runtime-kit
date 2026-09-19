@@ -93,10 +93,9 @@ Failure modes:
      generation when the source material is requirements, design, feasibility,
      product, architecture, customer-facing discussion, review findings, risks,
      lessons learned, validation guardrails, or fix-later backlog.
-   - For unresolved HEURISTIC_SYSTEM workflow gaps that should be versioned but
-     are not ready for a fix, use
-     `core/policies/heuristic-system/error-inbox/<slug>/ENTRY.md` instead of a
-     `docs/discussions/` capture.
+   - For an unresolved workflow gap that needs durable follow-up, open or update
+     an ordinary issue in the earliest owning repository when authorized; do not
+     use a `docs/discussions/` capture as a backlog or create a parallel inbox.
    - Treat `docs/discussions/<YYYY-MM-DD>-<slug>.md` as the default home. Use a
      `docs/plans/<YYYY-MM-DD>-<slug>/` bundle only for a document that will feed
      an executed-and-archived plan; promote into domain docs/runbooks (or
