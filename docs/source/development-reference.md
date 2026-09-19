@@ -405,6 +405,22 @@ Run the current full local gate:
 bash scripts/ci/all.sh
 ```
 
+Print its coverage boundary without running the gates:
+
+```bash
+bash scripts/ci/all.sh --describe-coverage
+```
+
+The local command runs the canonical repository stack against the active
+`nils-cli` surface. It requires a clean committed source because position 8
+executes convergence acceptance from the surface registry; a dirty source is
+rejected before position 1 instead of after the earlier gates have run. Use
+targeted checks while editing, then commit the reviewed change before the
+canonical pre-PR run. GitHub CI replays that stack at the minimum and validated
+release lanes. Host/authenticated product acceptance remains conditional; run
+it when the affected contract calls for it rather than describing an ordinary
+local pass as proof of that lane.
+
 That currently performs:
 
 1. nils-cli minimum/validated policy: `agent-runtime doctor --class
@@ -442,15 +458,32 @@ That currently performs:
     `scripts/ci/product-leak-allow.yaml`.
 16. `bash tests/memory-runtime/run.sh` — memory policy, retired-reference, and
     product-routing acceptance.
-17. `python3 tests/ci/test_policy_simplification.py` and
+17. `python3 tests/ci/test_ci_gate_coverage.py`,
+    `python3 tests/ci/test_policy_simplification.py`, and
     `python3 tests/ci/test_context_budget_skill_bodies.py` plus the
-    context-budget audit self-test/check — rendered home prompts, resolved edit
-    requirements, intent routing, validation deduplication, unchanged-prompt
-    budgets, and per-skill rendered body budgets. Skill-body surfaces are
-    discovered from `build/<product>/plugins/*/skills/*/SKILL.md` rather than
-    listed inline, so a new oversized skill fails the gate on the commit that
-    adds it; a body over target needs an `allow`/`reason`/`tracking` override in
+    context-budget audit self-test/check — executable coverage disclosure,
+    rendered home prompts, resolved edit requirements, intent routing,
+    validation deduplication, unchanged-prompt budgets, and per-skill rendered
+    body budgets. Skill-body surfaces are discovered from
+    `build/<product>/plugins/*/skills/*/SKILL.md` rather than listed inline, so
+    a new oversized skill fails the gate on the commit that adds it; a body over
+    target needs an `allow`/`reason`/`tracking` override in
     `SKILL_BODY_OVERRIDES`.
+
+Position 6 is deliberately a consistency check, not an independent semantic
+oracle: it regenerates committed goldens from the same canonical source before
+comparing them. The repository-wide audit behind #148 found these semantic
+owners for the rendered classes:
+
+| Rendered class | Position 6 proves | Independent semantic owners |
+| --- | --- | --- |
+| Home prompts | source/render agreement | policy-simplification and context-budget contracts at position 17 |
+| Product skills and reviewer agents | source/render agreement | skill governance, exposure, sandbox-install, deterministic-smoke, and product-leak gates at positions 2 and 8-15 |
+| Support matrix | source/render agreement | surface-manifest acceptance and version-baseline consistency at positions 8 and 14 |
+
+Add or change a semantic invariant at its lowest stable owner and capture a
+meaningful failing mutation there. A refreshed golden alone is never evidence
+that the invariant is protected.
 
 Position 1 retains the silent-drift protection while separating admission from
 reproducibility. As of nils-cli v1.25.0 the schema-v2 doctor owns stable-version

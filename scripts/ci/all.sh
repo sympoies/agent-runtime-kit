@@ -4,9 +4,9 @@
 # Linear, ordered gate stack — do not parallelize. Each position prints a
 # banner, runs its check, reports its elapsed wall-clock, and exits non-zero on
 # the first failure. Positions are NOT run concurrently: several positions
-# invoke `agent-runtime render` against the shared render cache and position 8's
-# convergence acceptance asserts a clean working tree, so overlapping positions
-# race the cache and that clean-tree check (measured flaky). See issue #689.
+# invoke `agent-runtime render` against the shared render cache, which is not
+# concurrency-safe, and position 8 executes clean-source convergence acceptance.
+# See issue #689.
 #
 # Compatibility: must run on macOS (system bash 3.2) and Linux runners.
 # Avoid associative arrays, mapfile, and `${var,,}` lowercasing.
@@ -19,6 +19,24 @@
 
 set -euo pipefail
 
+describe_coverage() {
+  cat <<'EOF'
+ci/all.sh coverage boundary:
+- canonical: positions 1-17 run against the active nils-cli surface
+- consistency: position 6 proves source/render agreement, not semantic invariants
+- provider CI: replays the canonical stack at minimum and validated nils-cli release lanes
+- committed-state: position 8 runs convergence; dirty sources stop before position 1
+- conditional: host/authenticated product acceptance runs only when affected
+EOF
+}
+
+if [ "${1:-}" = "--describe-coverage" ]; then
+  describe_coverage
+  exit 0
+fi
+
+describe_coverage
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -28,6 +46,16 @@ if git_local_env="$(git rev-parse --local-env-vars 2>/dev/null)"; then
   while IFS= read -r env_name; do
     [[ -n "$env_name" ]] && unset "$env_name"
   done <<<"$git_local_env"
+fi
+
+if ! source_status="$(git status --porcelain --untracked-files=normal)"; then
+  echo "ci/all.sh: could not determine whether the source is clean" >&2
+  exit 1
+fi
+if [ -n "$source_status" ]; then
+  echo "ci/all.sh: canonical gate requires a clean committed source because position 8 executes convergence acceptance" >&2
+  echo "ci/all.sh: use focused checks while editing; commit reviewed changes before pre-PR validation" >&2
+  exit 1
 fi
 
 # Per-position wall-clock timing. `banner` closes out the previous position's
@@ -251,9 +279,9 @@ banner 5 "agent-runtime render --target support-matrix"
 agent-runtime render --target support-matrix
 
 # -----------------------------------------------------------------------------
-# Position 6 — golden diff (rendered build vs committed golden tree)
+# Position 6 — rendered/golden consistency (not a semantic invariant gate)
 # -----------------------------------------------------------------------------
-banner 6 "git diff --exit-code tests/golden/ (after --update-golden refresh)"
+banner 6 "rendered/golden consistency after --update-golden refresh"
 agent-runtime render --target home-prompt >/dev/null
 agent-runtime render --target home-prompt --update-golden >/dev/null
 agent-runtime render --target home-prompt --product codex >/dev/null
@@ -477,6 +505,7 @@ bash tests/memory-runtime/run.sh
 # measured rather than assumed small.
 # -----------------------------------------------------------------------------
 banner 17 "context budget audit (#601 P1, #140 skill bodies)"
+python3 tests/ci/test_ci_gate_coverage.py
 python3 tests/ci/test_policy_simplification.py
 python3 tests/ci/test_context_budget_skill_bodies.py
 python3 scripts/ci/context-budget-audit.py --self-test
