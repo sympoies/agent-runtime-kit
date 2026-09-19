@@ -300,11 +300,11 @@ run_project_runtime_development_probe() {
   test -f "$body"
   test ! -e "$retired_root"
   bytes="$(wc -c <"$body" | tr -d ' ')"
-  test "$bytes" -le 8192
-  grep -Fq 'earliest owning layer' "$body"
+  test "$bytes" -le 2048
+  grep -Fq 'earliest owning' "$body"
   grep -Fq 'issue and public-safe devlog' "$body"
   grep -Fq 'does not grant automatic issue creation' "$body"
-  grep -Fq 'do not create a parallel inbox' "$body"
+  grep -Fq 'no parallel inbox' "$body"
   {
     printf 'body=%s\n' "$body"
     printf 'bytes=%s\n' "$bytes"
@@ -3363,19 +3363,20 @@ run_meta_outcome_routing_probe() {
     echo "runtime-smoke meta: git policy missing pre-PR dispatcher routing" >&2
     return 1
   }
-  grep -Fq '## Self-Improvement Loop' "$project_skill" || {
-    echo "runtime-smoke meta: project skill missing self-improvement loop" >&2
+  grep -Fq '## Project Delta' "$project_skill" || {
+    echo "runtime-smoke meta: project skill missing replacement delta" >&2
     return 1
   }
-  grep -Fq 'earliest owning layer' "$project_skill" &&
+  grep -Fq 'earliest owning' "$project_skill" &&
     grep -Fq 'does not grant automatic issue creation' "$project_skill" || {
     echo "runtime-smoke meta: project skill missing owner and provider boundaries" >&2
     return 1
   }
-  grep -Fq 'session closeout procedure' "$evidence_policy" &&
-    grep -Fq 'invokes `evidence migrate`' "$evidence_policy" &&
-    grep -Fq '`evidence prune-source` directly' "$evidence_policy" || {
-    echo "runtime-smoke meta: evidence policy missing direct closeout routing" >&2
+  grep -Fq 'evidence-control-plane closeout' "$evidence_policy" &&
+    grep -Fq 'applies only' "$evidence_policy" &&
+    grep -Fq 'reviewed, approved candidate set' "$evidence_policy" &&
+    grep -Fq 'not automatic' "$evidence_policy" || {
+    echo "runtime-smoke meta: evidence policy missing event-driven closeout routing" >&2
     return 1
   }
 
@@ -3471,7 +3472,7 @@ record_case "meta.outcome-routing.plan-archive-query" "plan-archive query single
 record_case "meta.outcome-routing.plan-archive-discover" "plan-archive discover JSON probe classified blocked candidate" run_plan_archive_discover_probe
 record_case "meta.outcome-routing.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
 record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
-record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and session-closeout procedures" run_meta_outcome_routing_probe
+record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and event-driven evidence closeout" run_meta_outcome_routing_probe
 record_case "meta.nils-cli-bump" "schema-v2 doctor blocked below minimum, admitted ahead into a real downstream gate, rejected an incompatible newer surface, and rejected an inverted range" run_nils_cli_bump_probe
 record_case "meta.repo-docs-boundary" "repo docs placement contract rendered consistently for all products" run_repo_docs_boundary_probe
 record_case "meta.worktree-triage" "worktree triage scan classified safe, rescue, and protected integration worktrees" run_worktree_triage_probe
