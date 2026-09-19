@@ -168,24 +168,54 @@ puts JSON.generate(entries)
         )
 
     def test_position_eight_executes_and_gates_the_convergence_entry(self) -> None:
-        canonical = (ROOT / "manifests/surfaces.yaml").read_text(encoding="utf-8")
-        convergence_command = (
-            'command: "bash tests/runtime-smoke/run.sh --mode convergence"'
-        )
-        self.assertEqual(canonical.count(convergence_command), 1)
-
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
             sentinel = temporary_root / "convergence-executed"
-            replacement = (
-                'command: "printf convergence-executed > '
-                f'{shlex.quote(str(sentinel))}; exit 73"'
+            convergence_command = "bash tests/runtime-smoke/run.sh --mode convergence"
+            sentinel_command = (
+                f"printf convergence-executed > {shlex.quote(str(sentinel))}; exit 73"
             )
             manifest = temporary_root / "surfaces.yaml"
-            manifest.write_text(
-                canonical.replace(convergence_command, replacement),
-                encoding="utf-8",
+
+            ruby = r"""
+data = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
+target = ARGV.fetch(1)
+replacement = ARGV.fetch(2)
+target_count = 0
+data.fetch("surfaces").each do |surface|
+  surface.fetch("products").each_value do |product|
+    product.fetch("acceptance").each do |entry|
+      next unless entry.key?("command")
+
+      if entry.fetch("command") == target
+        entry["command"] = replacement
+        target_count += 1
+      else
+        entry["command"] = "true"
+        entry.fetch("success")["exit_status"] = 0
+      end
+    end
+  end
+end
+abort "expected one convergence command, got #{target_count}" unless target_count == 1
+puts YAML.dump(data)
+"""
+            rewritten = subprocess.run(
+                [
+                    "ruby",
+                    "-ryaml",
+                    "-e",
+                    ruby,
+                    "manifests/surfaces.yaml",
+                    convergence_command,
+                    sentinel_command,
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
             )
+            manifest.write_text(rewritten.stdout, encoding="utf-8")
 
             result = subprocess.run(
                 [
