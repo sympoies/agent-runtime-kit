@@ -10,7 +10,21 @@ updates:
     schedule:
       interval: weekly
 
+  # The only npm manifest in this repo is the AI CLI pin set, and it is a
+  # derived artifact of the product floor rather than an independently
+  # upgradable dependency: `scripts/ci/security-hardening-audit.py` requires
+  # `manifests/runtime-roots.yaml` `recommended_version`, the Dockerfile ARG,
+  # `package.json`, and `package-lock.json` to agree, and that version moves in
+  # lockstep with `min_version` and `min_version_effective_from` through
+  # `.github/PULL_REQUEST_TEMPLATE/min-version-bump.md`. A lockfile-only bump
+  # therefore can never pass CI, so both packages are ignored here and new
+  # releases are surfaced by `scripts/ci/version-baseline-audit.py report`
+  # instead. The ecosystem entry itself stays because the same audit requires
+  # it; drop the ignores only together with that rule.
   - package-ecosystem: npm
     directory: /docker/npm-cli-pins
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "@anthropic-ai/claude-code"
+      - dependency-name: "@openai/codex"
