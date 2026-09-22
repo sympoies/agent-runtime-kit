@@ -162,7 +162,12 @@ baked `$HOME/.config/zsh` or `/opt/private-skills` tree.
   Personal shell repos are fetched or mounted at runtime, not copied into the
   image.
 - **AI CLIs**: `@anthropic-ai/claude-code` and `@openai/codex` via the
-  committed `docker/npm-cli-pins/package-lock.json` integrity pins.
+  committed `docker/npm-cli-pins/package-lock.json` integrity pins. Those pins
+  are derived from the product floor in `manifests/runtime-roots.yaml`, so they
+  move only through the bump ceremony in
+  `.github/PULL_REQUEST_TEMPLATE/min-version-bump.md`; Dependabot ignores both
+  packages, because it cannot reach the Dockerfile ARG or `recommended_version`
+  and so can never satisfy `scripts/ci/security-hardening-audit.py`.
 - **nils-cli**: prebuilt Linux release tarball (`agent-runtime`, `agent-docs`,
   `semantic-commit`, `forge-cli`, `plan-tooling`, `plan-issue`, `zsh-kit`, …
   ~40 binaries),
