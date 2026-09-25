@@ -439,6 +439,21 @@ when = "always"
         )
         self.assertIn("operator-authorized access expansion", edit_contract_words)
 
+    def test_voice_input_prompts_confirm_uncertain_terms_before_acting(self) -> None:
+        required = (
+            "voice input",
+            "misrecognized",
+            "data-changing request",
+            "confirm it with the user",
+        )
+        sources = {"source": read("AGENT_HOME.md")}
+        for product in HOME_PRODUCTS:
+            sources[product] = read(f"build/{product}/AGENT_HOME.md")
+        for name, text in sources.items():
+            words = " ".join(text.split()).casefold()
+            for phrase in required:
+                self.assertIn(phrase, words, f"{name} home prompt lacks {phrase!r}")
+
     def test_peer_coordination_routes_existing_authority_and_requires_disposition(
         self,
     ) -> None:

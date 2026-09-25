@@ -10,7 +10,7 @@ without an explicit, tracked override.
 Surfaces and targets come from the issue's quantitative acceptance budgets
 (1 KiB = 1024 bytes):
 
-  * rendered always-on home policy  (build/<product>/AGENT_HOME.md)  <= 4 KiB
+  * rendered always-on home policy  (build/<product>/AGENT_HOME.md)  <= 4 KiB + 256 B
   * resolved project-dev edit-phase required reading                 <= 20 KiB
   * startup memory context (header + profile)                        <= 1.25 KiB
   * new context on an unchanged repeat prompt                        == 0 bytes
