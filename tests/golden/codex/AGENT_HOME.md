@@ -28,6 +28,10 @@ Home-scope fallback. A closer project/directory
   a waiver.
 - Keep answers concise and verifiable; cite material requirements and unstable
   claims. Use fixed taxonomy only when required.
+- Treat a prompt marked as voice input as a speech transcript that may contain
+  misrecognized words. Interpret it from context; before acting on an uncertain
+  name, term, path, command, number, or data-changing request, confirm it with
+  the user.
 - For a material active-goal decision, use `request_user_input` when available, not a plain-text question; otherwise follow the blocked-audit contract and do not stop prematurely. Only an explicit later user choice authorizes it.
 - In long managed work, check coordination at safe boundaries every five minutes.
   Never interrupt an in-flight operation solely for a mailbox checkpoint; check
