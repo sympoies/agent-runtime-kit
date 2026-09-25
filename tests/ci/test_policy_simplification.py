@@ -17,7 +17,7 @@ SHARED_HOME_PRODUCTS = ["codex", "claude", "hermes"]
 HOME_PRODUCT_EXCEPTIONS = {
     "core/policies/code-review-delegation-codex.md": "codex",
 }
-HOME_BUDGET_BYTES = 4 * 1024
+HOME_BUDGET_BYTES = 4 * 1024 + 256
 EDIT_DOC_BUDGET_BYTES = 20 * 1024
 PRE_REPLACEMENT_EDIT_CONTEXT_BYTES = 8135
 PROJECT_SKILL_CONTEXT_DELTA_BYTES = 2 * 1024
@@ -438,6 +438,21 @@ when = "always"
             edit_contract,
         )
         self.assertIn("operator-authorized access expansion", edit_contract_words)
+
+    def test_voice_input_prompts_confirm_uncertain_terms_before_acting(self) -> None:
+        required = (
+            "voice input",
+            "misrecognized",
+            "data-changing request",
+            "confirm it with the user",
+        )
+        sources = {"source": read("AGENT_HOME.md")}
+        for product in HOME_PRODUCTS:
+            sources[product] = read(f"build/{product}/AGENT_HOME.md")
+        for name, text in sources.items():
+            words = " ".join(text.split()).casefold()
+            for phrase in required:
+                self.assertIn(phrase, words, f"{name} home prompt lacks {phrase!r}")
 
     def test_peer_coordination_routes_existing_authority_and_requires_disposition(
         self,

@@ -10,7 +10,7 @@ without an explicit, tracked override.
 Surfaces and targets come from the issue's quantitative acceptance budgets
 (1 KiB = 1024 bytes):
 
-  * rendered always-on home policy  (build/<product>/AGENT_HOME.md)  <= 4 KiB
+  * rendered always-on home policy  (build/<product>/AGENT_HOME.md)  <= 4 KiB + 256 B
   * resolved project-dev edit-phase required reading                 <= 20 KiB
   * startup memory context (header + profile)                        <= 1.25 KiB
   * new context on an unchanged repeat prompt                        == 0 bytes
@@ -79,6 +79,9 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 KIB = 1024
+# The always-on home prompt carries every product's shared invariants; 4 KiB plus
+# a 256-byte margin accommodates the voice-input confirmation rule.
+HOME_PROMPT_TARGET = 4 * KIB + 256
 
 
 # --- budget declarations -----------------------------------------------------
@@ -104,28 +107,28 @@ BUDGETS = [
         "id": "rendered-agent-home.codex",
         "description": "Rendered Codex always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/codex/AGENT_HOME.md"),
-        "target": 4 * KIB,
+        "target": HOME_PROMPT_TARGET,
         "override": None,
     },
     {
         "id": "rendered-agent-home.claude",
         "description": "Rendered Claude always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/claude/AGENT_HOME.md"),
-        "target": 4 * KIB,
+        "target": HOME_PROMPT_TARGET,
         "override": None,
     },
     {
         "id": "rendered-agent-home.hermes",
         "description": "Rendered Hermes always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/hermes/AGENT_HOME.md"),
-        "target": 4 * KIB,
+        "target": HOME_PROMPT_TARGET,
         "override": None,
     },
     {
         "id": "rendered-agent-home.neutral",
         "description": "Rendered neutral always-on home policy (AGENT_HOME).",
         "measure": ("file", "build/neutral/AGENT_HOME.md"),
-        "target": 4 * KIB,
+        "target": HOME_PROMPT_TARGET,
         "override": None,
     },
     {
