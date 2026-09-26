@@ -3451,6 +3451,37 @@ run_execution_capsule_probe() {
   rendered_contract_assert_all_contain meta execution-capsule 'for the operator instead of self-launching it'
 }
 
+run_sync_runtime_surfaces_codex_hook_order_probe() {
+  local out="$META_ARTIFACTS_DIR/codex-hook-order.txt"
+  local scenario
+  for scenario in success registry-failure hook-failure; do
+    (
+      SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+      product_live_home() { printf '%s\n' "$TMP_ROOT/codex-hook-order"; }
+      product_state_home() { printf '%s\n' "$TMP_ROOT/codex-hook-state"; }
+      hook_state=converged
+      sync_codex_plugin_registry() {
+        hook_state=drifted
+        [ "$scenario" != registry-failure ] || return 23
+      }
+      sync_agent_hook_setup() {
+        [ "$1" = codex ] || return 25
+        [ "$scenario" != registry-failure ] || return 26
+        [ "$hook_state" = drifted ] || return 27
+        [ "$scenario" != hook-failure ] || return 24
+        hook_state=converged
+      }
+      result=0
+      sync_product_activation codex || result=$?
+      case "$scenario" in
+        success) [ "$result" = 0 ] && [ "$hook_state" = converged ] ;;
+        registry-failure) [ "$result" = 23 ] ;;
+        hook-failure) [ "$result" = 24 ] ;;
+      esac
+    ) >>"$out" 2>&1 || return 1
+  done
+}
+
 failures=0
 record_case "meta.outcome-routing.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
 record_case "meta.home-prompt-render" "home prompt render isolates Codex-only delegation and product sentinel text" run_home_prompt_render_probe
@@ -3498,6 +3529,7 @@ record_case "meta.sync-runtime-surfaces.codex-marketplace" "sync-runtime-surface
 record_case "meta.sync-runtime-surfaces.codex-registry" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe
 record_case "meta.sync-runtime-surfaces.codex-missing" "sync-runtime-surfaces fails Codex plugin activation when the Codex CLI is unavailable" run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe
 record_case "meta.sync-runtime-surfaces.codex-preview" "sync-runtime-surfaces prints a Codex activation plan without executing it under dry-run" run_sync_runtime_surfaces_codex_plugin_registry_planned_probe
+record_case "meta.sync-runtime-surfaces.codex-hook-order" "Codex activation reconciles hooks after registry writes and preserves activation failures" run_sync_runtime_surfaces_codex_hook_order_probe
 record_case "meta.product-leak-unused-allow" "product leak audit rejects allowlist entries without active rendered artifacts" run_product_leak_unused_allow_probe
 
 exit "$failures"
