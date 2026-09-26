@@ -2656,7 +2656,10 @@ sync_product_activation() {
     codex)
       live_home="$(product_live_home "$product")"
       state_home="$(product_state_home "$product")"
-      sync_codex_plugin_registry "$live_home" "$state_home"
+      sync_codex_plugin_registry "$live_home" "$state_home" || return $?
+      # Plugin commands may reserialize config.toml, including the owned hook
+      # block. Reconcile it after the last registry write before cutover.
+      sync_agent_hook_setup "$product"
       ;;
     hermes)
       log "hermes: no plugin registry to sync; runtime-kit skills are linked under ~/.hermes/external-skills/agent-runtime-kit/"
