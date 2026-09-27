@@ -66,6 +66,21 @@ from hook_common import (
 
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
+# Tracking-mode values accepted for `--tier` (core/policies/work-modes.md).
+# Named modes are canonical; legacy L0-L3 codes stay accepted during migration.
+WORK_MODE_TIERS = frozenset(
+    {
+        "direct",
+        "issue",
+        "program",
+        "program/plan",
+        "program/dispatch",
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+    }
+)
 SESSION_FLOOR = (1, 21, 17)
 # Workflow-phase scoping (issue #601 P1 slice 3d). A mutation is verified against
 # the phase-scoped project-dev doc subset instead of the whole intent, so an edit
@@ -936,7 +951,7 @@ def main_agent_readiness_invocation(
         if words[:2] == ["main-agent", "quick"]:
             # quick acquires the work-context claim as its first durable act
             # (like init), so its exact pre-claim shape is admitted here. --tier
-            # is optional (default L0).
+            # is optional; the CLI applies its default tracking mode.
             if (
                 len(words) < 4
                 or words[2] != "--assignment-file"
@@ -952,7 +967,7 @@ def main_agent_readiness_invocation(
             return (
                 len(words) == 10
                 and words[4] == "--tier"
-                and words[5] in ("L0", "L1", "L2", "L3")
+                and words[5] in WORK_MODE_TIERS
                 and words[6] == "--idempotency-key"
                 and lifecycle_idempotency_key(words[7])
                 and words[8:] == ["--format", "json"]

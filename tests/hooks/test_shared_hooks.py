@@ -4685,7 +4685,8 @@ exit 64
             self.assert_blocked(decision, "failed with exit code 17")
             assert decision is not None
             failure_reason = str(decision.get("reason", ""))
-            self.assertIn("L1 issue-follow-up", failure_reason)
+            self.assertIn("`issue` mode (issue-follow-up)", failure_reason)
+            self.assertNotIn("L1", failure_reason)
             self.assertIn("earliest owning repository", failure_reason)
             self.assertIn("Do not create", failure_reason)
 
@@ -10810,6 +10811,18 @@ exit 0
                 rebind,
                 quick,
                 tiered_quick,
+                *(
+                    tiered_quick.replace("--tier L1", f"--tier {mode}")
+                    for mode in (
+                        "direct",
+                        "issue",
+                        "program",
+                        "program/plan",
+                        "program/dispatch",
+                        "L0",
+                        "L3",
+                    )
+                ),
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
@@ -10887,6 +10900,8 @@ exit 0
                 quick.replace("--assignment-file", "--packet-file"),
                 quick.replace("readiness-quick-0001", "short"),
                 tiered_quick.replace("--tier L1", "--tier L9"),
+                tiered_quick.replace("--tier L1", "--tier program/other"),
+                tiered_quick.replace("--tier L1", "--tier Direct"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
                 revision_fenced_init.replace(
@@ -16810,6 +16825,18 @@ exit 0
                 rebind,
                 quick,
                 tiered_quick,
+                *(
+                    tiered_quick.replace("--tier L1", f"--tier {mode}")
+                    for mode in (
+                        "direct",
+                        "issue",
+                        "program",
+                        "program/plan",
+                        "program/dispatch",
+                        "L0",
+                        "L3",
+                    )
+                ),
                 checkpoint,
             )
             typed_bootstrap_authorization = {
@@ -16957,6 +16984,8 @@ exit 0
                 quick.replace("--assignment-file", "--packet-file"),
                 quick.replace("main-agent-quick-0001", "short"),
                 tiered_quick.replace("--tier L1", "--tier L9"),
+                tiered_quick.replace("--tier L1", "--tier program/other"),
+                tiered_quick.replace("--tier L1", "--tier Direct"),
                 init.replace("--format json", "--format markdown"),
                 init + " extra",
                 rebind + " extra",
