@@ -182,7 +182,11 @@ The Main controller uses `advisory`; every isolated implementation worker uses `
 Immediately before every `main-agent init` branch, run `agent-session list
 --format json` and require `cli.agent-session.list.v1` to bind the exact
 controller session ID, incarnation, and canonical cwd with
-`coordination_mode:"advisory"`. A controller observed in `enforce`, `off`, or an unknown mode fails the pre-init gate.
+`coordination_mode:"advisory"`. That record is the recorded launch mode, so
+also prove the effective runtime mode: in the shell that runs `init`,
+`AGENT_SESSION_COORDINATION_MODE` (injected from the record at runtime launch
+and enforced by the coordination hooks) must equal `advisory`.
+A controller observed in `enforce`, `off`, or an unknown mode fails the pre-init gate.
 Do not call `init`. Report the mismatch and restart the controller in
 `advisory` through the ordinary session lifecycle, preserving any unique
 worktree material; never create the run first and promise to repair the mode

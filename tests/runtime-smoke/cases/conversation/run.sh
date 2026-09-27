@@ -168,6 +168,8 @@ assert_main_agent_mode_gate_contract() {
 assert_main_agent_preinit_observation_contract() {
   assert_normalized_contract_clause "$1" \
     'Immediately before every `main-agent init` branch, run `agent-session list --format json` and require `cli.agent-session.list.v1` to bind the exact controller session ID, incarnation, and canonical cwd with `coordination_mode:"advisory"`.'
+  assert_normalized_contract_clause "$1" \
+    'in the shell that runs `init`, `AGENT_SESSION_COORDINATION_MODE` (injected from the record at runtime launch and enforced by the coordination hooks) must equal `advisory`.'
 }
 
 assert_main_agent_no_unimplemented_owner_contract() {
