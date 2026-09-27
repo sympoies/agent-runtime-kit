@@ -874,7 +874,7 @@ surfaces:
             note: "live Codex session"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-codex.md#16-work-tier-delegation-policy-corepolicieswork-tier-levelsmd"
+          - "docs/source/harness-shape-codex.md#16-work-mode-delegation-policy-corepolicieswork-modesmd"
           - AGENT_HOME.md
       claude:
         state: not-applicable

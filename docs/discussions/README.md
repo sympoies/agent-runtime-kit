@@ -39,5 +39,5 @@ Exactly one of four, and all four move or delete the file:
   reasoning must already exist in-repo — an entry in this repository's
   development log (`docs/source/devlog/`) or promoted canon.
 
-See `core/policies/work-tier-levels.md` (the lifecycle and the escalation judge)
+See `core/policies/work-modes.md` (the capture lifecycle and mode selection)
 and `docs/source/docs-placement-retention-policy-v1.md` (placement + retention).

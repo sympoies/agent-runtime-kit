@@ -42,12 +42,12 @@ notes = "Concise contributor principles, maintenance workflow, finish-line valid
 [[document]]
 context = "project-dev"
 scope = "home"
-path = "core/policies/work-tier-levels.md"
+path = "core/policies/work-modes.md"
 product = ["codex", "claude", "hermes"]
 required = true
 when = "always"
 phase = "delivery"
-notes = "Work-tier levels (L0-L3) for delivery-phase durable state: keep routine L0 internal and surface only L1+, provider delivery, or materially ambiguous escalation. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
+notes = "Named work modes (direct / issue / program, plus program/plan and program/dispatch) for delivery-phase durable state: keep routine direct work internal and surface only provider artifacts, delivery, or materially ambiguous escalation. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
 context = "project-dev"
