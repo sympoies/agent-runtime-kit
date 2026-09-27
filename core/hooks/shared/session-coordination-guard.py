@@ -59,6 +59,21 @@ from hook_common import (
 
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
+# Tracking-mode values accepted for `--tier` (core/policies/work-modes.md).
+# Named modes are canonical; legacy L0-L3 codes stay accepted during migration.
+WORK_MODE_TIERS = frozenset(
+    {
+        "direct",
+        "issue",
+        "program",
+        "program/plan",
+        "program/dispatch",
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+    }
+)
 SUPPORTED_PRODUCTS = {"codex", "claude"}
 COORDINATION_FLOOR = (1, 24, 5)
 TIMEOUT_SECONDS = 6.0
@@ -1044,7 +1059,7 @@ def main_agent_bypass_invocation(
     if words[:2] == ["main-agent", "quick"]:
         # quick acquires the work-context claim as its first durable act (like
         # init), so its exact pre-claim shape must be admitted here. --tier is
-        # optional (default L0).
+        # optional; the CLI applies its default tracking mode.
         repository = bounded_git_toplevel(str(base)) if base is not None else None
         if (
             len(words) < 4
@@ -1061,7 +1076,7 @@ def main_agent_bypass_invocation(
         return (
             len(words) == 10
             and words[4] == "--tier"
-            and words[5] in ("L0", "L1", "L2", "L3")
+            and words[5] in WORK_MODE_TIERS
             and words[6] == "--idempotency-key"
             and lifecycle_idempotency_key(words[7])
             and words[8:] == ["--format", "json"]

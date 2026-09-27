@@ -559,14 +559,14 @@ def reason(
         failure_guidance = (
             "\nDiscovered-defect routing:\n"
             "- Project-owned product, test, or CI defect: classify it as "
-            "L1 issue-follow-up in the owning repository.\n"
+            "`issue` mode (issue-follow-up) in the owning repository.\n"
             "- Agent workflow, skill, hook, CLI, or primitive defect: propose "
             "an ordinary issue in the earliest owning repository.\n"
             "- Fixed in this turn or transient with no reusable lesson: create no "
             "retained artifact. If both owners apply, make the project issue primary "
             "and link dependent repositories only when the ownership spans them.\n"
-            "Do not create a provider issue automatically; L1+ provider mutation "
-            "still requires the user's decision."
+            "Do not create a provider issue automatically; creating any tracking "
+            "artifact still requires the user's decision."
         )
     lane = recovery_lane()
     return (
@@ -667,7 +667,7 @@ def routing_review_reason(repo_root: str, *, persistence_failed: bool = False) -
         f"Validation is being waived in {name}; discovered-defect routing review required "
         "before finishing. Classify the unresolved signal and state the evidence, owner, "
         "and route in the next user-facing response:\n"
-        "- Project-owned product/test/CI defect -> propose L1 issue-follow-up in the "
+        "- Project-owned product/test/CI defect -> propose `issue` mode (issue-follow-up) in the "
         "owning repository and wait for user approval before provider mutation.\n"
         "- Agent workflow/skill/hook/CLI/primitive defect -> propose an ordinary "
         "issue in the earliest owning repository.\n"

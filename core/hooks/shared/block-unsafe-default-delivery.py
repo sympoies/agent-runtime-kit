@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """PreToolUse hook: keep default-branch delivery on governed routes.
 
-PR delivery remains the default. A maintainer-authorized L0 direct-main change
-is authored as one signed commit on a non-default managed worktree and is
-delivered through ``forge-cli repo push-default``. A separately authorized L0
-default-branch task may use ``semantic-commit default-branch`` to author one
-signed local-only commit in the primary checkout. This hook blocks raw shell
-paths that would otherwise bypass either contract.
+PR delivery remains the default. A maintainer-authorized `direct`-mode
+direct-main change is authored as one signed commit on a non-default managed
+worktree and is delivered through ``forge-cli repo push-default``. A separately
+authorized `direct`-mode default-branch task may use
+``semantic-commit default-branch`` to author one signed local-only commit in the
+primary checkout. This hook blocks raw shell paths that would otherwise bypass
+either contract.
 
 This is a mechanical guardrail, not a shell sandbox. Provider branch rules and
 the forge-cli expected-base/signature/read-back contract remain authoritative.
