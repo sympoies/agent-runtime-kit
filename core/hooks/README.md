@@ -316,8 +316,14 @@ makes the advisory silent while later file/index mutation continues to fail
 closed.
 
 After exact authorization, the PreToolUse gate admits the transition only through
-the resolved managed `git-cli` executable and only when the private challenge or
-adopted receipt belongs to the current agent session. Released `git-cli worktree
+the resolved managed `git-cli` executable, or through this hook's own
+`checkout-lease-guard.py adopt-dirty` launcher, and only when the private
+challenge or adopted receipt belongs to the current agent session. A released
+git-cli that accepts the bearer only through `--challenge-fd` (sympoies/nils-cli#1761)
+receives the launcher command: it reads the bearer from stdin, requires it to
+match the issued reason-file digest, and parents git-cli through a private Unix
+socket so the bearer never reaches argv. An older git-cli receives the legacy
+`--challenge <bearer>` command. Released `git-cli worktree
 adopt-dirty` then rechecks and consumes the challenge under the lease lock, and
 publishes one privacy-safe receipt and an adopted lease-v2 record in the same
 transaction. The strict embedded lease-v2 adoption block is the guard's

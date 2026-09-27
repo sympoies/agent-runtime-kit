@@ -20,6 +20,7 @@ import re
 import secrets
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -75,6 +76,14 @@ MAX_LEASE_BYTES = 16 * 1024
 GIT_TIMEOUT_SECONDS = 5
 DIRTY_SNAPSHOT_TIMEOUT_SECONDS = 35
 CHALLENGE_TTL_SECONDS = 5 * 60
+# Released git-cli reads the adoption bearer only from an inherited Unix socket
+# whose peer is its direct parent (sympoies/nils-cli#1761). This hook doubles as
+# that parent: `checkout-lease-guard.py adopt-dirty` reads the bearer from its
+# own stdin and hands it to git-cli through a private socket, never argv.
+DIRTY_ADOPTION_LAUNCHER_NAME = "checkout-lease-guard.py"
+DIRTY_ADOPTION_LAUNCHER_ACTION = "adopt-dirty"
+DIRTY_ADOPTION_BEARER_BYTES = 64
+DIRTY_ADOPTION_TRANSPORT_PROBE_SECONDS = 5
 MAX_CHALLENGE_FILES = 128
 LOCK_WAIT_SECONDS = 2.0
 LOCK_POLL_SECONDS = 0.05
@@ -727,6 +736,8 @@ def executable_invocation_mutates(invocation: list[str]) -> bool:
         return True
     if executable == "git-cli" and git_cli_invocation_mutates(arguments):
         return True
+    if is_dirty_adoption_launcher_name(invocation):
+        return True
     if executable == "semantic-commit":
         return semantic_commit_invocation_mutates(arguments)
     if executable in {"sed", "perl", "ruby"} and any(
@@ -1300,10 +1311,76 @@ def invocation_environment_is_stable(tokens: list[str], executable: str) -> bool
     return index < len(raw) and os.path.basename(raw[index]) == executable
 
 
+def is_dirty_adoption_launcher_name(invocation: list[str]) -> bool:
+    """Whether an invocation names the adoption launcher by basename.
+
+    Any executable with this name counts as a mutation; only the hook's own
+    resolved path is the governed transition.
+    """
+    return (
+        len(invocation) >= 2
+        and os.path.basename(invocation[0]) == DIRTY_ADOPTION_LAUNCHER_NAME
+        and invocation[1] == DIRTY_ADOPTION_LAUNCHER_ACTION
+    )
+
+
+def is_trusted_dirty_adoption_launcher(raw: str) -> bool:
+    if not os.path.isabs(raw):
+        return False
+    try:
+        return os.path.realpath(raw) == os.path.realpath(__file__)
+    except OSError:
+        return False
+
+
+def dirty_adoption_reason_digest(raw: str) -> str | None:
+    """Return the challenge digest encoded in an issued reason-file name."""
+    path = Path(raw)
+    if not path.is_absolute() or path.suffix != ".txt" or not lower_hex(path.stem, 64):
+        return None
+    return path.stem
+
+
+def parse_dirty_adoption_launcher_arguments(
+    arguments: list[str],
+) -> dict[str, str] | None:
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(arguments):
+        name, separator, attached = arguments[index].partition("=")
+        if name not in {"--reason-file", "--format"} or name in values:
+            return None
+        if separator:
+            value = attached
+            index += 1
+        else:
+            if index + 1 >= len(arguments):
+                return None
+            value = arguments[index + 1]
+            index += 2
+        if not value:
+            return None
+        if name == "--format" and value not in {"text", "json"}:
+            return None
+        values[name] = value
+    if "--reason-file" not in values:
+        return None
+    digest = dirty_adoption_reason_digest(values["--reason-file"])
+    if digest is None:
+        return None
+    values["--challenge-digest"] = digest
+    return values
+
+
 def governed_dirty_transition_details(
     invocation: list[str],
 ) -> tuple[str, dict[str, str]] | None:
     invocation = invocation_without_redirections(invocation)
+    if is_dirty_adoption_launcher_name(invocation):
+        if not is_trusted_dirty_adoption_launcher(invocation[0]):
+            return None
+        values = parse_dirty_adoption_launcher_arguments(invocation[2:])
+        return None if values is None else ("adopt-dirty", values)
     if (
         len(invocation) < 4
         or not resolved_executable_matches(invocation[0], "git-cli", managed_cli=True)
@@ -1377,9 +1454,14 @@ def sole_governed_dirty_transition(
             return None
         details = governed_dirty_transition_details(invocation)
         if details is not None:
+            executable = (
+                DIRTY_ADOPTION_LAUNCHER_NAME
+                if is_dirty_adoption_launcher_name(invocation)
+                else "git-cli"
+            )
             if (
                 transition is not None
-                or not invocation_environment_is_stable(tokens, "git-cli")
+                or not invocation_environment_is_stable(tokens, executable)
                 or command_writes_repo(tokens, base)
             ):
                 return None
@@ -2137,8 +2219,27 @@ def governed_dirty_transition_admission(
         )
 
     if action == "adopt-dirty":
-        token = values["--challenge"]
-        token_digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+        token_digest = values.get("--challenge-digest", "")
+        if token_digest:
+            # The launcher form carries no bearer on the command line; the
+            # issued reason file names the challenge, and the launcher refuses a
+            # bearer whose digest differs from that name.
+            expected_reason = directory / "reasons" / f"{token_digest}.txt"
+            try:
+                reason_matches = os.path.realpath(
+                    values["--reason-file"]
+                ) == os.path.realpath(expected_reason)
+            except OSError:
+                reason_matches = False
+            if not reason_matches:
+                return (
+                    "Dirty-checkout adoption is blocked because the reason file does "
+                    "not belong to this checkout's challenge. Run the displayed "
+                    "adoption command unchanged."
+                )
+        else:
+            token = values["--challenge"]
+            token_digest = hashlib.sha256(token.encode("ascii")).hexdigest()
         challenge_path = directory / "challenges" / f"{token_digest}.json"
         with acquire_lock(directory):
             raw = read_regular_file(challenge_path, max_bytes=MAX_LEASE_BYTES)
@@ -2612,13 +2713,29 @@ def issue_dirty_checkout_challenge(payload: Mapping[str, Any]) -> int:
                 reason_file.unlink(missing_ok=True)
                 raise
 
+        if git_cli_dirty_adoption_transport() == "fd":
+            adopt_command = (
+                f"{shlex.quote(os.path.abspath(__file__))} "
+                f"{DIRTY_ADOPTION_LAUNCHER_ACTION} "
+                f"--reason-file {shlex.quote(str(reason_file))} <<< {token}"
+            )
+            transport_note = (
+                " The command hands the one-time challenge to git-cli through a "
+                "private socket rather than argv."
+            )
+        else:
+            adopt_command = (
+                f"git-cli worktree adopt-dirty --challenge {token} "
+                f"--reason-file {shlex.quote(str(reason_file))}"
+            )
+            transport_note = ""
         context = (
             "This checkout has unowned changes. Remain read-only for Q&A. Before "
             "implementation, ask the user to choose explicit takeover of the exact "
             "warned state or a managed worktree via `git-cli worktree add <slug>`. "
             "After explicit authorization, write a concise reason outside the checkout "
-            f"and run `git-cli worktree adopt-dirty --challenge {token} "
-            f"--reason-file {shlex.quote(str(reason_file))}`. Keep the challenge out of provider evidence."
+            f"and run `{adopt_command}`.{transport_note} Keep the challenge out of "
+            "provider evidence."
         )
         sys.stdout.write(
             json.dumps(
@@ -2636,6 +2753,115 @@ def issue_dirty_checkout_challenge(payload: Mapping[str, Any]) -> int:
         # fail-closed even when the released snapshot primitive is unavailable.
         return ALLOW
     return ALLOW
+
+
+def git_cli_dirty_adoption_transport() -> str:
+    """Select the bearer transport the installed git-cli accepts.
+
+    git-cli releases before sympoies/nils-cli#1761 take `--challenge <bearer>`;
+    later releases accept only `--challenge-fd`. Anything unreadable keeps the
+    legacy form, which such a git-cli would reject rather than misuse.
+    """
+    try:
+        completed = subprocess.run(
+            ["git-cli", "worktree", "adopt-dirty", "--help"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=DIRTY_ADOPTION_TRANSPORT_PROBE_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "argv"
+    return "fd" if "--challenge-fd" in completed.stdout + completed.stderr else "argv"
+
+
+def dirty_adoption_launcher_failure(code: str, message: str, status: int) -> int:
+    sys.stderr.write(f"checkout-lease-guard adopt-dirty: {code}: {message}\n")
+    return status
+
+
+def run_dirty_adoption_launcher(arguments: list[str]) -> int:
+    """Parent git-cli so it can read the adoption bearer from a private socket.
+
+    Reads exactly one 64-character bearer from stdin, requires it to match the
+    issued reason file's challenge digest, then connects a private Unix stream
+    socket, writes and half-closes the bearer before spawning, maps the accepted
+    endpoint to git-cli's stdin, and passes `--challenge-fd 0`. The bearer never
+    reaches argv, the environment, or this process's output.
+    """
+    values = parse_dirty_adoption_launcher_arguments(arguments)
+    if values is None:
+        return dirty_adoption_launcher_failure(
+            "invalid-arguments",
+            "usage: checkout-lease-guard.py adopt-dirty --reason-file "
+            "<issued-reason-file> [--format text|json] <<< <challenge>",
+            64,
+        )
+    raw = sys.stdin.buffer.read(DIRTY_ADOPTION_BEARER_BYTES + 2)
+    bearer = raw[:-1] if raw.endswith(b"\n") else raw
+    if re.fullmatch(rb"[0-9a-f]{64}", bearer) is None:
+        return dirty_adoption_launcher_failure(
+            "invalid-challenge",
+            "stdin must contain exactly the one-time 64-character challenge",
+            65,
+        )
+    if hashlib.sha256(bearer).hexdigest() != values["--challenge-digest"]:
+        return dirty_adoption_launcher_failure(
+            "challenge-reason-mismatch",
+            "the challenge does not belong to the issued reason file",
+            65,
+        )
+    git_cli = shutil.which("git-cli")
+    if not git_cli or not resolved_executable_matches(
+        "git-cli", "git-cli", managed_cli=True
+    ):
+        return dirty_adoption_launcher_failure(
+            "git-cli-untrusted",
+            "the managed git-cli executable is unavailable",
+            69,
+        )
+    command = [
+        git_cli,
+        "worktree",
+        "adopt-dirty",
+        "--challenge-fd",
+        "0",
+        "--reason-file",
+        values["--reason-file"],
+    ]
+    if "--format" in values:
+        command.append(f"--format={values['--format']}")
+    try:
+        with tempfile.TemporaryDirectory(prefix="ara-adopt-") as directory:
+            address = os.path.join(directory, "channel")
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sender = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                listener.bind(address)
+                listener.listen(1)
+                sender.connect(address)
+                receiver, _peer = listener.accept()
+            finally:
+                listener.close()
+            try:
+                sender.sendall(bearer)
+                sender.shutdown(socket.SHUT_WR)
+                # The sender stays open until git-cli exits so it can
+                # authenticate this process as the socket peer.
+                completed = subprocess.run(
+                    command, stdin=receiver.fileno(), check=False
+                )
+            finally:
+                receiver.close()
+                sender.close()
+    except OSError as exc:
+        return dirty_adoption_launcher_failure(
+            "channel-unavailable",
+            f"the private challenge channel could not be opened ({exc.strerror or 'error'})",
+            70,
+        )
+    return completed.returncode
 
 
 def emit_system_message(message: str) -> None:
@@ -2737,6 +2963,8 @@ def stop_audit(payload: Mapping[str, Any]) -> int:
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == DIRTY_ADOPTION_LAUNCHER_ACTION:
+        return run_dirty_adoption_launcher(sys.argv[2:])
     if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
         return ALLOW
     payload = read_payload()

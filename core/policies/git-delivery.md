@@ -340,11 +340,13 @@ range checks still must pass.
   warned choice and obtain explicit authorization for that exact state; otherwise
   use `git-cli worktree add`. Never infer authorization from the task or invoke
   `adopt-dirty` merely because the challenge exists.
-- After authorization, use only the displayed sole `git-cli worktree
-  adopt-dirty --challenge <bearer>
-  --reason-file <outside-checkout-file>` transition. The PreToolUse gate requires
-  the resolved managed executable and binds challenge consumption to the issuing
-  agent session. The released CLI rechecks the snapshot and competing lease
+- After authorization, run only the displayed sole adoption command unchanged:
+  `git-cli worktree adopt-dirty --challenge <bearer> --reason-file <file>` for a
+  git-cli that still takes the bearer on argv, or the hook's
+  `checkout-lease-guard.py adopt-dirty --reason-file <file> <<< <bearer>`
+  launcher for a released git-cli that reads it only through `--challenge-fd`.
+  The PreToolUse gate requires the resolved managed executable or the hook's own
+  launcher path and binds challenge consumption to the issuing agent session. The released CLI rechecks the snapshot and competing lease
   under the lock, consumes the challenge once, and writes matching
   receipt/lease-v2 provenance. Same-session refresh preserves that embedded
   provenance. Revoke only through `git-cli worktree revoke-dirty` with the
