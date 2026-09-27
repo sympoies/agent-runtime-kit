@@ -146,10 +146,56 @@ run_issue_outcome_routing_probe() {
   rendered_contract_assert_all_contain issue issue-follow-up 'The caller supplies `TRACKER_REPO`'
 }
 
+run_issue_program_mode_probe() {
+  local store="$TMP_ROOT/issue-program-store"
+  local dir="$ISSUE_ARTIFACTS_DIR/program"
+  local forge=(forge-cli --provider local --store-root "$store" --repo local:program-demo --format json)
+  local tracker child_a child_b n
+  require_issue_bin forge-cli || return 1
+  rm -rf "$store"
+  mkdir -p "$dir"
+
+  grep -Fq '### Program Mode' "$REPO_ROOT/core/skills/issue/issue-follow-up/SKILL.md.tera"
+  grep -Fq '## Tracker Template' "$REPO_ROOT/core/skills/issue/issue-follow-up/references/program-mode.md"
+  grep -Fq '## Child Template' "$REPO_ROOT/core/skills/issue/issue-follow-up/references/program-mode.md"
+  rendered_contract_assert_all_contain issue issue-follow-up '### Program Mode'
+
+  # Tracker placeholder first, so children can link to its number.
+  printf 'Program tracker placeholder.\n' >"$dir/tracker-placeholder.md"
+  "${forge[@]}" issue create --title "Track demo program" \
+    --body-file "$dir/tracker-placeholder.md" \
+    --label workflow::tracking >"$dir/tracker-create.json" 2>&1
+  tracker="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/tracker-create.json")"
+  [ -n "$tracker" ] || return 1
+
+  for n in a b; do
+    printf '## Program\n\nProgram key `demo`, item **%s**. Tracker: #%s.\n' "$n" "$tracker" >"$dir/child-$n.md"
+    "${forge[@]}" issue create --title "Demo child $n" \
+      --body-file "$dir/child-$n.md" \
+      --label workflow::follow-up >"$dir/child-$n-create.json" 2>&1
+  done
+  child_a="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/child-a-create.json")"
+  child_b="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/child-b-create.json")"
+  [ -n "$child_a" ] && [ -n "$child_b" ] || return 1
+
+  # Fill the tracker with the real child numbers.
+  printf '## Phase table\n\n- [ ] **a** Demo child a: #%s\n- [ ] **b** Demo child b: #%s\n' "$child_a" "$child_b" >"$dir/tracker.md"
+  "${forge[@]}" issue edit "$tracker" --body-file "$dir/tracker.md" >"$dir/tracker-edit.json" 2>&1
+  "${forge[@]}" issue view "$tracker" >"$dir/tracker-view.json" 2>&1
+  "${forge[@]}" issue view "$child_a" >"$dir/child-a-view.json" 2>&1
+
+  grep -q '"workflow::tracking"' "$dir/tracker-view.json"
+  grep -Fq "#$child_a" "$dir/tracker-view.json"
+  grep -Fq "#$child_b" "$dir/tracker-view.json"
+  grep -q '"workflow::follow-up"' "$dir/child-a-view.json"
+  grep -Fq "Tracker: #$tracker" "$dir/child-a-view.json"
+}
+
 failures=0
 record_case "issue.issue-follow-up" "forge-cli issue create/view/comment dry-run probes passed" run_issue_follow_up_probe
 record_case "issue.issue-triage" "forge-cli inbox issue triage dry-run probes passed" run_issue_triage_probe
 record_case "issue.outcome-routing.plan-finding" "forge-cli issue list dedup + create dry-run probes passed" run_report_plan_issue_finding_probe
 record_case "issue.outcome-routing.contract" "generic issue follow-up absorbs plan-family finding routing without a fixed provider account" run_issue_outcome_routing_probe
+record_case "issue.program-mode.contract" "program mode opens a tracker placeholder, linked children, and a filled tracker on the local provider" run_issue_program_mode_probe
 
 exit "$failures"
