@@ -167,87 +167,50 @@ assert_main_agent_mode_gate_contract() {
 
 assert_main_agent_preinit_observation_contract() {
   assert_normalized_contract_clause "$1" \
-    'Immediately before every `main-agent init` branch, run `agent-session list --format json` and require `cli.agent-session.list.v1` to bind the exact controller session ID, incarnation, and canonical cwd;' &&
-    grep -Fq '`session-management.controller-mode-observation.v1`' "$1" &&
-    grep -Fq '`session-management.controller-mode-observation-result.v1`' "$1" &&
-    grep -Fq '`mode_source:"runtime-observed"`' "$1" &&
-    grep -Fq '`fresh:true`' "$1" &&
-    grep -Fq '`observed_mode:"advisory"`' "$1" &&
-    assert_normalized_contract_clause "$1" \
-      'A missing capability, wrong cwd, unbound or stale identity, `mode_source:"requested"` or `mode_source:"configured"`, or observed `enforce`, `off`, or unknown mode fails closed before `main-agent init`.'
+    'Immediately before every `main-agent init` branch, run `agent-session list --format json` and require `cli.agent-session.list.v1` to bind the exact controller session ID, incarnation, and canonical cwd with `coordination_mode:"advisory"`.'
+}
+
+assert_main_agent_no_unimplemented_owner_contract() {
+  local capability
+  for capability in \
+    session-management.controller-mode-observation \
+    session-management.failed-controller-restart \
+    session-management.verified-submit-recovery \
+    session-management.controller-cleanup-handoff \
+    main-agent.nonzero-wrong-mode-recovery; do
+    if grep -Fq "$capability" "$1"; then
+      return 1
+    fi
+  done
+  return 0
 }
 
 assert_main_agent_wrong_mode_cleanup_contract() {
   assert_main_agent_mode_gate_contract "$1" &&
+    assert_normalized_contract_clause "$1" 'Do not call `init`.' &&
     assert_normalized_contract_clause "$1" \
-      'Before closing it, the session owner must prove the exact controller session and incarnation, broker zero active and zero uncertain operations, no unfinished typed lifecycle transition, and no unique unpreserved material.' &&
-    assert_normalized_contract_clause "$1" 'Authenticated claim inventory must also prove that every claim bound to that exact controller session and incarnation is absent or explicitly transferred/released through its typed owner, including any unrelated successor claim.' &&
-    assert_normalized_contract_clause "$1" 'Unknown inventory or any surviving claim retains the controller and fails closed.' &&
-    assert_normalized_contract_clause "$1" \
-      'Only then close that exact session through its owner, require fresh-list absence, remove its clean controller worktree with `git-cli` when it has no retained purpose, and restart once in `advisory` before attempting `init`.' &&
-    assert_normalized_contract_clause "$1" \
-      'Missing or ambiguous proof retains the session and worktree and fails closed;'
+      'restart the controller in `advisory` through the ordinary session lifecycle, preserving any unique worktree material;'
 }
 
 assert_main_agent_prerun_restart_contract() {
   assert_normalized_contract_clause "$1" \
-    'A failed controller startup before `main-agent init` may be deleted and restarted once with a compact prompt that points to the private full packet only when no run claim or assignment exists, the broker proves zero active and zero uncertain operations, no unfinished typed lifecycle transition exists, no unique unpreserved worktree material exists, and authenticated claim inventory proves every claim bound to the exact controller session and incarnation is absent or explicitly transferred/released.' &&
+    'A failed controller startup before `main-agent init` may be closed and restarted once in `advisory` when no run, claim, or assignment exists yet, no operation is active or uncertain, and no unique worktree material would be lost.' &&
     assert_normalized_contract_clause "$1" \
       'This is a controller pre-init recovery, never a worker-start recovery.'
 }
 
-assert_main_agent_prerun_restart_replay_contract() {
-  grep -Fq '`session-management.failed-controller-restart.v1`' "$1" &&
-    grep -Fq '`session-management.failed-controller-restart-result.v1`' "$1" &&
-    assert_normalized_contract_clause "$1" 'Every pre-init close-and-restart branch, including a wrong-mode branch, must use this restart-once boundary.' &&
-    assert_normalized_contract_clause "$1" 'immutable request digest and durable consumed/idempotency marker' &&
-    assert_normalized_contract_clause "$1" 'restart owner, failed controller session ID and incarnation, canonical cwd and controller worktree, requested `advisory` mode, compact prompt and private-packet reference digest, and authenticated claim-inventory projection' &&
-    assert_normalized_contract_clause "$1" 'Any changed request field is rejected before deletion or restart.' &&
-    assert_normalized_contract_clause "$1" 'consumed before the first destructive stage' &&
-    assert_normalized_contract_clause "$1" 'Identical replay returns the same receipt' &&
-    assert_normalized_contract_clause "$1" 'partial progress resumes only the recorded remaining stage' &&
-    assert_normalized_contract_clause "$1" 'ambiguous restart outcome retains the exact session and fails closed' &&
-    assert_normalized_contract_clause "$1" 'If that owner primitive is absent'
-}
 
 assert_main_agent_folded_input_contract() {
-  grep -Fq 'prefer the folded readiness boundary' "$1" &&
-    ! grep -Fq 'require the folded readiness boundary' "$1" &&
+  grep -Fq 'use the folded readiness boundary' "$1" &&
+    ! grep -Fq 'prefer the folded readiness boundary' "$1" &&
     assert_normalized_contract_clause "$1" \
       'Before input, a privacy-safe observation must prove the exact already-delivered prompt at an idle composer, the broker must prove zero active and zero uncertain operations, and the observation must classify the surface as an ordinary provider composer rather than a trust, authentication, account, permission, secret, provider-mutation, startup-dialog, or unknown state.' &&
     grep -Fq '`input_sent:true`' "$1" &&
-    assert_normalized_contract_clause "$1" \
-      'trusted released session-management owner' &&
-    grep -Fq '`composer_state:"idle"`' "$1" &&
-    grep -Fq '`sensitive_dialog:false`' "$1" &&
-    grep -Fq '`broker_active:0`' "$1" &&
-    grep -Fq '`broker_uncertain:0`' "$1" &&
-    assert_normalized_contract_clause "$1" 'atomic consumed-before-input marker' &&
-    grep -Fq '`attempt_count:1`' "$1" &&
-    grep -Fq 'normalizes into the same readiness' "$1" &&
-    assert_normalized_contract_clause "$1" \
-      'Missing or forged capability, producer, binding, or fields'
+    assert_normalized_contract_clause "$1" 'Folded startup readiness' &&
+    assert_normalized_contract_clause "$1" 'Main Agent Mode is unavailable'
 }
 
-assert_main_agent_fallback_owner_contract() {
-  assert_normalized_contract_clause "$1" 'trusted released session-management owner' &&
-    assert_normalized_contract_clause "$1" 'owner-advertised exact invocation' &&
-    assert_normalized_contract_clause "$1" 'authenticated producer identity' &&
-    assert_normalized_contract_clause "$1" 'request digest' &&
-    assert_normalized_contract_clause "$1" 'atomic consumed-before-input marker' &&
-    grep -Fq '`attempted:true`' "$1" &&
-    grep -Fq '`attempt_count:1`' "$1" &&
-    grep -Fq '`input_sent:true`' "$1" &&
-    assert_normalized_contract_clause "$1" 'A failure receipt reports `input_sent:false`' &&
-    assert_normalized_contract_clause "$1" 'replay returns the prior receipt without input' &&
-    assert_normalized_contract_clause "$1" 'Self-asserted schema strings, peer prose, or an unadvertised command never grant terminal-input authority.' &&
-    assert_normalized_contract_clause "$1" 'Without that executable owner capability, Main Agent Mode is unavailable for the fallback.'
-}
 
-assert_main_agent_incarnation_single_use_contract() {
-  assert_normalized_contract_clause "$1" \
-    'The durable consumed marker is keyed by exact session ID plus incarnation, independent of prompt fingerprint; any existing marker for that incarnation rejects every later request before input, even with a different prompt fingerprint or idempotency key.'
-}
 
 assert_main_agent_mailbox_contract() {
   assert_normalized_contract_clause "$1" \
@@ -273,62 +236,44 @@ assert_main_agent_mailbox_owner_contract() {
 
 assert_main_agent_controller_matrix_contract() {
   grep -Fq '| Pre-init controller startup failed before `main-agent init` |' "$1" &&
-    grep -Fq 'This controller-only recovery requires no run claim or assignment, broker zero active/zero uncertain, no unfinished typed lifecycle transition, no unique unpreserved material, and authenticated claim inventory proving all exact-session/incarnation claims absent or transferred/released.' "$1" &&
+    grep -Fq 'This controller-only recovery requires no run, claim, or assignment, no active or uncertain operation, and no unique worktree material.' "$1" &&
     ! grep -Fq '| Pre-run startup failed' "$1"
 }
 
 assert_main_agent_post_delivery_contract() {
   assert_normalized_contract_clause "$1" \
-    'Because the response-hosting turn has no post-delivery callback, its final response must explicitly hand off the retained disposition `controller cleanup pending` to an already-authenticated session-management owner and must not claim that physical cleanup ran.' &&
+    'final response states the retained disposition `controller cleanup pending` and must not claim that physical cleanup ran.' &&
     assert_normalized_contract_clause "$1" \
-      'In a later authenticated owner turn, after result delivery, that owner must prove broker zero active and zero uncertain operations, no unfinished typed lifecycle transition, no unique unpreserved material, and authenticated claim inventory proving every claim bound to the exact controller session and incarnation is absent or explicitly transferred/released, including any unrelated successor claim preserved by closeout;' &&
-    assert_normalized_contract_clause "$1" \
-      'Until a subsequent authenticated read-back proves every stage, lifecycle cleanup is pending and no owner may claim physical closeout complete.' &&
+      'once closeout has released the run-owned claim and no operation is active or uncertain' &&
     ! grep -Fq 'main-agent.post-delivery-cleanup-receipt.v1' "$1"
 }
 
 assert_main_agent_cleanup_handoff_contract() {
   assert_normalized_contract_clause "$1" 'Facade logical live-worker absence is not physical session-owner absence' &&
     assert_normalized_contract_clause "$1" '`cleanup_pending:false` covers only run and worker cleanup' &&
-    assert_normalized_contract_clause "$1" 'every claim bound to the exact controller session and incarnation' &&
-    assert_normalized_contract_clause "$1" 'unrelated successor claim' &&
-    grep -Fq '`session-management.controller-cleanup-handoff.v1`' "$1" &&
-    grep -Fq '`main-agent.controller-cleanup-handoff.v1`' "$1" &&
-    grep -Fq '`session-management.controller-cleanup-handoff-result.v1`' "$1" &&
-    assert_normalized_contract_clause "$1" 'exact persist and consume invocations' &&
-    assert_normalized_contract_clause "$1" 'producer and recipient-owner identities, run ID and revision, controller session and incarnation, canonical controller worktree, remaining cleanup stages, request digest, and idempotency key' &&
-    assert_normalized_contract_clause "$1" 'Identical persist replay returns the same receipt' &&
-    assert_normalized_contract_clause "$1" 'altered identity, worktree, run revision, cleanup stages, digest, recipient, or key fails closed' &&
-    assert_normalized_contract_clause "$1" 'passes that opaque reference, matching run/controller bindings, persisted revision, and a consume idempotency key to the exact consume invocation' &&
-    assert_normalized_contract_clause "$1" 'atomically consumes the handoff reference before the first destructive stage' &&
-    assert_normalized_contract_clause "$1" 'authenticated progress receipt containing the request digest, consume key, original persisted revision, and completed stages' &&
-    assert_normalized_contract_clause "$1" 'Identical consume replay returns that receipt and resumes only uncommitted stages.' &&
-    assert_normalized_contract_clause "$1" 'interrupted consume after session deletion reconciles exact-session absence through fresh authenticated identity/list evidence and never repeats deletion' &&
-    assert_normalized_contract_clause "$1" 'changed reference, identity, revision, digest, or consume key fails before mutation' &&
-    assert_normalized_contract_clause "$1" 'authenticated result read-back with matching run/controller bindings and revision' &&
-    assert_normalized_contract_clause "$1" 'bounded cleanup status and opaque handoff reference' &&
-    assert_normalized_contract_clause "$1" 'never a private path or unauthenticated deletion instruction'
+    assert_normalized_contract_clause "$1" 'deletes the exact controller session through `agent-session delete`' &&
+    assert_normalized_contract_clause "$1" 'controller worktree through `git-cli` when no retained purpose remains'
 }
 
 assert_main_agent_nonzero_wrong_mode_contract() {
   assert_normalized_contract_clause "$1" 'post-init wrong-mode incident with one or more assignments' &&
     assert_normalized_contract_clause "$1" 'freeze every new launch and Main-owned mutation' &&
     assert_normalized_contract_clause "$1" 'preserve every worker, claim, worktree, and unique material' &&
-    assert_normalized_contract_clause "$1" 'reconcile active or uncertain operations only through their exact owners' &&
-    assert_normalized_contract_clause "$1" 'Never use zero-assignment closeout for a nonzero run' &&
-    assert_normalized_contract_clause "$1" '`starting`, `working`, `submitted`, and `accepted`' &&
-    grep -Fq '`main-agent.nonzero-wrong-mode-recovery.v1`' "$1" &&
-    grep -Fq '`main-agent.nonzero-wrong-mode-recovery-result.v1`' "$1" &&
-    assert_normalized_contract_clause "$1" 'exact owner-supplied invocation' &&
-    assert_normalized_contract_clause "$1" 'revision-CAS request' &&
-    assert_normalized_contract_clause "$1" 'immutable assignment ID/revision/state snapshot' &&
-    assert_normalized_contract_clause "$1" 'one typed-owner receipt per assignment' &&
-    assert_normalized_contract_clause "$1" 'durably consumes a progress marker keyed by the full request digest, original run and assignment revisions, and idempotency key' &&
-    assert_normalized_contract_clause "$1" 'authenticated progress receipt records completed assignment stages and their typed-owner receipts' &&
-    assert_normalized_contract_clause "$1" 'Identical replay accepts that receipt across the now-stale original revisions and resumes only uncommitted stages' &&
-    assert_normalized_contract_clause "$1" 'A partial result preserves its committed stages, freezes every remaining stage' &&
-    assert_normalized_contract_clause "$1" 'an ambiguous stage is never repeated until its exact typed owner proves whether it committed' &&
-    assert_normalized_contract_clause "$1" 'executable typed owner recovery is unavailable, retain the run unchanged and fail closed'
+    assert_normalized_contract_clause "$1" 'keep supervising existing assignments only through their typed macros' &&
+    assert_normalized_contract_clause "$1" 'Never use zero-assignment closeout for a nonzero run'
+}
+
+assert_main_agent_program_contract() {
+  assert_normalized_contract_clause "$1" '`program` runs one Main Agent run per wave with one worker per child issue' &&
+    grep -Fq '## Program Waves' "$1" &&
+    assert_normalized_contract_clause "$1" 'The tracker is the only authoritative plan' &&
+    assert_normalized_contract_clause "$1" 'Accept each child **before merge**' &&
+    assert_normalized_contract_clause "$1" '`depends_on` mirrors the tracker edges' &&
+    assert_normalized_contract_clause "$1" 'tick the child on the tracker and post one checkpoint comment' &&
+    assert_normalized_contract_clause "$1" 'do not release or upgrade the `agent-session`, `main-agent`, hook, or provider runtime' &&
+    grep -Fq '`program/plan`' "$1" &&
+    grep -Fq '`program/dispatch`' "$1" &&
+    ! grep -Eq '(^|[^A-Za-z0-9])L[0-3]([^A-Za-z0-9]|$)' "$1"
 }
 
 assert_main_agent_preinit_observation_fixture() {
@@ -338,22 +283,7 @@ assert_main_agent_preinit_observation_fixture() {
     grep -Fxq 'observed_enforce_rejected=true' "$1"
 }
 
-assert_main_agent_fallback_owner_fixture() {
-  grep -Fxq 'missing_binding_rejected=true' "$1" &&
-    grep -Fxq 'mismatched_identity_prompt_rejected=true' "$1" &&
-    grep -Fxq 'forged_or_missing_capability_rejected=true' "$1" &&
-    grep -Fxq 'attempted_false_rejected=true' "$1" &&
-    grep -Fxq 'sensitive_or_unknown_surface_rejected=true' "$1" &&
-    grep -Fxq 'replay_input_rejected=true' "$1"
-}
 
-assert_main_agent_prerun_restart_fixture() {
-  grep -Fxq 'first_attempt_marker_consumed=true' "$1" &&
-    grep -Fxq 'surviving_claim_rejected=true' "$1" &&
-    grep -Fxq 'changed_restart_request_rejected=true' "$1" &&
-    grep -Fxq 'identical_replay_repeats_mutation=false' "$1" &&
-    grep -Fxq 'ambiguous_restart_retries=false' "$1"
-}
 
 assert_main_agent_mailbox_fixture() {
   grep -Fxq 'forged_sender_rejected=true' "$1" &&
@@ -362,28 +292,7 @@ assert_main_agent_mailbox_fixture() {
     grep -Fxq 'non_material_body_shown=false' "$1"
 }
 
-assert_main_agent_cleanup_fixture() {
-  grep -Fxq 'tombstoned_physical_session_present_complete=false' "$1" &&
-    grep -Fxq 'active_successor_claim_delete_allowed=false' "$1" &&
-    grep -Fxq 'altered_identity_worktree_revision_rejected=true' "$1" &&
-    grep -Fxq 'unadvertised_persist_consume_rejected=true' "$1" &&
-    grep -Fxq 'interrupted_consume_repeats_delete=false' "$1" &&
-    grep -Fxq 'changed_consume_request_mutates=false' "$1" &&
-    grep -Fxq 'replay_repeats_cleanup=false' "$1"
-}
 
-assert_main_agent_nonzero_wrong_mode_fixture() {
-  grep -Fxq 'starting_preserved=true' "$1" &&
-    grep -Fxq 'working_preserved=true' "$1" &&
-    grep -Fxq 'submitted_preserved=true' "$1" &&
-    grep -Fxq 'accepted_preserved=true' "$1" &&
-    grep -Fxq 'typed_owner_receipts_bound=true' "$1" &&
-    grep -Fxq 'changed_snapshot_rejected=true' "$1" &&
-    grep -Fxq 'first_assignment_stage_committed=true' "$1" &&
-    grep -Fxq 'replay_resumes_only_second_stage=true' "$1" &&
-    grep -Fxq 'new_key_repeats_first_stage=false' "$1" &&
-    grep -Fxq 'zero_assignment_closeout_used=false' "$1"
-}
 
 assert_main_agent_controller_recovery_contract() {
   local contract_file="$1"
@@ -392,10 +301,8 @@ assert_main_agent_controller_recovery_contract() {
     assert_main_agent_wrong_mode_cleanup_contract "$contract_file" &&
     assert_main_agent_preinit_observation_contract "$contract_file" &&
     assert_main_agent_prerun_restart_contract "$contract_file" &&
-    assert_main_agent_prerun_restart_replay_contract "$contract_file" &&
     assert_main_agent_folded_input_contract "$contract_file" &&
-    assert_main_agent_fallback_owner_contract "$contract_file" &&
-    assert_main_agent_incarnation_single_use_contract "$contract_file" &&
+    assert_main_agent_no_unimplemented_owner_contract "$contract_file" &&
     assert_main_agent_mailbox_contract "$contract_file" &&
     assert_main_agent_mailbox_owner_contract "$contract_file" &&
     assert_main_agent_post_delivery_contract "$contract_file" &&
@@ -422,19 +329,10 @@ run_main_agent_mode_probe() {
   local unsafe_input_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-unsafe-input-near-miss.md"
   local deferred_mailbox_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-deferred-mailbox-near-miss.md"
   local premature_cleanup_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-premature-cleanup-near-miss.md"
-  local replayed_submit_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-replayed-submit-near-miss.md"
   local preinit_observation_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-preinit-observation.txt"
   local preinit_observation_near_miss="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-preinit-observation-near-miss.txt"
-  local fallback_owner_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-fallback-owner.txt"
-  local fallback_owner_near_miss="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-fallback-owner-near-miss.txt"
-  local prerun_restart_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-prerun-restart.txt"
-  local prerun_restart_near_miss="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-prerun-restart-near-miss.txt"
   local mailbox_owner_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-mailbox-owner.txt"
   local mailbox_owner_near_miss="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-mailbox-owner-near-miss.txt"
-  local cleanup_handoff_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-cleanup-handoff.txt"
-  local cleanup_handoff_near_miss="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-cleanup-handoff-near-miss.txt"
-  local nonzero_wrong_mode_fixture="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-nonzero-wrong-mode.txt"
-  local nonzero_wrong_mode_near_miss="$CONVERSATION_ARTIFACTS_DIR/main-agent-mode-nonzero-wrong-mode-near-miss.txt"
   local product rendered golden rendered_protocol golden_protocol
 
   test -s "$source"
@@ -490,13 +388,6 @@ run_main_agent_mode_probe() {
     return 1
   fi
   printf '%s\n' \
-    'The same session incarnation may consume prompt fingerprint A with attempt_count:1.' \
-    'A changed prompt fingerprint B may start a new attempt_count:1 for that incarnation.' \
-    >"$replayed_submit_fixture"
-  if assert_main_agent_incarnation_single_use_contract "$replayed_submit_fixture"; then
-    return 1
-  fi
-  printf '%s\n' \
     'Because fixed terminal notification delivery deliberately waits for a no-claim safe-input boundary, a Main controller with an active claim may inspect and disposition its authenticated mailbox before returning to an idle waiting prompt.' \
     'Do not release or widen the claim, send terminal input, or infer message consumption merely to trigger that notification.' \
     >"$deferred_mailbox_fixture"
@@ -522,36 +413,6 @@ run_main_agent_mode_probe() {
     'observed_enforce_rejected=false' >"$preinit_observation_near_miss"
   if assert_main_agent_preinit_observation_fixture "$preinit_observation_near_miss"; then return 1; fi
   printf '%s\n' \
-    'missing_binding_rejected=true' \
-    'mismatched_identity_prompt_rejected=true' \
-    'forged_or_missing_capability_rejected=true' \
-    'attempted_false_rejected=true' \
-    'sensitive_or_unknown_surface_rejected=true' \
-    'replay_input_rejected=true' >"$fallback_owner_fixture"
-  assert_main_agent_fallback_owner_fixture "$fallback_owner_fixture"
-  printf '%s\n' \
-    'missing_binding_rejected=false' \
-    'mismatched_identity_prompt_rejected=false' \
-    'forged_or_missing_capability_rejected=false' \
-    'attempted_false_rejected=false' \
-    'sensitive_or_unknown_surface_rejected=false' \
-    'replay_input_rejected=false' >"$fallback_owner_near_miss"
-  if assert_main_agent_fallback_owner_fixture "$fallback_owner_near_miss"; then return 1; fi
-  printf '%s\n' \
-    'first_attempt_marker_consumed=true' \
-    'surviving_claim_rejected=true' \
-    'changed_restart_request_rejected=true' \
-    'identical_replay_repeats_mutation=false' \
-    'ambiguous_restart_retries=false' >"$prerun_restart_fixture"
-  assert_main_agent_prerun_restart_fixture "$prerun_restart_fixture"
-  printf '%s\n' \
-    'first_attempt_marker_consumed=false' \
-    'surviving_claim_rejected=false' \
-    'changed_restart_request_rejected=false' \
-    'identical_replay_repeats_mutation=true' \
-    'ambiguous_restart_retries=true' >"$prerun_restart_near_miss"
-  if assert_main_agent_prerun_restart_fixture "$prerun_restart_near_miss"; then return 1; fi
-  printf '%s\n' \
     'forged_sender_rejected=true' \
     'wrong_recipient_incarnation_rejected=true' \
     'stale_revision_rejected=true' \
@@ -563,53 +424,16 @@ run_main_agent_mode_probe() {
     'stale_revision_rejected=false' \
     'non_material_body_shown=true' >"$mailbox_owner_near_miss"
   if assert_main_agent_mailbox_fixture "$mailbox_owner_near_miss"; then return 1; fi
-  printf '%s\n' \
-    'tombstoned_physical_session_present_complete=false' \
-    'active_successor_claim_delete_allowed=false' \
-    'altered_identity_worktree_revision_rejected=true' \
-    'unadvertised_persist_consume_rejected=true' \
-    'interrupted_consume_repeats_delete=false' \
-    'changed_consume_request_mutates=false' \
-    'replay_repeats_cleanup=false' >"$cleanup_handoff_fixture"
-  assert_main_agent_cleanup_fixture "$cleanup_handoff_fixture"
-  printf '%s\n' \
-    'tombstoned_physical_session_present_complete=true' \
-    'active_successor_claim_delete_allowed=true' \
-    'altered_identity_worktree_revision_rejected=false' \
-    'unadvertised_persist_consume_rejected=false' \
-    'interrupted_consume_repeats_delete=true' \
-    'changed_consume_request_mutates=true' \
-    'replay_repeats_cleanup=true' >"$cleanup_handoff_near_miss"
-  if assert_main_agent_cleanup_fixture "$cleanup_handoff_near_miss"; then return 1; fi
-  printf '%s\n' \
-    'starting_preserved=true' \
-    'working_preserved=true' \
-    'submitted_preserved=true' \
-    'accepted_preserved=true' \
-    'typed_owner_receipts_bound=true' \
-    'changed_snapshot_rejected=true' \
-    'first_assignment_stage_committed=true' \
-    'replay_resumes_only_second_stage=true' \
-    'new_key_repeats_first_stage=false' \
-    'zero_assignment_closeout_used=false' >"$nonzero_wrong_mode_fixture"
-  assert_main_agent_nonzero_wrong_mode_fixture "$nonzero_wrong_mode_fixture"
-  printf '%s\n' \
-    'starting_preserved=false' \
-    'working_preserved=false' \
-    'submitted_preserved=false' \
-    'accepted_preserved=false' \
-    'typed_owner_receipts_bound=false' \
-    'changed_snapshot_rejected=false' \
-    'first_assignment_stage_committed=false' \
-    'replay_resumes_only_second_stage=false' \
-    'new_key_repeats_first_stage=true' \
-    'zero_assignment_closeout_used=true' >"$nonzero_wrong_mode_near_miss"
-  if assert_main_agent_nonzero_wrong_mode_fixture "$nonzero_wrong_mode_near_miss"; then return 1; fi
   assert_main_agent_v2_recovery_contract "$source"
   assert_main_agent_v2_recovery_contract "$protocol"
   assert_main_agent_controller_recovery_contract "$source"
   assert_main_agent_controller_recovery_contract "$protocol"
   assert_main_agent_controller_matrix_contract "$protocol"
+  assert_main_agent_program_contract "$source"
+  grep -Fq 'the tracker issue is the only' "$protocol"
+  if grep -Eq '(^|[^A-Za-z0-9])L[0-3]([^A-Za-z0-9]|$)' "$protocol"; then
+    return 1
+  fi
   grep -Fq '## Explicit Activation' "$source"
   grep -Fq 'agent-session activity doctor --agent codex --format json' "$source"
   grep -Fq 'agent-session activity doctor --agent claude --format json' "$source"
@@ -866,6 +690,8 @@ run_main_agent_mode_probe() {
   rendered_contract_assert_product_omits conversation main-agent-mode claude '--agent codex'
   for product in codex claude; do
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" 'main-agent worker supervise <assignment-id> --format json'
+    rendered_contract_assert_product_contains conversation main-agent-mode "$product" '## Program Waves'
+    rendered_contract_assert_product_omits conversation main-agent-mode "$product" 'session-management.verified-submit-recovery'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`recovery_action.kind`'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`dependency-not-satisfied`'
     rendered_contract_assert_product_contains conversation main-agent-mode "$product" '`main-agent worker request-changes`'

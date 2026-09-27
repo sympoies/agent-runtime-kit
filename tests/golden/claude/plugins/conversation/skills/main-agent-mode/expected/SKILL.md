@@ -22,7 +22,7 @@ Prereqs:
   restricting ordinary agent work.
 - A supported worker provider and executable provider helper pass the doctor
   gate below before mode activation or worker launch.
-- The active project intent, work-tier, test-first, validation, review, and
+- The active project intent, work-mode, test-first, validation, review, and
   delivery policies remain authoritative.
 - The detailed role, handoff, evidence, acceptance, and recovery protocol is
   available at `references/MAIN_AGENT_MODE_PROTOCOL.md`.
@@ -30,14 +30,14 @@ Prereqs:
 Inputs:
 
 - The accepted request, done criteria, constraints, repository, base ref, and
-  work tier.
+  work mode (`core/policies/work-modes.md`).
 - The literal worker provider name, `codex` or `claude`, chosen from the
   providers reported as supported by the installed `agent-session` doctor.
-- Existing plan, issue, run-state, PR, and worktree references when the tier
-  already owns them.
+- Existing tracker, plan, issue, run-state, PR, and worktree references when
+  the work mode already owns them.
 - One private mode-0600 objective packet for a new run, or an authenticated
   durable run relationship that `main-agent rehydrate` can recover.
-- An optional explicit `delegate-all` preference for L0/L1 work.
+- An optional explicit `delegate-all` preference for `direct` or `issue` work.
 
 Outputs:
 
@@ -70,7 +70,7 @@ Failure modes:
 
 Activate only after the user says to enable or use Main Agent Mode for the
 current workflow. State that the mode is active, its bounded outcome, the
-selected worker provider, and whether L0/L1 work is also delegated. Do not infer
+selected worker provider, and whether `direct` or `issue` work is also delegated. Do not infer
 activation from an ordinary request to implement, use subagents, work in
 parallel, or keep going. Activation does not persist into a later unrelated
 request, and an explicit user request to disable the mode takes effect before
@@ -162,59 +162,17 @@ main-agent self show --format json
 The Main controller uses `advisory`; every isolated implementation worker uses `enforce`.
 Immediately before every `main-agent init` branch, run `agent-session list
 --format json` and require `cli.agent-session.list.v1` to bind the exact
-controller session ID, incarnation, and canonical cwd; its `coordination_mode`
-field is identity context only and cannot distinguish requested or configured
-mode from a fresh runtime observation. Initialization additionally requires the
-trusted session-management owner to advertise
-`session-management.controller-mode-observation.v1` and execute its
-owner-supplied non-mutating invocation, returning authenticated
-`session-management.controller-mode-observation-result.v1` with the same
-session ID, incarnation, canonical cwd, `mode_source:"runtime-observed"`,
-`fresh:true`, and `observed_mode:"advisory"`. A missing capability, wrong cwd,
-unbound or stale identity, `mode_source:"requested"` or
-`mode_source:"configured"`, or observed `enforce`, `off`, or unknown mode fails
-closed before `main-agent init`. A controller observed in `enforce`, `off`, or
-an unknown mode fails the pre-init gate. Before closing it, the session owner must prove the exact controller
-session and incarnation, broker zero active and zero uncertain operations, no
-unfinished typed lifecycle transition, and no unique unpreserved material.
-Authenticated claim inventory must also prove that every claim bound to that
-exact controller session and incarnation is absent or explicitly
-transferred/released through its typed owner, including any unrelated successor
-claim. Unknown inventory or any surviving claim retains the controller and
-fails closed.
-Only then close that exact session through its owner, require fresh-list
-absence, remove its clean controller worktree with `git-cli` when it has no
-retained purpose, and restart once in `advisory` before attempting `init`.
-Missing or ambiguous proof retains the session and worktree and fails closed;
-never create the run first and promise to repair the mode later.
+controller session ID, incarnation, and canonical cwd with
+`coordination_mode:"advisory"`. A controller observed in `enforce`, `off`, or an unknown mode fails the pre-init gate.
+Do not call `init`. Report the mismatch and restart the controller in
+`advisory` through the ordinary session lifecycle, preserving any unique
+worktree material; never create the run first and promise to repair the mode
+later.
 
-A failed controller startup before `main-agent init` may be deleted and
-restarted once with a compact prompt that points to the private full packet
-only when no run claim or assignment exists, the broker proves zero active and
-zero uncertain operations, no unfinished typed lifecycle transition exists,
-no unique unpreserved worktree material exists, and authenticated claim
-inventory proves every claim bound to the exact controller session and
-incarnation is absent or explicitly transferred/released. This is a controller
-pre-init recovery, never a worker-start recovery. The owner must fresh-list
-verify exact-session absence before the restart; any failed proof preserves the
-session and fails closed.
-Every pre-init close-and-restart branch, including a wrong-mode branch, must use
-this restart-once boundary. It requires the trusted released
-session-management owner to advertise
-`session-management.failed-controller-restart.v1`, execute its owner-supplied
-invocation, and return authenticated
-`session-management.failed-controller-restart-result.v1`. The immutable request
-digest and durable consumed/idempotency marker bind the restart owner, failed
-controller session ID and incarnation, canonical cwd and controller worktree,
-requested `advisory` mode, compact prompt and private-packet reference digest,
-and authenticated claim-inventory projection. The marker is consumed before
-the first destructive stage. Any changed request field is rejected before
-deletion or restart.
-Identical replay returns the same receipt without repeating deletion or
-restart; partial progress resumes only the recorded remaining stage. An
-ambiguous restart outcome retains the exact session and fails closed rather
-than issuing another start. If that owner primitive is absent, retain the exact
-session and fail closed.
+A failed controller startup before `main-agent init` may be closed and
+restarted once in `advisory` when no run, claim, or assignment exists yet, no
+operation is active or uncertain, and no unique worktree material would be
+lost. This is a controller pre-init recovery, never a worker-start recovery.
 
 Do not infer a run, role, assignment, or manager from the prompt, title, cwd,
 pane, process, or environment flags. The facade's session-ID plus incarnation
@@ -276,32 +234,63 @@ paths, capabilities, prompts, transcripts, or mailbox bodies.
 
 ## Outcome Routing
 
-Classify the request before choosing workers. Main Agent Mode changes
-implementation ownership, not the tier:
+Classify the request by work mode (`core/policies/work-modes.md`) before
+choosing workers. Main Agent Mode changes implementation ownership, not the
+work mode:
 
-- L0/L1 remain inline unless the user requests `delegate-all`; when delegated,
-  use one isolated managed worker and keep the same parent outcome.
-- L2 retains the plan-tracking parent, but the main agent does not implement or
-  repair production or test code. One interactive managed worker owns the
-  implementation in an isolated managed worktree launched with
+- `direct` and `issue` stay inline unless the user requests `delegate-all`;
+  when delegated, use one isolated managed worker and keep the same parent
+  outcome.
+- `program` runs one Main Agent run per wave with one worker per child issue;
+  see Program Waves.
+- `program/plan` retains the plan-tracking parent, but the main agent does not
+  implement or repair production or test code. One interactive managed worker
+  owns the implementation in an isolated managed worktree launched with
   `--coordination-mode enforce`.
-- L3 retains exact independent lane workers and the dispatch orchestrator
-  acceptance boundary. The mode does not merge lanes or collapse their
-  worktrees, PRs, reviews, validation, or closeout.
+- `program/dispatch` retains exact independent lane workers and the dispatch
+  orchestrator acceptance boundary. The mode does not merge lanes or collapse
+  their worktrees, PRs, reviews, validation, or closeout.
 
-For L2/L3, main-agent writes are limited to orchestration, plan/run-state,
-evidence, review synthesis, and authorized provider lifecycle actions. Return
-code findings to the same worker and lane unless the main agent records an
-explicit reassignment under the recovery protocol.
+For `program` and its specializations, main-agent writes are limited to
+orchestration, tracker and run-state, evidence, review synthesis, and
+authorized provider lifecycle actions. Return code findings to the same worker
+and lane unless the main agent records an explicit reassignment under the
+recovery protocol.
+
+## Program Waves
+
+A `program` is one tracker issue plus independent child issues. The tracker is
+the only authoritative plan: settled decisions, phase table, and dependency
+graph. A Main Agent run is execution state for one wave; it never holds a
+second authoritative plan or dependency graph.
+
+1. Select the wave from the tracker: unchecked child issues whose dependencies
+   are closed. A release, deploy, or decision gate ends the wave; crossing it
+   needs fresh user authority.
+2. Start one run per wave. Create one assignment per child issue; each packet
+   names its child issue, and `depends_on` mirrors the tracker edges between
+   children of the same wave.
+3. Accept each child **before merge**: check its diff, validation, and PR
+   against the child's acceptance criteria and the tracker's settled
+   decisions. Return findings to the same worker; the main agent does not
+   repair child code.
+4. After acceptance and merge, tick the child on the tracker and post one
+   checkpoint comment (checked, result, decision, next).
+5. While a run is active, do not release or upgrade the `agent-session`,
+   `main-agent`, hook, or provider runtime that the controller or its workers
+   use. Schedule releases between waves.
+6. End the wave with run closeout. The next wave starts a new run from the
+   tracker, not from the closed run's state.
 
 ## Workflow
 
-1. Confirm explicit activation, bounded done criteria, worker provider, tier,
-   and any L0/L1 `delegate-all` preference.
+1. Confirm explicit activation, bounded done criteria, worker provider, work
+   mode, and any `direct` or `issue` `delegate-all` preference. For `program`,
+   also confirm the wave selected from the tracker.
 2. Pass the version, doctor, and conditional dry-run compatibility gates. Do
    not launch a worker while readiness is uncertain.
 3. Run authenticated `main-agent self show`. Rehydrate an existing run and
-   reconcile it with durable issue/plan/run-state/worktree evidence; never
+   reconcile it with durable tracker/issue/plan/run-state/worktree evidence; never
    create a second run merely because local conversation context is missing.
 4. Immediately before any no-run `main-agent init` branch, execute the exact
    list-plus-runtime-observation gate defined in Entrypoint. Continue to the
@@ -312,7 +301,8 @@ explicit reassignment under the recovery protocol.
    facade. Each private packet names a repository, non-overlapping scope,
    invariants, exclusions, base, isolated managed worktree, test-first and
    validation duties, delivery artifact duties, and the exact
-   completion/blocker packet. The Main Agent claim must not overlap a worker
+   completion/blocker packet; a `program` packet also names its child issue.
+   The Main Agent claim must not overlap a worker
    scope. For a mutating worker, the packet `worktree`, `launch.cwd`, durable
    assignment worktree, and authenticated worker cwd must resolve to the same
    canonical checkout root before bootstrap can mint its shell grant. Keep
@@ -330,7 +320,7 @@ explicit reassignment under the recovery protocol.
    terminal transition, re-read it, and retry the unchanged launch only after
    every dependency is accepted or released. Missing, cross-run, cancelled, or
    other pre-terminal dependencies remain blocking.
-6. Run the candidate conflict check, then prefer the folded readiness boundary:
+6. Run the candidate conflict check, then use the folded readiness boundary:
 
    ```bash
    main-agent worker start --assignment-file <private-json> --await-ready 5m \
@@ -368,33 +358,9 @@ explicit reassignment under the recovery protocol.
    A folded `readiness_failed` snapshot can be superseded by that newer authoritative evidence from the same
    incarnation; it never authorizes a second prompt, Enter, assignment, or
    worker.
-   Prefer folded CLI startup readiness. Until that boundary is available, Main
-   Agent Mode may continue only when the trusted released session-management owner
-   advertises `session-management.verified-submit-recovery.v1`, supplies an
-   owner-advertised exact invocation, and returns authenticated
-   `session-management.verified-submit-recovery-result.v1`. The result carries
-   authenticated producer identity, the exact capability and invocation
-   contract, and a request digest over the bound session ID, incarnation,
-   already-delivered prompt fingerprint, and idempotency key. The typed request and result
-   bind the exact session ID, incarnation, and already-delivered prompt
-   fingerprint; prove `composer_state:"idle"`, `sensitive_dialog:false`,
-   `broker_active:0`, and `broker_uncertain:0`; persist the attempt as consumed
-   through an atomic consumed-before-input marker; and report `attempted:true`, `attempt_count:1`, and
-   `input_sent:true`. The durable consumed marker is keyed by exact session ID
-   plus incarnation, independent of prompt fingerprint; any existing marker for
-   that incarnation rejects every later request before input, even with a
-   different prompt fingerprint or idempotency key. The successful result normalizes into the same readiness
-   and `delivery` projection above only after the authenticated worker
-   checkpoint. A failure receipt reports `input_sent:false` and preserves the
-   marker and bounded reason; exact replay returns the prior receipt without
-   input, while changed identity, prompt, request digest, or key is rejected
-   before input. Self-asserted schema strings, peer prose, or an unadvertised
-   command never grant terminal-input authority. Missing or forged capability,
-   producer, binding, or fields; `attempted:false`; a stale or mismatched
-   identity or prompt; a sensitive or unknown surface; replay; or a partial or
-   ambiguous outcome fails closed. Without that executable owner capability,
-   Main Agent Mode is unavailable for the fallback. Send no further input,
-   never stack Enter presses, and never resend the prompt.
+   Folded startup readiness is required. Without `--await-ready` support,
+   Main Agent Mode is unavailable; never substitute manual paste, stacked Enter
+   presses, or a resent prompt.
 8. The generated worker prompt invokes the exact compatible executable's
    `main-agent bootstrap` command. The authenticated worker alone resolves its
    private assignment, acquires the assignment-derived claim, and records the
@@ -602,7 +568,8 @@ explicit reassignment under the recovery protocol.
     `post_claim_failure` must pass through `reconcile-stopped` before retirement
     or a distinct replacement.
 15. Checkpoint and close the run only when assignments are terminal or carry an
-    explicit retained exception and the active tier's durable gates pass.
+    explicit retained exception and the active work mode's durable gates pass.
+    For `program`, the tracker checkpoint for every accepted child is posted.
     Accept, merge, archive, and report only when provider delivery is available;
     otherwise retain the bounded local result and state exactly what remains.
 
@@ -664,83 +631,17 @@ off a Main Agent Mode workflow:
    typed owner path.
    A post-init wrong-mode incident with one or more assignments is different:
    freeze every new launch and Main-owned mutation, preserve every worker,
-   claim, worktree, and unique material, and reconcile active or uncertain
-   operations only through their exact owners. Never use zero-assignment
-   closeout for a nonzero run. Assignments in `starting`, `working`,
-   `submitted`, and `accepted` remain in their current typed lifecycle until a
-   trusted owner recovery proves the exact safe transition. Recovery requires
-   the released facade to advertise
-   `main-agent.nonzero-wrong-mode-recovery.v1` with its exact owner-supplied
-   invocation and return authenticated
-   `main-agent.nonzero-wrong-mode-recovery-result.v1`. Its revision-CAS request
-   binds the controller session and incarnation, canonical cwd, run ID and
-   revision, immutable assignment ID/revision/state snapshot, broker
-   active/uncertain projection, request digest, and idempotency key. The result
-   binds the same digest and records one typed-owner receipt per assignment:
-   `starting` may move only through worker-start reconciliation, `working` only
-   through worker checkpoint/supervision, `submitted` only through manager
-   review, and `accepted` is preserved unchanged. It also returns the durable
-   post-recovery run revision and authenticated read-back. Before the first
-   assignment mutation, the owner durably consumes a progress marker keyed by
-   the full request digest, original run and assignment revisions, and
-   idempotency key. Its authenticated progress receipt records completed
-   assignment stages and their typed-owner receipts. Identical replay accepts
-   that receipt across the now-stale original revisions and resumes only
-   uncommitted stages; changed run, assignment snapshot, controller identity,
-   digest, or key is rejected before mutation. A partial result preserves its
-   committed stages, freezes every remaining stage, and requires authenticated
-   read-back reconciliation; an ambiguous stage is never repeated until its
-   exact typed owner proves whether it committed. When this executable typed
-   owner recovery is unavailable, retain the run unchanged and fail closed.
+   claim, worktree, and unique material, keep supervising existing assignments
+   only through their typed macros, and report the incident to the user. Never
+   use zero-assignment closeout for a nonzero run.
 5. Keep the Main provider session live until the user-facing result or handoff
-   prompt is delivered.
-   Physical provider-session stop or deletion is a later session-owner action;
-   the Main Agent must not terminate the transport that still owes the user its
-   final response.
-   Because the response-hosting turn has no post-delivery callback, its final
-   response must explicitly hand off the retained disposition `controller
-   cleanup pending` to an already-authenticated session-management owner and
-   must not claim that physical cleanup ran. The trusted released
-   session-management owner must advertise
-   `session-management.controller-cleanup-handoff.v1` and exact persist and
-   consume invocations. The persist request writes authenticated, run-bound,
-   replay-safe `main-agent.controller-cleanup-handoff.v1` state and binds the
-   producer and recipient-owner identities, run ID and revision, controller
-   session and incarnation, canonical controller worktree, remaining cleanup
-   stages, request digest, and idempotency key. It returns authenticated
-   `session-management.controller-cleanup-handoff-result.v1` with the same
-   digest, persisted revision, bounded cleanup status, and opaque handoff
-   reference. Identical persist replay returns the same receipt; altered
-   identity, worktree, run revision, cleanup stages, digest, recipient, or key
-   fails closed. The later owner passes that opaque reference, matching
-   run/controller bindings, persisted revision, and a consume idempotency key to
-   the exact consume invocation. That owner atomically consumes the handoff
-   reference before the first destructive stage and returns an authenticated
-   progress receipt containing the request digest, consume key, original
-   persisted revision, and completed stages. Identical consume replay returns
-   that receipt and resumes only uncommitted stages. An interrupted consume
-   after session deletion reconciles exact-session absence through fresh
-   authenticated identity/list evidence and never repeats deletion; changed
-   reference, identity, revision, digest, or consume key fails before mutation.
-   Cleanup requires authenticated result read-back with matching run/controller
-   bindings and revision.
-   Public final prose exposes only bounded cleanup status and opaque handoff
-   reference, never a private path or unauthenticated deletion instruction.
-   In a later authenticated owner turn, after
-   result delivery, that owner must prove broker zero active and zero uncertain
-   operations, no unfinished typed lifecycle transition, no unique
-   unpreserved material, and authenticated claim inventory proving every claim
-   bound to the exact controller session and incarnation is absent or explicitly
-   transferred/released, including any unrelated successor claim preserved by
-   closeout; delete the exact controller session; require a fresh
-   default list to prove exact-session absence; and remove its clean controller
-   worktree through `git-cli` when no retained purpose remains. That later owner
-   records the ordinary durable broker, exact-session deletion, fresh-list, and
-   worktree evidence owned by the session-management lifecycle. Until a
-   subsequent authenticated read-back proves every stage, lifecycle cleanup is
-   pending and no owner may claim physical closeout complete. Missing or
-   ambiguous proof retains the session/worktree and records the failed stage
-   without repeating deletion.
+   prompt is delivered. The response-hosting turn cannot delete its own
+   session first, so its final response states the retained disposition
+   `controller cleanup pending` and must not claim that physical cleanup ran.
+   Afterwards the user or a later session deletes the exact controller session
+   through `agent-session delete` once closeout has released the run-owned
+   claim and no operation is active or uncertain, then removes its clean
+   controller worktree through `git-cli` when no retained purpose remains.
 
 `worker retire`, `main-agent close`, and `work-context release` remain
 diagnostic and intentional recovery primitives. They are not the normal
@@ -752,15 +653,13 @@ closeout path and must not replace exact replay of an admitted closeout macro.
   runner and enforced interactive-session and acceptance boundary; unsupported
   runtimes have no managed Main Agent Mode surface.
 - It consumes compatible deterministic `agent-session` primitives and existing
-  tier/review/delivery outcomes. It adds no runtime graph, provider-specific
+  work-mode/review/delivery outcomes. It adds no runtime graph, provider-specific
   orchestration engine, or provider transport command.
 - Concrete provider transport mechanics remain runtime-owned. Main Agent Mode
-  prefers `worker start --await-ready` and its typed authenticated checkpoint
-  proof, including the bounded `submit_key_recovery` result. Until folded
-  startup is available, it consumes only the advertised session-management
-  owner's typed, one-attempt, per-incarnation verified-submit result defined
-  above; it never implements provider-specific paste, keypress, or pane
-  heuristics or consumes an untyped result.
+  uses `worker start --await-ready` and its typed authenticated checkpoint
+  proof, including the bounded `submit_key_recovery` result; it never
+  implements provider-specific paste, keypress, or pane heuristics or consumes
+  an untyped result.
 - Main Agent Mode never repairs trust, authentication, configuration, hooks,
   updates, permissions, or services. The dry-run compatibility probe is the
   only readiness fallback, and it never authorizes apply.
