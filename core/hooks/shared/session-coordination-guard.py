@@ -1368,6 +1368,10 @@ def invocation_is_recognized_mutation(
             arguments
         )
         return writes_files
+    if name == "checkout-lease-guard.py" and arguments[:1] == ["adopt-dirty"]:
+        # The checkout lease hook's launcher parents `git-cli worktree
+        # adopt-dirty` for the released descriptor transport.
+        return True
     return name == "git-cli" and len(arguments) >= 2 and (
         arguments[0], arguments[1]
     ) in {

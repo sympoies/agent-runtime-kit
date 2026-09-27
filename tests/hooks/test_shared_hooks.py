@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import stat
@@ -19243,19 +19244,70 @@ exit 65
         return lease
 
     @staticmethod
-    def _dirty_adoption_command_argv(advisory: dict[str, object]) -> list[str]:
+    def _dirty_adoption_command(advisory: dict[str, object]) -> dict[str, Any]:
+        """Parse the advisory's adoption command for either git-cli transport.
+
+        A git-cli that still accepts ``--challenge <bearer>`` receives the
+        legacy argv command. A released git-cli that reads the bearer only
+        through ``--challenge-fd`` receives the hook's launcher command, which
+        takes the bearer on stdin from a here-string.
+        """
         hook_output = advisory.get("hookSpecificOutput")
         if not isinstance(hook_output, dict):
             raise AssertionError("dirty adoption advisory omitted hook output")
         context = hook_output.get("additionalContext")
         if not isinstance(context, str):
             raise AssertionError("dirty adoption advisory omitted context")
-        match = re.search(
+        legacy = re.search(
             r"`(git-cli worktree adopt-dirty --challenge [^`]*)`", context
         )
-        if match is None:
-            raise AssertionError("dirty adoption advisory omitted adopt command")
-        return shlex.split(match.group(1))
+        if legacy is not None:
+            argv = shlex.split(legacy.group(1))
+            return {
+                "transport": "argv",
+                "argv": argv,
+                "token": argv[4],
+                "reason_file": Path(argv[6]),
+            }
+        launcher = re.search(
+            r"`([^`]* adopt-dirty --reason-file [^`]* <<< [0-9a-f]{64})`", context
+        )
+        if launcher is not None:
+            words = shlex.split(launcher.group(1))
+            if len(words) != 6 or words[1:3] != ["adopt-dirty", "--reason-file"]:
+                raise AssertionError("dirty adoption launcher command is malformed")
+            return {
+                "transport": "fd",
+                "argv": words[:4],
+                "token": words[5],
+                "reason_file": Path(words[3]),
+            }
+        raise AssertionError("dirty adoption advisory omitted adopt command")
+
+    @staticmethod
+    def _dirty_adoption_shell_command(details: dict[str, Any], *extra: str) -> str:
+        command = shlex.join([*details["argv"], *extra])
+        if details["transport"] == "fd":
+            command += f" <<< {details['token']}"
+        return command
+
+    @staticmethod
+    def _dirty_adoption_launcher_command(
+        details: dict[str, Any], launcher: Path | None = None
+    ) -> str:
+        """Build the launcher-form command for a challenge of either transport."""
+        executable = launcher or HOOK_DIR / "checkout-lease-guard.py"
+        return (
+            shlex.join(
+                [
+                    str(executable),
+                    "adopt-dirty",
+                    "--reason-file",
+                    str(details["reason_file"]),
+                ]
+            )
+            + f" <<< {details['token']}"
+        )
 
     @staticmethod
     def _invalid_utf8_checkout_path(root: Path, name: bytes = b"repo-\xff") -> Path:
@@ -19539,7 +19591,8 @@ exit 65
             self.assertIn("read-only", context.lower())
             self.assertRegex(
                 context,
-                r"git-cli worktree adopt-dirty --challenge \S+ --reason-file \S+",
+                r"(?:git-cli worktree adopt-dirty --challenge \S+|\S+ adopt-dirty)"
+                r" --reason-file \S+",
             )
             self.assertNotIn("<token>", context)
             self.assertIn("git-cli worktree add", context)
@@ -19567,7 +19620,7 @@ exit 65
                 challenge["authorization_turn_digest"],
                 hashlib.sha256(private_prompt.encode("utf-8")).hexdigest(),
             )
-            reason_file = Path(self._dirty_adoption_command_argv(advisory)[6])
+            reason_file = self._dirty_adoption_command(advisory)["reason_file"]
             self.assertTrue(reason_file.is_file())
             self.assertEqual(reason_file.stat().st_mode & 0o777, 0o600)
             self.assertEqual(reason_file.read_text(encoding="utf-8"), "")
@@ -19606,13 +19659,22 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assertIsNotNone(advisory)
             assert advisory is not None
-            argv = self._dirty_adoption_command_argv(advisory)
-            self.assertEqual(len(argv), 7)
-            self.assertEqual(
-                argv[:4], ["git-cli", "worktree", "adopt-dirty", "--challenge"]
-            )
-            self.assertEqual(argv[5], "--reason-file")
-            reason_file = Path(argv[6])
+            details = self._dirty_adoption_command(advisory)
+            argv = details["argv"]
+            if details["transport"] == "argv":
+                self.assertEqual(len(argv), 7)
+                self.assertEqual(
+                    argv[:4], ["git-cli", "worktree", "adopt-dirty", "--challenge"]
+                )
+                self.assertEqual(argv[5], "--reason-file")
+            else:
+                self.assertEqual(len(argv), 4)
+                self.assertEqual(
+                    Path(argv[0]).resolve(),
+                    (HOOK_DIR / "checkout-lease-guard.py").resolve(),
+                )
+                self.assertEqual(argv[1:3], ["adopt-dirty", "--reason-file"])
+            reason_file = details["reason_file"]
             self.assertTrue(reason_file.is_file())
             self.assertEqual(reason_file.stat().st_mode & 0o777, 0o600)
             self.assertEqual(reason_file.parent.stat().st_mode & 0o777, 0o700)
@@ -19648,9 +19710,9 @@ exit 65
                 self.assertEqual(code, 0, stderr)
                 self.assertIsNotNone(advisory)
                 assert advisory is not None
-                argv = self._dirty_adoption_command_argv(advisory)
-                self.assertEqual(len(argv), 7)
-                reason_paths.append(Path(argv[6]))
+                reason_paths.append(
+                    self._dirty_adoption_command(advisory)["reason_file"]
+                )
 
             self.assertNotEqual(reason_paths[0], reason_paths[1])
             self.assertFalse(reason_paths[0].exists())
@@ -19768,8 +19830,7 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assertIsNotNone(advisory)
             assert advisory is not None
-            argv = self._dirty_adoption_command_argv(advisory)
-            self.assertEqual(len(argv), 7)
+            self._dirty_adoption_command(advisory)
 
     def test_dirty_checkout_transition_requires_issuing_session_and_trusted_cli(
         self,
@@ -19802,17 +19863,26 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assertIsNotNone(advisory)
             assert advisory is not None
-            argv = self._dirty_adoption_command_argv(advisory)
-            command = shlex.join(argv)
+            details = self._dirty_adoption_command(advisory)
+            argv = details["argv"]
+            command = self._dirty_adoption_shell_command(details)
+            if details["transport"] == "argv":
+                shadow_command = shlex.join([str(fake_bin), *argv[1:]])
+            else:
+                # A launcher copy outside the trusted hook path is not the
+                # governed transition, so the ordinary dirty-checkout gate
+                # blocks it.
+                fake_launcher = fake_bin.parent / "checkout-lease-guard.py"
+                fake_launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                fake_launcher.chmod(0o755)
+                shadow_command = self._dirty_adoption_launcher_command(
+                    details, fake_launcher
+                )
 
             for session_id, candidate, fragment in (
                 ("issuing-session", command, None),
                 ("foreign-session", command, "issuing agent session"),
-                (
-                    "issuing-session",
-                    shlex.join([str(fake_bin), *argv[1:]]),
-                    "unowned changes",
-                ),
+                ("issuing-session", shadow_command, "unowned changes"),
             ):
                 with self.subTest(session_id=session_id, command=candidate):
                     code, decision, stderr = run_enforced_hook(
@@ -19899,13 +19969,15 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assertIsNotNone(advisory)
             assert advisory is not None
-            adopt_argv = self._dirty_adoption_command_argv(advisory)
-            token = adopt_argv[4]
-            reason_file = Path(adopt_argv[6])
+            details = self._dirty_adoption_command(advisory)
+            token = details["token"]
+            reason_file = details["reason_file"]
             reason = "Continue the user-authorized dirty checkout work.\n"
             reason_file.write_text(reason, encoding="utf-8")
 
-            adopt_command = shlex.join([*adopt_argv, "--format=json"])
+            adopt_command = self._dirty_adoption_shell_command(
+                details, "--format=json"
+            )
             code, decision, stderr = run_enforced_hook(
                 "checkout-lease-guard.py",
                 self._checkout_lease_payload(
@@ -19923,7 +19995,7 @@ exit 65
             cli_env = dict(os.environ)
             cli_env.update(env)
             adopted_result = subprocess.run(
-                [*adopt_argv, "--format=json"],
+                ["/bin/bash", "-c", adopt_command],
                 cwd=repo,
                 env=cli_env,
                 capture_output=True,
@@ -20107,9 +20179,9 @@ exit 65
                 self.assertEqual(code, 0, stderr)
                 self.assertIsNotNone(advisory)
                 assert advisory is not None
-                adopt_argv = self._dirty_adoption_command_argv(advisory)
-                token = adopt_argv[4]
-                reason_file = Path(adopt_argv[6])
+                details = self._dirty_adoption_command(advisory)
+                token = details["token"]
+                reason_file = details["reason_file"]
                 reason = f"Attempt rejected {case}.\n"
                 reason_file.write_text(reason, encoding="utf-8")
                 challenge_file = next(state.rglob("challenges/*.json"))
@@ -20138,7 +20210,13 @@ exit 65
                 cli_env = dict(os.environ)
                 cli_env.update(env)
                 rejected = subprocess.run(
-                    [*adopt_argv, "--format=json"],
+                    [
+                        "/bin/bash",
+                        "-c",
+                        self._dirty_adoption_shell_command(
+                            details, "--format=json"
+                        ),
+                    ],
                     cwd=repo,
                     env=cli_env,
                     capture_output=True,
@@ -20222,6 +20300,262 @@ exit 65
                     self.assert_blocked(decision, "unowned changes")
 
             self.assertEqual(self._checkout_lease_files(state), [])
+
+    @staticmethod
+    def _write_challenge_fd_git_cli_stub(bin_dir: Path, record: Path) -> Path:
+        """A git-cli stub that records how it received the adoption bearer."""
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        stub = bin_dir / "git-cli"
+        stub.write_text(
+            "#!/usr/bin/env python3\n"
+            "import hashlib, json, os, socket, stat, struct, sys\n"
+            "is_socket = stat.S_ISSOCK(os.fstat(0).st_mode)\n"
+            "peer_is_parent = None\n"
+            "if is_socket and sys.platform.startswith('linux'):\n"
+            "    probe = socket.socket(fileno=os.dup(0))\n"
+            "    creds = probe.getsockopt(\n"
+            "        socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i')\n"
+            "    )\n"
+            "    probe.close()\n"
+            "    peer_is_parent = struct.unpack('3i', creds)[0] == os.getppid()\n"
+            "data = b''\n"
+            "while True:\n"
+            "    chunk = os.read(0, 256)\n"
+            "    if not chunk:\n"
+            "        break\n"
+            "    data += chunk\n"
+            "bearer = data.decode('ascii', 'replace')\n"
+            f"with open({str(record)!r}, 'w', encoding='utf-8') as handle:\n"
+            "    json.dump({\n"
+            "        'argv': sys.argv[1:],\n"
+            "        'is_socket': is_socket,\n"
+            "        'peer_is_parent': peer_is_parent,\n"
+            "        'digest': hashlib.sha256(data).hexdigest(),\n"
+            "        'bearer_in_argv': any(bearer in a for a in sys.argv),\n"
+            "        'bearer_in_env': any(bearer in v for v in os.environ.values()),\n"
+            "    }, handle)\n"
+            "print(json.dumps({'ok': True}))\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return stub
+
+    def _run_dirty_adoption_launcher(
+        self,
+        arguments: list[str],
+        stdin: str,
+        bin_dir: Path,
+        *,
+        trusted: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        env = dict(os.environ)
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+        if trusted:
+            env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(bin_dir)
+        else:
+            env.pop("AGENT_RUNTIME_TRUSTED_CLI_ROOT", None)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        return subprocess.run(
+            [str(HOOK_DIR / "checkout-lease-guard.py"), "adopt-dirty", *arguments],
+            input=stdin,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+
+    def test_dirty_adoption_launcher_passes_bearer_through_parent_socket(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record = root / "record.json"
+            bin_dir = root / "bin"
+            self._write_challenge_fd_git_cli_stub(bin_dir, record)
+            token = secrets.token_hex(32)
+            digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+            reason_file = root / "reasons" / f"{digest}.txt"
+            reason_file.parent.mkdir()
+            reason_file.write_text("Adopt the warned state.\n", encoding="utf-8")
+
+            result = self._run_dirty_adoption_launcher(
+                ["--reason-file", str(reason_file), "--format=json"],
+                token + "\n",
+                bin_dir,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertEqual(json.loads(result.stdout), {"ok": True})
+            observed = json.loads(record.read_text(encoding="utf-8"))
+            self.assertEqual(
+                observed["argv"],
+                [
+                    "worktree",
+                    "adopt-dirty",
+                    "--challenge-fd",
+                    "0",
+                    "--reason-file",
+                    str(reason_file),
+                    "--format=json",
+                ],
+            )
+            self.assertTrue(observed["is_socket"])
+            self.assertEqual(observed["digest"], digest)
+            self.assertFalse(observed["bearer_in_argv"])
+            self.assertFalse(observed["bearer_in_env"])
+            if sys.platform.startswith("linux"):
+                self.assertTrue(observed["peer_is_parent"])
+            self.assertNotIn(token, result.stdout + result.stderr)
+
+    def test_dirty_adoption_launcher_rejects_unbound_or_malformed_input(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record = root / "record.json"
+            bin_dir = root / "bin"
+            self._write_challenge_fd_git_cli_stub(bin_dir, record)
+            token = secrets.token_hex(32)
+            digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+            reason_file = root / "reasons" / f"{digest}.txt"
+            reason_file.parent.mkdir()
+            reason_file.write_text("Adopt the warned state.\n", encoding="utf-8")
+            other_reason = root / "reasons" / f"{'0' * 64}.txt"
+            other_reason.write_text("Other.\n", encoding="utf-8")
+
+            for label, arguments, stdin, trusted in (
+                ("malformed-bearer", ["--reason-file", str(reason_file)], "xyz\n", True),
+                ("extra-input", ["--reason-file", str(reason_file)], token + "\nmore\n", True),
+                ("reason-mismatch", ["--reason-file", str(other_reason)], token + "\n", True),
+                ("missing-reason", [], token + "\n", True),
+                ("unknown-argument", ["--reason-file", str(reason_file), "--bogus"], token, True),
+                ("bearer-on-argv", ["--reason-file", str(reason_file), "--challenge", token], token, True),
+                ("untrusted-cli", ["--reason-file", str(reason_file)], token + "\n", False),
+            ):
+                with self.subTest(label=label):
+                    record.unlink(missing_ok=True)
+                    result = self._run_dirty_adoption_launcher(
+                        arguments, stdin, bin_dir, trusted=trusted
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(record.exists())
+                    self.assertNotIn(token, result.stdout + result.stderr)
+
+    def test_checkout_lease_admits_launcher_adoption_only_for_issuing_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            state = root / "state"
+            self._init_checkout_lease_repo(repo)
+            (repo / "unowned.txt").write_text("unknown\n", encoding="utf-8")
+            env = {
+                "AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION": "1",
+                "AGENT_RUNTIME_STATE_HOME": str(state),
+            }
+            self._dirty_snapshot_capability_or_skip(repo)
+            code, advisory, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                {
+                    "session_id": "launcher-issuing-session",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "authorize this exact state",
+                },
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            details = self._dirty_adoption_command(advisory)
+            command = self._dirty_adoption_launcher_command(details)
+            shadow = root / "shadow" / "checkout-lease-guard.py"
+            shadow.parent.mkdir()
+            shadow.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shadow.chmod(0o755)
+            copied_reason = root / "elsewhere" / details["reason_file"].name
+            copied_reason.parent.mkdir()
+            copied_reason.write_text("", encoding="utf-8")
+            launcher = shlex.quote(str(HOOK_DIR / "checkout-lease-guard.py"))
+            token = details["token"]
+
+            for session_id, candidate, fragment in (
+                ("launcher-issuing-session", command, None),
+                ("launcher-issuing-session", f"{command} 2>/dev/null", None),
+                ("foreign-session", command, "issuing agent session"),
+                (
+                    "launcher-issuing-session",
+                    self._dirty_adoption_launcher_command(details, shadow),
+                    "unowned changes",
+                ),
+                (
+                    "launcher-issuing-session",
+                    f"{launcher} adopt-dirty --reason-file "
+                    f"{shlex.quote(str(copied_reason))} <<< {token}",
+                    "reason file",
+                ),
+                (
+                    "launcher-issuing-session",
+                    f"{launcher} adopt-dirty --reason-file "
+                    f"{shlex.quote(str(details['reason_file']))} --bogus <<< {token}",
+                    "unowned changes",
+                ),
+                (
+                    "launcher-issuing-session",
+                    f"PATH=/tmp {command}",
+                    "unowned changes",
+                ),
+                (
+                    "launcher-issuing-session",
+                    f"{command} && touch README.md",
+                    "unowned changes",
+                ),
+            ):
+                with self.subTest(session_id=session_id, command=candidate):
+                    code, decision, stderr = run_enforced_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            session_id,
+                            repo,
+                            tool_name="Bash",
+                            command=candidate,
+                        ),
+                        cwd=repo,
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if fragment is None:
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, fragment)
+            self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_session_coordination_guard_classifies_launcher_adoption_as_mutation(
+        self,
+    ) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_guard_launcher",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        launcher = str(HOOK_DIR / "checkout-lease-guard.py")
+        self.assertTrue(
+            module.invocation_is_recognized_mutation(
+                [launcher, "adopt-dirty", "--reason-file", "/tmp/reason.txt"],
+                None,
+            )
+        )
+        self.assertFalse(
+            module.invocation_is_recognized_mutation([launcher, "--help"], None)
+        )
 
     def test_checkout_lease_v2_adoption_allows_current_session_and_preserves_refresh(
         self,
