@@ -12,15 +12,16 @@ active, and open a full runbook only for the phase that needs it.
 - **Must**: read the phase-relevant declared docs before writing; inspect the
   affected contract; use meaningful red before testable behavior edits or state
   a practical waiver and substitute validation; preserve user work; run
-  declared validation before completion. Keep routine L0 internal. Delivery
-  uses `semantic-commit` on a non-default managed-worktree branch except for an
-  exact current-request authorized `default-branch` completion.
+  declared validation before completion. Keep routine `direct` work internal.
+  Delivery uses `semantic-commit` on a non-default managed-worktree branch
+  except for an exact current-request authorized `default-branch` completion.
 - **Never**: direct `git commit`, `git worktree`, `gh pr create`, or
   `glab mr create`; force-push `main`; infer direct-main or default-branch from
   "small" or "hotfix".
 - **Next**: activate `project-dev` for the current phase. The edit contract is
-  `core/policies/files-hooks-validation.md`; load tier, Git, evidence, and
-  review runbooks only for delivery/review or an explicit gate.
+  `core/policies/files-hooks-validation.md`; load work-mode
+  (`core/policies/work-modes.md`), Git, evidence, and review runbooks only for
+  delivery/review or an explicit gate.
 
 ### Development log
 

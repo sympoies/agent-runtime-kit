@@ -241,7 +241,7 @@ python3 tests/ci/test_devlog_capability.py
 # docs/discussions is staging, not storage: a capture must stay deletable, so no
 # file outside that directory may reference one. The directory's own README and
 # a bare `docs/discussions/` mention are exempt because neither pins a capture.
-# Contract: core/policies/work-tier-levels.md, "Doc Lifecycle At L0 / L1".
+# Contract: core/policies/work-modes.md, "Capture Lifecycle".
 discussions_inbound="$(
   grep -rIl --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
     'docs/discussions/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-' . 2>/dev/null |

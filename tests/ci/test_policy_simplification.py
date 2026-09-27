@@ -219,7 +219,7 @@ when = "always"
             "core/policies/evidence-control-plane.md",
             "core/policies/files-hooks-validation.md",
             "core/policies/git-delivery.md",
-            "core/policies/work-tier-levels.md",
+            "core/policies/work-modes.md",
         ):
             self.assertIn(path, required)
 
@@ -416,7 +416,7 @@ when = "always"
 
     def test_conditional_delivery_and_cross_repo_routes_are_consistent(self) -> None:
         delivery = read("core/policies/git-delivery.md")
-        tier = read("core/policies/work-tier-levels.md")
+        tier = read("core/policies/work-modes.md")
         edit_contract = read("core/policies/files-hooks-validation.md")
         edit_contract_words = " ".join(edit_contract.split())
 
@@ -635,7 +635,7 @@ when = "always"
         self.assertNotIn("parent_intents: [session-closeout]", dispositions)
 
         discussions = read("docs/discussions/README.md")
-        work_tiers = read("core/policies/work-tier-levels.md")
+        work_tiers = read("core/policies/work-modes.md")
         evidence_archive = read("core/policies/evidence-archive/EVIDENCE_ARCHIVE.md")
         nils_surface = read("docs/source/nils-cli-surface.md")
         self.assertNotIn("error-inbox", discussions)
