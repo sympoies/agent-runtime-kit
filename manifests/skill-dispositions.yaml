@@ -272,7 +272,7 @@ dispositions:
     current_clis: [plan-archive]
     current_hooks: []
     enforcement_point: "Plan closeout readiness and dry-run-first archive policy."
-    migration_path: "Invoke from the L2 plan outcome after verified provider closeout."
+    migration_path: "Invoke from the program/plan outcome after verified provider closeout."
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
     live_cleanup_required: true
@@ -298,7 +298,7 @@ dispositions:
     current_clis: [plan-archive]
     current_hooks: []
     enforcement_point: "Read-only archive-candidate classification after closeout."
-    migration_path: "Invoke from the L2 plan outcome before archive migration."
+    migration_path: "Invoke from the program/plan outcome before archive migration."
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
     live_cleanup_required: true
@@ -753,7 +753,7 @@ dispositions:
     parent_intents: [delivery]
     current_clis: [plan-issue, plan-tooling]
     current_hooks: []
-    enforcement_point: "L2 plan outcome opens or resumes its tracker."
+    enforcement_point: "program/plan outcome opens or resumes its tracker."
     migration_path: "Merge tracker creation into deliver-plan-tracking-issue."
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
@@ -766,7 +766,7 @@ dispositions:
     parent_intents: [delivery]
     current_clis: [plan-issue, plan-archive]
     current_hooks: []
-    enforcement_point: "L2 plan outcome owns strict close-ready, read-back, and archive routing."
+    enforcement_point: "program/plan outcome owns strict close-ready, read-back, and archive routing."
     migration_path: "Merge closeout into deliver-plan-tracking-issue."
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
@@ -805,7 +805,7 @@ dispositions:
     parent_intents: [delivery]
     current_clis: [plan-issue, plan-tooling, forge-cli]
     current_hooks: []
-    enforcement_point: "L2 plan outcome owns execution and checkpoint reconciliation."
+    enforcement_point: "program/plan outcome owns execution and checkpoint reconciliation."
     migration_path: "Merge execution into deliver-plan-tracking-issue."
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false

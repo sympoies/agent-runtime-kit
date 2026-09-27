@@ -16,8 +16,12 @@
 ## Purpose
 
 This document defines the two user-visible plan outcomes and their internal
-phase boundaries. Users choose a complete lightweight tracking delivery or a
-complete dispatch delivery. Opening, execution, review, PR handling, closeout,
+phase boundaries. They are the `program/plan` and `program/dispatch`
+specializations of the `program` tracking mode in
+`core/policies/work-modes.md`; plain `program` (a tracker issue plus child
+issues through the `issue-follow-up` program mode) remains the default for
+large work. Users choose a complete lightweight tracking delivery or a
+complete dispatch delivery only when that specialization is required. Opening, execution, review, PR handling, closeout,
 and archive operations are internal phases selected by the parent outcome, not
 separate skill choices.
 
@@ -59,7 +63,7 @@ Both outcomes follow these rules:
 
 ## Lightweight Tracking Outcome
 
-`deliver-plan-tracking-issue` owns one issue-backed L2 delivery from open or
+`deliver-plan-tracking-issue` owns one issue-backed `program/plan` delivery from open or
 resume through implementation, validation, PR delivery, review, merge, strict
 closeout, and archive handoff.
 
@@ -99,7 +103,7 @@ plan-archive discover|migrate ...
 
 ## Dispatch Outcome
 
-`deliver-dispatch-plan` owns one shared L3 dispatch issue from open or resume
+`deliver-dispatch-plan` owns one shared `program/dispatch` issue from open or resume
 through lane coordination, independent lane review, approved integration,
 strict closeout, and provider read-back.
 
