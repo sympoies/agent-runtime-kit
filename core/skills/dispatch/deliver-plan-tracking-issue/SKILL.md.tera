@@ -127,7 +127,12 @@ Failure modes:
 
 ## Outcome Routing
 
-The user selects the L2 plan outcome, never tracker creation, execution,
+This skill is the `program/plan` specialization of the `program` tracking
+mode (`core/policies/work-modes.md`). Use it only when the frozen plan must
+live in the repository as a drift-checked plan bundle; plain `program` through
+the `issue-follow-up` program mode is the default for large work.
+
+The user selects the `program/plan` outcome, never tracker creation, execution,
 review, closeout, or archive substeps. This parent selects those phases using
 `references/outcome-routing.md` and preserves their
 separate CLI write authorities.

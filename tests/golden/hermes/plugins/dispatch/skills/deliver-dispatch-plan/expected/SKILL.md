@@ -112,7 +112,13 @@ Failure modes:
 
 ## Outcome Routing
 
-The user selects the L3 outcome, never a lane lifecycle substep. This parent
+This skill is the `program/dispatch` specialization of the `program`
+tracking mode (`core/policies/work-modes.md`). Use it only when lanes must
+integrate on a shared plan branch before main because intermediate lane states
+cannot land on main one by one; otherwise use plain `program` with one child
+issue per independently landable unit.
+
+The user selects the `program/dispatch` outcome, never a lane lifecycle substep. This parent
 applies `references/outcome-routing.md` to route lane
 execution, plan-branch PR creation, independent review, orchestrator merge,
 plan-level checkpoints, and strict closeout while keeping one writer for every
