@@ -85,8 +85,10 @@ HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
 MAX_PENDING_RECORDS = 32
 MAX_ORPHAN_RECOVERY_RECORDS = 4
-# Budget kept for the current call's own check and admission after recovery.
-ORPHAN_RECOVERY_RESERVE_SECONDS = 3 * TIMEOUT_SECONDS
+# The dispatcher stops this handler long before HOOK_BUDGET_SECONDS, so
+# recovery of other calls' records gets only a short slice from hook start and
+# never starves the current call's own check and admission.
+ORPHAN_RECOVERY_SLICE_SECONDS = 1.5
 # Refusals `work-context admit` raises only after its idempotency lookup, so a
 # replay that receives one proves the exact admission was never committed.
 POST_REPLAY_ADMISSION_REFUSALS = frozenset(
@@ -3784,7 +3786,8 @@ def recover_orphaned_records(
     for _priority, _name, path in sorted(snapshots)[:MAX_ORPHAN_RECOVERY_RECORDS]:
         if (
             HOOK_DEADLINE is not None
-            and HOOK_DEADLINE - time.monotonic() < ORPHAN_RECOVERY_RESERVE_SECONDS
+            and time.monotonic() - (HOOK_DEADLINE - HOOK_BUDGET_SECONDS)
+            > ORPHAN_RECOVERY_SLICE_SECONDS
         ):
             break
         descriptor = acquire_operation_lock(path, blocking=False)
@@ -4030,10 +4033,10 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
     if pending:
         emit_stop_coordination_result(
             "pending",
-            "Session coordination retains an unresolved operation proof. The next managed "
-            "mutation reconciles it through work-context once the runtime proves the "
-            "operation inactive; Stop does not release or guess the outcome of an active "
-            "operation.",
+            "Session coordination retains an unresolved operation proof. A managed "
+            "mutation in a later turn reconciles it through work-context once the "
+            "runtime proves the operation inactive; Stop does not release or guess the "
+            "outcome of an active operation.",
         )
     else:
         emit_stop_coordination_result("clean")

@@ -291,7 +291,8 @@ lease only in its final save, so a well-formed refusal (for example a parallel
 sibling refused while another call holds the session's single operation slot)
 retires its intent; a lost process, timeout, or unparseable reply stays
 pending. Before admitting a new mutation, the guard recovers up to four other
-calls' records of the current incarnation without waiting on their locks: with
+calls' records of the current incarnation within a 1.5-second slice and
+without waiting on their locks: with
 no nonterminal broker operation it retires them; otherwise it replays a lost
 admission by its exact idempotency key when the CLI lacks the broker proof
 surface (a replay retires only on refusals raised after admit's idempotency

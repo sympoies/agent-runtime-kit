@@ -14581,6 +14581,55 @@ exit 64
                 [("lease-1", 3)],
             )
 
+    def test_session_coordination_orphan_recovery_stops_after_time_slice(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_orphan_slice_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            namespace = Path(tmp)
+            record_path = namespace / f"{'a' * 64}.json"
+            record = {
+                "schema_version": "agent-runtime-kit.session-coordination-operation.v1",
+                "phase": "active",
+                "session": "managed-session",
+                "capability_file": "/private/capability",
+                "state_dir": "/private/state",
+                "session_incarnation": "incarnation-1",
+                "lease_id": "lease-1",
+                "lease_revision": 1,
+            }
+            record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            record_path.chmod(0o600)
+            arguments = {
+                "managed_session": "managed-session",
+                "capability_file": "/private/capability",
+                "state_dir": "/private/state",
+                "session_incarnation": "incarnation-1",
+            }
+            unavailable = subprocess.CompletedProcess([], 1, stdout="", stderr="")
+            for elapsed, expected_calls in ((0.0, 1), (2.0, 0)):
+                with self.subTest(elapsed=elapsed), mock.patch.object(
+                    guard, "run_cli", return_value=unavailable
+                ) as run, mock.patch.object(
+                    guard,
+                    "HOOK_DEADLINE",
+                    time.monotonic() + guard.HOOK_BUDGET_SECONDS - elapsed,
+                ):
+                    guard.recover_orphaned_records(
+                        "agent-session",
+                        namespace,
+                        namespace / "current.json",
+                        **arguments,
+                    )
+                    self.assertEqual(run.call_count, expected_calls)
+            self.assertEqual(guard.read_record(record_path), record)
+
     def test_session_coordination_post_tool_completes_admission_lost_by_timeout(
         self,
     ) -> None:
