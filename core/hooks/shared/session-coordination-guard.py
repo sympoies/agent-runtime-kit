@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +83,7 @@ PULL_REQUEST_TARGET_FLOOR = (1, 29, 1)
 TIMEOUT_SECONDS = 6.0
 HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
+RUN_CLI_CUTOFF: float | None = None
 MAX_PENDING_RECORDS = 32
 MAX_ORPHAN_RECOVERY_RECORDS = 4
 # The dispatcher stops this handler long before HOOK_BUDGET_SECONDS, so
@@ -333,8 +334,10 @@ def run_cli(
     args: list[str], *, timeout_seconds: float = TIMEOUT_SECONDS
 ) -> subprocess.CompletedProcess[str] | None:
     timeout = timeout_seconds
-    if HOOK_DEADLINE is not None:
-        timeout = min(timeout, HOOK_DEADLINE - time.monotonic())
+    for deadline in (HOOK_DEADLINE, RUN_CLI_CUTOFF):
+        if deadline is None:
+            continue
+        timeout = min(timeout, deadline - time.monotonic())
         if timeout <= 0:
             return None
     try:
@@ -3783,45 +3786,71 @@ def recover_orphaned_records(
             priority = 0 if snapshot.get("phase") == "active" else 1
             snapshots.append((priority, path.name, path))
     statuses: set[str] = set()
-    for _priority, _name, path in sorted(snapshots)[:MAX_ORPHAN_RECOVERY_RECORDS]:
-        if (
-            HOOK_DEADLINE is not None
-            and time.monotonic() - (HOOK_DEADLINE - HOOK_BUDGET_SECONDS)
-            > ORPHAN_RECOVERY_SLICE_SECONDS
-        ):
-            break
-        descriptor = acquire_operation_lock(path, blocking=False)
-        if descriptor is None:
-            continue
-        try:
-            record = read_record(path)
-            if not recoverable(record):
+    global RUN_CLI_CUTOFF
+    if HOOK_DEADLINE is not None:
+        # One aggregate cutoff bounds every recovery CLI call, not only the
+        # start of each record.
+        RUN_CLI_CUTOFF = (
+            HOOK_DEADLINE - HOOK_BUDGET_SECONDS + ORPHAN_RECOVERY_SLICE_SECONDS
+        )
+    try:
+        for _priority, _name, path in sorted(snapshots)[
+            :MAX_ORPHAN_RECOVERY_RECORDS
+        ]:
+            if RUN_CLI_CUTOFF is not None and time.monotonic() >= RUN_CLI_CUTOFF:
+                break
+            descriptor = acquire_operation_lock(path, blocking=False)
+            if descriptor is None:
                 continue
-            nonterminal = broker_nonterminal_operations(
-                executable, managed_session, capability_file, state_dir
-            )
-            if nonterminal is None:
-                statuses.add("uncertain")
-                continue
-            if nonterminal == 0:
-                # No lease of this session can still hold the operation slot.
-                if retire_record(path, record):
-                    statuses.add("terminal")
-                continue
-            if record.get("phase") == "admitting":
-                status, _code = recover_or_replay_admission(executable, path, record)
-                if status != "active":
-                    continue
-                record = read_record(path)
-            if operation_outcome(path, record) is not None and complete_record(
-                executable, path, record
-            ):
-                statuses.add("terminal")
-                continue
-            statuses.add(reconcile_orphaned_record(executable, path, record))
-        finally:
-            release_operation_lock(descriptor)
+            try:
+                statuses.add(
+                    recover_orphaned_record(
+                        executable,
+                        path,
+                        recoverable,
+                        managed_session=managed_session,
+                        capability_file=capability_file,
+                        state_dir=state_dir,
+                    )
+                )
+            finally:
+                release_operation_lock(descriptor)
+    finally:
+        RUN_CLI_CUTOFF = None
+    statuses.discard("skipped")
     return statuses
+
+
+def recover_orphaned_record(
+    executable: str,
+    path: Path,
+    recoverable: Callable[[Mapping[str, Any]], bool],
+    *,
+    managed_session: str,
+    capability_file: str,
+    state_dir: str,
+) -> str:
+    record = read_record(path)
+    if not recoverable(record):
+        return "skipped"
+    nonterminal = broker_nonterminal_operations(
+        executable, managed_session, capability_file, state_dir
+    )
+    if nonterminal is None:
+        return "uncertain"
+    if nonterminal == 0:
+        # No lease of this session can still hold the operation slot.
+        return "terminal" if retire_record(path, record) else "uncertain"
+    if record.get("phase") == "admitting":
+        status, _code = recover_or_replay_admission(executable, path, record)
+        if status != "active":
+            return "uncertain"
+        record = read_record(path)
+    if operation_outcome(path, record) is not None and complete_record(
+        executable, path, record
+    ):
+        return "terminal"
+    return reconcile_orphaned_record(executable, path, record)
 
 
 def retire_externally_reconciled_records(

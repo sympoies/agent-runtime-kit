@@ -14628,6 +14628,32 @@ exit 64
                         **arguments,
                     )
                     self.assertEqual(run.call_count, expected_calls)
+            # Calls started inside the slice are bounded by its aggregate
+            # cutoff, not by the per-call timeout.
+            timeouts: list[float] = []
+
+            def bounded_run(
+                *_args: Any, timeout: float, **_kwargs: Any
+            ) -> subprocess.CompletedProcess[str]:
+                timeouts.append(timeout)
+                return unavailable
+
+            with mock.patch.object(
+                guard.subprocess, "run", side_effect=bounded_run
+            ), mock.patch.object(
+                guard,
+                "HOOK_DEADLINE",
+                time.monotonic() + guard.HOOK_BUDGET_SECONDS - 1.0,
+            ):
+                guard.recover_orphaned_records(
+                    "agent-session",
+                    namespace,
+                    namespace / "current.json",
+                    **arguments,
+                )
+            self.assertEqual(len(timeouts), 1)
+            self.assertLessEqual(timeouts[0], 0.5)
+            self.assertIsNone(guard.RUN_CLI_CUTOFF)
             self.assertEqual(guard.read_record(record_path), record)
 
     def test_session_coordination_post_tool_completes_admission_lost_by_timeout(
