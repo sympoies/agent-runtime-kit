@@ -9043,6 +9043,123 @@ exit 65
                     )
                     + ");",
                 ),
+                # The object-literal subset admits only JSON-compatible scalar
+                # values, identifier or JSON keys, and names bound by a leading
+                # `const NAME = "<JSON string>"`. Everything else stays opaque.
+                (
+                    "unbound-identifier",
+                    'const r = await tools.exec_command({cmd: "x", workdir: w});',
+                ),
+                (
+                    "duplicate-key",
+                    'const r = await tools.exec_command({cmd: "x", workdir: '
+                    + json.dumps(str(root))
+                    + ', "workdir": '
+                    + json.dumps(str(target))
+                    + "});",
+                ),
+                (
+                    "template-literal",
+                    "const r = await tools.exec_command({cmd: `x`, workdir: `"
+                    + str(target)
+                    + "`});",
+                ),
+                (
+                    "computed-key",
+                    'const k = "workdir"; const r = await tools.exec_command('
+                    '{cmd: "x", [k]: '
+                    + json.dumps(str(target))
+                    + "});",
+                ),
+                (
+                    "spread",
+                    "const r = await tools.exec_command({...o, cmd: \"x\", "
+                    "workdir: "
+                    + json.dumps(str(target))
+                    + "});",
+                ),
+                (
+                    "comment",
+                    'const r = await tools.exec_command({cmd: "x", /* c */ '
+                    "workdir: "
+                    + json.dumps(str(target))
+                    + "});",
+                ),
+                (
+                    "javascript-only-escape",
+                    'const r = await tools.exec_command({cmd: "x", workdir: "'
+                    + str(target)
+                    + '\\x41"});',
+                ),
+                (
+                    "nested-object-value",
+                    'const r = await tools.exec_command({cmd: "x", workdir: '
+                    + json.dumps(str(target))
+                    + ', env: {A: "b"}});',
+                ),
+                (
+                    "let-binding",
+                    "let w = "
+                    + json.dumps(str(target))
+                    + '; const r = await tools.exec_command({cmd: "x", '
+                    "workdir: w});",
+                ),
+                (
+                    "multi-declarator",
+                    'const a = "x", w = '
+                    + json.dumps(str(target))
+                    + '; const r = await tools.exec_command({cmd: "x", '
+                    "workdir: w});",
+                ),
+                (
+                    "reassigned-binding",
+                    "const w = "
+                    + json.dumps(str(root))
+                    + "; w = "
+                    + json.dumps(str(target))
+                    + '; const r = await tools.exec_command({cmd: "x", '
+                    "workdir: w});",
+                ),
+                (
+                    "statement-after-call",
+                    'const r = await tools.exec_command({cmd: "x", workdir: '
+                    + json.dumps(str(target))
+                    + '}); await tools.exec_command({cmd: "y"});',
+                ),
+                (
+                    "rendered-call-then-call",
+                    'text(await tools.exec_command({cmd: "x", workdir: '
+                    + json.dumps(str(target))
+                    + '})); await tools.exec_command({cmd: "y"});',
+                ),
+                (
+                    "rendered-call-member",
+                    'text(await tools.exec_command({cmd: "x", workdir: '
+                    + json.dumps(str(target))
+                    + "}).output);",
+                ),
+                (
+                    "stringify-with-arguments",
+                    'const r = await tools.exec_command({cmd: "x", workdir: '
+                    + json.dumps(str(target))
+                    + "}); text(JSON.stringify(r, null, tools));",
+                ),
+                (
+                    "binding-shadows-declaration",
+                    "const r = "
+                    + json.dumps(str(root))
+                    + '; const r = await tools.exec_command({cmd: "x", '
+                    "workdir: r});",
+                ),
+                (
+                    "parallel-calls",
+                    "const r = await Promise.allSettled([tools.exec_command("
+                    '{cmd: "x", workdir: '
+                    + json.dumps(str(target))
+                    + '}), tools.exec_command({cmd: "y", workdir: '
+                    + json.dumps(str(target))
+                    + "})]);",
+                ),
             )
             for call_id, source in cases:
                 with self.subTest(call_id=call_id):
@@ -9076,6 +9193,95 @@ exit 65
                     self.assertEqual(
                         context.diagnostic, "workdir-attestation-missing"
                     )
+
+    def test_effective_workdir_reads_literal_custom_exec_objects(self) -> None:
+        # Codex code-mode calls are written as JavaScript object literals far
+        # more often than as strict JSON. A literal whose keys are identifiers
+        # or JSON strings, whose values are JSON scalars, and whose names are
+        # bound by a leading `const NAME = "<JSON string>"` still names exactly
+        # one workdir. Rejecting it attested the session checkout instead.
+        resolver = getattr(hook_common, "command_context", None)
+        self.assertTrue(callable(resolver), "command_context resolver is missing")
+        assert callable(resolver)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            quoted = json.dumps(str(target))
+            cases = (
+                (
+                    "identifier-keys",
+                    "const r = await tools.exec_command({\n"
+                    '  cmd: "git status --short",\n'
+                    f"  workdir: {quoted},\n"
+                    "  yield_time_ms: 10000,\n"
+                    "  max_output_tokens: 3000\n"
+                    "});\ntext(r.output);\n",
+                ),
+                (
+                    "const-binding",
+                    f"const w={quoted};const r=await tools.exec_command("
+                    '{cmd:"semantic-commit commit --format json",workdir:w,'
+                    "yield_time_ms:30000,max_output_tokens:2000});text(r);\n",
+                ),
+                (
+                    "mixed-keys-trailing-comma",
+                    'const r = await tools.exec_command({cmd:"x","workdir":'
+                    f'{quoted},"tty":false,"login":null,}});',
+                ),
+                (
+                    "pragma-newline-binding",
+                    '// @exec: {"yield_time_ms": 1000}\n'
+                    f"const base = {quoted}\n"
+                    'const r = await tools.exec_command({cmd: "x", '
+                    "workdir: base});\n",
+                ),
+                (
+                    "stringified-result",
+                    'const r = await tools.exec_command({cmd: "x", workdir: '
+                    f"{quoted}}});\ntext(JSON.stringify(r));\n",
+                ),
+                (
+                    "rendered-call",
+                    'text(await tools.exec_command({cmd:"x",workdir:'
+                    f"{quoted},max_output_tokens:1500}}));",
+                ),
+                (
+                    "rendered-grouped-output",
+                    f"const w={quoted};text((await tools.exec_command("
+                    '{cmd:"x",workdir:w})).output);\n',
+                ),
+            )
+            for call_id, source in cases:
+                with self.subTest(call_id=call_id):
+                    transcript = root / f"{call_id}.jsonl"
+                    transcript.write_text(
+                        json.dumps(
+                            {
+                                "payload": {
+                                    "type": "custom_tool_call",
+                                    "name": "exec",
+                                    "call_id": call_id,
+                                    "input": source,
+                                }
+                            }
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    context = resolver(
+                        {
+                            "tool_name": "Bash",
+                            "tool_input": {"command": "x"},
+                            "tool_use_id": call_id,
+                            "transcript_path": str(transcript),
+                            "cwd": str(root),
+                        }
+                    )
+                    self.assertEqual(context.path, target.resolve())
+                    self.assertEqual(context.source, "matching-transcript-call")
+                    self.assertTrue(context.attested)
+                    self.assertIsNone(context.diagnostic)
 
     def test_custom_exec_malformed_remainder_is_rejected_in_linear_time(
         self,
@@ -23322,7 +23528,8 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-            # A non-JSON JavaScript object is deliberately not interpreted as
+            # A JavaScript object outside the JSON-compatible literal subset
+            # (here, single-quoted strings) is deliberately not interpreted as
             # host attestation. It must report the failed classifier instead of
             # claiming the fallback primary checkout is the command target.
             transcript.write_text(
@@ -23381,6 +23588,132 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+    def test_default_delivery_hook_classifies_code_mode_calls_by_their_workdir(
+        self,
+    ) -> None:
+        # A Codex code-mode session is rooted at the primary checkout while
+        # each nested exec call names its own workdir. The managed-session
+        # record authenticates only the session root, so it must not stand in
+        # for a call whose own workdir the transcript could not decode.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            worktree = self._add_checkout_lease_worktree(
+                primary, "feat/code-mode"
+            )
+            state = root / "agent-session-state"
+            session_dir = state / "sessions" / "managed-codex"
+            session_dir.mkdir(parents=True)
+            record = session_dir / "session.json"
+            record.write_text(
+                json.dumps(
+                    {
+                        "id": "managed-codex",
+                        "agent": "codex",
+                        "cwd": str(primary),
+                        "runtime": {"launch_id": "managed-launch"},
+                        "startup": {"state": "ready"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            record.chmod(0o600)
+            env = {
+                "AGENT_SESSION_ID": "managed-codex",
+                "AGENT_SESSION_STATE_DIR": str(state),
+                "AGENT_SESSION_RUNTIME_ID": "managed-launch",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            command = (
+                "semantic-commit commit --type fix --scope hooks "
+                "--subject 'classify the call workdir' --format json"
+            )
+            transcript = root / "transcript.jsonl"
+
+            def run(
+                source: str,
+                call_id: str = "code-mode-call",
+                command: str = command,
+            ):
+                transcript.write_text(
+                    json.dumps(
+                        {
+                            "payload": {
+                                "type": "custom_tool_call",
+                                "name": "exec",
+                                "call_id": "code-mode-call",
+                                "input": source,
+                            }
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                payload = command_payload(command)
+                payload.update(
+                    {
+                        "tool_use_id": call_id,
+                        "transcript_path": str(transcript),
+                        "cwd": str(primary),
+                    }
+                )
+                return run_hook(
+                    "block-unsafe-default-delivery.py",
+                    payload,
+                    cwd=primary,
+                    env=env,
+                )
+
+            literal = (
+                f"const w={json.dumps(str(worktree))};"
+                f"const r=await tools.exec_command({{cmd:{json.dumps(command)},"
+                "workdir:w,yield_time_ms:30000});text(r);\n"
+            )
+            code, decision, stderr = run(literal)
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            parallel = (
+                "const r = await Promise.allSettled([tools.exec_command("
+                f"{{cmd: {json.dumps(command)}, workdir: "
+                f"{json.dumps(str(worktree))}}}), tools.exec_command("
+                '{cmd: "git status"})]);\ntext(JSON.stringify(r));\n'
+            )
+            code, decision, stderr = run(parallel)
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            self.assert_blocked(decision, "rule=governed-authoring-target")
+            self.assert_blocked(decision, "--repo <absolute path>")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertNotIn("[default-delivery: blocked]", reason)
+
+            # A call the transcript has not recorded yet (Claude flushes after
+            # the hook) keeps the authenticated managed-session fallback.
+            code, decision, stderr = run(parallel, call_id="not-yet-flushed")
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: blocked]")
+            self.assert_blocked(decision, "context=managed-session-cwd")
+
+            # The same provenance decides raw Git: a feature-worktree merge is
+            # not a default-branch merge because the session root is on `main`.
+            merge = "git merge --no-commit --no-ff origin/main"
+            merge_literal = literal.replace(
+                json.dumps(command), json.dumps(merge)
+            )
+            code, decision, stderr = run(merge_literal, command=merge)
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            merge_parallel = parallel.replace(
+                json.dumps(command), json.dumps(merge)
+            )
+            code, decision, stderr = run(merge_parallel, command=merge)
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+            self.assert_blocked(decision, "rule=governed-authoring-target")
+            reason = str((decision or {}).get("reason", ""))
+            self.assertNotIn("[default-delivery: blocked]", reason)
 
     def test_default_delivery_hook_rejects_unattested_raw_git_context(
         self,

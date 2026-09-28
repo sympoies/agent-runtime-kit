@@ -184,6 +184,19 @@ that same resolved path. The transcript tail remains capped at 4 MiB.
 The custom-tool form accepts one optional strict-JSON `// @exec:` pragma and
 one complete canonical wrapper only; additional JavaScript or another exec
 call makes the workdir ambiguous rather than borrowing the first call's target.
+Its argument is strict JSON or a flat object literal whose keys are identifiers
+or JSON strings and whose values are JSON scalars or names bound by leading
+`const NAME = "<JSON string>"` declarations; a JSON decoder and a JavaScript
+engine read that subset identically. Duplicate keys, nested values, spreads,
+computed keys, comments, template or single-quoted strings, and other bindings
+stay unreadable. The wrapper may bind the result and render it with `text(r)`,
+`text(r.output)`, or `text(JSON.stringify(r))`, or render the call directly as
+`text(await tools.exec_command(...))` or
+`text((await tools.exec_command(...)).output)`. When the matching transcript
+call exists but its workdir is unreadable, a managed-session-cwd result
+reports `call_workdir_unreadable`: that session record attests the session
+root, not this call, and `block-unsafe-default-delivery.py` then treats the
+call's repository as unresolved.
 Direct-edit verification stays target-based; shell verification is
 command-context based.
 

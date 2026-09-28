@@ -3126,12 +3126,19 @@ def main() -> int:
             context.source == "process-cwd"
             and not isinstance(payload.get("transcript_path"), str)
         )
+        base_diagnostic = context.diagnostic or ""
+        # A Codex code-mode session record authenticates the session root, not
+        # a recorded call whose own workdir could not be decoded; that call may
+        # run in any checkout, so its repository stays unresolved.
+        if context.call_workdir_unreadable:
+            base_resolved = False
+            base_diagnostic = "workdir-attestation-missing"
         reason = command_block_reason(
             command,
             context.path,
             base_source=context.source,
             base_resolved=base_resolved,
-            base_diagnostic=context.diagnostic or "",
+            base_diagnostic=base_diagnostic,
         )
         if reason:
             emit_block(normalize_refusal_reason(reason))
