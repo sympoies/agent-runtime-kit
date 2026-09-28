@@ -373,10 +373,15 @@ distinguishable from a proven default-branch write.
 The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
 even without a variable prefix. The zsh extended-glob repetition, exclusion,
-and negation operators (`#`, `~`, and `^`) are opaque there as well.
+and negation operators (`#`, `~`, and `^`) are opaque there as well. A lone `[`,
+the `[[` reserved word, and a zsh `$+name[key]` presence test with a literal key
+are literal test syntax that cannot name `git` or `semantic-commit`, so they stay
+classifiable; governed words among their arguments are still inspected.
 After alias, hash, command-table, PATH, or sourced-function state changes, later
 bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.
+Redirections are ignored when judging such a command, so a query such as
+`alias name 2>/dev/null` stays query-only.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also

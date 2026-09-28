@@ -64,6 +64,7 @@ from hook_common import (
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    invocation_without_redirections,
     is_managed_cli_home_bin,
     is_assignment,
     nested_shell_payload,
@@ -149,6 +150,10 @@ EXPANDED_EXECUTABLE_PATH_RE = re.compile(
     r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
 )
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
+LITERAL_TEST_COMMAND_WORDS = frozenset({"[", "[["})
+ZSH_PRESENCE_TEST_RE = re.compile(
+    r"\$\+[A-Za-z_][A-Za-z0-9_]*(?:\[[A-Za-z0-9_.:+-]+\])?"
+)
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
 )
@@ -1510,8 +1515,12 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
 def shell_command_changes_executable_resolution(
     simple_command: list[str],
 ) -> bool:
-    """Whether later bare command words have lost a verifiable executable."""
-    invocation = invocation_tokens(simple_command)
+    """Whether later bare command words have lost a verifiable executable.
+
+    Redirections are dropped first: ``alias bat 2>/dev/null`` is still a query,
+    and a redirection cannot define an alias, hash, function, or builtin.
+    """
+    invocation = invocation_without_redirections(invocation_tokens(simple_command))
     executable = ""
     arguments: list[str] = []
     if invocation:
@@ -1678,6 +1687,24 @@ def opaque_invocation_has_stable_non_governed_basename(
     match = EXPANDED_EXECUTABLE_PATH_RE.fullmatch(invocation[1])
     return bool(
         match and match.group("basename") not in GOVERNED_CONTEXT_EXECUTABLES
+    )
+
+
+def opaque_invocation_is_literal_shell_test(invocation: list[str]) -> bool:
+    """Whether an "opaque" command word is really literal test syntax.
+
+    The command-position check reads any bracket as a glob, but a lone ``[``
+    has no closing bracket to match and ``[[`` is a reserved word, so both are
+    the literal test command. A zsh ``$+name[key]`` presence test with a
+    literal key expands only to ``0`` or ``1`` (and stays literal in bash).
+    None of them can name ``git`` or ``semantic-commit``. Governed words among
+    their arguments are still found by the opaque-candidate scan.
+    """
+    if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
+        return False
+    word = invocation[1]
+    return word in LITERAL_TEST_COMMAND_WORDS or bool(
+        ZSH_PRESENCE_TEST_RE.fullmatch(word)
     )
 
 
@@ -3020,6 +3047,7 @@ def command_block_reason(
             and invocation[0] == OPAQUE_WRAPPER_COMMAND
             and not opaque_candidates
             and not opaque_invocation_has_stable_non_governed_basename(invocation)
+            and not opaque_invocation_is_literal_shell_test(invocation)
         ):
             return unresolved(
                 f"{classification_evidence('opaque-executable', 'dynamic-executable')} "

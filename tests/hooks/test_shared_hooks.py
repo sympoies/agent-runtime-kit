@@ -23143,6 +23143,74 @@ exit 65
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
+    def test_default_delivery_hook_admits_literal_conditional_command_words(
+        self,
+    ) -> None:
+        # `[` and `[[` are literal test words, and a zsh `$+name[key]` presence
+        # test expands only to 0 or 1. None can expand to `git` or
+        # `semantic-commit`, yet the bracket read as a glob made ordinary
+        # read-only loops and conditionals unverified.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            allowed = (
+                "if [ -f AGENTS.md ]; then cat AGENTS.md; "
+                "else printf 'none\\n'; fi",
+                'for f in a b; do if [[ -e "$f" ]]; then echo "$f"; fi; done',
+                '[ ! -e ~/.kube/config ] && [ -d "$HOME" ] || exit 1',
+                "git merge-tree $(git merge-base HEAD HEAD) HEAD HEAD | "
+                "while read -r blob path; do "
+                'if [ "$blob" != x ]; then printf \'%s\\n\' "$path"; fi; done',
+                "zsh -ic '(( $+functions[z] )) && print yes || print no'",
+                "(( $+commands[zoxide] )) && print present",
+                "zsh -ic 'alias bat 2>/dev/null'; git status --short",
+            )
+            for command in allowed:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            still_classified = (
+                (
+                    "[ -f README.md ] && git push origin main",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "if [[ -f README.md ]]; then git push origin HEAD:main; fi",
+                    "[default-delivery: blocked]",
+                ),
+                ('[ -n "$x" ] && $tool push origin main', "rule=opaque-executable"),
+                (
+                    "(( $+functions[$(printf git)] )) push origin main",
+                    "rule=opaque-executable",
+                ),
+                ("$+tool[$key] push origin main", "rule=opaque-executable"),
+                ("[x] push origin main", "rule=opaque-executable"),
+                (
+                    "alias g=git 2>/dev/null; g push origin main",
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    "[ -f README.md ] && semantic-commit commit "
+                    "--message 'fix: x'",
+                    "changed executable resolution",
+                ),
+            )
+            for command, fragment in still_classified:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
     def test_default_delivery_hook_uses_custom_exec_transcript_workdir(
         self,
     ) -> None:
