@@ -1441,21 +1441,41 @@ def process_wrapper_governed_invocation(
 def executable_resolution_rejection(
     invocation: list[str], context_safe: bool
 ) -> str:
-    """Reject a bare governed authoring CLI after shell resolution changed."""
-    if context_safe or not invocation:
+    """Reject a bare governed authoring CLI after shell resolution changed.
+
+    Only an authoring invocation depends on the governed CLI re-verifying its
+    own target, so only that needs a proven executable identity. Help,
+    dry-run, and validate-only forms author nothing and fall through to the
+    ordinary classifier. The refusal is unverified, not blocked: the identity
+    could not be proven, which says nothing about the default branch. It
+    deliberately does not lead with ``AMBIGUOUS_PREFIX``, so the one-shot
+    waiver, which presumes the real governed CLI, cannot admit it.
+    """
+    if context_safe or len(invocation) < 2:
         return ""
-    if (
-        PurePosixPath(invocation[0]).name == "semantic-commit"
-        and len(invocation) > 1
-        and invocation[1]
-        in {"commit", "default-branch", "fixup", "local-default", "squash"}
-    ):
-        return (
-            f"{MARK_BLOCKED} Blocked `semantic-commit` after an earlier shell command could "
-            "have changed executable resolution. Use a separate tool call "
-            "with the target checkout as its top-level workdir."
+    if PurePosixPath(invocation[0]).name != "semantic-commit":
+        return ""
+    subcommand = invocation[1]
+    if subcommand not in {
+        "commit", "default-branch", "fixup", "local-default", "squash",
+    }:
+        return ""
+    if subcommand != "local-default":
+        authors_commit, _writes_files, _repo = (
+            semantic_commit_invocation_effects(invocation[1:])
         )
-    return ""
+        if not authors_commit:
+            return ""
+    evidence = classification_evidence(
+        "executable-resolution", f"semantic-commit {subcommand}"
+    )
+    return (
+        f"{MARK_UNVERIFIED} {evidence} An earlier shell command in this tool "
+        "call could have changed executable resolution, so this authoring "
+        "`semantic-commit` could not be verified as the managed CLI. Run it as "
+        "a separate tool call with the target checkout as its top-level "
+        "workdir; stage with `git add -- <paths>` in its own call first."
+    )
 
 
 def shell_command_changes_git_context(simple_command: list[str]) -> bool:

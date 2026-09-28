@@ -23211,6 +23211,60 @@ exit 65
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, fragment)
 
+    def test_default_delivery_hook_admits_non_committing_semantic_commit_after_commands(
+        self,
+    ) -> None:
+        # Help, dry-run, and validate-only forms author nothing, so an earlier
+        # command in the same call cannot turn them into default-branch
+        # delivery. An authoring form still fails closed, but as unverified:
+        # the executable identity could not be proven, which is not a proven
+        # default-branch write (issue #21).
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            allowed = (
+                "cat README.md; semantic-commit commit --help",
+                "git status --short && semantic-commit commit --help | head -5",
+                "printf ok; semantic-commit commit --dry-run --message 'fix: x'",
+                "printf ok; semantic-commit commit --validate-only "
+                "--message 'fix: x'",
+                "printf ok; semantic-commit default-branch --help",
+            )
+            for command in allowed:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            waiver = (
+                "AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER="
+                "'the primary checkout target is authorized'"
+            )
+            unverified = (
+                "printf ok; semantic-commit commit --message 'fix: x'",
+                "git add -- README.md && semantic-commit commit --repo "
+                f"{shlex.quote(str(repo))} --message 'fix: x'",
+                f"printf ok; {waiver} semantic-commit commit --message 'fix: x'",
+                "cat README.md; semantic-commit fixup --target HEAD",
+            )
+            for command in unverified:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: unverified]")
+                    self.assert_blocked(decision, "rule=executable-resolution")
+                    self.assert_blocked(decision, "changed executable resolution")
+                    reason = str((decision or {}).get("reason", ""))
+                    self.assertNotIn("[default-delivery: blocked]", reason)
+
     def test_default_delivery_hook_uses_custom_exec_transcript_workdir(
         self,
     ) -> None:

@@ -403,10 +403,15 @@ outside-repository receipt. The removed `local-default` spelling and ordinary
 default-branch commit forms remain blocked. A `semantic-commit` target resolves
 from explicit `--repo`, so a cross-repository invocation is classified against
 the repository it mutates rather than the tool workdir. A bare authoring
-invocation after any earlier shell command fails closed because PATH, hashes,
-aliases, functions, or shell command tables may have changed; compound routes
-must be split into a separate tool call with the target checkout as its
-top-level workdir. Relative or expanded destinations,
+invocation after any earlier shell command fails closed as
+`[default-delivery: unverified]` (`rule=executable-resolution`) because PATH,
+hashes, aliases, functions, or shell command tables may have changed; that
+refusal says the executable identity is unproven, not that the target is the
+default branch, and the one-shot waiver never admits it. Compound routes,
+including `git add ... && semantic-commit commit`, must be split into a
+separate tool call with the target checkout as its top-level workdir. Help,
+`--dry-run`, and `--validate-only` forms author nothing and stay available
+after earlier commands. Relative or expanded destinations,
 nested shells, and command-local `GIT_*`/`HOME` overrides also fail closed, and
 raw Git still fails closed after every shell-context change or missing
 per-call workdir attestation. An absolute `git -C /path/to/repository ...`
