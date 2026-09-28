@@ -2461,6 +2461,37 @@ class SharedHookTests(unittest.TestCase):
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
 
+    def test_portable_paths_scan_covers_canonical_skill_and_policy_sources(
+        self,
+    ) -> None:
+        # Rendered SKILL.md and policy docs come from these canonical sources,
+        # so a home path must be caught where it is authored.
+        for path in (
+            "core/skills/example/SKILL.md.tera",
+            "core/skills/example/references/guide.md.tera",
+            "core/policies/example-policy.md",
+            "core/policies/evidence-archive/EXAMPLE.md",
+        ):
+            with self.subTest(path=path):
+                code, decision, stderr = run_hook(
+                    "portable-paths-scan.py",
+                    write_payload(path, "Run /Users/example/project/tool\n"),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "portable-paths")
+
+        for path in (
+            "core/policies/agent-hook/example.toml",
+            "tests/fixtures/example/SKILL.md.tera",
+        ):
+            with self.subTest(path=path):
+                code, decision, stderr = run_hook(
+                    "portable-paths-scan.py",
+                    write_payload(path, "Run /Users/example/project/tool\n"),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
     def test_mcp_secret_scan_covers_broader_paths_and_redacts_secret_samples(self) -> None:
         aws_secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
         cases = (

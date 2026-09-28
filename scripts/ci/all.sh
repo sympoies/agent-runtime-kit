@@ -476,13 +476,16 @@ python3 scripts/ci/version-baseline-audit.py check
 # -----------------------------------------------------------------------------
 # Position 15 — rendered product leakage audit
 # -----------------------------------------------------------------------------
-banner 15 "product leakage audit + macOS portability audit"
+banner 15 "product leakage audit + macOS portability audit + portable-paths audit"
 bash scripts/ci/product-leak-audit.sh --self-test
 bash scripts/ci/product-leak-audit.sh
 # Linux CI cannot reproduce the bash 3.2 and BSD-tooling faults this guards, so
 # the audit is static: it fails on the spelling rather than on the behaviour.
 bash scripts/ci/macos-portability-audit.sh --self-test
 bash scripts/ci/macos-portability-audit.sh
+# Tracked active docs and their canonical sources (`*.md.tera`, policies) must
+# not commit machine-local home paths; the edit hook only sees new writes.
+python3 core/hooks/shared/portable-paths-scan.py --tracked
 
 # -----------------------------------------------------------------------------
 # Position 16 — memory policy, retired-reference audit, and product routing
