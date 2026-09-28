@@ -2994,17 +2994,26 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
 
     ``$(...)`` and backtick substitutions are found unquoted and inside double
     quotes; single-quoted and ANSI-C quoted text, shell comments, and escaped
-    markers stay literal. Returns the rewritten command and a map from placeholder word to
-    substitution body, in source order. An unterminated substitution is left
-    in place for the ordinary tokenizer. Arithmetic ``$((...))`` is not a
-    substitution, but substitutions inside it are still found; a ``$((`` whose
-    inner group does not close as ``))`` is ``$( (...) )``, as bash reads it.
-    A ``#`` inside ``${...}`` never starts a comment.
+    markers stay literal. Returns the rewritten command and a map from
+    placeholder word to substitution body, in source order. An unterminated
+    substitution is left in place for the ordinary tokenizer. Arithmetic
+    ``$((...))`` is not a substitution, but substitutions inside it are still
+    found; a ``$((`` whose inner group does not close as ``))`` is
+    ``$( (...) )``, as bash reads it. A ``#`` inside ``${...}`` never starts a
+    comment.
+
+    Here-document bodies follow bash: an unquoted-delimiter body expands every
+    substitution and has no quotes or comments, a quoted-delimiter body is
+    copied verbatim, and a quoted-delimiter body that a shell executes as its
+    script is scanned as ordinary shell text.
     """
     out: list[str] = []
     bodies: dict[str, str] = {}
     double_quoted = False
-    parameter_depth = 0
+    # The double-quote state at each open `${`; its `}` closes only in that
+    # same state, so a quoted `}` inside the expansion stays literal.
+    parameter_quotes: list[bool] = []
+    out_line_start = 0
     index = 0
     length = len(command)
 
@@ -3013,15 +3022,83 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
         bodies[word] = body
         return word
 
+    def take_substitution(in_double_quotes: bool) -> bool:
+        """Replace a substitution starting at ``index``; return whether one did."""
+        nonlocal index
+        if command.startswith("$((", index):
+            inner_end = _command_substitution_end(command, index + 3)
+            if inner_end < 0 or command.startswith(")", inner_end + 1):
+                out.append("$((")
+                index += 3
+                return True
+        if command.startswith("$(", index):
+            end = _command_substitution_end(command, index + 2)
+            if end >= 0:
+                out.append(placeholder(command[index + 2 : end]))
+                index = end + 1
+                return True
+        elif command[index] == "`":
+            end = _backtick_end(command, index)
+            if end >= 0:
+                out.append(
+                    placeholder(
+                        _backtick_body(command[index + 1 : end], in_double_quotes)
+                    )
+                )
+                index = end + 1
+                return True
+        return False
+
+    def heredoc_body(delimiter: str, strip_tabs: bool, expand: bool) -> None:
+        """Copy one here-document body and its closing line from ``index``."""
+        nonlocal index
+        at_line_start = True
+        while index < length:
+            if at_line_start:
+                line_end = command.find("\n", index)
+                line_end = length if line_end < 0 else line_end
+                line = command[index:line_end].rstrip("\r")
+                if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                    end = min(line_end + 1, length)
+                    out.append(command[index:end])
+                    index = end
+                    return
+                at_line_start = False
+            char = command[index]
+            if char == "\n":
+                out.append(char)
+                index += 1
+                at_line_start = True
+                continue
+            if expand and char == "\\":
+                out.append(command[index : index + 2])
+                index += 2
+                continue
+            if expand and take_substitution(False):
+                continue
+            out.append(char)
+            index += 1
+
     while index < length:
         char = command[index]
         if char == "\\":
             out.append(command[index : index + 2])
             index += 2
             continue
+        if char == "\n" and not double_quoted and not parameter_quotes:
+            line = "".join(out[out_line_start:]).rstrip("\r")
+            out.append(char)
+            index += 1
+            for delimiter, strip_tabs, executed, quoted, _start in (
+                _heredoc_delimiters_on_line(line)
+            ):
+                if not (quoted and executed):
+                    heredoc_body(delimiter, strip_tabs, expand=not quoted)
+            out_line_start = len(out)
+            continue
         if (
             not double_quoted
-            and not parameter_depth
+            and not parameter_quotes
             and char == "#"
             and (index == 0 or command[index - 1] in " \t\n;&|()<>")
         ):
@@ -3053,35 +3130,17 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
             index += 1
             continue
         if command.startswith("${", index):
-            parameter_depth += 1
+            parameter_quotes.append(double_quoted)
             out.append("${")
             index += 2
             continue
-        if char == "}" and parameter_depth:
-            parameter_depth -= 1
+        if char == "}" and parameter_quotes and parameter_quotes[-1] == double_quoted:
+            parameter_quotes.pop()
             out.append(char)
             index += 1
             continue
-        if command.startswith("$((", index):
-            inner_end = _command_substitution_end(command, index + 3)
-            if inner_end < 0 or command.startswith(")", inner_end + 1):
-                out.append("$((")
-                index += 3
-                continue
-        if command.startswith("$(", index):
-            end = _command_substitution_end(command, index + 2)
-            if end >= 0:
-                out.append(placeholder(command[index + 2 : end]))
-                index = end + 1
-                continue
-        elif char == "`":
-            end = _backtick_end(command, index)
-            if end >= 0:
-                out.append(
-                    placeholder(_backtick_body(command[index + 1 : end], double_quoted))
-                )
-                index = end + 1
-                continue
+        if take_substitution(double_quoted):
+            continue
         out.append(char)
         index += 1
     return "".join(out), bodies
@@ -4033,12 +4092,14 @@ def scoped_simple_commands_with_nested_shells(
         if key in seen:
             return
         seen.add(key)
-        stripped = _strip_heredocs_for_parse(source, strip_heredocs)
+        # Extraction reads here-document bodies itself (inert bodies stay
+        # verbatim), so the inert strip runs on the rewritten text.
         try:
-            rewritten, substitutions = extract_command_substitutions(stripped)
+            rewritten, substitutions = extract_command_substitutions(source)
         except _SubstitutionTooDeep:
             commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
             return
+        rewritten = _strip_heredocs_for_parse(rewritten, strip_heredocs)
 
         def expand(words: Iterable[str]) -> None:
             for word in words:

@@ -453,6 +453,13 @@ class SharedHookTests(unittest.TestCase):
             "echo ${x:- #} `git commit -m y`",
             'echo "$((git commit -m x) )"',
             "echo $((git commit -m x) )",
+            'x="$(cat <<E\n# "$(git commit -m x)"\nE\n)"',
+            "cat <<E\n## Fix `git commit -m x` hook\nE",
+            'cat <<E\n# note "$(git commit -m x)"\nE',
+            "gh issue comment 1 --body-file - <<E\n## Fix `git commit -m x`\nE",
+            'cat <<E\n# "`git commit -m x`"\nE',
+            "cat <<E\nit's $(git commit -m x)\nE",
+            'echo ${x:-"}" #"$(git commit -m x)"}',
         )
         for command in blocked:
             with self.subTest(blocked=command):
@@ -483,6 +490,10 @@ class SharedHookTests(unittest.TestCase):
             "ls  # see `git commit --amend` docs\ngit status",
             'echo "$(( 1 + (2) ))"',
             "echo $(( (1 + 2) * 3 ))",
+            "echo ok # it's $(git commit -m y)",
+            "cat <<'E'\n# `git commit`\nE",
+            "cat <<E\n# plain note\nE\necho ok # it's `git commit -m y`",
+            "cat <<E >/dev/null\n$(printf ok)\nE\necho '$(git commit -m y)'",
         )
         for command in allowed:
             with self.subTest(allowed=command):
@@ -23530,6 +23541,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 'echo "$(echo ${x:-)} ; git push origin main)"',
                 'echo "$((git push origin main) )"',
                 'semantic-commit commit -m "$(git push origin main)"',
+                "cat <<E\n## Fix `git push origin main`\nE",
+                'echo ${x:-"}" #"$(git push origin main)"}',
             )
             for command in blocked:
                 with self.subTest(blocked=command):
