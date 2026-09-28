@@ -144,93 +144,148 @@ def selected_inline_alias(simple_command: list[str]) -> str | None:
     return None
 
 
-@functools.lru_cache(maxsize=1)
-def git_installed_commands() -> frozenset[str]:
-    """Return installed Git commands under a bounded probe.
+FALLBACK_BUILTINS = frozenset(
+    {
+        "add",
+        "branch",
+        "checkout",
+        "clone",
+        "commit",
+        "config",
+        "diff",
+        "fetch",
+        "grep",
+        "init",
+        "log",
+        "merge",
+        "mv",
+        "pull",
+        "push",
+        "rebase",
+        "reset",
+        "restore",
+        "rev-parse",
+        "rm",
+        "show",
+        "status",
+        "switch",
+        "tag",
+        "worktree",
+    }
+)
+# Variables and env options that change where Git finds `git-<name>` programs.
+LOOKUP_ENV_NAME_RE = re.compile(r"(?:^|[\s=]|^-u)(?:PATH|GIT_EXEC_PATH)(?:=|\s|$)")
+ENV_RESET_TOKENS = {"-", "-i", "--ignore-environment"}
 
-    Git dispatches a builtin, then an installed `git-<name>` program (exec-path
-    porcelain such as `submodule`, or a PATH extension such as `git-lfs`),
-    before it consults aliases, so none of these names can hide an alias.
-    Invocation-defined `-c alias.*` aliases are rejected separately.
-    """
-    fallback = frozenset(
-        {
-            "add",
-            "branch",
-            "checkout",
-            "clone",
-            "commit",
-            "config",
-            "diff",
-            "fetch",
-            "grep",
-            "init",
-            "log",
-            "merge",
-            "mv",
-            "pull",
-            "push",
-            "rebase",
-            "reset",
-            "restore",
-            "rev-parse",
-            "rm",
-            "show",
-            "status",
-            "switch",
-            "tag",
-            "worktree",
-        }
-    )
+
+def list_git_commands(categories: str) -> frozenset[str] | None:
+    """Return `git --list-cmds=<categories>` under a bounded probe."""
     try:
         completed = subprocess.run(
-            ["git", "--list-cmds=builtins,main,others"],
+            ["git", f"--list-cmds={categories}"],
             capture_output=True,
             check=False,
             text=True,
             timeout=2,
         )
     except (OSError, subprocess.SubprocessError):
-        return fallback
+        return None
     if completed.returncode != 0 or len(completed.stdout) > 1024 * 1024:
-        return fallback
-    return fallback | frozenset(completed.stdout.split())
+        return None
+    return frozenset(completed.stdout.split())
+
+
+@functools.lru_cache(maxsize=1)
+def git_builtin_commands() -> frozenset[str]:
+    """Return Git builtins, with a conservative fallback."""
+    return FALLBACK_BUILTINS | (list_git_commands("builtins") or frozenset())
+
+
+@functools.lru_cache(maxsize=1)
+def git_installed_commands() -> frozenset[str]:
+    """Return builtins plus installed `git-<name>` programs.
+
+    Git dispatches a builtin, then an installed `git-<name>` program (exec-path
+    porcelain such as `submodule`, or a PATH extension such as `git-lfs`),
+    before it consults aliases, so none of these names can hide an alias while
+    the lookup environment matches this probe. Invocation-defined `-c alias.*`
+    aliases are rejected separately.
+    """
+    return git_builtin_commands() | (list_git_commands("main,others") or frozenset())
+
+
+def tokens_before_git(simple_command: list[str], invocation: list[str]) -> list[str]:
+    if invocation and simple_command[-len(invocation) :] == invocation:
+        return simple_command[: -len(invocation)]
+    for index, token in enumerate(simple_command):
+        if basename(token) == "git":
+            return simple_command[:index]
+    return simple_command
+
+
+def retargets_program_lookup(simple_command: list[str], invocation: list[str]) -> bool:
+    """Whether this command changes PATH or Git's exec-path for the Git call.
+
+    Then an installed `git-<name>` seen by the hook may be absent for Git, which
+    falls back to a same-named configured alias.
+    """
+    prefix = tokens_before_git(simple_command, invocation)
+    if any(LOOKUP_ENV_NAME_RE.search(token) for token in prefix):
+        return True
+    if any(basename(token) == "env" for token in prefix) and any(
+        token in ENV_RESET_TOKENS
+        or (token.startswith("-") and not token.startswith("--") and "i" in token[1:])
+        for token in prefix
+    ):
+        return True
+    for token in invocation[1:]:
+        if token == "--exec-path" or token.startswith("--exec-path="):
+            return True
+        if not token.startswith("-"):
+            break
+    return False
+
+
+def subcommand_block_reason(
+    subcommand: str | None, simple_command: list[str], invocation: list[str]
+) -> str:
+    if subcommand is None:
+        return ""
+    if subcommand == "commit":
+        return BLOCK_REASON
+    if token_is_dynamic(subcommand):
+        return OPAQUE_REASON
+    if not GIT_SUBCOMMAND_RE.fullmatch(subcommand):
+        return ""
+    if subcommand in git_builtin_commands():
+        return ""
+    if subcommand not in git_installed_commands():
+        return ALIAS_REASON
+    if retargets_program_lookup(simple_command, invocation):
+        return ALIAS_REASON
+    return ""
 
 
 def git_commit_block_reason(command: str) -> str:
     for simple_command in simple_commands_with_nested_shells(command):
         if selected_inline_alias(simple_command) is not None:
             return ALIAS_REASON
-        subcommand = git_subcommand(simple_command)
-        if subcommand == "commit":
-            return BLOCK_REASON
-        if subcommand is not None and token_is_dynamic(subcommand):
-            return OPAQUE_REASON
-        if (
-            subcommand is not None
-            and GIT_SUBCOMMAND_RE.fullmatch(subcommand)
-            and subcommand not in git_installed_commands()
-        ):
-            return ALIAS_REASON
         invocation = invocation_tokens(simple_command)
+        reason = subcommand_block_reason(
+            git_subcommand(simple_command), simple_command, invocation
+        )
+        if reason:
+            return reason
         if invocation_is_unresolved_nested(invocation):
             return OPAQUE_REASON
         for candidate in opaque_invocation_candidates(invocation, {"git"}):
             if selected_inline_alias(candidate) is not None:
                 return ALIAS_REASON
-            candidate_subcommand = git_subcommand(candidate)
-            if candidate_subcommand == "commit":
-                return BLOCK_REASON
-            if candidate_subcommand is not None and token_is_dynamic(
-                candidate_subcommand
-            ):
-                return OPAQUE_REASON
-            if (
-                candidate_subcommand is not None
-                and GIT_SUBCOMMAND_RE.fullmatch(candidate_subcommand)
-                and candidate_subcommand not in git_installed_commands()
-            ):
-                return ALIAS_REASON
+            reason = subcommand_block_reason(
+                git_subcommand(candidate), simple_command, candidate
+            )
+            if reason:
+                return reason
             if invocation_is_unresolved_nested(candidate):
                 return OPAQUE_REASON
     return ""

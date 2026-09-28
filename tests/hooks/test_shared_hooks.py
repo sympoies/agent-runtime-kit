@@ -541,9 +541,34 @@ class SharedHookTests(unittest.TestCase):
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
 
+            # A command that retargets PATH or the exec-path can hide the
+            # installed program, letting Git fall back to a same-named alias.
+            # Builtins stay admitted because Git never looks them up there.
+            for command in (
+                "PATH=/usr/bin git status --short",
+                "GIT_EXEC_PATH=/nonexistent git status",
+                "git --exec-path=/nonexistent status",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
             for command in (
                 "git fixture-not-installed pull",
                 "git -c alias.submodule=commit submodule",
+                "PATH=/usr/bin git fixture-extension pull",
+                "GIT_EXEC_PATH=/nonexistent git fixture-extension pull",
+                "env PATH=/usr/bin git fixture-extension pull",
+                "env -u PATH git fixture-extension pull",
+                "env -i git fixture-extension pull",
+                "git --exec-path=/nonexistent fixture-extension pull",
+                "git --exec-path /nonexistent fixture-extension pull",
+                "GIT_EXEC_PATH=/nonexistent git submodule update",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
