@@ -12694,6 +12694,398 @@ exit 64
                 },
             )
 
+    def _pull_request_head_repo(self, root: Path, branch: str = "feat/topic") -> Path:
+        repo = root / "repo"
+        (repo / "src").mkdir(parents=True)
+        subprocess.run(
+            ["git", "init", "--quiet", "--initial-branch", branch],
+            cwd=repo,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "remote",
+                "add",
+                "origin",
+                "https://example.invalid/example/repository.git",
+            ],
+            cwd=repo,
+            check=True,
+        )
+        return repo
+
+    def test_session_coordination_pull_request_head_targets_per_command_shape(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_pull_request_heads_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+
+        def head(repository: str, branch: str) -> dict[str, object]:
+            return {
+                "schema_version": "agent-session.operation-targets.v1",
+                "targets": [],
+                "provider_refs": [],
+                "pull_requests": [
+                    {
+                        "kind": "pull-request-head",
+                        "repository": repository,
+                        "head": branch,
+                    }
+                ],
+                "checkouts": [],
+            }
+
+        def provider(kind: str, number: int) -> dict[str, object]:
+            return {
+                "schema_version": "agent-session.operation-targets.v1",
+                "targets": [],
+                "provider_refs": [
+                    {
+                        "kind": kind,
+                        "repository": "example/repository",
+                        "number": number,
+                    }
+                ],
+                "checkouts": [],
+            }
+
+        own = head("example/repository", "feat/topic")
+        cases: tuple[tuple[str, str | None, object], ...] = (
+            # Head-bound shapes resolve to the pull request of one branch.
+            ("forge-cli pr create --kind feature --title x", "provider-pr", own),
+            (
+                "forge-cli pr deliver --kind feature --title x --no-merge",
+                "provider-pr",
+                own,
+            ),
+            (
+                "forge-cli --format json pr deliver --no-merge --kind bug --title x",
+                "provider-pr",
+                own,
+            ),
+            (
+                "forge-cli pr create --title x --kind feature --head feat/topic",
+                "provider-pr",
+                own,
+            ),
+            (
+                "forge-cli --provider github pr create --title x --kind feature "
+                "--repo example/repository --remote origin",
+                "provider-pr",
+                own,
+            ),
+            # Another branch or repository is emitted as named, so the broker's
+            # head grant (not this parser) is what denies it.
+            (
+                "forge-cli pr create --title x --kind feature --head feat/other",
+                "provider-pr",
+                head("example/repository", "feat/other"),
+            ),
+            (
+                "forge-cli pr deliver --title x --kind feature --no-merge "
+                "--repo Other/Repository",
+                "provider-pr",
+                head("other/repository", "feat/topic"),
+            ),
+            (
+                "forge-cli pr create --title x --kind feature -R other/repository "
+                "--head=feat/topic",
+                "provider-pr",
+                head("other/repository", "feat/topic"),
+            ),
+            (
+                "forge-cli pr create --title x --kind feature -Rother/repository",
+                "provider-pr",
+                head("other/repository", "feat/topic"),
+            ),
+            (
+                "forge-cli pr create --title x --kind feature -Ra/b --repo c/d",
+                None,
+                "provider-pr-unresolved",
+            ),
+            # A delivery that would merge stays with the Main Agent.
+            ("forge-cli pr deliver --kind feature --title x", None, "provider-pr-unresolved"),
+            # Ambiguous or unprovable heads and repositories fail closed.
+            (
+                "forge-cli pr create --title x --kind feature --head a --head b",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli pr create --title x --kind feature --repo a/b -R c/d",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli pr create --title x --kind feature --head fork:feat/topic",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli pr create --title x --kind feature --head feat..topic",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli pr create --title x --kind feature --remote upstream",
+                None,
+                "provider-pr-unresolved",
+            ),
+            # Repository identity is host-less, so the forge authority must
+            # remain the checkout origin's.
+            (
+                "forge-cli pr create --title x --kind feature "
+                "--repo example/repository --remote upstream",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli pr create --title x --kind feature "
+                "--host other.example --provider gitlab",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli --host=other.example pr deliver --no-merge "
+                "--kind feature --title x",
+                None,
+                "provider-pr-unresolved",
+            ),
+            ("gh pr create --title x --head feat/topic", None, "provider-pr-unresolved"),
+            # Numbered shapes keep their provider reference; a worker claim
+            # carries no pull-request reference, so merge stays uncovered.
+            ("forge-cli pr merge 7", "provider-pr", provider("pr", 7)),
+            ("forge-cli pr comment 7 --body-file x.md", "provider-pr", provider("pr", 7)),
+            ("forge-cli pr review 7", "provider-pr", provider("pr", 7)),
+            ("forge-cli issue comment 12 --body-file x.md", "provider-issue", provider("issue", 12)),
+            # The Main Agent owns new issues.
+            ("forge-cli issue create --title x", None, "provider-issue-unresolved"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._pull_request_head_repo(Path(tmp))
+            for command, operation, expected in cases:
+                with self.subTest(command=command):
+                    payload = command_payload(command)
+                    payload["cwd"] = str(repo)
+                    result = guard.operation_targets(
+                        payload, "Bash", pull_request_targets=True
+                    )
+                    if operation is None:
+                        self.assertEqual(result, (None, expected))
+                    else:
+                        self.assertEqual(result, (operation, expected))
+
+            # Without the capability every head-bound shape keeps the released
+            # unresolved result, and no shape grows a `pull_requests` field.
+            for command, _operation, expected in cases:
+                with self.subTest(command=command, gated=False):
+                    payload = command_payload(command)
+                    payload["cwd"] = str(repo)
+                    operation, targets = guard.operation_targets(payload, "Bash")
+                    if isinstance(expected, dict) and "pull_requests" in expected:
+                        self.assertIsNone(operation)
+                        self.assertEqual(targets, "provider-pr-unresolved")
+                    elif isinstance(targets, dict):
+                        self.assertNotIn("pull_requests", targets)
+
+            subprocess.run(
+                ["git", "commit", "--quiet", "--allow-empty", "-m", "seed"],
+                cwd=repo,
+                check=True,
+                env={
+                    **os.environ,
+                    "GIT_AUTHOR_NAME": "fixture",
+                    "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+                    "GIT_COMMITTER_NAME": "fixture",
+                    "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+                },
+            )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach"], cwd=repo, check=True
+            )
+            payload = command_payload("forge-cli pr create --kind feature --title x")
+            payload["cwd"] = str(repo)
+            self.assertEqual(
+                guard.operation_targets(payload, "Bash", pull_request_targets=True),
+                (None, "provider-pr-unresolved"),
+            )
+
+    def test_session_coordination_pull_request_capability_follows_version(
+        self,
+    ) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_pull_request_capability_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        for output, expected in (
+            ("agent-session 1.29.0 (v1.29.0, rustc 1.98.1)", False),
+            ("agent-session 1.24.5", False),
+            ("agent-session 1.29.1 (v1.29.1, rustc 1.98.1)", True),
+            ("agent-session 1.30.0", True),
+            ("agent-session unknown", False),
+        ):
+            with self.subTest(output=output):
+                completed = subprocess.CompletedProcess(
+                    ["agent-session", "--version"], 0, stdout=output + "\n", stderr=""
+                )
+                with mock.patch.object(guard, "run_cli", return_value=completed):
+                    self.assertEqual(
+                        guard.pull_request_target_capability(
+                            f"/fixture/{secrets.token_hex(4)}/agent-session"
+                        ),
+                        expected,
+                    )
+
+    def test_session_coordination_guard_admits_only_own_pull_request_head(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = self._pull_request_head_repo(root)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            agent_session = bin_dir / "agent-session"
+            # The fake broker mirrors the released contract: an older surface
+            # rejects the unknown `pull_requests` field as invalid scope, and a
+            # newer one covers only the claim's private head grant.
+            agent_session.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo "agent-session ${FAKE_VERSION}"; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","session_id":"private-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context check"* ]]; then
+  printf '%s\\n' '{"ok":true,"data":{"schema_version":"agent-session.conflict-evaluation.v1","classification":"clear","complete":true,"reasons":[],"peers":[]}}'
+  exit 0
+fi
+if [[ "$*" == *"work-context admit"* ]]; then
+  targets=''
+  previous=''
+  for argument in "$@"; do
+    [[ "$previous" == '--targets-file' ]] && targets="$argument"
+    previous="$argument"
+  done
+  body="$(cat "$targets")"
+  printf 'admit %s\\n' "$body" >> "$CALL_LOG"
+  if [[ "$body" == *'"pull_requests"'* && "$FAKE_VERSION" == 1.29.0* ]]; then
+    printf '%s\\n' '{"ok":false,"error":{"code":"invalid-scope","message":"unknown field pull_requests"}}'
+    exit 1
+  fi
+  grant='{"head": "feat/topic", "kind": "pull-request-head", "repository": "example/repository"}'
+  if [[ "$body" != *"\\"pull_requests\\": [$grant]"* ]]; then
+    printf '%s\\n' '{"ok":false,"error":{"code":"uncovered-mutation-scope","message":"not covered"}}'
+    exit 1
+  fi
+  printf '%s\\n' '{"ok":true,"data":{"schema_version":"agent-session.operation-lease.v1","lease_id":"lease-1","revision":1,"state":"active"}}'
+  exit 0
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            capability = root / "private-capability"
+            capability.write_text("secret\n", encoding="utf-8")
+            capability.chmod(0o600)
+            base_env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": "private-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                "CALL_LOG": str(call_log),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            own = "forge-cli pr deliver --kind feature --title x --no-merge"
+
+            def run(command: str, version: str, call: str) -> dict[str, object] | None:
+                payload = command_payload(command)
+                payload.update(
+                    {
+                        "cwd": str(repo),
+                        "session_id": "private-product-session",
+                        "tool_use_id": call,
+                        "hook_event_name": "PreToolUse",
+                    }
+                )
+                code, decision, stderr = run_enforced_hook(
+                    "session-coordination-guard.py",
+                    payload,
+                    cwd=repo,
+                    env=dict(base_env, FAKE_VERSION=version),
+                )
+                self.assertEqual(code, 0, stderr)
+                return decision
+
+            # Released v1.29.0 surface: unchanged fail-closed result, and the
+            # broker is never asked to admit a field it would reject.
+            for index, command in enumerate(
+                (own, "forge-cli pr create --kind feature --title x")
+            ):
+                with self.subTest(version="1.29.0", command=command):
+                    decision = run(
+                        command, "1.29.0 (v1.29.0, rustc 1.98.1)", f"old-{index}"
+                    )
+                    self.assert_blocked(decision, "provider-pr-unresolved")
+            self.assertFalse(call_log.exists())
+
+            decision = run(own, "1.29.1 (v1.29.1, rustc 1.98.1)", "own-head")
+            self.assert_allowed(decision)
+            admitted = call_log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(admitted), 1)
+            self.assertEqual(
+                json.loads(admitted[0].removeprefix("admit ")),
+                {
+                    "schema_version": "agent-session.operation-targets.v1",
+                    "checkouts": [],
+                    "provider_refs": [],
+                    "pull_requests": [
+                        {
+                            "head": "feat/topic",
+                            "kind": "pull-request-head",
+                            "repository": "example/repository",
+                        }
+                    ],
+                    "targets": [],
+                },
+            )
+
+            for command, fragment in (
+                (
+                    "forge-cli pr create --kind feature --title x --head feat/other",
+                    "uncovered-mutation-scope",
+                ),
+                (
+                    "forge-cli pr deliver --kind feature --title x --no-merge "
+                    "--repo other/repository",
+                    "uncovered-mutation-scope",
+                ),
+                ("forge-cli pr merge 7", "uncovered-mutation-scope"),
+                ("forge-cli pr deliver --kind feature --title x", "provider-pr-unresolved"),
+                ("forge-cli issue create --title x", "provider-issue-unresolved"),
+            ):
+                with self.subTest(command=command):
+                    decision = run(
+                        command,
+                        "1.30.0",
+                        "denied-" + hashlib.sha256(command.encode()).hexdigest()[:12],
+                    )
+                    self.assert_blocked(decision, fragment)
+
     @unittest.skipUnless(
         os.environ.get("AGENT_SESSION_COUPLED_ACCEPTANCE") == "1",
         "requires a source-linked agent-session binary",
@@ -13143,6 +13535,168 @@ exit 64
             self.assertEqual(len(alpha_operations), 1)
             self.assertEqual(alpha_operations[0]["operation"], "shell")
             self.assertEqual(alpha_operations[0]["state"], "completed")
+
+            # Pull-request head targets: a surface below the capability floor
+            # rejects the unknown field, so the guard must keep the released
+            # unresolved result and never send it.
+            source_version = tuple(int(part) for part in parsed_version.groups())
+            supports_heads = source_version >= (1, 29, 1)
+            if supports_heads:
+                registry = json.loads(registry_path.read_text(encoding="utf-8"))
+                alpha_claim = next(
+                    claim
+                    for claim in registry["claims"]
+                    if claim["session_id"] == "alpha" and claim["state"] == "active"
+                )
+                alpha_claim["pull_request_head"] = {
+                    "repository": "example/repository",
+                    "head": "main",
+                }
+                registry_path.write_text(json.dumps(registry) + "\n", encoding="utf-8")
+                registry_path.chmod(0o600)
+            elif "(v" in version:
+                # A tagged release below the floor must reject the field, which
+                # is why the guard withholds it. An untagged source build may
+                # already accept it while still reporting the older version.
+                targets_file = root / "direct-pull-request.targets.json"
+                targets_file.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "agent-session.operation-targets.v1",
+                            "pull_requests": [
+                                {
+                                    "kind": "pull-request-head",
+                                    "repository": "example/repository",
+                                    "head": "main",
+                                }
+                            ],
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                targets_file.chmod(0o600)
+                token_file = root / "direct-pull-request.token"
+                token_file.write_text("hook-" + "0" * 32, encoding="utf-8")
+                token_file.chmod(0o600)
+                active_claim = next(
+                    claim
+                    for claim in json.loads(registry_path.read_text(encoding="utf-8"))[
+                        "claims"
+                    ]
+                    if claim["session_id"] == "alpha" and claim["state"] == "active"
+                )
+                claim_id = active_claim["claim_id"]
+                claim_revision = active_claim["revision"]
+                direct = subprocess.run(
+                    [
+                        agent_session,
+                        "--state-dir",
+                        str(state),
+                        "work-context",
+                        "admit",
+                        "--session",
+                        "alpha",
+                        "--claim",
+                        claim_id,
+                        "--if-revision",
+                        str(claim_revision),
+                        "--targets-file",
+                        str(targets_file),
+                        "--operation",
+                        "provider-pr",
+                        "--execution-token-file",
+                        str(token_file),
+                        "--capability-file",
+                        str(capabilities["alpha"]),
+                        "--idempotency-key",
+                        "coupled-direct-pull-request-0001",
+                        "--format",
+                        "json",
+                    ],
+                    cwd=repo,
+                    env=command_env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(direct.returncode, 0, direct.stdout)
+                self.assertEqual(
+                    json.loads(direct.stdout)["error"]["code"], "invalid-scope"
+                )
+            operations_before = len(alpha_operations)
+            for index, (command, allowed_reason) in enumerate(
+                (
+                    ("forge-cli pr deliver --kind feature --title x --no-merge", None),
+                    (
+                        "forge-cli pr create --kind feature --title x --head feat/other",
+                        "uncovered-mutation-scope",
+                    ),
+                    (
+                        "forge-cli pr create --kind feature --title x "
+                        "--repo other/repository",
+                        "uncovered-mutation-scope",
+                    ),
+                )
+            ):
+                pull_request = command_payload(command)
+                pull_request.update(
+                    {
+                        "cwd": str(repo),
+                        "session_id": "product-alpha",
+                        "tool_use_id": f"coupled-pull-request-{index}",
+                        "hook_event_name": "PreToolUse",
+                    }
+                )
+                code, pull_request_pre, stderr = run_enforced_hook(
+                    "session-coordination-guard.py",
+                    pull_request,
+                    cwd=repo,
+                    env=enforce_env,
+                )
+                self.assertEqual(code, 0, stderr)
+                if not supports_heads:
+                    self.assert_blocked(pull_request_pre, "provider-pr-unresolved")
+                    continue
+                if allowed_reason is not None:
+                    self.assert_blocked(pull_request_pre, allowed_reason)
+                    continue
+                self.assertNotEqual(
+                    (pull_request_pre or {}).get("decision"), "block"
+                )
+                pull_request_post = dict(pull_request)
+                pull_request_post["hook_event_name"] = "PostToolUse"
+                pull_request_post["tool_response"] = {"exit_code": 0}
+                code, completed_pull_request, stderr = run_enforced_hook(
+                    "session-coordination-guard.py",
+                    pull_request_post,
+                    cwd=repo,
+                    env=enforce_env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(completed_pull_request)
+            operations = [
+                operation
+                for operation in json.loads(
+                    registry_path.read_text(encoding="utf-8")
+                )["operations"]
+                if operation["session_id"] == "alpha"
+            ]
+            if supports_heads:
+                self.assertEqual(len(operations), operations_before + 1)
+                self.assertEqual(
+                    operations[-1]["pull_request_targets"],
+                    [
+                        {
+                            "kind": "pull-request-head",
+                            "repository": "example/repository",
+                            "head": "main",
+                        }
+                    ],
+                )
+                self.assertEqual(operations[-1]["state"], "completed")
+            else:
+                self.assertEqual(len(operations), operations_before)
 
     def test_session_coordination_guard_admits_advises_and_completes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

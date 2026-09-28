@@ -76,6 +76,10 @@ WORK_MODE_TIERS = frozenset(
 )
 SUPPORTED_PRODUCTS = {"codex", "claude"}
 COORDINATION_FLOOR = (1, 24, 5)
+# First agent-session release whose `work-context admit` accepts the additive
+# `pull_requests` operation-target field. The released v1.29.0 surface denies
+# unknown fields, so the guard emits the field only at or above this floor.
+PULL_REQUEST_TARGET_FLOOR = (1, 29, 1)
 TIMEOUT_SECONDS = 6.0
 HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
@@ -381,11 +385,20 @@ def coordination_mode() -> str:
     return raw if raw in COORDINATION_MODES else "advisory"
 
 
-def coordination_capability(executable: str, mode: str = "enforce") -> bool:
+def agent_session_version(executable: str) -> tuple[int, int, int] | None:
     version = run_cli([executable, "--version"])
     if version is None or version.returncode != 0:
-        return False
-    parsed = parse_version(version.stdout + "\n" + version.stderr)
+        return None
+    return parse_version(version.stdout + "\n" + version.stderr)
+
+
+def pull_request_target_capability(executable: str) -> bool:
+    parsed = agent_session_version(executable)
+    return parsed is not None and parsed >= PULL_REQUEST_TARGET_FLOOR
+
+
+def coordination_capability(executable: str, mode: str = "enforce") -> bool:
+    parsed = agent_session_version(executable)
     if parsed is None or parsed < COORDINATION_FLOOR:
         return False
     help_result = run_cli([executable, "work-context", "--help"])
@@ -1841,6 +1854,120 @@ def provider_target(
     )
 
 
+def option_occurrences(words: list[str], names: frozenset[str]) -> list[str | None]:
+    """Every value given for ``names``; ``None`` marks an option missing its value."""
+    values: list[str | None] = []
+    for index, token in enumerate(words):
+        if token in names:
+            values.append(words[index + 1] if index + 1 < len(words) else None)
+            continue
+        for name in names:
+            if token.startswith(f"{name}="):
+                values.append(token.split("=", 1)[1])
+                break
+        else:
+            if "-R" in names and token.startswith("-R") and token != "-R":
+                values.append(token[2:])
+    return values
+
+
+def canonical_branch(value: str) -> str | None:
+    """Mirror agent-session's bounded branch-name check for pull-request heads."""
+    if (
+        not value
+        or value != value.strip()
+        or len(value.encode("utf-8")) > 255
+        or value.startswith(("-", "/", "."))
+        or value.endswith(("/", ".", ".lock"))
+        or ".." in value
+        or "//" in value
+        or "@{" in value
+        or any(
+            character.isspace()
+            or not character.isprintable()
+            or character in "~^:?*[\\"
+            for character in value
+        )
+    ):
+        return None
+    return value
+
+
+def checkout_branch(root: Path) -> str | None:
+    """The branch checked out at ``root``; an unborn branch counts, detached does not."""
+    completed = run_cli(
+        ["git", "-C", str(root), "symbolic-ref", "--quiet", "--short", "HEAD"]
+    )
+    if completed is None or completed.returncode != 0:
+        return None
+    return canonical_branch(completed.stdout.strip())
+
+
+def pull_request_head_action(words: list[str]) -> bool:
+    """Whether a provider command acts on the pull request of one head branch.
+
+    Only `forge-cli pr create` and `forge-cli pr deliver --no-merge` qualify: both
+    name their pull request by head branch rather than number. A delivery that
+    would merge, every numbered shape, and `gh` stay on their released path, so
+    merging and pull requests the parser cannot bind to a head remain with the
+    Main Agent.
+    """
+    if not words or os.path.basename(words[0]) != "forge-cli":
+        return False
+    parsed = provider_group_action(words)
+    if parsed is None or parsed[1] != "pr":
+        return False
+    group_index, _group, action = parsed
+    if action == "create":
+        return True
+    return action == "deliver" and "--no-merge" in words[group_index + 2 :]
+
+
+def pull_request_head_target(
+    words: list[str], repository: str, root: Path
+) -> dict[str, str] | None:
+    """Resolve a head-bound pull-request command to one `pull-request-head` target.
+
+    The repository comes from `--repo` or the checkout origin, and the head from
+    `--head` or the checkout's current branch. A repeated option, a `--host`
+    override or non-origin `--remote`, a detached checkout, or an invalid name
+    leaves the target unresolved so enforcement fails closed.
+    """
+    arguments = words[1:]
+    repositories = option_occurrences(arguments, frozenset({"--repo", "-R"}))
+    heads = option_occurrences(arguments, frozenset({"--head"}))
+    remotes = option_occurrences(arguments, frozenset({"--remote"}))
+    # Repository identity is host-less, so the forge authority must stay the
+    # checkout origin's: another host or remote could reach a same-path
+    # repository on a different forge.
+    if (
+        len(repositories) > 1
+        or len(heads) > 1
+        or remotes not in ([], ["origin"])
+        or option_occurrences(arguments, frozenset({"--host"}))
+    ):
+        return None
+    if repositories:
+        raw_repository = repositories[0]
+        effective_repository = (
+            normalized_repository(raw_repository) if raw_repository else None
+        )
+    else:
+        effective_repository = repository
+    if heads:
+        raw_head = heads[0]
+        head = canonical_branch(raw_head) if raw_head else None
+    else:
+        head = checkout_branch(root)
+    if effective_repository is None or head is None:
+        return None
+    return {
+        "kind": "pull-request-head",
+        "repository": effective_repository,
+        "head": head,
+    }
+
+
 def explicit_cross_repository(
     words: list[str], base: Path, root: Path
 ) -> bool:
@@ -1866,8 +1993,14 @@ def explicit_cross_repository(
 
 
 def operation_targets(
-    payload: Mapping[str, Any], tool: str
+    payload: Mapping[str, Any], tool: str, *, pull_request_targets: bool = False
 ) -> tuple[str, dict[str, Any]] | tuple[None, str]:
+    """Project a tool call onto `agent-session.operation-targets.v1`.
+
+    ``pull_request_targets`` enables the additive `pull_requests` field. Callers
+    pass it only after the admitting agent-session proves it accepts the field;
+    otherwise head-bound pull-request commands keep their unresolved result.
+    """
     base = effective_workdir(payload).resolve(strict=False)
     targets: list[dict[str, str]] = []
     checkouts: list[dict[str, str]] = []
@@ -1926,6 +2059,17 @@ def operation_targets(
             os.path.basename(item) in {"gh", "forge-cli"} for item in words[1:]
         ):
             return None, "provider-target-unresolved"
+        if pull_request_targets and pull_request_head_action(words):
+            head_target = pull_request_head_target(words, repository, root)
+            if head_target is None:
+                return None, "provider-pr-unresolved"
+            return "provider-pr", {
+                "schema_version": "agent-session.operation-targets.v1",
+                "targets": [],
+                "provider_refs": [],
+                "pull_requests": [head_target],
+                "checkouts": [],
+            }
         provider = provider_target(words or [], repository)
         if provider is not None:
             operation, provider_ref = provider
@@ -2612,7 +2756,16 @@ def _pre_tool_locked(
     ):
         emit_block(claim_recovery_reason("claim-invalid"))
         return ALLOW
-    target_result = operation_targets(payload, tool)
+    command_words = (
+        simple_words(command_from(payload)) if tool in COMMAND_TOOLS else None
+    )
+    target_result = operation_targets(
+        payload,
+        tool,
+        pull_request_targets=bool(command_words)
+        and pull_request_head_action(command_words or [])
+        and pull_request_target_capability(executable),
+    )
     operation, targets_or_reason = target_result
     if operation is None:
         emit_block(mutation_target_recovery(str(targets_or_reason)))
