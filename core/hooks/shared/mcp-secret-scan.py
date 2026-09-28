@@ -45,7 +45,9 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "AWS secret key",
         re.compile(
             r"(?i)(?:aws[_-]?secret[_-]?(?:access[_-]?)?key|secret[_-]?access[_-]?key)"
-            r"[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])"
+            # `:` / `=` separate a key from its value; `,` separates a CLI flag
+            # from its value in a JSON args array (`"--flag", "<value>"`).
+            r"[\"']?\s*[:=,]\s*[\"']?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])"
         ),
     ),
     ("Private key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),

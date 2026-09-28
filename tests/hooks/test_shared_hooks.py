@@ -2570,11 +2570,19 @@ class SharedHookTests(unittest.TestCase):
             (".mcp.json", "AIzaSyDExampleExampleExampleExample12345", "value"),
             (".mcp.json", "ya29.a0AfH6SMBExampleExampleExampleExample", "value"),
         )
-        for path, secret, key in cases:
+        contents = [
+            (path, secret, key, f'{{"{key}":"{secret}"}}') for path, secret, key in cases
+        ]
+        # A CLI flag followed by its value in a JSON args array.
+        for flag in ("--aws-secret-access-key", "--secret-access-key"):
+            contents.append(
+                (".mcp.json", aws_secret, flag, f'{{"args": ["{flag}", "{aws_secret}"]}}')
+            )
+        for path, secret, key, content in contents:
             with self.subTest(path=path, secret=secret[:8], key=key):
                 code, decision, stderr = run_hook(
                     "mcp-secret-scan.py",
-                    write_payload(path, f'{{"{key}":"{secret}"}}'),
+                    write_payload(path, content),
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, path)
@@ -2601,6 +2609,7 @@ class SharedHookTests(unittest.TestCase):
             '{"mcpServers":{"tool":{"command":"npx",'
             f'"args":["github:org/tool#{sha}"]}}}}}}',
             f'{{"integrity":{{"sha1":"{sha}"}}}}',
+            f'{{"args": ["--revision", "{sha}"]}}',
             '{"value":"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}',
         ):
             with self.subTest(content=content[:40]):
