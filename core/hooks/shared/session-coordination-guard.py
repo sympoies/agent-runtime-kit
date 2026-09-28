@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +83,26 @@ PULL_REQUEST_TARGET_FLOOR = (1, 29, 1)
 TIMEOUT_SECONDS = 6.0
 HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
+RUN_CLI_CUTOFF: float | None = None
 MAX_PENDING_RECORDS = 32
+MAX_ORPHAN_RECOVERY_RECORDS = 4
+# The dispatcher stops this handler long before HOOK_BUDGET_SECONDS, so
+# recovery of other calls' records gets only a short slice from hook start and
+# never starves the current call's own check and admission.
+ORPHAN_RECOVERY_SLICE_SECONDS = 1.5
+# Refusals `work-context admit` raises only after its idempotency lookup, so a
+# replay that receives one proves the exact admission was never committed.
+POST_REPLAY_ADMISSION_REFUSALS = frozenset(
+    {
+        "claim-conflict",
+        "uncovered-mutation-scope",
+        "claim-not-found",
+        "claim-expired",
+        "claim-not-active",
+        "claim-revision-conflict",
+        "operation-not-working",
+    }
+)
 MAX_STOP_RECONCILIATION_RECORDS = 128
 MAX_STOP_RECONCILIATION_GROUPS = 2
 MAX_STOP_ADMISSION_PROOF_PREPARATIONS = 16
@@ -315,8 +334,10 @@ def run_cli(
     args: list[str], *, timeout_seconds: float = TIMEOUT_SECONDS
 ) -> subprocess.CompletedProcess[str] | None:
     timeout = timeout_seconds
-    if HOOK_DEADLINE is not None:
-        timeout = min(timeout, HOOK_DEADLINE - time.monotonic())
+    for deadline in (HOOK_DEADLINE, RUN_CLI_CUTOFF):
+        if deadline is None:
+            continue
+        timeout = min(timeout, deadline - time.monotonic())
         if timeout <= 0:
             return None
     try:
@@ -2328,8 +2349,9 @@ def advisory_pre_tool(
     return ALLOW
 
 
-def acquire_operation_lock(path: Path) -> int | None:
+def acquire_operation_lock(path: Path, *, blocking: bool = True) -> int | None:
     lock_path = path.with_suffix(".lock")
+    descriptor: int | None = None
     try:
         flags = os.O_RDWR | os.O_CREAT
         if hasattr(os, "O_NOFOLLOW"):
@@ -2338,9 +2360,15 @@ def acquire_operation_lock(path: Path) -> int | None:
         if stat.S_IMODE(os.fstat(descriptor).st_mode) != 0o600:
             os.close(descriptor)
             return None
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        operation = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+        fcntl.flock(descriptor, operation)
         return descriptor
     except OSError:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         return None
 
 
@@ -2703,7 +2731,7 @@ def _pre_tool_locked(
     if record_path.exists():
         prior = read_record(record_path)
         if prior.get("phase") == "admitting":
-            status, code = recover_admission(executable, record_path, prior)
+            status, code = recover_or_replay_admission(executable, record_path, prior)
             if status == "active":
                 return ALLOW
             if status == "terminal":
@@ -2756,6 +2784,15 @@ def _pre_tool_locked(
     ):
         emit_block(claim_recovery_reason("claim-invalid"))
         return ALLOW
+    recovery = recover_orphaned_records(
+        executable,
+        namespace,
+        record_path,
+        managed_session=managed_session,
+        capability_file=capability_file,
+        state_dir=state_dir,
+        session_incarnation=context["session_incarnation"],
+    )
     command_words = (
         simple_words(command_from(payload)) if tool in COMMAND_TOOLS else None
     )
@@ -2849,6 +2886,16 @@ def _pre_tool_locked(
         return ALLOW
     status, code = submit_admission(executable, record_path, pending_record)
     if status != "active":
+        if "pending" in recovery and code in {
+            "operation-in-progress",
+            "coordination-unavailable",
+        }:
+            emit_block(
+                "Managed mutation blocked: an earlier call's operation never reported "
+                "completion and is now being reconciled. Retry this call after a few "
+                "seconds. [reason: operation-reconcile-pending]"
+            )
+            return ALLOW
         if code == "claim-conflict":
             reason = "definite peer conflict"
         elif code == "uncovered-mutation-scope":
@@ -2988,7 +3035,7 @@ def retire_record(path: Path, record: Mapping[str, Any]) -> bool:
 
 
 def submit_admission(
-    executable: str, path: Path, record: dict[str, Any]
+    executable: str, path: Path, record: dict[str, Any], *, replay: bool = False
 ) -> tuple[str, str]:
     required_strings = (
         "session",
@@ -3053,14 +3100,17 @@ def submit_admission(
     lease = result_data(body)
     if admitted is None or admitted.returncode != 0 or not lease:
         code = error_code(body)
-        if code in {
-            "claim-conflict",
-            "uncovered-mutation-scope",
-            "claim-not-found",
-            "claim-expired",
-            "claim-revision-conflict",
-            "session-incarnation-mismatch",
-        }:
+        # `work-context admit` commits a lease only in its final registry
+        # save, so a well-formed refusal to a first submission proves nothing
+        # was admitted. Keeping such a record would strand it in `admitting`
+        # forever: a parallel sibling refused while another call holds the
+        # session's single operation slot must not leave Stop pending. A
+        # replay can be refused by broker checks that run before admit's
+        # idempotency lookup, so it retires only on refusals raised after
+        # that lookup. A lost process, timeout, or unparseable reply stays
+        # uncertain.
+        refused = body.get("ok") is False and isinstance(body.get("error"), Mapping)
+        if refused and (not replay or code in POST_REPLAY_ADMISSION_REFUSALS):
             retire_record(path, record)
             return "rejected", code
         return "uncertain", code
@@ -3544,6 +3594,265 @@ def recover_admission(
     return "active", "admitted"
 
 
+def recover_or_replay_admission(
+    executable: str, path: Path, record: dict[str, Any]
+) -> tuple[str, str]:
+    """Resolve an `admitting` record whose admission reply was lost.
+
+    A CLI with the broker proof surface keeps the exact-proof recovery. No
+    released agent-session provides it, so otherwise replay the exact
+    admission: same idempotency key, token, and targets. A committed admission
+    replays its lease; only a refusal raised after the replay lookup retires
+    the record.
+    """
+    if broker_proof_capability(executable):
+        return recover_admission(executable, path, record)
+    return submit_admission(executable, path, record, replay=True)
+
+
+def broker_proof_capability(executable: str) -> bool:
+    listed = run_cli([executable, "broker", "--help"])
+    if listed is None or listed.returncode != 0:
+        return False
+    return all(
+        re.search(rf"(?m)^\s+{command}\s", listed.stdout) is not None
+        for command in ("prepare-admission-proof", "proof")
+    )
+
+
+def broker_nonterminal_operations(
+    executable: str, managed_session: str, capability_file: str, state_dir: str
+) -> int | None:
+    status = run_cli(
+        common_cli_args(executable, state_dir)
+        + [
+            "broker",
+            "status",
+            "--session",
+            managed_session,
+            "--capability-file",
+            capability_file,
+            "--format",
+            "json",
+        ]
+    )
+    data = result_data(json_body(status))
+    operation = data.get("operation") if data else None
+    if (
+        status is None
+        or status.returncode != 0
+        or data.get("schema_version") != "agent-session.coordination-broker.v1"
+        or data.get("session_id") != managed_session
+        or not isinstance(operation, Mapping)
+        or not all(
+            exact_integer(operation.get(field)) and operation[field] >= 0
+            for field in ("active", "uncertain")
+        )
+    ):
+        return None
+    return operation["active"] + operation["uncertain"]
+
+
+def reconcile_orphaned_record(
+    executable: str, path: Path, record: dict[str, Any]
+) -> str:
+    """Ask the broker to reconcile an admitted lease whose PostToolUse never came.
+
+    `work-context reconcile` itself proves the operation inactive from
+    controller-owned turn and descendant evidence, so a call that is still
+    running is refused rather than released. The first accepted call moves the
+    lease to `reconcile_pending`; a later call finalizes it. An outcome that was
+    never observed is reported as `fail`, never guessed as success.
+    """
+    revision = record.get("lease_revision")
+    lease_id = record.get("lease_id")
+    raw_token = record.get("token_file")
+    if (
+        record.get("phase") != "active"
+        or not isinstance(lease_id, str)
+        or not lease_id
+        or not exact_integer(revision)
+        or revision < 1
+        or not isinstance(raw_token, str)
+        or not isinstance(record.get("complete_idempotency"), str)
+    ):
+        return "uncertain"
+    token_file = operation_file(path, raw_token, ".token")
+    try:
+        if token_file is None or token_file.is_symlink() or not token_file.is_file():
+            return "uncertain"
+        execution_token = token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "uncertain"
+    outcome = operation_outcome(path, record) or "fail"
+    # TTL expiry advances an unfinished lease by exactly one revision.
+    for attempt in (revision, revision + 1):
+        proof_path = path.parent / f".{uuid.uuid4().hex}.reconcile-proof"
+        proof = {
+            "schema_version": "agent-session.operation-reconcile-proof.v1",
+            "execution_token": execution_token,
+            "outcome": outcome,
+        }
+        if not write_private(proof_path, json.dumps(proof, sort_keys=True) + "\n"):
+            return "uncertain"
+        try:
+            reconciled = run_cli(
+                common_cli_args(executable, record["state_dir"])
+                + [
+                    "work-context",
+                    "reconcile",
+                    "--session",
+                    record["session"],
+                    "--lease",
+                    lease_id,
+                    "--if-revision",
+                    str(attempt),
+                    "--proof-file",
+                    str(proof_path),
+                    "--capability-file",
+                    record["capability_file"],
+                    "--idempotency-key",
+                    "hook-reconcile-"
+                    + digest(f"{record['complete_idempotency']}:{attempt}")[:32],
+                    "--format",
+                    "json",
+                ]
+            )
+        finally:
+            best_effort_unlink(proof_path)
+        body = json_body(reconciled)
+        lease = result_data(body)
+        if reconciled is not None and reconciled.returncode == 0 and lease:
+            if (
+                lease.get("schema_version") != "agent-session.operation-lease.v1"
+                or lease.get("lease_id") != lease_id
+                or not exact_integer(lease.get("revision"))
+            ):
+                return "uncertain"
+            if lease.get("state") in TERMINAL_OPERATION_STATES:
+                return "terminal" if retire_record(path, record) else "uncertain"
+            if lease.get("state") == "reconcile_pending" and replace_private(
+                path, dict(record, lease_revision=lease["revision"])
+            ):
+                return "pending"
+            return "uncertain"
+        code = error_code(body) if reconciled is not None else ""
+        if code == "operation-reconcile-pending":
+            return "pending"
+        if code == "operation-still-running":
+            return "running"
+        if code != "operation-revision-conflict":
+            return "uncertain"
+    return "uncertain"
+
+
+def recover_orphaned_records(
+    executable: str,
+    namespace: Path,
+    current: Path,
+    *,
+    managed_session: str,
+    capability_file: str,
+    state_dir: str,
+    session_incarnation: str,
+) -> set[str]:
+    """Recover other calls' records before admitting a new mutation.
+
+    A record outlives its call when the provider never delivers PostToolUse
+    for an admitted call, or when the admission reply was lost. The broker
+    holds at most one nonterminal operation per session, so such a record
+    would otherwise refuse every later mutation. Locks are taken without
+    waiting so a sibling mid-hook is never touched, and broker state is read
+    while the record is locked.
+    """
+    def recoverable(record: Mapping[str, Any]) -> bool:
+        return (
+            record.get("schema_version")
+            == "agent-runtime-kit.session-coordination-operation.v1"
+            and record.get("session") == managed_session
+            and record.get("capability_file") == capability_file
+            and record.get("state_dir") == state_dir
+            # Broker counts cover only the current incarnation.
+            and record.get("session_incarnation") == session_incarnation
+            and record.get("phase") in {"active", "admitting"}
+        )
+
+    snapshots: list[tuple[int, str, Path]] = []
+    for path in namespace.glob("*.json"):
+        if path.name.endswith(".targets.json") or path == current:
+            continue
+        snapshot = read_record(path)
+        if recoverable(snapshot):
+            priority = 0 if snapshot.get("phase") == "active" else 1
+            snapshots.append((priority, path.name, path))
+    statuses: set[str] = set()
+    global RUN_CLI_CUTOFF
+    if HOOK_DEADLINE is not None:
+        # One aggregate cutoff bounds every recovery CLI call, not only the
+        # start of each record.
+        RUN_CLI_CUTOFF = (
+            HOOK_DEADLINE - HOOK_BUDGET_SECONDS + ORPHAN_RECOVERY_SLICE_SECONDS
+        )
+    try:
+        for _priority, _name, path in sorted(snapshots)[
+            :MAX_ORPHAN_RECOVERY_RECORDS
+        ]:
+            if RUN_CLI_CUTOFF is not None and time.monotonic() >= RUN_CLI_CUTOFF:
+                break
+            descriptor = acquire_operation_lock(path, blocking=False)
+            if descriptor is None:
+                continue
+            try:
+                statuses.add(
+                    recover_orphaned_record(
+                        executable,
+                        path,
+                        recoverable,
+                        managed_session=managed_session,
+                        capability_file=capability_file,
+                        state_dir=state_dir,
+                    )
+                )
+            finally:
+                release_operation_lock(descriptor)
+    finally:
+        RUN_CLI_CUTOFF = None
+    statuses.discard("skipped")
+    return statuses
+
+
+def recover_orphaned_record(
+    executable: str,
+    path: Path,
+    recoverable: Callable[[Mapping[str, Any]], bool],
+    *,
+    managed_session: str,
+    capability_file: str,
+    state_dir: str,
+) -> str:
+    record = read_record(path)
+    if not recoverable(record):
+        return "skipped"
+    nonterminal = broker_nonterminal_operations(
+        executable, managed_session, capability_file, state_dir
+    )
+    if nonterminal is None:
+        return "uncertain"
+    if nonterminal == 0:
+        # No lease of this session can still hold the operation slot.
+        return "terminal" if retire_record(path, record) else "uncertain"
+    if record.get("phase") == "admitting":
+        status, _code = recover_or_replay_admission(executable, path, record)
+        if status != "active":
+            return "uncertain"
+        record = read_record(path)
+    if operation_outcome(path, record) is not None and complete_record(
+        executable, path, record
+    ):
+        return "terminal"
+    return reconcile_orphaned_record(executable, path, record)
+
+
 def retire_externally_reconciled_records(
     executable: str, records: list[Path]
 ) -> set[Path]:
@@ -3664,7 +3973,11 @@ def _post_tool_locked(
         )
         return ALLOW
     if executable is not None and record.get("phase") == "admitting":
-        recover_admission(executable, record_path, record)
+        # The tool ran, so either a replayed or a first admission describes a
+        # real operation that is completed with the observed outcome below.
+        recover_or_replay_admission(executable, record_path, record)
+        if not record_path.exists():
+            return ALLOW
         record = read_record(record_path)
         record["outcome"] = outcome
     if executable is None or not complete_record(executable, record_path, record):
@@ -3725,7 +4038,7 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
             path.name,
         )
     )
-    if executable is not None:
+    if executable is not None and records:
         retired = retire_externally_reconciled_records(executable, records)
         if retired:
             records = [path for path in records if path not in retired]
@@ -3749,9 +4062,10 @@ def stop_audit(executable: str | None, managed_session: str, product: str) -> in
     if pending:
         emit_stop_coordination_result(
             "pending",
-            "Session coordination retains an unresolved operation proof. Use authenticated "
-            "work-context complete/reconcile recovery before another mutation; Stop does not "
-            "release or guess the outcome of an active operation.",
+            "Session coordination retains an unresolved operation proof. A managed "
+            "mutation in a later turn reconciles it through work-context once the "
+            "runtime proves the operation inactive; Stop does not release or guess the "
+            "outcome of an active operation.",
         )
     else:
         emit_stop_coordination_result("clean")
