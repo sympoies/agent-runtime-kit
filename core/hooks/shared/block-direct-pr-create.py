@@ -68,20 +68,21 @@ ALLOWED_MR_SKILLS: frozenset[str] = _BUILTIN_MR_SKILLS | _OVERLAY_SKILLS
 MARKER_ENV_NAMES = ("AGENT_RUNTIME_PR_SKILL",)
 
 BLOCK_REASON_PR = (
-    "Do not run gh pr create directly. Open PRs through an audited PR workflow "
-    "so the body follows the standard template and the call is traceable. "
-    "Skill bypass: prefix the command with AGENT_RUNTIME_PR_SKILL=<exact "
-    "allowed skill name>."
+    "Do not run gh pr create directly. Open PRs through the deliver-pr "
+    "workflow with `forge-cli pr deliver` (or `forge-cli pr create` for a "
+    "create-only record) so the body follows the standard template and the "
+    "call is traceable. Skill bypass: prefix the command with "
+    "AGENT_RUNTIME_PR_SKILL=<exact allowed skill name>."
 )
 
 BLOCK_REASON_MR = (
-    "Do not create GitLab MRs directly. Use an audited MR workflow so the "
-    "description, branch handling, and source-branch policy are reviewable. "
-    "Skill bypass: prefix the command with AGENT_RUNTIME_PR_SKILL=<exact "
-    "allowed MR skill name>."
+    "Do not create GitLab MRs directly. Open MRs through the deliver-pr "
+    "workflow with `forge-cli pr deliver` (or `forge-cli pr create` for a "
+    "create-only record) so the description, branch handling, and "
+    "source-branch policy are reviewable. Skill bypass: prefix the command "
+    "with AGENT_RUNTIME_PR_SKILL=<exact allowed MR skill name>."
 )
 
-ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*")
 CLI_OPTIONS_WITH_VALUE = {"-R", "--repo"}
 CLI_OPTIONS_WITH_VALUE_PREFIXES = ("--repo=",)
 GLAB_API_METHOD_FLAGS = {"-X", "--method"}
@@ -99,41 +100,6 @@ PULLS_ENDPOINT_RE = re.compile(r"(?:^|/)repos/[^/\s]+/[^/\s]+/pulls/?(?:$|[?#])"
 
 def basename(token: str) -> str:
     return PurePosixPath(token).name
-
-
-def is_assignment(token: str) -> bool:
-    return bool(ASSIGNMENT_RE.match(token))
-
-
-def skip_env_prefix(tokens: list[str], index: int) -> int:
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return index + 1
-        if is_assignment(token):
-            index += 1
-            continue
-        if token in {"-i", "--ignore-environment", "-0", "--null"}:
-            index += 1
-            continue
-        if token in {"-u", "--unset"}:
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return index
-    return index
-
-
-def cli_command_index(simple_command: list[str], command_name: str) -> int | None:
-    invocation = invocation_tokens(simple_command)
-    if not invocation:
-        return None
-    return 0 if basename(invocation[0]) == command_name else None
 
 
 def skip_cli_global_options(tokens: list[str], index: int) -> int:

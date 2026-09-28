@@ -2,14 +2,17 @@
 #
 # SessionStart hook: surface health problems once per day.
 #
-# Two independent, opt-in-aware checks share one daily nudge:
+# Two independent, opt-in-aware checks, each with its own daily stamp:
 #   1. agent-docs repo preflight health (when `agent-docs` is installed and the
 #      current repo declares `AGENT_DOCS.toml`): strict preflight for every
 #      declared intent. Runtime-kit source checkouts self-anchor docs-home;
-#      other project catalogs inherit the active managed docs-home.
+#      other project catalogs inherit the active managed docs-home. Stamped
+#      per repository, so a session in a repo without a catalog does not
+#      consume the check for other repos.
 #   2. evidence-archive wiring (only when the user has opted in via
 #      $AGENT_EVIDENCE_ARCHIVE_HOME, a machine-local config, or a default clone):
 #      clone presence, local config validity, and hosts.yaml validity.
+#      Machine-wide, so stamped once per day per product.
 #
 # The hook is product-neutral. Product activation sets AGENT_RUNTIME_PRODUCT so
 # cache keys and labels stay readable. A user who has not opted into the
@@ -28,9 +31,19 @@ python_bin="$(command -v python3 || true)"
 
 product="${AGENT_RUNTIME_PRODUCT:-agent-runtime}"
 stamp_dir="$HOME/.cache/agent-runtime-kit"
-stamp="$stamp_dir/health-${product}-$(date +%Y%m%d).stamp"
-[[ -f "$stamp" ]] && exit 0
+stamp_day="$(date +%Y%m%d)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+repo_hash=""
+if [[ -n "$repo_root" ]]; then
+  repo_hash="$(printf '%s' "$repo_root" | cksum 2>/dev/null | awk '{print $1}' || true)"
+fi
+docs_stamp="$stamp_dir/health-${product}-docs-${repo_hash:-norepo}-${stamp_day}.stamp"
+evidence_stamp="$stamp_dir/health-${product}-evidence-${stamp_day}.stamp"
+docs_due=0
+[[ -n "$repo_root" && -f "$repo_root/AGENT_DOCS.toml" && ! -f "$docs_stamp" ]] && docs_due=1
+evidence_due=0
+[[ ! -f "$evidence_stamp" ]] && evidence_due=1
+[[ "$docs_due" -eq 0 && "$evidence_due" -eq 0 ]] && exit 0
 
 trusted_cli_path() {
   local candidate
@@ -227,23 +240,24 @@ evidence_problems() {
 # --- decide whether either lane can run today -------------------------------
 
 have_agent_docs=0
-agent_docs_bin="$(trusted_cli_path agent-docs || true)"
-[[ -n "$agent_docs_bin" ]] && have_agent_docs=1
-opted_in=0
-evidence_opted_in && opted_in=1
-
-# Nothing to check today: do not stamp, so a later session can re-check.
-if [[ "$have_agent_docs" -eq 0 && "$opted_in" -eq 0 ]]; then
-  exit 0
+if [[ "$docs_due" -eq 1 ]]; then
+  agent_docs_bin="$(trusted_cli_path agent-docs || true)"
+  [[ -n "$agent_docs_bin" ]] && have_agent_docs=1
 fi
+opted_in=0
+[[ "$evidence_due" -eq 1 ]] && evidence_opted_in && opted_in=1
 
-mkdir -p "$stamp_dir"
-: >"$stamp"
+# Stamp a lane only when it actually runs, so a session where a lane has
+# nothing to check leaves that lane due for a later session.
+stamp_lane() {
+  mkdir -p "$stamp_dir" && : >"$1"
+}
 
 # --- lane 1: agent-docs repo health -----------------------------------------
 
 docs_block=""
-if [[ "$have_agent_docs" -eq 1 && -n "$repo_root" && -f "$repo_root/AGENT_DOCS.toml" ]]; then
+if [[ "$have_agent_docs" -eq 1 ]]; then
+  stamp_lane "$docs_stamp"
   # Prefer an explicit docs-home override. The runtime-kit source checkout
   # self-anchors so rendered home-prompt symlinks cannot resolve home-scoped
   # docs under build/<product>/. Other project catalogs inherit docs-home.
@@ -334,6 +348,7 @@ fi
 
 evid_block=""
 if [[ "$opted_in" -eq 1 ]]; then
+  stamp_lane "$evidence_stamp"
   evid_problems="$(evidence_problems)"
   if [[ -n "$evid_problems" ]]; then
     evid_block="evidence-archive wiring problems (you have opted in via \$AGENT_EVIDENCE_ARCHIVE_HOME, a local config, or a local clone):

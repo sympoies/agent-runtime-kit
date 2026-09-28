@@ -49,6 +49,8 @@ HOME_PATH_RE = re.compile(
 )
 TRAILING_PUNCTUATION = ".,;:)]}'\"`"
 TEXT_SUFFIXES = {".md", ".mdx", ".rst", ".txt"}
+TEMPLATE_SUFFIX = ".tera"
+ACTIVE_DIRECTORY_PARTS = {"docs", "skills", "docker", "policies"}
 ACTIVE_BASENAMES = {
     "AGENTS.md",
     "AGENT_HOME.md",
@@ -110,13 +112,16 @@ def is_active_text_surface(file_path: str) -> bool:
         return False
 
     basename = parts[-1]
+    # Canonical `*.md.tera` sources render to the active docs they template.
+    if basename.lower().endswith(TEMPLATE_SUFFIX):
+        basename = basename[: -len(TEMPLATE_SUFFIX)]
     if basename in ACTIVE_BASENAMES:
         return True
 
     suffix = Path(basename).suffix.lower()
     if suffix not in TEXT_SUFFIXES:
         return False
-    return any(part in {"docs", "skills", "docker"} for part in parts[:-1])
+    return any(part in ACTIVE_DIRECTORY_PARTS for part in parts[:-1])
 
 
 def is_allowed_literal(sample: str) -> bool:

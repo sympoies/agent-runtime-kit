@@ -514,6 +514,93 @@ class SharedHookTests(unittest.TestCase):
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "rule=git-alias-resolution")
 
+    def test_direct_git_commit_hook_allows_installed_non_builtin_commands(
+        self,
+    ) -> None:
+        # Git dispatches builtins and installed `git-<name>` programs (exec-path
+        # porcelain such as submodule/mergetool, or PATH extensions such as
+        # git-lfs) before aliases, so those names cannot hide a commit alias.
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            extension = bin_dir / "git-fixture-extension"
+            extension.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            extension.chmod(0o755)
+            env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+            for command in (
+                "git submodule update --init",
+                "git mergetool",
+                "git fixture-extension pull",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            # A command that retargets PATH or the exec-path can hide the
+            # installed program, letting Git fall back to a same-named alias.
+            # Builtins stay admitted because Git never looks them up there.
+            for command in (
+                "PATH=/usr/bin git status --short",
+                "GIT_EXEC_PATH=/nonexistent git status",
+                "git --exec-path=/nonexistent status",
+                "export PATH=/usr/bin:/bin; git status",
+                "export FOO=1; git fixture-extension pull",
+                "git fixture-extension pull; echo PATH",
+                "source .venv/bin/activate; git status",
+                "git add . && git fixture-extension pull",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command in (
+                "git fixture-not-installed pull",
+                "git -c alias.submodule=commit submodule",
+                "PATH=/usr/bin git fixture-extension pull",
+                "GIT_EXEC_PATH=/nonexistent git fixture-extension pull",
+                "env PATH=/usr/bin git fixture-extension pull",
+                "env -u PATH git fixture-extension pull",
+                "env -i git fixture-extension pull",
+                "git --exec-path=/nonexistent fixture-extension pull",
+                "git --exec-path /nonexistent fixture-extension pull",
+                "GIT_EXEC_PATH=/nonexistent git submodule update",
+                # Earlier statements in the same command retarget lookup too.
+                "export PATH=/usr/bin:/bin; git fixture-extension pull",
+                "PATH=/usr/bin:/bin; git fixture-extension pull",
+                "PATH+=:/nonexistent; git fixture-extension pull",
+                "unset PATH; git fixture-extension pull",
+                "export GIT_EXEC_PATH=/nonexistent; git submodule update",
+                "declare -x PATH=/usr/bin; git fixture-extension pull",
+                "for PATH in /usr/bin; do git fixture-extension pull; done",
+                "read PATH <<< /usr/bin; git fixture-extension pull",
+                "printf -v PATH %s /usr/bin; git fixture-extension pull",
+                "bash -c 'export PATH=/usr/bin; git fixture-extension pull'",
+                "git config alias.fixture-extension commit && "
+                "export PATH=/usr/bin && git fixture-extension -m x",
+                # Sourced files and namerefs can change lookup invisibly.
+                "source /tmp/env.sh; git fixture-extension pull",
+                "set -a; . ./env; git fixture-extension pull",
+                "declare -n r=PATH; r=/x; git fixture-extension pull",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=git-alias-resolution")
+
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
             (
@@ -603,6 +690,30 @@ class SharedHookTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "uv run --locked python")
+
+    def test_block_messages_name_the_governed_route(self) -> None:
+        # `git-cli worktree` has no move/repair/lock/unlock, so the message
+        # must route those to the override instead of a nonexistent command.
+        code, decision, stderr = run_hook(
+            "block-direct-git-worktree.py",
+            command_payload("git worktree move ../old ../new"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "no git-cli worktree equivalent")
+        assert decision is not None
+        self.assertIn("ALLOW_DIRECT_GIT_WORKTREE=1", str(decision.get("reason", "")))
+
+        for command in ("gh pr create --draft", "glab mr create --draft"):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "forge-cli pr deliver")
+                assert decision is not None
+                reason = str(decision.get("reason", ""))
+                self.assertIn("forge-cli pr create", reason)
+                self.assertIn("AGENT_RUNTIME_PR_SKILL", reason)
 
     def test_block_hooks_ignore_inert_heredoc_prose(self) -> None:
         # A quoted-delimiter here-doc body is data with no expansion at all;
@@ -1280,6 +1391,23 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "missing a body")
 
+    def test_body_gate_names_mixed_message_and_structured_forms(self) -> None:
+        # semantic-commit rejects --message/--message-file combined with the
+        # structured fields, so the bullets never become a body. The gate must
+        # say that instead of reporting a missing body next to visible bullets.
+        command = (
+            "semantic-commit commit --message 'fix(hooks): tighten gate' "
+            "--body-bullet 'first reason' --body-bullet 'second reason'"
+        )
+        code, decision, stderr = run_hook(
+            "semantic-commit-body-gate.py",
+            command_payload(command),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "cannot be combined")
+        assert decision is not None
+        self.assertNotIn("missing a body", str(decision.get("reason", "")))
+
     def test_allows_body_gate_with_structured_body_bullet(self) -> None:
         command = (
             "semantic-commit commit --type fix --scope hooks "
@@ -1775,6 +1903,8 @@ class SharedHookTests(unittest.TestCase):
             "forge-cli issue create --title x",
             # A global option value must not be mistaken for the subcommand.
             "forge-cli --repo owner/x --format json pr create --title x",
+            "forge-cli --host gitlab.example.com pr create --title x",
+            "forge-cli --host=gitlab.example.com issue create --title x",
             # The agent-run exec wrapper is unwrapped before matching.
             "agent-run exec --cwd /repo -- forge-cli issue create --title x",
             # --label-catalog is not a label selection.
@@ -1789,6 +1919,10 @@ class SharedHookTests(unittest.TestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "--label")
+                assert decision is not None
+                reason = str(decision.get("reason", ""))
+                self.assertIn("FORGE_NO_LABELS=1", reason)
+                self.assertNotIn("not a hard requirement", reason)
 
         allowed_commands = (
             "forge-cli pr create --title x --label type::feature",
@@ -1801,6 +1935,11 @@ class SharedHookTests(unittest.TestCase):
             "forge-cli pr create --help",
             "forge-cli pr deliver --help",
             "forge-cli issue create -h",
+            # A dry run creates no record.
+            "forge-cli --dry-run pr create --title x",
+            "forge-cli pr create --dry-run --title x",
+            "forge-cli pr deliver --kind feature --dry-run",
+            "forge-cli issue create --title x --dry-run",
             "gh pr create --title x",
             # Explicit no-label opt-out via the inline bypass marker.
             "FORGE_NO_LABELS=1 forge-cli pr create --title x",
@@ -2109,20 +2248,63 @@ class SharedHookTests(unittest.TestCase):
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
 
+    def test_portable_paths_scan_covers_canonical_skill_and_policy_sources(
+        self,
+    ) -> None:
+        # Rendered SKILL.md and policy docs come from these canonical sources,
+        # so a home path must be caught where it is authored.
+        for path in (
+            "core/skills/example/SKILL.md.tera",
+            "core/skills/example/references/guide.md.tera",
+            "core/policies/example-policy.md",
+            "core/policies/evidence-archive/EXAMPLE.md",
+        ):
+            with self.subTest(path=path):
+                code, decision, stderr = run_hook(
+                    "portable-paths-scan.py",
+                    write_payload(path, "Run /Users/example/project/tool\n"),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "portable-paths")
+
+        for path in (
+            "core/policies/agent-hook/example.toml",
+            "tests/fixtures/example/SKILL.md.tera",
+        ):
+            with self.subTest(path=path):
+                code, decision, stderr = run_hook(
+                    "portable-paths-scan.py",
+                    write_payload(path, "Run /Users/example/project/tool\n"),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
     def test_mcp_secret_scan_covers_broader_paths_and_redacts_secret_samples(self) -> None:
+        aws_secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
         cases = (
-            (".vscode/mcp.json", "github_pat_1234567890abcdef1234567890abcdef1234"),
-            (".cursor/mcp.json", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
-            ("mcp.json", "-----BEGIN OPENSSH PRIVATE KEY-----"),
-            (".mcp.json", "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"),
-            (".mcp.json", "AIzaSyDExampleExampleExampleExample12345"),
-            (".mcp.json", "ya29.a0AfH6SMBExampleExampleExampleExample"),
+            (".vscode/mcp.json", "github_pat_1234567890abcdef1234567890abcdef1234", "value"),
+            # A 40-character AWS secret is only recognizable by its key context.
+            (".cursor/mcp.json", aws_secret, "AWS_SECRET_ACCESS_KEY"),
+            (".mcp.json", aws_secret, "aws_secret_access_key"),
+            (".mcp.json", aws_secret, "SecretAccessKey"),
+            ("mcp.json", "-----BEGIN OPENSSH PRIVATE KEY-----", "value"),
+            (".mcp.json", "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "value"),
+            (".mcp.json", "AIzaSyDExampleExampleExampleExample12345", "value"),
+            (".mcp.json", "ya29.a0AfH6SMBExampleExampleExampleExample", "value"),
         )
-        for path, secret in cases:
-            with self.subTest(path=path, secret=secret[:8]):
+        contents = [
+            (path, secret, key, f'{{"{key}":"{secret}"}}') for path, secret, key in cases
+        ]
+        # A CLI flag followed by its value in a JSON args array.
+        for flag in ("--aws-secret-access-key", "--secret-access-key"):
+            contents.append(
+                (".mcp.json", aws_secret, flag, f'{{"args": ["{flag}", "{aws_secret}"]}}')
+            )
+        for path, secret, key, content in contents:
+            with self.subTest(path=path, secret=secret[:8], key=key):
                 code, decision, stderr = run_hook(
                     "mcp-secret-scan.py",
-                    write_payload(path, f'{{"value":"{secret}"}}'),
+                    write_payload(path, content),
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, path)
@@ -2138,6 +2320,24 @@ class SharedHookTests(unittest.TestCase):
                 code, decision, stderr = run_hook(
                     "mcp-secret-scan.py",
                     write_payload(path, benign),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        # 40-character git SHAs, hex digests, and other runs without an AWS
+        # secret key name are not AWS secret keys.
+        sha = "3f786850e387550fdab836ed7e6dc881de23001b"
+        for content in (
+            '{"mcpServers":{"tool":{"command":"npx",'
+            f'"args":["github:org/tool#{sha}"]}}}}}}',
+            f'{{"integrity":{{"sha1":"{sha}"}}}}',
+            f'{{"args": ["--revision", "{sha}"]}}',
+            '{"value":"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}',
+        ):
+            with self.subTest(content=content[:40]):
+                code, decision, stderr = run_hook(
+                    "mcp-secret-scan.py",
+                    write_payload(".mcp.json", content),
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
@@ -27846,6 +28046,155 @@ exit 66
             context = decision.get("hookSpecificOutput", {}).get("additionalContext", "")
             self.assertIn("intent task-tools", str(context))
             self.assertIn("task-tools missing docs", str(context))
+
+    def test_session_start_healthcheck_daily_stamp_is_per_repository(self) -> None:
+        # The first session of the day in a repository without a catalog must
+        # not consume the agent-docs check for every other repository.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{"intents":["project-dev"]}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' 'project-dev missing docs'
+  exit 65
+fi
+exit 66
+""",
+            )
+            home = root / "home"
+            home.mkdir()
+            env = {
+                "HOME": str(home),
+                "AGENT_DOCS_HOME": "",
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_EVIDENCE_ARCHIVE_HOME": "",
+                "XDG_CONFIG_HOME": str(root / "config"),
+                "XDG_DATA_HOME": str(root / "data"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            repos: dict[str, Path] = {}
+            for name in ("plain", "catalog-a", "catalog-b"):
+                repo = root / name
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                if name != "plain":
+                    (repo / "AGENT_DOCS.toml").write_text(
+                        '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                        'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                        encoding="utf-8",
+                    )
+                repos[name] = repo
+
+            def context_in(name: str) -> str:
+                code, decision, stderr = run_shell_hook(
+                    "session-start-healthcheck.sh",
+                    {"hook_event_name": "SessionStart"},
+                    cwd=repos[name],
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                if decision is None:
+                    return ""
+                return str(
+                    decision.get("hookSpecificOutput", {}).get("additionalContext", "")
+                )
+
+            self.assertEqual(context_in("plain"), "")
+            self.assertIn("project-dev missing docs", context_in("catalog-a"))
+            # The nudge stays once per day for the same repository.
+            self.assertEqual(context_in("catalog-a"), "")
+            self.assertIn("project-dev missing docs", context_in("catalog-b"))
+
+    def test_session_start_healthcheck_evidence_stamp_is_machine_wide(self) -> None:
+        # The evidence-archive lane is machine-wide: once per day across
+        # repositories, and a docs-only session must not consume its stamp.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{"intents":["project-dev"]}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' 'ok'
+  exit 0
+fi
+exit 66
+""",
+            )
+            evidence = bin_dir / "evidence"
+            evidence.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            evidence.chmod(0o755)
+            home = root / "home"
+            home.mkdir()
+            base_env = {
+                "HOME": str(home),
+                "AGENT_DOCS_HOME": "",
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_EVIDENCE_ARCHIVE_HOME": "",
+                "XDG_CONFIG_HOME": str(root / "config"),
+                "XDG_DATA_HOME": str(root / "data"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            opted_in_env = {
+                **base_env,
+                "AGENT_EVIDENCE_ARCHIVE_HOME": str(root / "missing-archive"),
+            }
+            repos: dict[str, Path] = {}
+            for name in ("catalog-a", "catalog-b", "plain"):
+                repo = root / name
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                if name != "plain":
+                    (repo / "AGENT_DOCS.toml").write_text(
+                        '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                        'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                        encoding="utf-8",
+                    )
+                repos[name] = repo
+
+            def context_in(name: str, env: dict[str, str]) -> str:
+                code, decision, stderr = run_shell_hook(
+                    "session-start-healthcheck.sh",
+                    {"hook_event_name": "SessionStart"},
+                    cwd=repos[name],
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                if decision is None:
+                    return ""
+                return str(
+                    decision.get("hookSpecificOutput", {}).get("additionalContext", "")
+                )
+
+            # A docs-lane-only session (not opted in) runs and stamps only docs.
+            self.assertEqual(context_in("catalog-a", base_env), "")
+            stamps = sorted(
+                path.name for path in (home / ".cache" / "agent-runtime-kit").iterdir()
+            )
+            self.assertEqual(len(stamps), 1, stamps)
+            self.assertIn("-docs-", stamps[0])
+
+            first = context_in("catalog-b", opted_in_env)
+            self.assertIn("evidence-archive", first)
+            self.assertIn("archive clone not found", first)
+            # Suppressed for the rest of the day, in any other repository.
+            self.assertNotIn("evidence-archive", context_in("plain", opted_in_env))
 
     def test_session_start_healthcheck_evidence_archive_optin(self) -> None:
         # The SessionStart healthcheck must validate evidence-archive wiring only

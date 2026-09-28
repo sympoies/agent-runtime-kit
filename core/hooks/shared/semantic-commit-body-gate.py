@@ -24,12 +24,25 @@ BLOCK_REASON_TEMPLATE = (
     "semantic-commit message is missing a body\n"
     "  subject: {subject}\n"
     "  rule: non-trivial commits need 1-2 bullets explaining why and scope\n"
-    "  fix: add a body — `\\n\\n- <reason>` via --message/--message-file,\n"
-    "       or pass `--body-bullet <reason>` (a --trailer does not count)\n"
+    "  fix: add a body — `\\n\\n- <reason>` inside --message/--message-file,\n"
+    "       or use --type/--scope/--subject with `--body-bullet <reason>`\n"
+    "       (the two forms cannot be combined; a --trailer does not count)\n"
     "  ref: `semantic-commit commit --help`, and commit rules in\n"
     "       `core/policies/git-delivery.md`\n"
     "  escape hatch: add `[no-body]` in the subject if this is truly trivial"
 )
+
+MIXED_FORMS_REASON = (
+    "semantic-commit message forms cannot be combined\n"
+    "  --message/--message-file cannot be combined with the structured\n"
+    "  --type/--scope/--subject/--body-bullet fields; semantic-commit rejects\n"
+    "  the mix, so the --body-bullet values never become a body.\n"
+    "  fix: put the body inside the message (`<subject>\\n\\n- <reason>`), or\n"
+    "       drop --message and use --type/--scope/--subject with --body-bullet\n"
+    "  ref: `semantic-commit commit --help`"
+)
+MESSAGE_FLAGS = ("--message", "-m", "--message-file", "-F")
+STRUCTURED_FLAGS = ("--type", "--scope", "--subject", "--body-bullet")
 
 TRIVIAL_TYPES = {"chore", "docs", "style", "build"}
 TRIVIAL_KEYWORDS = ("bump", "refresh", "regenerate", "pin", "lockfile")
@@ -111,6 +124,11 @@ def main() -> int:
 
     subject, body_lines = resolved
     if not body_lines and not is_trivial_subject(subject):
+        if iter_flag_values(command, *MESSAGE_FLAGS) and iter_flag_values(
+            command, *STRUCTURED_FLAGS
+        ):
+            emit_block(MIXED_FORMS_REASON)
+            return ALLOW
         emit_block(BLOCK_REASON_TEMPLATE.format(subject=subject or "<unparsed>"))
     return ALLOW
 
