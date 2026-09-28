@@ -577,6 +577,158 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "semantic-commit")
 
+    def test_direct_git_commit_hook_classifies_quoted_command_substitutions(
+        self,
+    ) -> None:
+        # The shell runs a command substitution inside double quotes, and a
+        # backtick substitution quoted or not, exactly like an unquoted `$(...)`
+        # (issue #182). Single-quoted text and escaped markers stay literal.
+        blocked = (
+            "echo $(git commit -m y)",
+            'echo "$(git commit -m y)"',
+            "echo `git commit -m y`",
+            'echo "`git commit -m y`"',
+            'x="$(git commit -m y)"',
+            "x=`git commit -m y`",
+            '[ "$(git commit -m y)" ]',
+            "[[ -n `git commit -m y` ]]",
+            'test "`git commit -m y`"',
+            'echo "a $(printf "%s" "$(git commit -m y)") b"',
+            'echo "$(printf ok)" "$(git commit -m y)"',
+            "bash -c 'echo \"$(git commit -m y)\"'",
+            'echo "${x:-$(git commit -m y)}"',
+            'echo "$(case x in a) git commit -m y;; esac)"',
+            'echo "$(echo case; git commit -m y)"',
+            "echo a#`git commit -m y`",
+            'echo "$(echo ${x:-)} ; git commit -m x)"',
+            'x="$(: ${y#)} ; git commit -m x)"',
+            "echo ${x:- #} `git commit -m y`",
+            'echo "$((git commit -m x) )"',
+            "echo $((git commit -m x) )",
+            'x="$(cat <<E\n# "$(git commit -m x)"\nE\n)"',
+            "cat <<E\n## Fix `git commit -m x` hook\nE",
+            'cat <<E\n# note "$(git commit -m x)"\nE',
+            "gh issue comment 1 --body-file - <<E\n## Fix `git commit -m x`\nE",
+            'cat <<E\n# "`git commit -m x`"\nE',
+            "cat <<E\nit's $(git commit -m x)\nE",
+            'echo ${x:-"}" #"$(git commit -m x)"}',
+            "cat <<E\nit's fine\nE\ngit commit -m x",
+            "cat <<E\n\"\nE\necho '$(x)'; git commit -m x",
+            "git status # don't stop here\ngit commit -m x",
+            "echo a\\ #b; git commit -m x",
+            "echo a\\\n#b; git commit -m x",
+            "[[ x =~ (#) ]]; git commit -m x",
+            "[[ x =~ a|#b ]]; git commit -m x",
+            "[[ $l =~ ^(#|$) ]] || git commit -m x",
+            "[[ a == @(b|#c) ]] && git commit -m x",
+            "ls @(a|#b); git commit -m x",
+            'echo "$(echo a\\ #b; git commit -m x)"',
+            "echo $(( 1 + (2 #3) )); git commit -m x",
+        )
+        for command in blocked:
+            with self.subTest(blocked=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "Use semantic-commit instead")
+
+        allowed = (
+            "echo '$(git commit -m y)'",
+            "echo '`git commit -m y`'",
+            'echo "\\$(git commit -m y)"',
+            'echo "\\`git commit -m y\\`"',
+            'echo "$HOME"',
+            "[ -f x ]",
+            "[[ -f x ]]",
+            "[ -x /usr/bin/git ]",
+            '[[ "$tool" == git ]]',
+            'test "$(git rev-parse --abbrev-ref HEAD)" = main',
+            "readlink -f $(which a) $(which b)",
+            'git status --short && echo "$(git rev-parse HEAD)"',
+            "cat <<'EOF'\n$(git commit -m y)\n`git commit -m y`\nEOF",
+            'gh pr view --json body "$(cat <<\'EOF\'\n'
+            "don't run `git commit` here (see #182)\nEOF\n)\"",
+            "git status  # then `git commit -m y` later",
+            'ls  # "$(git commit -m y)"',
+            "ls  # see `git commit --amend` docs\ngit status",
+            'echo "$(( 1 + (2) ))"',
+            "echo $(( (1 + 2) * 3 ))",
+            "echo ok # it's $(git commit -m y)",
+            "cat <<'E'\n# `git commit`\nE",
+            "cat <<E\n# plain note\nE\necho ok # it's `git commit -m y`",
+            "cat <<E >/dev/null\n$(printf ok)\nE\necho '$(git commit -m y)'",
+            "cat <<E\nit's fine\nE\ngit status",
+            "gh issue comment 1 --body-file - <<E\nit's done\nE",
+            "git status  # don't worry, it's read-only",
+            "echo x #; git commit -m y",
+        )
+        for command in allowed:
+            with self.subTest(allowed=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        # A command the tokenizer cannot parse fails closed instead of
+        # silently yielding no commands.
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py",
+            command_payload('echo "unterminated; git commit -m x'),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "rule=opaque-executable")
+
+        # Nesting beyond the bounded parser fails closed without recursion.
+        nested = "$(echo " * 40 + "true" + ")" * 40
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(f"echo {nested}")
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "rule=opaque-executable")
+
+    def test_shell_tokenizer_exposes_command_substitutions_structurally(
+        self,
+    ) -> None:
+        # Every command substitution becomes its own simple command, ordered
+        # before the command whose words it expands, and the containing word
+        # keeps a dynamic marker instead of leaving a stray `$` token in
+        # command position (issue #182).
+        commands = hook_common.simple_commands_with_nested_shells(
+            "readlink -f $(which a) $(which b)"
+        )
+        self.assertEqual(commands[:2], [["which", "a"], ["which", "b"]])
+        self.assertEqual(len(commands), 3)
+        outer = commands[2]
+        self.assertEqual(outer[:2], ["readlink", "-f"])
+        self.assertEqual(len(outer), 4)
+        self.assertTrue(all("$" in word for word in outer[2:]))
+        self.assertEqual(hook_common.invocation_tokens(outer)[0], "readlink")
+
+        for command, inner in (
+            ('echo "$(git push origin main)"', ["git", "push", "origin", "main"]),
+            ("echo `git push origin main`", ["git", "push", "origin", "main"]),
+            ('x="`printf a`"', ["printf", "a"]),
+            ('echo "`echo \\"q\\" \\`printf b\\``"', ["printf", "b"]),
+        ):
+            with self.subTest(command=command):
+                self.assertIn(
+                    inner, hook_common.simple_commands_with_nested_shells(command)
+                )
+
+        for command in (
+            "echo '$(git push origin main)'",
+            "echo '`git push origin main`'",
+            'echo "\\$(git push origin main)"',
+            "cat <<'EOF'\n$(git push origin main)\nEOF",
+        ):
+            with self.subTest(literal=command):
+                self.assertNotIn(
+                    ["git", "push", "origin", "main"],
+                    hook_common.simple_commands_with_nested_shells(command),
+                )
+
     def test_direct_git_commit_hook_does_not_misdiagnose_git_show(self) -> None:
         issue_reproducer = (
             'R=$HOME/Project/sympoies/agent-runtime-kit\n'
@@ -24078,6 +24230,256 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_classifies_quoted_command_substitutions(
+        self,
+    ) -> None:
+        # A double-quoted `$(...)` and a backtick substitution, quoted or not,
+        # run exactly like an unquoted `$(...)`, including inside test words
+        # and assignments (issue #182). Single-quoted text stays literal.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            blocked = (
+                "echo $(git push origin main)",
+                'echo "$(git push origin main)"',
+                "echo `git push origin main`",
+                'echo "`git push origin main`"',
+                'x="$(git push origin main)"',
+                '[ "$(git push origin main)" ]',
+                "[[ -n `git push origin main` ]]",
+                'test "`git push origin HEAD:main`"',
+                'echo "a $(printf "%s" "$(git push origin main)") b"',
+                'echo "$(printf ok)" "$(git push origin main)"',
+                "bash -c 'echo \"`git push origin main`\"'",
+                "echo a#`git push origin main`",
+                'echo "$(echo ${x:-)} ; git push origin main)"',
+                'echo "$((git push origin main) )"',
+                'semantic-commit commit -m "$(git push origin main)"',
+                "cat <<E\n## Fix `git push origin main`\nE",
+                'echo ${x:-"}" #"$(git push origin main)"}',
+                "cat <<E\nit's fine\nE\ngit push origin main",
+                "cat <<E\n\"\nE\necho '$(x)'; git push origin main",
+                "echo a\\\n#b; git push origin main",
+                "echo a\\ #b; git push origin main",
+            )
+            for command in blocked:
+                with self.subTest(blocked=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: blocked]")
+
+            allowed = (
+                "echo '$(git push origin main)'",
+                "echo '`git push origin main`'",
+                'echo "\\$(git push origin main)"',
+                'echo "$HOME"',
+                "[ -f x ]",
+                "readlink -f $(which a) $(which b)",
+                'echo "$(git rev-parse HEAD)" `git status --short`',
+                "cat <<'EOF'\n$(git push origin main)\n`git push origin main`\nEOF",
+                "git status  # then `git push origin main` later",
+                'ls  # "$(git push origin main)"',
+                "cat <<E\nit's fine\nE\ngit status",
+                "gh issue comment 1 --body-file - <<E\nit's done\nE",
+                "git status  # don't worry, it's read-only",
+            )
+            for command in allowed:
+                with self.subTest(allowed=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload('[ "$(printf git)" ] push origin main'),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A `#` inside a `[[` regex is not a comment; the `$` the tokenizer
+            # then sees in command position keeps the refusal unverified.
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "while read -r line; do [[ $line =~ ^(#|$) ]] && continue; "
+                    'echo "$line"; done < f; git push origin main'
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: ")
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload('echo "unterminated; git push origin main'),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+
+            nested = "$(echo " * 40 + "true" + ")" * 40
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(f"echo {nested}"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
+
+    def test_default_delivery_hook_scopes_substitution_state_to_the_subshell(
+        self,
+    ) -> None:
+        # A command substitution runs in a subshell: it cannot change the
+        # parent's aliases, functions, hashes, PATH, or cwd, so its body must
+        # not taint the command it expands. State changes still apply within
+        # the same substitution body.
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(primary, "feat/subst")
+            allowed = (
+                "semantic-commit commit --message \"$(cat <<'EOF'\n"
+                "fix: x\n\n- Explain the fix\nEOF\n)\"",
+                'semantic-commit commit -m "$(date)"',
+                "semantic-commit commit -m $(date)",
+                "semantic-commit commit -m `date`",
+                'semantic-commit commit --message "$(printf body)"',
+            )
+            for command in allowed:
+                with self.subTest(allowed=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command, fragment in (
+                (
+                    'echo "$(alias g=git; g push origin main)"',
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    'semantic-commit commit -m "$(printf ok; semantic-commit '
+                    "commit -m 'fix: x')\"",
+                    "changed executable resolution",
+                ),
+                (
+                    "printf ok; semantic-commit commit -m \"$(date)\"",
+                    "changed executable resolution",
+                ),
+            ):
+                with self.subTest(blocked=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_classifies_each_identical_substitution(
+        self,
+    ) -> None:
+        # Two textually identical substitutions are distinct executions under
+        # different inherited shell state, so the second must be classified
+        # after a `cd`, alias, or PATH change instead of being deduplicated.
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(primary, "feat/twice")
+            target = shlex.quote(str(primary))
+            for command in (
+                'echo "$(git push origin HEAD)"',
+                'echo "$(semantic-commit commit -m x)"',
+            ):
+                with self.subTest(allowed=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+            for command, fragment in (
+                (
+                    f'echo "$(git push origin HEAD)"; cd {target} && '
+                    'echo "$(git push origin HEAD)"',
+                    "[default-delivery: ",
+                ),
+                (
+                    f'echo "$(semantic-commit commit -m x)"; cd {target} && '
+                    'echo "$(semantic-commit commit -m x)"',
+                    "[default-delivery: ",
+                ),
+                (
+                    'echo "$(git push origin HEAD)"; alias git=true; '
+                    'echo "$(git push origin HEAD)"',
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    'echo "$(git push origin HEAD)"; export PATH=/tmp:$PATH; '
+                    'echo "$(git push origin HEAD)"',
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    f"bash -c 'git push origin HEAD'; cd {target} && "
+                    "bash -c 'git push origin HEAD'",
+                    "[default-delivery: ",
+                ),
+            ):
+                with self.subTest(blocked=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_treats_zsh_disable_as_resolution_change(
+        self,
+    ) -> None:
+        # zsh `disable` removes a builtin, reserved word, alias, or function
+        # from lookup, so a later bare word of the same name can resolve to a
+        # PATH executable; listing forms without names stay query-only.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            for mutation in (
+                "disable printf",
+                "disable -r [[",
+                "disable -f runner",
+                "disable -m 'p*'",
+            ):
+                with self.subTest(mutation=mutation):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{mutation}; printf --version"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=opaque-shell-resolution")
+            for query in ("disable", "disable -f", "disable -ra"):
+                with self.subTest(query=query):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{query}; printf --version"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
     def test_default_delivery_hook_admits_non_committing_semantic_commit_after_commands(
         self,

@@ -410,8 +410,33 @@ and negation operators (`#`, `~`, and `^`) are opaque there as well. A lone `[`,
 the `[[` reserved word, and a zsh `$+name[key]` presence test with a literal key
 are literal test syntax that cannot name `git` or `semantic-commit`, so they stay
 classifiable; governed words among their arguments are still inspected.
-After alias, hash, command-table, PATH, or sourced-function state changes, later
-bare command words are opaque. This taint is monotonic across the conservative
+`block-direct-git-commit.py` shares that literal-test helper and does not scan
+test operands for a Git subcommand, because the test never executes them.
+Both Git guards classify every command substitution the shell would run:
+`$(...)` unquoted or inside double quotes, and backticks quoted or not,
+including in test operands and assignments. The shared tokenizer parses each
+body as its own simple command ahead of the command it expands and leaves a
+dynamic placeholder word in its place, so several substitutions in one command
+stay arguments instead of leaving a stray `$` in command position.
+A `)` inside `${...}` stays part of the expansion, and `$((cmd) )` is read as
+a substitution as bash reads it. Single-quoted text, shell comments, escaped
+markers, and quoted-delimiter here-doc bodies stay literal; an
+unquoted-delimiter here-doc body expands every substitution (it has no
+quotes or comments, so an apostrophe there stays literal), and inside a
+substitution its lines are classified like any other script text. Both Git
+guards parse strictly: shell comments are dropped before tokenizing (only a
+`#` after an unescaped blank, newline, `;`, or `&`, outside `[[ ]]` and any
+open parenthesized group, counts as a comment), and a
+command the tokenizer still cannot parse (for example an unterminated quote)
+is refused as unresolved instead of yielding no commands. A substitution body runs in a
+subshell, so default-delivery applies the shell state it changes (aliases,
+PATH, `cd`, executable resolution) only within that body: a governed
+`semantic-commit commit --message "$(cat <<'EOF' ... EOF)"` keeps the
+classification it has without the substitution. The commit guard's
+program-lookup scan stays conservative and still counts PATH changes inside
+substitution bodies.
+After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
+`disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.
 Redirections are ignored when judging such a command, so a query such as
 `alias name 2>/dev/null` stays query-only.

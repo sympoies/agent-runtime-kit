@@ -69,11 +69,12 @@ from hook_common import (
     is_assignment,
     nested_shell_payload,
     opaque_invocation_candidates,
+    opaque_invocation_is_literal_shell_test,
     read_payload,
+    scoped_simple_commands_with_nested_shells,
     resolves_within_its_directory,
     semantic_commit_invocation_effects,
     semantic_commit_invocation_state,
-    simple_commands_with_nested_shells,
 )
 
 # A refusal is only actionable if the caller can tell "this is forbidden" from
@@ -150,10 +151,6 @@ EXPANDED_EXECUTABLE_PATH_RE = re.compile(
     r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
 )
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
-LITERAL_TEST_COMMAND_WORDS = frozenset({"[", "[["})
-ZSH_PRESENCE_TEST_RE = re.compile(
-    r"\$\+[A-Za-z_][A-Za-z0-9_]*(?:\[[A-Za-z0-9_.:+-]+\])?"
-)
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
 )
@@ -1587,6 +1584,13 @@ def shell_command_changes_executable_resolution(
         return bool(arguments) and not all(
             re.fullmatch(r"-[anps]+", token) for token in arguments
         )
+    if executable == "disable":
+        # zsh `disable` without names only lists disabled elements. A named or
+        # pattern form removes a builtin, reserved word, alias, or function
+        # from lookup, so a later word of that name can resolve through PATH.
+        return bool(arguments) and not all(
+            re.fullmatch(r"-[afprs]+", token) for token in arguments
+        )
     if executable == "unalias":
         return bool(arguments)
 
@@ -1707,24 +1711,6 @@ def opaque_invocation_has_stable_non_governed_basename(
     match = EXPANDED_EXECUTABLE_PATH_RE.fullmatch(invocation[1])
     return bool(
         match and match.group("basename") not in GOVERNED_CONTEXT_EXECUTABLES
-    )
-
-
-def opaque_invocation_is_literal_shell_test(invocation: list[str]) -> bool:
-    """Whether an "opaque" command word is really literal test syntax.
-
-    The command-position check reads any bracket as a glob, but a lone ``[``
-    has no closing bracket to match and ``[[`` is a reserved word, so both are
-    the literal test command. A zsh ``$+name[key]`` presence test with a
-    literal key expands only to ``0`` or ``1`` (and stays literal in bash).
-    None of them can name ``git`` or ``semantic-commit``. Governed words among
-    their arguments are still found by the opaque-candidate scan.
-    """
-    if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
-        return False
-    word = invocation[1]
-    return word in LITERAL_TEST_COMMAND_WORDS or bool(
-        ZSH_PRESENCE_TEST_RE.fullmatch(word)
     )
 
 
@@ -2891,15 +2877,46 @@ def command_block_reason(
     executable_resolution_tainted = initial_executable_resolution_tainted
     repository_context_unresolved = initial_repository_context_unresolved
     executable_identity_unresolved = initial_executable_identity_unresolved
-    simple_commands = simple_commands_with_nested_shells(command)
+    # Strict parsing drops comments and fails closed on untokenizable text.
+    scoped_commands = scoped_simple_commands_with_nested_shells(command, strict=True)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
     resolves_directories = not any(
-        nested_shell_payload(invocation_tokens(tokens)) for tokens in simple_commands
+        nested_shell_payload(invocation_tokens(tokens))
+        for tokens, _scope in scoped_commands
     )
     directory_resolved = initial_directory_resolved
     cwd = base
-    for simple_command in simple_commands:
+    # A command substitution body runs in a subshell: shell state it changes
+    # applies to later commands of the same body only. Entering a body saves
+    # the enclosing state and leaving it restores that state, so the command
+    # a substitution expands keeps the classification it would have alone.
+    saved_scopes: list[tuple[tuple[int, ...], tuple[Any, ...]]] = []
+    for simple_command, scope in scoped_commands:
+        while saved_scopes and scope[: len(saved_scopes[-1][0])] != saved_scopes[-1][0]:
+            (
+                shell_context_safe,
+                executable_resolution_safe,
+                executable_resolution_tainted,
+                directory_resolved,
+                cwd,
+                base_source,
+            ) = saved_scopes.pop()[1]
+        entered = len(saved_scopes[-1][0]) if saved_scopes else 0
+        for level in range(entered + 1, len(scope) + 1):
+            saved_scopes.append(
+                (
+                    scope[:level],
+                    (
+                        shell_context_safe,
+                        executable_resolution_safe,
+                        executable_resolution_tainted,
+                        directory_resolved,
+                        cwd,
+                        base_source,
+                    ),
+                )
+            )
         invocation = delivery_invocation_tokens(simple_command)
         if (
             executable_resolution_tainted

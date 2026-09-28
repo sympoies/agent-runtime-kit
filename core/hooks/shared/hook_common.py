@@ -15,6 +15,7 @@ from __future__ import annotations
 import fcntl
 import functools
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -2042,6 +2043,11 @@ def _shield_dynamic_word_parentheses(command: str) -> str:
 
 
 def shell_tokens(command: str) -> list[str]:
+    return _checked_shell_tokens(command) or []
+
+
+def _checked_shell_tokens(command: str) -> list[str] | None:
+    """Return shell tokens, or ``None`` when the text cannot be tokenized."""
     try:
         lexer = shlex.shlex(
             _shield_dynamic_word_parentheses(_shield_clobber_redirects(command)),
@@ -2052,7 +2058,7 @@ def shell_tokens(command: str) -> list[str]:
         lexer.commenters = ""
         return list(lexer)
     except ValueError:
-        return []
+        return None
 
 
 def is_shell_separator(token: str) -> bool:
@@ -2750,13 +2756,27 @@ def simple_commands(command: str, *, strip_heredocs: bool = False) -> list[list[
     # data by shell semantics and must never be classified as commands;
     # `strip_heredocs=True` additionally drops expandable bodies for callers
     # that only credit, never block (see strip_heredoc_bodies).
+    return _split_simple_commands(_strip_heredocs_for_parse(command, strip_heredocs))
+
+
+def _strip_heredocs_for_parse(command: str, strip_heredocs: bool) -> str:
     if strip_heredocs:
-        command = strip_heredoc_bodies(command)
-    else:
-        command = strip_heredoc_bodies(command, inert_only=True)
+        return strip_heredoc_bodies(command)
+    return strip_heredoc_bodies(command, inert_only=True)
+
+
+def _split_simple_commands(command: str) -> list[list[str]]:
+    return _checked_simple_commands(command) or []
+
+
+def _checked_simple_commands(command: str) -> list[list[str]] | None:
+    """Split into simple commands, or ``None`` when tokenizing fails."""
+    tokens = _checked_shell_tokens(normalize_command_separators(command))
+    if tokens is None:
+        return None
     commands: list[list[str]] = []
     current: list[str] = []
-    for token in shell_tokens(normalize_command_separators(command)):
+    for token in tokens:
         if is_shell_separator(token):
             if current:
                 commands.append(current)
@@ -2766,6 +2786,452 @@ def simple_commands(command: str, *, strip_heredocs: bool = False) -> list[list[
     if current:
         commands.append(current)
     return commands
+
+
+# A command substitution is replaced by one dynamic placeholder word so the
+# containing command keeps its shape; its body is parsed as its own source.
+# `$[` never starts a parameter name, so no expanded-path or zsh presence-test
+# grammar can mistake the placeholder for a stable word.
+COMMAND_SUBSTITUTION_PLACEHOLDER = "$[__agent_runtime_command_substitution_{}__]"
+_COMMAND_SUBSTITUTION_PLACEHOLDER_RE = re.compile(
+    r"\$\[__agent_runtime_command_substitution_(\d+)__\]"
+)
+COMMAND_SUBSTITUTION_NESTING_LIMIT = 32
+_command_substitution_ids = itertools.count()
+
+
+class _SubstitutionTooDeep(Exception):
+    """Command substitutions nest deeper than the bounded parser follows."""
+
+
+def _backtick_end(text: str, index: int) -> int:
+    """Return the closing backtick for the one at ``index``, or -1."""
+    cursor = index + 1
+    while cursor < len(text):
+        if text[cursor] == "\\":
+            cursor += 2
+            continue
+        if text[cursor] == "`":
+            return cursor
+        cursor += 1
+    return -1
+
+
+def _backtick_body(raw: str, double_quoted: bool) -> str:
+    """Remove the backslashes the shell strips from a backtick body."""
+    specials = "$`\\" + ('"' if double_quoted else "")
+    out: list[str] = []
+    index = 0
+    while index < len(raw):
+        if raw[index] == "\\" and index + 1 < len(raw) and raw[index + 1] in specials:
+            out.append(raw[index + 1])
+            index += 2
+            continue
+        out.append(raw[index])
+        index += 1
+    return "".join(out)
+
+
+def _double_quoted_end(text: str, index: int, nesting: int) -> int:
+    """Return the closing quote for the ``"`` at ``index``, or -1."""
+    cursor = index + 1
+    while cursor < len(text):
+        char = text[cursor]
+        if char == "\\":
+            cursor += 2
+            continue
+        if char == '"':
+            return cursor
+        if char == "`":
+            end = _backtick_end(text, cursor)
+        elif text.startswith("${", cursor):
+            end = _parameter_expansion_end(text, cursor, nesting + 1, True)
+        elif text.startswith("$(", cursor):
+            end = _command_substitution_end(text, cursor + 2, nesting + 1)
+        else:
+            cursor += 1
+            continue
+        if end < 0:
+            return -1
+        cursor = end + 1
+    return -1
+
+
+def _parameter_expansion_end(
+    text: str, index: int, nesting: int, double_quoted: bool
+) -> int:
+    """Return the ``}`` closing the ``${`` at ``index``, or -1.
+
+    A ``)``, ``#``, or quote inside a parameter expansion belongs to the
+    expansion, not to an enclosing substitution. Inside double quotes a single
+    quote stays literal, which only narrows what is skipped.
+    """
+    if nesting > COMMAND_SUBSTITUTION_NESTING_LIMIT:
+        raise _SubstitutionTooDeep
+    depth = 0
+    cursor = index + 2
+    while cursor < len(text):
+        char = text[cursor]
+        if char == "\\":
+            cursor += 2
+            continue
+        if char == "}":
+            if depth == 0:
+                return cursor
+            depth -= 1
+            cursor += 1
+            continue
+        if char == "{":
+            depth += 1
+            cursor += 1
+            continue
+        if char == "'" and not double_quoted:
+            end = text.find("'", cursor + 1)
+        elif char == '"':
+            end = _double_quoted_end(text, cursor, nesting)
+        elif char == "`":
+            end = _backtick_end(text, cursor)
+        elif text.startswith("${", cursor):
+            end = _parameter_expansion_end(text, cursor, nesting + 1, double_quoted)
+        elif text.startswith("$(", cursor):
+            end = _command_substitution_end(text, cursor + 2, nesting + 1)
+        else:
+            cursor += 1
+            continue
+        if end < 0:
+            return -1
+        cursor = end + 1
+    return -1
+
+
+def _comment_starts_at(text: str, index: int, start: int = 0) -> bool:
+    """Whether an unquoted ``#`` at ``index`` certainly starts a comment.
+
+    Deliberately narrow: only at ``start`` or right after an unescaped space,
+    tab, newline, ``;``, or ``&``. A ``#`` after ``(``, ``|``, or an escaped
+    blank is a word character in regex, extglob, and pattern contexts, and
+    callers never ask while a ``[[``, arithmetic, or other parenthesized group
+    is open. Missing a real comment is safe: its text is tokenized as before.
+    """
+    if index == start:
+        return True
+    if text[index - 1] not in " \t\n;&":
+        return False
+    backslashes = 0
+    cursor = index - 2
+    while cursor >= start and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 0
+
+
+def _double_bracket_delta(text: str, index: int, start: int = 0) -> int:
+    """Return +1 at a ``[[`` word, -1 at a ``]]`` word, otherwise 0."""
+    end = index + 2
+    after = end >= len(text) or text[end] in " \t\n;&|)"
+    if text.startswith("[[", index) and after and (
+        index == start or text[index - 1] in " \t\n;&|(!"
+    ):
+        return 1
+    if text.startswith("]]", index) and after and index > start and (
+        text[index - 1] in " \t"
+    ):
+        return -1
+    return 0
+
+
+def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
+    """Return the ``)`` closing a ``$(`` whose body starts at ``index``, or -1.
+
+    The body is a new quoting context: quotes, nested substitutions, comments,
+    and here-document bodies are skipped so a parenthesis or apostrophe inside
+    them cannot end the body early, a ``)`` inside a ``${...}`` parameter
+    expansion belongs to that expansion, and a ``case`` pattern's unbalanced
+    ``)`` does not close the body while the ``case`` is open.
+    """
+    if nesting > COMMAND_SUBSTITUTION_NESTING_LIMIT:
+        raise _SubstitutionTooDeep
+    depth = 0
+    open_cases = 0
+    open_tests = 0
+    line_start = index
+    cursor = index
+    length = len(text)
+
+    def keyword_at(word: str) -> bool:
+        end = cursor + len(word)
+        return (
+            text.startswith(word, cursor)
+            and (cursor == index or text[cursor - 1] in " \t\n;&|()")
+            and (end == length or text[end] in " \t\n;&|()")
+        )
+
+    def command_position() -> bool:
+        before = text[index:cursor].rstrip(" \t")
+        if not before or before[-1] in ";&|(\n":
+            return True
+        previous = before.split()[-1]
+        return previous in {"!", "{", "do", "else", "then"}
+
+    while cursor < length:
+        char = text[cursor]
+        if char == "c" and keyword_at("case") and command_position():
+            open_cases += 1
+            cursor += 4
+            continue
+        if char == "e" and open_cases and keyword_at("esac"):
+            open_cases -= 1
+            cursor += 4
+            continue
+        if char == "\\":
+            cursor += 2
+            continue
+        if char == "'":
+            end = text.find("'", cursor + 1)
+        elif char == '"':
+            end = _double_quoted_end(text, cursor, nesting)
+        elif char == "`":
+            end = _backtick_end(text, cursor)
+        elif text.startswith("${", cursor):
+            end = _parameter_expansion_end(text, cursor, nesting + 1, False)
+        elif text.startswith("$(", cursor):
+            end = _command_substitution_end(text, cursor + 2, nesting + 1)
+        elif char in "[]" and _double_bracket_delta(text, cursor, index):
+            open_tests = max(open_tests + _double_bracket_delta(text, cursor, index), 0)
+            cursor += 2
+            continue
+        elif (
+            char == "#"
+            and not depth
+            and not open_tests
+            and _comment_starts_at(text, cursor, index)
+        ):
+            end = text.find("\n", cursor)
+            if end < 0:
+                return -1
+            cursor = end
+            continue
+        elif char == "(":
+            depth += 1
+            cursor += 1
+            continue
+        elif char == ")":
+            if depth == 0 and not open_cases:
+                return cursor
+            depth = max(depth - 1, 0)
+            cursor += 1
+            continue
+        elif char == "\n":
+            heredocs = _heredoc_delimiters_on_line(text[line_start:cursor])
+            cursor += 1
+            for delimiter, strip_tabs, *_rest in heredocs:
+                while True:
+                    if cursor >= length:
+                        return -1
+                    line_end = text.find("\n", cursor)
+                    if line_end < 0:
+                        line_end = length
+                    line = text[cursor:line_end].rstrip("\r")
+                    cursor = line_end + 1
+                    if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                        break
+            line_start = cursor
+            continue
+        else:
+            cursor += 1
+            continue
+        if end < 0:
+            return -1
+        cursor = end + 1
+    return -1
+
+
+def extract_command_substitutions(
+    command: str, *, drop_comments: bool = False
+) -> tuple[str, dict[str, str]]:
+    """Replace each command substitution the shell would run with a placeholder.
+
+    ``$(...)`` and backtick substitutions are found unquoted and inside double
+    quotes; single-quoted and ANSI-C quoted text, shell comments, and escaped
+    markers stay literal. Returns the rewritten command and a map from
+    placeholder word to substitution body, in source order. An unterminated
+    substitution is left in place for the ordinary tokenizer. Arithmetic
+    ``$((...))`` is not a substitution, but substitutions inside it are still
+    found; a ``$((`` whose inner group does not close as ``))`` is
+    ``$( (...) )``, as bash reads it. A ``#`` inside ``${...}`` never starts a
+    comment.
+
+    Here-document bodies follow bash: an unquoted-delimiter body expands every
+    substitution and has no quotes or comments, so its quote characters are
+    escaped to stay literal for the tokenizer; a quoted-delimiter body is
+    copied verbatim, and a quoted-delimiter body that a shell executes as its
+    script is scanned as ordinary shell text. ``drop_comments`` removes shell
+    comments instead of copying them, so comment prose cannot break
+    tokenization.
+    """
+    out: list[str] = []
+    bodies: dict[str, str] = {}
+    double_quoted = False
+    # The double-quote state at each open `${`; its `}` closes only in that
+    # same state, so a quoted `}` inside the expansion stays literal.
+    parameter_quotes: list[bool] = []
+    # Open unquoted parentheses (subshells, arithmetic, extglob groups) and
+    # `[[` tests: a `#` inside them is never treated as a comment.
+    paren_depth = 0
+    open_tests = 0
+    out_line_start = 0
+    index = 0
+    length = len(command)
+
+    def placeholder(body: str) -> str:
+        word = COMMAND_SUBSTITUTION_PLACEHOLDER.format(next(_command_substitution_ids))
+        bodies[word] = body
+        return word
+
+    def take_substitution(in_double_quotes: bool) -> bool:
+        """Replace a substitution starting at ``index``; return whether one did."""
+        nonlocal index
+        if command.startswith("$((", index):
+            inner_end = _command_substitution_end(command, index + 3)
+            if inner_end < 0 or command.startswith(")", inner_end + 1):
+                out.append("$((")
+                index += 3
+                return True
+        if command.startswith("$(", index):
+            end = _command_substitution_end(command, index + 2)
+            if end >= 0:
+                out.append(placeholder(command[index + 2 : end]))
+                index = end + 1
+                return True
+        elif command[index] == "`":
+            end = _backtick_end(command, index)
+            if end >= 0:
+                out.append(
+                    placeholder(
+                        _backtick_body(command[index + 1 : end], in_double_quotes)
+                    )
+                )
+                index = end + 1
+                return True
+        return False
+
+    def heredoc_body(delimiter: str, strip_tabs: bool, expand: bool) -> None:
+        """Copy one here-document body and its closing line from ``index``."""
+        nonlocal index
+        at_line_start = True
+        while index < length:
+            if at_line_start:
+                line_end = command.find("\n", index)
+                line_end = length if line_end < 0 else line_end
+                line = command[index:line_end].rstrip("\r")
+                if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                    end = min(line_end + 1, length)
+                    out.append(command[index:end])
+                    index = end
+                    return
+                at_line_start = False
+            char = command[index]
+            if char == "\n":
+                out.append(char)
+                index += 1
+                at_line_start = True
+                continue
+            if expand and char == "\\":
+                out.append(command[index : index + 2])
+                index += 2
+                continue
+            if expand and take_substitution(False):
+                continue
+            if expand and char in "'\"":
+                # Quotes are literal in an expanding body; keep them literal
+                # for the tokenizer so prose cannot unbalance later commands.
+                out.append("\\" + char)
+                index += 1
+                continue
+            out.append(char)
+            index += 1
+
+    while index < length:
+        char = command[index]
+        if char == "\\":
+            out.append(command[index : index + 2])
+            index += 2
+            continue
+        if char == "\n" and not double_quoted and not parameter_quotes:
+            line = "".join(out[out_line_start:]).rstrip("\r")
+            out.append(char)
+            index += 1
+            for delimiter, strip_tabs, executed, quoted, _start in (
+                _heredoc_delimiters_on_line(line)
+            ):
+                if not (quoted and executed):
+                    heredoc_body(delimiter, strip_tabs, expand=not quoted)
+            out_line_start = len(out)
+            continue
+        if (
+            not double_quoted
+            and not parameter_quotes
+            and not paren_depth
+            and not open_tests
+            and char == "#"
+            and _comment_starts_at(command, index)
+        ):
+            # A comment runs nothing; copy it through unchanged so the ordinary
+            # tokenizer treats it exactly as it did before substitutions were
+            # extracted.
+            end = command.find("\n", index)
+            end = length if end < 0 else end
+            if not drop_comments:
+                out.append(command[index:end])
+            index = end
+            continue
+        if not double_quoted and char == "'":
+            end = command.find("'", index + 1)
+            end = length if end < 0 else end + 1
+            out.append(command[index:end])
+            index = end
+            continue
+        if not double_quoted and command.startswith("$'", index):
+            end = index + 2
+            while end < length and command[end] != "'":
+                end += 2 if command[end] == "\\" else 1
+            end = min(end + 1, length)
+            out.append(command[index:end])
+            index = end
+            continue
+        if char == '"':
+            double_quoted = not double_quoted
+            out.append(char)
+            index += 1
+            continue
+        if command.startswith("${", index):
+            parameter_quotes.append(double_quoted)
+            out.append("${")
+            index += 2
+            continue
+        if char == "}" and parameter_quotes and parameter_quotes[-1] == double_quoted:
+            parameter_quotes.pop()
+            out.append(char)
+            index += 1
+            continue
+        if not double_quoted and char in "[]":
+            delta = _double_bracket_delta(command, index)
+            if delta:
+                open_tests = max(open_tests + delta, 0)
+                out.append(command[index : index + 2])
+                index += 2
+                continue
+        if take_substitution(double_quoted):
+            if out[-1] == "$((" and not double_quoted:
+                paren_depth += 2
+            continue
+        if not double_quoted and char == "(":
+            paren_depth += 1
+        elif not double_quoted and char == ")":
+            paren_depth = max(paren_depth - 1, 0)
+        out.append(char)
+        index += 1
+    return "".join(out), bodies
 
 
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*")
@@ -3254,6 +3720,31 @@ def opaque_invocation_has_unresolved_nested(invocation: list[str]) -> bool:
     )
 
 
+LITERAL_TEST_COMMAND_WORDS = frozenset({"[", "[["})
+ZSH_PRESENCE_TEST_RE = re.compile(
+    r"\$\+[A-Za-z_][A-Za-z0-9_]*(?:\[[A-Za-z0-9_.:+-]+\])?"
+)
+
+
+def opaque_invocation_is_literal_shell_test(invocation: list[str]) -> bool:
+    """Whether an "opaque" command word is really literal test syntax.
+
+    The command-position check reads any bracket as a glob, but a lone ``[``
+    has no closing bracket to match and ``[[`` is a reserved word, so both are
+    the literal test command. A zsh ``$+name[key]`` presence test with a
+    literal key expands only to ``0`` or ``1`` (and stays literal in bash).
+    None of them can name ``git`` or ``semantic-commit``, and a test operand is
+    never executed; a command substitution among the operands is parsed as its
+    own simple command by ``simple_commands_with_nested_shells``.
+    """
+    if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
+        return False
+    word = invocation[1]
+    return word in LITERAL_TEST_COMMAND_WORDS or bool(
+        ZSH_PRESENCE_TEST_RE.fullmatch(word)
+    )
+
+
 def _short_option_cluster_next_index(
     tokens: list[str],
     index: int,
@@ -3639,7 +4130,11 @@ def nested_shell_payload(invocation: list[str]) -> str | None:
 
 
 def simple_commands_with_nested_shells(
-    command: str, *, strip_heredocs: bool = False, max_depth: int = 5
+    command: str,
+    *,
+    strip_heredocs: bool = False,
+    max_depth: int = 5,
+    strict: bool = False,
 ) -> list[list[str]]:
     """Return simple commands, recursively descending into shell command strings.
 
@@ -3648,27 +4143,100 @@ def simple_commands_with_nested_shells(
     ``-c``/``--command`` payload, or the command is ``eval``, the payload is
     parsed as another shell command string so guard hooks inspect equivalent
     wrapper forms of a blocked action.
-    """
-    commands: list[list[str]] = []
-    seen: set[tuple[int, str]] = set()
 
-    def visit(source: str, depth: int) -> None:
+    Command substitutions, unquoted, double-quoted, or backtick, are parsed the
+    same way and their simple commands are emitted before the command whose
+    words they expand, which the shell also runs first. The containing word
+    keeps a dynamic placeholder (``COMMAND_SUBSTITUTION_PLACEHOLDER``), so
+    several substitutions in one command stay argument words rather than
+    leaving a stray ``$`` in command position.
+
+    ``strict`` is for enforcing guards: shell comments are dropped before
+    tokenizing, and a source the tokenizer cannot parse yields an
+    ``OPAQUE_NESTED_SHELL_COMMAND`` marker instead of no commands.
+    """
+    return [
+        tokens
+        for tokens, _scope in scoped_simple_commands_with_nested_shells(
+            command,
+            strip_heredocs=strip_heredocs,
+            max_depth=max_depth,
+            strict=strict,
+        )
+    ]
+
+
+def scoped_simple_commands_with_nested_shells(
+    command: str,
+    *,
+    strip_heredocs: bool = False,
+    max_depth: int = 5,
+    strict: bool = False,
+) -> list[tuple[list[str], tuple[int, ...]]]:
+    """Return ``simple_commands_with_nested_shells`` with substitution scopes.
+
+    Each command carries the path of command substitutions it runs inside:
+    ``()`` for the top-level shell, ``(n,)`` for a substitution body, and a
+    longer path for nested substitutions. A substitution body runs in a
+    subshell, so shell state it changes (aliases, functions, hashes, PATH,
+    cwd) reaches later commands in the same scope but never the enclosing
+    one. Commands of one scope are contiguous in the returned order.
+    """
+    commands: list[tuple[list[str], tuple[int, ...]]] = []
+    scope_ids = itertools.count()
+
+    def visit(
+        source: str, depth: int, scope: tuple[int, ...] = (), nesting: int = 0
+    ) -> None:
+        # No textual deduplication: identical text at another position is a
+        # distinct execution under different inherited shell state. Recursion
+        # stays bounded because a payload visit increases ``depth`` and a
+        # substitution body is strictly shorter than its source.
         if depth > max_depth:
             return
-        key = (depth, source)
-        if key in seen:
+        # Extraction reads here-document bodies itself (inert bodies stay
+        # verbatim), so the inert strip runs on the rewritten text.
+        try:
+            rewritten, substitutions = extract_command_substitutions(
+                source, drop_comments=strict
+            )
+        except _SubstitutionTooDeep:
+            commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
             return
-        seen.add(key)
-        for tokens in simple_commands(source, strip_heredocs=strip_heredocs):
+        rewritten = _strip_heredocs_for_parse(rewritten, strip_heredocs)
+
+        def expand(words: Iterable[str]) -> None:
+            for word in words:
+                body = substitutions.pop(word, None)
+                if body is None:
+                    continue
+                if nesting >= COMMAND_SUBSTITUTION_NESTING_LIMIT:
+                    commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
+                    continue
+                visit(body, depth, (*scope, next(scope_ids)), nesting + 1)
+
+        parsed = _checked_simple_commands(rewritten)
+        if parsed is None:
+            parsed = []
+            if strict:
+                commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
+        for tokens in parsed:
             if not tokens:
                 continue
-            commands.append(tokens)
+            expand(
+                match.group(0)
+                for token in tokens
+                for match in _COMMAND_SUBSTITUTION_PLACEHOLDER_RE.finditer(token)
+            )
+            commands.append((tokens, scope))
             payload = nested_shell_payload(invocation_tokens(tokens))
             if payload:
                 if depth >= max_depth:
-                    commands.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
                 else:
-                    visit(payload, depth + 1)
+                    visit(payload, depth + 1, scope, nesting)
+        # A substitution whose word the tokenizer dropped still runs.
+        expand(list(substitutions))
 
     visit(command, 0)
     return commands

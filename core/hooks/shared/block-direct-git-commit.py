@@ -23,6 +23,7 @@ from hook_common import (
     invocation_is_unresolved_nested,
     invocation_tokens,
     opaque_invocation_candidates,
+    opaque_invocation_is_literal_shell_test,
     read_payload,
     simple_commands_with_nested_shells,
 )
@@ -290,7 +291,11 @@ def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
     An earlier `export PATH=...`, `unset PATH`, `for PATH in ...`, or similar
     changes lookup for every later Git call, including across `;`, `&&`, and
     nested shells. A sourced file or a nameref (`declare -n r=PATH`) can do
-    the same invisibly. The token check is deliberately conservative.
+    the same invisibly. The token check is deliberately conservative: it is
+    order-insensitive and also counts statements inside command substitution
+    bodies, even though a subshell cannot change the parent's lookup. It only
+    narrows admission of installed non-builtin Git commands, never of
+    `commit` itself.
     """
     for tokens in simple_commands:
         word = command_word(tokens)
@@ -337,7 +342,8 @@ def subcommand_block_reason(
 
 
 def git_commit_block_reason(command: str) -> str:
-    simple_commands = list(simple_commands_with_nested_shells(command))
+    # Strict parsing drops comments and fails closed on untokenizable text.
+    simple_commands = list(simple_commands_with_nested_shells(command, strict=True))
     lookup_retargeted = command_retargets_lookup(simple_commands)
     for simple_command in simple_commands:
         if selected_inline_alias(simple_command) is not None:
@@ -353,6 +359,10 @@ def git_commit_block_reason(command: str) -> str:
             return reason
         if invocation_is_unresolved_nested(invocation):
             return OPAQUE_REASON
+        if opaque_invocation_is_literal_shell_test(invocation):
+            # Test operands are never executed; a substitution among them is
+            # already its own simple command in this loop.
+            continue
         for candidate in opaque_invocation_candidates(invocation, {"git"}):
             if selected_inline_alias(candidate) is not None:
                 return ALIAS_REASON
