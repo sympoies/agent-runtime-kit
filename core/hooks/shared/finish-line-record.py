@@ -64,7 +64,6 @@ from hook_common import (
     read_payload,
     session_marker_key,
     strip_heredoc_bodies,
-    touch_marker,
     tool_input_dict,
     validation_contracts,
     validation_command_target_key,
@@ -1474,7 +1473,10 @@ def main() -> int:
     tool = tool_name(payload)
     event = hook_event(payload)
     command = command_from(payload) if tool == "Bash" else ""
-    if tool == "Bash" and event not in {"", "PreToolUse"}:
+    # Validation credit needs the PreToolUse outcome wrapper's observed exit
+    # status; provider payloads always name their event, so any other or
+    # missing event is a no-op.
+    if tool == "Bash" and event != "PreToolUse":
         return ALLOW
 
     repo_root = git_toplevel()
@@ -1490,37 +1492,24 @@ def main() -> int:
         )
         if not matches:
             return ALLOW
-        if event == "PreToolUse":
-            if generated_wrapper_token(command) is not None:
-                return ALLOW
-            if not outcome_status_is_provable(command, matches):
-                emit_unprovable_validation_advisory()
-                return ALLOW
-            try:
-                state_lock = acquire_validation_state_lock(repo_root)
-            except OSError:
-                emit_block(registration_block_reason())
-                return ALLOW
-            token = outcome_token(payload, command)
-            pending, registration_failed = pending_records(
-                repo_root, matches, token
-            )
-            if registration_failed:
-                discard_registered_attempts(pending)
-                emit_block(registration_block_reason())
-                return ALLOW
-            if pending:
-                emit_rewrite(payload, wrapped_command(command, token, pending))
-        elif not event:
-            # Compatibility for older direct invocations and existing fixtures.
-            # Product hook wiring always supplies an explicit event name.
-            try:
-                state_lock = acquire_validation_state_lock(repo_root)
-            except OSError:
-                emit_block(registration_block_reason())
-                return ALLOW
-            for markers, index, _declared in matches:
-                touch_marker(command_ran_marker(markers, index))
+        if generated_wrapper_token(command) is not None:
+            return ALLOW
+        if not outcome_status_is_provable(command, matches):
+            emit_unprovable_validation_advisory()
+            return ALLOW
+        try:
+            state_lock = acquire_validation_state_lock(repo_root)
+        except OSError:
+            emit_block(registration_block_reason())
+            return ALLOW
+        token = outcome_token(payload, command)
+        pending, registration_failed = pending_records(repo_root, matches, token)
+        if registration_failed:
+            discard_registered_attempts(pending)
+            emit_block(registration_block_reason())
+            return ALLOW
+        if pending:
+            emit_rewrite(payload, wrapped_command(command, token, pending))
     elif tool in EDIT_TOOLS:
         for path in file_paths_from_payload(payload):
             if path.endswith(".md"):

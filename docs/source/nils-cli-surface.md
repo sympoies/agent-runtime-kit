@@ -1684,6 +1684,10 @@ phase-aware `test-first-evidence`, and v2 `skill-usage` ownership; and
 owners during archive and closeout promotion. No Browser/Evidence command was
 retired or renamed in this release.
 
+The `agent-docs` per-binary floor in `nils-cli-pin.yaml` is `1.24.0`: the
+shared hooks call `session prepare` (`v1.23.0`) and `session verify --phase`
+(`v1.24.0`) without a capability probe. It stays below the release tag floor.
+
 Notes on derivation:
 
 - The **Crate** column lists every directory currently under

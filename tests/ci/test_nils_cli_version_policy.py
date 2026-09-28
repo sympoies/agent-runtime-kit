@@ -198,6 +198,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["git-cli"], "1.27.16")
         self.assertEqual(required_clis["agent-hook"], "1.27.35")
         self.assertEqual(required_clis["agent-memory"], "1.26.4")
+        self.assertEqual(required_clis["agent-docs"], "1.24.0")
         minimum = tuple(
             int(part)
             for part in yaml_scalar(manifest, "minimum_supported_tag")[1:].split(".")

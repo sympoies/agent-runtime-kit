@@ -2775,35 +2775,20 @@ class SharedHookTests(unittest.TestCase):
         marker: Path,
         product: str = "codex",
         prepared_intent: str = "project-dev",
-        advertise_phase: bool = True,
     ) -> str:
         """Fake agent-docs that records argv and models the #601 3d phase surface.
 
-        ``session verify --help`` advertises ``--phase`` (the hook's feature
-        probe) only when ``advertise_phase`` is set, so a test can exercise both
-        a phase-capable CLI and a supported-but-pre-phase CLI. ``session verify``
-        reports the intent active once ``marker`` exists (modeling the primitive
-        rule that a full, no-phase preparation satisfies any phase-scoped
-        verify), and ``session prepare`` succeeds and creates the marker. Every
+        ``session verify`` reports the intent active once ``marker`` exists
+        (modeling the primitive rule that a full, no-phase preparation satisfies
+        any phase-scoped verify), and ``session prepare`` succeeds and creates the marker. Every
         invocation appends ``$*`` to ``log_path`` so a test can assert which
         ``--phase`` the hook threaded into each call.
         """
         log_q = shlex.quote(str(log_path))
         marker_q = shlex.quote(str(marker))
-        if advertise_phase:
-            verify_help = (
-                "  printf '%s\\n' 'Verify a phase-scoped or full preparation for the required intents'\n"
-                "  printf '%s\\n' '      --phase <PHASE>'\n"
-            )
-        else:
-            verify_help = "  printf '%s\\n' 'Verify the active intents for a session'\n"
         return f"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> {log_q}
-if [[ "$*" == *"session verify --help"* ]]; then
-{verify_help}  exit 0
-fi
-if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
 if [[ "$*" == *"session prepare"* ]]; then
   printf 'prepared\\n' > {marker_q}
   printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":["{prepared_intent}"],"record_file":"r.json","verified":true,"prepared_intents":["{prepared_intent}"],"reason":"prepared"}}}}'
@@ -2819,6 +2804,54 @@ if [[ "$*" == *"session verify"* ]]; then
 fi
 exit 64
 """
+
+    def _run_declared_validation(
+        self,
+        repo: Path,
+        command: str,
+        *,
+        env: dict[str, str],
+        session_id: str | None = None,
+    ) -> None:
+        """Credit a declared validation the way provider wiring does.
+
+        The PreToolUse hook rewrites the command into its outcome wrapper, and
+        running that wrapper records the observed exit status. A missing
+        ``bash <script>`` target is stubbed to succeed so the fixture models a
+        passing validation.
+        """
+        words = shlex.split(command)
+        if len(words) == 2 and words[0] == "bash":
+            script = repo / words[1]
+            if not script.exists():
+                script.parent.mkdir(parents=True, exist_ok=True)
+                script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+                script.chmod(0o755)
+        payload = command_event_payload(
+            "PreToolUse",
+            command,
+            tool_use_id=f"declared-validation-{secrets.token_hex(4)}",
+        )
+        if session_id is not None:
+            payload["session_id"] = session_id
+        code, rewrite, stderr = run_hook(
+            "finish-line-record.py", payload, cwd=repo, env=env
+        )
+        self.assertEqual(code, 0, stderr)
+        assert rewrite is not None, stderr
+        hook_output = rewrite["hookSpecificOutput"]
+        assert isinstance(hook_output, dict)
+        updated_input = hook_output["updatedInput"]
+        assert isinstance(updated_input, dict)
+        completed = subprocess.run(
+            ["bash", "-c", str(updated_input["command"])],
+            cwd=repo,
+            env=gate_env(env),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     @staticmethod
     def _mark_runtime_kit_source_checkout(repo: Path) -> None:
@@ -2871,13 +2904,7 @@ exit 64
             self.assertNotIn("Running it records", reason)
 
             # Running the declared validation records the run.
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/ci/all.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
 
             # The gate releases now that validation ran after the edit.
             code, decision, stderr = run_hook(
@@ -2885,6 +2912,40 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+    def test_finish_line_record_ignores_eventless_validation_payload(self) -> None:
+        """Validation credit requires the PreToolUse outcome wrapper.
+
+        A Bash payload without ``hook_event_name`` carries no observed exit
+        status, so it must never credit the declared validation. Real provider
+        payloads always name their event.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "finish-line-record.py",
+                command_payload("bash scripts/ci/all.sh"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_finish_line_gate_names_the_recovery_lane_by_absolute_path(self) -> None:
         # The block text is read inside the repository being validated, which is
@@ -3004,12 +3065,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(editing_decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = "editing-session"
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id="editing-session"
             )
-            self.assertEqual(code, 0, stderr)
 
             code, editing_decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3042,12 +3100,9 @@ exit 64
             session_dir = marker_dir / f"session-{session_key}"
             self.assertTrue(session_dir.is_dir())
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3088,12 +3143,9 @@ exit 64
                     "AGENT_RUNTIME_DOCS_HOME": str(repo),
                     "AGENT_RUNTIME_PRODUCT": product,
                 }
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py", validation, cwd=repo, env=env
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             codex_env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
@@ -3153,12 +3205,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             for env in (codex_env, claude_env):
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py", validation, cwd=repo, env=env
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3179,12 +3228,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assertFalse(codex_terminal.exists())
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=claude_env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=claude_env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3204,12 +3250,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=codex_env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=codex_env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3254,12 +3297,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             for env in (codex_env, claude_env):
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py", validation, cwd=repo, env=env
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3366,15 +3406,9 @@ exit 64
                 )
                 self.assertEqual(code, 0, stderr)
                 for product in ("codex", "claude"):
-                    validation = command_payload("bash scripts/ci/all.sh")
-                    validation["session_id"] = session_id
-                    code, _, stderr = run_hook(
-                        "finish-line-record.py",
-                        validation,
-                        cwd=repo,
-                        env=envs[product],
+                    self._run_declared_validation(
+                        repo, "bash scripts/ci/all.sh", env=envs[product], session_id=session_id
                     )
-                    self.assertEqual(code, 0, stderr)
 
                 code, decision, stderr = run_hook(
                     "stop-finish-line-gate.py",
@@ -3395,15 +3429,9 @@ exit 64
                     env=envs[newer_product],
                 )
                 self.assertEqual(code, 0, stderr)
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs[newer_product],
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=envs[newer_product], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
                 code, decision, stderr = run_hook(
                     "stop-finish-line-gate.py",
@@ -3424,15 +3452,9 @@ exit 64
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "scripts/ci/all.sh")
 
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs[stale_product],
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=envs[stale_product], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
                 code, decision, stderr = run_hook(
                     "stop-finish-line-gate.py",
                     {"session_id": session_id},
@@ -3473,15 +3495,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             for product in ("codex", "claude"):
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs[product],
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=envs[product], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3505,15 +3521,9 @@ exit 64
             )
             self.assertFalse((session_dir / ".terminal-codex").exists())
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["codex"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=envs["codex"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3533,15 +3543,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["claude"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=envs["claude"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3575,12 +3579,9 @@ exit 64
                 "finish-line-record.py", edit, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             unknown = session_dir / ".terminal-unknown"
             unknown.touch()
 
@@ -3638,24 +3639,12 @@ exit 64
                 "bash scripts/ci/primary.sh",
                 "bash scripts/ci/secondary.sh",
             ):
-                validation = command_payload(command)
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs["codex"],
+                self._run_declared_validation(
+                    repo, command, env=envs["codex"], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
-            validation = command_payload("bash scripts/ci/secondary.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["claude"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/secondary.sh", env=envs["claude"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             self.assertTrue(
                 (session_dir / "foo.codex.claude.cmd0.ran").is_file()
             )
@@ -3682,15 +3671,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "bash scripts/ci/primary.sh")
 
-            validation = command_payload("bash scripts/ci/primary.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["claude"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/primary.sh", env=envs["claude"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3723,12 +3706,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assertTrue(session_dir.is_dir())
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
 
             dirty = session_dir / "project-dev.dirty"
             spec = importlib.util.spec_from_file_location(
@@ -3844,12 +3824,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assertTrue(session_dir.is_dir())
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3879,13 +3856,7 @@ exit 64
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/ci/all.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
             code, legacy_decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
@@ -3938,12 +3909,9 @@ exit 64
 
             self.assert_blocked(read_only_decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = "post-upgrade-session"
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id="post-upgrade-session"
             )
-            self.assertEqual(code, 0, stderr)
 
             code, upgraded_decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -6610,13 +6578,14 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             fake_command = 'printf %s "bash scripts/ci/all.sh && bash tests/hooks/run.sh"'
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(fake_command),
+                command_event_payload("PreToolUse", fake_command),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_allowed(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -6630,8 +6599,10 @@ exit 64
         #     cd /repo
         #     bash scripts/ci/all.sh && bash tests/hooks/run.sh
         # An unquoted newline must act as a command separator; otherwise the
-        # validation command on the second physical line is glued onto `cd`,
-        # never recognized, and the gate stays spuriously blocked.
+        # validation command on the second physical line is glued onto `cd` and
+        # never recognized. Recognition alone earns no credit: this aggregate
+        # shape cannot prove its outcome, so the recorder explains that instead
+        # of silently ignoring the run.
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
@@ -6652,20 +6623,20 @@ exit 64
                 "bash scripts/ci/all.sh && bash tests/hooks/run.sh\n"
                 'echo "done=$?"'
             )
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(multiline),
+                command_event_payload("PreToolUse", multiline),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
-            # Both declared validations ran after the edit, so the gate releases.
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_finish_line_record_ignores_validation_text_inside_quotes(self) -> None:
         # Guard against a false positive: a multi-line command whose only
@@ -6685,13 +6656,14 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             quoted = 'cd /repo\nprintf "%s\nbash scripts/ci/all.sh\n" "header"'
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(quoted),
+                command_event_payload("PreToolUse", quoted),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_allowed(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -6718,13 +6690,14 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             heredoc = "cat > ci.sh <<'EOF'\nbash scripts/ci/all.sh\nEOF"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(heredoc),
+                command_event_payload("PreToolUse", heredoc),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_allowed(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -6732,9 +6705,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_validation_after_heredoc(self) -> None:
+    def test_finish_line_record_recognizes_validation_after_heredoc(self) -> None:
         # The here-doc stripping must remove only the body: a real validation
-        # run AFTER the here-doc closes still credits the gate (agent-runtime-kit#351).
+        # run AFTER the here-doc closes is still recognized (agent-runtime-kit#351).
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -6749,21 +6722,22 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "cat > note.txt <<'EOF'\nsome notes\nEOF\nbash scripts/ci/all.sh"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_continued_heredoc_opener(self) -> None:
+    def test_finish_line_record_recognizes_continued_heredoc_opener(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -6778,21 +6752,22 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "cat <<EOF && \\\nbash scripts/ci/all.sh\nnotes\nEOF"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_validation_inside_shell_heredoc(self) -> None:
+    def test_finish_line_record_recognizes_validation_inside_shell_heredoc(self) -> None:
         self._require_agent_docs()
         commands = (
             "bash <<'EOF'\nbash scripts/ci/all.sh\nEOF",
@@ -6812,19 +6787,20 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
 
-                    code, _, stderr = run_hook(
+                    code, recorded, stderr = run_hook(
                         "finish-line-record.py",
-                        command_payload(payload),
+                        command_event_payload("PreToolUse", payload),
                         cwd=repo,
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
+                    self.assert_unprovable_validation_advisory(recorded)
 
                     code, decision, stderr = run_hook(
                         "stop-finish-line-gate.py", {}, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_finish_line_record_ignores_shell_heredoc_stdin_not_used_as_script(self) -> None:
         self._require_agent_docs()
@@ -6846,13 +6822,14 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
 
-                    code, _, stderr = run_hook(
+                    code, recorded, stderr = run_hook(
                         "finish-line-record.py",
-                        command_payload(payload),
+                        command_event_payload("PreToolUse", payload),
                         cwd=repo,
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(recorded)
 
                     code, decision, stderr = run_hook(
                         "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -6860,7 +6837,7 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_ignores_heredoc_operator_inside_comment(self) -> None:
+    def test_finish_line_record_recognizes_validation_after_commented_heredoc_operator(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -6875,21 +6852,22 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "# <<EOF\nbash scripts/ci/all.sh"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_validation_after_ansi_c_quoted_heredoc(self) -> None:
+    def test_finish_line_record_recognizes_validation_after_ansi_c_quoted_heredoc(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -6904,19 +6882,20 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "cat <<$'EOF'\nnotes\nEOF\nbash scripts/ci/all.sh"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_command_match_requires_declared_shell_heredoc_body(self) -> None:
         declared = "bash <<'EOF'\nbash scripts/ci/all.sh\nEOF"
@@ -7157,13 +7136,7 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
 
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/ci/all.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7171,13 +7144,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/task-tools.sh")
 
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/task-tools.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/task-tools.sh", env=env)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7538,13 +7505,9 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
 
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash codex.sh"),
-                cwd=repo,
-                env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"},
+            self._run_declared_validation(
+                repo, "bash codex.sh", env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"}
             )
-            self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -10022,62 +9985,102 @@ exit 64
             self.assert_blocked(decision, "trusted")
             self.assertFalse(marker.exists())
 
-    def test_pre_edit_intent_gate_allows_verified_session_and_legacy_cli(self) -> None:
-        for supports_session in (True, False):
-            for product in ("codex", "claude"):
-                with self.subTest(
-                    supports_session=supports_session, product=product
-                ), tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    repo = root / "repo"
-                    repo.mkdir()
-                    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-                    (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-                    bin_dir = root / "bin"
-                    bin_dir.mkdir()
-                    if supports_session:
-                        body = f"""#!/usr/bin/env bash
+    def test_pre_edit_intent_gate_allows_verified_session(self) -> None:
+        for product in ("codex", "claude"):
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                body = f"""#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"session --help"* ]]; then
-  printf '%s\n' '  verify    verify active intents'
-  exit 0
-fi
 if [[ "$args" == *"session verify"* ]]; then
-  printf '%s\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"verified":true}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"verified":true}}}}'
   exit 0
 fi
 exit 64
 """
-                    else:
-                        body = """#!/usr/bin/env bash
+                self._write_fake_agent_docs(bin_dir, body)
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "CLAUDE_KIT_STATE_HOME": str(repo / "state"),
+                    "HOME": str(root / "home"),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                (root / "home").mkdir()
+                payload = write_payload("src/lib.rs", "fn main() {}\n")
+                payload["session_id"] = "intent-gate-allow"
+
+                code, decision, stderr = run_hook(
+                    "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+    def test_pre_edit_intent_gate_pre_session_cli_is_never_admitted_unverified(
+        self,
+    ) -> None:
+        """A CLI without the session surface fails verification, not open.
+
+        The supported nils-cli floor ships ``session verify``; an older binary
+        that reports a pre-session version must not bypass enforcement. Enforce
+        blocks at verification; advisory still preserves the work.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"--version"* ]]; then
-  printf '%s\n' 'agent-docs 1.21.16 (v1.21.16)'
+  printf '%s\\n' 'agent-docs 1.21.16 (v1.21.16)'
   exit 0
 fi
-if [[ "$*" == *"session --help"* ]]; then
-  exit 64
-fi
 exit 64
-"""
-                    self._write_fake_agent_docs(bin_dir, body)
-                    env = {
-                        "AGENT_RUNTIME_DOCS_HOME": str(repo),
-                        "AGENT_RUNTIME_PRODUCT": product,
-                        "CLAUDE_KIT_STATE_HOME": str(repo / "state"),
-                        "HOME": str(root / "home"),
-                        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-                    }
-                    (root / "home").mkdir()
-                    payload = write_payload("src/lib.rs", "fn main() {}\n")
-                    payload["session_id"] = "intent-gate-allow"
+""",
+            )
+            (root / "home").mkdir()
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(root / "home"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "pre-session-cli"
 
-                    code, decision, stderr = run_hook(
-                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[reason: project-dev-required]")
+            self.assertIn("intent-not-active-or-stale", str(decision))
+
+            code, advisory, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={**env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "advisory"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            self.assertNotEqual(advisory.get("decision"), "block")
+            self.assertIn(
+                "[reason: project-dev-advisory-unavailable]", str(advisory)
+            )
 
     def test_pre_edit_intent_gate_blocks_repository_shell_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -10224,6 +10227,11 @@ exit 64
                     "json",
                 ]
             )
+            # Classifiable mutations (a direct edit, a simple-argv command)
+            # recover through the phase-scoped `edit` preparation.
+            prepare_edit_cmd = prepare_cmd.replace(
+                " --format json", " --phase edit --format json"
+            )
             # A read-only `git status` is now admitted without project-dev, so
             # the recovery-message assertion uses a genuine mutation command.
             payload = command_payload("printf x > out.txt")
@@ -10258,7 +10266,10 @@ exit 64
             )
             self.assertEqual(unknown_reason.count("Route "), 2)
             self.assertIn(f"Route 1 (local exploration): `{inspect_route}`", unknown_reason)
-            self.assertIn(f"Route 2 (exact-target project-dev): run `{prepare_cmd}`", unknown_reason)
+            self.assertIn(
+                f"Route 2 (exact-target project-dev): run `{prepare_edit_cmd}`",
+                unknown_reason,
+            )
 
             direct_edit = write_payload("src/lib.rs", "fn main() {}\n")
             direct_edit["session_id"] = "intent-recovery"
@@ -10269,7 +10280,7 @@ exit 64
             self.assert_blocked(decision, "project-dev")
             assert decision is not None
             direct_reason = str(decision.get("reason", ""))
-            self.assertIn(prepare_cmd, direct_reason)
+            self.assertIn(prepare_edit_cmd, direct_reason)
             self.assertIn("[reason: project-dev-required]", direct_reason)
 
             # Backward compatibility: an explicit `session activate` bootstrap is
@@ -12002,45 +12013,6 @@ exit 64
             verify_calls = self._verify_calls(call_log)
             self.assertTrue(verify_calls)
             self.assertTrue(all("--phase edit" in line for line in verify_calls))
-
-    def test_pre_edit_intent_gate_phase_unsupported_cli_uses_full_intent(self) -> None:
-        """#601 3d: a supported-but-pre-phase CLI is gated on the full intent.
-
-        The `--phase` flag is gated behind a feature probe; when the CLI does not
-        advertise it, the hook falls back to full `project-dev` verification and
-        emits no `--phase`, so phase-scoping is never a hard error on an older
-        (but session-capable) release.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-            bin_dir = root / "runtime-bin"
-            bin_dir.mkdir()
-            call_log = root / "calls.log"
-            marker = root / "prepared"
-            self._write_fake_agent_docs(
-                bin_dir,
-                self._phase_aware_fake_agent_docs(
-                    log_path=call_log, marker=marker, advertise_phase=False
-                ),
-            )
-            env = self._phase_gate_env(repo, bin_dir)
-            payload = write_payload("src/lib.rs", "fn main() {}\n")
-            payload["session_id"] = "pre-phase"
-            code, decision, stderr = run_hook(
-                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "project-dev")
-            reason = str(decision)
-            self.assertIn("--intent project-dev", reason)
-            self.assertNotIn("--phase", reason)
-            verify_calls = self._verify_calls(call_log)
-            self.assertTrue(verify_calls)
-            self.assertTrue(all("--phase" not in line for line in verify_calls))
 
     def test_pre_edit_intent_gate_consumes_phase_scoped_prepare(self) -> None:
         """#601 3d: a trusted phase-scoped `session prepare --phase edit` runs.
@@ -18520,14 +18492,26 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "project-dev")
 
-    def test_pre_edit_intent_gate_capability_detection_fails_closed(self) -> None:
+    def test_pre_edit_intent_gate_unusable_agent_docs_fails_closed(self) -> None:
         cases = {
-            "crash": "if [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.17'; exit 0; fi\nexit 70",
-            "legacy-text-nonzero": "if [[ \"$*\" == *\"session --help\"* ]]; then exit 64; fi\nif [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.16'; exit 70; fi\nexit 64",
-            "malformed": "if [[ \"$*\" == *\"--version\"* ]]; then echo 'unknown build'; exit 0; fi\nexit 64",
-            "timeout": "sleep 0.2\necho 'agent-docs 1.21.17'",
+            "crash": (
+                "if [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.17'; exit 0; fi\nexit 70",
+                "intent-not-active-or-stale",
+            ),
+            "legacy-text-nonzero": (
+                "if [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.16'; exit 70; fi\nexit 64",
+                "intent-not-active-or-stale",
+            ),
+            "malformed": (
+                "echo 'unknown build'; exit 0",
+                "intent-verification-malformed",
+            ),
+            "timeout": (
+                "sleep 0.2\necho 'agent-docs 1.21.17'",
+                "intent-verification-timeout",
+            ),
         }
-        for name, body in cases.items():
+        for name, (body, verification_code) in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp)
                 subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -18538,7 +18522,7 @@ exit 64
                     bin_dir, f"#!/usr/bin/env bash\nset -euo pipefail\n{body}\n"
                 )
                 payload = write_payload("src/lib.rs", "x\n")
-                payload["session_id"] = "capability-failure"
+                payload["session_id"] = "unusable-agent-docs"
                 code, decision, stderr = run_hook(
                     "pre-edit-intent-gate.py",
                     payload,
@@ -18550,7 +18534,8 @@ exit 64
                     },
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "capability")
+                self.assert_blocked(decision, "[reason: project-dev-required]")
+                self.assertIn(f"`{verification_code}`", str(decision))
 
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -18570,7 +18555,7 @@ exit 64
                 env={"AGENT_RUNTIME_PRODUCT": "codex", "PATH": str(bin_dir)},
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "capability")
+            self.assert_blocked(decision, "agent-docs capability is unavailable")
 
     def test_pre_edit_intent_gate_gates_real_notebook_path_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -18947,7 +18932,12 @@ exit 64
             )
             home = repo / "home"
             home.mkdir()
-            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo), "HOME": str(home)}
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(home),
+            }
 
             code, decision, stderr = run_shell_hook(
                 "user-prompt-agent-docs.sh",
@@ -18962,13 +18952,13 @@ exit 64
             ctx = ""
             if isinstance(hook_output, dict):
                 ctx = str(hook_output.get("additionalContext", ""))
-            # The project-dev intent still surfaces (doc + validation command).
-            self.assertIn("project-dev", ctx)
-            self.assertIn("DEV.md", ctx)
-            self.assertIn("scripts/ci/all.sh", ctx)
-            # The generalization: a declared non-project-dev intent surfaces too.
-            self.assertIn("task-tools", ctx)
-            self.assertIn("ext.md", ctx)
+            # Every declared intent is routed, but nothing is active yet, so no
+            # runbook or validation command is injected.
+            self.assertIn("Inactive available intents: project-dev, task-tools.", ctx)
+            self.assertIn("session prepare --session-id cue-test", ctx)
+            self.assertNotIn("DEV.md", ctx)
+            self.assertNotIn("ext.md", ctx)
+            self.assertNotIn("scripts/ci/all.sh", ctx)
 
     def test_preflight_cue_qualifies_required_docs_with_roots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -18991,12 +18981,16 @@ exit 64
                 f"""#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"session status"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"]}}}}'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"],"verified":true}}}}'
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
@@ -19010,6 +19004,8 @@ exit 65
             home.mkdir()
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19045,30 +19041,35 @@ exit 65
             (repo / "CLAUDE.md").write_text("# Claude\n", encoding="utf-8")
             bin_dir = repo / "bin"
             bin_dir.mkdir()
+            log_path = repo / "agent-docs.args"
             self._write_fake_agent_docs(
                 bin_dir,
-                """#!/usr/bin/env bash
+                f"""#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  printf '%s\n' '      --product <PRODUCT>'
+printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
 fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
+if [[ "$args" == *"session status"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"]}}}}'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"],"verified":true}}}}'
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
   if [[ "$args" == *"--product codex"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[{"path":"CODEX.md","required":true}],"validation":{"declared":true,"commands":["bash codex.sh"]}}'
+    printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"CODEX.md","required":true}}],"validation":{{"declared":true,"commands":["bash codex.sh"]}}}}'
     exit 0
   fi
   if [[ "$args" == *"--product claude"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[{"path":"CLAUDE.md","required":true}],"validation":{"declared":true,"commands":["bash claude.sh"]}}'
+    printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"CLAUDE.md","required":true}}],"validation":{{"declared":true,"commands":["bash claude.sh"]}}}}'
     exit 0
   fi
-  printf '%s\n' '{"intent":"project-dev","documents":[{"path":"CODEX.md","required":true},{"path":"CLAUDE.md","required":true}],"validation":{"declared":true,"commands":["bash unfiltered.sh"]}}'
+  printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"CODEX.md","required":true}},{{"path":"CLAUDE.md","required":true}}],"validation":{{"declared":true,"commands":["bash unfiltered.sh"]}}}}'
   exit 0
 fi
 exit 65
@@ -19079,6 +19080,7 @@ exit 65
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19097,9 +19099,15 @@ exit 65
             if isinstance(hook_output, dict):
                 ctx = str(hook_output.get("additionalContext", ""))
             self.assertIn("CODEX.md", ctx)
-            self.assertIn("codex.sh", ctx)
             self.assertNotIn("CLAUDE.md", ctx)
-            self.assertNotIn("unfiltered.sh", ctx)
+            calls = log_path.read_text(encoding="utf-8").splitlines()
+            preflights = [call for call in calls if " preflight " in f" {call} "]
+            self.assertTrue(preflights)
+            for call in preflights:
+                self.assertIn("--require-declared-intent --product codex", call)
+            # The supported floor ships these flags and the session surface, so
+            # the prompt hook no longer spends a `--help` probe on every prompt.
+            self.assertFalse([call for call in calls if "--help" in call])
 
     def test_preflight_cue_defaults_docs_home_to_runtime_kit_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -19126,10 +19134,6 @@ if [[ "$args" != *"--docs-home {expected_repo}"* ]]; then
   echo "missing repo-root docs-home" >&2
   exit 64
 fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
@@ -19146,6 +19150,8 @@ exit 65
             env = {
                 "AGENT_DOCS_HOME": "",
                 "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19195,10 +19201,6 @@ if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
   echo "missing AGENT_DOCS_HOME fallback" >&2
   exit 64
 fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
@@ -19215,6 +19217,8 @@ exit 65
             env = {
                 "AGENT_DOCS_HOME": str(docs_home_link),
                 "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19256,10 +19260,6 @@ if [[ "$args" == *"--docs-home {expected_repo}"* ]]; then
   echo "repo-local catalog must not replace inherited docs-home" >&2
   exit 64
 fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
@@ -19276,6 +19276,8 @@ exit 65
             env = {
                 "AGENT_DOCS_HOME": "",
                 "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19292,9 +19294,7 @@ exit 65
                 f"--docs-home {expected_repo}", log_path.read_text(encoding="utf-8")
             )
 
-    def test_preflight_cue_fails_closed_for_undeclared_intent_when_guarded(
-        self,
-    ) -> None:
+    def test_preflight_cue_fails_closed_for_undeclared_active_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             expected_repo = repo.resolve()
@@ -19312,12 +19312,16 @@ exit 65
                 """#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\n' '{"intents":["project-dev","project_dev"]}'
+  exit 0
+fi
+if [[ "$args" == *"session status"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"active_intents":["project-dev","project_dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"active_intents":["project-dev","project_dev"],"verified":true}}'
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
@@ -19343,6 +19347,8 @@ exit 65
             home.mkdir()
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19356,6 +19362,47 @@ exit 65
             self.assertNotEqual(code, 0)
             self.assertIsNone(decision)
             self.assertIn("project_dev", stderr)
+
+    def test_preflight_cue_is_silent_without_runtime_product(self) -> None:
+        """Without a codex/claude product there is no session context to cue.
+
+        agent-hook always exports AGENT_RUNTIME_PRODUCT, so an unset or foreign
+        product exits quietly before spending any agent-docs call.
+        """
+        for product in (None, "hermes"):
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp)
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+                bin_dir = repo / "bin"
+                bin_dir.mkdir()
+                log_path = repo / "agent-docs.args"
+                self._write_fake_agent_docs(
+                    bin_dir,
+                    f"""#!/usr/bin/env bash
+printf '%s\\n' "$*" >> {shlex.quote(str(log_path))}
+printf '%s\\n' '{{"intents":["project-dev"]}}'
+""",
+                )
+                home = repo / "home"
+                home.mkdir()
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "HOME": str(home),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                if product is not None:
+                    env["AGENT_RUNTIME_PRODUCT"] = product
+
+                code, decision, stderr = run_shell_hook(
+                    "user-prompt-agent-docs.sh",
+                    {"session_id": "cue-no-product", "prompt": "hello"},
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+                self.assertFalse(log_path.exists())
 
     def test_preflight_cue_lists_all_required_docs(self) -> None:
         self._require_agent_docs()
@@ -19377,7 +19424,41 @@ exit 65
             (repo / "AGENT_DOCS.toml").write_text("\n".join(entries), encoding="utf-8")
             home = repo / "home"
             home.mkdir()
-            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo), "HOME": str(home)}
+            state_home = repo / "state"
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "HOME": str(home),
+            }
+            agent_docs = shutil.which("agent-docs")
+            assert agent_docs is not None
+            subprocess.run(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo),
+                    "--project-path",
+                    str(repo),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    "cue-overflow-test",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home),
+                    "--intent",
+                    "project-dev",
+                    "--format",
+                    "json",
+                ],
+                cwd=repo,
+                env=gate_env({"HOME": str(home)}),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             code, decision, stderr = run_shell_hook(
                 "user-prompt-agent-docs.sh",

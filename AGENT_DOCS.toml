@@ -26,9 +26,9 @@
 # `phase` applies to every phase (the safe superset). The pre-edit gate maps
 # direct edits and generic mutation-capable shell to `edit`, and the governed
 # delivery CLIs (semantic-commit/forge-cli/git-cli) to `delivery`; `review` docs
-# are reached through explicit `--phase review` preflight, not the gate. Needs a
-# phase-capable agent-docs (the pinned surface); on an older CLI the gate falls
-# back to full project-dev. `scripts/ci/context-budget-audit.py` resolves this
+# are reached through explicit `--phase review` preflight, not the gate. Every
+# supported agent-docs release is phase-capable; an uninspectable shell command
+# falls back to full project-dev. `scripts/ci/context-budget-audit.py` resolves this
 # catalog through `agent-docs`; do not maintain a second hand-written mirror.
 [[document]]
 context = "project-dev"
@@ -150,7 +150,7 @@ notes = "Development log as a default capability: detect docs/devlog or docs/sou
 
 # task-tools intent: external-fact awareness plus optional CLI-tooling catalog.
 # Docs-only (no [[validation]] contract). Durable session-aware hooks expand it
-# only after activation; older agent-docs releases retain the all-intents cue.
+# only after activation.
 # Optional docs remain auditable and available through agent-docs.
 [[document]]
 context = "task-tools"
