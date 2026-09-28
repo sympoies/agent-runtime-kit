@@ -46,6 +46,150 @@ from hook_common import (  # noqa: E402
     session_id_from_payload,
 )
 
+# Fake agent-session with the released broker's single nonterminal operation
+# per session, idempotent admission replay, token-bound completion, and
+# two-phase quiescence-proven reconciliation.
+SINGLE_SLOT_AGENT_SESSION = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+state_path = Path(os.environ["FAKE_BROKER_STATE"])
+log_path = Path(os.environ["FAKE_BROKER_LOG"])
+args = sys.argv[1:]
+if args[:1] == ["--state-dir"]:
+    args = args[2:]
+with log_path.open("a", encoding="utf-8") as log:
+    log.write(" ".join(args) + "\n")
+NONTERMINAL = {"active", "completing", "reconcile_pending"}
+
+
+def option(name):
+    return args[args.index(name) + 1] if name in args else None
+
+
+def ok(data):
+    print(json.dumps({"ok": True, "data": data}))
+    sys.exit(0)
+
+
+def fail(code):
+    print(json.dumps({"ok": False, "error": {"code": code, "message": "synthetic"}}))
+    sys.exit(1)
+
+
+def lease_body(lease_id, lease):
+    return {
+        "schema_version": "agent-session.operation-lease.v1",
+        "lease_id": lease_id,
+        "revision": lease["revision"],
+        "state": lease["state"],
+    }
+
+
+if args == ["--version"]:
+    print("agent-session 1.29.2")
+    sys.exit(0)
+command = args[:2]
+if command == ["work-context", "--help"]:
+    print("show check admit complete reconcile")
+    sys.exit(0)
+if command == ["work-context", "show"]:
+    ok({
+        "schema_version": "agent-session.work-context.v1",
+        "session_id": "managed-session",
+        "session_incarnation": "incarnation-1",
+        "claim_id": "claim-1",
+        "revision": 3,
+        "state": "active",
+    })
+if command == ["work-context", "check"]:
+    ok({
+        "schema_version": "agent-session.conflict-evaluation.v1",
+        "classification": "clear",
+        "complete": True,
+        "reasons": [],
+        "peers": [],
+    })
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except FileNotFoundError:
+    state = {"leases": {}, "receipts": {}}
+
+
+def save():
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+
+if command == ["broker", "status"]:
+    leases = list(state["leases"].values())
+    ok({
+        "schema_version": "agent-session.coordination-broker.v1",
+        "session_id": "managed-session",
+        "state": "ready",
+        "generation": 1,
+        "capability_available": True,
+        "heartbeat_fresh": True,
+        "claim": None,
+        "operation": {
+            "active": sum(lease["state"] == "active" for lease in leases),
+            "uncertain": sum(
+                lease["state"] in {"completing", "reconcile_pending"}
+                for lease in leases
+            ),
+        },
+    })
+if command == ["work-context", "admit"]:
+    key = option("--idempotency-key")
+    if key in state["receipts"]:
+        ok(lease_body(state["receipts"][key], {"revision": 1, "state": "active"}))
+    if any(lease["state"] in NONTERMINAL for lease in state["leases"].values()):
+        fail("coordination-unavailable")
+    lease_id = f"lease-{len(state['leases']) + 1}"
+    state["leases"][lease_id] = {"revision": 1, "state": "active"}
+    state["receipts"][key] = lease_id
+    save()
+    garble = Path(os.environ["FAKE_BROKER_GARBLE_ADMIT"])
+    if garble.exists():
+        garble.unlink()
+        print("admission response lost")
+        sys.exit(0)
+    ok(lease_body(lease_id, state["leases"][lease_id]))
+if command in (["work-context", "complete"], ["work-context", "reconcile"]):
+    lease_id = option("--lease")
+    lease = state["leases"].get(lease_id)
+    if lease is None:
+        fail("operation-not-found")
+    if lease["state"] not in NONTERMINAL or str(lease["revision"]) != option(
+        "--if-revision"
+    ):
+        fail("operation-revision-conflict")
+    if command[1] == "complete":
+        outcome = option("--outcome")
+    else:
+        proof = json.loads(Path(option("--proof-file")).read_text(encoding="utf-8"))
+        assert set(proof) == {"schema_version", "execution_token", "outcome"}, proof
+        assert proof["schema_version"] == "agent-session.operation-reconcile-proof.v1"
+        assert proof["execution_token"].startswith("hook-")
+        outcome = proof["outcome"]
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write(f"RECONCILE-PROOF outcome={outcome}\n")
+        if os.environ.get("FAKE_BROKER_QUIESCENT") != "1":
+            fail("operation-still-running")
+        if lease["state"] != "reconcile_pending":
+            lease.update(state="reconcile_pending", revision=lease["revision"] + 1)
+            save()
+            ok(lease_body(lease_id, lease))
+    lease.update(
+        state="completed" if outcome == "pass" else "failed",
+        revision=lease["revision"] + 1,
+    )
+    save()
+    ok(lease_body(lease_id, lease))
+sys.exit(64)
+'''
+
 
 def parse_stdout(stdout: str) -> dict[str, object] | None:
     stripped = stdout.strip()
@@ -14071,6 +14215,305 @@ exit 64
             self.assertEqual(list(namespace.glob("*.json")), [])
             self.assertEqual(list(namespace.glob("*.token")), [])
             self.assertEqual(list(namespace.glob("*.outcome")), [])
+
+    def single_slot_coordination_fixture(
+        self, root: Path
+    ) -> tuple[Path, dict[str, str], Path, Path]:
+        """Model the released broker's one nonterminal operation per session."""
+        repo = root / "repo"
+        (repo / "src").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", "https://example.invalid/example/repo.git"],
+            cwd=repo,
+            check=True,
+        )
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        agent_session = bin_dir / "agent-session"
+        agent_session.write_text(SINGLE_SLOT_AGENT_SESSION, encoding="utf-8")
+        agent_session.chmod(0o755)
+        capability = root / "capability"
+        capability.write_text("secret\n", encoding="utf-8")
+        capability.chmod(0o600)
+        runtime_state = root / "runtime-state"
+        call_log = root / "calls.log"
+        env = {
+            "AGENT_RUNTIME_PRODUCT": "claude",
+            "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+            "AGENT_RUNTIME_STATE_HOME": str(runtime_state),
+            "AGENT_SESSION_ID": "managed-session",
+            "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+            "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+            "FAKE_BROKER_STATE": str(root / "broker.json"),
+            "FAKE_BROKER_LOG": str(call_log),
+            "FAKE_BROKER_GARBLE_ADMIT": str(root / "garble-admit"),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        }
+        namespace = runtime_state / "session-coordination" / hashlib.sha256(
+            b"managed-session"
+        ).hexdigest()
+        return repo, env, namespace, call_log
+
+    @staticmethod
+    def operation_records(namespace: Path) -> list[dict[str, Any]]:
+        return [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(namespace.glob("*.json"))
+            if not path.name.endswith(".targets.json")
+        ]
+
+    @staticmethod
+    def edit_event(tool_use_id: str, event: str = "PreToolUse") -> dict[str, Any]:
+        payload = write_payload(f"src/{tool_use_id}.rs", "fn main() {}\n")
+        payload.update(
+            {
+                "session_id": "product-session",
+                "tool_use_id": tool_use_id,
+                "hook_event_name": event,
+            }
+        )
+        if event == "PostToolUse":
+            payload["tool_response"] = {"success": True}
+        return payload
+
+    def test_session_coordination_refused_sibling_admission_leaves_no_record(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, namespace, call_log = self.single_slot_coordination_fixture(
+                Path(tmp)
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("sibling-a"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A parallel sibling reaches admission while the first call still
+            # holds the session's single operation slot.
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("sibling-b"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "coordination-unavailable")
+            self.assertEqual(
+                [record["phase"] for record in self.operation_records(namespace)],
+                ["active"],
+            )
+
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("sibling-a", "PostToolUse"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                {"hook_event_name": "Stop", "session_id": "product-session"},
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(decision and decision.get("status"), "clean")
+            self.assertEqual(list(namespace.glob("*.token")), [])
+            self.assertIn("work-context complete", call_log.read_text(encoding="utf-8"))
+
+    def test_session_coordination_next_call_reconciles_orphaned_active_lease(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, namespace, call_log = self.single_slot_coordination_fixture(
+                Path(tmp)
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("orphaned-call"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            # PostToolUse for the admitted call never arrives.
+
+            # Within the same turn the runtime cannot prove the call inactive,
+            # so the orphan is retained and the next mutation stays blocked.
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("same-turn-call"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "coordination-unavailable")
+            self.assertEqual(
+                [record["phase"] for record in self.operation_records(namespace)],
+                ["active"],
+            )
+
+            quiescent = dict(env, FAKE_BROKER_QUIESCENT="1")
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("next-turn-call"),
+                cwd=repo,
+                env=quiescent,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "operation-reconcile-pending")
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("next-turn-retry"),
+                cwd=repo,
+                env=quiescent,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            records = self.operation_records(namespace)
+            self.assertEqual([record["phase"] for record in records], ["active"])
+            self.assertEqual(records[0]["lease_id"], "lease-2")
+            broker = json.loads(Path(env["FAKE_BROKER_STATE"]).read_text("utf-8"))
+            self.assertEqual(broker["leases"]["lease-1"]["state"], "failed")
+            calls = call_log.read_text(encoding="utf-8")
+            self.assertIn("RECONCILE-PROOF outcome=fail", calls)
+            self.assertNotIn("RECONCILE-PROOF outcome=pass", calls)
+
+    def test_session_coordination_recovers_admitting_record_left_by_lost_response(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, env, namespace, call_log = self.single_slot_coordination_fixture(
+                root
+            )
+            # The broker commits the lease but the hook never sees the result,
+            # as when the hook times out between admission and persistence.
+            (root / "garble-admit").write_text("", encoding="utf-8")
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("lost-admission"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(decision)
+            self.assertEqual(
+                [record["phase"] for record in self.operation_records(namespace)],
+                ["admitting"],
+            )
+
+            quiescent = dict(env, FAKE_BROKER_QUIESCENT="1")
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("next-call"),
+                cwd=repo,
+                env=quiescent,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "operation-reconcile-pending")
+            recovered = self.operation_records(namespace)
+            self.assertEqual([record["phase"] for record in recovered], ["active"])
+            self.assertEqual(recovered[0]["lease_id"], "lease-1")
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("next-retry"),
+                cwd=repo,
+                env=quiescent,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(
+                [record["lease_id"] for record in self.operation_records(namespace)],
+                ["lease-2"],
+            )
+
+    def test_session_coordination_post_tool_completes_admission_lost_by_timeout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, env, namespace, call_log = self.single_slot_coordination_fixture(
+                root
+            )
+            (root / "garble-admit").write_text("", encoding="utf-8")
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("timed-out-admission"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            # A provider that treats the hook timeout as non-blocking still
+            # runs the tool and reports its result.
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("timed-out-admission", "PostToolUse"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(self.operation_records(namespace), [])
+            broker = json.loads(Path(env["FAKE_BROKER_STATE"]).read_text("utf-8"))
+            self.assertEqual(broker["leases"]["lease-1"]["state"], "completed")
+
+    def test_session_coordination_background_shell_completes_at_launch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, namespace, call_log = self.single_slot_coordination_fixture(
+                Path(tmp)
+            )
+            pre = command_payload("make validate", run_in_background=True)
+            pre.update(
+                {
+                    "session_id": "product-session",
+                    "tool_use_id": "background-shell",
+                    "hook_event_name": "PreToolUse",
+                    "cwd": str(repo),
+                }
+            )
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", pre, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(
+                [record["operation"] for record in self.operation_records(namespace)],
+                ["shell"],
+            )
+            # Claude reports a background Bash call at launch, not at exit.
+            post = dict(pre)
+            post["hook_event_name"] = "PostToolUse"
+            post["tool_response"] = {
+                "stdout": "",
+                "stderr": "",
+                "interrupted": False,
+                "isImage": False,
+                "backgroundTaskId": "task-1",
+            }
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", post, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertEqual(self.operation_records(namespace), [])
+            self.assertEqual(list(namespace.glob("*.token")), [])
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py",
+                self.edit_event("after-background"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
 
     def test_session_coordination_stop_retires_exact_externally_reconciled_operation(
         self,

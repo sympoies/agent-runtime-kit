@@ -286,9 +286,22 @@ conflict classifications remain bounded advisories. PostTool success/failure
 is durably recorded before runtime probes and completes the exact token-bound
 lease. Admission intent, replay key, token, targets, and completion proof remain
 in a mode-0600 hashed session namespace across timeouts for exact duplicate/Stop
-replay rather than being guessed or released. Same-call Pre/Post/Stop activity
-is serialized by a stable local lock. `agent-hook` evaluates every ordinary
-rule first and invokes the locked `agent-session.coordination.v1` capability
+replay rather than being guessed or released. `work-context admit` commits a
+lease only in its final save, so a well-formed refusal (for example a parallel
+sibling refused while another call holds the session's single operation slot)
+retires its intent; a lost process, timeout, or unparseable reply stays
+pending. Before admitting a new mutation, the guard recovers up to four other
+calls' records of the current incarnation without waiting on their locks: with
+no nonterminal broker operation it retires them; otherwise it replays a lost
+admission by its exact idempotency key, completes a recorded outcome, or asks
+`work-context reconcile` to finalize a lease whose PostToolUse never arrived.
+That command proves the call inactive from controller-owned turn and
+descendant evidence, so a sibling still running in the same turn is kept; an
+outcome that was never observed is reported as `fail`. A PostToolUse whose
+admission reply was lost replays it and completes the lease with the observed
+result, and a background shell call completes when the provider reports its
+launch. Same-call Pre/Post/Stop activity is serialized by a stable local lock.
+`agent-hook` evaluates every ordinary rule first and invokes the locked `agent-session.coordination.v1` capability
 only after an aggregate allow, except for the narrowly typed worker-bootstrap
 transition. When an exact literal trusted same-release `main-agent bootstrap
 --idempotency-key <key> --format json` request is blocked solely by
