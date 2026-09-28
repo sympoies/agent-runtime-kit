@@ -2055,6 +2055,8 @@ class SharedHookTests(unittest.TestCase):
             "forge-cli issue create --title x",
             # A global option value must not be mistaken for the subcommand.
             "forge-cli --repo owner/x --format json pr create --title x",
+            "forge-cli --host gitlab.example.com pr create --title x",
+            "forge-cli --host=gitlab.example.com issue create --title x",
             # The agent-run exec wrapper is unwrapped before matching.
             "agent-run exec --cwd /repo -- forge-cli issue create --title x",
             # --label-catalog is not a label selection.
@@ -2069,6 +2071,10 @@ class SharedHookTests(unittest.TestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "--label")
+                assert decision is not None
+                reason = str(decision.get("reason", ""))
+                self.assertIn("FORGE_NO_LABELS=1", reason)
+                self.assertNotIn("not a hard requirement", reason)
 
         allowed_commands = (
             "forge-cli pr create --title x --label type::feature",
@@ -2081,6 +2087,11 @@ class SharedHookTests(unittest.TestCase):
             "forge-cli pr create --help",
             "forge-cli pr deliver --help",
             "forge-cli issue create -h",
+            # A dry run creates no record.
+            "forge-cli --dry-run pr create --title x",
+            "forge-cli pr create --dry-run --title x",
+            "forge-cli pr deliver --kind feature --dry-run",
+            "forge-cli issue create --title x --dry-run",
             "gh pr create --title x",
             # Explicit no-label opt-out via the inline bypass marker.
             "FORGE_NO_LABELS=1 forge-cli pr create --title x",

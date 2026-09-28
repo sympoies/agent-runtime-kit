@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: remind on unlabeled forge-cli record creation.
+"""PreToolUse hook: block unlabeled forge-cli record creation.
 
 Identity routing is environment-owned. A private installation can place an
 executable router at the front of PATH, while public runtime-kit workflows keep
@@ -7,11 +7,11 @@ using portable forge semantics and ambient provider credentials by default.
 This hook deliberately does not interpret shell execution or private identity
 profiles.
 
-The reminder covers `forge-cli` commands that create or deliver a labelable
+The hook blocks `forge-cli` commands that create or deliver a labelable
 provider record (`pr create`, `pr deliver`, `issue create`) without a `--label`
-flag. Labels remain optional: an intentional no-label record can proceed by
-prefixing the command with `FORGE_NO_LABELS=1` (or
-`AGENT_RUNTIME_FORGE_NO_LABELS=1`).
+flag. Help and `--dry-run` invocations create nothing and pass. An intentional
+no-label record can proceed by prefixing the command with `FORGE_NO_LABELS=1`
+(or `AGENT_RUNTIME_FORGE_NO_LABELS=1`).
 
 `forge-cli` is provider-neutral, so `pr create` already covers both GitHub PRs
 and GitLab MRs; there is no separate `mr` subcommand to match.
@@ -37,12 +37,12 @@ from hook_common import (
 )
 
 REMINDER = (
-    "forge-cli is about to create a record without any --label. Consider adding "
-    "one or more --label flags so the record carries type / area / state / size "
-    "/ workflow for triage and automation (follow forge-label-taxonomy; when the "
-    "repo ships manifests/forge-labels.yaml, pick from that catalog). This is a "
-    "reminder, not a hard requirement: if this record intentionally needs no "
-    "label, re-run with FORGE_NO_LABELS=1 prefixed."
+    "Blocked: forge-cli is about to create a record without any --label. Add one "
+    "or more --label flags so the record carries type / area / state / size / "
+    "workflow for triage and automation (follow forge-label-taxonomy; when the "
+    "repo ships manifests/forge-labels.yaml, pick from that catalog). If this "
+    "record intentionally needs no label, re-run the same command prefixed with "
+    "FORGE_NO_LABELS=1."
 )
 
 LABELABLE_SUBCOMMANDS = frozenset(
@@ -50,7 +50,7 @@ LABELABLE_SUBCOMMANDS = frozenset(
 )
 LABEL_FLAG = "--label"
 LABEL_FLAG_PREFIX = "--label="
-HELP_FLAGS = frozenset({"--help", "-h"})
+NON_CREATING_FLAGS = frozenset({"--help", "-h", "--dry-run"})
 OVERRIDE_ENV_NAMES = ("FORGE_NO_LABELS", "AGENT_RUNTIME_FORGE_NO_LABELS")
 TRUTHY_VALUES = {"1", "true", "yes"}
 
@@ -58,6 +58,7 @@ TRUTHY_VALUES = {"1", "true", "yes"}
 # the subcommand scan does not mistake a value for the `pr` / `issue` command.
 FORGE_GLOBAL_OPTIONS_WITH_VALUE = {
     "--format",
+    "--host",
     "--remote",
     "--provider",
     "--repo",
@@ -147,8 +148,9 @@ def has_label_flag(rest: list[str]) -> bool:
     )
 
 
-def is_help_request(rest: list[str]) -> bool:
-    return any(token in HELP_FLAGS for token in rest)
+def creates_nothing(rest: list[str]) -> bool:
+    """Help and dry-run invocations never create a provider record."""
+    return any(token in NON_CREATING_FLAGS for token in rest)
 
 
 def needs_label_reminder(tokens: list[str]) -> bool:
@@ -158,7 +160,7 @@ def needs_label_reminder(tokens: list[str]) -> bool:
     rest = invocation[1:]
     if leading_subcommand(rest) not in LABELABLE_SUBCOMMANDS:
         return False
-    if is_help_request(rest):
+    if creates_nothing(rest):
         return False
     return not has_label_flag(rest)
 
