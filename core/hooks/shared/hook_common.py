@@ -2043,6 +2043,11 @@ def _shield_dynamic_word_parentheses(command: str) -> str:
 
 
 def shell_tokens(command: str) -> list[str]:
+    return _checked_shell_tokens(command) or []
+
+
+def _checked_shell_tokens(command: str) -> list[str] | None:
+    """Return shell tokens, or ``None`` when the text cannot be tokenized."""
     try:
         lexer = shlex.shlex(
             _shield_dynamic_word_parentheses(_shield_clobber_redirects(command)),
@@ -2053,7 +2058,7 @@ def shell_tokens(command: str) -> list[str]:
         lexer.commenters = ""
         return list(lexer)
     except ValueError:
-        return []
+        return None
 
 
 def is_shell_separator(token: str) -> bool:
@@ -2761,9 +2766,17 @@ def _strip_heredocs_for_parse(command: str, strip_heredocs: bool) -> str:
 
 
 def _split_simple_commands(command: str) -> list[list[str]]:
+    return _checked_simple_commands(command) or []
+
+
+def _checked_simple_commands(command: str) -> list[list[str]] | None:
+    """Split into simple commands, or ``None`` when tokenizing fails."""
+    tokens = _checked_shell_tokens(normalize_command_separators(command))
+    if tokens is None:
+        return None
     commands: list[list[str]] = []
     current: list[str] = []
-    for token in shell_tokens(normalize_command_separators(command)):
+    for token in tokens:
         if is_shell_separator(token):
             if current:
                 commands.append(current)
@@ -2989,7 +3002,9 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
     return -1
 
 
-def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
+def extract_command_substitutions(
+    command: str, *, drop_comments: bool = False
+) -> tuple[str, dict[str, str]]:
     """Replace each command substitution the shell would run with a placeholder.
 
     ``$(...)`` and backtick substitutions are found unquoted and inside double
@@ -3003,9 +3018,12 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
     comment.
 
     Here-document bodies follow bash: an unquoted-delimiter body expands every
-    substitution and has no quotes or comments, a quoted-delimiter body is
+    substitution and has no quotes or comments, so its quote characters are
+    escaped to stay literal for the tokenizer; a quoted-delimiter body is
     copied verbatim, and a quoted-delimiter body that a shell executes as its
-    script is scanned as ordinary shell text.
+    script is scanned as ordinary shell text. ``drop_comments`` removes shell
+    comments instead of copying them, so comment prose cannot break
+    tokenization.
     """
     out: list[str] = []
     bodies: dict[str, str] = {}
@@ -3076,6 +3094,12 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
                 continue
             if expand and take_substitution(False):
                 continue
+            if expand and char in "'\"":
+                # Quotes are literal in an expanding body; keep them literal
+                # for the tokenizer so prose cannot unbalance later commands.
+                out.append("\\" + char)
+                index += 1
+                continue
             out.append(char)
             index += 1
 
@@ -3107,7 +3131,8 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
             # extracted.
             end = command.find("\n", index)
             end = length if end < 0 else end
-            out.append(command[index:end])
+            if not drop_comments:
+                out.append(command[index:end])
             index = end
             continue
         if not double_quoted and char == "'":
@@ -4042,7 +4067,11 @@ def nested_shell_payload(invocation: list[str]) -> str | None:
 
 
 def simple_commands_with_nested_shells(
-    command: str, *, strip_heredocs: bool = False, max_depth: int = 5
+    command: str,
+    *,
+    strip_heredocs: bool = False,
+    max_depth: int = 5,
+    strict: bool = False,
 ) -> list[list[str]]:
     """Return simple commands, recursively descending into shell command strings.
 
@@ -4058,17 +4087,28 @@ def simple_commands_with_nested_shells(
     keeps a dynamic placeholder (``COMMAND_SUBSTITUTION_PLACEHOLDER``), so
     several substitutions in one command stay argument words rather than
     leaving a stray ``$`` in command position.
+
+    ``strict`` is for enforcing guards: shell comments are dropped before
+    tokenizing, and a source the tokenizer cannot parse yields an
+    ``OPAQUE_NESTED_SHELL_COMMAND`` marker instead of no commands.
     """
     return [
         tokens
         for tokens, _scope in scoped_simple_commands_with_nested_shells(
-            command, strip_heredocs=strip_heredocs, max_depth=max_depth
+            command,
+            strip_heredocs=strip_heredocs,
+            max_depth=max_depth,
+            strict=strict,
         )
     ]
 
 
 def scoped_simple_commands_with_nested_shells(
-    command: str, *, strip_heredocs: bool = False, max_depth: int = 5
+    command: str,
+    *,
+    strip_heredocs: bool = False,
+    max_depth: int = 5,
+    strict: bool = False,
 ) -> list[tuple[list[str], tuple[int, ...]]]:
     """Return ``simple_commands_with_nested_shells`` with substitution scopes.
 
@@ -4095,7 +4135,9 @@ def scoped_simple_commands_with_nested_shells(
         # Extraction reads here-document bodies itself (inert bodies stay
         # verbatim), so the inert strip runs on the rewritten text.
         try:
-            rewritten, substitutions = extract_command_substitutions(source)
+            rewritten, substitutions = extract_command_substitutions(
+                source, drop_comments=strict
+            )
         except _SubstitutionTooDeep:
             commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
             return
@@ -4111,7 +4153,12 @@ def scoped_simple_commands_with_nested_shells(
                     continue
                 visit(body, depth, (*scope, next(scope_ids)), nesting + 1)
 
-        for tokens in _split_simple_commands(rewritten):
+        parsed = _checked_simple_commands(rewritten)
+        if parsed is None:
+            parsed = []
+            if strict:
+                commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
+        for tokens in parsed:
             if not tokens:
                 continue
             expand(

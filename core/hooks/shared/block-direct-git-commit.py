@@ -342,7 +342,8 @@ def subcommand_block_reason(
 
 
 def git_commit_block_reason(command: str) -> str:
-    simple_commands = list(simple_commands_with_nested_shells(command))
+    # Strict parsing drops comments and fails closed on untokenizable text.
+    simple_commands = list(simple_commands_with_nested_shells(command, strict=True))
     lookup_retargeted = command_retargets_lookup(simple_commands)
     for simple_command in simple_commands:
         if selected_inline_alias(simple_command) is not None:

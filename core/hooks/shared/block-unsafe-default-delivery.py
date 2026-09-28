@@ -2877,7 +2877,8 @@ def command_block_reason(
     executable_resolution_tainted = initial_executable_resolution_tainted
     repository_context_unresolved = initial_repository_context_unresolved
     executable_identity_unresolved = initial_executable_identity_unresolved
-    scoped_commands = scoped_simple_commands_with_nested_shells(command)
+    # Strict parsing drops comments and fails closed on untokenizable text.
+    scoped_commands = scoped_simple_commands_with_nested_shells(command, strict=True)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
     resolves_directories = not any(

@@ -460,6 +460,9 @@ class SharedHookTests(unittest.TestCase):
             'cat <<E\n# "`git commit -m x`"\nE',
             "cat <<E\nit's $(git commit -m x)\nE",
             'echo ${x:-"}" #"$(git commit -m x)"}',
+            "cat <<E\nit's fine\nE\ngit commit -m x",
+            "cat <<E\n\"\nE\necho '$(x)'; git commit -m x",
+            "git status # don't stop here\ngit commit -m x",
         )
         for command in blocked:
             with self.subTest(blocked=command):
@@ -494,6 +497,9 @@ class SharedHookTests(unittest.TestCase):
             "cat <<'E'\n# `git commit`\nE",
             "cat <<E\n# plain note\nE\necho ok # it's `git commit -m y`",
             "cat <<E >/dev/null\n$(printf ok)\nE\necho '$(git commit -m y)'",
+            "cat <<E\nit's fine\nE\ngit status",
+            "gh issue comment 1 --body-file - <<E\nit's done\nE",
+            "git status  # don't worry, it's read-only",
         )
         for command in allowed:
             with self.subTest(allowed=command):
@@ -502,6 +508,15 @@ class SharedHookTests(unittest.TestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
+
+        # A command the tokenizer cannot parse fails closed instead of
+        # silently yielding no commands.
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py",
+            command_payload('echo "unterminated; git commit -m x'),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "rule=opaque-executable")
 
         # Nesting beyond the bounded parser fails closed without recursion.
         nested = "$(echo " * 40 + "true" + ")" * 40
@@ -23543,6 +23558,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 'semantic-commit commit -m "$(git push origin main)"',
                 "cat <<E\n## Fix `git push origin main`\nE",
                 'echo ${x:-"}" #"$(git push origin main)"}',
+                "cat <<E\nit's fine\nE\ngit push origin main",
+                "cat <<E\n\"\nE\necho '$(x)'; git push origin main",
             )
             for command in blocked:
                 with self.subTest(blocked=command):
@@ -23565,6 +23582,9 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "cat <<'EOF'\n$(git push origin main)\n`git push origin main`\nEOF",
                 "git status  # then `git push origin main` later",
                 'ls  # "$(git push origin main)"',
+                "cat <<E\nit's fine\nE\ngit status",
+                "gh issue comment 1 --body-file - <<E\nit's done\nE",
+                "git status  # don't worry, it's read-only",
             )
             for command in allowed:
                 with self.subTest(allowed=command):
@@ -23583,6 +23603,14 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload('echo "unterminated; git push origin main'),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
 
             nested = "$(echo " * 40 + "true" + ")" * 40
             code, decision, stderr = run_hook(

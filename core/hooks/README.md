@@ -406,8 +406,11 @@ A `)` inside `${...}` stays part of the expansion, and `$((cmd) )` is read as
 a substitution as bash reads it. Single-quoted text, shell comments, escaped
 markers, and quoted-delimiter here-doc bodies stay literal; an
 unquoted-delimiter here-doc body expands every substitution (it has no
-quotes or comments), and inside a substitution its lines are classified like
-any other script text. A substitution body runs in a
+quotes or comments, so an apostrophe there stays literal), and inside a
+substitution its lines are classified like any other script text. Both Git
+guards parse strictly: shell comments are dropped before tokenizing, and a
+command the tokenizer still cannot parse (for example an unterminated quote)
+is refused as unresolved instead of yielding no commands. A substitution body runs in a
 subshell, so default-delivery applies the shell state it changes (aliases,
 PATH, `cd`, executable resolution) only within that body: a governed
 `semantic-commit commit --message "$(cat <<'EOF' ... EOF)"` keeps the
