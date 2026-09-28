@@ -463,6 +463,15 @@ class SharedHookTests(unittest.TestCase):
             "cat <<E\nit's fine\nE\ngit commit -m x",
             "cat <<E\n\"\nE\necho '$(x)'; git commit -m x",
             "git status # don't stop here\ngit commit -m x",
+            "echo a\\ #b; git commit -m x",
+            "echo a\\\n#b; git commit -m x",
+            "[[ x =~ (#) ]]; git commit -m x",
+            "[[ x =~ a|#b ]]; git commit -m x",
+            "[[ $l =~ ^(#|$) ]] || git commit -m x",
+            "[[ a == @(b|#c) ]] && git commit -m x",
+            "ls @(a|#b); git commit -m x",
+            'echo "$(echo a\\ #b; git commit -m x)"',
+            "echo $(( 1 + (2 #3) )); git commit -m x",
         )
         for command in blocked:
             with self.subTest(blocked=command):
@@ -500,6 +509,7 @@ class SharedHookTests(unittest.TestCase):
             "cat <<E\nit's fine\nE\ngit status",
             "gh issue comment 1 --body-file - <<E\nit's done\nE",
             "git status  # don't worry, it's read-only",
+            "echo x #; git commit -m y",
         )
         for command in allowed:
             with self.subTest(allowed=command):
@@ -23560,6 +23570,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 'echo ${x:-"}" #"$(git push origin main)"}',
                 "cat <<E\nit's fine\nE\ngit push origin main",
                 "cat <<E\n\"\nE\necho '$(x)'; git push origin main",
+                "echo a\\\n#b; git push origin main",
+                "echo a\\ #b; git push origin main",
             )
             for command in blocked:
                 with self.subTest(blocked=command):
@@ -23603,6 +23615,19 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+            # A `#` inside a `[[` regex is not a comment; the `$` the tokenizer
+            # then sees in command position keeps the refusal unverified.
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "while read -r line; do [[ $line =~ ^(#|$) ]] && continue; "
+                    'echo "$line"; done < f; git push origin main'
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: ")
 
             code, decision, stderr = run_hook(
                 "block-unsafe-default-delivery.py",

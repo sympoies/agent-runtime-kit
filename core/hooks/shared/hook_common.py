@@ -2904,6 +2904,42 @@ def _parameter_expansion_end(
     return -1
 
 
+def _comment_starts_at(text: str, index: int, start: int = 0) -> bool:
+    """Whether an unquoted ``#`` at ``index`` certainly starts a comment.
+
+    Deliberately narrow: only at ``start`` or right after an unescaped space,
+    tab, newline, ``;``, or ``&``. A ``#`` after ``(``, ``|``, or an escaped
+    blank is a word character in regex, extglob, and pattern contexts, and
+    callers never ask while a ``[[``, arithmetic, or other parenthesized group
+    is open. Missing a real comment is safe: its text is tokenized as before.
+    """
+    if index == start:
+        return True
+    if text[index - 1] not in " \t\n;&":
+        return False
+    backslashes = 0
+    cursor = index - 2
+    while cursor >= start and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 0
+
+
+def _double_bracket_delta(text: str, index: int, start: int = 0) -> int:
+    """Return +1 at a ``[[`` word, -1 at a ``]]`` word, otherwise 0."""
+    end = index + 2
+    after = end >= len(text) or text[end] in " \t\n;&|)"
+    if text.startswith("[[", index) and after and (
+        index == start or text[index - 1] in " \t\n;&|(!"
+    ):
+        return 1
+    if text.startswith("]]", index) and after and index > start and (
+        text[index - 1] in " \t"
+    ):
+        return -1
+    return 0
+
+
 def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
     """Return the ``)`` closing a ``$(`` whose body starts at ``index``, or -1.
 
@@ -2917,6 +2953,7 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
         raise _SubstitutionTooDeep
     depth = 0
     open_cases = 0
+    open_tests = 0
     line_start = index
     cursor = index
     length = len(text)
@@ -2959,8 +2996,15 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
             end = _parameter_expansion_end(text, cursor, nesting + 1, False)
         elif text.startswith("$(", cursor):
             end = _command_substitution_end(text, cursor + 2, nesting + 1)
-        elif char == "#" and (
-            cursor == index or text[cursor - 1] in " \t\n;&|()<>"
+        elif char in "[]" and _double_bracket_delta(text, cursor, index):
+            open_tests = max(open_tests + _double_bracket_delta(text, cursor, index), 0)
+            cursor += 2
+            continue
+        elif (
+            char == "#"
+            and not depth
+            and not open_tests
+            and _comment_starts_at(text, cursor, index)
         ):
             end = text.find("\n", cursor)
             if end < 0:
@@ -3031,6 +3075,10 @@ def extract_command_substitutions(
     # The double-quote state at each open `${`; its `}` closes only in that
     # same state, so a quoted `}` inside the expansion stays literal.
     parameter_quotes: list[bool] = []
+    # Open unquoted parentheses (subshells, arithmetic, extglob groups) and
+    # `[[` tests: a `#` inside them is never treated as a comment.
+    paren_depth = 0
+    open_tests = 0
     out_line_start = 0
     index = 0
     length = len(command)
@@ -3123,8 +3171,10 @@ def extract_command_substitutions(
         if (
             not double_quoted
             and not parameter_quotes
+            and not paren_depth
+            and not open_tests
             and char == "#"
-            and (index == 0 or command[index - 1] in " \t\n;&|()<>")
+            and _comment_starts_at(command, index)
         ):
             # A comment runs nothing; copy it through unchanged so the ordinary
             # tokenizer treats it exactly as it did before substitutions were
@@ -3164,8 +3214,21 @@ def extract_command_substitutions(
             out.append(char)
             index += 1
             continue
+        if not double_quoted and char in "[]":
+            delta = _double_bracket_delta(command, index)
+            if delta:
+                open_tests = max(open_tests + delta, 0)
+                out.append(command[index : index + 2])
+                index += 2
+                continue
         if take_substitution(double_quoted):
+            if out[-1] == "$((" and not double_quoted:
+                paren_depth += 2
             continue
+        if not double_quoted and char == "(":
+            paren_depth += 1
+        elif not double_quoted and char == ")":
+            paren_depth = max(paren_depth - 1, 0)
         out.append(char)
         index += 1
     return "".join(out), bodies
