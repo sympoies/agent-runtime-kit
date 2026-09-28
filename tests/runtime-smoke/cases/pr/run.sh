@@ -84,7 +84,7 @@ write_dispatch_session_record() {
   cat >"$path" <<'BODY'
 ## Dispatch Lane PR
 
-- Lane: L1
+- Lane: lane-1
 - PR: https://github.com/graysurf/agent-runtime-kit/pull/123
 - Status: draft PR created
 - Validation: forge-cli dry-run (pass)
@@ -1527,12 +1527,12 @@ run_pr_outcome_routing_probe() {
   grep -Fq '**Merge**' "$skill"
   grep -Fq '**Close unmerged**' "$skill"
   grep -Fq '**Quick merge**' "$skill"
-  grep -Fq 'L0 or L1' "$skill"
-  grep -Fq 'L2 or L3' "$skill"
+  grep -Fq 'for `direct` or `issue` work' "$skill"
+  grep -Fq 'mandatory for `program/plan` or `program/dispatch` delivery' "$skill"
   grep -Fq 'scope suggests or forces no risk' "$skill"
   grep -Fq 'A clean `pass` is terminal' "$skill"
   grep -Fq 'review evidence for the current head' "$skill"
-  grep -Fq 'routes to the full pre-merge profile without changing the work tier' "$skill"
+  grep -Fq 'routes to the full pre-merge profile without changing the work mode' "$skill"
   grep -Fq '.agents/scripts/pre-pr.sh' "$skill"
   grep -Fq 'semantic-commit' "$skill"
   grep -Fq 'The user requests the PR/MR outcome, not a lifecycle helper.' "$skill"

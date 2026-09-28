@@ -29,7 +29,7 @@
       "name": "dispatch",
       "version": "0.1.0",
       "source": "./plugins/dispatch",
-      "description": "Two governed plan outcomes — L2 plan tracking and L3 multi-lane dispatch — with lifecycle phases routed internally."
+      "description": "Two governed program specializations — program/plan tracking and program/dispatch multi-lane dispatch — with lifecycle phases routed internally."
     },
     {
       "name": "issue",

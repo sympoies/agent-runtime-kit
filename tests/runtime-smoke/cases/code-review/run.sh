@@ -600,7 +600,7 @@ run_code_review_outcome_routing_probe() {
   grep -Fq 'A verdict of `escalate` routes to the full pre-merge' "$skill"
   grep -Fq '## Quick Pre-Merge Profile' "$delivery_gate"
   grep -Fq '## Full Pre-Merge Profile' "$delivery_gate"
-  grep -Fq 'L2 or L3' "$delivery_gate"
+  grep -Fq 'not `program/plan` or `program/dispatch` delivery' "$delivery_gate"
   grep -Fq 'either `suggested_specialists` or `forced_specialists`' "$delivery_gate"
 
   rendered_contract_assert_skill code-review code-review-specialists

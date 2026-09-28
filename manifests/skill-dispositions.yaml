@@ -758,7 +758,7 @@ dispositions:
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Tracker creation is an internal L2 lifecycle phase."
+    rationale: "Tracker creation is an internal program/plan lifecycle phase."
   - id: dispatch.plan-tracking-issue-closeout
     status: reviewed
     user_outcome: no
@@ -771,7 +771,7 @@ dispositions:
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Closeout is an internal L2 phase."
+    rationale: "Closeout is an internal program/plan phase."
   - id: dispatch.deliver-dispatch-plan
     status: reviewed
     example_request: "Execute this plan as coordinated dispatch lanes"
@@ -781,7 +781,7 @@ dispositions:
     current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
     current_hooks: ["test-first and review delivery gates"]
     enforcement_point: "Shared dispatch issue controller, lane coordination, and closeout handoff."
-    migration_path: "Retain as the single L3 dispatch-plan outcome and internalize lane roles."
+    migration_path: "Retain as the single program/dispatch outcome and internalize lane roles."
     compatibility_required: false
     live_cleanup_required: false
     rationale: "Coordinated multi-lane delivery is a complete user-requested outcome."
@@ -792,12 +792,12 @@ dispositions:
     parent_intents: [delivery]
     current_clis: [plan-issue]
     current_hooks: []
-    enforcement_point: "L3 dispatch outcome owns strict integration closeout."
+    enforcement_point: "program/dispatch outcome owns strict integration closeout."
     migration_path: "Merge closeout into deliver-dispatch-plan."
     replacement: dispatch.deliver-dispatch-plan
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Closeout is an internal L3 phase."
+    rationale: "Closeout is an internal program/dispatch phase."
   - id: dispatch.execute-plan-tracking-issue
     status: reviewed
     user_outcome: no
@@ -810,7 +810,7 @@ dispositions:
     replacement: dispatch.deliver-plan-tracking-issue
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Execution is an internal L2 lifecycle phase."
+    rationale: "Execution is an internal program/plan lifecycle phase."
   - id: dispatch.deliver-plan-tracking-issue
     status: reviewed
     example_request: "Execute and deliver this issue-backed plan"
@@ -820,7 +820,7 @@ dispositions:
     current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
     current_hooks: ["test-first and review delivery gates"]
     enforcement_point: "Plan controller, implementation, validation, review, PR delivery, and close-ready handoff."
-    migration_path: "Retain as the single L2 plan-tracking outcome and internalize child roles."
+    migration_path: "Retain as the single program/plan outcome and internalize child roles."
     compatibility_required: false
     live_cleanup_required: false
     rationale: "End-to-end issue-backed plan delivery is a complete user-requested outcome."
@@ -831,12 +831,12 @@ dispositions:
     parent_intents: [delivery, code-review]
     current_clis: [review-specialists, forge-cli, plan-issue]
     current_hooks: [code review delegation policy]
-    enforcement_point: "L3 dispatch outcome routes lane PRs to independent reviewers."
+    enforcement_point: "program/dispatch outcome routes lane PRs to independent reviewers."
     migration_path: "Merge lane review into deliver-dispatch-plan."
     replacement: dispatch.deliver-dispatch-plan
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Lane review is an internal L3 phase."
+    rationale: "Lane review is an internal program/dispatch phase."
   - id: dispatch.execute-dispatch-lane
     status: reviewed
     user_outcome: no
@@ -844,9 +844,9 @@ dispositions:
     parent_intents: [delivery]
     current_clis: [plan-issue, forge-cli]
     current_hooks: []
-    enforcement_point: "L3 dispatch outcome assigns and checkpoints lane execution."
+    enforcement_point: "program/dispatch outcome assigns and checkpoints lane execution."
     migration_path: "Merge lane execution into deliver-dispatch-plan."
     replacement: dispatch.deliver-dispatch-plan
     compatibility_required: false
     live_cleanup_required: true
-    rationale: "Lane execution is an internal L3 phase."
+    rationale: "Lane execution is an internal program/dispatch phase."

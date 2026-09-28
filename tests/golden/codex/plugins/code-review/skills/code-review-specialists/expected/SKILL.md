@@ -124,8 +124,8 @@ The caller requests the review outcome; the workflow selects context and depth.
   as closed-set closure review: classify them as resolved, unresolved,
   accepted, or residual risk without starting another discovery generation.
 - **Pre-merge** — the review is a delivery gate. Select quick depth only for an
-  eligible L0/L1 routine diff; use the full profile for L2/L3 delivery or any
-  risk trigger. Preserve comment-before-fix ordering and return a decision to
+  eligible `direct` or `issue` routine diff; use the full profile for
+  `program/plan` or `program/dispatch` delivery or any risk trigger. Preserve comment-before-fix ordering and return a decision to
   the delivery owner.
 - **Focused** — the user explicitly asks for one or more lenses. Force only
   those lenses unless scope reveals a mandatory safety lens.
@@ -139,10 +139,10 @@ The caller requests the review outcome; the workflow selects context and depth.
   reviewer confidence. Use scope detection and the specialist workflow below.
 - **Quick pre-merge** — quick depth may terminate the delivery review when scope
   is bounded, validation and checks pass, no suggested or forced risk-specialist
-  trigger or unresolved review state exists, and the outer work is L0 or L1. A `pass` verdict is
+  trigger or unresolved review state exists, and the outer work is `direct` or `issue`. A `pass` verdict is
   terminal review evidence for the current head; `findings` blocks merge and
   enters repair/follow-up. A verdict of `escalate` routes to the full pre-merge
-  profile without changing the work tier.
+  profile without changing the work mode.
 
 All modes are read-only. When reviewer subagents are available and a mode uses
 one or more lenses, the workflow must dispatch the selected reviewers. The

@@ -10,7 +10,7 @@ the typed CLI owns schema, storage, and deterministic verification.
 Create retained evidence when an explicit request, repository/delivery gate,
 high-risk workflow, audit, cross-session handoff, deferred defect, or reusable
 operational lesson needs it. Do not create evidence merely because a command
-exists, a named skill ran, a session ended, or ordinary L0 work completed.
+exists, a named skill ran, a session ended, or ordinary `direct` work completed.
 
 Records live in one workflow-owned `agent-out` directory unless the active
 workflow declares another private artifact root. Never commit raw runtime
@@ -101,7 +101,7 @@ Closeout is event-driven:
   any source prune.
 - Route a reusable gap to the earliest owning test, diagnostic, policy, skill,
   or ordinary issue in its canonical repository. Creating provider state still
-  requires the active tier and user authority; do not create a parallel inbox.
+  requires the active work mode and user authority; do not create a parallel inbox.
 
 - Never create a duplicate closeout-owned usage record.
 - Retention excludes empty, transient, failed-setup, or unreviewed artifacts and
