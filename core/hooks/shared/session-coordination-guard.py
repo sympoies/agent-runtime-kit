@@ -85,6 +85,21 @@ HOOK_BUDGET_SECONDS = 50.0
 HOOK_DEADLINE: float | None = None
 MAX_PENDING_RECORDS = 32
 MAX_ORPHAN_RECOVERY_RECORDS = 4
+# Budget kept for the current call's own check and admission after recovery.
+ORPHAN_RECOVERY_RESERVE_SECONDS = 3 * TIMEOUT_SECONDS
+# Refusals `work-context admit` raises only after its idempotency lookup, so a
+# replay that receives one proves the exact admission was never committed.
+POST_REPLAY_ADMISSION_REFUSALS = frozenset(
+    {
+        "claim-conflict",
+        "uncovered-mutation-scope",
+        "claim-not-found",
+        "claim-expired",
+        "claim-not-active",
+        "claim-revision-conflict",
+        "operation-not-working",
+    }
+)
 MAX_STOP_RECONCILIATION_RECORDS = 128
 MAX_STOP_RECONCILIATION_GROUPS = 2
 MAX_STOP_ADMISSION_PROOF_PREPARATIONS = 16
@@ -3015,7 +3030,7 @@ def retire_record(path: Path, record: Mapping[str, Any]) -> bool:
 
 
 def submit_admission(
-    executable: str, path: Path, record: dict[str, Any]
+    executable: str, path: Path, record: dict[str, Any], *, replay: bool = False
 ) -> tuple[str, str]:
     required_strings = (
         "session",
@@ -3081,12 +3096,16 @@ def submit_admission(
     if admitted is None or admitted.returncode != 0 or not lease:
         code = error_code(body)
         # `work-context admit` commits a lease only in its final registry
-        # save, so a well-formed refusal envelope proves nothing was admitted.
-        # Keeping such a record would strand it in `admitting` forever: a
-        # parallel sibling refused while another call holds the session's
-        # single operation slot must not leave Stop pending. A lost process,
-        # timeout, or unparseable reply stays uncertain.
-        if body.get("ok") is False and isinstance(body.get("error"), Mapping):
+        # save, so a well-formed refusal to a first submission proves nothing
+        # was admitted. Keeping such a record would strand it in `admitting`
+        # forever: a parallel sibling refused while another call holds the
+        # session's single operation slot must not leave Stop pending. A
+        # replay can be refused by broker checks that run before admit's
+        # idempotency lookup, so it retires only on refusals raised after
+        # that lookup. A lost process, timeout, or unparseable reply stays
+        # uncertain.
+        refused = body.get("ok") is False and isinstance(body.get("error"), Mapping)
+        if refused and (not replay or code in POST_REPLAY_ADMISSION_REFUSALS):
             retire_record(path, record)
             return "rejected", code
         return "uncertain", code
@@ -3575,17 +3594,25 @@ def recover_or_replay_admission(
 ) -> tuple[str, str]:
     """Resolve an `admitting` record whose admission reply was lost.
 
-    The released CLI has no broker proof surface, so fall back to replaying
-    the exact admission: same idempotency key, token, and targets. A committed
-    admission replays its lease; a well-formed refusal retires the record.
+    A CLI with the broker proof surface keeps the exact-proof recovery. No
+    released agent-session provides it, so otherwise replay the exact
+    admission: same idempotency key, token, and targets. A committed admission
+    replays its lease; only a refusal raised after the replay lookup retires
+    the record.
     """
-    status, code = recover_admission(executable, path, record)
-    if status != "uncertain":
-        return status, code
-    current = read_record(path)
-    if current.get("phase") != "admitting":
-        return "uncertain", code
-    return submit_admission(executable, path, current)
+    if broker_proof_capability(executable):
+        return recover_admission(executable, path, record)
+    return submit_admission(executable, path, record, replay=True)
+
+
+def broker_proof_capability(executable: str) -> bool:
+    listed = run_cli([executable, "broker", "--help"])
+    if listed is None or listed.returncode != 0:
+        return False
+    return all(
+        re.search(rf"(?m)^\s+{command}\s", listed.stdout) is not None
+        for command in ("prepare-admission-proof", "proof")
+    )
 
 
 def broker_nonterminal_operations(
@@ -3733,30 +3760,39 @@ def recover_orphaned_records(
     waiting so a sibling mid-hook is never touched, and broker state is read
     while the record is locked.
     """
+    def recoverable(record: Mapping[str, Any]) -> bool:
+        return (
+            record.get("schema_version")
+            == "agent-runtime-kit.session-coordination-operation.v1"
+            and record.get("session") == managed_session
+            and record.get("capability_file") == capability_file
+            and record.get("state_dir") == state_dir
+            # Broker counts cover only the current incarnation.
+            and record.get("session_incarnation") == session_incarnation
+            and record.get("phase") in {"active", "admitting"}
+        )
+
     snapshots: list[tuple[int, str, Path]] = []
     for path in namespace.glob("*.json"):
         if path.name.endswith(".targets.json") or path == current:
             continue
-        phase = read_record(path).get("phase")
-        if phase in {"active", "admitting"}:
-            snapshots.append((0 if phase == "active" else 1, path.name, path))
+        snapshot = read_record(path)
+        if recoverable(snapshot):
+            priority = 0 if snapshot.get("phase") == "active" else 1
+            snapshots.append((priority, path.name, path))
     statuses: set[str] = set()
     for _priority, _name, path in sorted(snapshots)[:MAX_ORPHAN_RECOVERY_RECORDS]:
+        if (
+            HOOK_DEADLINE is not None
+            and HOOK_DEADLINE - time.monotonic() < ORPHAN_RECOVERY_RESERVE_SECONDS
+        ):
+            break
         descriptor = acquire_operation_lock(path, blocking=False)
         if descriptor is None:
             continue
         try:
             record = read_record(path)
-            if (
-                record.get("schema_version")
-                != "agent-runtime-kit.session-coordination-operation.v1"
-                or record.get("session") != managed_session
-                or record.get("capability_file") != capability_file
-                or record.get("state_dir") != state_dir
-                # Broker counts cover only the current incarnation.
-                or record.get("session_incarnation") != session_incarnation
-                or record.get("phase") not in {"active", "admitting"}
-            ):
+            if not recoverable(record):
                 continue
             nonterminal = broker_nonterminal_operations(
                 executable, managed_session, capability_file, state_dir

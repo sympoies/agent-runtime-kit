@@ -293,7 +293,9 @@ retires its intent; a lost process, timeout, or unparseable reply stays
 pending. Before admitting a new mutation, the guard recovers up to four other
 calls' records of the current incarnation without waiting on their locks: with
 no nonterminal broker operation it retires them; otherwise it replays a lost
-admission by its exact idempotency key, completes a recorded outcome, or asks
+admission by its exact idempotency key when the CLI lacks the broker proof
+surface (a replay retires only on refusals raised after admit's idempotency
+lookup), completes a recorded outcome, or asks
 `work-context reconcile` to finalize a lease whose PostToolUse never arrived.
 That command proves the call inactive from controller-owned turn and
 descendant evidence, so a sibling still running in the same turn is kept; an
