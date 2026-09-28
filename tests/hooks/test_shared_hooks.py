@@ -19054,7 +19054,12 @@ exit 64
             )
             home = repo / "home"
             home.mkdir()
-            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo), "HOME": str(home)}
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(home),
+            }
 
             code, decision, stderr = run_shell_hook(
                 "user-prompt-agent-docs.sh",
@@ -19069,13 +19074,13 @@ exit 64
             ctx = ""
             if isinstance(hook_output, dict):
                 ctx = str(hook_output.get("additionalContext", ""))
-            # The project-dev intent still surfaces (doc + validation command).
-            self.assertIn("project-dev", ctx)
-            self.assertIn("DEV.md", ctx)
-            self.assertIn("scripts/ci/all.sh", ctx)
-            # The generalization: a declared non-project-dev intent surfaces too.
-            self.assertIn("task-tools", ctx)
-            self.assertIn("ext.md", ctx)
+            # Every declared intent is routed, but nothing is active yet, so no
+            # runbook or validation command is injected.
+            self.assertIn("Inactive available intents: project-dev, task-tools.", ctx)
+            self.assertIn("session prepare --session-id cue-test", ctx)
+            self.assertNotIn("DEV.md", ctx)
+            self.assertNotIn("ext.md", ctx)
+            self.assertNotIn("scripts/ci/all.sh", ctx)
 
     def test_preflight_cue_qualifies_required_docs_with_roots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -19098,12 +19103,16 @@ exit 64
                 f"""#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"session status"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"]}}}}'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"],"verified":true}}}}'
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
@@ -19117,6 +19126,8 @@ exit 65
             home.mkdir()
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(docs_home),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19152,30 +19163,35 @@ exit 65
             (repo / "CLAUDE.md").write_text("# Claude\n", encoding="utf-8")
             bin_dir = repo / "bin"
             bin_dir.mkdir()
+            log_path = repo / "agent-docs.args"
             self._write_fake_agent_docs(
                 bin_dir,
-                """#!/usr/bin/env bash
+                f"""#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  printf '%s\n' '      --product <PRODUCT>'
+printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
 fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
+if [[ "$args" == *"session status"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"]}}}}'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\\n' '{{"ok":true,"data":{{"active_intents":["project-dev"],"verified":true}}}}'
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
   if [[ "$args" == *"--product codex"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[{"path":"CODEX.md","required":true}],"validation":{"declared":true,"commands":["bash codex.sh"]}}'
+    printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"CODEX.md","required":true}}],"validation":{{"declared":true,"commands":["bash codex.sh"]}}}}'
     exit 0
   fi
   if [[ "$args" == *"--product claude"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[{"path":"CLAUDE.md","required":true}],"validation":{"declared":true,"commands":["bash claude.sh"]}}'
+    printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"CLAUDE.md","required":true}}],"validation":{{"declared":true,"commands":["bash claude.sh"]}}}}'
     exit 0
   fi
-  printf '%s\n' '{"intent":"project-dev","documents":[{"path":"CODEX.md","required":true},{"path":"CLAUDE.md","required":true}],"validation":{"declared":true,"commands":["bash unfiltered.sh"]}}'
+  printf '%s\\n' '{{"intent":"project-dev","documents":[{{"path":"CODEX.md","required":true}},{{"path":"CLAUDE.md","required":true}}],"validation":{{"declared":true,"commands":["bash unfiltered.sh"]}}}}'
   exit 0
 fi
 exit 65
@@ -19186,6 +19202,7 @@ exit 65
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19204,9 +19221,15 @@ exit 65
             if isinstance(hook_output, dict):
                 ctx = str(hook_output.get("additionalContext", ""))
             self.assertIn("CODEX.md", ctx)
-            self.assertIn("codex.sh", ctx)
             self.assertNotIn("CLAUDE.md", ctx)
-            self.assertNotIn("unfiltered.sh", ctx)
+            calls = log_path.read_text(encoding="utf-8").splitlines()
+            preflights = [call for call in calls if " preflight " in f" {call} "]
+            self.assertTrue(preflights)
+            for call in preflights:
+                self.assertIn("--require-declared-intent --product codex", call)
+            # The supported floor ships these flags and the session surface, so
+            # the prompt hook no longer spends a `--help` probe on every prompt.
+            self.assertFalse([call for call in calls if "--help" in call])
 
     def test_preflight_cue_defaults_docs_home_to_runtime_kit_source_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -19233,10 +19256,6 @@ if [[ "$args" != *"--docs-home {expected_repo}"* ]]; then
   echo "missing repo-root docs-home" >&2
   exit 64
 fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
@@ -19253,6 +19272,8 @@ exit 65
             env = {
                 "AGENT_DOCS_HOME": "",
                 "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19302,10 +19323,6 @@ if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
   echo "missing AGENT_DOCS_HOME fallback" >&2
   exit 64
 fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
@@ -19322,6 +19339,8 @@ exit 65
             env = {
                 "AGENT_DOCS_HOME": str(docs_home_link),
                 "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19363,10 +19382,6 @@ if [[ "$args" == *"--docs-home {expected_repo}"* ]]; then
   echo "repo-local catalog must not replace inherited docs-home" >&2
   exit 64
 fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\\n' '{{"intents":["project-dev"]}}'
   exit 0
@@ -19383,6 +19398,8 @@ exit 65
             env = {
                 "AGENT_DOCS_HOME": "",
                 "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19399,9 +19416,7 @@ exit 65
                 f"--docs-home {expected_repo}", log_path.read_text(encoding="utf-8")
             )
 
-    def test_preflight_cue_fails_closed_for_undeclared_intent_when_guarded(
-        self,
-    ) -> None:
+    def test_preflight_cue_fails_closed_for_undeclared_active_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             expected_repo = repo.resolve()
@@ -19419,12 +19434,16 @@ exit 65
                 """#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  exit 0
-fi
 if [[ "$args" == *"list --format json"* ]]; then
   printf '%s\n' '{"intents":["project-dev","project_dev"]}'
+  exit 0
+fi
+if [[ "$args" == *"session status"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"active_intents":["project-dev","project_dev"]}}'
+  exit 0
+fi
+if [[ "$args" == *"session verify"* ]]; then
+  printf '%s\n' '{"ok":true,"data":{"active_intents":["project-dev","project_dev"],"verified":true}}'
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
@@ -19450,6 +19469,8 @@ exit 65
             home.mkdir()
             env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -19463,6 +19484,47 @@ exit 65
             self.assertNotEqual(code, 0)
             self.assertIsNone(decision)
             self.assertIn("project_dev", stderr)
+
+    def test_preflight_cue_is_silent_without_runtime_product(self) -> None:
+        """Without a codex/claude product there is no session context to cue.
+
+        agent-hook always exports AGENT_RUNTIME_PRODUCT, so an unset or foreign
+        product exits quietly before spending any agent-docs call.
+        """
+        for product in (None, "hermes"):
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp)
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+                bin_dir = repo / "bin"
+                bin_dir.mkdir()
+                log_path = repo / "agent-docs.args"
+                self._write_fake_agent_docs(
+                    bin_dir,
+                    f"""#!/usr/bin/env bash
+printf '%s\\n' "$*" >> {shlex.quote(str(log_path))}
+printf '%s\\n' '{{"intents":["project-dev"]}}'
+""",
+                )
+                home = repo / "home"
+                home.mkdir()
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "HOME": str(home),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                if product is not None:
+                    env["AGENT_RUNTIME_PRODUCT"] = product
+
+                code, decision, stderr = run_shell_hook(
+                    "user-prompt-agent-docs.sh",
+                    {"session_id": "cue-no-product", "prompt": "hello"},
+                    cwd=repo,
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+                self.assertFalse(log_path.exists())
 
     def test_preflight_cue_lists_all_required_docs(self) -> None:
         self._require_agent_docs()
@@ -19484,7 +19546,41 @@ exit 65
             (repo / "AGENT_DOCS.toml").write_text("\n".join(entries), encoding="utf-8")
             home = repo / "home"
             home.mkdir()
-            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo), "HOME": str(home)}
+            state_home = repo / "state"
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(state_home),
+                "HOME": str(home),
+            }
+            agent_docs = shutil.which("agent-docs")
+            assert agent_docs is not None
+            subprocess.run(
+                [
+                    agent_docs,
+                    "--docs-home",
+                    str(repo),
+                    "--project-path",
+                    str(repo),
+                    "session",
+                    "prepare",
+                    "--session-id",
+                    "cue-overflow-test",
+                    "--product",
+                    "codex",
+                    "--state-home",
+                    str(state_home),
+                    "--intent",
+                    "project-dev",
+                    "--format",
+                    "json",
+                ],
+                cwd=repo,
+                env=gate_env({"HOME": str(home)}),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             code, decision, stderr = run_shell_hook(
                 "user-prompt-agent-docs.sh",

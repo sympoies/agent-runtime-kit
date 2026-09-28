@@ -3,12 +3,12 @@
 # UserPromptSubmit hook: inject a short, language-agnostic agent-docs awareness
 # cue for repos that declare intents in AGENT_DOCS.toml.
 #
-# On a released agent-docs with durable session state, the cue expands only
-# active intents and lists inactive routes without injecting their runbooks.
-# The agent classifies the natural-language request and activates the relevant
-# intent; no English-keyword matching or evidence-skill selection is required.
-# Older agent-docs releases keep the compatibility behavior of resolving every
-# declared intent and do not claim selective activation was enforced.
+# The cue expands only active intents from durable agent-docs session state
+# and lists inactive routes without injecting their runbooks. The agent
+# classifies the natural-language request and activates the relevant intent; no
+# English-keyword matching or evidence-skill selection is required. Every
+# supported agent-docs release ships the session surface, so the hook does not
+# probe for it; without a codex/claude runtime product it stays silent.
 #
 set -uo pipefail
 
@@ -120,20 +120,18 @@ for k in ("session_id", "sessionId", "session", "conversation_id"):
         break
 ' <<<"$payload" 2>/dev/null || true
 )"
-product="${AGENT_RUNTIME_PRODUCT:-agent-runtime}"
-product_args=()
+product="${AGENT_RUNTIME_PRODUCT:-}"
 case "$product" in
   codex | claude) ;;
-  *) product="" ;;
+  *) exit 0 ;;
 esac
 repo_hash="$(printf '%s' "$repo_root" | cksum 2>/dev/null | awk '{print $1}' || true)"
 key="${session_id:-$(date +%Y%m%d)}"
 stamp_dir="$HOME/.cache/agent-runtime-kit"
-stamp_product="${product:-agent-runtime}"
-stamp_base="$stamp_dir/preflight-cue-${stamp_product}-${repo_hash}-${key}"
+stamp_base="$stamp_dir/preflight-cue-${product}-${repo_hash}-${key}"
 # Announced-intent memory persists across activation_key changes (unlike the
 # per-fingerprint stamp) so a later cue lists only newly-active intents' docs.
-announced_file="$stamp_dir/preflight-announced-${stamp_product}-${repo_hash}-${key}"
+announced_file="$stamp_dir/preflight-announced-${product}-${repo_hash}-${key}"
 
 docs_home="${AGENT_RUNTIME_DOCS_HOME:-${AGENT_DOCS_HOME:-}}"
 if [[ -z "$docs_home" ]] && runtime_kit_source_checkout "$repo_root"; then
@@ -148,16 +146,6 @@ if [[ -n "$docs_home" ]]; then
 fi
 dh_args=()
 [[ -n "$docs_home" ]] && dh_args=(--docs-home "$docs_home")
-
-require_declared_args=()
-if "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-  preflight --help 2>/dev/null | grep -q -- "--require-declared-intent"; then
-  require_declared_args=(--require-declared-intent)
-fi
-if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-  preflight --help 2>/dev/null | grep -q -- "--product"; then
-  product_args=(--product "$product")
-fi
 
 # Enumerate every declared intent, newest catalog wins. No hard-coded intent.
 # Keep a canonical identity separate from display order so even a session with
@@ -205,24 +193,17 @@ runtime_state_home() {
   esac
 }
 
-session_supported=0
 active_intents=""
-state_home=""
 status_json=""
 verify_json=""
 activation_stale=0
-if [[ -n "$product" ]] && "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-  session --help 2>/dev/null | grep -q -- "status" &&
-  "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-    session --help 2>/dev/null | grep -q -- "verify"; then
-  session_supported=1
-  state_home="$(runtime_state_home)"
-  if [[ -n "$session_id" && -n "$state_home" ]]; then
-    status_json="$("$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-      session status --session-id "$session_id" --product "$product" \
-      --state-home "$state_home" --format json 2>/dev/null || true)"
-    active_intents="$(
-      printf '%s' "$status_json" | "$python_bin" -c '
+state_home="$(runtime_state_home)"
+if [[ -n "$session_id" && -n "$state_home" ]]; then
+  status_json="$("$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
+    session status --session-id "$session_id" --product "$product" \
+    --state-home "$state_home" --format json 2>/dev/null || true)"
+  active_intents="$(
+    printf '%s' "$status_json" | "$python_bin" -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -233,16 +214,16 @@ for intent in (data or {}).get("active_intents", []):
     if isinstance(intent, str) and intent:
         print(intent)
 ' 2>/dev/null || true
-    )"
-    if [[ -n "$active_intents" ]]; then
-      verify_args=()
-      while IFS= read -r active_intent; do
-        [[ -n "$active_intent" ]] && verify_args+=(--require-intent "$active_intent")
-      done <<<"$active_intents"
-      verify_json="$("$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-        session verify --session-id "$session_id" --product "$product" \
-        --state-home "$state_home" "${verify_args[@]+"${verify_args[@]}"}" --format json 2>/dev/null || true)"
-      verified="$(printf '%s' "$verify_json" | "$python_bin" -c '
+  )"
+  if [[ -n "$active_intents" ]]; then
+    verify_args=()
+    while IFS= read -r active_intent; do
+      [[ -n "$active_intent" ]] && verify_args+=(--require-intent "$active_intent")
+    done <<<"$active_intents"
+    verify_json="$("$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
+      session verify --session-id "$session_id" --product "$product" \
+      --state-home "$state_home" "${verify_args[@]+"${verify_args[@]}"}" --format json 2>/dev/null || true)"
+    verified="$(printf '%s' "$verify_json" | "$python_bin" -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -252,42 +233,31 @@ data = d.get("data") if isinstance(d, dict) else None
 if d.get("ok") is True and isinstance(data, dict) and data.get("verified") is True:
     print("yes")
 ' 2>/dev/null || true)"
-      if [[ "$verified" != "yes" ]]; then
-        activation_stale=1
-        active_intents=""
-      fi
+    if [[ "$verified" != "yes" ]]; then
+      activation_stale=1
+      active_intents=""
     fi
   fi
 fi
 
-selected_intents="$intents"
-if [[ "$session_supported" == "1" ]]; then
-  selected_intents="$active_intents"
-fi
-
-# Resolve only selected intents. With durable session state this means active
-# intents; with an older CLI it preserves the previous all-intents fallback.
+# Resolve only the active intents from durable session state.
 preflights=()
 while IFS= read -r intent; do
   [[ -z "$intent" ]] && continue
   pf="$(
     "$agent_docs_bin" "${dh_args[@]+"${dh_args[@]}"}" --project-path "$repo_root" \
-      preflight --intent "$intent" "${require_declared_args[@]+"${require_declared_args[@]}"}" \
-      "${product_args[@]+"${product_args[@]}"}" \
+      preflight --intent "$intent" --require-declared-intent --product "$product" \
       --format json 2>/dev/null
   )"
   status=$?
   if [[ $status -ne 0 ]]; then
-    if [[ ${#require_declared_args[@]} -gt 0 ]]; then
-      printf 'agent-runtime-kit: agent-docs preflight failed for declared intent %s (exit %s)\n' \
-        "$intent" "$status" >&2
-      exit 2
-    fi
-    continue
+    printf 'agent-runtime-kit: agent-docs preflight failed for declared intent %s (exit %s)\n' \
+      "$intent" "$status" >&2
+    exit 2
   fi
   [[ -z "$pf" ]] && continue
   preflights+=("$pf")
-done <<<"$selected_intents"
+done <<<"$active_intents"
 
 preflight_identity="$(printf '%s\n' "${preflights[@]+"${preflights[@]}"}" | cksum 2>/dev/null || true)"
 # The session record's raw bytes are intentionally NOT part of this key: a
@@ -295,18 +265,18 @@ preflight_identity="$(printf '%s\n' "${preflights[@]+"${preflights[@]}"}" | cksu
 # prepare` that refreshes activated_at) with unchanged active intents, documents,
 # and catalog must not re-emit the cue (P0-2 bullet 4). Meaningful changes still
 # invalidate via active_intents / status / verify / preflight / catalog.
-activation_key="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s' \
-  "$session_supported" "$active_intents" "$activation_stale" "$status_json" \
+activation_key="$(printf '%s\n%s\n%s\n%s\n%s\n%s' \
+  "$active_intents" "$activation_stale" "$status_json" \
   "$verify_json" "$preflight_identity" "$catalog_identity" |
   cksum | awk '{print $1}' || true)"
-stamp="${stamp_base}-${activation_key:-legacy}.stamp"
+stamp="${stamp_base}-${activation_key}.stamp"
 [[ -f "$stamp" ]] && exit 0
 
 # Delta cue: intents active now but not previously announced for this
 # session/repo. Only these carry their required-doc list in the cue below; the
 # announced set is updated only after a cue is actually emitted.
 new_active_intents=""
-if [[ "$session_supported" == "1" && -n "$active_intents" ]]; then
+if [[ -n "$active_intents" ]]; then
   prev_announced=""
   [[ -f "$announced_file" ]] && prev_announced="$(cat "$announced_file" 2>/dev/null || true)"
   while IFS= read -r _active_intent; do
@@ -323,14 +293,12 @@ fi
 IFS= read -r -d '' cue_program <<'PY' || true
 import json, os, shlex, sys
 lines = []
-val_cmds = []
 home_roots = set()
 project_roots = set()
 preflight_docs = []
 declared = [x for x in os.environ.get("AGENT_RUNTIME_DECLARED_INTENTS", "").splitlines() if x]
 active = [x for x in os.environ.get("AGENT_RUNTIME_ACTIVE_INTENTS", "").splitlines() if x]
 new_active = [x for x in os.environ.get("AGENT_RUNTIME_NEW_ACTIVE_INTENTS", "").splitlines() if x]
-session_supported = os.environ.get("AGENT_RUNTIME_SESSION_SUPPORTED") == "1"
 session_id = os.environ.get("AGENT_RUNTIME_SESSION_ID", "")
 product = os.environ.get("AGENT_RUNTIME_SESSION_PRODUCT", "")
 state_home = os.environ.get("AGENT_RUNTIME_SESSION_STATE_HOME", "")
@@ -387,10 +355,6 @@ for raw in sys.argv[1:]:
         home_roots.add(str(d.get("docs_home")))
     if d.get("project_path") and any(doc_owner(x) == "project" for x in docs):
         project_roots.add(str(d.get("project_path")))
-    val = d.get("validation") or {}
-    for cmd in (val.get("commands") or []):
-        if cmd not in val_cmds:
-            val_cmds.append(cmd)
 
 root_parts = []
 if home_roots:
@@ -400,36 +364,35 @@ if project_roots:
 if root_parts:
     lines.append("Doc roots: " + ", ".join(root_parts) + ".")
 
-if session_supported:
-    if activation_stale:
-        lines.append("The prior agent-docs activation is stale or unverifiable; re-prepare it before writing.")
-    if new_active:
-        lines.append("Newly active agent-docs intents: " + ", ".join(new_active) + ".")
-    inactive = [intent for intent in declared if intent not in active]
-    if inactive:
-        lines.append("Inactive available intents: " + ", ".join(inactive) + ".")
-        if session_id and product:
-            context_args = []
-            if resolved_docs_home:
-                context_args += ["--docs-home", resolved_docs_home]
-            context_args += ["--project-path", resolved_project_path]
-            prefix = shlex.quote(resolved_agent_docs) + " " + " ".join(
-                shlex.quote(value) for value in context_args
-            )
-            lines.append(
-                "Classify the request, then prepare only relevant inactive intents before writing: "
-                f"{prefix} session prepare --session-id {shlex.quote(session_id)} "
-                f"--product {product} --state-home {shlex.quote(state_home)} "
-                "--intent <intent> --format json."
-            )
-        else:
-            lines.append(
-                "Selective preparation is supported but this hook lacks session/product context; "
-                "do not claim intent preparation was verified."
-            )
+if activation_stale:
+    lines.append("The prior agent-docs activation is stale or unverifiable; re-prepare it before writing.")
+if new_active:
+    lines.append("Newly active agent-docs intents: " + ", ".join(new_active) + ".")
+inactive = [intent for intent in declared if intent not in active]
+if inactive:
+    lines.append("Inactive available intents: " + ", ".join(inactive) + ".")
+    if session_id:
+        context_args = []
+        if resolved_docs_home:
+            context_args += ["--docs-home", resolved_docs_home]
+        context_args += ["--project-path", resolved_project_path]
+        prefix = shlex.quote(resolved_agent_docs) + " " + " ".join(
+            shlex.quote(value) for value in context_args
+        )
+        lines.append(
+            "Classify the request, then prepare only relevant inactive intents before writing: "
+            f"{prefix} session prepare --session-id {shlex.quote(session_id)} "
+            f"--product {product} --state-home {shlex.quote(state_home)} "
+            "--intent <intent> --format json."
+        )
+    else:
+        lines.append(
+            "Selective preparation is supported but this hook lacks session context; "
+            "do not claim intent preparation was verified."
+        )
 
 for d, intent, docs in preflight_docs:
-    if session_supported and intent not in new_active:
+    if intent not in new_active:
         # Delta cue: only the newly-active intent's required docs are listed;
         # already-announced intents are not re-emitted on later prompts.
         continue
@@ -438,15 +401,8 @@ for d, intent, docs in preflight_docs:
         lines.append(
             f"Required {intent} docs ({len(docs)}): {names}. Read them before writing."
         )
-# P0-2 bullet 6: the durable-session delta cue does not expand the full
-# validation command list on ordinary prompts (the finish-line gate still
-# enforces it). The legacy all-intents fallback keeps the cue for older CLIs.
-if val_cmds and not session_supported:
-    lines.append(
-        "Before declaring this task done, run the declared validation: "
-        + " && ".join(val_cmds)
-        + " (the finish-line gate enforces this; state a waiver to override)."
-    )
+# P0-2 bullet 6: the delta cue does not expand the validation command list on
+# ordinary prompts; the finish-line gate enforces it.
 if not lines:
     raise SystemExit(0)
 print("\n".join(lines))
@@ -456,7 +412,6 @@ cue="$(
   AGENT_RUNTIME_DECLARED_INTENTS="$intents" \
     AGENT_RUNTIME_ACTIVE_INTENTS="$active_intents" \
     AGENT_RUNTIME_NEW_ACTIVE_INTENTS="$new_active_intents" \
-    AGENT_RUNTIME_SESSION_SUPPORTED="$session_supported" \
     AGENT_RUNTIME_SESSION_ID="$session_id" \
     AGENT_RUNTIME_SESSION_PRODUCT="$product" \
     AGENT_RUNTIME_SESSION_STATE_HOME="$state_home" \
@@ -468,7 +423,7 @@ cue="$(
 )"
 [[ -z "$cue" ]] && exit 0
 
-reminder="[agent-runtime-kit:${stamp_product}] This repo declares agent-docs intent contracts.
+reminder="[agent-runtime-kit:${product}] This repo declares agent-docs intent contracts.
 ${cue}"
 
 CTX="$reminder" "$python_bin" -c '
@@ -487,6 +442,6 @@ mkdir -p "$stamp_dir"
 : >"$stamp"
 # Record the active set as announced only after a cue was emitted, so the next
 # cue's delta lists only intents that become active afterwards.
-if [[ "$session_supported" == "1" && -n "$active_intents" ]]; then
+if [[ -n "$active_intents" ]]; then
   printf '%s\n' "$active_intents" >"$announced_file" 2>/dev/null || true
 fi

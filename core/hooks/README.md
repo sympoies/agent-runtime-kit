@@ -86,10 +86,12 @@ A failed outcome stays outstanding and the Stop gate proposes owner-based
 routing before honoring a validation waiver. The hooks retain neither raw
 command output nor provider artifacts and never open an issue automatically.
 
-Selective intent activation is available when the installed `agent-docs`
-exposes durable `session activate/status/verify`. `user-prompt-agent-docs.sh`
-expands required docs for active intents and lists inactive routes without
-injecting their runbooks. `pre-edit-intent-gate.py` then checks `project-dev`
+Selective intent activation uses the durable `session prepare/status/verify`
+surface that every supported `agent-docs` release ships; the hooks do not probe
+for it. `user-prompt-agent-docs.sh` expands required docs for active intents and
+lists inactive routes without injecting their runbooks; it always passes
+`--require-declared-intent --product <product>` to `preflight` and stays silent
+when no `codex`/`claude` runtime product is set. `pre-edit-intent-gate.py` then checks `project-dev`
 for every canonical target repository before direct edits and against the
 shared shell command context.
 
