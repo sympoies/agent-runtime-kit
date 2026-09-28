@@ -14,7 +14,7 @@ usage() {
 Usage: bash scripts/ci/skill-governance-audit.sh [--check-counts|--update-counts] [--fixture create|remove|create-project|remove-project|count-refresh|codex-plugin|reviewer-profile|description-limit|exposure-contract] [--shape-only [paths...]]
 
 Checks:
-  default                   Validate active repo source/manifests/plugins/reminders/counts.
+  default                   Validate active repo source/manifests/plugins/counts.
   --check-counts            Check maintained active skill-count references only.
   --update-counts           Refresh maintained active skill-count references.
   --fixture create          Validate the create-skill fixture completeness.
@@ -1892,35 +1892,9 @@ def validate_repo() -> None:
                 if needle not in body:
                     fail(f"{skill_id} missing project lifecycle contract phrase: {needle}")
 
-    reminders = json.loads(read(ROOT / "core" / "hooks" / "shared" / "skill-usage-reminder.skills.json"))
     retired = set(
         json.loads(read(ROOT / "manifests" / "retired-skill-ids.json"))["skills"]
     )
-    active_short_ids = {skill_id.split(".", 1)[1] for skill_id in by_id}
-    explicit_external = {
-        "browser-qa",
-        "find-and-fix-bugs",
-        "fix-bug-pr",
-        "gh-fix-ci",
-        "release-workflow",
-        "semgrep-find-and-fix",
-    }
-    for entry in reminders:
-        reminder_id = str(entry.get("skill", ""))
-        qualified_matches = {
-            skill_id
-            for skill_id in retired
-            if skill_id == reminder_id or skill_id.endswith(f".{reminder_id}")
-        }
-        if qualified_matches:
-            fail(
-                "skill-usage reminder exposes retired skill id "
-                f"{reminder_id}: {sorted(qualified_matches)}"
-            )
-        if reminder_id not in active_short_ids:
-            if entry.get("surface") != "external" or reminder_id not in explicit_external:
-                fail(f"skill-usage reminder has ungoverned non-active id: {reminder_id}")
-
     retired_short_ids = {skill_id.split(".", 1)[1] for skill_id in retired}
     for agent_path in sorted((ROOT / "core" / "agents").glob("**/AGENT.md.tera")):
         body = read(agent_path)
@@ -1932,22 +1906,6 @@ def validate_repo() -> None:
                 "active agent template references retired skills "
                 f"{agent_path.relative_to(ROOT)}: {stale_refs}"
             )
-    exact = {
-        entry.get("skill")
-        for entry in reminders
-        if entry.get("tier") == "exact-only"
-    }
-    expected_exact = {
-        "create-skill",
-        "create-project-skill",
-        "remove-skill",
-        "remove-project-skill",
-    }
-    if not expected_exact.issubset(exact):
-        fail(f"missing lifecycle exact-only reminder entries: {sorted(expected_exact - exact)}")
-    if "skill-governance" in exact:
-        fail("skill-governance is a repo governance tool, not a user-facing skill")
-
     audit_rendered_lifecycle_reference_packaging(ROOT)
 
     count = validate_counts(ROOT)
@@ -2001,7 +1959,6 @@ def validate_remove_fixture() -> None:
         "golden",
         "sandbox",
         "runtime-smoke",
-        "reminder",
         "maintained-doc",
         "historical-doc-retained",
     }
@@ -2025,7 +1982,6 @@ def validate_remove_fixture() -> None:
         "tests/runtime-smoke/acceptance-matrix.yaml",
         "tests/sandbox/codex/expected-skills.txt",
         "tests/sandbox/claude/expected-skills.txt",
-        "core/hooks/shared/skill-usage-reminder.skills.json",
         "docs/source/removable-skill.md",
         "docs/plans/removable-skill-history.md",
     ]:
@@ -2035,7 +1991,7 @@ def validate_remove_fixture() -> None:
     entry = next((item for item in entries if item["id"] == "fixture.removable-skill"), None)
     if entry is None or not isinstance(entry.get("invocation"), dict) or not isinstance(entry.get("exposure"), dict):
         fail("remove fixture missing v2 invocation/exposure admission")
-    print("skill-governance-audit: remove fixture OK classes=10 retained_history=true")
+    print("skill-governance-audit: remove fixture OK classes=9 retained_history=true")
 
 
 def validate_create_project_fixture() -> None:

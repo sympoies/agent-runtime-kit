@@ -36,8 +36,7 @@ Outputs:
 - `manifests/plugins.yaml` containment update, and product plugin metadata
   only when a new domain was approved.
 - Rendered product output, golden snapshots, sandbox expected skill list
-  updates, runtime-smoke matrix/case coverage, and reminder metadata when the
-  skill should be agent-invoked.
+  updates, and runtime-smoke matrix/case coverage.
 
 Failure modes:
 
@@ -99,14 +98,13 @@ bash scripts/ci/all.sh
    must never enter `migration.pending_disposition` or the #562 ledger.
 6. Add plugin containment for the skill. For existing domains, do not touch
    unrelated plugin metadata.
-7. Add reminder metadata only when agents should invoke the skill as a workflow.
-8. Add runtime-smoke matrix coverage and any case-runner probe needed to prove
+7. Add runtime-smoke matrix coverage and any case-runner probe needed to prove
    the skill surface.
-9. Run `bash scripts/ci/skill-governance-audit.sh --update-counts` after the
+8. Run `bash scripts/ci/skill-governance-audit.sh --update-counts` after the
    source, manifest, sandbox, and runtime-smoke surfaces are in place.
-10. Render both products, refresh golden snapshots, run governance audit, and
+9. Render both products, refresh golden snapshots, run governance audit, and
    run the relevant smoke checks.
-11. Leave staging, commit, PR creation, and issue state updates to the caller's
+10. Leave staging, commit, PR creation, and issue state updates to the caller's
     delivery workflow.
 
 ## Boundary

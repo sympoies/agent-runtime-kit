@@ -641,14 +641,9 @@ when = "always"
         self.assertNotIn("error-inbox", discussions)
         self.assertNotIn("error-inbox", work_tiers)
         self.assertNotIn("session closeout procedure", evidence_archive.casefold())
-        for hook_path in (
-            "core/hooks/shared/skill-usage-reminder.py",
-            "core/hooks/shared/stop-finish-line-gate.py",
-        ):
-            hook = read(hook_path)
-            with self.subTest(hook_path=hook_path):
-                self.assertNotIn("heuristic-inbox", hook)
-                self.assertNotIn("heuristic-system", hook)
+        hook = read("core/hooks/shared/stop-finish-line-gate.py")
+        self.assertNotIn("heuristic-inbox", hook)
+        self.assertNotIn("heuristic-system", hook)
         self.assertIn(
             "Agent-runtime-kit no longer consumes or pins `heuristic-inbox`",
             nils_surface,

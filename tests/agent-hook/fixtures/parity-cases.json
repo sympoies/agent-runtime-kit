@@ -8,10 +8,10 @@
       "owner_test": "tests/hooks/test_shared_hooks.py::test_checkout_lease_preserves_read_only_bash_and_stop_is_non_destructive"
     },
     {
-      "case": "optional-memory-write-reminder",
+      "case": "unprovable-validation-advisory",
       "expected_action": "warn",
-      "rule_id": "runtime.codex.pre-tool-use.bash.memory-write-principle-reminder",
-      "owner_test": "tests/hooks/test_shared_hooks.py::test_memory_write_principle_reminder"
+      "rule_id": "runtime.codex.pre-tool-use.bash.finish-line-record",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_finish_line_unprovable_validation_emits_one_private_advisory"
     },
     {
       "case": "direct-git-commit",

@@ -1191,36 +1191,17 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "missing a body")
 
-        claude_trailer = (
-            "semantic-commit default-branch --message "
-            "'fix: thing\n\n- why\n\n"
-            "Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(claude_trailer),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
         for suffix in ("--dry-run", "--help"):
             with self.subTest(read_only=suffix):
-                for hook in (
+                code, decision, stderr = run_hook(
                     "semantic-commit-body-gate.py",
-                    "block-claude-coauthor-trailer.py",
-                ):
-                    code, decision, stderr = run_hook(
-                        hook,
-                        command_payload(f"{claude_trailer} {suffix}"),
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    command_payload(f"{bodyless} {suffix}"),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
 
         removed = bodyless.replace("default-branch", "local-default", 1)
-        for hook in (
-            "semantic-commit-body-gate.py",
-            "block-claude-coauthor-trailer.py",
-        ):
+        for hook in ("semantic-commit-body-gate.py",):
             with self.subTest(removed_local_default=hook):
                 code, decision, stderr = run_hook(
                     hook,
@@ -1332,210 +1313,6 @@ class SharedHookTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
-
-    def test_blocks_claude_coauthor_trailer_in_heredoc(self) -> None:
-        command = (
-            "semantic-commit commit --message \"$(cat <<'MSG'\n"
-            "feat(hook): add gate\n\n"
-            "- explain why\n\n"
-            "Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n"
-            "MSG\n)\""
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_blocks_claude_coauthor_for_any_model_inline(self) -> None:
-        # Model name after `Claude` must not matter — block Sonnet/Haiku too.
-        command = (
-            "semantic-commit commit --message "
-            "'fix: thing\n\n- why\n\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_blocks_claude_coauthor_with_leading_space(self) -> None:
-        command = (
-            "semantic-commit commit --message "
-            "'fix: thing\n\n- why\n\n  Co-authored-by: Claude Haiku 4.5 <noreply@anthropic.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_claude_coauthor_regex_handles_blank_line_input_quickly(self) -> None:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "block_claude_coauthor_trailer",
-            HOOK_DIR / "block-claude-coauthor-trailer.py",
-        )
-        self.assertIsNotNone(spec)
-        assert spec is not None and spec.loader is not None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        message = "\n" * 200_000 + "not-a-trailer: Claude\n"
-        started = time.perf_counter()
-        self.assertFalse(module.has_claude_coauthor(message))
-        elapsed = time.perf_counter() - started
-        self.assertLess(elapsed, 1.0)
-
-    def test_allows_non_claude_coauthor(self) -> None:
-        command = (
-            "semantic-commit commit --message "
-            "'feat: thing\n\n- why\n\nCo-Authored-By: Jane Dev <jane@example.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
-    def test_allows_message_without_claude_trailer(self) -> None:
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload("semantic-commit commit --message 'feat: thing\n\n- why'"),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
-    def test_allows_claude_trailer_on_dry_run(self) -> None:
-        command = (
-            "semantic-commit commit --dry-run --message "
-            "'feat: thing\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
-    def test_blocks_claude_coauthor_via_trailer_flag(self) -> None:
-        # Reproduces the gate bypass: the Claude trailer is passed via
-        # `--trailer` alongside structured `--subject`/`--body-bullet`, so there
-        # is no `--message` body for extract_message() to recover.
-        command = (
-            "semantic-commit commit --type fix --scope hooks "
-            "--subject 'tighten gate' --body-bullet 'why it matters' "
-            "--trailer 'Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_blocks_claude_coauthor_in_body_bullet(self) -> None:
-        command = (
-            "semantic-commit commit --subject 'fix: thing' "
-            "--body-bullet 'Co-authored-by: Claude Haiku 4.5 <noreply@anthropic.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_blocks_claude_coauthor_via_message_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            msg = Path(tmp) / "msg.txt"
-            msg.write_text(
-                "feat: thing\n\n- why\n\n"
-                "Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n",
-                encoding="utf-8",
-            )
-            code, decision, stderr = run_hook(
-                "block-claude-coauthor-trailer.py",
-                command_payload(f"semantic-commit commit --message-file {msg}"),
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_claude_gate_treats_option_like_message_filename_as_data(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "-h").write_text(
-                "feat: thing\n\n- why\n\n"
-                "Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n",
-                encoding="utf-8",
-            )
-            code, decision, stderr = run_hook(
-                "block-claude-coauthor-trailer.py",
-                command_payload("semantic-commit commit --message-file -h"),
-                cwd=repo,
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "Claude Co-Authored-By trailer")
-
-    def test_claude_gate_allows_validate_only_message_file_generation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            recovery = Path(tmp) / "recovery.md"
-            command = (
-                "semantic-commit commit --validate-only "
-                "--subject 'feat: inspect message' "
-                "--trailer 'Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>' "
-                f"--message-out {shlex.quote(str(recovery))}"
-            )
-            code, decision, stderr = run_hook(
-                "block-claude-coauthor-trailer.py",
-                command_payload(command),
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
-
-    def test_allows_non_claude_trailer_flag(self) -> None:
-        command = (
-            "semantic-commit commit --subject 'feat: thing' --body-bullet 'why' "
-            "--trailer 'Co-Authored-By: Jane Dev <jane@example.com>'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
-    def test_allows_structured_fields_without_trailer(self) -> None:
-        command = (
-            "semantic-commit commit --type fix --scope hooks "
-            "--subject 'tighten gate' --body-bullet 'why it matters'"
-        )
-        code, decision, stderr = run_hook(
-            "block-claude-coauthor-trailer.py",
-            command_payload(command),
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
-    def test_claude_coauthor_gate_is_claude_only(self) -> None:
-        script = "block-claude-coauthor-trailer.py"
-        self.assertTrue((HOOK_DIR / script).is_file(), script)
-        claude_rules = inventory_rules(
-            product="claude",
-            event="PreToolUse",
-            handler="block-claude-coauthor-trailer",
-        )
-        codex_rules = inventory_rules(
-            product="codex",
-            handler="block-claude-coauthor-trailer",
-        )
-        self.assertEqual(inventory_tools(claude_rules), {"Bash"})
-        self.assertEqual(codex_rules, [])
 
     def test_blocks_bare_python_in_uv_project_and_allows_shared_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2210,67 +1987,6 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "project-state memory")
 
-    def test_memory_write_principle_reminder_opt_in_fires_non_blocking(self) -> None:
-        flag = "AGENT_RUNTIME_MEMORY_WRITE_REMINDER"
-
-        # (a) Opt-in ON + a Write to a memory-store note -> non-blocking reminder.
-        code, decision, stderr = run_hook(
-            "memory-write-principle-reminder.py",
-            write_payload("~/.config/agent-memory/global/foo.md", "note"),
-            env={flag: "1"},
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assertIsNotNone(decision)
-        assert decision is not None
-        # Never a block decision; only additive PreToolUse context.
-        self.assertNotIn("decision", decision)
-        hook_output = decision.get("hookSpecificOutput", {})
-        self.assertIsInstance(hook_output, dict)
-        assert isinstance(hook_output, dict)
-        self.assertEqual(hook_output.get("hookEventName"), "PreToolUse")
-        ctx = str(hook_output.get("additionalContext", ""))
-        self.assertIn("Memory Boundaries", ctx)
-
-        # (a') Bash-authored heredoc write to a per-product memory dir also fires.
-        code, decision, stderr = run_hook(
-            "memory-write-principle-reminder.py",
-            command_payload(
-                "cat > ~/.codex/memories/env_notes.md <<'EOF'\nnote\nEOF"
-            ),
-            env={flag: "1"},
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assertIsNotNone(decision)
-        assert decision is not None
-        self.assertNotIn("decision", decision)
-        hook_output = decision.get("hookSpecificOutput", {})
-        assert isinstance(hook_output, dict)
-        self.assertIn(
-            "Memory Boundaries", str(hook_output.get("additionalContext", ""))
-        )
-
-    def test_memory_write_principle_reminder_silent_when_flag_unset(self) -> None:
-        flag = "AGENT_RUNTIME_MEMORY_WRITE_REMINDER"
-        # Flag UNSET (empty is not truthy) -> silent even for a memory-store note.
-        code, decision, stderr = run_hook(
-            "memory-write-principle-reminder.py",
-            write_payload("~/.config/agent-memory/global/foo.md", "note"),
-            env={flag: ""},
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
-    def test_memory_write_principle_reminder_ignores_unrelated_paths(self) -> None:
-        flag = "AGENT_RUNTIME_MEMORY_WRITE_REMINDER"
-        # Opt-in ON but the write is outside the memory store -> silent.
-        code, decision, stderr = run_hook(
-            "memory-write-principle-reminder.py",
-            write_payload("/tmp/x.md", "note"),
-            env={flag: "1"},
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
-
     def test_blocks_mcp_secret_and_portable_path_writes(self) -> None:
         code, decision, stderr = run_hook(
             "mcp-secret-scan.py",
@@ -2536,111 +2252,6 @@ class SharedHookTests(unittest.TestCase):
         )
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "could not inspect")
-
-    def test_skill_usage_reminder_uses_catalog(self) -> None:
-        code, decision, stderr = run_hook(
-            "skill-usage-reminder.py",
-            {"prompt": "please run deliver-pr for this branch"},
-            env={"AGENT_RUNTIME_PRODUCT": "codex"},
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assertIsNotNone(decision)
-        assert decision is not None
-        output = decision.get("hookSpecificOutput")
-        self.assertIsInstance(output, dict)
-        assert isinstance(output, dict)
-        self.assertIn("deliver-pr", str(output.get("additionalContext", "")))
-
-    def test_skill_usage_reminder_uses_one_workflow_owner_when_supported(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            bin_dir = Path(tmp)
-            skill_usage = bin_dir / "skill-usage"
-            skill_usage.write_text(
-                "#!/usr/bin/env bash\n"
-                "if [[ \"$*\" == \"init --help\" ]]; then\n"
-                "  printf '%s\\n' '      --owner-kind <OWNER_KIND>'\n"
-                "  exit 0\n"
-                "fi\n"
-                "exit 64\n",
-                encoding="utf-8",
-            )
-            skill_usage.chmod(0o755)
-            code, decision, stderr = run_hook(
-                "skill-usage-reminder.py",
-                {"prompt": "please run deliver-pr for this branch"},
-                env={
-                    "AGENT_RUNTIME_PRODUCT": "codex",
-                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-                },
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertIsNotNone(decision)
-            assert decision is not None
-            output = decision.get("hookSpecificOutput")
-            self.assertIsInstance(output, dict)
-            assert isinstance(output, dict)
-            context = str(output.get("additionalContext", ""))
-            self.assertIn("skill-usage.record.v2", context)
-            self.assertIn("--owner-kind workflow", context)
-            self.assertIn("one outermost", context)
-
-    def test_skill_usage_reminder_routes_aliases_to_active_parent_outcomes(self) -> None:
-        cases = (
-            ("open PR", "deliver-pr", "create-pr"),
-            ("quick code review", "code-review-specialists", "code-review-quick-pass"),
-            ("execute dispatch lane", "deliver-dispatch-plan", "execute-dispatch-lane"),
-        )
-        for prompt, active, retired in cases:
-            with self.subTest(prompt=prompt):
-                code, decision, stderr = run_hook(
-                    "skill-usage-reminder.py",
-                    {"prompt": prompt},
-                    env={"AGENT_RUNTIME_PRODUCT": "codex"},
-                )
-                self.assertEqual(code, 0, stderr)
-                self.assertIsNotNone(decision)
-                assert decision is not None
-                output = decision.get("hookSpecificOutput")
-                self.assertIsInstance(output, dict)
-                context = str(output)
-                self.assertIn(active, context)
-                self.assertNotIn(f"detected: {retired}", context)
-
-    def test_skill_usage_reminder_hides_internal_evidence_migrate_phrases(self) -> None:
-        for prompt in (
-            "evidence migrate --apply",
-            "migrate evidence",
-            "archive skill-usage evidence",
-        ):
-            with self.subTest(prompt=prompt):
-                code, decision, stderr = run_hook(
-                    "skill-usage-reminder.py",
-                    {"prompt": prompt},
-                    env={"AGENT_RUNTIME_PRODUCT": "codex"},
-                )
-                self.assertEqual(code, 0, stderr)
-                context = ""
-                if decision is not None:
-                    output = decision.get("hookSpecificOutput")
-                    if isinstance(output, dict):
-                        context = str(output.get("additionalContext", ""))
-                self.assertNotIn("evidence-migrate", context)
-
-    def test_skill_usage_reminder_ignores_unrelated_evidence_mentions(self) -> None:
-        # A passing mention of evidence that is not the migrate/archive action
-        # must not trigger the reminder.
-        code, decision, stderr = run_hook(
-            "skill-usage-reminder.py",
-            {"prompt": "the migration evidence in the report looked fine"},
-            env={"AGENT_RUNTIME_PRODUCT": "codex"},
-        )
-        self.assertEqual(code, 0, stderr)
-        context = ""
-        if decision is not None:
-            output = decision.get("hookSpecificOutput")
-            if isinstance(output, dict):
-                context = str(output.get("additionalContext", ""))
-        self.assertNotIn("evidence-migrate", context)
 
     def test_agent_memory_cue_injects_at_codex_session_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -19510,15 +19121,12 @@ exit 65
             "finish-line-record.py",
             "forge-label-reminder.py",
             "mcp-secret-scan.py",
-            "memory-write-principle-reminder.py",
             "portable-paths-scan.py",
             "pre-edit-intent-gate.py",
             "semantic-commit-body-gate.py",
             "session-coordination-guard.py",
             "session-start-healthcheck.sh",
-            "skill-usage-reminder.py",
             "stop-finish-line-gate.py",
-            "stop-pre-pr-reminder.sh",
             "user-prompt-agent-docs.sh",
         }
         codex_claude_scripts = {
@@ -27271,18 +26879,6 @@ exit 65
             self.assertIn("released", str(audit.get("systemMessage", "")))
             self.assertEqual(self._checkout_lease_files(state), [])
             self.assertTrue(linked.is_dir())
-
-    def test_claude_memory_reminder_matches_all_edit_tools(self) -> None:
-        reminder_rules = inventory_rules(
-            product="claude",
-            event="PreToolUse",
-            handler="memory-write-principle-reminder",
-        )
-        matcher_tools = inventory_tools(reminder_rules)
-        self.assertTrue(
-            {"Write", "Edit", "MultiEdit", "NotebookEdit"} <= matcher_tools,
-            matcher_tools,
-        )
 
     def test_claude_multiedit_hooks_exclude_content_only_scanners(self) -> None:
         """MultiEdit carries its content in `edits[]`, not at the top level.
