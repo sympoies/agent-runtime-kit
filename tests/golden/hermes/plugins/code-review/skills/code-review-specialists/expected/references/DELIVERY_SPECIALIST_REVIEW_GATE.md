@@ -45,7 +45,7 @@ delivery context; quick or full is the review profile inside that context.
 
 Quick review is eligible only when all of these are true:
 
-- The outer work is L0 or L1, not L2 or L3 plan/dispatch delivery.
+- The outer work is `direct` or `issue`, not `program/plan` or `program/dispatch` delivery.
 - The diff is bounded and ordinary, required validation and provider checks
   pass, and there is no unresolved current-head finding, change request, or
   review thread.
@@ -67,7 +67,7 @@ otherwise use the declared inline fallback. Its verdict controls the route:
   rerun affected validation, and use quick follow-up only while scope remains
   bounded. A clean follow-up can then become the final outcome.
 - `escalate`: select the full pre-merge profile and its required lenses without
-  changing the work tier or requesting another user decision.
+  changing the work mode or requesting another user decision.
 
 A clean quick pass does not need a separate `comments-only` lens post before the
 final outcome. Quick findings do: use `--decision comments-only --lens quick`
@@ -76,7 +76,8 @@ posting order in `REVIEW_OUTCOME_POSTING_CONTRACT.md`.
 
 ## Full Pre-Merge Profile
 
-Use the full profile for every L2/L3 PR and whenever quick eligibility fails.
+Use the full profile for every `program/plan` or `program/dispatch` PR and
+whenever quick eligibility fails.
 
 1. Run deterministic scope detection with forced minimum lenses:
 

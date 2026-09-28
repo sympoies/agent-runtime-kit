@@ -58,9 +58,9 @@ Inputs:
   `lifecycle_fingerprint` and a released disposition.
 - Local terminal identity captured before merge: checkout root, branch,
   delivered head SHA, base ref, and whether the checkout is primary or a
-  managed linked worktree. When an outer L2/L3 or requested post-merge workflow
-  still owns terminal duties, pass this identity outward instead of cleaning
-  early.
+  managed linked worktree. When an outer `program/plan` or `program/dispatch`
+  workflow, or a requested post-merge workflow, still owns terminal duties, pass
+  this identity outward instead of cleaning early.
 - If the body references a linked tracking or dispatch issue, use non-closing
   references such as `Refs #<issue>`; provider auto-close keywords are refused.
   Carry the references through `pr-body render --issues-file` — rendered as
@@ -193,7 +193,7 @@ The user requests the PR/MR outcome, not a lifecycle helper.
   current state, record the reason, and call `forge-cli pr close` without
   pretending delivery succeeded.
 
-Dispatch lane PR creation remains an internal L3 dispatch role because its
+Dispatch lane PR creation remains an internal `program/dispatch` role because its
 plan-branch target and lane checkpoint authority belong to that outcome.
 
 ## Review Profile Selection
@@ -202,7 +202,7 @@ Pre-merge remains mandatory. Select the smallest safe profile after checks and
 scope detection; a user request such as "PR quick merge" expresses a preference,
 not permission to bypass escalation.
 
-- **Quick merge** — available for an L0 or L1 PR only when the diff is bounded,
+- **Quick merge** — available for `direct` or `issue` work only when the diff is bounded,
   required validation and checks pass, scope suggests or forces no risk
   specialist, no unresolved current-head review state exists, and `reviewer-quick` has
   enough confidence to inspect the complete change. A clean `pass` is terminal
@@ -211,9 +211,9 @@ not permission to bypass escalation.
 - **Quick findings** — post concrete findings before repair, block merge, rerun
   affected validation, and use quick follow-up only while the scope stays
   bounded.
-- **Full review** — mandatory for L2 or L3 delivery, any specialist trigger,
+- **Full review** — mandatory for `program/plan` or `program/dispatch` delivery, any specialist trigger,
   existing unresolved review state, insufficient quick-review confidence, or a
-  quick `escalate` verdict. It routes to the full pre-merge profile without changing the work tier
+  quick `escalate` verdict. It routes to the full pre-merge profile without changing the work mode
   or requiring another user decision.
 
 The quick profile changes review depth only. It never skips checks, final
@@ -360,8 +360,8 @@ review-specialists scope \
   --base "$BASE_REF" \
   --format json
 
-# Full-profile route only: L2/L3, a risk trigger, unresolved review state, or
-# quick-review escalation.
+# Full-profile route only: program/plan or program/dispatch, a risk trigger,
+# unresolved review state, or quick-review escalation.
 review-specialists scope \
   --base "$BASE_REF" \
   --testing \
@@ -700,8 +700,9 @@ Use `profile=tracking` for lightweight plan-tracking issues and
    `--no-merge` so checks / pipelines complete before the mandatory review gate.
 9. Run the generic code-review outcome in pre-merge context. Start with
    unforced scope detection and select quick or full through **Review Profile
-   Selection**. Quick requires an eligible L0/L1 change and a `pass`; L2/L3,
-   risk signals, unresolved current-head review state, or `escalate` select full.
+   Selection**. Quick requires eligible `direct` or `issue` work and a `pass`;
+   `program/plan` or `program/dispatch` delivery, risk signals, unresolved
+   current-head review state, or `escalate` select full.
 10. Keep review workers read-only. For a clean quick pass, defer the review
    outcome write to step 15; the required ledger genesis in step 11 is separate
    workflow state. As each full-profile lens or blocking quick finding returns,
@@ -825,7 +826,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     `git-cli sync-default --format json`; that surface owns the remote-bound
     fast-forward, and raw `git merge` / `git pull` on the default branch stay
     refused even with `--ff-only` because local state cannot prove publication.
-    If an outer L2/L3 workflow remains, hand it the captured identity and defer
+    If an outer `program/plan` or `program/dispatch` workflow remains, hand it
+    the captured identity and defer
     this step.
 
 ## Boundary

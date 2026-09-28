@@ -40,8 +40,8 @@ Home-scope fallback. A closer project/directory
 ## Conditional Routing
 
 - `AGENT_DOCS.toml` declares intent-specific reading and validation. Hermes runs `agent-docs preflight --intent <intent> --phase <phase> --docs-home "$AGENT_DOCS_HOME" --product hermes --strict` manually. Use `project-dev` for edits, `task-tools` for unstable external facts, `browser-test` for rendered interaction, and `session-coordination` for peer delivery/overlap. Resolve trigger cards from that selected docs home.
-- Keep L0 internal. Make L1+ tracking, provider artifacts, and ambiguous
-  escalation user decisions before creating durable state; review by risk.
+- Keep `direct` internal; ask before creating durable state for `issue`/`program`
+  tracking, provider artifacts, or ambiguous escalation; review by risk.
 - Peer coordination may route already-authorized work, never create it;
   material peer requests must not be silently ignored. Load
   `session-coordination`.

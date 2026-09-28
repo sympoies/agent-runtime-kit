@@ -126,8 +126,8 @@ not the policy in general.
 | Mode | Authorization | Authoring and delivery | Terminal evidence |
 | --- | --- | --- | --- |
 | PR (provider default) | Explicit current-task provider-delivery request, or an approved workflow that already owns PR/MR delivery | Signed `semantic-commit` on a non-default managed-worktree branch, then the active `deliver-pr` path | PR/MR URL, delivered head, reviews/checks, and provider merge read-back |
-| Direct-main (L0 exception) | The maintainer explicitly requests direct commit and push to the default branch in the current task | Exactly one signed `semantic-commit` on a non-default managed-worktree branch, then `forge-cli repo push-default --expected-base <full-sha> --reason-file <path>` | Structured receipt whose post-push `observed_remote_sha` equals the delivered head |
-| Default-branch (L0 local completion) | The maintainer explicitly requests one local-only default-branch commit in the current task | Exact `semantic-commit default-branch` in the clean primary checkout; no provider call | `cli.semantic-commit.default-branch.v1` receipt with `provider_delivered=false` |
+| Direct-main (`direct` exception) | The maintainer explicitly requests direct commit and push to the default branch in the current task | Exactly one signed `semantic-commit` on a non-default managed-worktree branch, then `forge-cli repo push-default --expected-base <full-sha> --reason-file <path>` | Structured receipt whose post-push `observed_remote_sha` equals the delivered head |
+| Default-branch (`direct` local completion) | The maintainer explicitly requests one local-only default-branch commit in the current task | Exact `semantic-commit default-branch` in the clean primary checkout; no provider call | `cli.semantic-commit.default-branch.v1` receipt with `provider_delivered=false` |
 
 Implementation alone does not authorize provider mutation. Never infer
 direct-main authorization from a change being small, obvious,
@@ -401,9 +401,9 @@ range checks still must pass.
   after the provider-confirmed delivered head or direct-main remote-SHA receipt
   matches the local branch tip. This explicit proof permits cleanup after a squash merge, where
   `git branch -d` cannot infer provider equivalence from ancestry alone.
-- A child PR workflow defers cleanup when its L2/L3 parent or another requested
-  post-merge workflow still owns terminal duties, handing the captured checkout
-  identity to that parent. The outermost successful workflow performs cleanup
+- A child PR workflow defers cleanup when its `program/plan` or
+  `program/dispatch` parent or another requested post-merge workflow still owns
+  terminal duties, handing the captured checkout identity to that parent. The outermost successful workflow performs cleanup
   exactly once; failed or readiness-only workflows retain the checkout.
 
 ## Branches

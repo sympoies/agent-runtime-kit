@@ -37,8 +37,8 @@ Outputs:
     converged requirements, design, feasibility, product, architecture,
     customer-facing, review, risk, lessons-learned, or fix-later material that
     is captured for later work but is not an executed-and-archived plan bundle.
-  - L2 plan source: only when the document will feed a plan that is executed and
-    archived, save it inside the bundle as
+  - `program/plan` source: only when the document will feed a plan that is
+    executed and archived, save it inside the bundle as
     `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` (or
     `<slug>-review-source.md` for review / risk / backlog material) and include
     the `Execution` plan lines below.
@@ -52,7 +52,7 @@ Outputs:
   non-blocking open questions in the final response instead of writing them into
   the document.
 - An `Execution` section with stable `Recommended plan` and
-  `Recommended execution state` lines only for the L2 plan-source case; omit
+  `Recommended execution state` lines only for the `program/plan` source case; omit
   them for a `docs/discussions/` capture and for promoted canon.
 - Updated local docs index or README only when the document is promoted into
   canon; never for a `docs/discussions/` capture, which no file outside that
@@ -100,7 +100,7 @@ Failure modes:
      `docs/plans/<YYYY-MM-DD>-<slug>/` bundle only for a document that will feed
      an executed-and-archived plan; promote into domain docs/runbooks (or
      `docs/source/`) only when the content is durable canon.
-   - Graduating a `docs/discussions/` capture to L2: when it later needs a
+   - Graduating a `docs/discussions/` capture to `program/plan`: when it later needs a
      tracked plan, move it into a `docs/plans/<YYYY-MM-DD>-<slug>/` bundle as
      `<slug>-discussion-source.md` (retire the `docs/discussions/` original),
      author the `<slug>-plan.md` + `<slug>-execution-state.md`, then run the
@@ -116,8 +116,8 @@ Failure modes:
    - Default: place the document at `docs/discussions/<YYYY-MM-DD>-<slug>.md`
      for captured discussion / spec material that is not an
      executed-and-archived plan.
-   - L2 plan source: only when the document will feed a plan that runs and is
-     archived, place it inside the bundle as
+   - `program/plan` source: only when the document will feed a plan that runs
+     and is archived, place it inside the bundle as
      `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` (or
      `<slug>-review-source.md` for review / risk / backlog material).
    - Durable canon: promote to the owning domain docs area (or `docs/source/`
@@ -176,7 +176,7 @@ Failure modes:
      question would materially change the document's facts, scope, acceptance
      criteria, or next artifact, pause and ask before writing instead of
      publishing a misleading source document.
-   - For an L2 plan source only (inside `docs/plans/<YYYY-MM-DD>-<slug>/`),
+   - For a `program/plan` source only (inside `docs/plans/<YYYY-MM-DD>-<slug>/`),
      include these stable machine-checkable lines in the `Execution` section:
      - `Recommended plan: docs/plans/<YYYY-MM-DD>-<slug>/<slug>-plan.md`
      - `Recommended execution state: docs/plans/<YYYY-MM-DD>-<slug>/<slug>-execution-state.md`
@@ -187,8 +187,9 @@ Failure modes:
      `retained as the acceptance source`, or any other self-declared retention:
      content worth keeping takes the `canonise` exit, which moves it out of
      `docs/discussions/`. `open-issue` is complete on its own — an ordinary
-     issue retires the capture, so do not manufacture an L1 or L2 plan merely to
-     justify deleting it. See `core/policies/work-tier-levels.md`.
+     issue retires the capture, so do not manufacture a `program` tracker or a
+     `program/plan` bundle merely to justify deleting it. See
+     `core/policies/work-modes.md`.
    - When a plan's `Read First` section links a document produced by this
      skill, use `Source type: discussion-to-implementation-doc` for both
      `*-discussion-source.md` and `*-review-source.md`; do not use the retired

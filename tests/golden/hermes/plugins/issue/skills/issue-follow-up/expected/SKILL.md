@@ -71,11 +71,11 @@ lower-level issue or PR/MR tools.
 
 - Treat `forge-cli issue` as the provider mutation surface, not a separate
   user-facing workflow choice.
-- Use the L2 plan-tracking outcome for plan-bundle lifecycle work.
+- Use the `program/plan` outcome for plan-bundle lifecycle work.
 - Use normal implementation and PR/MR workflows when code/docs changes are
   ready.
-- Let the L2 or L3 parent workflow mirror review and closeout evidence when the
-  issue is part of a plan lifecycle.
+- Let the `program/plan` or `program/dispatch` parent workflow mirror review and
+  closeout evidence when the issue is part of a plan lifecycle.
 
 ## Modes
 

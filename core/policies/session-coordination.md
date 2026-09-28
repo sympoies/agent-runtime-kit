@@ -5,7 +5,7 @@ automatic advice reports an overlap, a task benefits from a public scope
 declaration, or explicit `enforce`/recovery is in play. Advisory coordination
 is automatic awareness, not a routine planning step. It does not create work
 authorization or replace `project-dev`, provider rules, user consent, or formal
-L3/provider dispatch. Unmanaged sessions remain valid.
+`program/dispatch` or provider dispatch. Unmanaged sessions remain valid.
 
 ## Work authorization and collision response
 

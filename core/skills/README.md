@@ -15,7 +15,7 @@ and retained retirement history are defined in the
 | `code-review` | 1 | Generic read-only code review with internal mode selection |
 | `computer-use` | 1 | macOS desktop automation and GUI testing |
 | `conversation` | 3 | Discussion capture, guided build, and handoff |
-| `dispatch` | 2 | L2 plan tracking and L3 dispatch outcomes |
+| `dispatch` | 2 | `program/plan` tracking and `program/dispatch` outcomes |
 | `issue` | 2 | Issue triage and durable follow-up |
 | `media` | 2 | Image conversion, screen capture |
 | `meta` | 13 | Explicit execution handoff, repository, documentation, and runtime maintenance outcomes |
