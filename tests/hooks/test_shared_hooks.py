@@ -514,6 +514,46 @@ class SharedHookTests(unittest.TestCase):
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "rule=git-alias-resolution")
 
+    def test_direct_git_commit_hook_allows_installed_non_builtin_commands(
+        self,
+    ) -> None:
+        # Git dispatches builtins and installed `git-<name>` programs (exec-path
+        # porcelain such as submodule/mergetool, or PATH extensions such as
+        # git-lfs) before aliases, so those names cannot hide a commit alias.
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            extension = bin_dir / "git-fixture-extension"
+            extension.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            extension.chmod(0o755)
+            env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+            for command in (
+                "git submodule update --init",
+                "git mergetool",
+                "git fixture-extension pull",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command in (
+                "git fixture-not-installed pull",
+                "git -c alias.submodule=commit submodule",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(command),
+                        env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "rule=git-alias-resolution")
+
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
             (

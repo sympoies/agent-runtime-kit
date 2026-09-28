@@ -36,13 +36,12 @@ OPAQUE_REASON = (
 )
 ALIAS_REASON = (
     "Git subcommand dispatch could not be admitted safely. Classification: "
-    "rule=git-alias-resolution; operation=dynamic-subcommand. A non-builtin "
-    "subcommand or invocation-defined alias can resolve through configured or "
-    "shell aliases to `commit`; use a literal Git builtin, or use "
-    "semantic-commit for commit creation."
+    "rule=git-alias-resolution; operation=dynamic-subcommand. A subcommand "
+    "that is not an installed Git command, or an invocation-defined alias, can "
+    "resolve through configured or shell aliases to `commit`; use a literal "
+    "installed Git command, or use semantic-commit for commit creation."
 )
 
-ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*")
 GIT_SUBCOMMAND_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 GIT_OPTIONS_WITH_VALUE = {
     "-C",
@@ -64,41 +63,6 @@ GIT_OPTIONS_WITH_VALUE_PREFIXES = (
 
 def basename(token: str) -> str:
     return PurePosixPath(token).name
-
-
-def is_assignment(token: str) -> bool:
-    return bool(ASSIGNMENT_RE.match(token))
-
-
-def skip_env_prefix(tokens: list[str], index: int) -> int:
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return index + 1
-        if is_assignment(token):
-            index += 1
-            continue
-        if token in {"-i", "--ignore-environment", "-0", "--null"}:
-            index += 1
-            continue
-        if token in {"-u", "--unset"}:
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return index
-    return index
-
-
-def git_command_index(simple_command: list[str]) -> int | None:
-    invocation = invocation_tokens(simple_command)
-    if not invocation:
-        return None
-    return 0 if basename(invocation[0]) == "git" else None
 
 
 def git_subcommand(simple_command: list[str]) -> str | None:
@@ -181,8 +145,14 @@ def selected_inline_alias(simple_command: list[str]) -> str | None:
 
 
 @functools.lru_cache(maxsize=1)
-def git_builtin_commands() -> frozenset[str]:
-    """Return Git builtins under a bounded probe, with a conservative fallback."""
+def git_installed_commands() -> frozenset[str]:
+    """Return installed Git commands under a bounded probe.
+
+    Git dispatches a builtin, then an installed `git-<name>` program (exec-path
+    porcelain such as `submodule`, or a PATH extension such as `git-lfs`),
+    before it consults aliases, so none of these names can hide an alias.
+    Invocation-defined `-c alias.*` aliases are rejected separately.
+    """
     fallback = frozenset(
         {
             "add",
@@ -214,7 +184,7 @@ def git_builtin_commands() -> frozenset[str]:
     )
     try:
         completed = subprocess.run(
-            ["git", "--list-cmds=builtins"],
+            ["git", "--list-cmds=builtins,main,others"],
             capture_output=True,
             check=False,
             text=True,
@@ -239,7 +209,7 @@ def git_commit_block_reason(command: str) -> str:
         if (
             subcommand is not None
             and GIT_SUBCOMMAND_RE.fullmatch(subcommand)
-            and subcommand not in git_builtin_commands()
+            and subcommand not in git_installed_commands()
         ):
             return ALIAS_REASON
         invocation = invocation_tokens(simple_command)
@@ -258,16 +228,12 @@ def git_commit_block_reason(command: str) -> str:
             if (
                 candidate_subcommand is not None
                 and GIT_SUBCOMMAND_RE.fullmatch(candidate_subcommand)
-                and candidate_subcommand not in git_builtin_commands()
+                and candidate_subcommand not in git_installed_commands()
             ):
                 return ALIAS_REASON
             if invocation_is_unresolved_nested(candidate):
                 return OPAQUE_REASON
     return ""
-
-
-def invokes_git_commit(command: str) -> bool:
-    return bool(git_commit_block_reason(command))
 
 
 def main() -> int:
