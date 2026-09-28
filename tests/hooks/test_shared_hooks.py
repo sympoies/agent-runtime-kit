@@ -447,6 +447,7 @@ class SharedHookTests(unittest.TestCase):
             'echo "${x:-$(git commit -m y)}"',
             'echo "$(case x in a) git commit -m y;; esac)"',
             'echo "$(echo case; git commit -m y)"',
+            "echo a#`git commit -m y`",
         )
         for command in blocked:
             with self.subTest(blocked=command):
@@ -472,6 +473,9 @@ class SharedHookTests(unittest.TestCase):
             "cat <<'EOF'\n$(git commit -m y)\n`git commit -m y`\nEOF",
             'gh pr view --json body "$(cat <<\'EOF\'\n'
             "don't run `git commit` here (see #182)\nEOF\n)\"",
+            "git status  # then `git commit -m y` later",
+            'ls  # "$(git commit -m y)"',
+            "ls  # see `git commit --amend` docs\ngit status",
         )
         for command in allowed:
             with self.subTest(allowed=command):
@@ -480,6 +484,14 @@ class SharedHookTests(unittest.TestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
+
+        # Nesting beyond the bounded parser fails closed without recursion.
+        nested = "$(echo " * 40 + "true" + ")" * 40
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload(f"echo {nested}")
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "rule=opaque-executable")
 
     def test_shell_tokenizer_exposes_command_substitutions_structurally(
         self,
@@ -23507,6 +23519,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 'echo "a $(printf "%s" "$(git push origin main)") b"',
                 'echo "$(printf ok)" "$(git push origin main)"',
                 "bash -c 'echo \"`git push origin main`\"'",
+                "echo a#`git push origin main`",
             )
             for command in blocked:
                 with self.subTest(blocked=command):
@@ -23527,6 +23540,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "readlink -f $(which a) $(which b)",
                 'echo "$(git rev-parse HEAD)" `git status --short`',
                 "cat <<'EOF'\n$(git push origin main)\n`git push origin main`\nEOF",
+                "git status  # then `git push origin main` later",
+                'ls  # "$(git push origin main)"',
             )
             for command in allowed:
                 with self.subTest(allowed=command):
@@ -23545,6 +23560,15 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+            nested = "$(echo " * 40 + "true" + ")" * 40
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(f"echo {nested}"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: unverified]")
 
     def test_default_delivery_hook_treats_zsh_disable_as_resolution_change(
         self,

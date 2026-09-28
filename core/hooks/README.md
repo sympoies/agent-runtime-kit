@@ -402,8 +402,8 @@ including in test operands and assignments. The shared tokenizer parses each
 body as its own simple command ahead of the command it expands and leaves a
 dynamic placeholder word in its place, so several substitutions in one command
 stay arguments instead of leaving a stray `$` in command position.
-Single-quoted text, escaped markers, and quoted-delimiter here-doc bodies stay
-literal.
+Single-quoted text, shell comments, escaped markers, and quoted-delimiter
+here-doc bodies stay literal.
 After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
 `disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.

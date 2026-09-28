@@ -2895,7 +2895,7 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
         elif text.startswith("$(", cursor):
             end = _command_substitution_end(text, cursor + 2, nesting + 1)
         elif char == "#" and (
-            cursor == index or text[cursor - 1] in " \t\n;&|()"
+            cursor == index or text[cursor - 1] in " \t\n;&|()<>"
         ):
             end = text.find("\n", cursor)
             if end < 0:
@@ -2941,8 +2941,8 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
     """Replace each command substitution the shell would run with a placeholder.
 
     ``$(...)`` and backtick substitutions are found unquoted and inside double
-    quotes; single-quoted and ANSI-C quoted text and escaped markers stay
-    literal. Returns the rewritten command and a map from placeholder word to
+    quotes; single-quoted and ANSI-C quoted text, shell comments, and escaped
+    markers stay literal. Returns the rewritten command and a map from placeholder word to
     substitution body, in source order. An unterminated substitution is left
     in place for the ordinary tokenizer. Arithmetic ``$((`` is not a
     substitution, but substitutions inside it are still found.
@@ -2963,6 +2963,19 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
         if char == "\\":
             out.append(command[index : index + 2])
             index += 2
+            continue
+        if (
+            not double_quoted
+            and char == "#"
+            and (index == 0 or command[index - 1] in " \t\n;&|()<>")
+        ):
+            # A comment runs nothing; copy it through unchanged so the ordinary
+            # tokenizer treats it exactly as it did before substitutions were
+            # extracted.
+            end = command.find("\n", index)
+            end = length if end < 0 else end
+            out.append(command[index:end])
+            index = end
             continue
         if not double_quoted and char == "'":
             end = command.find("'", index + 1)
