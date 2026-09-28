@@ -9497,6 +9497,89 @@ exit 65
             )
             self.assertTrue(managed_before_transcript_flush.attested)
             self.assertIsNone(managed_before_transcript_flush.diagnostic)
+            self.assertFalse(
+                managed_before_transcript_flush.call_workdir_unreadable
+            )
+
+            # Only a recorded call whose own workdir could not be decoded marks
+            # the managed-session context. A readable call without a workdir
+            # runs in the session cwd, and an unrecorded call keeps the
+            # before-flush fallback.
+            readable_call = 'const r = await tools.exec_command({cmd:"x"});'
+            unreadable_cases = (
+                (
+                    "unreadable-malformed",
+                    "const r = await tools.exec_command({cmd: 'x'});",
+                    "unreadable-malformed",
+                    "transcript-custom-input-malformed",
+                    True,
+                ),
+                (
+                    "unreadable-ambiguous",
+                    'const r = await tools.exec_command({cmd:"x"}); '
+                    'await tools.exec_command({cmd:"y"});',
+                    "unreadable-ambiguous",
+                    "transcript-custom-input-ambiguous",
+                    True,
+                ),
+                (
+                    "readable-without-workdir",
+                    readable_call,
+                    "readable-without-workdir",
+                    "transcript-workdir-missing",
+                    False,
+                ),
+                (
+                    "call-id-mismatch",
+                    readable_call,
+                    "some-other-call",
+                    "transcript-call-mismatch",
+                    False,
+                ),
+            )
+            for name, source, call_id, diagnostic, unreadable in unreadable_cases:
+                with self.subTest(transcript_case=name):
+                    case_transcript = root / f"{name}.jsonl"
+                    case_transcript.write_text(
+                        json.dumps(
+                            {
+                                "payload": {
+                                    "type": "custom_tool_call",
+                                    "name": "exec",
+                                    "call_id": call_id,
+                                    "input": source,
+                                }
+                            }
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    self.assertEqual(
+                        hook_common._transcript_workdir_result(
+                            str(case_transcript), name
+                        ).diagnostic,
+                        diagnostic,
+                    )
+                    with (
+                        mock.patch.dict(os.environ, managed_env, clear=False),
+                        mock.patch.object(
+                            hook_common.Path, "cwd", return_value=target
+                        ),
+                    ):
+                        context = resolver(
+                            {
+                                "tool_name": "Bash",
+                                "tool_input": {"command": "x"},
+                                "tool_use_id": name,
+                                "transcript_path": str(case_transcript),
+                                "cwd": str(target),
+                            }
+                        )
+                    self.assertEqual(context.path, target.resolve())
+                    self.assertEqual(context.source, "managed-session-cwd")
+                    self.assertTrue(context.attested)
+                    self.assertIsNone(context.diagnostic)
+                    self.assertIs(context.call_workdir_unreadable, unreadable)
 
             with (
                 mock.patch.dict(

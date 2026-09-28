@@ -187,9 +187,11 @@ call makes the workdir ambiguous rather than borrowing the first call's target.
 Its argument is strict JSON or a flat object literal whose keys are identifiers
 or JSON strings and whose values are JSON scalars or names bound by leading
 `const NAME = "<JSON string>"` declarations; a JSON decoder and a JavaScript
-engine read that subset identically. Duplicate keys, nested values, spreads,
-computed keys, comments, template or single-quoted strings, and other bindings
-stay unreadable. The wrapper may bind the result and render it with `text(r)`,
+engine read that subset identically. In the object-literal form, duplicate
+keys, nested values, spreads, computed keys, comments, template or
+single-quoted strings, and other bindings stay unreadable; strict JSON keeps
+its own rules, where the last duplicate key wins as it does in JavaScript and
+only the top-level `workdir` is read. The wrapper may bind the result and render it with `text(r)`,
 `text(r.output)`, or `text(JSON.stringify(r))`, or render the call directly as
 `text(await tools.exec_command(...))` or
 `text((await tools.exec_command(...)).output)`. When the matching transcript
