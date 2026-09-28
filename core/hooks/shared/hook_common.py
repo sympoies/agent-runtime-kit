@@ -2831,6 +2831,55 @@ def _double_quoted_end(text: str, index: int, nesting: int) -> int:
             return cursor
         if char == "`":
             end = _backtick_end(text, cursor)
+        elif text.startswith("${", cursor):
+            end = _parameter_expansion_end(text, cursor, nesting + 1, True)
+        elif text.startswith("$(", cursor):
+            end = _command_substitution_end(text, cursor + 2, nesting + 1)
+        else:
+            cursor += 1
+            continue
+        if end < 0:
+            return -1
+        cursor = end + 1
+    return -1
+
+
+def _parameter_expansion_end(
+    text: str, index: int, nesting: int, double_quoted: bool
+) -> int:
+    """Return the ``}`` closing the ``${`` at ``index``, or -1.
+
+    A ``)``, ``#``, or quote inside a parameter expansion belongs to the
+    expansion, not to an enclosing substitution. Inside double quotes a single
+    quote stays literal, which only narrows what is skipped.
+    """
+    if nesting > COMMAND_SUBSTITUTION_NESTING_LIMIT:
+        raise _SubstitutionTooDeep
+    depth = 0
+    cursor = index + 2
+    while cursor < len(text):
+        char = text[cursor]
+        if char == "\\":
+            cursor += 2
+            continue
+        if char == "}":
+            if depth == 0:
+                return cursor
+            depth -= 1
+            cursor += 1
+            continue
+        if char == "{":
+            depth += 1
+            cursor += 1
+            continue
+        if char == "'" and not double_quoted:
+            end = text.find("'", cursor + 1)
+        elif char == '"':
+            end = _double_quoted_end(text, cursor, nesting)
+        elif char == "`":
+            end = _backtick_end(text, cursor)
+        elif text.startswith("${", cursor):
+            end = _parameter_expansion_end(text, cursor, nesting + 1, double_quoted)
         elif text.startswith("$(", cursor):
             end = _command_substitution_end(text, cursor + 2, nesting + 1)
         else:
@@ -2847,8 +2896,9 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
 
     The body is a new quoting context: quotes, nested substitutions, comments,
     and here-document bodies are skipped so a parenthesis or apostrophe inside
-    them cannot end the body early, and a ``case`` pattern's unbalanced ``)``
-    does not close it while the ``case`` is open.
+    them cannot end the body early, a ``)`` inside a ``${...}`` parameter
+    expansion belongs to that expansion, and a ``case`` pattern's unbalanced
+    ``)`` does not close the body while the ``case`` is open.
     """
     if nesting > COMMAND_SUBSTITUTION_NESTING_LIMIT:
         raise _SubstitutionTooDeep
@@ -2892,6 +2942,8 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
             end = _double_quoted_end(text, cursor, nesting)
         elif char == "`":
             end = _backtick_end(text, cursor)
+        elif text.startswith("${", cursor):
+            end = _parameter_expansion_end(text, cursor, nesting + 1, False)
         elif text.startswith("$(", cursor):
             end = _command_substitution_end(text, cursor + 2, nesting + 1)
         elif char == "#" and (
@@ -2944,12 +2996,15 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
     quotes; single-quoted and ANSI-C quoted text, shell comments, and escaped
     markers stay literal. Returns the rewritten command and a map from placeholder word to
     substitution body, in source order. An unterminated substitution is left
-    in place for the ordinary tokenizer. Arithmetic ``$((`` is not a
-    substitution, but substitutions inside it are still found.
+    in place for the ordinary tokenizer. Arithmetic ``$((...))`` is not a
+    substitution, but substitutions inside it are still found; a ``$((`` whose
+    inner group does not close as ``))`` is ``$( (...) )``, as bash reads it.
+    A ``#`` inside ``${...}`` never starts a comment.
     """
     out: list[str] = []
     bodies: dict[str, str] = {}
     double_quoted = False
+    parameter_depth = 0
     index = 0
     length = len(command)
 
@@ -2966,6 +3021,7 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
             continue
         if (
             not double_quoted
+            and not parameter_depth
             and char == "#"
             and (index == 0 or command[index - 1] in " \t\n;&|()<>")
         ):
@@ -2996,10 +3052,22 @@ def extract_command_substitutions(command: str) -> tuple[str, dict[str, str]]:
             out.append(char)
             index += 1
             continue
-        if command.startswith("$((", index):
-            out.append("$((")
-            index += 3
+        if command.startswith("${", index):
+            parameter_depth += 1
+            out.append("${")
+            index += 2
             continue
+        if char == "}" and parameter_depth:
+            parameter_depth -= 1
+            out.append(char)
+            index += 1
+            continue
+        if command.startswith("$((", index):
+            inner_end = _command_substitution_end(command, index + 3)
+            if inner_end < 0 or command.startswith(")", inner_end + 1):
+                out.append("$((")
+                index += 3
+                continue
         if command.startswith("$(", index):
             end = _command_substitution_end(command, index + 2)
             if end >= 0:
@@ -3932,10 +4000,33 @@ def simple_commands_with_nested_shells(
     several substitutions in one command stay argument words rather than
     leaving a stray ``$`` in command position.
     """
-    commands: list[list[str]] = []
-    seen: set[tuple[int, str]] = set()
+    return [
+        tokens
+        for tokens, _scope in scoped_simple_commands_with_nested_shells(
+            command, strip_heredocs=strip_heredocs, max_depth=max_depth
+        )
+    ]
 
-    def visit(source: str, depth: int, nesting: int = 0) -> None:
+
+def scoped_simple_commands_with_nested_shells(
+    command: str, *, strip_heredocs: bool = False, max_depth: int = 5
+) -> list[tuple[list[str], tuple[int, ...]]]:
+    """Return ``simple_commands_with_nested_shells`` with substitution scopes.
+
+    Each command carries the path of command substitutions it runs inside:
+    ``()`` for the top-level shell, ``(n,)`` for a substitution body, and a
+    longer path for nested substitutions. A substitution body runs in a
+    subshell, so shell state it changes (aliases, functions, hashes, PATH,
+    cwd) reaches later commands in the same scope but never the enclosing
+    one. Commands of one scope are contiguous in the returned order.
+    """
+    commands: list[tuple[list[str], tuple[int, ...]]] = []
+    seen: set[tuple[int, str]] = set()
+    scope_ids = itertools.count()
+
+    def visit(
+        source: str, depth: int, scope: tuple[int, ...] = (), nesting: int = 0
+    ) -> None:
         if depth > max_depth:
             return
         key = (depth, source)
@@ -3946,7 +4037,7 @@ def simple_commands_with_nested_shells(
         try:
             rewritten, substitutions = extract_command_substitutions(stripped)
         except _SubstitutionTooDeep:
-            commands.append([OPAQUE_NESTED_SHELL_COMMAND])
+            commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
             return
 
         def expand(words: Iterable[str]) -> None:
@@ -3955,9 +4046,9 @@ def simple_commands_with_nested_shells(
                 if body is None:
                     continue
                 if nesting >= COMMAND_SUBSTITUTION_NESTING_LIMIT:
-                    commands.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
                     continue
-                visit(body, depth, nesting + 1)
+                visit(body, depth, (*scope, next(scope_ids)), nesting + 1)
 
         for tokens in _split_simple_commands(rewritten):
             if not tokens:
@@ -3967,13 +4058,13 @@ def simple_commands_with_nested_shells(
                 for token in tokens
                 for match in _COMMAND_SUBSTITUTION_PLACEHOLDER_RE.finditer(token)
             )
-            commands.append(tokens)
+            commands.append((tokens, scope))
             payload = nested_shell_payload(invocation_tokens(tokens))
             if payload:
                 if depth >= max_depth:
-                    commands.append([OPAQUE_NESTED_SHELL_COMMAND])
+                    commands.append(([OPAQUE_NESTED_SHELL_COMMAND], scope))
                 else:
-                    visit(payload, depth + 1)
+                    visit(payload, depth + 1, scope, nesting)
         # A substitution whose word the tokenizer dropped still runs.
         expand(list(substitutions))
 

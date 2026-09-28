@@ -71,10 +71,10 @@ from hook_common import (
     opaque_invocation_candidates,
     opaque_invocation_is_literal_shell_test,
     read_payload,
+    scoped_simple_commands_with_nested_shells,
     resolves_within_its_directory,
     semantic_commit_invocation_effects,
     semantic_commit_invocation_state,
-    simple_commands_with_nested_shells,
 )
 
 # A refusal is only actionable if the caller can tell "this is forbidden" from
@@ -2877,15 +2877,45 @@ def command_block_reason(
     executable_resolution_tainted = initial_executable_resolution_tainted
     repository_context_unresolved = initial_repository_context_unresolved
     executable_identity_unresolved = initial_executable_identity_unresolved
-    simple_commands = simple_commands_with_nested_shells(command)
+    scoped_commands = scoped_simple_commands_with_nested_shells(command)
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
     resolves_directories = not any(
-        nested_shell_payload(invocation_tokens(tokens)) for tokens in simple_commands
+        nested_shell_payload(invocation_tokens(tokens))
+        for tokens, _scope in scoped_commands
     )
     directory_resolved = initial_directory_resolved
     cwd = base
-    for simple_command in simple_commands:
+    # A command substitution body runs in a subshell: shell state it changes
+    # applies to later commands of the same body only. Entering a body saves
+    # the enclosing state and leaving it restores that state, so the command
+    # a substitution expands keeps the classification it would have alone.
+    saved_scopes: list[tuple[tuple[int, ...], tuple[Any, ...]]] = []
+    for simple_command, scope in scoped_commands:
+        while saved_scopes and scope[: len(saved_scopes[-1][0])] != saved_scopes[-1][0]:
+            (
+                shell_context_safe,
+                executable_resolution_safe,
+                executable_resolution_tainted,
+                directory_resolved,
+                cwd,
+                base_source,
+            ) = saved_scopes.pop()[1]
+        entered = len(saved_scopes[-1][0]) if saved_scopes else 0
+        for level in range(entered + 1, len(scope) + 1):
+            saved_scopes.append(
+                (
+                    scope[:level],
+                    (
+                        shell_context_safe,
+                        executable_resolution_safe,
+                        executable_resolution_tainted,
+                        directory_resolved,
+                        cwd,
+                        base_source,
+                    ),
+                )
+            )
         invocation = delivery_invocation_tokens(simple_command)
         if (
             executable_resolution_tainted

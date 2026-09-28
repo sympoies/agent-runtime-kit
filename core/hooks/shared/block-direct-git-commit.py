@@ -291,7 +291,11 @@ def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
     An earlier `export PATH=...`, `unset PATH`, `for PATH in ...`, or similar
     changes lookup for every later Git call, including across `;`, `&&`, and
     nested shells. A sourced file or a nameref (`declare -n r=PATH`) can do
-    the same invisibly. The token check is deliberately conservative.
+    the same invisibly. The token check is deliberately conservative: it is
+    order-insensitive and also counts statements inside command substitution
+    bodies, even though a subshell cannot change the parent's lookup. It only
+    narrows admission of installed non-builtin Git commands, never of
+    `commit` itself.
     """
     for tokens in simple_commands:
         word = command_word(tokens)

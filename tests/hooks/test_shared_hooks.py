@@ -448,6 +448,11 @@ class SharedHookTests(unittest.TestCase):
             'echo "$(case x in a) git commit -m y;; esac)"',
             'echo "$(echo case; git commit -m y)"',
             "echo a#`git commit -m y`",
+            'echo "$(echo ${x:-)} ; git commit -m x)"',
+            'x="$(: ${y#)} ; git commit -m x)"',
+            "echo ${x:- #} `git commit -m y`",
+            'echo "$((git commit -m x) )"',
+            "echo $((git commit -m x) )",
         )
         for command in blocked:
             with self.subTest(blocked=command):
@@ -476,6 +481,8 @@ class SharedHookTests(unittest.TestCase):
             "git status  # then `git commit -m y` later",
             'ls  # "$(git commit -m y)"',
             "ls  # see `git commit --amend` docs\ngit status",
+            'echo "$(( 1 + (2) ))"',
+            "echo $(( (1 + 2) * 3 ))",
         )
         for command in allowed:
             with self.subTest(allowed=command):
@@ -23520,6 +23527,9 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 'echo "$(printf ok)" "$(git push origin main)"',
                 "bash -c 'echo \"`git push origin main`\"'",
                 "echo a#`git push origin main`",
+                'echo "$(echo ${x:-)} ; git push origin main)"',
+                'echo "$((git push origin main) )"',
+                'semantic-commit commit -m "$(git push origin main)"',
             )
             for command in blocked:
                 with self.subTest(blocked=command):
@@ -23569,6 +23579,59 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "[default-delivery: unverified]")
+
+    def test_default_delivery_hook_scopes_substitution_state_to_the_subshell(
+        self,
+    ) -> None:
+        # A command substitution runs in a subshell: it cannot change the
+        # parent's aliases, functions, hashes, PATH, or cwd, so its body must
+        # not taint the command it expands. State changes still apply within
+        # the same substitution body.
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(primary, "feat/subst")
+            allowed = (
+                "semantic-commit commit --message \"$(cat <<'EOF'\n"
+                "fix: x\n\n- Explain the fix\nEOF\n)\"",
+                'semantic-commit commit -m "$(date)"',
+                "semantic-commit commit -m $(date)",
+                "semantic-commit commit -m `date`",
+                'semantic-commit commit --message "$(printf body)"',
+            )
+            for command in allowed:
+                with self.subTest(allowed=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for command, fragment in (
+                (
+                    'echo "$(alias g=git; g push origin main)"',
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    'semantic-commit commit -m "$(printf ok; semantic-commit '
+                    "commit -m 'fix: x')\"",
+                    "changed executable resolution",
+                ),
+                (
+                    "printf ok; semantic-commit commit -m \"$(date)\"",
+                    "changed executable resolution",
+                ),
+            ):
+                with self.subTest(blocked=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
 
     def test_default_delivery_hook_treats_zsh_disable_as_resolution_change(
         self,

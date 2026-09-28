@@ -402,8 +402,17 @@ including in test operands and assignments. The shared tokenizer parses each
 body as its own simple command ahead of the command it expands and leaves a
 dynamic placeholder word in its place, so several substitutions in one command
 stay arguments instead of leaving a stray `$` in command position.
-Single-quoted text, shell comments, escaped markers, and quoted-delimiter
-here-doc bodies stay literal.
+A `)` inside `${...}` stays part of the expansion, and `$((cmd) )` is read as
+a substitution as bash reads it. Single-quoted text, shell comments, escaped
+markers, and quoted-delimiter here-doc bodies stay literal; an
+unquoted-delimiter here-doc inside a substitution expands, so its lines are
+classified like any other script text. A substitution body runs in a
+subshell, so default-delivery applies the shell state it changes (aliases,
+PATH, `cd`, executable resolution) only within that body: a governed
+`semantic-commit commit --message "$(cat <<'EOF' ... EOF)"` keeps the
+classification it has without the substitution. The commit guard's
+program-lookup scan stays conservative and still counts PATH changes inside
+substitution bodies.
 After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
 `disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.
