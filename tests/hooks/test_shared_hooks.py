@@ -27752,6 +27752,73 @@ exit 66
             self.assertIn("intent task-tools", str(context))
             self.assertIn("task-tools missing docs", str(context))
 
+    def test_session_start_healthcheck_daily_stamp_is_per_repository(self) -> None:
+        # The first session of the day in a repository without a catalog must
+        # not consume the agent-docs check for every other repository.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{"intents":["project-dev"]}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' 'project-dev missing docs'
+  exit 65
+fi
+exit 66
+""",
+            )
+            home = root / "home"
+            home.mkdir()
+            env = {
+                "HOME": str(home),
+                "AGENT_DOCS_HOME": "",
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_EVIDENCE_ARCHIVE_HOME": "",
+                "XDG_CONFIG_HOME": str(root / "config"),
+                "XDG_DATA_HOME": str(root / "data"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            repos: dict[str, Path] = {}
+            for name in ("plain", "catalog-a", "catalog-b"):
+                repo = root / name
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                if name != "plain":
+                    (repo / "AGENT_DOCS.toml").write_text(
+                        '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                        'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                        encoding="utf-8",
+                    )
+                repos[name] = repo
+
+            def context_in(name: str) -> str:
+                code, decision, stderr = run_shell_hook(
+                    "session-start-healthcheck.sh",
+                    {"hook_event_name": "SessionStart"},
+                    cwd=repos[name],
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                if decision is None:
+                    return ""
+                return str(
+                    decision.get("hookSpecificOutput", {}).get("additionalContext", "")
+                )
+
+            self.assertEqual(context_in("plain"), "")
+            self.assertIn("project-dev missing docs", context_in("catalog-a"))
+            # The nudge stays once per day for the same repository.
+            self.assertEqual(context_in("catalog-a"), "")
+            self.assertIn("project-dev missing docs", context_in("catalog-b"))
+
     def test_session_start_healthcheck_evidence_archive_optin(self) -> None:
         # The SessionStart healthcheck must validate evidence-archive wiring only
         # when the user has opted in (env / local config / a default clone with
