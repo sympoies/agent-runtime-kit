@@ -1339,6 +1339,23 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "missing a body")
 
+    def test_body_gate_names_mixed_message_and_structured_forms(self) -> None:
+        # semantic-commit rejects --message/--message-file combined with the
+        # structured fields, so the bullets never become a body. The gate must
+        # say that instead of reporting a missing body next to visible bullets.
+        command = (
+            "semantic-commit commit --message 'fix(hooks): tighten gate' "
+            "--body-bullet 'first reason' --body-bullet 'second reason'"
+        )
+        code, decision, stderr = run_hook(
+            "semantic-commit-body-gate.py",
+            command_payload(command),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "cannot be combined")
+        assert decision is not None
+        self.assertNotIn("missing a body", str(decision.get("reason", "")))
+
     def test_allows_body_gate_with_structured_body_bullet(self) -> None:
         command = (
             "semantic-commit commit --type fix --scope hooks "
