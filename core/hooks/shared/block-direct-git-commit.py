@@ -176,6 +176,26 @@ FALLBACK_BUILTINS = frozenset(
 # Variables and env options that change where Git finds `git-<name>` programs.
 LOOKUP_ENV_NAME_RE = re.compile(r"(?:^|[\s=]|^-u)(?:PATH|GIT_EXEC_PATH)(?:=|\s|$)")
 ENV_RESET_TOKENS = {"-", "-i", "--ignore-environment"}
+LOOKUP_ENV_NAMES = frozenset({"PATH", "GIT_EXEC_PATH"})
+LOOKUP_ASSIGNMENT_RE = re.compile(r"^(?:PATH|GIT_EXEC_PATH)\+?=")
+# Shell words that can bind a variable named by a later argument.
+VARIABLE_BINDING_WORDS = frozenset(
+    {
+        "declare",
+        "export",
+        "for",
+        "getopts",
+        "local",
+        "mapfile",
+        "printf",
+        "read",
+        "readarray",
+        "readonly",
+        "select",
+        "typeset",
+        "unset",
+    }
+)
 
 
 def list_git_commands(categories: str) -> frozenset[str] | None:
@@ -246,8 +266,31 @@ def retargets_program_lookup(simple_command: list[str], invocation: list[str]) -
     return False
 
 
+def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
+    """Whether any statement of the whole command may change PATH or GIT_EXEC_PATH.
+
+    An earlier `export PATH=...`, `unset PATH`, `for PATH in ...`, or similar
+    changes lookup for every later Git call, including across `;`, `&&`, and
+    nested shells. The token check is deliberately conservative.
+    """
+    for tokens in simple_commands:
+        if any(LOOKUP_ASSIGNMENT_RE.match(token) for token in tokens):
+            return True
+        if any(PurePosixPath(token).name in VARIABLE_BINDING_WORDS for token in tokens) and any(
+            token in LOOKUP_ENV_NAMES
+            or token.lstrip("-").lstrip("v") in LOOKUP_ENV_NAMES
+            for token in tokens
+        ):
+            return True
+    return False
+
+
 def subcommand_block_reason(
-    subcommand: str | None, simple_command: list[str], invocation: list[str]
+    subcommand: str | None,
+    simple_command: list[str],
+    invocation: list[str],
+    *,
+    lookup_retargeted: bool = False,
 ) -> str:
     if subcommand is None:
         return ""
@@ -261,18 +304,23 @@ def subcommand_block_reason(
         return ""
     if subcommand not in git_installed_commands():
         return ALIAS_REASON
-    if retargets_program_lookup(simple_command, invocation):
+    if lookup_retargeted or retargets_program_lookup(simple_command, invocation):
         return ALIAS_REASON
     return ""
 
 
 def git_commit_block_reason(command: str) -> str:
-    for simple_command in simple_commands_with_nested_shells(command):
+    simple_commands = list(simple_commands_with_nested_shells(command))
+    lookup_retargeted = command_retargets_lookup(simple_commands)
+    for simple_command in simple_commands:
         if selected_inline_alias(simple_command) is not None:
             return ALIAS_REASON
         invocation = invocation_tokens(simple_command)
         reason = subcommand_block_reason(
-            git_subcommand(simple_command), simple_command, invocation
+            git_subcommand(simple_command),
+            simple_command,
+            invocation,
+            lookup_retargeted=lookup_retargeted,
         )
         if reason:
             return reason
@@ -282,7 +330,10 @@ def git_commit_block_reason(command: str) -> str:
             if selected_inline_alias(candidate) is not None:
                 return ALIAS_REASON
             reason = subcommand_block_reason(
-                git_subcommand(candidate), simple_command, candidate
+                git_subcommand(candidate),
+                simple_command,
+                candidate,
+                lookup_retargeted=lookup_retargeted,
             )
             if reason:
                 return reason

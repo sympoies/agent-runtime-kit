@@ -548,6 +548,9 @@ class SharedHookTests(unittest.TestCase):
                 "PATH=/usr/bin git status --short",
                 "GIT_EXEC_PATH=/nonexistent git status",
                 "git --exec-path=/nonexistent status",
+                "export PATH=/usr/bin:/bin; git status",
+                "export FOO=1; git fixture-extension pull",
+                "git fixture-extension pull; echo PATH",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -569,6 +572,19 @@ class SharedHookTests(unittest.TestCase):
                 "git --exec-path=/nonexistent fixture-extension pull",
                 "git --exec-path /nonexistent fixture-extension pull",
                 "GIT_EXEC_PATH=/nonexistent git submodule update",
+                # Earlier statements in the same command retarget lookup too.
+                "export PATH=/usr/bin:/bin; git fixture-extension pull",
+                "PATH=/usr/bin:/bin; git fixture-extension pull",
+                "PATH+=:/nonexistent; git fixture-extension pull",
+                "unset PATH; git fixture-extension pull",
+                "export GIT_EXEC_PATH=/nonexistent; git submodule update",
+                "declare -x PATH=/usr/bin; git fixture-extension pull",
+                "for PATH in /usr/bin; do git fixture-extension pull; done",
+                "read PATH <<< /usr/bin; git fixture-extension pull",
+                "printf -v PATH %s /usr/bin; git fixture-extension pull",
+                "bash -c 'export PATH=/usr/bin; git fixture-extension pull'",
+                "git config alias.fixture-extension commit && "
+                "export PATH=/usr/bin && git fixture-extension -m x",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
