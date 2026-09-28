@@ -42,6 +42,7 @@ ALIAS_REASON = (
     "installed Git command, or use semantic-commit for commit creation."
 )
 
+ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
 GIT_SUBCOMMAND_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 GIT_OPTIONS_WITH_VALUE = {
     "-C",
@@ -266,14 +267,40 @@ def retargets_program_lookup(simple_command: list[str], invocation: list[str]) -
     return False
 
 
+SOURCING_WORDS = frozenset({"source", "."})
+NAMEREF_WORDS = frozenset({"declare", "typeset", "local"})
+COMMAND_PREFIX_WORDS = frozenset({"builtin", "command"})
+
+
+def command_word(tokens: list[str]) -> str | None:
+    """Return the shell command word, skipping assignments and builtin/command."""
+    index = 0
+    while index < len(tokens) and ASSIGNMENT_RE.match(tokens[index]):
+        index += 1
+    while index < len(tokens) and tokens[index] in COMMAND_PREFIX_WORDS:
+        index += 1
+        while index < len(tokens) and tokens[index].startswith("-"):
+            index += 1
+    return tokens[index] if index < len(tokens) else None
+
+
 def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
     """Whether any statement of the whole command may change PATH or GIT_EXEC_PATH.
 
     An earlier `export PATH=...`, `unset PATH`, `for PATH in ...`, or similar
     changes lookup for every later Git call, including across `;`, `&&`, and
-    nested shells. The token check is deliberately conservative.
+    nested shells. A sourced file or a nameref (`declare -n r=PATH`) can do
+    the same invisibly. The token check is deliberately conservative.
     """
     for tokens in simple_commands:
+        word = command_word(tokens)
+        if word in SOURCING_WORDS:
+            return True
+        if word in NAMEREF_WORDS and any(
+            token.startswith("-") and not token.startswith("--") and "n" in token[1:]
+            for token in tokens[1:]
+        ):
+            return True
         if any(LOOKUP_ASSIGNMENT_RE.match(token) for token in tokens):
             return True
         if any(PurePosixPath(token).name in VARIABLE_BINDING_WORDS for token in tokens) and any(

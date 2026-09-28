@@ -551,6 +551,8 @@ class SharedHookTests(unittest.TestCase):
                 "export PATH=/usr/bin:/bin; git status",
                 "export FOO=1; git fixture-extension pull",
                 "git fixture-extension pull; echo PATH",
+                "source .venv/bin/activate; git status",
+                "git add . && git fixture-extension pull",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -585,6 +587,10 @@ class SharedHookTests(unittest.TestCase):
                 "bash -c 'export PATH=/usr/bin; git fixture-extension pull'",
                 "git config alias.fixture-extension commit && "
                 "export PATH=/usr/bin && git fixture-extension -m x",
+                # Sourced files and namerefs can change lookup invisibly.
+                "source /tmp/env.sh; git fixture-extension pull",
+                "set -a; . ./env; git fixture-extension pull",
+                "declare -n r=PATH; r=/x; git fixture-extension pull",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
