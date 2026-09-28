@@ -8,7 +8,6 @@ contracts, and cleanup behavior stay consistent across sessions.
 from __future__ import annotations
 
 import os
-import re
 import sys
 from collections.abc import Mapping
 from pathlib import PurePosixPath
@@ -31,10 +30,11 @@ from hook_common import (
 
 BLOCK_REASON = (
     "Do not use mutating git worktree commands directly. Use git-cli worktree "
-    "instead. Emergency override: prefix with ALLOW_DIRECT_GIT_WORKTREE=1."
+    "add, remove, or prune instead. `git worktree move`, `repair`, `lock`, and "
+    "`unlock` have no git-cli worktree equivalent; run them only with the "
+    "emergency override: prefix with ALLOW_DIRECT_GIT_WORKTREE=1."
 )
 
-ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*")
 MUTATING_WORKTREE_COMMANDS = {
     "add",
     "remove",
@@ -69,46 +69,6 @@ GIT_OPTIONS_WITH_VALUE_PREFIXES = (
 
 def basename(token: str) -> str:
     return PurePosixPath(token).name
-
-
-def is_assignment(token: str) -> bool:
-    return bool(ASSIGNMENT_RE.match(token))
-
-
-def skip_env_prefix(tokens: list[str], index: int) -> int:
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            return index + 1
-        if is_assignment(token):
-            index += 1
-            continue
-        if token in {"-i", "--ignore-environment", "-0", "--null"}:
-            index += 1
-            continue
-        if token in {"-u", "--unset"}:
-            index += 2
-            continue
-        if token.startswith("--unset="):
-            index += 1
-            continue
-        if token.startswith("-") and token != "-":
-            index += 1
-            continue
-        return index
-    return index
-
-
-def git_command_index(simple_command: list[str]) -> int | None:
-    invocation = invocation_tokens(simple_command)
-    if not invocation:
-        return None
-    return 0 if basename(invocation[0]) == "git" else None
-
-
-def git_subcommand(simple_command: list[str]) -> str | None:
-    found = git_subcommand_with_index(simple_command)
-    return found[0] if found is not None else None
 
 
 def git_subcommand_with_index(simple_command: list[str]) -> tuple[str, int] | None:

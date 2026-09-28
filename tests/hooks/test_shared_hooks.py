@@ -644,6 +644,30 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "uv run --locked python")
 
+    def test_block_messages_name_the_governed_route(self) -> None:
+        # `git-cli worktree` has no move/repair/lock/unlock, so the message
+        # must route those to the override instead of a nonexistent command.
+        code, decision, stderr = run_hook(
+            "block-direct-git-worktree.py",
+            command_payload("git worktree move ../old ../new"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "no git-cli worktree equivalent")
+        assert decision is not None
+        self.assertIn("ALLOW_DIRECT_GIT_WORKTREE=1", str(decision.get("reason", "")))
+
+        for command in ("gh pr create --draft", "glab mr create --draft"):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "forge-cli pr deliver")
+                assert decision is not None
+                reason = str(decision.get("reason", ""))
+                self.assertIn("forge-cli pr create", reason)
+                self.assertIn("AGENT_RUNTIME_PR_SKILL", reason)
+
     def test_block_hooks_ignore_inert_heredoc_prose(self) -> None:
         # A quoted-delimiter here-doc body is data with no expansion at all;
         # prose that merely mentions command-like words must not trip the
