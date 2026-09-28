@@ -330,29 +330,6 @@ def _transcript_workdir_result(
     return TranscriptWorkdirResult(None, "transcript-call-mismatch")
 
 
-def _transcript_workdir_value(transcript_path: str, tool_use_id: str) -> str | None:
-    """Compatibility helper returning only the bounded transcript value."""
-    return _transcript_workdir_result(transcript_path, tool_use_id).value
-
-
-def workdir_from_transcript(payload: Mapping[str, Any]) -> Path | None:
-    """Workdir from the Codex transcript's exec_command arguments.
-
-    Codex submits a shell command's ``workdir`` in the transcript event whose
-    ``call_id`` matches this call's ``tool_use_id`` rather than inline in the
-    tool input. Delegates to a cached, bounded, fail-soft reader.
-    """
-    tool_use_id = payload.get("tool_use_id")
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(tool_use_id, str) or not isinstance(transcript_path, str):
-        return None
-    value = _transcript_workdir_value(transcript_path, tool_use_id)
-    if value is None:
-        return None
-    workdir = Path(value).expanduser()
-    return workdir if workdir.is_absolute() else Path.cwd() / workdir
-
-
 def _context_from_value(
     value: str,
     *,
@@ -1202,42 +1179,6 @@ def _agent_docs_json(args: list[str]) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _agent_docs_supports_declared_intent_guard(repo_root: str) -> bool:
-    try:
-        completed = subprocess.run(
-            _agent_docs_base_args(repo_root) + ["preflight", "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
-        )
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return False
-    return (
-        completed.returncode == 0
-        and "--require-declared-intent" in completed.stdout
-    )
-
-
-def _agent_docs_product_args(repo_root: str) -> list[str]:
-    product = _runtime_product()
-    if product is None:
-        return []
-    try:
-        completed = subprocess.run(
-            _agent_docs_base_args(repo_root) + ["preflight", "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
-        )
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return []
-    if completed.returncode != 0 or "--product" not in completed.stdout:
-        return []
-    return ["--product", product]
-
-
 def _validation_marker_default(context: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", context.strip()).strip(".-")
     if not safe:
@@ -1285,12 +1226,8 @@ def _declared_intents(repo_root: str) -> list[str]:
 def _resolve_validation_contracts(repo_root: str) -> list[dict[str, Any]]:
     """Resolve every declared validation contract via `agent-docs`."""
     contracts: list[dict[str, Any]] = []
-    guard_args = (
-        ["--require-declared-intent"]
-        if _agent_docs_supports_declared_intent_guard(repo_root)
-        else []
-    )
-    product_args = _agent_docs_product_args(repo_root)
+    product = _runtime_product()
+    product_args = ["--product", product] if product else []
     for intent in _declared_intents(repo_root):
         data = _agent_docs_json(
             _agent_docs_base_args(repo_root)
@@ -1298,7 +1235,7 @@ def _resolve_validation_contracts(repo_root: str) -> list[dict[str, Any]]:
                 "preflight",
                 "--intent",
                 intent,
-                *guard_args,
+                "--require-declared-intent",
                 *product_args,
                 "--format",
                 "json",
@@ -1379,14 +1316,6 @@ def validation_contracts(repo_root: str) -> list[dict[str, Any]]:
     except OSError:
         pass
     return contracts
-
-
-def project_dev_validation_contract(repo_root: str) -> dict[str, Any] | None:
-    """The repo's project-dev validation contract, or None when none applies."""
-    for contract in validation_contracts(repo_root):
-        if contract.get("context") == "project-dev":
-            return contract
-    return None
 
 
 def validation_marker_set(
