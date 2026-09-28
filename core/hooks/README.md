@@ -247,7 +247,22 @@ scope; compound or otherwise opaque shell effects, explicit cross-repository
 destinations, commands outside a
 governed repository, wrapped provider clients, and unresolved provider targets
 fail closed. Provider `--repo`/`-R` overrides bind the effective provider
-reference rather than the hook checkout. Nested `sh`/`bash`/`zsh` command
+reference rather than the hook checkout. `forge-cli pr create` and
+`forge-cli pr deliver --no-merge` name their pull request by head branch, so
+they resolve to one `pull-request-head` target (repository from `--repo` or the
+checkout origin, head from `--head` or the current branch) that only a Main
+Agent worker's private head grant covers; another branch or repository is
+denied as uncovered. A repeated option, a `--host` or `--provider` override
+or non-origin `--remote` (the target carries no forge host), a detached
+checkout, or an invalid branch name stays unresolved. The
+guard emits this additive `pull_requests` field only when the admitting
+`agent-session` is at or above the first release that accepts it; the released
+v1.29.0 surface rejects the unknown field, so it keeps the unresolved result.
+A delivery that would merge, every numbered `pr <action> <N>` (which cannot be
+bound to a head without a provider lookup and keeps its `pr` provider
+reference, never held by a worker claim), `gh pr create`, and `issue create`
+keep their released behavior, leaving merges and new issues with the Main
+Agent. Nested `sh`/`bash`/`zsh` command
 strings are unwrapped before destination checks, and Git forms that may invoke
 configured fsmonitor, pager, external-diff, or filter programs do not bypass
 admission. A definite peer conflict and
