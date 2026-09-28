@@ -2462,19 +2462,23 @@ class SharedHookTests(unittest.TestCase):
                 self.assert_allowed(decision)
 
     def test_mcp_secret_scan_covers_broader_paths_and_redacts_secret_samples(self) -> None:
+        aws_secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
         cases = (
-            (".vscode/mcp.json", "github_pat_1234567890abcdef1234567890abcdef1234"),
-            (".cursor/mcp.json", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
-            ("mcp.json", "-----BEGIN OPENSSH PRIVATE KEY-----"),
-            (".mcp.json", "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"),
-            (".mcp.json", "AIzaSyDExampleExampleExampleExample12345"),
-            (".mcp.json", "ya29.a0AfH6SMBExampleExampleExampleExample"),
+            (".vscode/mcp.json", "github_pat_1234567890abcdef1234567890abcdef1234", "value"),
+            # A 40-character AWS secret is only recognizable by its key context.
+            (".cursor/mcp.json", aws_secret, "AWS_SECRET_ACCESS_KEY"),
+            (".mcp.json", aws_secret, "aws_secret_access_key"),
+            (".mcp.json", aws_secret, "SecretAccessKey"),
+            ("mcp.json", "-----BEGIN OPENSSH PRIVATE KEY-----", "value"),
+            (".mcp.json", "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "value"),
+            (".mcp.json", "AIzaSyDExampleExampleExampleExample12345", "value"),
+            (".mcp.json", "ya29.a0AfH6SMBExampleExampleExampleExample", "value"),
         )
-        for path, secret in cases:
-            with self.subTest(path=path, secret=secret[:8]):
+        for path, secret, key in cases:
+            with self.subTest(path=path, secret=secret[:8], key=key):
                 code, decision, stderr = run_hook(
                     "mcp-secret-scan.py",
-                    write_payload(path, f'{{"value":"{secret}"}}'),
+                    write_payload(path, f'{{"{key}":"{secret}"}}'),
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, path)
@@ -2490,6 +2494,23 @@ class SharedHookTests(unittest.TestCase):
                 code, decision, stderr = run_hook(
                     "mcp-secret-scan.py",
                     write_payload(path, benign),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        # 40-character git SHAs, hex digests, and other runs without an AWS
+        # secret key name are not AWS secret keys.
+        sha = "3f786850e387550fdab836ed7e6dc881de23001b"
+        for content in (
+            '{"mcpServers":{"tool":{"command":"npx",'
+            f'"args":["github:org/tool#{sha}"]}}}}}}',
+            f'{{"integrity":{{"sha1":"{sha}"}}}}',
+            '{"value":"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}',
+        ):
+            with self.subTest(content=content[:40]):
+                code, decision, stderr = run_hook(
+                    "mcp-secret-scan.py",
+                    write_payload(".mcp.json", content),
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)

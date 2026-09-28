@@ -38,7 +38,16 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Slack user token", re.compile(r"\bxoxp-[A-Za-z0-9-]{10,}\b")),
     ("xAI key", re.compile(r"\bxai-[A-Za-z0-9_-]{16,}\b")),
     ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("AWS secret key", re.compile(r"\b[A-Za-z0-9/+=]{40}\b")),
+    # A bare 40-character run also matches git SHAs and hex digests, so an AWS
+    # secret is recognized only next to its key name (the nils-scrub approach
+    # of key/value context rather than a context-free run).
+    (
+        "AWS secret key",
+        re.compile(
+            r"(?i)(?:aws[_-]?secret[_-]?(?:access[_-]?)?key|secret[_-]?access[_-]?key)"
+            r"[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])"
+        ),
+    ),
     ("Private key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("age secret key", re.compile(r"\bAGE-SECRET-KEY-1[0-9A-Z]{20,}\b")),
     ("Google API key", re.compile(r"\bAIza[A-Za-z0-9_-]{20,}\b")),
