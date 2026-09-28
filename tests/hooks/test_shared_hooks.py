@@ -3194,6 +3194,54 @@ fi
 exit 64
 """
 
+    def _run_declared_validation(
+        self,
+        repo: Path,
+        command: str,
+        *,
+        env: dict[str, str],
+        session_id: str | None = None,
+    ) -> None:
+        """Credit a declared validation the way provider wiring does.
+
+        The PreToolUse hook rewrites the command into its outcome wrapper, and
+        running that wrapper records the observed exit status. A missing
+        ``bash <script>`` target is stubbed to succeed so the fixture models a
+        passing validation.
+        """
+        words = shlex.split(command)
+        if len(words) == 2 and words[0] == "bash":
+            script = repo / words[1]
+            if not script.exists():
+                script.parent.mkdir(parents=True, exist_ok=True)
+                script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+                script.chmod(0o755)
+        payload = command_event_payload(
+            "PreToolUse",
+            command,
+            tool_use_id=f"declared-validation-{secrets.token_hex(4)}",
+        )
+        if session_id is not None:
+            payload["session_id"] = session_id
+        code, rewrite, stderr = run_hook(
+            "finish-line-record.py", payload, cwd=repo, env=env
+        )
+        self.assertEqual(code, 0, stderr)
+        assert rewrite is not None, stderr
+        hook_output = rewrite["hookSpecificOutput"]
+        assert isinstance(hook_output, dict)
+        updated_input = hook_output["updatedInput"]
+        assert isinstance(updated_input, dict)
+        completed = subprocess.run(
+            ["bash", "-c", str(updated_input["command"])],
+            cwd=repo,
+            env=gate_env(env),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     @staticmethod
     def _mark_runtime_kit_source_checkout(repo: Path) -> None:
         (repo / "AGENT_HOME.md").write_text("# Home\n", encoding="utf-8")
@@ -3245,13 +3293,7 @@ exit 64
             self.assertNotIn("Running it records", reason)
 
             # Running the declared validation records the run.
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/ci/all.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
 
             # The gate releases now that validation ran after the edit.
             code, decision, stderr = run_hook(
@@ -3259,6 +3301,40 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
+
+    def test_finish_line_record_ignores_eventless_validation_payload(self) -> None:
+        """Validation credit requires the PreToolUse outcome wrapper.
+
+        A Bash payload without ``hook_event_name`` carries no observed exit
+        status, so it must never credit the declared validation. Real provider
+        payloads always name their event.
+        """
+        self._require_agent_docs()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
+            code, _, stderr = run_hook(
+                "finish-line-record.py",
+                write_payload("src/lib.rs", "fn main() {}\n"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+
+            code, decision, stderr = run_hook(
+                "finish-line-record.py",
+                command_payload("bash scripts/ci/all.sh"),
+                cwd=repo,
+                env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_finish_line_gate_names_the_recovery_lane_by_absolute_path(self) -> None:
         # The block text is read inside the repository being validated, which is
@@ -3378,12 +3454,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(editing_decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = "editing-session"
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id="editing-session"
             )
-            self.assertEqual(code, 0, stderr)
 
             code, editing_decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3416,12 +3489,9 @@ exit 64
             session_dir = marker_dir / f"session-{session_key}"
             self.assertTrue(session_dir.is_dir())
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3462,12 +3532,9 @@ exit 64
                     "AGENT_RUNTIME_DOCS_HOME": str(repo),
                     "AGENT_RUNTIME_PRODUCT": product,
                 }
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py", validation, cwd=repo, env=env
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             codex_env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
@@ -3527,12 +3594,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             for env in (codex_env, claude_env):
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py", validation, cwd=repo, env=env
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3553,12 +3617,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assertFalse(codex_terminal.exists())
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=claude_env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=claude_env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3578,12 +3639,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=codex_env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=codex_env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3628,12 +3686,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             for env in (codex_env, claude_env):
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py", validation, cwd=repo, env=env
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3740,15 +3795,9 @@ exit 64
                 )
                 self.assertEqual(code, 0, stderr)
                 for product in ("codex", "claude"):
-                    validation = command_payload("bash scripts/ci/all.sh")
-                    validation["session_id"] = session_id
-                    code, _, stderr = run_hook(
-                        "finish-line-record.py",
-                        validation,
-                        cwd=repo,
-                        env=envs[product],
+                    self._run_declared_validation(
+                        repo, "bash scripts/ci/all.sh", env=envs[product], session_id=session_id
                     )
-                    self.assertEqual(code, 0, stderr)
 
                 code, decision, stderr = run_hook(
                     "stop-finish-line-gate.py",
@@ -3769,15 +3818,9 @@ exit 64
                     env=envs[newer_product],
                 )
                 self.assertEqual(code, 0, stderr)
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs[newer_product],
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=envs[newer_product], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
                 code, decision, stderr = run_hook(
                     "stop-finish-line-gate.py",
@@ -3798,15 +3841,9 @@ exit 64
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "scripts/ci/all.sh")
 
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs[stale_product],
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=envs[stale_product], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
                 code, decision, stderr = run_hook(
                     "stop-finish-line-gate.py",
                     {"session_id": session_id},
@@ -3847,15 +3884,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             for product in ("codex", "claude"):
-                validation = command_payload("bash scripts/ci/all.sh")
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs[product],
+                self._run_declared_validation(
+                    repo, "bash scripts/ci/all.sh", env=envs[product], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -3879,15 +3910,9 @@ exit 64
             )
             self.assertFalse((session_dir / ".terminal-codex").exists())
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["codex"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=envs["codex"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3907,15 +3932,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["claude"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=envs["claude"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -3949,12 +3968,9 @@ exit 64
                 "finish-line-record.py", edit, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             unknown = session_dir / ".terminal-unknown"
             unknown.touch()
 
@@ -4012,24 +4028,12 @@ exit 64
                 "bash scripts/ci/primary.sh",
                 "bash scripts/ci/secondary.sh",
             ):
-                validation = command_payload(command)
-                validation["session_id"] = session_id
-                code, _, stderr = run_hook(
-                    "finish-line-record.py",
-                    validation,
-                    cwd=repo,
-                    env=envs["codex"],
+                self._run_declared_validation(
+                    repo, command, env=envs["codex"], session_id=session_id
                 )
-                self.assertEqual(code, 0, stderr)
-            validation = command_payload("bash scripts/ci/secondary.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["claude"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/secondary.sh", env=envs["claude"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             self.assertTrue(
                 (session_dir / "foo.codex.claude.cmd0.ran").is_file()
             )
@@ -4056,15 +4060,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "bash scripts/ci/primary.sh")
 
-            validation = command_payload("bash scripts/ci/primary.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                validation,
-                cwd=repo,
-                env=envs["claude"],
+            self._run_declared_validation(
+                repo, "bash scripts/ci/primary.sh", env=envs["claude"], session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
                 {"session_id": session_id},
@@ -4097,12 +4095,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assertTrue(session_dir.is_dir())
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
 
             dirty = session_dir / "project-dev.dirty"
             spec = importlib.util.spec_from_file_location(
@@ -4218,12 +4213,9 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assertTrue(session_dir.is_dir())
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = session_id
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id=session_id
             )
-            self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -4253,13 +4245,7 @@ exit 64
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/ci/all.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
             code, legacy_decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
@@ -4312,12 +4298,9 @@ exit 64
 
             self.assert_blocked(read_only_decision, "scripts/ci/all.sh")
 
-            validation = command_payload("bash scripts/ci/all.sh")
-            validation["session_id"] = "post-upgrade-session"
-            code, _, stderr = run_hook(
-                "finish-line-record.py", validation, cwd=repo, env=env
+            self._run_declared_validation(
+                repo, "bash scripts/ci/all.sh", env=env, session_id="post-upgrade-session"
             )
-            self.assertEqual(code, 0, stderr)
 
             code, upgraded_decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
@@ -6984,13 +6967,14 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             fake_command = 'printf %s "bash scripts/ci/all.sh && bash tests/hooks/run.sh"'
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(fake_command),
+                command_event_payload("PreToolUse", fake_command),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_allowed(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7004,8 +6988,10 @@ exit 64
         #     cd /repo
         #     bash scripts/ci/all.sh && bash tests/hooks/run.sh
         # An unquoted newline must act as a command separator; otherwise the
-        # validation command on the second physical line is glued onto `cd`,
-        # never recognized, and the gate stays spuriously blocked.
+        # validation command on the second physical line is glued onto `cd` and
+        # never recognized. Recognition alone earns no credit: this aggregate
+        # shape cannot prove its outcome, so the recorder explains that instead
+        # of silently ignoring the run.
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
@@ -7026,20 +7012,20 @@ exit 64
                 "bash scripts/ci/all.sh && bash tests/hooks/run.sh\n"
                 'echo "done=$?"'
             )
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(multiline),
+                command_event_payload("PreToolUse", multiline),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
-            # Both declared validations ran after the edit, so the gate releases.
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_finish_line_record_ignores_validation_text_inside_quotes(self) -> None:
         # Guard against a false positive: a multi-line command whose only
@@ -7059,13 +7045,14 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             quoted = 'cd /repo\nprintf "%s\nbash scripts/ci/all.sh\n" "header"'
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(quoted),
+                command_event_payload("PreToolUse", quoted),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_allowed(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7092,13 +7079,14 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             heredoc = "cat > ci.sh <<'EOF'\nbash scripts/ci/all.sh\nEOF"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(heredoc),
+                command_event_payload("PreToolUse", heredoc),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_allowed(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7106,9 +7094,9 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_validation_after_heredoc(self) -> None:
+    def test_finish_line_record_recognizes_validation_after_heredoc(self) -> None:
         # The here-doc stripping must remove only the body: a real validation
-        # run AFTER the here-doc closes still credits the gate (agent-runtime-kit#351).
+        # run AFTER the here-doc closes is still recognized (agent-runtime-kit#351).
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -7123,21 +7111,22 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "cat > note.txt <<'EOF'\nsome notes\nEOF\nbash scripts/ci/all.sh"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_continued_heredoc_opener(self) -> None:
+    def test_finish_line_record_recognizes_continued_heredoc_opener(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -7152,21 +7141,22 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "cat <<EOF && \\\nbash scripts/ci/all.sh\nnotes\nEOF"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_validation_inside_shell_heredoc(self) -> None:
+    def test_finish_line_record_recognizes_validation_inside_shell_heredoc(self) -> None:
         self._require_agent_docs()
         commands = (
             "bash <<'EOF'\nbash scripts/ci/all.sh\nEOF",
@@ -7186,19 +7176,20 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
 
-                    code, _, stderr = run_hook(
+                    code, recorded, stderr = run_hook(
                         "finish-line-record.py",
-                        command_payload(payload),
+                        command_event_payload("PreToolUse", payload),
                         cwd=repo,
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
+                    self.assert_unprovable_validation_advisory(recorded)
 
                     code, decision, stderr = run_hook(
                         "stop-finish-line-gate.py", {}, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_finish_line_record_ignores_shell_heredoc_stdin_not_used_as_script(self) -> None:
         self._require_agent_docs()
@@ -7220,13 +7211,14 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
 
-                    code, _, stderr = run_hook(
+                    code, recorded, stderr = run_hook(
                         "finish-line-record.py",
-                        command_payload(payload),
+                        command_event_payload("PreToolUse", payload),
                         cwd=repo,
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(recorded)
 
                     code, decision, stderr = run_hook(
                         "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7234,7 +7226,7 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_ignores_heredoc_operator_inside_comment(self) -> None:
+    def test_finish_line_record_recognizes_validation_after_commented_heredoc_operator(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -7249,21 +7241,22 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "# <<EOF\nbash scripts/ci/all.sh"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
-    def test_finish_line_record_credits_validation_after_ansi_c_quoted_heredoc(self) -> None:
+    def test_finish_line_record_recognizes_validation_after_ansi_c_quoted_heredoc(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
@@ -7278,19 +7271,20 @@ exit 64
             self.assertEqual(code, 0, stderr)
 
             payload = "cat <<$'EOF'\nnotes\nEOF\nbash scripts/ci/all.sh"
-            code, _, stderr = run_hook(
+            code, recorded, stderr = run_hook(
                 "finish-line-record.py",
-                command_payload(payload),
+                command_event_payload("PreToolUse", payload),
                 cwd=repo,
                 env=env,
             )
             self.assertEqual(code, 0, stderr)
+            self.assert_unprovable_validation_advisory(recorded)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "scripts/ci/all.sh")
 
     def test_command_match_requires_declared_shell_heredoc_body(self) -> None:
         declared = "bash <<'EOF'\nbash scripts/ci/all.sh\nEOF"
@@ -7531,13 +7525,7 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
 
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/ci/all.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7545,13 +7533,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/task-tools.sh")
 
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash scripts/task-tools.sh"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
+            self._run_declared_validation(repo, "bash scripts/task-tools.sh", env=env)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
@@ -7912,13 +7894,9 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
 
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                command_payload("bash codex.sh"),
-                cwd=repo,
-                env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"},
+            self._run_declared_validation(
+                repo, "bash codex.sh", env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"}
             )
-            self.assertEqual(code, 0, stderr)
 
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py",
