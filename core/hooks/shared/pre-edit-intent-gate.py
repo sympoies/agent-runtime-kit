@@ -6,8 +6,9 @@ checked against one provenance-aware command context: a pre-tool hook cannot
 observe shell-expanded filesystem destinations reliably, so cross-repository
 shell mutations need a host-attested target workdir. Project-dev is advisory by
 default, explicitly fail-closed under ``enforce``, and solely bypassed by
-``off``. Only an explicitly versioned pre-session ``agent-docs`` release
-receives compatibility behavior.
+``off``. A trusted ``agent-docs`` without the session surface fails at
+verification like any other unverified session; there is no pre-session
+compatibility bypass.
 
 Enforcement is scoped to the boundary that owns the risk. In enforce mode,
 repository mutation (direct edits and mutation-capable shell) requires prepared
@@ -81,17 +82,17 @@ WORK_MODE_TIERS = frozenset(
         "L3",
     }
 )
-SESSION_FLOOR = (1, 21, 17)
 # Workflow-phase scoping (issue #601 P1 slice 3d). A mutation is verified against
 # the phase-scoped project-dev doc subset instead of the whole intent, so an edit
 # no longer forces the delivery/review runbooks. Direct edits and generic
 # mutation-capable shell are content work (the `edit` phase); the governed
 # delivery CLIs are the `delivery` phase. `review` is not gated here (review is
 # dispatched through the agent tool, which this hook does not observe); its docs
-# are reached through explicit `--phase review` preflight. The flag is only ever
-# threaded when the trusted CLI advertises it (see `phase_supported`); otherwise
-# the hook falls back to full, no-phase project-dev verification -- and a full
-# preparation satisfies every phase-scoped verify, so the fallback is always safe.
+# are reached through explicit `--phase review` preflight. `--phase` ships in
+# every supported agent-docs release, so it is always threaded when the mutation
+# can be classified; an uninspectable shell command falls back to full, no-phase
+# project-dev verification, and a full preparation satisfies every phase-scoped
+# verify.
 PHASE_EDIT = "edit"
 PHASE_DELIVERY = "delivery"
 # Basenames of the governed delivery CLIs whose invocation is a delivery-phase
@@ -319,43 +320,6 @@ def parsed_version(text: str) -> tuple[int, int, int] | None:
         return None
     major, minor, patch = (int(part) for part in match.groups())
     return major, minor, patch
-
-
-def session_capability(base_args: list[str]) -> tuple[str, str]:
-    completed, outcome = run_probe(base_args + ["session", "--help"])
-    if completed is None:
-        return "unavailable", f"session-probe-{outcome}"
-    if completed.returncode == 0 and "verify" in completed.stdout:
-        return "supported", "session-verify-present"
-
-    version_probe, version_outcome = run_probe([base_args[0], "--version"])
-    if version_probe is None:
-        return "unavailable", f"version-probe-{version_outcome}"
-    if version_probe.returncode != 0:
-        return "unavailable", "version-probe-nonzero"
-    version = parsed_version(version_probe.stdout + "\n" + version_probe.stderr)
-    if version is None:
-        return "unavailable", "version-probe-malformed"
-    if version < SESSION_FLOOR:
-        return "legacy", ".".join(str(part) for part in version)
-    return "unavailable", "required-session-surface-missing"
-
-
-def phase_supported(base_args: list[str]) -> bool:
-    """Whether the trusted agent-docs advertises the ``--phase`` filter.
-
-    Phase-scoped resolution (issue #601 P1 slice 3d) arrived in a specific
-    agent-docs release. Rather than couple the hook to a version number, this
-    feature-probes the verify surface: a CLI that lists ``--phase`` under
-    ``session verify --help`` supports phase-scoped verification. A
-    session-capable but pre-phase release returns ``False`` here, so the hook
-    keeps threading the full, no-phase intent and phase-scoping stays inert --
-    never a hard error on an older governed runtime.
-    """
-    completed, _ = run_probe(base_args + ["session", "verify", "--help"])
-    if completed is None or completed.returncode != 0:
-        return False
-    return "--phase" in completed.stdout
 
 
 def phase_for(tool: str, command_words: list[str] | None) -> str | None:
@@ -1904,30 +1868,6 @@ def main() -> int:
             emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
 
-    primary_agent_docs_args = agent_docs_args(repos[0], agent_docs_executable)
-    capability, detail = session_capability(primary_agent_docs_args)
-    if capability == "legacy":
-        if mode_warning:
-            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
-        return ALLOW
-    if capability != "supported":
-        message = (
-            "agent-docs session capability could not be verified "
-            f"({detail}). [reason: project-dev-advisory-unavailable]"
-        )
-        if mode == "enforce":
-            emit_block(
-                "agent-docs session capability could not be verified and enforced "
-                f"repository mutation fails closed ({detail}). "
-                "[reason: project-dev-required]"
-            )
-        else:
-            emit_advisory(
-                message + " Work remains allowed because project-dev is advisory.",
-                mode_warning=mode_warning,
-            )
-        return ALLOW
-
     if not current_session:
         message = (
             "The mutation payload has no session id; retry from a target-rooted Codex "
@@ -2026,8 +1966,6 @@ def main() -> int:
             intents, phase = (
                 recovered if recovered is not None else (("project-dev",), None)
             )
-            if phase is not None and not phase_supported(primary_agent_docs_args):
-                phase = None
             canonical_recovery = recovery_command(
                 repo_root=repos[0],
                 executable=agent_docs_executable,
@@ -2062,17 +2000,12 @@ def main() -> int:
             return ALLOW
 
     # Phase-scope the verification to the observed mutation (issue #601 P1 slice
-    # 3d) when the trusted CLI advertises `--phase`; otherwise -- or for a shell
-    # command the parser cannot inspect (`phase_for` returns None) -- fall back to
-    # full, no-phase project-dev. Edits and inspectable generic shell verify the
-    # `edit` set; the governed delivery CLIs verify the `delivery` set. A full
-    # preparation satisfies every phase verify, so the fallback and an
-    # already-fully-prepared session both stay unblocked.
-    phase = (
-        phase_for(tool, command_words)
-        if phase_supported(primary_agent_docs_args)
-        else None
-    )
+    # 3d). A shell command the parser cannot inspect (`phase_for` returns None)
+    # falls back to full, no-phase project-dev. Edits and inspectable generic
+    # shell verify the `edit` set; the governed delivery CLIs verify the
+    # `delivery` set. A full preparation satisfies every phase verify, so the
+    # fallback and an already-fully-prepared session both stay unblocked.
+    phase = phase_for(tool, command_words)
     failures: list[tuple[str, str]] = []
     for repo_root in repos:
         verified, code = verify_intent(

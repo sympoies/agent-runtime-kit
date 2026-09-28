@@ -142,10 +142,10 @@ activate-plus-strict-preflight primitive — with the trusted executable and
 session context. A successful in-hook prepare keeps `[reason: prepared]` and
 adds `[action: retry-original]`: do not run the prepare command again; retry the
 original blocked command. The older `session activate` bootstrap remains accepted for
-backward compatibility. Only a successfully probed,
-explicitly versioned pre-session `agent-docs` release retains compatibility
-behavior; a missing, timed-out, crashed, malformed, or on-floor binary without
-the session surface fails closed. Before any probe, the hooks require the
+backward compatibility. The gate does not probe `agent-docs` for the session or
+`--phase` surface, which every supported release ships; a missing, timed-out,
+crashed, malformed, or pre-session binary fails at `session verify` like any
+unverified session, so enforce blocks and advisory preserves the work. Before any probe, the hooks require the
 resolved `agent-docs` executable to live in a known managed CLI directory
 (`/opt/homebrew/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/usr/local/bin`,
 `/usr/bin`, or the per-user `~/.local/nils-cli/bin` produced by

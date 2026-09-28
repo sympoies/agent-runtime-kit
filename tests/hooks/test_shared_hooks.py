@@ -3164,35 +3164,20 @@ class SharedHookTests(unittest.TestCase):
         marker: Path,
         product: str = "codex",
         prepared_intent: str = "project-dev",
-        advertise_phase: bool = True,
     ) -> str:
         """Fake agent-docs that records argv and models the #601 3d phase surface.
 
-        ``session verify --help`` advertises ``--phase`` (the hook's feature
-        probe) only when ``advertise_phase`` is set, so a test can exercise both
-        a phase-capable CLI and a supported-but-pre-phase CLI. ``session verify``
-        reports the intent active once ``marker`` exists (modeling the primitive
-        rule that a full, no-phase preparation satisfies any phase-scoped
-        verify), and ``session prepare`` succeeds and creates the marker. Every
+        ``session verify`` reports the intent active once ``marker`` exists
+        (modeling the primitive rule that a full, no-phase preparation satisfies
+        any phase-scoped verify), and ``session prepare`` succeeds and creates the marker. Every
         invocation appends ``$*`` to ``log_path`` so a test can assert which
         ``--phase`` the hook threaded into each call.
         """
         log_q = shlex.quote(str(log_path))
         marker_q = shlex.quote(str(marker))
-        if advertise_phase:
-            verify_help = (
-                "  printf '%s\\n' 'Verify a phase-scoped or full preparation for the required intents'\n"
-                "  printf '%s\\n' '      --phase <PHASE>'\n"
-            )
-        else:
-            verify_help = "  printf '%s\\n' 'Verify the active intents for a session'\n"
         return f"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> {log_q}
-if [[ "$*" == *"session verify --help"* ]]; then
-{verify_help}  exit 0
-fi
-if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
 if [[ "$*" == *"session prepare"* ]]; then
   printf 'prepared\\n' > {marker_q}
   printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":["{prepared_intent}"],"record_file":"r.json","verified":true,"prepared_intents":["{prepared_intent}"],"reason":"prepared"}}}}'
@@ -10122,62 +10107,102 @@ exit 64
             self.assert_blocked(decision, "trusted")
             self.assertFalse(marker.exists())
 
-    def test_pre_edit_intent_gate_allows_verified_session_and_legacy_cli(self) -> None:
-        for supports_session in (True, False):
-            for product in ("codex", "claude"):
-                with self.subTest(
-                    supports_session=supports_session, product=product
-                ), tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    repo = root / "repo"
-                    repo.mkdir()
-                    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-                    (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-                    bin_dir = root / "bin"
-                    bin_dir.mkdir()
-                    if supports_session:
-                        body = f"""#!/usr/bin/env bash
+    def test_pre_edit_intent_gate_allows_verified_session(self) -> None:
+        for product in ("codex", "claude"):
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                body = f"""#!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"session --help"* ]]; then
-  printf '%s\n' '  verify    verify active intents'
-  exit 0
-fi
 if [[ "$args" == *"session verify"* ]]; then
-  printf '%s\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"verified":true}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"verified":true}}}}'
   exit 0
 fi
 exit 64
 """
-                    else:
-                        body = """#!/usr/bin/env bash
+                self._write_fake_agent_docs(bin_dir, body)
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "CLAUDE_KIT_STATE_HOME": str(repo / "state"),
+                    "HOME": str(root / "home"),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                (root / "home").mkdir()
+                payload = write_payload("src/lib.rs", "fn main() {}\n")
+                payload["session_id"] = "intent-gate-allow"
+
+                code, decision, stderr = run_hook(
+                    "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+    def test_pre_edit_intent_gate_pre_session_cli_is_never_admitted_unverified(
+        self,
+    ) -> None:
+        """A CLI without the session surface fails verification, not open.
+
+        The supported nils-cli floor ships ``session verify``; an older binary
+        that reports a pre-session version must not bypass enforcement. Enforce
+        blocks at verification; advisory still preserves the work.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"--version"* ]]; then
-  printf '%s\n' 'agent-docs 1.21.16 (v1.21.16)'
+  printf '%s\\n' 'agent-docs 1.21.16 (v1.21.16)'
   exit 0
 fi
-if [[ "$*" == *"session --help"* ]]; then
-  exit 64
-fi
 exit 64
-"""
-                    self._write_fake_agent_docs(bin_dir, body)
-                    env = {
-                        "AGENT_RUNTIME_DOCS_HOME": str(repo),
-                        "AGENT_RUNTIME_PRODUCT": product,
-                        "CLAUDE_KIT_STATE_HOME": str(repo / "state"),
-                        "HOME": str(root / "home"),
-                        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-                    }
-                    (root / "home").mkdir()
-                    payload = write_payload("src/lib.rs", "fn main() {}\n")
-                    payload["session_id"] = "intent-gate-allow"
+""",
+            )
+            (root / "home").mkdir()
+            env = {
+                "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
+                "HOME": str(root / "home"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            payload = write_payload("src/lib.rs", "fn main() {}\n")
+            payload["session_id"] = "pre-session-cli"
 
-                    code, decision, stderr = run_hook(
-                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[reason: project-dev-required]")
+            self.assertIn("intent-not-active-or-stale", str(decision))
+
+            code, advisory, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={**env, "AGENT_RUNTIME_PROJECT_DEV_MODE": "advisory"},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIsNotNone(advisory)
+            assert advisory is not None
+            self.assertNotEqual(advisory.get("decision"), "block")
+            self.assertIn(
+                "[reason: project-dev-advisory-unavailable]", str(advisory)
+            )
 
     def test_pre_edit_intent_gate_blocks_repository_shell_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -10324,6 +10349,11 @@ exit 64
                     "json",
                 ]
             )
+            # Classifiable mutations (a direct edit, a simple-argv command)
+            # recover through the phase-scoped `edit` preparation.
+            prepare_edit_cmd = prepare_cmd.replace(
+                " --format json", " --phase edit --format json"
+            )
             # A read-only `git status` is now admitted without project-dev, so
             # the recovery-message assertion uses a genuine mutation command.
             payload = command_payload("printf x > out.txt")
@@ -10358,7 +10388,10 @@ exit 64
             )
             self.assertEqual(unknown_reason.count("Route "), 2)
             self.assertIn(f"Route 1 (local exploration): `{inspect_route}`", unknown_reason)
-            self.assertIn(f"Route 2 (exact-target project-dev): run `{prepare_cmd}`", unknown_reason)
+            self.assertIn(
+                f"Route 2 (exact-target project-dev): run `{prepare_edit_cmd}`",
+                unknown_reason,
+            )
 
             direct_edit = write_payload("src/lib.rs", "fn main() {}\n")
             direct_edit["session_id"] = "intent-recovery"
@@ -10369,7 +10402,7 @@ exit 64
             self.assert_blocked(decision, "project-dev")
             assert decision is not None
             direct_reason = str(decision.get("reason", ""))
-            self.assertIn(prepare_cmd, direct_reason)
+            self.assertIn(prepare_edit_cmd, direct_reason)
             self.assertIn("[reason: project-dev-required]", direct_reason)
 
             # Backward compatibility: an explicit `session activate` bootstrap is
@@ -12102,45 +12135,6 @@ exit 64
             verify_calls = self._verify_calls(call_log)
             self.assertTrue(verify_calls)
             self.assertTrue(all("--phase edit" in line for line in verify_calls))
-
-    def test_pre_edit_intent_gate_phase_unsupported_cli_uses_full_intent(self) -> None:
-        """#601 3d: a supported-but-pre-phase CLI is gated on the full intent.
-
-        The `--phase` flag is gated behind a feature probe; when the CLI does not
-        advertise it, the hook falls back to full `project-dev` verification and
-        emits no `--phase`, so phase-scoping is never a hard error on an older
-        (but session-capable) release.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-            bin_dir = root / "runtime-bin"
-            bin_dir.mkdir()
-            call_log = root / "calls.log"
-            marker = root / "prepared"
-            self._write_fake_agent_docs(
-                bin_dir,
-                self._phase_aware_fake_agent_docs(
-                    log_path=call_log, marker=marker, advertise_phase=False
-                ),
-            )
-            env = self._phase_gate_env(repo, bin_dir)
-            payload = write_payload("src/lib.rs", "fn main() {}\n")
-            payload["session_id"] = "pre-phase"
-            code, decision, stderr = run_hook(
-                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "project-dev")
-            reason = str(decision)
-            self.assertIn("--intent project-dev", reason)
-            self.assertNotIn("--phase", reason)
-            verify_calls = self._verify_calls(call_log)
-            self.assertTrue(verify_calls)
-            self.assertTrue(all("--phase" not in line for line in verify_calls))
 
     def test_pre_edit_intent_gate_consumes_phase_scoped_prepare(self) -> None:
         """#601 3d: a trusted phase-scoped `session prepare --phase edit` runs.
@@ -18620,14 +18614,26 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "project-dev")
 
-    def test_pre_edit_intent_gate_capability_detection_fails_closed(self) -> None:
+    def test_pre_edit_intent_gate_unusable_agent_docs_fails_closed(self) -> None:
         cases = {
-            "crash": "if [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.17'; exit 0; fi\nexit 70",
-            "legacy-text-nonzero": "if [[ \"$*\" == *\"session --help\"* ]]; then exit 64; fi\nif [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.16'; exit 70; fi\nexit 64",
-            "malformed": "if [[ \"$*\" == *\"--version\"* ]]; then echo 'unknown build'; exit 0; fi\nexit 64",
-            "timeout": "sleep 0.2\necho 'agent-docs 1.21.17'",
+            "crash": (
+                "if [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.17'; exit 0; fi\nexit 70",
+                "intent-not-active-or-stale",
+            ),
+            "legacy-text-nonzero": (
+                "if [[ \"$*\" == *\"--version\"* ]]; then echo 'agent-docs 1.21.16'; exit 70; fi\nexit 64",
+                "intent-not-active-or-stale",
+            ),
+            "malformed": (
+                "echo 'unknown build'; exit 0",
+                "intent-verification-malformed",
+            ),
+            "timeout": (
+                "sleep 0.2\necho 'agent-docs 1.21.17'",
+                "intent-verification-timeout",
+            ),
         }
-        for name, body in cases.items():
+        for name, (body, verification_code) in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp)
                 subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -18638,7 +18644,7 @@ exit 64
                     bin_dir, f"#!/usr/bin/env bash\nset -euo pipefail\n{body}\n"
                 )
                 payload = write_payload("src/lib.rs", "x\n")
-                payload["session_id"] = "capability-failure"
+                payload["session_id"] = "unusable-agent-docs"
                 code, decision, stderr = run_hook(
                     "pre-edit-intent-gate.py",
                     payload,
@@ -18650,7 +18656,8 @@ exit 64
                     },
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "capability")
+                self.assert_blocked(decision, "[reason: project-dev-required]")
+                self.assertIn(f"`{verification_code}`", str(decision))
 
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -18670,7 +18677,7 @@ exit 64
                 env={"AGENT_RUNTIME_PRODUCT": "codex", "PATH": str(bin_dir)},
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "capability")
+            self.assert_blocked(decision, "agent-docs capability is unavailable")
 
     def test_pre_edit_intent_gate_gates_real_notebook_path_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
