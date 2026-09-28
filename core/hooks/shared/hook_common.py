@@ -4183,18 +4183,17 @@ def scoped_simple_commands_with_nested_shells(
     one. Commands of one scope are contiguous in the returned order.
     """
     commands: list[tuple[list[str], tuple[int, ...]]] = []
-    seen: set[tuple[int, str]] = set()
     scope_ids = itertools.count()
 
     def visit(
         source: str, depth: int, scope: tuple[int, ...] = (), nesting: int = 0
     ) -> None:
+        # No textual deduplication: identical text at another position is a
+        # distinct execution under different inherited shell state. Recursion
+        # stays bounded because a payload visit increases ``depth`` and a
+        # substitution body is strictly shorter than its source.
         if depth > max_depth:
             return
-        key = (depth, source)
-        if key in seen:
-            return
-        seen.add(key)
         # Extraction reads here-document bodies itself (inert bodies stay
         # verbatim), so the inert strip runs on the rewritten text.
         try:

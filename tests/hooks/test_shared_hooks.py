@@ -23699,6 +23699,65 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, fragment)
 
+    def test_default_delivery_hook_classifies_each_identical_substitution(
+        self,
+    ) -> None:
+        # Two textually identical substitutions are distinct executions under
+        # different inherited shell state, so the second must be classified
+        # after a `cd`, alias, or PATH change instead of being deduplicated.
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            repo = self._add_checkout_lease_worktree(primary, "feat/twice")
+            target = shlex.quote(str(primary))
+            for command in (
+                'echo "$(git push origin HEAD)"',
+                'echo "$(semantic-commit commit -m x)"',
+            ):
+                with self.subTest(allowed=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+            for command, fragment in (
+                (
+                    f'echo "$(git push origin HEAD)"; cd {target} && '
+                    'echo "$(git push origin HEAD)"',
+                    "[default-delivery: ",
+                ),
+                (
+                    f'echo "$(semantic-commit commit -m x)"; cd {target} && '
+                    'echo "$(semantic-commit commit -m x)"',
+                    "[default-delivery: ",
+                ),
+                (
+                    'echo "$(git push origin HEAD)"; alias git=true; '
+                    'echo "$(git push origin HEAD)"',
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    'echo "$(git push origin HEAD)"; export PATH=/tmp:$PATH; '
+                    'echo "$(git push origin HEAD)"',
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    f"bash -c 'git push origin HEAD'; cd {target} && "
+                    "bash -c 'git push origin HEAD'",
+                    "[default-delivery: ",
+                ),
+            ):
+                with self.subTest(blocked=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
     def test_default_delivery_hook_treats_zsh_disable_as_resolution_change(
         self,
     ) -> None:
