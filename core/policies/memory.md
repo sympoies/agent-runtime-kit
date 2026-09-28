@@ -86,9 +86,8 @@ hostnames, or account details.
 
 ## Hooks And Audits
 
-Hooks may inject bounded startup data, block project-state memory writes, or
-remind the agent of this boundary. They are mechanical guardrails and do not
-replace review or verification.
+Hooks may inject bounded startup data or block project-state memory writes.
+They are mechanical guardrails and do not replace review or verification.
 
 `scripts/ci/retired-memory-audit.sh` derives retired skill IDs and rendered
 source paths from the runtime-kit retirement manifest, then delegates exact

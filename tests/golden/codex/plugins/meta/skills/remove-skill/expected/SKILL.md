@@ -30,7 +30,7 @@ Outputs:
 - After apply approval: removed `core/skills/<domain>/<skill>/` source,
   `manifests/skills.yaml` entry, `manifests/plugins.yaml` containment, product
   render metadata, golden snapshots, sandbox expected skill pins, runtime-smoke
-  cases, hook/reminder metadata, and maintained docs references.
+  cases, hook metadata, and maintained docs references.
 - A reviewed `manifests/skill-dispositions.yaml` row is retained when the skill
   belongs to the frozen #562 migration cohort; it records destination,
   replacement/compatibility needs, and live cleanup instead of deleting history.
@@ -66,7 +66,7 @@ Classify matches before editing:
 - rendered build output and golden snapshots
 - sandbox expected skill lists
 - runtime-smoke matrix and case-runner probes
-- hook/reminder metadata
+- hook metadata
 - maintained docs
 - retained historical records under `docs/plans/**`
 
@@ -95,7 +95,7 @@ bash scripts/ci/all.sh
    the frozen migration cohort, update its disposition row to `reviewed`; never
    delete or replace a baseline row to make a new pending skill fit.
 6. Remove plugin containment and product metadata for the target skill.
-7. Remove rendered/golden/sandbox/runtime-smoke/hook/reminder references.
+7. Remove rendered/golden/sandbox/runtime-smoke/hook references.
 8. Run `bash scripts/ci/skill-governance-audit.sh --update-counts` to refresh
    maintained active skill-count surfaces without touching historical
    `docs/plans/**` records.

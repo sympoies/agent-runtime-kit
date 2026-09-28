@@ -5,6 +5,5 @@
 - golden: tests/golden/codex and tests/golden/claude fixture outputs
 - sandbox: tests/sandbox/codex and tests/sandbox/claude expected skill pins
 - runtime-smoke: tests/runtime-smoke/acceptance-matrix.yaml
-- reminder: core/hooks/shared/skill-usage-reminder.skills.json
 - maintained-doc: docs/source/removable-skill.md
 - historical-doc-retained: docs/plans/removable-skill-history.md

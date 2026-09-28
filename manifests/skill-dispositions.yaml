@@ -547,7 +547,7 @@ dispositions:
     destination: internal-workflow
     parent_intents: [project-dev, delivery]
     current_clis: [skill-usage]
-    current_hooks: [skill usage reminder]
+    current_hooks: []
     enforcement_point: "Outermost retained workflow owns one linked usage record."
     migration_path: "Keep the v2 CLI record and remove nested user-facing invocation."
     compatibility_required: false
