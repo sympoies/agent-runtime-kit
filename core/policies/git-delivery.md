@@ -401,9 +401,9 @@ range checks still must pass.
   after the provider-confirmed delivered head or direct-main remote-SHA receipt
   matches the local branch tip. This explicit proof permits cleanup after a squash merge, where
   `git branch -d` cannot infer provider equivalence from ancestry alone.
-- A child PR workflow defers cleanup when its plan or dispatch parent or another requested
-  post-merge workflow still owns terminal duties, handing the captured checkout
-  identity to that parent. The outermost successful workflow performs cleanup
+- A child PR workflow defers cleanup when its `program/plan` or
+  `program/dispatch` parent or another requested post-merge workflow still owns
+  terminal duties, handing the captured checkout identity to that parent. The outermost successful workflow performs cleanup
   exactly once; failed or readiness-only workflows retain the checkout.
 
 ## Branches

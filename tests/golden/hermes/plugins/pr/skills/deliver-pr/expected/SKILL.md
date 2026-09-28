@@ -58,9 +58,9 @@ Inputs:
   `lifecycle_fingerprint` and a released disposition.
 - Local terminal identity captured before merge: checkout root, branch,
   delivered head SHA, base ref, and whether the checkout is primary or a
-  managed linked worktree. When an outer plan or dispatch workflow, or a
-  requested post-merge workflow, still owns terminal duties, pass this identity
-  outward instead of cleaning early.
+  managed linked worktree. When an outer `program/plan` or `program/dispatch`
+  workflow, or a requested post-merge workflow, still owns terminal duties, pass
+  this identity outward instead of cleaning early.
 - If the body references a linked tracking or dispatch issue, use non-closing
   references such as `Refs #<issue>`; provider auto-close keywords are refused.
   Carry the references through `pr-body render --issues-file` — rendered as
@@ -826,7 +826,8 @@ Use `profile=tracking` for lightweight plan-tracking issues and
     `git-cli sync-default --format json`; that surface owns the remote-bound
     fast-forward, and raw `git merge` / `git pull` on the default branch stay
     refused even with `--ff-only` because local state cannot prove publication.
-    If an outer plan or dispatch workflow remains, hand it the captured identity and defer
+    If an outer `program/plan` or `program/dispatch` workflow remains, hand it
+    the captured identity and defer
     this step.
 
 ## Boundary
