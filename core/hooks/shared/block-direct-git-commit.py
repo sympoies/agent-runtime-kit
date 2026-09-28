@@ -23,6 +23,7 @@ from hook_common import (
     invocation_is_unresolved_nested,
     invocation_tokens,
     opaque_invocation_candidates,
+    opaque_invocation_is_literal_shell_test,
     read_payload,
     simple_commands_with_nested_shells,
 )
@@ -353,6 +354,10 @@ def git_commit_block_reason(command: str) -> str:
             return reason
         if invocation_is_unresolved_nested(invocation):
             return OPAQUE_REASON
+        if opaque_invocation_is_literal_shell_test(invocation):
+            # Test operands are never executed; a substitution among them is
+            # already its own simple command in this loop.
+            continue
         for candidate in opaque_invocation_candidates(invocation, {"git"}):
             if selected_inline_alias(candidate) is not None:
                 return ALIAS_REASON
