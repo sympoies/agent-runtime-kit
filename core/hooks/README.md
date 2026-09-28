@@ -184,6 +184,21 @@ that same resolved path. The transcript tail remains capped at 4 MiB.
 The custom-tool form accepts one optional strict-JSON `// @exec:` pragma and
 one complete canonical wrapper only; additional JavaScript or another exec
 call makes the workdir ambiguous rather than borrowing the first call's target.
+Its argument is strict JSON or a flat object literal whose keys are identifiers
+or JSON strings and whose values are JSON scalars or names bound by leading
+`const NAME = "<JSON string>"` declarations; a JSON decoder and a JavaScript
+engine read that subset identically. In the object-literal form, duplicate
+keys, nested values, spreads, computed keys, comments, template or
+single-quoted strings, and other bindings stay unreadable; strict JSON keeps
+its own rules, where the last duplicate key wins as it does in JavaScript and
+only the top-level `workdir` is read. The wrapper may bind the result and render it with `text(r)`,
+`text(r.output)`, or `text(JSON.stringify(r))`, or render the call directly as
+`text(await tools.exec_command(...))` or
+`text((await tools.exec_command(...)).output)`. When the matching transcript
+call exists but its workdir is unreadable, a managed-session-cwd result
+reports `call_workdir_unreadable`: that session record attests the session
+root, not this call, and `block-unsafe-default-delivery.py` then treats the
+call's repository as unresolved.
 Direct-edit verification stays target-based; shell verification is
 command-context based.
 
@@ -373,10 +388,15 @@ distinguishable from a proven default-branch write.
 The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
 even without a variable prefix. The zsh extended-glob repetition, exclusion,
-and negation operators (`#`, `~`, and `^`) are opaque there as well.
+and negation operators (`#`, `~`, and `^`) are opaque there as well. A lone `[`,
+the `[[` reserved word, and a zsh `$+name[key]` presence test with a literal key
+are literal test syntax that cannot name `git` or `semantic-commit`, so they stay
+classifiable; governed words among their arguments are still inspected.
 After alias, hash, command-table, PATH, or sourced-function state changes, later
 bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.
+Redirections are ignored when judging such a command, so a query such as
+`alias name 2>/dev/null` stays query-only.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also
@@ -398,10 +418,15 @@ outside-repository receipt. The removed `local-default` spelling and ordinary
 default-branch commit forms remain blocked. A `semantic-commit` target resolves
 from explicit `--repo`, so a cross-repository invocation is classified against
 the repository it mutates rather than the tool workdir. A bare authoring
-invocation after any earlier shell command fails closed because PATH, hashes,
-aliases, functions, or shell command tables may have changed; compound routes
-must be split into a separate tool call with the target checkout as its
-top-level workdir. Relative or expanded destinations,
+invocation after any earlier shell command fails closed as
+`[default-delivery: unverified]` (`rule=executable-resolution`) because PATH,
+hashes, aliases, functions, or shell command tables may have changed; that
+refusal says the executable identity is unproven, not that the target is the
+default branch, and the one-shot waiver never admits it. Compound routes,
+including `git add ... && semantic-commit commit`, must be split into a
+separate tool call with the target checkout as its top-level workdir. Help,
+`--dry-run`, and `--validate-only` forms author nothing and stay available
+after earlier commands. Relative or expanded destinations,
 nested shells, and command-local `GIT_*`/`HOME` overrides also fail closed, and
 raw Git still fails closed after every shell-context change or missing
 per-call workdir attestation. An absolute `git -C /path/to/repository ...`

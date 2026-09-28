@@ -118,6 +118,12 @@ the Git context unverifiable for everything after it. Run the Git command on its
 own with an explicit repository — `git -C /absolute/path …` — or in a separate
 tool call.
 
+An authoring `semantic-commit` after any other command in the same tool call is
+`unverified` with `rule=executable-resolution`: the guard cannot prove which
+executable that word resolves to. Run it as its own tool call, after staging
+with `git add -- <paths>` in a separate call. Its help, `--dry-run`, and
+`--validate-only` forms are not affected.
+
 Each refusal names the governed surface for the operation actually attempted,
 not the policy in general.
 

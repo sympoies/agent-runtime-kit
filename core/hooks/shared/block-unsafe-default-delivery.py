@@ -64,6 +64,7 @@ from hook_common import (
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    invocation_without_redirections,
     is_managed_cli_home_bin,
     is_assignment,
     nested_shell_payload,
@@ -149,6 +150,10 @@ EXPANDED_EXECUTABLE_PATH_RE = re.compile(
     r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
 )
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
+LITERAL_TEST_COMMAND_WORDS = frozenset({"[", "[["})
+ZSH_PRESENCE_TEST_RE = re.compile(
+    r"\$\+[A-Za-z_][A-Za-z0-9_]*(?:\[[A-Za-z0-9_.:+-]+\])?"
+)
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
 )
@@ -1436,21 +1441,41 @@ def process_wrapper_governed_invocation(
 def executable_resolution_rejection(
     invocation: list[str], context_safe: bool
 ) -> str:
-    """Reject a bare governed authoring CLI after shell resolution changed."""
-    if context_safe or not invocation:
+    """Reject a bare governed authoring CLI after shell resolution changed.
+
+    Only an authoring invocation depends on the governed CLI re-verifying its
+    own target, so only that needs a proven executable identity. Help,
+    dry-run, and validate-only forms author nothing and fall through to the
+    ordinary classifier. The refusal is unverified, not blocked: the identity
+    could not be proven, which says nothing about the default branch. It
+    deliberately does not lead with ``AMBIGUOUS_PREFIX``, so the one-shot
+    waiver, which presumes the real governed CLI, cannot admit it.
+    """
+    if context_safe or len(invocation) < 2:
         return ""
-    if (
-        PurePosixPath(invocation[0]).name == "semantic-commit"
-        and len(invocation) > 1
-        and invocation[1]
-        in {"commit", "default-branch", "fixup", "local-default", "squash"}
-    ):
-        return (
-            f"{MARK_BLOCKED} Blocked `semantic-commit` after an earlier shell command could "
-            "have changed executable resolution. Use a separate tool call "
-            "with the target checkout as its top-level workdir."
+    if PurePosixPath(invocation[0]).name != "semantic-commit":
+        return ""
+    subcommand = invocation[1]
+    if subcommand not in {
+        "commit", "default-branch", "fixup", "local-default", "squash",
+    }:
+        return ""
+    if subcommand != "local-default":
+        authors_commit, _writes_files, _repo = (
+            semantic_commit_invocation_effects(invocation[1:])
         )
-    return ""
+        if not authors_commit:
+            return ""
+    evidence = classification_evidence(
+        "executable-resolution", f"semantic-commit {subcommand}"
+    )
+    return (
+        f"{MARK_UNVERIFIED} {evidence} An earlier shell command in this tool "
+        "call could have changed executable resolution, so this authoring "
+        "`semantic-commit` could not be verified as the managed CLI. Run it as "
+        "a separate tool call with the target checkout as its top-level "
+        "workdir; stage with `git add -- <paths>` in its own call first."
+    )
 
 
 def shell_command_changes_git_context(simple_command: list[str]) -> bool:
@@ -1510,8 +1535,12 @@ def shell_command_changes_git_context(simple_command: list[str]) -> bool:
 def shell_command_changes_executable_resolution(
     simple_command: list[str],
 ) -> bool:
-    """Whether later bare command words have lost a verifiable executable."""
-    invocation = invocation_tokens(simple_command)
+    """Whether later bare command words have lost a verifiable executable.
+
+    Redirections are dropped first: ``alias bat 2>/dev/null`` is still a query,
+    and a redirection cannot define an alias, hash, function, or builtin.
+    """
+    invocation = invocation_without_redirections(invocation_tokens(simple_command))
     executable = ""
     arguments: list[str] = []
     if invocation:
@@ -1678,6 +1707,24 @@ def opaque_invocation_has_stable_non_governed_basename(
     match = EXPANDED_EXECUTABLE_PATH_RE.fullmatch(invocation[1])
     return bool(
         match and match.group("basename") not in GOVERNED_CONTEXT_EXECUTABLES
+    )
+
+
+def opaque_invocation_is_literal_shell_test(invocation: list[str]) -> bool:
+    """Whether an "opaque" command word is really literal test syntax.
+
+    The command-position check reads any bracket as a glob, but a lone ``[``
+    has no closing bracket to match and ``[[`` is a reserved word, so both are
+    the literal test command. A zsh ``$+name[key]`` presence test with a
+    literal key expands only to ``0`` or ``1`` (and stays literal in bash).
+    None of them can name ``git`` or ``semantic-commit``. Governed words among
+    their arguments are still found by the opaque-candidate scan.
+    """
+    if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
+        return False
+    word = invocation[1]
+    return word in LITERAL_TEST_COMMAND_WORDS or bool(
+        ZSH_PRESENCE_TEST_RE.fullmatch(word)
     )
 
 
@@ -3020,6 +3067,7 @@ def command_block_reason(
             and invocation[0] == OPAQUE_WRAPPER_COMMAND
             and not opaque_candidates
             and not opaque_invocation_has_stable_non_governed_basename(invocation)
+            and not opaque_invocation_is_literal_shell_test(invocation)
         ):
             return unresolved(
                 f"{classification_evidence('opaque-executable', 'dynamic-executable')} "
@@ -3078,12 +3126,19 @@ def main() -> int:
             context.source == "process-cwd"
             and not isinstance(payload.get("transcript_path"), str)
         )
+        base_diagnostic = context.diagnostic or ""
+        # A Codex code-mode session record authenticates the session root, not
+        # a recorded call whose own workdir could not be decoded; that call may
+        # run in any checkout, so its repository stays unresolved.
+        if context.call_workdir_unreadable:
+            base_resolved = False
+            base_diagnostic = "workdir-attestation-missing"
         reason = command_block_reason(
             command,
             context.path,
             base_source=context.source,
             base_resolved=base_resolved,
-            base_diagnostic=context.diagnostic or "",
+            base_diagnostic=base_diagnostic,
         )
         if reason:
             emit_block(normalize_refusal_reason(reason))

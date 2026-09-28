@@ -142,8 +142,32 @@ CODEX_EXEC_PRAGMA_RE = re.compile(
     r"\A[ \t]*// @exec:[ \t]*(?P<options>[^\r\n]+)[ \t]*\r?\n"
 )
 CODEX_CUSTOM_EXEC_PREFIX_RE = re.compile(
-    r"\A\s*(?:const\s+(?P<binding>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*)?"
+    r"\A\s*(?:const\s+(?P<binding>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*"
+    r"|(?P<rendered>text\(\s*(?P<grouped>\(\s*)?))?"
     r"await\s+tools\.exec_command\(\s*"
+)
+# One leading `const NAME = "<JSON string>"` declaration per match. The
+# lookahead admits only a JSON string initializer, so the call's own
+# `const r = await ...` binding never matches.
+CODEX_CUSTOM_EXEC_BINDING_RE = re.compile(
+    r"[ \t\r\n]*const[ \t\r\n]+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)"
+    r"[ \t\r\n]*=[ \t\r\n]*(?=\")"
+)
+JS_IDENTIFIER_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+JS_LITERAL_WHITESPACE = " \t\r\n"
+_JSON_DECODER = json.JSONDecoder()
+# Diagnostics for a transcript event that matched this call but whose own
+# workdir could not be decoded. Such a call may carry any workdir, so a session
+# checkout must not stand in for it as attested.
+TRANSCRIPT_CALL_WORKDIR_UNREADABLE = frozenset(
+    {
+        "transcript-arguments-malformed",
+        "transcript-arguments-missing",
+        "transcript-custom-input-ambiguous",
+        "transcript-custom-input-malformed",
+        "transcript-custom-input-missing",
+        "transcript-custom-input-unrecognized",
+    }
 )
 COMMAND_CONTEXT_SOURCES = frozenset(
     {
@@ -167,12 +191,17 @@ class CommandContext(NamedTuple):
     a fallback selected after transcript-call matching failed. Consumers can
     therefore retain same-repository compatibility without silently treating a
     process-local fallback as an attested cross-repository target.
+
+    ``call_workdir_unreadable`` is true when a transcript event matched this
+    call but its own workdir could not be decoded. A ``managed-session-cwd``
+    context then attests only the session root, not the call's target.
     """
 
     path: Path
     source: str
     attested: bool
     diagnostic: str | None = None
+    call_workdir_unreadable: bool = False
 
 
 class TranscriptWorkdirResult(NamedTuple):
@@ -181,39 +210,169 @@ class TranscriptWorkdirResult(NamedTuple):
 
 
 def _custom_exec_remainder_is_canonical(
-    remainder: str, binding: str | None
+    remainder: str,
+    binding: str | None,
+    *,
+    rendered: bool = False,
+    grouped: bool = False,
 ) -> bool:
-    """Recognize the tiny supported wrapper suffix in one linear scan."""
+    """Recognize the tiny supported wrapper suffix in one linear scan.
+
+    Every accepted suffix is a fixed token sequence that only renders this
+    call's own result, so none can issue a second exec call that would share
+    this call's transcript entry. ``rendered`` closes a
+    ``text(await tools.exec_command(...))`` prefix, and ``grouped`` its
+    ``text((await tools.exec_command(...)).output)`` form.
+    """
 
     def skip_space(index: int) -> int:
         while index < len(remainder) and remainder[index].isspace():
             index += 1
         return index
 
-    index = skip_space(0)
-    if index >= len(remainder) or remainder[index] != ")":
+    def expect(index: int | None, *tokens: str) -> int | None:
+        for token in tokens:
+            if index is None:
+                return None
+            index = skip_space(index)
+            if not remainder.startswith(token, index):
+                return None
+            index += len(token)
+        return index
+
+    def terminal(index: int | None) -> bool:
+        if index is None:
+            return False
+        index = skip_space(index)
+        if index < len(remainder) and remainder[index] == ";":
+            index = skip_space(index + 1)
+        return index == len(remainder)
+
+    if rendered:
+        closing = (")", ")", ".output", ")") if grouped else (")", ")")
+        return terminal(expect(0, *closing))
+    index = expect(0, ")")
+    if index is None:
         return False
-    index = skip_space(index + 1)
-    if index < len(remainder) and remainder[index] == ";":
-        index = skip_space(index + 1)
-    if index == len(remainder):
+    if terminal(index):
         return True
-    if binding is None or not remainder.startswith("text", index):
-        return False
-    index = skip_space(index + len("text"))
-    if index >= len(remainder) or remainder[index] != "(":
-        return False
-    index = skip_space(index + 1)
-    output_expression = f"{binding}.output"
-    if not remainder.startswith(output_expression, index):
-        return False
-    index = skip_space(index + len(output_expression))
-    if index >= len(remainder) or remainder[index] != ")":
-        return False
-    index = skip_space(index + 1)
+    index = skip_space(index)
     if index < len(remainder) and remainder[index] == ";":
-        index = skip_space(index + 1)
-    return index == len(remainder)
+        index += 1
+    if binding is None:
+        return False
+    # `text(r)`, `text(r.output)`, and `text(JSON.stringify(r))` only render
+    # the call's own result.
+    for render in (
+        (f"{binding}.output",),
+        ("JSON.stringify", "(", binding, ")"),
+        (binding,),
+    ):
+        if terminal(expect(expect(index, "text", "("), *render, ")")):
+            return True
+    return False
+
+
+def _skip_js_literal_space(source: str, index: int) -> int:
+    while index < len(source) and source[index] in JS_LITERAL_WHITESPACE:
+        index += 1
+    return index
+
+
+def _js_literal_scalar(
+    source: str, index: int, bindings: Mapping[str, str]
+) -> tuple[Any, int] | None:
+    """Decode one JSON scalar, JSON literal name, or bound ``const`` name."""
+    identifier = JS_IDENTIFIER_RE.match(source, index)
+    if identifier is not None:
+        name = identifier.group()
+        if name in {"true", "false", "null"}:
+            return {"true": True, "false": False, "null": None}[name], identifier.end()
+        if name in bindings:
+            return bindings[name], identifier.end()
+        return None
+    if index < len(source) and (source[index] in '"-' or "0" <= source[index] <= "9"):
+        try:
+            return _JSON_DECODER.raw_decode(source, index)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _js_literal_object(
+    source: str, bindings: Mapping[str, str]
+) -> tuple[dict[str, Any], int] | None:
+    """Decode a flat object literal in the JSON-compatible JavaScript subset.
+
+    Keys are identifiers or JSON strings; values are JSON scalars or names
+    bound by a leading ``const NAME = "<JSON string>"``. Within that subset a
+    JSON decoder and a JavaScript engine read identical values, so the decoded
+    workdir is the one the call runs with. Duplicate keys, nested values,
+    spreads, computed keys, comments, and non-JSON string forms are refused
+    rather than interpreted. The scan is linear in the source length.
+    """
+    if source[:1] != "{":
+        return None
+    members: dict[str, Any] = {}
+    index = _skip_js_literal_space(source, 1)
+    while True:
+        if source[index : index + 1] == "}":
+            return members, index + 1
+        if source[index : index + 1] == '"':
+            try:
+                key, index = _JSON_DECODER.raw_decode(source, index)
+            except json.JSONDecodeError:
+                return None
+        else:
+            identifier = JS_IDENTIFIER_RE.match(source, index)
+            if identifier is None:
+                return None
+            key, index = identifier.group(), identifier.end()
+        if key in members:
+            return None
+        index = _skip_js_literal_space(source, index)
+        if source[index : index + 1] != ":":
+            return None
+        scalar = _js_literal_scalar(
+            source, _skip_js_literal_space(source, index + 1), bindings
+        )
+        if scalar is None:
+            return None
+        members[key], index = scalar
+        index = _skip_js_literal_space(source, index)
+        if source[index : index + 1] == ",":
+            index = _skip_js_literal_space(source, index + 1)
+            continue
+        if source[index : index + 1] != "}":
+            return None
+
+
+def _custom_exec_bindings(source: str) -> tuple[dict[str, str], int] | None:
+    """Read leading ``const NAME = "<JSON string>"`` declarations.
+
+    Each declaration ends at ``;`` or a line break, so the next statement is a
+    new declaration or the exec call itself. A ``const`` binding cannot be
+    reassigned, and nothing but further declarations may precede the call.
+    """
+    bindings: dict[str, str] = {}
+    cursor = 0
+    while (declaration := CODEX_CUSTOM_EXEC_BINDING_RE.match(source, cursor)) is not None:
+        try:
+            value, end = _JSON_DECODER.raw_decode(source, declaration.end())
+        except json.JSONDecodeError:
+            return None
+        name = declaration.group("name")
+        if not isinstance(value, str) or name in bindings:
+            return None
+        while end < len(source) and source[end] in " \t":
+            end += 1
+        if source[end : end + 1] == ";":
+            end += 1
+        elif source[end : end + 1] not in {"\n", "\r"}:
+            return None
+        bindings[name] = value
+        cursor = end
+    return bindings, cursor
 
 
 def _custom_exec_arguments(
@@ -223,11 +382,12 @@ def _custom_exec_arguments(
 
     Current Codex transcripts wrap ``tools.exec_command`` in a small JavaScript
     orchestration input instead of exposing the legacy JSON ``arguments``
-    field. Trust only an anchored call whose first argument is strict JSON and
-    whose closing parenthesis follows that object. We deliberately do not parse
-    JavaScript object literals or search arbitrary source text for a
-    ``workdir`` substring: either would let command content impersonate host
-    context.
+    field. Trust only an anchored call whose first argument is strict JSON or
+    the flat JSON-compatible object-literal subset (see ``_js_literal_object``),
+    preceded by nothing but string ``const`` declarations, and whose closing
+    parenthesis follows that object. We deliberately do not evaluate
+    JavaScript or search arbitrary source text for a ``workdir`` substring:
+    either would let command content impersonate host context.
     """
     if (
         event_payload.get("type") != "custom_tool_call"
@@ -248,18 +408,33 @@ def _custom_exec_arguments(
         source = source[pragma.end() :]
     elif source.lstrip().startswith("// @exec:"):
         return None, "transcript-custom-input-malformed"
+    declared = _custom_exec_bindings(source)
+    if declared is None:
+        return None, "transcript-custom-input-malformed"
+    bindings, declarations_end = declared
+    source = source[declarations_end:]
     match = CODEX_CUSTOM_EXEC_PREFIX_RE.match(source)
     if match is None:
         return None, "transcript-custom-input-unrecognized"
     argument_source = source[match.end() :]
     try:
-        parsed, end = json.JSONDecoder().raw_decode(argument_source)
+        parsed, end = _JSON_DECODER.raw_decode(argument_source)
     except json.JSONDecodeError:
-        return None, "transcript-custom-input-malformed"
+        literal = _js_literal_object(argument_source, bindings)
+        if literal is None:
+            return None, "transcript-custom-input-malformed"
+        parsed, end = literal
     if not isinstance(parsed, Mapping):
         return None, "transcript-custom-input-malformed"
     binding = match.group("binding")
-    if not _custom_exec_remainder_is_canonical(argument_source[end:], binding):
+    if binding is not None and binding in bindings:
+        return None, "transcript-custom-input-ambiguous"
+    if not _custom_exec_remainder_is_canonical(
+        argument_source[end:],
+        binding,
+        rendered=match.group("rendered") is not None,
+        grouped=match.group("grouped") is not None,
+    ):
         return None, "transcript-custom-input-ambiguous"
     if not isinstance(parsed.get("cmd"), str):
         return None, "transcript-custom-input-malformed"
@@ -471,9 +646,11 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
     payload/session cwd from becoming attested for that call. An independently
     authenticated managed-session record may still attest the same real process
     cwd; this is required for Claude, whose current tool call can reach the hook
-    before it is flushed to the transcript. The resolver is pure in-process
-    except for bounded transcript/session-record reads; it never starts a
-    subprocess.
+    before it is flushed to the transcript. When the transcript did record this
+    call but its workdir was unreadable, that managed-session result carries
+    ``call_workdir_unreadable`` so a guard can decline to treat the session
+    root as the call's target. The resolver is pure in-process except for
+    bounded transcript/session-record reads; it never starts a subprocess.
     """
     tool_input = tool_input_dict(payload)
     for value in iter_workdir_values(tool_input):
@@ -507,7 +684,13 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
         if context.attested:
             return context
         if (managed_cwd := _managed_session_cwd()) == context.path:
-            return CommandContext(managed_cwd, "managed-session-cwd", True, None)
+            return CommandContext(
+                managed_cwd,
+                "managed-session-cwd",
+                True,
+                None,
+                transcript_diagnostic in TRANSCRIPT_CALL_WORKDIR_UNREADABLE,
+            )
         return context
     top_cwd = payload.get("cwd")
     if isinstance(top_cwd, str) and top_cwd:
@@ -519,10 +702,22 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
         if context.attested:
             return context
         if (managed_cwd := _managed_session_cwd()) == context.path:
-            return CommandContext(managed_cwd, "managed-session-cwd", True, None)
+            return CommandContext(
+                managed_cwd,
+                "managed-session-cwd",
+                True,
+                None,
+                transcript_diagnostic in TRANSCRIPT_CALL_WORKDIR_UNREADABLE,
+            )
         return context
     if managed_cwd := _managed_session_cwd():
-        return CommandContext(managed_cwd, "managed-session-cwd", True, None)
+        return CommandContext(
+            managed_cwd,
+            "managed-session-cwd",
+            True,
+            None,
+            transcript_diagnostic in TRANSCRIPT_CALL_WORKDIR_UNREADABLE,
+        )
     return CommandContext(
         Path.cwd().resolve(strict=False),
         "process-cwd",
