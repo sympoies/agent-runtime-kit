@@ -27868,6 +27868,88 @@ exit 66
             self.assertEqual(context_in("catalog-a"), "")
             self.assertIn("project-dev missing docs", context_in("catalog-b"))
 
+    def test_session_start_healthcheck_evidence_stamp_is_machine_wide(self) -> None:
+        # The evidence-archive lane is machine-wide: once per day across
+        # repositories, and a docs-only session must not consume its stamp.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+if [[ "$args" == *"list --format json"* ]]; then
+  printf '%s\\n' '{"intents":["project-dev"]}'
+  exit 0
+fi
+if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
+  printf '%s\\n' 'ok'
+  exit 0
+fi
+exit 66
+""",
+            )
+            evidence = bin_dir / "evidence"
+            evidence.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            evidence.chmod(0o755)
+            home = root / "home"
+            home.mkdir()
+            base_env = {
+                "HOME": str(home),
+                "AGENT_DOCS_HOME": "",
+                "AGENT_RUNTIME_DOCS_HOME": "",
+                "AGENT_EVIDENCE_ARCHIVE_HOME": "",
+                "XDG_CONFIG_HOME": str(root / "config"),
+                "XDG_DATA_HOME": str(root / "data"),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            opted_in_env = {
+                **base_env,
+                "AGENT_EVIDENCE_ARCHIVE_HOME": str(root / "missing-archive"),
+            }
+            repos: dict[str, Path] = {}
+            for name in ("catalog-a", "catalog-b", "plain"):
+                repo = root / name
+                repo.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                if name != "plain":
+                    (repo / "AGENT_DOCS.toml").write_text(
+                        '[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                        'path = "DEV.md"\nrequired = true\nwhen = "always"\n',
+                        encoding="utf-8",
+                    )
+                repos[name] = repo
+
+            def context_in(name: str, env: dict[str, str]) -> str:
+                code, decision, stderr = run_shell_hook(
+                    "session-start-healthcheck.sh",
+                    {"hook_event_name": "SessionStart"},
+                    cwd=repos[name],
+                    env=env,
+                )
+                self.assertEqual(code, 0, stderr)
+                if decision is None:
+                    return ""
+                return str(
+                    decision.get("hookSpecificOutput", {}).get("additionalContext", "")
+                )
+
+            # A docs-lane-only session (not opted in) runs and stamps only docs.
+            self.assertEqual(context_in("catalog-a", base_env), "")
+            stamps = sorted(
+                path.name for path in (home / ".cache" / "agent-runtime-kit").iterdir()
+            )
+            self.assertEqual(len(stamps), 1, stamps)
+            self.assertIn("-docs-", stamps[0])
+
+            first = context_in("catalog-b", opted_in_env)
+            self.assertIn("evidence-archive", first)
+            self.assertIn("archive clone not found", first)
+            # Suppressed for the rest of the day, in any other repository.
+            self.assertNotIn("evidence-archive", context_in("plain", opted_in_env))
+
     def test_session_start_healthcheck_evidence_archive_optin(self) -> None:
         # The SessionStart healthcheck must validate evidence-archive wiring only
         # when the user has opted in (env / local config / a default clone with
