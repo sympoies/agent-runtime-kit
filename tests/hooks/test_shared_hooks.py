@@ -12775,10 +12775,24 @@ exit 64
                 own,
             ),
             (
-                "forge-cli --provider github pr create --title x --kind feature "
+                "forge-cli pr create --title x --kind feature "
                 "--repo example/repository --remote origin",
                 "provider-pr",
                 own,
+            ),
+            # A forced provider with `--repo` can select another forge's default
+            # host for the same repository path.
+            (
+                "forge-cli --provider gitlab --repo example/repository pr create "
+                "--title x --kind feature --head feat/topic",
+                None,
+                "provider-pr-unresolved",
+            ),
+            (
+                "forge-cli pr deliver --no-merge --provider=github "
+                "--kind feature --title x",
+                None,
+                "provider-pr-unresolved",
             ),
             # Another branch or repository is emitted as named, so the broker's
             # head grant (not this parser) is what denies it.
@@ -13625,7 +13639,7 @@ exit 64
                     json.loads(direct.stdout)["error"]["code"], "invalid-scope"
                 )
             operations_before = len(alpha_operations)
-            for index, (command, allowed_reason) in enumerate(
+            for index, (command, blocked_reason) in enumerate(
                 (
                     ("forge-cli pr deliver --kind feature --title x --no-merge", None),
                     (
@@ -13658,8 +13672,8 @@ exit 64
                 if not supports_heads:
                     self.assert_blocked(pull_request_pre, "provider-pr-unresolved")
                     continue
-                if allowed_reason is not None:
-                    self.assert_blocked(pull_request_pre, allowed_reason)
+                if blocked_reason is not None:
+                    self.assert_blocked(pull_request_pre, blocked_reason)
                     continue
                 self.assertNotEqual(
                     (pull_request_pre or {}).get("decision"), "block"

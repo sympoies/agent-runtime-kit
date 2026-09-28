@@ -252,9 +252,9 @@ reference rather than the hook checkout. `forge-cli pr create` and
 they resolve to one `pull-request-head` target (repository from `--repo` or the
 checkout origin, head from `--head` or the current branch) that only a Main
 Agent worker's private head grant covers; another branch or repository is
-denied as uncovered. A repeated option, a `--host` override or non-origin
-`--remote` (the target carries no forge host), a detached checkout, or an
-invalid branch name stays unresolved. The
+denied as uncovered. A repeated option, a `--host` or `--provider` override
+or non-origin `--remote` (the target carries no forge host), a detached
+checkout, or an invalid branch name stays unresolved. The
 guard emits this additive `pull_requests` field only when the admitting
 `agent-session` is at or above the first release that accepts it; the released
 v1.29.0 surface rejects the unknown field, so it keeps the unresolved result.

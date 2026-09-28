@@ -1929,8 +1929,8 @@ def pull_request_head_target(
     """Resolve a head-bound pull-request command to one `pull-request-head` target.
 
     The repository comes from `--repo` or the checkout origin, and the head from
-    `--head` or the checkout's current branch. A repeated option, a `--host`
-    override or non-origin `--remote`, a detached checkout, or an invalid name
+    `--head` or the checkout's current branch. A repeated option, a `--host` or
+    `--provider` override, a non-origin `--remote`, a detached checkout, or an invalid name
     leaves the target unresolved so enforcement fails closed.
     """
     arguments = words[1:]
@@ -1938,13 +1938,13 @@ def pull_request_head_target(
     heads = option_occurrences(arguments, frozenset({"--head"}))
     remotes = option_occurrences(arguments, frozenset({"--remote"}))
     # Repository identity is host-less, so the forge authority must stay the
-    # checkout origin's: another host or remote could reach a same-path
-    # repository on a different forge.
+    # checkout origin's: another host, provider, or remote could reach a
+    # same-path repository on a different forge.
     if (
         len(repositories) > 1
         or len(heads) > 1
         or remotes not in ([], ["origin"])
-        or option_occurrences(arguments, frozenset({"--host"}))
+        or option_occurrences(arguments, frozenset({"--host", "--provider"}))
     ):
         return None
     if repositories:
