@@ -62,7 +62,8 @@ already-authorized delivery work and avoid worktree or task-scope collisions,
 but it cannot create or expand work authorization.
 `core/policies/session-coordination.md` is the canonical detailed policy for
 peer-request dispositions, bounded sender waiting, default advisory behavior,
-unmanaged sessions, and explicit enforcement. `AGENT_DOCS.toml` loads that
+the informational task-start `agent-session board` check, unmanaged sessions,
+and explicit enforcement. `AGENT_DOCS.toml` loads that
 policy through the home-scoped `session-coordination` intent; inspect the
 resolved contract with:
 

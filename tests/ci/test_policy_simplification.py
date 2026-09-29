@@ -543,6 +543,65 @@ when = "always"
         ):
             self.assertIn(required, coordination)
 
+    def test_session_board_guidance_reaches_every_runtime_surface(self) -> None:
+        board_guidance = (
+            "`agent-session board --state live --format json`",
+            "`agent-session message send --to-machine <machine> --to <session_id>`",
+            "`messaging_supported: true`",
+            "same repository",
+            "same issue or pull request",
+            "before mutating shared state",
+            "`board-disabled`",
+            "`data.mode` is `local`",
+            "skip silently",
+            "never fail the task",
+            "informational",
+            "grants no authority",
+            "is not a claim",
+            "does not replace work-context advice or collision checks",
+            "runtime turn state and retitle activity",
+            "do not write or maintain a progress summary",
+        )
+
+        # Render chain: every rendered home prompt routes coordination to the
+        # session-coordination intent and to the trigger cards that name the
+        # task-start board check.
+        for product in HOME_PRODUCTS:
+            rendered = " ".join(read(f"build/{product}/AGENT_HOME.md").split())
+            self.assertIn("`session-coordination`", rendered)
+            if product == "hermes":
+                self.assertIn("Resolve trigger cards", rendered)
+            else:
+                self.assertIn("Triggers: `core/policies/intent-cards.md`", rendered)
+
+        cards = read("core/policies/intent-cards.md")
+        card = " ".join(
+            cards.split("## session-coordination", 1)[1].split("\n## ", 1)[0].split()
+        ).casefold()
+        for required in (
+            "long or repository-mutating managed work starts",
+            "`agent-session board`",
+            "treat a board row as authority or a claim",
+            "fail a task because the board is unavailable",
+            "progress summary",
+        ):
+            self.assertIn(required, card)
+
+        # Runtime surface: the intent each product resolves carries the
+        # guidance, not only the source file.
+        for product in SHARED_HOME_PRODUCTS:
+            with self.subTest(product=product):
+                payload = preflight("session-coordination", product=product)
+                paths = required_relative_paths(payload)
+                self.assertEqual(paths, ["core/policies/session-coordination.md"])
+                resolved = " ".join(read(paths[0]).split()).casefold()
+                for required in board_guidance:
+                    self.assertIn(required.casefold(), resolved)
+                self.assertNotIn(
+                    "no manual claim, activation ritual, or mechanical pre-task check",
+                    resolved,
+                )
+
     def test_hermes_has_a_resolvable_conditional_policy_route(self) -> None:
         hermes_home = read("build/hermes/AGENT_HOME.md")
         documented = (
