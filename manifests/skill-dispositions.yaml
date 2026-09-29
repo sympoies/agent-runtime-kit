@@ -267,39 +267,36 @@ dispositions:
   - id: meta.plan-archive-migrate
     status: reviewed
     user_outcome: no
-    destination: internal-workflow
+    destination: remove
     parent_intents: [delivery]
-    current_clis: [plan-archive]
+    current_clis: []
     current_hooks: []
     enforcement_point: "Plan closeout readiness and dry-run-first archive policy."
-    migration_path: "Invoke from the program/plan outcome after verified provider closeout."
-    replacement: dispatch.deliver-plan-tracking-issue
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Archive migration is an internal post-close phase."
   - id: meta.plan-archive-query
     status: reviewed
     user_outcome: no
-    destination: internal-workflow
+    destination: remove
     parent_intents: [project-dev, delivery]
-    current_clis: [plan-archive]
+    current_clis: []
     current_hooks: []
     enforcement_point: "Read-only historical context lookup policy."
-    migration_path: "Invoke directly when opening a recurring plan or diagnosing prior work."
-    replacement: dispatch.deliver-plan-tracking-issue
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Archive lookup supports another outcome and is not itself a user workflow."
   - id: meta.plan-archive-discover
     status: reviewed
     user_outcome: no
-    destination: internal-workflow
+    destination: remove
     parent_intents: [delivery]
-    current_clis: [plan-archive]
+    current_clis: []
     current_hooks: []
     enforcement_point: "Read-only archive-candidate classification after closeout."
-    migration_path: "Invoke from the program/plan outcome before archive migration."
-    replacement: dispatch.deliver-plan-tracking-issue
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Archive discovery is an internal closeout phase."
@@ -726,7 +723,7 @@ dispositions:
     user_outcome: yes
     destination: entrypoint
     parent_intents: [pr-delivery, project-dev]
-    current_clis: [forge-cli, agent-runtime, plan-issue, review-specialists]
+    current_clis: [forge-cli, agent-runtime, review-specialists]
     current_hooks: ["test-first provider gate", "pre-merge review policy"]
     enforcement_point: "Governed PR lifecycle with rendered body, checks, review, and merge controls."
     migration_path: "Retain as the single governed PR lifecycle outcome and fold child modes into it."
@@ -749,26 +746,24 @@ dispositions:
   - id: dispatch.create-plan-tracking-issue
     status: reviewed
     user_outcome: no
-    destination: merge
+    destination: remove
     parent_intents: [delivery]
-    current_clis: [plan-issue, plan-tooling]
+    current_clis: []
     current_hooks: []
     enforcement_point: "program/plan outcome opens or resumes its tracker."
-    migration_path: "Merge tracker creation into deliver-plan-tracking-issue."
-    replacement: dispatch.deliver-plan-tracking-issue
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Tracker creation is an internal program/plan lifecycle phase."
   - id: dispatch.plan-tracking-issue-closeout
     status: reviewed
     user_outcome: no
-    destination: merge
+    destination: remove
     parent_intents: [delivery]
-    current_clis: [plan-issue, plan-archive]
+    current_clis: []
     current_hooks: []
     enforcement_point: "program/plan outcome owns strict close-ready, read-back, and archive routing."
-    migration_path: "Merge closeout into deliver-plan-tracking-issue."
-    replacement: dispatch.deliver-plan-tracking-issue
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Closeout is an internal program/plan phase."
@@ -778,7 +773,7 @@ dispositions:
     user_outcome: yes
     destination: entrypoint
     parent_intents: [dispatch, project-dev]
-    current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
+    current_clis: [forge-cli, review-evidence, review-specialists]
     current_hooks: ["test-first and review delivery gates"]
     enforcement_point: "Shared dispatch issue controller, lane coordination, and closeout handoff."
     migration_path: "Retain as the single program/dispatch outcome and internalize lane roles."
@@ -790,7 +785,7 @@ dispositions:
     user_outcome: no
     destination: merge
     parent_intents: [delivery]
-    current_clis: [plan-issue]
+    current_clis: [forge-cli]
     current_hooks: []
     enforcement_point: "program/dispatch outcome owns strict integration closeout."
     migration_path: "Merge closeout into deliver-dispatch-plan."
@@ -801,13 +796,12 @@ dispositions:
   - id: dispatch.execute-plan-tracking-issue
     status: reviewed
     user_outcome: no
-    destination: merge
+    destination: remove
     parent_intents: [delivery]
-    current_clis: [plan-issue, plan-tooling, forge-cli]
+    current_clis: []
     current_hooks: []
     enforcement_point: "program/plan outcome owns execution and checkpoint reconciliation."
-    migration_path: "Merge execution into deliver-plan-tracking-issue."
-    replacement: dispatch.deliver-plan-tracking-issue
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Execution is an internal program/plan lifecycle phase."
@@ -815,21 +809,21 @@ dispositions:
     status: reviewed
     example_request: "Execute and deliver this issue-backed plan"
     user_outcome: yes
-    destination: entrypoint
+    destination: remove
     parent_intents: [plan-tracking, project-dev]
-    current_clis: [plan-tooling, plan-issue, forge-cli, review-evidence, review-specialists]
+    current_clis: []
     current_hooks: ["test-first and review delivery gates"]
     enforcement_point: "Plan controller, implementation, validation, review, PR delivery, and close-ready handoff."
-    migration_path: "Retain as the single program/plan outcome and internalize child roles."
+    migration_path: "Retire the plan-bundle lifecycle; ordinary issues and work modes own future work."
     compatibility_required: false
-    live_cleanup_required: false
+    live_cleanup_required: true
     rationale: "End-to-end issue-backed plan delivery is a complete user-requested outcome."
   - id: dispatch.review-dispatch-lane-pr
     status: reviewed
     user_outcome: no
     destination: merge
     parent_intents: [delivery, code-review]
-    current_clis: [review-specialists, forge-cli, plan-issue]
+    current_clis: [review-specialists, forge-cli]
     current_hooks: [code review delegation policy]
     enforcement_point: "program/dispatch outcome routes lane PRs to independent reviewers."
     migration_path: "Merge lane review into deliver-dispatch-plan."
@@ -842,7 +836,7 @@ dispositions:
     user_outcome: no
     destination: merge
     parent_intents: [delivery]
-    current_clis: [plan-issue, forge-cli]
+    current_clis: [forge-cli]
     current_hooks: []
     enforcement_point: "program/dispatch outcome assigns and checkpoints lane execution."
     migration_path: "Merge lane execution into deliver-dispatch-plan."

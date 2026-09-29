@@ -13,7 +13,6 @@
 #
 # Required on PATH (installed via `brew install sympoies/tap/nils-cli`):
 #   - agent-runtime  (subcommands: render, audit-drift, doctor)
-#   - plan-tooling   (subcommand: validate)
 #   - python3        (for offline runtime-smoke loopback/sample probes,
 #                    and for parsing the skill-surface doctor JSON output)
 
@@ -219,14 +218,12 @@ python3 tests/ci/test_nils_cli_version_policy.py
 echo "ci/all.sh: nils-cli policy admitted host; downstream sentinel reached"
 
 # -----------------------------------------------------------------------------
-# Position 2 — plan bundle and skill lifecycle governance validation
+# Position 2 — skill lifecycle governance validation
 #
 # This is intentionally after version admission: no nils-cli surface other
 # than the schema-v2 doctor may execute before a below-minimum host is blocked.
 # -----------------------------------------------------------------------------
-require_bin plan-tooling
-banner 2 "plan-tooling validate + skill-governance audit"
-plan-tooling validate --format text --explain
+banner 2 "skill-governance audit"
 bash scripts/ci/skill-governance-audit.sh
 bash scripts/ci/skill-governance-audit.sh --fixture count-refresh
 bash scripts/ci/skill-governance-audit.sh --fixture codex-plugin

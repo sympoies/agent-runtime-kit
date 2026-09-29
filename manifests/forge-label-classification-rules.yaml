@@ -90,13 +90,11 @@ rules:
         - "skills"
         - "SKILL.md"
         - "dispatch"
-        - "plan-issue record"
         - "pr skill"
     - label: area::cli
       title_any:
         - "cli"
         - "agent-run"
-        - "plan-issue"
         - "doctor"
         - "forge-cli"
       any:
@@ -104,7 +102,6 @@ rules:
         - "command"
         - "forge-cli"
         - "agent-run"
-        - "plan-issue"
         - "doctor --class"
     - label: area::runtime
       title_any:

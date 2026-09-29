@@ -169,7 +169,7 @@ baked `$HOME/.config/zsh` or `/opt/private-skills` tree.
   packages, because it cannot reach the Dockerfile ARG or `recommended_version`
   and so can never satisfy `scripts/ci/security-hardening-audit.py`.
 - **nils-cli**: prebuilt Linux release tarball (`agent-runtime`, `agent-docs`,
-  `semantic-commit`, `forge-cli`, `plan-tooling`, `plan-issue`, `zsh-kit`, …
+  `semantic-commit`, `forge-cli`, `zsh-kit`, …
   ~40 binaries),
   pinned to the version and Linux release digests in
   `docs/source/nils-cli-pin.yaml`, then verified against both that in-repo

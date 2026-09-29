@@ -40,7 +40,6 @@ command -v brew >/dev/null 2>&1
 brew tap sympoies/tap
 brew install sympoies/tap/nils-cli
 agent-runtime --version
-plan-tooling --version
 ```
 
 Required-doc policy is data this repo declares in `AGENT_DOCS.toml`; the harness
@@ -181,11 +180,10 @@ Local GPG or SSH commit signing is optional for this fallback path. Configure it
 only when the operator wants signed local commits as part of their normal setup;
 do not make GPG installation a bootstrap prerequisite for every contributor.
 
-Generated plan bundles do not need a direct push to `main` before execution.
-They need provider-visible source, plan, and state records on the tracking issue.
-If the plan bundle PR remains open after execution finishes, update its
-execution-state document with the final evidence before merging it, or close the
-PR as obsolete if the issue closeout already superseded the branch contents.
+Program work uses an ordinary tracker and child issues when coordination is
+needed. Record current decisions, owner, validation, and delivery status on the
+relevant issue. Close a superseded PR explicitly after its replacement is
+provider-visible.
 
 ## Refreshing Runtime Surfaces
 
@@ -428,8 +426,7 @@ That currently performs:
    version-alignment --pin docs/source/nils-cli-pin.yaml` — blocks below
    `minimum_supported_tag` or any `required_clis[]` floor, admits through
    `validated_tag`, and warns above validated before continuing downstream
-2. `plan-tooling validate --format text --explain` plus
-   `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
+2. `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
 3. `agent-runtime render --target home-prompt` for neutral / Codex / Claude /
    Hermes,
    then `agent-runtime render --product codex`
@@ -509,7 +506,6 @@ and record the reason in the bump commit.
 For targeted checks:
 
 ```bash
-plan-tooling validate --format text --explain
 bash scripts/ci/skill-governance-audit.sh
 bash scripts/ci/skill-governance-audit.sh --fixture create
 bash scripts/ci/skill-governance-audit.sh --fixture remove

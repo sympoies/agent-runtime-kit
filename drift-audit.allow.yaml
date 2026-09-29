@@ -23,8 +23,6 @@ unsafe_allow:
     reason: "Link maps intentionally embed hook command strings used by managed runtime config blocks."
   - path: "manifests/surfaces.yaml"
     reason: "Surface provenance uses `path#heading-slug` citations; slugged heading words concatenate into tokens (e.g. `pluginpluginjson` from `.codex-plugin/plugin.json`) that trip the entropy heuristic. These are documentation citations, not secrets."
-  - path: "core/skills/dispatch/plan-issue-spec/*"
-    reason: "Canonical plan-issue family spec docs contain JSON payload examples, schema identifiers, and long hyphenated doc paths (e.g. issue-backed-plan-record-contract-v2.md) that trip the entropy heuristic. These are documentation examples, not secrets. They only scan now because the spec moved from docs/source/ into the runtime source tree."
   - path: "core/skills/conversation/*/SKILL.md.tera"
     reason: "Conversation workflow skills contain public safety instructions about omitting sensitive values; they do not contain credentials."
   - path: "build/*/plugins/conversation/skills/*/SKILL.md"

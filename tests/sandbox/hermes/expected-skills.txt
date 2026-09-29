@@ -4,7 +4,6 @@ conversation.discussion-to-implementation-doc
 conversation.guided-feature-build
 conversation.handoff-session-prompt
 dispatch.deliver-dispatch-plan
-dispatch.deliver-plan-tracking-issue
 issue.issue-follow-up
 issue.issue-triage
 media.image-processing

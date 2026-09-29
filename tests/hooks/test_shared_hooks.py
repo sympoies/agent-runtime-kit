@@ -11171,7 +11171,7 @@ exit 0
             )
             tiered_quick = (
                 f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--tier L1 --idempotency-key readiness-quick-0002 --format json"
+                "--tier issue --idempotency-key readiness-quick-0002 --format json"
             )
             bootstrap = (
                 "main-agent bootstrap --idempotency-key "
@@ -11227,15 +11227,12 @@ exit 0
                 quick,
                 tiered_quick,
                 *(
-                    tiered_quick.replace("--tier L1", f"--tier {mode}")
+                    tiered_quick.replace("--tier issue", f"--tier {mode}")
                     for mode in (
                         "direct",
                         "issue",
                         "program",
-                        "program/plan",
                         "program/dispatch",
-                        "L0",
-                        "L3",
                     )
                 ),
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
@@ -11314,9 +11311,9 @@ exit 0
                 quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
                 quick.replace("--assignment-file", "--packet-file"),
                 quick.replace("readiness-quick-0001", "short"),
-                tiered_quick.replace("--tier L1", "--tier L9"),
-                tiered_quick.replace("--tier L1", "--tier program/other"),
-                tiered_quick.replace("--tier L1", "--tier Direct"),
+                tiered_quick.replace("--tier issue", "--tier L0"),
+                tiered_quick.replace("--tier issue", "--tier program/plan"),
+                tiered_quick.replace("--tier issue", "--tier Direct"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
                 revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
                 revision_fenced_init.replace(
@@ -13819,7 +13816,7 @@ exit 64
                     {
                         "schema_version": "agent-session.work-context-input.v1",
                         "intent": "implementation",
-                        "tier": "L2",
+                        "tier": "program/dispatch",
                         "repositories": ["example/repository"],
                         "worktrees": [],
                         "provider_refs": [],
@@ -18247,7 +18244,7 @@ exit 0
             )
             tiered_quick = (
                 f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--tier L1 --idempotency-key main-agent-quick-0002 --format json"
+                "--tier issue --idempotency-key main-agent-quick-0002 --format json"
             )
             bootstrap = (
                 "main-agent bootstrap --idempotency-key "
@@ -18308,15 +18305,12 @@ exit 0
                 quick,
                 tiered_quick,
                 *(
-                    tiered_quick.replace("--tier L1", f"--tier {mode}")
+                    tiered_quick.replace("--tier issue", f"--tier {mode}")
                     for mode in (
                         "direct",
                         "issue",
                         "program",
-                        "program/plan",
                         "program/dispatch",
-                        "L0",
-                        "L3",
                     )
                 ),
                 checkpoint,
@@ -18465,9 +18459,9 @@ exit 0
                 quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
                 quick.replace("--assignment-file", "--packet-file"),
                 quick.replace("main-agent-quick-0001", "short"),
-                tiered_quick.replace("--tier L1", "--tier L9"),
-                tiered_quick.replace("--tier L1", "--tier program/other"),
-                tiered_quick.replace("--tier L1", "--tier Direct"),
+                tiered_quick.replace("--tier issue", "--tier L0"),
+                tiered_quick.replace("--tier issue", "--tier program/plan"),
+                tiered_quick.replace("--tier issue", "--tier Direct"),
                 init.replace("--format json", "--format markdown"),
                 init + " extra",
                 rebind + " extra",
@@ -20036,7 +20030,7 @@ if [[ "$args" == *"session verify"* ]]; then
   exit 0
 fi
 if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  printf '%s\\n' '{{"intent":"project-dev","docs_home":{json.dumps(str(docs_home))},"project_path":{json.dumps(str(project))},"documents":[{{"path":{json.dumps(str(docs_home / "core" / "policies" / "work-tier-levels.md"))},"required":true,"scope":"home","source":"project"}},{{"path":{json.dumps(str(project / "DEV.md"))},"required":true,"scope":"project","source":"project"}}],"validation":{{"declared":true,"commands":[]}}}}'
+  printf '%s\\n' '{{"intent":"project-dev","docs_home":{json.dumps(str(docs_home))},"project_path":{json.dumps(str(project))},"documents":[{{"path":{json.dumps(str(docs_home / "core" / "policies" / "work-modes.md"))},"required":true,"scope":"home","source":"project"}},{{"path":{json.dumps(str(project / "DEV.md"))},"required":true,"scope":"project","source":"project"}}],"validation":{{"declared":true,"commands":[]}}}}'
   exit 0
 fi
 exit 65
@@ -20066,9 +20060,9 @@ exit 65
             if isinstance(hook_output, dict):
                 ctx = str(hook_output.get("additionalContext", ""))
             self.assertIn(f"Doc roots: home={docs_home}, project={project}.", ctx)
-            self.assertIn("home:core/policies/work-tier-levels.md", ctx)
+            self.assertIn("home:core/policies/work-modes.md", ctx)
             self.assertIn("project:DEV.md", ctx)
-            self.assertNotIn(str(docs_home / "core" / "policies" / "work-tier-levels.md"), ctx)
+            self.assertNotIn(str(docs_home / "core" / "policies" / "work-modes.md"), ctx)
 
     def test_preflight_cue_forwards_agent_docs_product(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

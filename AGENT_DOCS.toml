@@ -47,7 +47,7 @@ product = ["codex", "claude", "hermes"]
 required = true
 when = "always"
 phase = "delivery"
-notes = "Named work modes (direct / issue / program, plus program/plan and program/dispatch) for delivery-phase durable state: keep routine direct work internal and surface only provider artifacts, delivery, or materially ambiguous escalation. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
+notes = "Named work modes (direct / issue / program, with program/dispatch when integration needs a shared branch) for delivery-phase durable state: keep routine direct work internal and surface only provider artifacts, delivery, or materially ambiguous escalation. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
 context = "project-dev"

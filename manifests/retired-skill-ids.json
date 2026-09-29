@@ -40,6 +40,7 @@
     "dispatch.dispatch-plan-closeout",
     "dispatch.execute-plan-tracking-issue",
     "dispatch.review-dispatch-lane-pr",
-    "dispatch.execute-dispatch-lane"
+    "dispatch.execute-dispatch-lane",
+    "dispatch.deliver-plan-tracking-issue"
   ]
 }

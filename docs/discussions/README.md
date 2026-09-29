@@ -9,17 +9,16 @@ is kept here. A capture lives here only until it reaches an exit.
 - One dated file per capture: `docs/discussions/<YYYY-MM-DD>-<slug>.md`.
 - Every capture declares an `Exit:` in its header, chosen when it is written and
   executed by the PR that ships the work.
-- Not scanned by `plan-tooling` / `plan-archive`. Captures are never archived;
-  the durable record is the issue, the PR, the devlog entry, or promoted canon.
+- Captures are never archived; the durable record is the issue, the PR, the
+  devlog entry, or promoted canon.
 
 ## Exits
 
-Exactly one of four, and all four move or delete the file:
+Exactly one of three, and all three move or delete the file:
 
 | `Exit:` | Action |
 | --- | --- |
-| `open-issue` | Open a tracked record for the outstanding work, then delete the capture. An ordinary issue is enough — do not manufacture an L1/L2 plan to justify the exit. When the provider cannot accept one, keep the capture staged until it can take a valid exit. |
-| `promote-to-plan` | Move into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` and author the plan bundle. |
+| `open-issue` | Open a tracked record for the outstanding work, then delete the capture. An ordinary issue is enough. When the provider cannot accept one, keep the capture staged until it can take a valid exit. |
 | `canonise` | Move into the owning domain doc, or `docs/source/` for repo-wide architecture, specs, and policy. |
 | `retire` | Delete. The default once the work ships or is abandoned. |
 

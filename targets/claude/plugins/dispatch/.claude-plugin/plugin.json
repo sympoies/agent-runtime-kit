@@ -1,7 +1,7 @@
 {
   "name": "dispatch",
   "version": "0.1.0",
-  "description": "Two governed program specializations: program/plan issue-backed tracking and program/dispatch multi-lane dispatch.",
+  "description": "Governed program dispatch for independently reviewed lanes on a shared integration branch.",
   "author": {
     "name": "sympoies"
   },

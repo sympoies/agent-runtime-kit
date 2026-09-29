@@ -636,7 +636,6 @@ skills:
     required_clis:
       forge-cli: ">=1.27.27"
       agent-runtime: ">=0.19.0"
-      plan-issue: ">=1.1.0"
       review-specialists: ">=1.27.27"
     state_out_mode: runtime
 
@@ -660,35 +659,6 @@ skills:
       hermes:
         render_to: plugins/dispatch/skills/deliver-dispatch-plan/SKILL.md
     required_clis:
-      plan-tooling: ">=1.0.1"
-      plan-issue: ">=1.0.13"
-      forge-cli: ">=1.27.27"
-      review-evidence: ">=0.16.0"
-      review-specialists: ">=1.27.27"
-    state_out_mode: runtime
-
-  - id: dispatch.deliver-plan-tracking-issue
-    domain: dispatch
-    source: core/skills/dispatch/deliver-plan-tracking-issue
-    invocation:
-      role: workflow
-      intents: [plan-tracking, project-dev]
-      example_request: "Execute and deliver this issue-backed plan"
-      admission_rationale: "End-to-end issue-backed plan delivery is a complete user-requested outcome."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: deliver-plan-tracking-issue
-        render_to: plugins/dispatch/skills/deliver-plan-tracking-issue/SKILL.md
-      claude:
-        name: deliver-plan-tracking-issue
-        render_to: plugins/dispatch/skills/deliver-plan-tracking-issue/SKILL.md
-      hermes:
-        render_to: plugins/dispatch/skills/deliver-plan-tracking-issue/SKILL.md
-    required_clis:
-      plan-tooling: ">=1.0.1"
-      plan-issue: ">=1.0.13"
       forge-cli: ">=1.27.27"
       review-evidence: ">=0.16.0"
       review-specialists: ">=1.27.27"

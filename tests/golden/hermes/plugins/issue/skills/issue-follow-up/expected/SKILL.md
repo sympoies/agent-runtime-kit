@@ -71,11 +71,10 @@ lower-level issue or PR/MR tools.
 
 - Treat `forge-cli issue` as the provider mutation surface, not a separate
   user-facing workflow choice.
-- Use the `program/plan` outcome for plan-bundle lifecycle work.
 - Use normal implementation and PR/MR workflows when code/docs changes are
   ready.
-- Let the `program/plan` or `program/dispatch` parent workflow mirror review and
-  closeout evidence when the issue is part of a plan lifecycle.
+- Let a program tracker or dispatch parent record review and closeout evidence
+  when the issue belongs to that work.
 
 ## Modes
 
@@ -175,25 +174,6 @@ children still requires the user's decision.
 6. Keep the tracker current: tick a child when it closes and post a one-line
    tracker checkpoint. Close the tracker only after the program closeout in
    `core/policies/work-modes.md` holds.
-
-### Plan-Family Finding Mode
-
-Use this mode when a plan-tracking skill, CLI, driver, or catalog problem needs
-its own durable upstream follow-up. The caller supplies `TRACKER_REPO`; this
-generic workflow never hardcodes a provider account or repository.
-
-1. Normalize the finding into surface, severity, description, reproduction,
-   expected versus actual behavior, provenance, and a fix candidate.
-2. Deduplicate before opening with `forge-cli issue list --repo
-   "$TRACKER_REPO" --label plan-issue-finding --state open --format json`.
-3. Comment on a clear existing match. Otherwise open one issue through
-   `forge-cli issue create` with `plan-issue-finding`, the shared type/area/
-   severity labels, and `state::needs-triage`.
-4. Keep implementation outside the tracker issue workflow. When the upstream
-   fix lands, post the fixing PR and validation, then close the issue.
-
-This is an internal specialization of issue follow-up, not a separate outcome
-the user must discover.
 
 ## Static HTTP Evidence
 

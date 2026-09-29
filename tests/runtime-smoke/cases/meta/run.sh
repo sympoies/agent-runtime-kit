@@ -3057,81 +3057,6 @@ SH
   test ! -e "$compound/tail.ran"
 }
 
-run_plan_archive_migrate_probe() {
-  local out="$META_ARTIFACTS_DIR/plan-archive-migrate.dry-run.json"
-  require_meta_bin plan-archive || return 1
-  local root="$META_ARTIFACTS_DIR/plan-archive-migrate"
-  local src="$root/source"
-  local archive="$root/archive"
-  rm -rf "$root"
-  mkdir -p "$src" "$archive/config"
-  (
-    cd "$src"
-    git init -q -b main
-    git remote add origin git@github.com:graysurf/agent-runtime-kit.git
-    mkdir -p docs/plans/2026-05-27-smoke-plan
-    printf '# smoke plan\n' >docs/plans/2026-05-27-smoke-plan/PLAN.md
-    git add docs/plans
-    git -c user.name=smoke -c user.email=smoke@example.com commit -q -m "seed plan"
-  )
-  printf 'version: 1\nhosts:\n  github.com:\n    class: personal\n    primary_identity: graysurf\n' \
-    >"$archive/config/hosts.yaml"
-  plan-archive migrate \
-    --plan docs/plans/2026-05-27-smoke-plan \
-    --source-repo "$src" \
-    --archive "$archive" \
-    --hosts "$archive/config/hosts.yaml" \
-    --issue https://github.com/graysurf/agent-runtime-kit/issues/126 \
-    --format json >"$out" 2>&1
-  grep -q '"schema_version":"cli.plan-archive.migrate.v1"' "$out"
-  grep -q 'plans/github.com/graysurf/agent-runtime-kit/2026-05-27-smoke-plan' "$out"
-}
-
-run_plan_archive_query_probe() {
-  local out="$META_ARTIFACTS_DIR/plan-archive-query.single.json"
-  require_meta_bin plan-archive || return 1
-  local archive="$META_ARTIFACTS_DIR/plan-archive-query/archive"
-  local dir="$archive/_index/github.com/graysurf/agent-runtime-kit/issues/126"
-  rm -rf "$archive"
-  mkdir -p "$dir"
-  printf '{"title":"smoke"}' >"$dir/20260527T010000Z.json"
-  plan-archive query \
-    --ref https://github.com/graysurf/agent-runtime-kit/issues/126 \
-    --archive "$archive" \
-    --format json >"$out" 2>&1
-  grep -q '"schema_version":"cli.plan-archive.query.v1"' "$out"
-  grep -q '"fetched_at":"2026-05-27T01:00:00Z"' "$out"
-}
-
-run_plan_archive_discover_probe() {
-  local out="$META_ARTIFACTS_DIR/plan-archive-discover.scan.json"
-  require_meta_bin plan-archive || return 1
-  local root="$META_ARTIFACTS_DIR/plan-archive-discover"
-  local src="$root/source"
-  local archive="$root/archive"
-  rm -rf "$root"
-  mkdir -p "$src" "$archive/config"
-  (
-    cd "$src"
-    git init -q -b main
-    git remote add origin git@github.com:graysurf/agent-runtime-kit.git
-    mkdir -p docs/plans/2026-05-27-discover-smoke
-    printf '# discover smoke plan\n' >docs/plans/2026-05-27-discover-smoke/PLAN.md
-    git add docs/plans
-    git -c user.name=smoke -c user.email=smoke@example.com commit -q -m "seed plan"
-  )
-  printf 'version: 1\nhosts:\n  github.com:\n    class: personal\n    primary_identity: graysurf\n' \
-    >"$archive/config/hosts.yaml"
-  plan-archive discover \
-    --source-repo "$src" \
-    --archive "$archive" \
-    --hosts "$archive/config/hosts.yaml" \
-    --format json >"$out" 2>&1
-  grep -q '"schema_version":"cli.plan-archive.discover.v1"' "$out"
-  grep -q '"status":"blocked"' "$out"
-  grep -q '"code":"no-provider-refs"' "$out"
-}
-
 run_evidence_migrate_probe() {
   local out="$META_ARTIFACTS_DIR/evidence-migrate.dry-run.json"
   require_meta_bin evidence || return 1
@@ -3541,9 +3466,6 @@ record_case "meta.release" "project-local release shim executed fixture script" 
 record_case "meta.outcome-routing.repo-retro" "repo-retro JSON report probe passed against temp git workspace" run_repo_retro_probe
 record_case "meta.outcome-routing.semantic-commit" "semantic-commit dry-run validated staged temp change without commit" run_semantic_commit_probe
 record_case "meta.setup-project" "setup-project dry-run/apply adoption probes passed" run_setup_project_probe
-record_case "meta.outcome-routing.plan-archive-migrate" "plan-archive migrate dry-run JSON probe resolved archive target" run_plan_archive_migrate_probe
-record_case "meta.outcome-routing.plan-archive-query" "plan-archive query single-ref JSON probe surfaced fetched_at" run_plan_archive_query_probe
-record_case "meta.outcome-routing.plan-archive-discover" "plan-archive discover JSON probe classified blocked candidate" run_plan_archive_discover_probe
 record_case "meta.outcome-routing.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
 record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
 record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and event-driven evidence closeout" run_meta_outcome_routing_probe

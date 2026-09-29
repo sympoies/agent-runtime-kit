@@ -407,8 +407,8 @@ range checks still must pass.
   after the provider-confirmed delivered head or direct-main remote-SHA receipt
   matches the local branch tip. This explicit proof permits cleanup after a squash merge, where
   `git branch -d` cannot infer provider equivalence from ancestry alone.
-- A child PR workflow defers cleanup when its `program/plan` or
-  `program/dispatch` parent or another requested post-merge workflow still owns
+- A child PR workflow defers cleanup when its `program/dispatch` parent or
+  another requested post-merge workflow still owns
   terminal duties, handing the captured checkout identity to that parent. The outermost successful workflow performs cleanup
   exactly once; failed or readiness-only workflows retain the checkout.
 
@@ -472,8 +472,8 @@ blocker after that route is unavailable.
   create` / `pr deliver` require `--test-first-evidence <dir>` for `--kind
   feature` / `bug` records (both the create and adopt paths, and the
   `--dry-run` preflight). `docs` / `chore` / `ci` / `refactor` are exempt.
-- The retained PR and plan parent outcomes (`deliver-pr`,
-  `deliver-plan-tracking-issue`, and `deliver-dispatch-plan`) thread that flag
+- The retained PR and dispatch parent outcomes (`deliver-pr` and
+  `deliver-dispatch-plan`) thread that flag
   through their internal create/deliver phases for `--kind feature` / `bug` and
   omit it for exempt kinds. Point it at the `verify`-clean directory produced
   by the policy-owned `test-first-evidence` CLI flow.

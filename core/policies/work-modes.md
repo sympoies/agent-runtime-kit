@@ -10,8 +10,7 @@ ambiguous escalation is actually involved.
 
 It is a `project-dev` delivery document in `AGENT_DOCS.toml`. `AGENT_HOME.md`
 carries only the routing invariant; this file owns the modes and their
-artifact boundaries. It replaces the numbered tier ladder; see
-[Legacy Mapping](#legacy-mapping).
+artifact boundaries. It supersedes the retired numbered tier ladder.
 
 ## Three Independent Axes
 
@@ -51,7 +50,6 @@ condition holds.
 
 | Specialization | Required when | Outcome skill |
 | --- | --- | --- |
-| `program/plan` | The frozen plan must live in the repository, with plan and reality drift checked and a plan bundle archived at closeout | `deliver-plan-tracking-issue` |
 | `program/dispatch` | Lanes must integrate on a shared branch before landing on main, because intermediate lane states cannot land one by one | `deliver-dispatch-plan` |
 
 A plain `program` covers the rest. Its children merge independently, and its
@@ -76,7 +74,6 @@ tracker is the plan.
 | `direct` | `inline` | Delegate one worker only on an explicit `delegate-all` request |
 | `issue` | `inline` or one delegated worker | One isolated worker; the same issue remains the outcome |
 | `program` | `inline`, or `main-agent` for waves of parallel children | See below |
-| `program/plan` | Per `deliver-plan-tracking-issue` | One implementation worker; the main agent does not repair code |
 | `program/dispatch` | Per `deliver-dispatch-plan` | One worker per lane; the dispatch acceptance boundary remains |
 
 A `program` run under `main-agent` works like this:
@@ -174,15 +171,13 @@ Operating rules:
   confidence.
   - Eligible `direct` or `issue` routine diffs, including program children, may
     use a quick review whose clean `pass` is terminal for the reviewed head.
-  - `program/plan` and `program/dispatch` PRs, and any risk-triggering diff,
+  - `program/dispatch` PRs and any risk-triggering diff,
     keep the full specialist gate.
   - Escalating review depth never changes the mode.
 - **Implementation-readiness doc is an optional spec, not a mode.** A
   `discussion-to-implementation-doc` capture records converged intent: scope,
   acceptance criteria, and validation plan.
-  - Its default home is `docs/discussions/<YYYY-MM-DD>-<slug>.md`, or inside
-    the `docs/plans/<YYYY-MM-DD>-<slug>/` bundle only when it feeds a
-    `program/plan`.
+  - Its default home is `docs/discussions/<YYYY-MM-DD>-<slug>.md`.
   - It can attach to any mode: linked in the PR body for `direct`, or from the
     issue or tracker otherwise.
   - The mode is chosen when the work is picked up. A capture not yet scheduled
@@ -192,8 +187,8 @@ Operating rules:
 ## Capture Lifecycle
 
 `docs/discussions/` is **staging, not storage**. It holds a capture only while
-that capture has not yet reached an exit. Every capture leaves by one of four
-exits, and **all four are a move or a delete**; none of them leaves the file
+that capture has not yet reached an exit. Every capture leaves by one of three
+exits, and **all three are a move or a delete**; none of them leaves the file
 where it is. A capture that is part durable canon and part outstanding backlog
 takes two exits: `canonise` the durable half, then open a record for the
 remainder and delete what is left.
@@ -201,7 +196,6 @@ remainder and delete what is left.
 | `Exit:` | Action | When |
 | --- | --- | --- |
 | `open-issue` | Open a tracked record carrying the outstanding work, then `git rm` the capture | The work is real but not finished now. Any mode works: an ordinary issue is enough; do not manufacture a tracker to justify the exit. If the provider cannot accept the record, keep the capture staged until it can take a valid exit instead of creating a second tracker. |
-| `promote-to-plan` | `git mv` into `docs/plans/<YYYY-MM-DD>-<slug>/<slug>-discussion-source.md` | The work becomes a `program/plan` |
 | `canonise` | `git mv` into the owning domain doc or `docs/source/` | The content is durable canon that outlives the change |
 | `retire` | `git rm` | Shipped or abandoned (the default) |
 
@@ -247,24 +241,13 @@ Rules that keep this true:
 | A migration whose lanes must integrate before main | `program/dispatch` |
 | A doc that records "do Y later", not yet scheduled | Capture; mode undecided until picked up |
 
-## Legacy Mapping
-
-Older records, hooks, and CLI arguments use numbered tiers. Read them as:
-
-| Legacy | Mode |
-| --- | --- |
-| `L0` | `direct` |
-| `L1` | `issue` |
-| `L2` | `program/plan` |
-| `L3` | `program/dispatch` |
-
 ## Relationship To Nearby Surfaces
 
 - `AGENT_HOME.md` keeps routine `direct` work internal and routes here only
   when durable delivery state or an ambiguous escalation is in play.
 - `issue-follow-up` owns `issue` records and program tracker and child
-  records. `deliver-plan-tracking-issue` and `deliver-dispatch-plan` own the
-  two specializations. `discussion-to-implementation-doc` owns captures.
+  records. `deliver-dispatch-plan` owns coordinated dispatch.
+  `discussion-to-implementation-doc` owns captures.
 - `deliver-pr` owns default provider PR/MR delivery. `git-delivery.md` owns the
   direct-main and default-branch exceptions.
 - `main-agent-mode` owns execution under `main-agent`; this file owns which

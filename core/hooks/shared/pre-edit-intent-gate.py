@@ -68,18 +68,12 @@ from hook_common import (
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
 # Tracking-mode values accepted for `--tier` (core/policies/work-modes.md).
-# Named modes are canonical; legacy L0-L3 codes stay accepted during migration.
 WORK_MODE_TIERS = frozenset(
     {
         "direct",
         "issue",
         "program",
-        "program/plan",
         "program/dispatch",
-        "L0",
-        "L1",
-        "L2",
-        "L3",
     }
 )
 # Workflow-phase scoping (issue #601 P1 slice 3d). A mutation is verified against
