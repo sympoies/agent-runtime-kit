@@ -273,7 +273,6 @@ assert_main_agent_program_contract() {
     assert_normalized_contract_clause "$1" '`depends_on` mirrors the tracker edges' &&
     assert_normalized_contract_clause "$1" 'tick the child on the tracker and post one checkpoint comment' &&
     assert_normalized_contract_clause "$1" 'do not release or upgrade the `agent-session`, `main-agent`, hook, or provider runtime' &&
-    grep -Fq '`program/plan`' "$1" &&
     grep -Fq '`program/dispatch`' "$1" &&
     ! grep -Eq '(^|[^A-Za-z0-9])L[0-3]([^A-Za-z0-9]|$)' "$1"
 }

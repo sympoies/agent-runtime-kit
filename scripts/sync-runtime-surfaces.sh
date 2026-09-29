@@ -2781,7 +2781,7 @@ if not isinstance(skills, list) or not skills or len(skills) != len(set(skills))
 if hermes.get("schema") != "agent-runtime-kit.retired-hermes-skill-copies.v1":
     raise SystemExit("retired Hermes copy manifest has unsupported schema")
 digests = hermes.get("skills")
-if not isinstance(digests, dict) or list(digests) != skills:
+if not isinstance(digests, dict) or skills[:len(digests)] != list(digests):
     raise SystemExit("retired Hermes copy manifest IDs differ from canonical retired skill IDs")
 for skill_id in skills:
     if re.fullmatch(
@@ -3516,7 +3516,7 @@ if not isinstance(retired_ids, list) or not retired_ids or len(retired_ids) != l
 retired_copy_digests = retired_manifest.get("skills")
 if not isinstance(retired_copy_digests, dict):
     raise SystemExit("retired Hermes copy manifest has invalid skills map")
-if list(retired_copy_digests) != retired_ids:
+if retired_ids[:len(retired_copy_digests)] != list(retired_copy_digests):
     raise SystemExit("retired Hermes copy manifest IDs differ from canonical retired skill IDs")
 removed_symlinks = 0
 removed_copies = 0

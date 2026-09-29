@@ -46,7 +46,7 @@ skill's next action.
 
 - End-to-end delivery runs the mandatory pre-merge review gate before merge.
   Eligible `direct` or `issue` routine changes may use a terminal quick pass;
-  `program/plan` or `program/dispatch` work, specialist triggers, unresolved
+  `program/dispatch` work, specialist triggers, unresolved
   review state, or quick escalation use the full profile. Both profiles retain
   the same provider merge gates.
 - Close-only workflows run review only when the user asked for it or when the

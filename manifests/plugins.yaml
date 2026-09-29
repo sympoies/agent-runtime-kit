@@ -112,7 +112,6 @@ plugins:
     domain: dispatch
     contained_skills:
       - dispatch.deliver-dispatch-plan
-      - dispatch.deliver-plan-tracking-issue
     product_manifests:
       codex: targets/codex/plugins/dispatch/.codex-plugin/plugin.json
       claude: targets/claude/plugins/dispatch/.claude-plugin/plugin.json

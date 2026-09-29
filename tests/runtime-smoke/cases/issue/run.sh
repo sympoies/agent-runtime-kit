@@ -100,50 +100,15 @@ run_issue_triage_probe() {
   grep -q '"schema_version":"cli.forge-cli.issue.view.v1"' "$view_out"
 }
 
-run_report_plan_issue_finding_probe() {
-  local body="$ISSUE_ARTIFACTS_DIR/finding-body.md"
-  local list_out="$ISSUE_ARTIFACTS_DIR/finding-list.json"
-  local create_out="$ISSUE_ARTIFACTS_DIR/finding-create.json"
-  require_issue_bin forge-cli || return 1
-
-  printf 'Runtime smoke plan-issue finding body.\n' >"$body"
-
-  forge-cli --provider github --repo graysurf/plan-tracking-testbed \
-    --dry-run --format json \
-    issue list \
-    --label plan-issue-finding \
-    --state open >"$list_out" 2>&1
-  forge-cli --provider github --repo graysurf/plan-tracking-testbed \
-    --dry-run --format json \
-    issue create \
-    --title "Runtime smoke plan-issue finding" \
-    --body-file "$body" \
-    --label plan-issue-finding \
-    --label state::needs-triage \
-    --label type::bug \
-    --label area::skills \
-    --label severity::s2 >"$create_out" 2>&1
-
-  grep -q '"schema_version"' "$list_out"
-  grep -q '"schema_version":"cli.forge-cli.issue.create.v1"' "$create_out"
-  grep -q '"plan-issue-finding"' "$create_out"
-  grep -q '"state::needs-triage"' "$create_out"
-  grep -q '"type::bug"' "$create_out"
-  grep -q '"area::skills"' "$create_out"
-  grep -q '"severity::s2"' "$create_out"
-}
-
 run_issue_outcome_routing_probe() {
   local skill="$REPO_ROOT/core/skills/issue/issue-follow-up/SKILL.md.tera"
 
-  grep -Fq '### Plan-Family Finding Mode' "$skill"
-  grep -Fq 'The caller supplies `TRACKER_REPO`' "$skill"
-  grep -Fq 'Deduplicate before opening' "$skill"
-  grep -Fq 'plan-issue-finding' "$skill"
-
+  grep -Fq 'forge-cli issue' "$skill"
+  grep -Fq '### Program Mode' "$skill"
+  ! grep -Fq 'Plan-Family Finding Mode' "$skill"
   rendered_contract_assert_skill issue issue-follow-up
-  rendered_contract_assert_all_contain issue issue-follow-up '### Plan-Family Finding Mode'
-  rendered_contract_assert_all_contain issue issue-follow-up 'The caller supplies `TRACKER_REPO`'
+  rendered_contract_assert_all_contain issue issue-follow-up '### Program Mode'
+  rendered_contract_assert_all_omit issue issue-follow-up 'plan-issue-finding'
 }
 
 run_issue_program_mode_probe() {
@@ -194,8 +159,7 @@ run_issue_program_mode_probe() {
 failures=0
 record_case "issue.issue-follow-up" "forge-cli issue create/view/comment dry-run probes passed" run_issue_follow_up_probe
 record_case "issue.issue-triage" "forge-cli inbox issue triage dry-run probes passed" run_issue_triage_probe
-record_case "issue.outcome-routing.plan-finding" "forge-cli issue list dedup + create dry-run probes passed" run_report_plan_issue_finding_probe
-record_case "issue.outcome-routing.contract" "generic issue follow-up absorbs plan-family finding routing without a fixed provider account" run_issue_outcome_routing_probe
+record_case "issue.outcome-routing.contract" "generic issue follow-up routes program children without plan-family mode" run_issue_outcome_routing_probe
 record_case "issue.program-mode.contract" "program mode opens a tracker placeholder, linked children, and a filled tracker on the local provider" run_issue_program_mode_probe
 
 exit "$failures"

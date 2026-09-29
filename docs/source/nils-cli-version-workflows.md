@@ -36,7 +36,7 @@ movement and mirror refresh.
 5. Temporary version switching changes `PATH`; it never edits the policy.
 
 The consumed surface is the full nils-cli release (`agent-runtime`,
-`plan-issue`, `plan-tooling`, `forge-cli`, `agent-docs`, and the remaining
+`forge-cli`, `agent-docs`, and the remaining
 required CLIs), not one binary. The helper therefore resolves a release
 tarball or whole-workspace build.
 

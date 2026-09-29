@@ -1,463 +1,144 @@
 ---
 name: deliver-dispatch-plan
 description: >
-  Open or resume one shared dispatch plan issue, coordinate independently
-  reviewed lane PRs, integrate approved work, and close through strict gates.
+  Coordinate a program whose lane PRs must integrate on a shared branch before
+  the integration PR can land on main.
 ---
 
 # Deliver Dispatch Plan
 
 ## Contract
 
-Prereqs:
+Prerequisites:
 
-- Profile: `dispatch`.
-- CLI floors: `plan-issue >=1.0.13`, `plan-tooling >=1.0.1`,
-  `forge-cli >=1.28.30`, `git-cli >=1.25.13`, `review-specialists >=1.27.27`.
-  The `forge-cli` floor is 1.28.30 because review-loop compare-and-swap and
-  pending-review recovery are delegated to `--auto-state`, `--preflight`, and
-  `--recover-pending`; an older host rejects all three at parse time.
-- The dispatch issue is either not opened yet, or the existing issue is
-  the same shared plan being resumed by the orchestrator.
-- Dispatch `run-state.json` is either uninitialized or reconciled.
-- Shared family rules apply from
-  `core/skills/dispatch/plan-issue-spec/skill-family.md`.
-- Internal role ordering and single-writer boundaries apply from
-  `references/outcome-routing.md`.
+- Select `program/dispatch` under `core/policies/work-modes.md` only when
+  intermediate lane states cannot land on main one by one.
+- Use a program tracker issue and one child issue per independently reviewable
+  lane. The tracker body carries the program key, decisions, dependency graph,
+  phase checkboxes, and checkpoint log. Each child carries its lane scope and
+  acceptance. `references/DISPATCH_ISSUE_RECORD_CONTRACT.md` owns the record
+  shape; `references/outcome-routing.md` owns writer boundaries.
+- `forge-cli >=1.28.30`, `git-cli >=1.25.13`, and
+  `review-specialists >=1.27.27` are available. The forge floor supplies
+  review-loop compare-and-swap, pending-review recovery, and guarded merge.
+- The user has authorized provider artifacts and delivery. Release, deploy,
+  activation, and other phase gates keep their own authority.
 
 Inputs:
 
-- `OWNER_REPO`, `PLAN_BUNDLE`, `PLAN`, `SLUG`, optional `ISSUE`, `PROVIDER`,
-  and post-close read-back paths `CLOSED_ISSUE_VIEW_JSON`,
-  `CLOSED_ISSUE_JSON`, and `CLOSED_ISSUE_BODY`.
-- `RUN_STATE` for the dispatch run.
-- Lane assignments with `TASK_ID` / sprint / PR group, `PLAN_BRANCH`,
-  exact task context, `LANE_PR_NUMBER`, and the dispatch bundle
-  (`TASK_PROMPT_PATH`, `PLAN_SNAPSHOT_PATH`, `DISPATCH_RECORD_PATH`).
-- Dispatch labels. GitHub uses `workflow::plan` plus
-  `workflow::dispatch`; GitLab uses only `workflow::dispatch` plus bare
-  `plan` because scoped labels collapse per `key::` scope.
-- Lane approval URLs, review evidence paths, linked PRs, and final
-  integration evidence for close-ready.
-- Reviewer-owned lane outcome inputs: `LANE_REVIEW_DECISION`,
-  `LANE_REVIEW_OUTCOME`, and `LANE_REVIEW_LENS_ARGS`.
-- On GitHub, `REVIEW_LEDGER_FINDINGS`, the lane review's delivery-mode specialist merge
-  envelope (including its generated empty envelope), plus
-  `REVIEW_LEDGER_DISPOSITIONS` when the genesis observation has open findings.
-- Captured terminal identity for each lane and the integration checkout:
-  checkout root, branch, delivered head SHA, base ref, and
-  primary-versus-managed-worktree kind.
+- `OWNER_REPO`, provider, tracker issue, child issues, integration branch and
+  target base, assigned lane scopes, branch/worktree ownership, and acceptance.
+- For each lane: child issue, task packet, PR number, expected provider head,
+  validation, checks, independent review decision, review evidence, and
+  disposition of findings.
+- For the final integration PR: settled lane heads, conflict resolution,
+  validation, review, checks, and provider merge evidence.
 
 Outputs:
 
-- `record open|attach --profile dispatch` for source, plan, and initial
-  state snapshots.
-- `tracking run init --profile dispatch --execution-state-file ...`.
-  Always pass `--execution-state-file`; otherwise later dispatch state
-  checkpoints render a synthesized single-row ledger instead of the
-  accumulative task table.
-- Dispatch-level checkpoints through `tracking checkpoint --profile
-  dispatch --live --post state[,session[,validation[,review]]]`.
-- Final per-lane ledger repair through `plan-tooling ledger-update`.
-- Independent lane review, GitHub review-loop observations, and
-  orchestrator-owned merge after approval.
-- Every provider-visible specialist body and its actionable thread file come
-  from one `review-specialists bundle --profile provider-review` artifact,
-  rendered with `--mode delivery`, `--reviewable`, `--lens`, `--lens-verdict`,
-  `--scope`, and an `--evidence-reviewed` value that is a portable identifier
-  rather than an absolute local path; from nils-cli v1.28.0 an absent or
-  placeholder value for any of those but `--lens-verdict` fails the render.
-  In `governed` mode, the owner App publishes that complete
-  report exactly once and the personal identity records only
-  exact-head-verified `--metadata-only` provenance without the report
-  `--comment-file`.
-- On GitHub, current-head native review summaries inspected through
-  `forge-cli pr reviews` and semantically dispositioned before lane approval;
-  GitLab retains the outcome-note flow. The merge primitive owns observed
-  convergence and provider gate mechanics.
-- Strict `tracking close-ready --profile dispatch --expect-visible`, followed
-  by `record close --profile dispatch` only when every lane and integration
-  gate passes.
-- Post-close provider read-back plus
-  `record audit --profile dispatch --expect-visible` before completion.
-- After all dispatch-required post-merge activation/deployment, closeout,
-  archive, and evidence duties, terminal cleanup for every safe completed
-  managed checkout under `core/policies/git-delivery.md`, with retained-state
-  diagnostics for every unsafe one.
+- One current tracker and child issue timeline, updated through `forge-cli
+  issue`. The tracker remains the authoritative plan; comments record
+  checkpoints and the body checkbox table reflects verified child state.
+- Lane PRs targeting the integration branch, each independently reviewed and
+  merged by the orchestrator only after approval and provider gates.
+- One reviewed integration PR targeting the default branch, then provider
+  read-back, issue closeout, and safe managed-worktree cleanup.
 
-Failure modes:
-
-- Stop on `run-state-stale`, `RECORD_BLOCKED`,
-  `visible-completeness-failed`, or any close-ready blocker.
-- Stop on provider payload privacy failures such as `local_path_present`; rewrite
-  useful evidence paths to `$HOME/...` and omit remote-useless local artifact
-  paths before retrying.
-- Stop when `--recover-pending` refuses. `github_pending_review_exists` means no
-  single viewer-owned deletable node could be named for the lane PR; a
-  `pending_review_*` code names the guard that rejected the one candidate. Read
-  it; never delete review state by hand.
-- Stop on `ledger-rows-pending`; repair only the named task rows before
-  retrying close-ready.
-- Stop on typed review-convergence, native change-request, thread/task, or head
-  gate failures. Read and disposition the matching evidence under the
-  closed-set admission rule; on `review_convergence_activity_changed`, refresh
-  lane review approval before retrying merge without extending the repair loop
-  for a non-admitted concern.
-- Forbidden writes: lane-scoped implementation posts by the orchestrator, lane
-  review posts by lane executors, lightweight-tracking closeout rules, multiple
-  shared issues for one dispatch plan, or raw lifecycle comments.
-- Stop cleanup when a checkout is dirty/locked, provider merge truth does not
-  match its captured delivered head, or any downstream terminal duty is still
-  pending. Never force-remove ambiguous lane or integration work.
+Stop when issue or PR state is stale, a lane lacks validation or independent
+review, the reviewed head changed, the review-loop has open findings, provider
+checks fail, a merge gate rejects, or a child remains open. Read current
+provider state and repair the owning lane or record before retrying. Never
+infer closeout from prose alone.
 
 ## Outcome Routing
 
-This skill is the `program/dispatch` specialization of the `program`
-tracking mode (`core/policies/work-modes.md`). Use it only when lanes must
-integrate on a shared plan branch before main because intermediate lane states
-cannot land on main one by one; otherwise use plain `program` with one child
-issue per independently landable unit.
+A plain `program` delivers child PRs independently. This specialization adds
+an integration branch because lane PRs cannot safely land on main separately.
+Main Agent Mode changes execution ownership, not the tracker or provider gate.
 
-The user selects the `program/dispatch` outcome, never a lane lifecycle substep. This parent
-applies `references/outcome-routing.md` to route lane
-execution, plan-branch PR creation, independent review, orchestrator merge,
-plan-level checkpoints, and strict closeout while keeping one writer for every
-role.
-
-Lane executors stop after implementation, validation, PR creation, and their
-lane-scoped state/session/validation checkpoint. An independent reviewer owns
-provider review activity and the lane review checkpoint. Only the orchestrator
-may merge an approved lane PR with `--allow-non-default-base`, update
-plan-level integration truth, and enter dispatch closeout.
-
-For feature/bug lane PRs, the parent allocates a policy-owned v2 evidence
-directory before production edits. When `[test_first].require = true`, the
-internal lane PR create/deliver call must thread
-`--test-first-evidence "$EVIDENCE_DIR"`; exempt PR kinds omit it. The CLI record
-is internal workflow state, not a lane lifecycle outcome exposed to the user.
+- A lane executor owns implementation, local validation, its managed worktree,
+  and creation or update of its PR against the integration branch. It posts a
+  factual checkpoint on its child issue and stops before review or merge.
+- An independent reviewer owns lane review evidence and provider review
+  activity. Return fixable findings to the same lane executor.
+- The orchestrator owns lane acceptance, guarded non-default-base merges,
+  integration validation and PR, tracker checkpoints, and closeout. It does not
+  fabricate a lane's implementation or validation evidence.
+- `deliver-pr` owns the final integration PR's ordinary review and merge gates.
+  The dispatch owner retains downstream issue and checkout closeout duties.
 
 ## Entrypoint
 
-```bash
-plan-tooling validate --file "$PLAN" --format text --explain
+1. Read the current tracker and every child with `forge-cli issue view
+   --with-comments`. Verify the program key, dependency graph, settled
+   decisions, and which child work is still open. Deduplicate before creating
+   a missing issue; create or edit through `forge-cli issue` with a Markdown
+   body file. Use `workflow::tracking` on the tracker and
+   `workflow::follow-up` on children. See `core/policies/work-modes.md`.
+2. Read the integration branch and each lane PR through `forge-cli pr view`.
+   Compare their provider heads with the last checkpoint. If a resumed run
+   disagrees with the provider, update the tracker from verified state before
+   assigning or merging more work.
+3. Assign a lane only when its dependencies are satisfied. The packet names
+   the child issue, exact task scope, acceptance, integration branch, worktree,
+   validation, and stop condition. Record owner, branch, PR, and state in the
+   child issue. Keep the same lane for CI repair and review follow-up unless
+   the orchestrator records an explicit reassignment.
+4. Require test-first evidence for feature or bug lanes when project policy
+   enables it. Thread `--test-first-evidence` into the lane PR create/deliver
+   call when required. Use `agent-out` for local evidence and `git-cli` and
+   `semantic-commit` for governed worktree and commit operations. Lane PR
+   creation uses `forge-cli`; its base must be the integration branch.
+5. Use `deliver-pr` through its reviewed readiness stop (`--no-merge`) for
+   each lane PR, then read checks and the exact PR head. Select the risk-based
+   `code-review-specialists` profile. On GitHub, publish the canonical
+   `--profile provider-review` bundle with `--mode delivery`, `--reviewable`,
+   `--lens-verdict`, `--scope`, and a portable `--evidence-reviewed` value.
+   In governed mode, publish through the App and keep the personal identity
+   `--metadata-only` without `--comment-file`. Observe the review-loop ledger
+   at that head;
+   repair or disposition all findings before approval. Use `forge-cli pr
+   reviews` for current-head native feedback. On GitLab, use the supported
+   outcome-note route and pass `--review-convergence=false` at merge.
+6. A reviewer posts its decision through `forge-cli pr review`, bound to the
+   inspected head. The orchestrator merges a lane only after independent
+   approval, green required checks, zero open blocking findings, and complete
+   thread/task gates:
 
-# GitHub label form. For GitLab, drop workflow::plan and keep
-# workflow::dispatch plus the bare plan marker.
-plan-issue --repo "$OWNER_REPO" --format json record open \
-  --profile dispatch \
-  --bundle "$PLAN_BUNDLE" \
-  --title "$TITLE" \
-  --label type::chore \
-  --label area::docs \
-  --label state::needs-triage \
-  --label workflow::plan \
-  --label workflow::dispatch \
-  --label plan
+   ```bash
+   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" pr merge \
+     "$LANE_PR_NUMBER" --allow-non-default-base \
+     --expected-head "$REVIEWED_HEAD" --expected-base "$INTEGRATION_BRANCH"
+   ```
 
-plan-issue --format json tracking run init \
-  --provider-repo "$OWNER_REPO" \
-  --issue "$ISSUE" \
-  --profile dispatch \
-  --bundle "$PLAN_BUNDLE" \
-  --execution-state-file "$PLAN_BUNDLE/$SLUG-execution-state.md" \
-  --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-plan-issue --format json tracking checkpoint \
-  --provider-repo "$OWNER_REPO" \
-  --issue "$ISSUE" \
-  --profile dispatch \
-  --run-state "$RUN_STATE" \
-  --live \
-  --post state,session \
-  --repair-dashboard
-
-plan-tooling ledger-update \
-  --execution-state "$PLAN_BUNDLE/$SLUG-execution-state.md" \
-  --task "$TASK_ID" \
-  --status done \
-  --evidence "$LANE_PR_1"
-
-REVIEWED_PR="$(
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    --format json pr view "$LANE_PR_NUMBER"
-)"
-REVIEWED_HEAD="$(
-  printf '%s\n' "$REVIEWED_PR" |
-    jq -er 'select(.ok == true) | .data.head_sha'
-)" || exit $?
-readonly REVIEWED_HEAD
-# GitHub-only review-loop ledger: GitLab v1 has no ledger surface or merge gate.
-if [ "$PROVIDER" = github ]; then
-: "${REVIEW_LEDGER_FINDINGS:?set to delivery-mode findings.merged.json}"
-# Review-loop genesis: before any repair, with the CLI-owned preflight sweep.
-# `--preflight` runs the full non-mutating sweep and fails with every rejecting
-# rule named, so no separate `--dry-run` call is needed. `--auto-state` reads the
-# tip: genesis holds no digest from an earlier round, so there is no claim for
-# `--expected-state` to make here. The closing observation is the opposite case.
-REVIEW_LEDGER_GENESIS="$(
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-    pr review-loop observe "$LANE_PR_NUMBER" \
-    --expected-head "$REVIEWED_HEAD" \
-    --auto-state \
-    --preflight \
-    --findings-file "$REVIEW_LEDGER_FINDINGS"
-)" || exit $?
-REVIEW_LEDGER_STATE_TIP="$(
-  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
-    jq -er 'select(.ok == true) | .data.state_tip_digest'
-)" || exit $?
-REVIEW_LEDGER_OPEN_COUNT="$(
-  printf '%s\n' "$REVIEW_LEDGER_GENESIS" |
-    jq -er '[.data.state.findings[] | select(.status == "open")] | length'
-)" || exit $?
-fi
-
-# On GitHub, stop here when findings are open. Repair, publish with
-# `git-cli push --format json`, rerun validation
-# and the affected lane review, then provide REVIEW_LEDGER_DISPOSITIONS. GitLab
-# retains its outcome-note path without ledger calls.
-
-# After independent lane review, inspect native review bodies once. Repair,
-# accept with rationale, or move actionable current-head feedback to a
-# follow-up before the lane approval/checkpoint is final. Stale reviews are
-# informational. When summary_truncated is true, retrieve the full review body
-# through provider read tooling and stop if it is unavailable. Do not poll for
-# absent observed bots.
-PRE_SUBMIT_PR="$(
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    --format json pr view "$LANE_PR_NUMBER"
-)"
-EXPECTED_REVIEW_HEAD="$(
-  printf '%s\n' "$PRE_SUBMIT_PR" |
-    jq -er 'select(.ok == true) | .data.head_sha'
-)" || exit $?
-readonly EXPECTED_REVIEW_HEAD
-
-# Review-loop closing observation: after repair/push and before merge.
-if [ "$PROVIDER" = github ] && [ "${REVIEW_LEDGER_OPEN_COUNT:-0}" -gt 0 ]; then
-  : "${REVIEW_LEDGER_DISPOSITIONS:?set repaired/accepted finding dispositions}"
-  # Keep `--expected-state` here and do NOT use `--auto-state`. This digest came
-  # back from the genesis append, so it is a claim about a tip this workflow
-  # already saw, and it is the only thing that catches a resumed shell reusing
-  # genesis state. `--auto-state` re-reads and would silently accept a chain
-  # someone else advanced in between.
-  REVIEW_LEDGER_CLOSE="$(
-    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-      pr review-loop observe "$LANE_PR_NUMBER" \
-      --expected-head "$EXPECTED_REVIEW_HEAD" \
-      --expected-state "$REVIEW_LEDGER_STATE_TIP" \
-      --preflight \
-      --findings-file "$REVIEW_LEDGER_DISPOSITIONS"
-  )" || exit $?
-  REVIEW_LEDGER_STATE_TIP="$(
-    printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
-      jq -er 'select(.ok == true) | .data.state_tip_digest'
-  )" || exit $?
-  printf '%s\n' "$REVIEW_LEDGER_CLOSE" |
-    jq -e '.ok == true and ([.data.state.findings[].status] | index("open") | not)' \
-      >/dev/null
-fi
-if [ "$PROVIDER" = github ]; then
-  PRE_SUBMIT_REVIEWS="$(
-    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-      --format json pr reviews "$LANE_PR_NUMBER"
-  )"
-  printf '%s\n' "$PRE_SUBMIT_REVIEWS"
-  printf '%s\n' "$PRE_SUBMIT_REVIEWS" |
-    jq -e --arg head "$EXPECTED_REVIEW_HEAD" \
-      '.ok == true and .data.head_sha == $head' >/dev/null
-fi
-
-LANE_SUBMIT_REVIEW=()
-# `--recover-pending` clears one exact abandoned viewer-owned pending review from
-# an earlier attempt of this same submission. The CLI owns the guard: exactly one
-# viewer-authored deletable node, still bound to this head, with no inline drafts
-# and a byte-identical body, deleted under its own lease and confirmed gone. Do
-# not re-implement that guard here — a defect in it deletes somebody else's
-# review, and it is not undoable.
-[ "$PROVIDER" = github ] &&
-  LANE_SUBMIT_REVIEW=(
-    --submit-review
-    --expected-head "$EXPECTED_REVIEW_HEAD"
-    --recover-pending
-  )
-# Capture the outcome bytes once. Initial submission, guarded recovery, and
-# the single retry must all use this immutable value rather than rereading a
-# mutable file path. Preserve capture failures before freezing the value, and
-# use `--option=value` below so hyphen-leading Markdown remains one argv value.
-EXPECTED_REVIEW_BODY="$(cat "$LANE_REVIEW_OUTCOME")" || exit $?
-readonly EXPECTED_REVIEW_BODY
-NATIVE_REVIEW_CMD=(
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json
-  pr review "$LANE_PR_NUMBER"
-  --decision "$LANE_REVIEW_DECISION"
-  "${LANE_SUBMIT_REVIEW[@]}"
-  --comment="$EXPECTED_REVIEW_BODY"
-  "${LANE_REVIEW_LENS_ARGS[@]}"
-  --issue "$ISSUE" --mirror-issue
-)
-# The independent lane reviewer owns this command block. `--recover-pending`
-# above makes `github_pending_review_exists` recoverable inside the command, so
-# there is no conflict branch, no jq node selection, and no retry to sequence
-# here. A refusal names the guard that rejected it
-# (`pending_review_body_mismatch` means the pending review is not the one this
-# submission would have replaced) and must be read, not worked around.
-NATIVE_REVIEW_JSON="$("${NATIVE_REVIEW_CMD[@]}")" || exit $?
-
-printf '%s\n' "$NATIVE_REVIEW_JSON"
-APPROVAL="$(
-  printf '%s\n' "$NATIVE_REVIEW_JSON" | jq -er '.data.pr_comment_url'
-)"
-# The orchestrator merges only after approval. forge-cli owns observed quiet
-# timing, native change requests, thread/task gates, and provider-head binding.
-REVIEW_CONVERGENCE_ARGS=()
-[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)
-forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-  pr ready "$LANE_PR_NUMBER"
-# Keep merge on the same provider head that was inspected and reviewed.
-forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-  pr merge "$LANE_PR_NUMBER" --allow-non-default-base \
-  --expected-head "$EXPECTED_REVIEW_HEAD" \
-  "${REVIEW_CONVERGENCE_ARGS[@]}"
-
-plan-issue --format json tracking close-ready \
-  --provider-repo "$OWNER_REPO" \
-  --issue "$ISSUE" \
-  --profile dispatch \
-  --run-state "$RUN_STATE" \
-  --linked-pr "$LANE_PR_1" \
-  --linked-pr "$LANE_PR_2" \
-  --approval "$APPROVAL" \
-  --expect-visible
-
-# Only after close-ready reports ready=true and blockers=[].
-plan-issue --repo "$OWNER_REPO" --format json record close \
-  --profile dispatch --issue "$ISSUE" \
-  --linked-pr "$LANE_PR_1" --linked-pr "$LANE_PR_2" \
-  --approval "$APPROVAL" \
-  --add-label state::closed --remove-label state::needs-triage
-
-forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json issue view "$ISSUE" --with-comments \
-  >"$CLOSED_ISSUE_VIEW_JSON"
-jq '{body:.data.body, comments:(.data.comments // [])}' \
-  "$CLOSED_ISSUE_VIEW_JSON" >"$CLOSED_ISSUE_JSON"
-jq -r .body "$CLOSED_ISSUE_JSON" >"$CLOSED_ISSUE_BODY"
-
-plan-issue --repo "$OWNER_REPO" --format json record audit \
-  --profile dispatch \
-  --body-file "$CLOSED_ISSUE_BODY" \
-  --comments-json "$CLOSED_ISSUE_JSON" \
-  --expect-visible
-```
-
-Replace `area::docs` with the dispatch plan's primary `area::` label.
-
-## Workflow
-
-1. **Preflight** — run `plan-tooling validate`; when resuming, also run
-   `tracking status --profile dispatch --expect-visible`. Stop on stale
-   or blocked state.
-2. **Provider branch** — choose labels:
-   - GitHub: `workflow::plan` + `workflow::dispatch`.
-   - GitLab: `workflow::dispatch` + bare `plan`.
-3. **Open / resume** — open or attach the shared dispatch issue, then run
-   `tracking run init` with `--execution-state-file`.
-4. **Lane execution** — assign each lane its exact scope, worktree, branch,
-   run state, task packet, and `PLAN_BRANCH`. The lane executor implements,
-   validates, creates the plan-branch PR, posts lane state/session/validation,
-   and stops ready for independent review.
-5. **Independent lane review** — a different reviewer runs the generic review
-   outcome with retained evidence and posts provider review activity. On
-   GitHub, render the canonical five-column body and actionable thread artifact
-   together with `review-specialists bundle --profile provider-review`, then
-   validate the body with `forge-cli pr review validate --specialist-report`
-   before publication. In `governed` mode, the publisher's
-   personal step must use `--metadata-only`, the exact reviewed head, native
-   review URL, and expected App author, and must not receive the report body or
-   `--comment-file`. On
-   GitHub, for every lane generate the delivery-mode findings envelope and
-   append review-loop genesis at the reviewed head before any repair. A clean
-   lane uses the generated empty envelope. After the repair is published, rerun
-   affected lenses as closed-set closure without restarting full-diff discovery;
-   only the generic review outcome's explicit new-generation conditions may
-   reopen discovery. Then append the closing dispositions with exact state-tip
-   and repaired-head CAS before approval. On
-   GitLab, do not require ledger artifacts or call `pr review-loop`; retain the
-   outcome-note path and pass `--review-convergence=false` to merge. On
-   GitHub, read `forge-cli pr reviews` and disposition actionable current-head
-   summaries under the closed-set admission rule; route a non-admitted new
-   concern to follow-up or an explicit critical-risk handoff without extending
-   the repair loop. On GitLab, retain the outcome-note path. Then finalize lane
-   approval and the review checkpoint. Native submission carries
-   `--recover-pending`, so an abandoned draft from an earlier attempt is cleared
-   by the command under its own guard; a refusal names the guard that rejected
-   it and stops the lane. Never select a node by hand or downgrade to an outcome
-   note. The lane executor never self-reviews.
-   The command binds the native review to the inspected head with
-   `--expected-head`.
-6. **Orchestrator merge** — after approval and provider gates, the orchestrator
-   merges the lane PR through `forge-cli pr merge
-   --allow-non-default-base`. On GitHub, the CLI requires the closed review-loop
-   ledger for that exact head. It owns observed convergence, native state,
-   threads/tasks, and head binding — outdated unresolved threads are
-   auto-dispositioned `stale` (`data.stale_thread_dispositions`) so only
-   non-outdated threads block, and any `--allow-unresolved-threads` bypass on a
-   lane requires a paired `--allow-unresolved-threads-reason`
-   (`data.unresolved_threads_override_reason`). On
-   `review_convergence_activity_changed`, re-read summaries, disposition them
-   under the closed-set admission rule, and refresh lane approval/checkpoint
-   before retrying without extending the repair loop for a non-admitted
-   concern; other typed failures route to their matching read/disposition path.
-   Observed convergence is GitHub-only in v1,
-   so GitLab merge calls explicitly pass `--review-convergence=false` to
-   neutralize any user-global GitHub policy.
-   `review_convergence_head_changed` requires rebinding lane delivery evidence
-   to the new head, then re-run validation and affected review lenses, read the
-   current-head summaries, post a new owner outcome, and refresh lane
-   approval/checkpoint before retry. A reviewer does not merge.
-7. **Dispatch checkpoints** — post plan-level state/session/validation/review
-   only when orchestration truth changes across lanes.
-8. **Ledger finalize branch** — before close-ready, patch any lane row not
-   already updated by its lane executor.
-9. **Read-back** — run `tracking status --profile dispatch
-   --expect-visible` after dispatch checkpoints.
-10. **Close-ready / closeout** — run the non-mutating close-ready gate. Stop on
-    every blocker. On `ready: true`, write the closing summary, optionally
-    repair only a stale dashboard, and call `record close --profile dispatch`.
-11. **Closeout read-back** — fetch the closed provider issue with comments and
-    run `record audit --profile dispatch --expect-visible`; stop unless the
-    closeout role is visible and lint-clean.
-12. **Terminal local cleanup** — after dispatch-required deployment,
-    activation, archive, evidence, and local closeout duties, recheck each
-    provider-confirmed delivered head and local checkout. Restore a clean
-    primary integration checkout to base. From the primary checkout, run
-    `git-cli worktree remove <path-or-slug> --format json` through the supported
-    hooked shell for each safe managed lane/integration worktree; the
-    target-aware lease guard must confirm no live foreign owner before removal.
-    If that proof or hook is unavailable, retain the worktree. Delete a local branch only when its tip equals
-    the provider-confirmed delivered head. When the merge left the primary
-    checkout's default branch behind its remote, advance it with
-    `git-cli sync-default --format json`. Retain and report dirty, locked,
-    missing, or unverifiable state.
+   The CLI owns observed review convergence and provider-head binding. A
+   typed failure routes to the matching read/disposition path; it is never
+   bypassed by a hand-written timing loop.
+7. After each lane merge, verify the provider merge commit and integration
+   branch head. Post a child checkpoint with the PR, checks, review, and
+   merged head; close the child with `forge-cli issue close` only after its
+   acceptance holds. Tick its tracker checkbox with `forge-cli issue edit`
+   using a reviewed Markdown body file, and post a one-line checkpoint.
+8. After all lanes merge, resolve integration conflicts in a managed worktree,
+   run the integration validation, and deliver the integration PR through
+   `deliver-pr`. The integration PR references the tracker without an
+   auto-close keyword. A new integration head requires validation and review
+   rebinding.
+9. Read back the integration PR merge and all children. Canonise durable
+   decisions in repository docs or the devlog, post the final tracker
+   checkpoint, and close the tracker through `forge-cli issue close` only when
+   every child is closed or explicitly transferred. Then perform requested
+   post-merge duties and `core/policies/git-delivery.md` terminal cleanup.
+   Verify each provider-confirmed delivered head before removing a checkout.
+   Use `git-cli worktree remove <path-or-slug> --format json` only for a clean,
+   unowned managed worktree. Retain dirty, locked, or unverifiable worktrees
+   and report the exact reason.
 
 ## Boundary
 
-Owns:
-
-- Plan-level orchestration, lane assignment, integration judgement,
-  dispatch dashboard freshness, native-summary disposition, typed merge retry,
-  approved lane integration, and strict closeout.
-- Dispatch-required post-merge duties and exactly-once terminal cleanup for
-  safe lane and integration checkouts after strict provider closeout/read-back.
-
-Must not:
-
-- Implement lane tasks, let a lane executor review or merge its own PR, close
-  with any blocker, merge PRs outside the active delivery workflow, or apply lightweight tracking
-  closeout rules.
-
-Internal phases:
-
-- Open/resume, lane execution, lane PR creation, independent review,
-  orchestrator merge, and closeout follow `references/outcome-routing.md`;
-  they are not separate user choices.
+Use `references/LOCAL_REHEARSAL.md` for provider dry runs,
+`references/TASK_LANE_CONTINUITY.md` for follow-up and reassignment, and
+`references/POST_REVIEW_OUTCOMES.md` for the reviewer-to-issue checkpoint.
+The tracker and child issues replace repository plan bundles and local plan
+ledgers. Historical archived plans remain read-only evidence; new dispatch
+work does not create `docs/plans` bundles or require plan-specific CLIs.

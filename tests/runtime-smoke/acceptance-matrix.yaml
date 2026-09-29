@@ -527,23 +527,10 @@ cases:
     skill_id: dispatch.deliver-dispatch-plan
     mode: deterministic
     fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: repair shared dispatch dashboard and post lifecycle comments
-    invocation: plan-tooling validate/split-prs plus plan-issue record post/repair-dashboard/audit and specialist scope probes
+    setup: use a temporary forge-cli local provider store
+    invocation: create, edit, read, and close program tracker and child issues through forge-cli; verify rendered dispatch route
     expected_exit_code: 0
-    expected_artifacts: dispatch dashboard repair JSON, split JSON, audit JSON, and specialist scope JSON
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: dispatch.deliver-plan-tracking-issue.shared-cli.deterministic
-    product: shared-cli
-    domain: dispatch
-    skill_id: dispatch.deliver-plan-tracking-issue
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: render tracking record and review evidence record
-    invocation: review-specialists scope plus review-evidence verify plus forge-cli pr checks dry-run, specialist testing/maintainability native review dry-runs, final review dry-run with issue mirror, and tracking validation comment visible render
-    expected_exit_code: 0
-    expected_artifacts: specialist scope JSON, review evidence JSON, provider checks, specialist PR review outcome plans, final review outcome plan, and validation comment visible render
+    expected_artifacts: temporary local provider records and rendered dispatch skill files
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none

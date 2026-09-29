@@ -112,7 +112,6 @@ run_portable_review_identity_contract_probe() {
   local specialist="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_COMMENT.md"
   local outcome="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_REVIEW_OUTCOME_COMMENT.md"
   local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
   local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
 
   if grep -R -E 'FORGE_BOT_PROFILE|lens bot profile|same lens bot profile|review-testing-bot|review-maintainability|dobi-bot' \
@@ -127,11 +126,9 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'REVIEW_PUBLISHER_FAILURE_OBSERVED_THIS_RUN' "$posting"
   [[ "$(grep -Fc 'NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)' "$posting")" == 1 ]]
   [[ "$(grep -Fc 'NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)' "$delivery")" == 1 ]]
-  [[ "$(grep -Fc 'NATIVE_REVIEW_IDENTITY=(env FORGE_AS=user)' "$tracking")" == 1 ]]
   [[ "$(grep -Fc 'env FORGE_AS=user forge-cli' "$posting")" == 1 ]]
   [[ "$(grep -Fc 'FINAL_REVIEW_IDENTITY=(env FORGE_AS=user)' "$posting")" == 1 ]]
   [[ "$(grep -Fc 'env FORGE_AS=user forge-cli' "$delivery")" == 1 ]]
-  [[ "$(grep -Fc 'env FORGE_AS=user forge-cli' "$tracking")" == 1 ]]
   [[ "$(grep -Fc 'FINAL_REVIEW_IDENTITY=(env FORGE_AS=user)' "$outcome")" == 1 ]]
   grep -Fq 'is_truthy "${AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED:-}"' "$posting"
   grep -Fq 'is_truthy "${AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED:-}"' "$posting"
@@ -166,19 +163,14 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
   grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
-  grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$tracking"
-  grep -Fq 'TRACKING_LENS_ARGS+=(--review-lens "$selected_lens")' "$tracking"
-  grep -Fq '`portable` posts one compact review comment' "$tracking"
-  grep -Fq 'In `governed` GitHub mode, do not post per-lens full reports through the personal identity.' "$tracking"
-  grep -Fq 'one combined pre-repair report through `forge-review-publish`' "$tracking"
-  for owner in "$delivery" "$tracking" "$dispatch"; do
+  for owner in "$delivery" "$dispatch"; do
     grep -Fq -- '--profile provider-review' "$owner"
     grep -Fq -- '--metadata-only' "$owner"
     grep -Fq -- '--comment-file' "$owner"
     ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$owner"
   done
   grep -Fq -- '--decision comments-only' "$gate"
-  for owner in "$delivery" "$tracking"; do
+  for owner in "$delivery"; do
     grep -Fq 'pull request head changed before personal escape outcome' "$owner"
     grep -Fq 'pr view "$PR_NUMBER"' "$owner"
   done
@@ -600,7 +592,7 @@ run_code_review_outcome_routing_probe() {
   grep -Fq 'A verdict of `escalate` routes to the full pre-merge' "$skill"
   grep -Fq '## Quick Pre-Merge Profile' "$delivery_gate"
   grep -Fq '## Full Pre-Merge Profile' "$delivery_gate"
-  grep -Fq 'not `program/plan` or `program/dispatch` delivery' "$delivery_gate"
+  grep -Fq 'not `program/dispatch` delivery' "$delivery_gate"
   grep -Fq 'either `suggested_specialists` or `forced_specialists`' "$delivery_gate"
 
   rendered_contract_assert_skill code-review code-review-specialists
@@ -627,7 +619,6 @@ run_review_convergence_contract_probe() {
   local convergence="$REPO_ROOT/core/policies/review-thread-convergence.md"
   local quick="$REPO_ROOT/core/agents/code-review/reviewer-quick/AGENT.md.tera"
   local deliver="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
   local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
 
   grep -Fq 'possible improvement is not incompleteness' "$home_policy"
@@ -644,12 +635,8 @@ run_review_convergence_contract_probe() {
   grep -Fq 'every actionable current-head summary under the' "$deliver"
   grep -Fq 'the new evidence under the closed-set admission rule' "$deliver"
   grep -Fq 'the new current-head evidence under the closed-set admission' "$deliver"
-  grep -Fq 'affected lenses as closed-set closure' "$tracking"
-  grep -Fq 'every actionable current-head summary under the closed-set' "$tracking"
-  grep -Fq 'the new evidence under the closed-set admission rule' "$tracking"
-  grep -Fq 'affected lenses as closed-set closure' "$dispatch"
-  grep -Fq 'summaries under the closed-set admission rule' "$dispatch"
-  grep -Fq 'under the closed-set admission rule, and refresh lane' "$dispatch"
+  grep -Fq 'review-loop ledger' "$dispatch"
+  grep -Fq 'typed failure routes to the matching read/disposition path' "$dispatch"
   grep -Fq 'Admitted genuine defect' "$convergence"
   grep -Fq 'do not extend the current repair loop' "$convergence"
 
@@ -691,7 +678,6 @@ run_provider_review_metadata_contract_probe() {
   local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
   local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
   local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  local tracking="$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"
   local dispatch="$REPO_ROOT/core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera"
   local flag owner block
 
@@ -715,7 +701,7 @@ run_provider_review_metadata_contract_probe() {
   # The prose owners must name the same requirement, so a reader who never
   # opens the reference contract still passes the metadata through. These are
   # narrative, not copyable commands, so a whole-file grep is the right scope.
-  for owner in "$delivery" "$tracking" "$dispatch"; do
+  for owner in "$delivery" "$dispatch"; do
     grep -Fq -- '--reviewable' "$owner" || return 1
     grep -Fq -- '--lens-verdict' "$owner" || return 1
     grep -Fq -- '--scope' "$owner" || return 1

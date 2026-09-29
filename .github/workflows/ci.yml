@@ -81,6 +81,5 @@ jobs:
           scripts/dev/with-nils-version.sh "release:${{ matrix.tag }}" -- bash -c '
             set -euo pipefail
             agent-runtime --version
-            plan-tooling --version
             bash scripts/ci/all.sh
           '

@@ -70,9 +70,7 @@
     "dispatch.review-dispatch-lane-pr",
     "dispatch.execute-dispatch-lane"
   ],
-  "pending_ids": [
-
-  ],
+  "pending_ids": [],
   "reviewed_field_mapping": [
     {
       "disposition": "example_request",
@@ -112,8 +110,7 @@
     "issue.issue-triage",
     "code-review.code-review-specialists",
     "pr.deliver-pr",
-    "dispatch.deliver-dispatch-plan",
-    "dispatch.deliver-plan-tracking-issue"
+    "dispatch.deliver-dispatch-plan"
   ],
   "retired_ids": [
     "meta.agent-docs",
@@ -155,6 +152,7 @@
     "dispatch.dispatch-plan-closeout",
     "dispatch.execute-plan-tracking-issue",
     "dispatch.review-dispatch-lane-pr",
-    "dispatch.execute-dispatch-lane"
+    "dispatch.execute-dispatch-lane",
+    "dispatch.deliver-plan-tracking-issue"
   ]
 }

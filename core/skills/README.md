@@ -15,7 +15,7 @@ and retained retirement history are defined in the
 | `code-review` | 1 | Generic read-only code review with internal mode selection |
 | `computer-use` | 1 | macOS desktop automation and GUI testing |
 | `conversation` | 3 | Discussion capture, guided build, and handoff |
-| `dispatch` | 2 | `program/plan` tracking and `program/dispatch` outcomes |
+| `dispatch` | 1 | `program/dispatch` coordination |
 | `issue` | 2 | Issue triage and durable follow-up |
 | `media` | 2 | Image conversion, screen capture |
 | `meta` | 13 | Explicit execution handoff, repository, documentation, and runtime maintenance outcomes |
@@ -101,7 +101,6 @@ Routing guidance for the skill family lives in
 
 | Series | Skill | Purpose |
 | --- | --- | --- |
-| Plan-tracking issue | [deliver-plan-tracking-issue](./dispatch/deliver-plan-tracking-issue/) | Delivers a lightweight issue-backed plan through implementation, review, PR delivery, and close readiness gates. |
 | Dispatch plan | [deliver-dispatch-plan](./dispatch/deliver-dispatch-plan/) | Delivers a dispatch-ready plan by creating the shared issue record, dispatching lanes, reviewing PRs, and closing gates. |
 
 ## Issue

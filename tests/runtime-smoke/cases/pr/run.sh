@@ -79,18 +79,6 @@ Runtime smoke validates the forge-cli PR create dry-run contract.
 BODY
 }
 
-write_dispatch_session_record() {
-  local path="$1"
-  cat >"$path" <<'BODY'
-## Dispatch Lane PR
-
-- Lane: lane-1
-- PR: https://github.com/graysurf/agent-runtime-kit/pull/123
-- Status: draft PR created
-- Validation: forge-cli dry-run (pass)
-BODY
-}
-
 assert_provider_payload_local_path_gate() {
   local path="$1"
   local raw_path="$2"
@@ -110,7 +98,6 @@ assert_delivery_skills_thread_test_first_evidence() {
   local rc=0 skill
   for skill in \
     core/skills/pr/deliver-pr/SKILL.md.tera \
-    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
     if ! grep -q -- '--test-first-evidence' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill omits --test-first-evidence gate threading" >&2
@@ -124,7 +111,6 @@ assert_delivery_skills_own_terminal_worktree_cleanup() {
   local rc=0 skill
   for skill in \
     core/skills/pr/deliver-pr/SKILL.md.tera \
-    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
     if ! grep -q 'core/policies/git-delivery.md' "$REPO_ROOT/$skill" ||
       ! grep -q 'git-cli worktree remove <path-or-slug> --format json' "$REPO_ROOT/$skill" ||
@@ -218,10 +204,7 @@ assert_delivery_skills_use_native_review_convergence() {
     rc=1
   fi
 
-  for skill in \
-    core/skills/pr/deliver-pr/SKILL.md.tera \
-    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
-    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
+  for skill in core/skills/pr/deliver-pr/SKILL.md.tera; do
     if ! grep -q 'forge-cli >=1.28.30' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill does not require forge-cli 1.28.30" >&2
       rc=1
@@ -277,9 +260,7 @@ assert_delivery_skills_use_native_review_convergence() {
   # The recovery recipe is destructive, so validate its executable ordering
   # and fail-closed semantics rather than merely checking marker tokens.
   if ! python3 - "$REPO_ROOT" \
-    core/skills/pr/deliver-pr/SKILL.md.tera \
-    core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera \
-    core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera <<'PY'; then
+    core/skills/pr/deliver-pr/SKILL.md.tera <<'PY'; then
 from pathlib import Path
 import re
 import sys
@@ -909,11 +890,6 @@ PY
     echo "runtime-smoke pr: deliver-pr still mandates an unconditional manual thread sweep" >&2
     rc=1
   fi
-  if grep -q '# Disposition every review thread and task-list item before merge.' \
-    "$REPO_ROOT/core/skills/dispatch/deliver-plan-tracking-issue/SKILL.md.tera"; then
-    echo "runtime-smoke pr: tracking delivery still duplicates unconditional merge-gate reads" >&2
-    rc=1
-  fi
   return "$rc"
 }
 
@@ -1164,11 +1140,7 @@ run_create_dispatch_lane_probe() {
   local workspace="$PR_WORKSPACE/create-dispatch"
   local body="$PR_ARTIFACTS_DIR/create-dispatch-body.md"
   local out="$PR_ARTIFACTS_DIR/create-dispatch.json"
-  local session="$PR_ARTIFACTS_DIR/create-dispatch-session.md"
-  local session_payload="$PR_ARTIFACTS_DIR/create-dispatch-session-payload.json"
-  local post_out="$PR_ARTIFACTS_DIR/create-dispatch-session-post.json"
   require_pr_bin forge-cli || return 1
-  require_pr_bin plan-issue || return 1
   mkdir -p "$workspace"
   cp -R "$SCRIPT_DIR/workspaces/basic-repo/." "$workspace"
   init_pushed_branch_fixture "$workspace" "feat/dispatch-lane-runtime-smoke" \
@@ -1190,24 +1162,10 @@ run_create_dispatch_lane_probe() {
       --label-catalog "$LABEL_CATALOG" \
       --strict-labels
   ) >"$out" 2>&1
-  write_dispatch_session_record "$session"
-  cat >"$session_payload" <<'JSON'
-{"summary":"Runtime smoke dispatch lane PR created"}
-JSON
-  plan-issue record post \
-    --dry-run \
-    --issue 50 \
-    --profile dispatch \
-    --kind session \
-    --payload-file "$session_payload" \
-    --summary-file "$session" \
-    --format json >"$post_out" 2>&1
   grep -q '"schema_version":"cli.forge-cli.pr.create.v1"' "$out"
   grep -q '"provider":"github"' "$out"
   grep -q '"workflow::dispatch"' "$out"
   grep -q '"size::s"' "$out"
-  grep -q '"schema_version":"plan-issue.record.post.v2"' "$post_out"
-  grep -q '<!-- plan-issue-record:v2 role=session profile=dispatch -->' "$post_out"
 }
 
 run_close_github_probe() {
@@ -1314,11 +1272,7 @@ run_deliver_github_probe() {
   grep -q '"forced_specialists"' "$review_out"
   grep -q '"maintainability"' "$review_out"
   grep -q '"testing"' "$review_out"
-  grep -q 'lifecycle readiness is also a pre-merge gate' \
-    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  grep -q 'plan-issue --format json record audit' \
-    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  grep -q 'role=session' \
+  grep -q 'parent workflow owns final closeout through `forge-cli issue`' \
     "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
   printf 'Runtime smoke deliver-pr specialist review.\n' >"$review_body"
   printf '[{"path":"pr-fixture.txt","line":1,"body":"Runtime smoke deliver-pr actionable finding thread."}]\n' >"$review_threads"
@@ -1394,11 +1348,7 @@ run_deliver_gitlab_probe() {
   grep -q '"forced_specialists"' "$review_out"
   grep -q '"maintainability"' "$review_out"
   grep -q '"testing"' "$review_out"
-  grep -q 'lifecycle readiness is also a pre-merge gate' \
-    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  grep -q 'plan-issue --format json record audit' \
-    "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
-  grep -q 'role=session' \
+  grep -q 'parent workflow owns final closeout through `forge-cli issue`' \
     "$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
 }
 
@@ -1528,7 +1478,7 @@ run_pr_outcome_routing_probe() {
   grep -Fq '**Close unmerged**' "$skill"
   grep -Fq '**Quick merge**' "$skill"
   grep -Fq 'for `direct` or `issue` work' "$skill"
-  grep -Fq 'mandatory for `program/plan` or `program/dispatch` delivery' "$skill"
+  grep -Fq 'mandatory for `program/dispatch` delivery' "$skill"
   grep -Fq 'scope suggests or forces no risk' "$skill"
   grep -Fq 'A clean `pass` is terminal' "$skill"
   grep -Fq 'review evidence for the current head' "$skill"

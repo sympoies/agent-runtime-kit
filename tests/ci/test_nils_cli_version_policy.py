@@ -69,7 +69,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                 encoding="utf-8",
             )
             helper.chmod(0o755)
-            for binary in ("agent-runtime", "plan-tooling"):
+            for binary in ("agent-runtime", "forge-cli"):
                 probe = bin_dir / binary
                 probe.write_text(
                     "#!/usr/bin/env bash\n"
@@ -252,13 +252,13 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                 "${{ matrix.roles }}": "validated",
                 "${{ matrix.tag }}": "v1.26.0",
             },
-            ["agent-runtime", "plan-tooling"],
+            ["agent-runtime"],
         )
 
         gate_stack = read("scripts/ci/all.sh")
         self.assertLess(
             gate_stack.index("agent-runtime doctor --class version-alignment"),
-            gate_stack.index("plan-tooling validate --format text --explain"),
+            gate_stack.index('banner 2 "skill-governance audit"'),
         )
 
     def test_sync_runtime_surfaces_enforces_version_alignment_on_apply(self) -> None:

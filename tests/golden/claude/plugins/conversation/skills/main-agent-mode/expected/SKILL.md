@@ -247,15 +247,11 @@ work mode:
   outcome.
 - `program` runs one Main Agent run per wave with one worker per child issue;
   see Program Waves.
-- `program/plan` retains the plan-tracking parent, but the main agent does not
-  implement or repair production or test code. One interactive managed worker
-  owns the implementation in an isolated managed worktree launched with
-  `--coordination-mode enforce`.
 - `program/dispatch` retains exact independent lane workers and the dispatch
   orchestrator acceptance boundary. The mode does not merge lanes or collapse
   their worktrees, PRs, reviews, validation, or closeout.
 
-For `program` and its specializations, main-agent writes are limited to
+For `program` and dispatch, main-agent writes are limited to
 orchestration, tracker and run-state, evidence, review synthesis, and
 authorized provider lifecycle actions. Return code findings to the same worker
 and lane unless the main agent records an explicit reassignment under the

@@ -55,10 +55,6 @@ nils_cli:
 required_clis:
   - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
     min: "1.27.35"
-  - bin: plan-issue       # tracking controller + execution-state sync/writeback + review evidence context gate + provider payload privacy gate + lifecycle mutation lock + unified terminal closeout rows
-    min: "1.1.0"
-  - bin: plan-tooling     # ledger-update / ledger-sync + exec-state-sync repair
-    min: "1.0.1"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
   - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + exact requested-base binding across lookup/adopt/create readback/ready/merge + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery + durable review-loop ledger with faithful observe dry-run preflight + CLI-owned review-loop compare-and-swap (`observe --auto-state` / `--preflight`) and guarded pending-review recovery (`pr review --recover-pending`)
@@ -67,8 +63,6 @@ required_clis:
     min: "1.27.27"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
     min: "1.21.19"
-  - bin: plan-archive     # discover / migrate / refresh / query
-    min: "0.25.5"
   - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2` + durable product/session-scoped intent activation and path classification + atomic `session prepare` (v1.23.0) + phase-scoped `--phase` preflight/verify (v1.24.0)
     # The shared hooks call `session prepare` and `session verify --phase`
     # without a capability probe, so the per-binary floor is the phase surface.

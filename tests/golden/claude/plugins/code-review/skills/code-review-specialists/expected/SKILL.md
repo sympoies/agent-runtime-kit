@@ -125,7 +125,7 @@ The caller requests the review outcome; the workflow selects context and depth.
   accepted, or residual risk without starting another discovery generation.
 - **Pre-merge** — the review is a delivery gate. Select quick depth only for an
   eligible `direct` or `issue` routine diff; use the full profile for
-  `program/plan` or `program/dispatch` delivery or any risk trigger. Preserve comment-before-fix ordering and return a decision to
+  `program/dispatch` delivery or any risk trigger. Preserve comment-before-fix ordering and return a decision to
   the delivery owner.
 - **Focused** — the user explicitly asks for one or more lenses. Force only
   those lenses unless scope reveals a mandatory safety lens.

@@ -11,7 +11,7 @@ findings. None are separate skills.
 | Small, routine, docs-only, or ordinary diff | `quick` | Lightweight read-only review; escalate when scope or confidence requires it. |
 | Explicit lens requested | `focused` | Run only the requested testing, security, performance, data-migration, API-contract, maintainability, or red-team lenses unless concrete scope requires more. |
 | Eligible `direct` or `issue` PR/MR near merge | `pre-merge` + `quick` | Treat a clean quick pass as terminal review evidence for the current head; escalate on scope, risk, findings, or confidence. |
-| `program/plan`, `program/dispatch`, or risk-triggering PR/MR near merge | `pre-merge` + `specialist` | Force at least testing and maintainability, add risk lenses, produce a delivery outcome, and leave provider writes and merge decisions to the owning delivery workflow. |
+| `program/dispatch` or risk-triggering PR/MR near merge | `pre-merge` + `specialist` | Force at least testing and maintainability, add risk lenses, produce a delivery outcome, and leave provider writes and merge decisions to the owning delivery workflow. |
 | Previous findings repaired | `follow-up` | Run closed-set closure review over supplied findings, repair hunks, and their direct regression surface; admit only material repair-introduced regressions. |
 | Broad or high-risk change | `specialist` | Select and dispatch the relevant specialist bundle, then validate and merge findings. |
 
@@ -28,8 +28,6 @@ fallback only when dispatch is unavailable or blocked.
 
 - `deliver-pr` invokes pre-merge context before merge, selects quick or full
   review, and owns provider comments, fixes, checks, and merge.
-- `deliver-plan-tracking-issue` invokes pre-merge context with the full profile
-  for each PR, then owns issue-visible review evidence and strict closeout.
 - `deliver-dispatch-plan` invokes the generic outcome for independent lane
   review and keeps provider writes, checkpoints, integration, and closeout in
   the dispatch parent.

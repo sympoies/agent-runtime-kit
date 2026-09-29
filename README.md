@@ -80,7 +80,7 @@ the same rendered skills through its configured
 ## CLI boundary
 
 The `agent-runtime` command and the rest of the runtime surface
-(`agent-docs`, `agent-out`, `plan-tooling`, `forge-cli`, and related tools) live in
+(`agent-docs`, `agent-out`, `forge-cli`, and related tools) live in
 [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) and install via
 Homebrew.
 
@@ -88,7 +88,6 @@ Homebrew.
 brew tap sympoies/tap
 brew install sympoies/tap/nils-cli
 agent-runtime --version
-plan-tooling --version
 ```
 
 Skills declare the binaries they need through `required_clis`. Released
@@ -210,7 +209,7 @@ through its external skill root:
 `media` · `meta` · `pr` · `reporting`
 
 Representative skills include `pr:deliver-pr`,
-`dispatch:deliver-plan-tracking-issue`, `issue:issue-triage`,
+`dispatch:deliver-dispatch-plan`, `issue:issue-triage`,
 `meta:sync-runtime-surfaces`, `reporting:project-retro`, and
 `computer-use:macos-desktop`.
 

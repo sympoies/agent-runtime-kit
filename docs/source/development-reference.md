@@ -40,7 +40,6 @@ command -v brew >/dev/null 2>&1
 brew tap sympoies/tap
 brew install sympoies/tap/nils-cli
 agent-runtime --version
-plan-tooling --version
 ```
 
 Required-doc policy is data this repo declares in `AGENT_DOCS.toml`; the harness
@@ -428,8 +427,7 @@ That currently performs:
    version-alignment --pin docs/source/nils-cli-pin.yaml` — blocks below
    `minimum_supported_tag` or any `required_clis[]` floor, admits through
    `validated_tag`, and warns above validated before continuing downstream
-2. `plan-tooling validate --format text --explain` plus
-   `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
+2. `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
 3. `agent-runtime render --target home-prompt` for neutral / Codex / Claude /
    Hermes,
    then `agent-runtime render --product codex`
@@ -509,7 +507,6 @@ and record the reason in the bump commit.
 For targeted checks:
 
 ```bash
-plan-tooling validate --format text --explain
 bash scripts/ci/skill-governance-audit.sh
 bash scripts/ci/skill-governance-audit.sh --fixture create
 bash scripts/ci/skill-governance-audit.sh --fixture remove

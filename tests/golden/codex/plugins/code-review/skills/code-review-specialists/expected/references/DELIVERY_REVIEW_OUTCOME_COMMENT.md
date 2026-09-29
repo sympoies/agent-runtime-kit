@@ -21,9 +21,6 @@ combined approval summary.
 - `deliver-pr` posts the outcome on the PR/MR before merging through the
   governed publisher or the guarded portable/personal direct route selected in
   `REVIEW_OUTCOME_POSTING_CONTRACT.md`.
-- `deliver-plan-tracking-issue` records the PR/MR outcome comment URL in
-  issue-hosted session or validation evidence instead of duplicating the full
-  report.
 - `code-review-specialists` supplies review evidence only. It must not post or
   update live PR/MR comments.
 

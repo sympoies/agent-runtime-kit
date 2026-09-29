@@ -8,7 +8,7 @@
 #   - agent-runtime doctor — probe `<command> --version` for every formula
 #     in the active profile and report ok / missing / outdated.
 #
-# Nils-cli binaries (agent-out, agent-docs, semantic-commit, plan-tooling,
+# Nils-cli binaries (agent-out, agent-docs, semantic-commit,
 # git-cli, etc.) are NOT listed here. They ship as part of the `nils-cli`
 # Homebrew formula and are pinned in `docs/source/nils-cli-surface.md`.
 #

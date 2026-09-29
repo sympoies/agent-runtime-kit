@@ -5,7 +5,6 @@ conversation.guided-feature-build
 conversation.handoff-session-prompt
 conversation.main-agent-mode
 dispatch.deliver-dispatch-plan
-dispatch.deliver-plan-tracking-issue
 issue.issue-follow-up
 issue.issue-triage
 media.image-processing

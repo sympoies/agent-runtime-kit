@@ -71,9 +71,9 @@ assert pending_rows == pending_ids
 assert reviewed_rows == progress["reviewed_ids"]
 assert len(reviewed_rows) == 66
 assert len(pending_rows) == 0
-assert progress["retired_ids"] == [
+assert set(progress["retired_ids"]) == {
     skill_id for skill_id in reviewed_rows if skill_id not in set(skill_ids)
-]
+}
 
 skill_chunks = {
     match.group(1): chunk
@@ -113,7 +113,12 @@ retired_hermes = json.loads(
     (root / "manifests/retired-hermes-skill-copies.json").read_text()
 )
 assert retired_hermes["schema"] == "agent-runtime-kit.retired-hermes-skill-copies.v1"
-assert list(retired_hermes["skills"]) == retired_ids["skills"]
+# This manifest freezes the earlier Hermes-copy migration cohort. Skills
+# retired after that source revision have no copy in its historical baseline.
+assert list(retired_hermes["skills"]) == [
+    skill_id for skill_id in retired_ids["skills"]
+    if skill_id in retired_hermes["skills"]
+]
 
 source_revision = retired_hermes["source_revision"]
 subprocess.run(
@@ -197,7 +202,6 @@ policy_paths = [
     root / "AGENT_HOME.md",
     root / "AGENT_DOCS.toml",
     root / "core/policies/work-modes.md",
-    root / "core/policies/work-tier-levels.md",
     root / "core/policies/git-delivery.md",
     root / "core/policies/review-thread-convergence.md",
 ]
@@ -249,7 +253,7 @@ assert report["product"] == product, (product, report.get("product"))
 skills = report["skills"]
 manifest = Path(sys.argv[3]).read_text()
 active_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", manifest, re.M)
-assert len(active_ids) == 29, (product, len(active_ids))
+assert len(active_ids) == 28, (product, len(active_ids))
 pending_ids = set(
     re.findall(r"^    - ([a-z0-9.-]+)$", manifest.split("skills:", 1)[0], re.M)
 )

@@ -227,30 +227,6 @@ SKILL_BODY_OVERRIDES = {
         ),
         "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
     },
-    "skill-body.dispatch.deliver-plan-tracking-issue": {
-        "allow": 34 * KIB,
-        "reason": (
-            "Plan bundle + issue lifecycle + strict closeout + archive handoff "
-            "in one body. The review-loop and pending-review machinery this "
-            "shared with deliver-pr is now delegated to nils-cli 1.28.30, "
-            "which took 2,162 bytes off. The remainder is the lifecycle "
-            "contract, and no further reduction is designed; the ceiling is "
-            "the measured size rounded up one KiB and #140 owns the decision."
-        ),
-        "tracking": "graysurf/agent-runtime-kit#140 (delegation landed; no further reduction scheduled)",
-    },
-    "skill-body.dispatch.deliver-dispatch-plan": {
-        "allow": 23 * KIB,
-        "reason": (
-            "Shared dispatch spine plus per-lane delivery and closeout. The "
-            "review-loop and pending-review machinery is now delegated to "
-            "nils-cli 1.28.30, which took 2,326 bytes off. The remainder is "
-            "the lane/orchestrator contract, and no further reduction is "
-            "designed; the ceiling is the measured size rounded up one KiB "
-            "and #140 owns the decision."
-        ),
-        "tracking": "graysurf/agent-runtime-kit#140 (delegation landed; no further reduction scheduled)",
-    },
     "skill-body.computer-use.macos-desktop": {
         "allow": 22 * KIB,
         "reason": (

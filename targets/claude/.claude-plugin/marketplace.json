@@ -29,7 +29,7 @@
       "name": "dispatch",
       "version": "0.1.0",
       "source": "./plugins/dispatch",
-      "description": "Two governed program specializations — program/plan tracking and program/dispatch multi-lane dispatch — with lifecycle phases routed internally."
+      "description": "Program dispatch across independently reviewed lanes with an ordinary tracker and child issues."
     },
     {
       "name": "issue",

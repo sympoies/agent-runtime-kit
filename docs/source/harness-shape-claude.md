@@ -351,7 +351,7 @@ Status legend:
 
 From `DEVELOPMENT.md`:
 
-1. `plan-tooling validate` — covers manifest schemas.
+1. `scripts/ci/skill-governance-audit.sh` — covers skill manifests.
 2. `agent-runtime render --product codex` — not Claude-side.
 3. **`agent-runtime render --product claude`** — render gate.
 4. **render-golden refresh + `git diff --exit-code`** — render
