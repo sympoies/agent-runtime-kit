@@ -183,7 +183,6 @@ render, drift-audit, smoke-test, and coupled `nils-cli` detail.
 ├── docs/
 │   ├── source/          # architecture, policies, specs, and references
 │   │   └── devlog/      # retained monthly implementation narrative
-│   ├── plans/           # plan bundles and retained execution records
 │   └── discussions/     # captured discussion / implementation-readiness specs
 ├── build/               # generated render output
 ├── docker/              # container image build context (published to GHCR)

@@ -77,8 +77,29 @@ PY
   view="$(forge-cli "${common[@]}" issue view "$tracker")"
   printf '%s\n' "$view" | jq -e --arg a "#$child_a" --arg b "#$child_b" \
     '.ok == true and (.data.body | contains($a) and contains($b))' >/dev/null
+  forge-cli "${common[@]}" issue view "$child_a" |
+    jq -e '.ok == true and .data.state == "open"' >/dev/null
+  forge-cli "${common[@]}" issue view "$child_b" |
+    jq -e '.ok == true and .data.state == "open"' >/dev/null
   forge-cli "${common[@]}" issue close "$child_a" >/dev/null
   forge-cli "${common[@]}" issue close "$child_b" >/dev/null
+  forge-cli "${common[@]}" issue view "$child_a" |
+    jq -e '.ok == true and .data.state == "closed"' >/dev/null
+  forge-cli "${common[@]}" issue view "$child_b" |
+    jq -e '.ok == true and .data.state == "closed"' >/dev/null
+  python3 - "$DISPATCH_ARTIFACTS_DIR/tracker.md" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+body = path.read_text()
+assert body.count('- [ ] Lane ') == 2
+path.write_text(body.replace('- [ ] Lane ', '- [x] Lane '))
+PY
+  forge-cli "${common[@]}" issue edit "$tracker" \
+    --body-file "$DISPATCH_ARTIFACTS_DIR/tracker.md" >/dev/null
+  forge-cli "${common[@]}" issue view "$tracker" |
+    jq -e '.ok == true and .data.state == "open" and
+      (.data.body | contains("- [x] Lane A") and contains("- [x] Lane B"))' >/dev/null
   forge-cli "${common[@]}" issue close "$tracker" >/dev/null
   forge-cli "${common[@]}" issue view "$tracker" |
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
@@ -89,7 +110,21 @@ rendered_route_probe() {
   grep -Fq 'program/dispatch' "$source"
   grep -Fq 'workflow::tracking' "$source"
   grep -Fq 'workflow::follow-up' "$source"
-  grep -Fq -- '--allow-non-default-base' "$source"
+  python3 - "$source" <<'PY'
+from pathlib import Path
+import re
+import sys
+body = Path(sys.argv[1]).read_text()
+guarded_merge = re.search(r'pr merge \\\n\s+"\$LANE_PR_NUMBER" --allow-non-default-base \\\n\s+--expected-head "\$REVIEWED_HEAD" --expected-base "\$INTEGRATION_BRANCH"', body)
+assert guarded_merge, 'lane merge must bind reviewed head and integration base'
+assert body.index('reviewed readiness stop (`--no-merge`)') < guarded_merge.start()
+assert body.index('only after independent') < guarded_merge.start()
+assert body.index('green required checks') < guarded_merge.start()
+assert guarded_merge.end() < body.index('close the child with `forge-cli issue close`')
+assert body.index('close the child with `forge-cli issue close`') < body.index('Tick its tracker checkbox')
+assert body.index('deliver the integration PR through') < body.index('Read back the integration PR merge and all children')
+assert body.index('Read back the integration PR merge and all children') < body.index('close the tracker through `forge-cli issue close`')
+PY
   ! grep -Eq 'plan-issue|plan-tooling|plan-archive' "$source"
   rendered_contract_assert_skill dispatch deliver-dispatch-plan
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'forge-cli issue close'

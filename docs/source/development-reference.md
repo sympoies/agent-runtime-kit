@@ -180,11 +180,10 @@ Local GPG or SSH commit signing is optional for this fallback path. Configure it
 only when the operator wants signed local commits as part of their normal setup;
 do not make GPG installation a bootstrap prerequisite for every contributor.
 
-Generated plan bundles do not need a direct push to `main` before execution.
-They need provider-visible source, plan, and state records on the tracking issue.
-If the plan bundle PR remains open after execution finishes, update its
-execution-state document with the final evidence before merging it, or close the
-PR as obsolete if the issue closeout already superseded the branch contents.
+Program work uses an ordinary tracker and child issues when coordination is
+needed. Record current decisions, owner, validation, and delivery status on the
+relevant issue. Close a superseded PR explicitly after its replacement is
+provider-visible.
 
 ## Refreshing Runtime Surfaces
 

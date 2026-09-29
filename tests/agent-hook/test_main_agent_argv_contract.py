@@ -104,11 +104,11 @@ def admitted_shapes(packet: str) -> list[list[str]]:
         ["worker", "supervise", "assignment-contract", "--format", "json"],
         ["quick", "--assignment-file", packet, "--idempotency-key", key, "--format", "json"],
         [
-            "quick", "--assignment-file", packet, "--tier", "L0",
+            "quick", "--assignment-file", packet, "--tier", "direct",
             "--idempotency-key", key, "--format", "json",
         ],
         [
-            "quick", "--assignment-file", packet, "--tier", "program/plan",
+            "quick", "--assignment-file", packet, "--tier", "program/dispatch",
             "--idempotency-key", key, "--format", "json",
         ],
         [

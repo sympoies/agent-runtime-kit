@@ -2,7 +2,6 @@
 #
 # Schema: ../core/docs/schemas/surfaces.schema.json
 # Architecture: docs/source/harness-shape-codex.md, docs/source/harness-shape-claude.md
-# Plan: docs/plans/support-matrix-rendered/
 #
 # This manifest is the canonical row registry for the cross-product
 # SUPPORT_MATRIX view rendered by `agent-runtime render --target
