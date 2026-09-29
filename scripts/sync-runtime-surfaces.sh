@@ -2550,8 +2550,6 @@ preflight_codex_plugin_registry() {
   local installed_json
   local installed_refs
   local marketplaces_json
-  local -a codex_args
-  codex_args=()
   CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED=0
 
   [ "$APPLY" = "1" ] || return 0
@@ -2576,11 +2574,14 @@ preflight_codex_plugin_registry() {
       return 1
     }
     source_marketplace_override="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$source_marketplace_root")"
-    codex_args=(-c "marketplaces.$marketplace.source=$source_marketplace_override")
     CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED=1
     log "Codex marketplace snapshot missing; preflighting against source marketplace: $source_marketplace_root"
   fi
-  installed_json="$(codex "${codex_args[@]}" plugin list --json)"
+  if [ "$CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED" = "1" ]; then
+    installed_json="$(codex -c "marketplaces.$marketplace.source=$source_marketplace_override" plugin list --json)"
+  else
+    installed_json="$(codex plugin list --json)"
+  fi
   if ! installed_refs="$(codex_installed_plugin_refs_for_marketplace "$installed_json" "$marketplace")"; then
     CODEX_PLUGIN_STATUS="failed-invalid-installed-ref"
     err "Codex plugin registry returned an invalid installed plugin id for the managed marketplace; refusing refresh."
