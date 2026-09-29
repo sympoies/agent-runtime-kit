@@ -80,7 +80,7 @@ RUN set -eux; \
 # run `agent-runtime`. Keep this at trixie (or newer) while the pinned nils-cli
 # needs glibc ≥ 2.39.
 # -----------------------------------------------------------------------------
-FROM node:26-trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239 AS runtime
+FROM node:26-trixie-slim@sha256:ec7758ee051e457b468b32bde57b0879010b325bb9862718e9615225ce4aaae1 AS runtime
 ARG CLAUDE_CODE_VERSION
 ARG CODEX_VERSION
 ARG GH_VERSION
