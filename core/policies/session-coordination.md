@@ -3,7 +3,8 @@
 Use this conditional policy when long or repository-mutating managed work
 starts, a material authenticated peer request arrives, automatic advice reports
 an overlap, a task benefits from a public scope declaration, or explicit
-`enforce`/recovery is in play. Advisory coordination is automatic awareness,
+`enforce`/recovery is in play. Advisory coordination is automatic awareness;
+apart from the one read-only check in [Session board](#session-board), it is
 not a routine planning step. It does not create work
 authorization or replace `project-dev`, provider rules, user consent, or formal
 `program/dispatch` or provider dispatch. Unmanaged sessions remain valid.
