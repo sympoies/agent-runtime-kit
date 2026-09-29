@@ -34,6 +34,7 @@ CODEX_PLUGIN_PREFLIGHT_DONE=0
 CODEX_PREFLIGHT_MARKETPLACE=""
 CODEX_PREFLIGHT_INSTALLED_REFS=""
 CODEX_PREFLIGHT_MARKETPLACES_JSON=""
+CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED=0
 AGENT_HOOK_CONFIG=""
 AGENT_HOOK_POLICY=""
 AGENT_HOOK_STATE_DIR=""
@@ -2540,28 +2541,60 @@ require_codex_plugin_cli() {
 
 preflight_codex_plugin_registry() {
   local live_home="$1"
+  local state_home="$2"
   local marketplace_json
   local marketplace
+  local materialized_home
+  local source_marketplace_root
+  local source_marketplace_override
   local installed_json
   local installed_refs
   local marketplaces_json
+  CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED=0
 
   [ "$APPLY" = "1" ] || return 0
   require_codex_plugin_cli || return $?
 
   marketplace_json="$(codex_marketplace_json_path "$live_home")"
   marketplace="$(codex_marketplace_name "$marketplace_json")"
-  installed_json="$(codex plugin list --json)"
+  materialized_home="$(codex_materialized_marketplace_home "$state_home" "$marketplace")"
+  # Codex cannot inspect its registry while the managed snapshot is missing.
+  # Read through the source marketplace for preflight only; the normal refresh
+  # materializes the snapshot after render, before any plugin registry writes.
+  if [ ! -f "$materialized_home/.agents/plugins/marketplace.json" ]; then
+    source_marketplace_root="$SOURCE_ROOT/targets/codex"
+    case "$marketplace" in
+      "" | *[!A-Za-z0-9_-]*)
+        err "unsafe Codex marketplace name for source preflight: $marketplace"
+        return 1
+        ;;
+    esac
+    [ -f "$source_marketplace_root/.agents/plugins/marketplace.json" ] || {
+      err "missing source Codex marketplace manifest: $source_marketplace_root"
+      return 1
+    }
+    source_marketplace_override="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$source_marketplace_root")"
+    CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED=1
+    log "Codex marketplace snapshot missing; preflighting against source marketplace: $source_marketplace_root"
+  fi
+  if [ "$CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED" = "1" ]; then
+    installed_json="$(codex -c "marketplaces.$marketplace.source=$source_marketplace_override" plugin list --json)"
+  else
+    installed_json="$(codex plugin list --json)"
+  fi
   if ! installed_refs="$(codex_installed_plugin_refs_for_marketplace "$installed_json" "$marketplace")"; then
     CODEX_PLUGIN_STATUS="failed-invalid-installed-ref"
     err "Codex plugin registry returned an invalid installed plugin id for the managed marketplace; refusing refresh."
     return 1
   fi
-  marketplaces_json="$(codex plugin marketplace list --json)"
-  if ! validate_codex_marketplace_registry_json "$marketplaces_json"; then
-    CODEX_PLUGIN_STATUS="failed-invalid-marketplace-registry"
-    err "Codex plugin registry returned invalid marketplace data; refusing refresh."
-    return 1
+  marketplaces_json=""
+  if [ "$CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED" != "1" ]; then
+    marketplaces_json="$(codex plugin marketplace list --json)"
+    if ! validate_codex_marketplace_registry_json "$marketplaces_json"; then
+      CODEX_PLUGIN_STATUS="failed-invalid-marketplace-registry"
+      err "Codex plugin registry returned invalid marketplace data; refusing refresh."
+      return 1
+    fi
   fi
 
   CODEX_PREFLIGHT_MARKETPLACE="$marketplace"
@@ -2598,7 +2631,7 @@ sync_codex_plugin_registry() {
   if [ "$APPLY" = "1" ]; then
     if [ "$CODEX_PLUGIN_PREFLIGHT_DONE" != "1" ] ||
       [ "$CODEX_PREFLIGHT_MARKETPLACE" != "$marketplace" ]; then
-      preflight_codex_plugin_registry "$live_home" || return $?
+      preflight_codex_plugin_registry "$live_home" "$state_home" || return $?
     fi
   fi
 
@@ -2606,6 +2639,15 @@ sync_codex_plugin_registry() {
 
   log "syncing Codex plugin registry marketplace=$marketplace source=$materialized_home"
   if [ "$APPLY" = "1" ]; then
+    marketplaces_json="$CODEX_PREFLIGHT_MARKETPLACES_JSON"
+    if [ "$CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED" = "1" ]; then
+      marketplaces_json="$(codex plugin marketplace list --json)"
+      if ! validate_codex_marketplace_registry_json "$marketplaces_json"; then
+        CODEX_PLUGIN_STATUS="failed-invalid-marketplace-registry"
+        err "Codex plugin registry returned invalid marketplace data after restoring its snapshot; refusing refresh."
+        return 1
+      fi
+    fi
     installed_refs="$CODEX_PREFLIGHT_INSTALLED_REFS"
     while IFS= read -r plugin_ref; do
       [ -n "$plugin_ref" ] || continue
@@ -2615,7 +2657,6 @@ sync_codex_plugin_registry() {
 $installed_refs
 EOF_REFRESH_CODEX_PLUGINS
 
-    marketplaces_json="$CODEX_PREFLIGHT_MARKETPLACES_JSON"
     if codex_marketplace_registered "$marketplaces_json" "$marketplace"; then
       run_cmd codex plugin marketplace remove "$marketplace"
     fi
@@ -2674,13 +2715,15 @@ sync_product_activation() {
 preflight_selected_product_activation() {
   local product
   local live_home
+  local state_home
 
   [ "$APPLY" = "1" ] || return 0
   for product in $(selected_products); do
     live_home="$(product_live_home "$product")"
+    state_home="$(product_state_home "$product")"
     case "$product" in
       claude) preflight_claude_plugin_registry "$live_home" ;;
-      codex) preflight_codex_plugin_registry "$live_home" ;;
+      codex) preflight_codex_plugin_registry "$live_home" "$state_home" ;;
       hermes) : ;;
       *)
         err "unknown product: $product"

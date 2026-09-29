@@ -750,6 +750,9 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$CODEX_STUB_LOG"
+if [ "${1:-}" = -c ]; then
+  shift 2
+fi
 case "$*" in
   "plugin list --json")
     printf '{"installed":[],"available":[]}\n'
@@ -2749,6 +2752,16 @@ JSON
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$CODEX_STUB_LOG"
+source_override=0
+if [ "${1:-}" = -c ]; then
+  [ "$2" = "marketplaces.codex-kit.source=\"$CODEX_STUB_SOURCE_ROOT\"" ] || exit 1
+  source_override=1
+  shift 2
+elif { [ "$*" = "plugin list --json" ] || [ "$*" = "plugin marketplace list --json" ]; } \
+  && [ ! -f "$CODEX_STUB_MARKETPLACE/.agents/plugins/marketplace.json" ]; then
+  echo 'configured Codex marketplace snapshot is missing' >&2
+  exit 1
+fi
 case "$*" in
   "plugin list --json")
     if [ "${CODEX_STUB_BAD_PLUGIN_REF:-0}" = "1" ]; then
@@ -2758,7 +2771,11 @@ case "$*" in
     fi
     ;;
   "plugin marketplace list --json")
-    printf '{"marketplaces":[{"name":"codex-kit","root":"/old-state-home"}]}\n'
+    if [ "${CODEX_STUB_UNREGISTERED:-0}" = 1 ] && [ "$source_override" = 0 ]; then
+      printf '{"marketplaces":[]}\n'
+    else
+      printf '{"marketplaces":[{"name":"codex-kit","root":"/old-state-home"}]}\n'
+    fi
     ;;
 esac
 SH
@@ -2770,10 +2787,14 @@ SH
     APPLY=1
     SOURCE_ROOT="$source_root"
     PATH="$stub_bin:$PATH" CODEX_STUB_LOG="$stub_log" \
+      CODEX_STUB_MARKETPLACE="$materialized_home" \
+      CODEX_STUB_SOURCE_ROOT="$source_root/targets/codex" \
       sync_codex_plugin_registry "$codex_home" "$state_home"
   ) >"$out" 2>&1
 
   grep -q "materializing Codex plugin marketplace" "$out"
+  grep -q "Codex marketplace snapshot missing; preflighting against source marketplace" "$out"
+  grep -q -- '-c marketplaces.codex-kit.source=' "$stub_log"
   grep -q "syncing Codex plugin registry marketplace=codex-kit source=$materialized_home" "$out"
   grep -q "plugin marketplace remove codex-kit" "$stub_log"
   grep -q "plugin marketplace add $materialized_home" "$stub_log"
@@ -2797,12 +2818,32 @@ SH
   test -f "$materialized_home/plugins/meta/.codex-plugin/plugin.json"
   test -f "$materialized_home/.agents/plugins/marketplace.json"
 
+  rm -rf "$materialized_home"
+  : >"$stub_log"
+  (
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
+    APPLY=1
+    SOURCE_ROOT="$source_root"
+    PATH="$stub_bin:$PATH" CODEX_STUB_LOG="$stub_log" \
+      CODEX_STUB_MARKETPLACE="$materialized_home" \
+      CODEX_STUB_SOURCE_ROOT="$source_root/targets/codex" \
+      CODEX_STUB_UNREGISTERED=1 \
+      sync_codex_plugin_registry "$codex_home" "$state_home"
+  ) >"$out.unregistered" 2>&1
+  if grep -q 'plugin marketplace remove codex-kit' "$stub_log"; then
+    echo 'Codex refresh removed a marketplace that was not registered' >&2
+    return 1
+  fi
+  grep -q "plugin marketplace add $materialized_home" "$stub_log"
+
   set +e
   (
     SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
     APPLY=1
     SOURCE_ROOT="$source_root"
     PATH="$stub_bin:$PATH" CODEX_STUB_LOG="$bad_stub_log" \
+      CODEX_STUB_MARKETPLACE="$materialized_home" \
+      CODEX_STUB_SOURCE_ROOT="$source_root/targets/codex" \
       CODEX_STUB_BAD_PLUGIN_REF=1 \
       sync_codex_plugin_registry "$codex_home" "$state_home"
   ) >"$out.bad-ref" 2>&1

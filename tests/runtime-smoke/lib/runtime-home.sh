@@ -280,6 +280,9 @@ runtime_write_plugin_stubs() {
   cat >"$stub_bin/codex" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${1:-}" = -c ]; then
+  shift 2
+fi
 case "$*" in
   "plugin --help" | "plugin marketplace --help") exit 0 ;;
   "plugin list --json") printf '%s\n' '{"installed":[],"available":[]}' ; exit 0 ;;
@@ -319,7 +322,7 @@ runtime_activate_product_registry() {
     APPLY=1
     case "$product" in
       codex)
-        preflight_codex_plugin_registry "$live_home"
+        preflight_codex_plugin_registry "$live_home" "$state_home"
         sync_codex_plugin_registry "$live_home" "$state_home"
         ;;
       claude)
