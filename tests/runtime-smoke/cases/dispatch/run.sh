@@ -81,7 +81,59 @@ PY
     jq -e '.ok == true and .data.state == "open"' >/dev/null
   forge-cli "${common[@]}" issue view "$child_b" |
     jq -e '.ok == true and .data.state == "open"' >/dev/null
+  # The local provider supports PR reads from seeded records, while PR
+  # mutation stays with the real provider. Check the state gate before any
+  # child closeout, then read back the simulated merge and checkpoint.
+  mkdir -p "$DISPATCH_STORE/prs"
+  cat >"$DISPATCH_STORE/prs/7.json" <<'PR'
+{"number":7,"state":"OPEN","merged":false,"merge_sha":null,
+ "checks":"pending","required_state":"pending","required_count":1,
+ "non_required_failures":[],"comments":[]}
+PR
+  if forge-cli "${common[@]}" pr checks 7 |
+    jq -e '.ok == true and .data.state == "success"' >/dev/null; then
+    echo 'pending lane checks passed the closeout gate' >&2
+    return 1
+  fi
+  cat >"$DISPATCH_STORE/prs/7.json" <<'PR'
+{"number":7,"state":"MERGED","merged":true,
+ "merge_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "checks":"success","required_state":"success","required_count":1,
+ "non_required_failures":[],"comments":[{"body":"Independent review approved lane A head",
+ "html_url":"local://dispatch-smoke/pull/7#comment-1","author":"reviewer"}]}
+PR
+  forge-cli "${common[@]}" pr checks 7 |
+    jq -e '.ok == true and .data.state == "success" and .data.required_count == 1' >/dev/null
+  forge-cli "${common[@]}" pr view 7 |
+    jq -e '.ok == true and .data.state == "merged" and
+      .data.merge_commit_sha == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' >/dev/null
+  forge-cli "${common[@]}" pr comments 7 |
+    jq -e '.ok == true and (.data.comments | any(.author == "reviewer" and
+      (.body | contains("Independent review approved lane A head"))))' >/dev/null
+  forge-cli "${common[@]}" issue comment "$child_a" \
+    --body 'Lane PR #7 merged into the integration branch at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; required checks passed; independent review approved the lane head.' >/dev/null
+  forge-cli "${common[@]}" issue view "$child_a" --with-comments |
+    jq -e '.ok == true and (.data.comments | any(.body | contains("Lane PR #7 merged") and contains("independent review approved")))' >/dev/null
   forge-cli "${common[@]}" issue close "$child_a" >/dev/null
+  cat >"$DISPATCH_STORE/prs/9.json" <<'PR'
+{"number":9,"state":"MERGED","merged":true,
+ "merge_sha":"cccccccccccccccccccccccccccccccccccccccc",
+ "checks":"success","required_state":"success","required_count":1,
+ "non_required_failures":[],"comments":[{"body":"Independent review approved lane B head",
+ "html_url":"local://dispatch-smoke/pull/9#comment-1","author":"reviewer"}]}
+PR
+  forge-cli "${common[@]}" pr checks 9 |
+    jq -e '.ok == true and .data.state == "success" and .data.required_count == 1' >/dev/null
+  forge-cli "${common[@]}" pr view 9 |
+    jq -e '.ok == true and .data.state == "merged" and
+      .data.merge_commit_sha == "cccccccccccccccccccccccccccccccccccccccc"' >/dev/null
+  forge-cli "${common[@]}" pr comments 9 |
+    jq -e '.ok == true and (.data.comments | any(.author == "reviewer" and
+      (.body | contains("Independent review approved lane B head"))))' >/dev/null
+  forge-cli "${common[@]}" issue comment "$child_b" \
+    --body 'Lane PR #9 merged into the integration branch at cccccccccccccccccccccccccccccccccccccccc; required checks passed; independent review approved the lane head.' >/dev/null
+  forge-cli "${common[@]}" issue view "$child_b" --with-comments |
+    jq -e '.ok == true and (.data.comments | any(.body | contains("Lane PR #9 merged") and contains("independent review approved")))' >/dev/null
   forge-cli "${common[@]}" issue close "$child_b" >/dev/null
   forge-cli "${common[@]}" issue view "$child_a" |
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
@@ -100,6 +152,19 @@ PY
   forge-cli "${common[@]}" issue view "$tracker" |
     jq -e '.ok == true and .data.state == "open" and
       (.data.body | contains("- [x] Lane A") and contains("- [x] Lane B"))' >/dev/null
+  cat >"$DISPATCH_STORE/prs/8.json" <<'PR'
+{"number":8,"state":"MERGED","merged":true,
+ "merge_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+ "checks":"success","required_state":"success","required_count":1,
+ "non_required_failures":[],"comments":[]}
+PR
+  forge-cli "${common[@]}" pr view 8 |
+    jq -e '.ok == true and .data.state == "merged" and
+      .data.merge_commit_sha == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' >/dev/null
+  forge-cli "${common[@]}" issue comment "$tracker" \
+    --body 'Integration PR #8 merged at bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; both child issues closed with lane checkpoints and tracker checkboxes completed.' >/dev/null
+  forge-cli "${common[@]}" issue view "$tracker" --with-comments |
+    jq -e '.ok == true and (.data.comments | any(.body | contains("Integration PR #8 merged") and contains("both child issues closed")))' >/dev/null
   forge-cli "${common[@]}" issue close "$tracker" >/dev/null
   forge-cli "${common[@]}" issue view "$tracker" |
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
@@ -133,7 +198,7 @@ PY
 
 failures=0
 results_record_case 'dispatch.deliver-dispatch-plan.provider-program' \
-  'forge-cli local tracker and child create/edit/read/close passed' provider_program_probe
+  'forge-cli local tracker, seeded PR read, checkpoint and closeout passed' provider_program_probe
 results_record_case 'dispatch.deliver-dispatch-plan.rendered-route' \
   'rendered dispatch routes through program issues without plan CLIs' rendered_route_probe
 exit "$failures"

@@ -13816,7 +13816,7 @@ exit 64
                     {
                         "schema_version": "agent-session.work-context-input.v1",
                         "intent": "implementation",
-                        "tier": "L2",
+                        "tier": "program/dispatch",
                         "repositories": ["example/repository"],
                         "worktrees": [],
                         "provider_refs": [],
