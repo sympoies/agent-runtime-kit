@@ -33,11 +33,15 @@ Read this tracker and the child issues.
 Use one integration branch.
 
 ## Phase table
-- [ ] Lane A
-- [ ] Lane B
+- [ ] **A** Lane A
+- [ ] **B** Lane B
 
 ## Dependency graph
-Lane A and Lane B precede integration.
+```mermaid
+graph LR
+  A
+  B
+```
 
 ## Open decisions
 None.
@@ -68,8 +72,8 @@ from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 body = path.read_text()
-body = body.replace('Lane A\n', f'Lane A (#{sys.argv[2]})\n')
-body = body.replace('Lane B\n', f'Lane B (#{sys.argv[3]})\n')
+body = body.replace('Lane A\n', f'Lane A: #{sys.argv[2]}\n')
+body = body.replace('Lane B\n', f'Lane B: #{sys.argv[3]}\n')
 path.write_text(body)
 PY
   forge-cli "${common[@]}" issue edit "$tracker" \
@@ -144,14 +148,14 @@ from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 body = path.read_text()
-assert body.count('- [ ] Lane ') == 2
-path.write_text(body.replace('- [ ] Lane ', '- [x] Lane '))
+assert body.count('- [ ] **') == 2
+path.write_text(body.replace('- [ ] **', '- [x] **'))
 PY
   forge-cli "${common[@]}" issue edit "$tracker" \
     --body-file "$DISPATCH_ARTIFACTS_DIR/tracker.md" >/dev/null
   forge-cli "${common[@]}" issue view "$tracker" |
     jq -e '.ok == true and .data.state == "open" and
-      (.data.body | contains("- [x] Lane A") and contains("- [x] Lane B"))' >/dev/null
+      (.data.body | contains("- [x] **A** Lane A: #") and contains("- [x] **B** Lane B: #"))' >/dev/null
   cat >"$DISPATCH_STORE/prs/8.json" <<'PR'
 {"number":8,"state":"MERGED","merged":true,
  "merge_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

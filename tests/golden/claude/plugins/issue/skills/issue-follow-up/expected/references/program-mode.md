@@ -59,11 +59,18 @@ Program key **`<key>`**. <What outcome the program delivers and why.>
 ## Phase table
 
 ### Phase 1: <name>
+
 - [ ] **<id>** <title>: <owner/repo#number>
+- [ ] **<id>** <title>: <owner/repo#number> · after <id>
+
+### Phase 2: <name>
+
+- [ ] **<id>** <gate: a release, deploy, or decision> · after <id>, <id>
 
 ## Dependency graph
 
-<mermaid graph or bullet list of edges>
+<One `mermaid` block derived from the phase table rows by the rules in
+`tracker-row-grammar.md`. Never change it independently of the rows.>
 
 ## Open decisions
 
@@ -108,6 +115,46 @@ Depends on <ids>. <Parallelism note.>
 <ids this item unblocks.>
 ```
 
+## Writing Phase Rows
+
+`tracker-row-grammar.md`, next to this file, is the normative grammar: how a
+row is parsed, how the dependency graph is derived, and what a linter
+reports. Load it before writing or checking the graph block, and whenever a
+row is unusual. The short form:
+
+```text
+- [ ] **<id>** <title>: <ref> (<notes>) · after <id>, <id>
+```
+
+- One row per line, starting at column one and never wrapped.
+- `<id>` is an upper-case letter followed by letters or digits, unique in the
+  tracker. A lower-case first letter makes the row malformed.
+- `<ref>` is `owner/repo#N`, or `#N` for the tracker's own repository. A row
+  without a ref is a gate: a release, a deploy, or a decision.
+- `(<notes>)` is optional, such as the delivering PR.
+- ` · after <ids>` lists the ids the row depends on; the mark is U+00B7
+  MIDDLE DOT. The phase row is the authoritative declaration of a
+  dependency, and the child's `Depends on` line repeats it.
+
+```markdown
+- [x] **S1** Row grammar: example/alpha#14 (PR example/alpha#16)
+- [ ] **REL** Release containing S1 · after S1
+```
+
+Three consequences to write rows by:
+
+- A parenthesised group that ends the row, before any `· after` clause, is
+  always the notes, on a gate too: `Release the CLI (v2)` has the title
+  `Release the CLI`.
+- A ref that is not written exactly, such as `:#12` or `: #12.`, stays in the
+  title and turns the row into a gate. No finding reports it.
+- A title that itself ends with ` · after <word>` is read as a dependency.
+
+The dependency graph block is derived from the rows by the generation rules
+in the grammar. Tracker tooling writes it when that tooling is available;
+otherwise write those lines from the rows. Never change the graph
+independently of the rows.
+
 ## Checkpoint Discipline
 
 - Post the normal follow-up checkpoint (Checked / Result / Decision / Next) on
@@ -116,6 +163,9 @@ Depends on <ids>. <Parallelism note.>
   tracker with the PR link and any release or deploy evidence.
 - Record a settled decision in the tracker's Decisions section before a child
   depends on it; open decisions stay in Open decisions until decided.
+- Tick a gate row when its release, deploy, or decision has happened.
+- Change a dependency in its phase row's `after` clause, then derive the
+  dependency graph block from the rows again.
 
 ## Closeout
 
