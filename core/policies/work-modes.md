@@ -122,9 +122,9 @@ Operating rules:
   then fill the tracker with the real child numbers.
 - The phase row is the authoritative declaration of a dependency; a child's
   depends-on line repeats it. The dependency graph is derived from the rows
-  by the rules in `issue-follow-up`'s `references/tracker-row-grammar.md`:
-  by tracker tooling when it is available, otherwise by writing those lines
-  from the rows. Never change the graph independently of the rows.
+  by the rules in `issue-follow-up`'s `references/tracker-row-grammar.md`,
+  through the Tracker Commands in its `references/program-mode.md`. Never
+  change the graph independently of the rows.
 - A child issue must be enough on its own to resume work after compaction or a
   handoff.
 - Children in public repositories carry no hostnames, personal names, or
@@ -132,7 +132,7 @@ Operating rules:
 - Deduplicate against open issues first, and link an existing related issue
   rather than duplicating it.
 - Each child's delivery follows `issue` mode. When a child closes, tick it on
-  the tracker and post a one-line checkpoint with its PR.
+  the tracker and post a one-line checkpoint with its PR (Tracker Commands).
 - Labels: `workflow::tracking` for the tracker, `workflow::follow-up` for
   children (label mechanics are in `forge-label-taxonomy.md`).
 

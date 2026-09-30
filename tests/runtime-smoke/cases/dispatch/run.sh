@@ -12,14 +12,21 @@ set -euo pipefail
 . "$SCRIPT_DIR/lib/results.sh"
 # shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
 . "$SCRIPT_DIR/lib/rendered-contract.sh"
+# shellcheck source=tests/runtime-smoke/lib/tracker-commands.sh
+. "$SCRIPT_DIR/lib/tracker-commands.sh"
 
 DISPATCH_ARTIFACTS_DIR="$ARTIFACTS_DIR/dispatch"
 DISPATCH_STORE="$TMP_ROOT/dispatch-provider"
+DISPATCH_TRACKER_MODE="$(tracker_commands_mode)"
 mkdir -p "$DISPATCH_ARTIFACTS_DIR" "$DISPATCH_STORE"
 
 provider_program_probe() {
   local tracker child_a child_b view
   local common=(--provider local --repo local:dispatch-smoke --store-root "$DISPATCH_STORE" --format json)
+  if [ "$DISPATCH_TRACKER_MODE" = missing ]; then
+    echo "runtime-smoke dispatch: forge-cli is newer than minimum_supported_tag but 'issue tracker' is unavailable" >&2
+    return 1
+  fi
   cat >"$DISPATCH_ARTIFACTS_DIR/tracker.md" <<'BODY'
 ## Purpose
 Coordinate two lanes that must integrate on one branch.
@@ -143,7 +150,25 @@ PR
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
   forge-cli "${common[@]}" issue view "$child_b" |
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
-  python3 - "$DISPATCH_ARTIFACTS_DIR/tracker.md" <<'PY'
+  if [ "$DISPATCH_TRACKER_MODE" = tracker ]; then
+    # forge-cli 1.31.2+ ticks one row, records its PR, and posts the checkpoint.
+    local lane pr
+    for lane in A:7 B:9; do
+      pr="${lane#*:}"
+      lane="${lane%%:*}"
+      printf 'Lane %s ticked: PR #%s merged into the integration branch.\n' \
+        "$lane" "$pr" >"$DISPATCH_ARTIFACTS_DIR/tick-$lane.md"
+      forge-cli "${common[@]}" issue tracker tick "$tracker" --item "$lane" \
+        --pr "#$pr" --comment-file "$DISPATCH_ARTIFACTS_DIR/tick-$lane.md" |
+        jq -e '.ok == true and .data.written == true and .data.comment_posted == true' >/dev/null
+    done
+    forge-cli "${common[@]}" issue tracker lint "$tracker" --check-state |
+      jq -e '.ok == true and .data.state_checked == true and .data.findings == []' >/dev/null
+    forge-cli "${common[@]}" issue view "$tracker" |
+      jq -e '.data.body | contains("(PR #7)") and contains("(PR #9)")' >/dev/null
+  else
+    # An older forge-cli has no tracker commands: tick through a reviewed body.
+    python3 - "$DISPATCH_ARTIFACTS_DIR/tracker.md" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -151,8 +176,9 @@ body = path.read_text()
 assert body.count('- [ ] **') == 2
 path.write_text(body.replace('- [ ] **', '- [x] **'))
 PY
-  forge-cli "${common[@]}" issue edit "$tracker" \
-    --body-file "$DISPATCH_ARTIFACTS_DIR/tracker.md" >/dev/null
+    forge-cli "${common[@]}" issue edit "$tracker" \
+      --body-file "$DISPATCH_ARTIFACTS_DIR/tracker.md" >/dev/null
+  fi
   forge-cli "${common[@]}" issue view "$tracker" |
     jq -e '.ok == true and .data.state == "open" and
       (.data.body | contains("- [x] **A** Lane A: #") and contains("- [x] **B** Lane B: #"))' >/dev/null
@@ -190,19 +216,21 @@ assert body.index('reviewed readiness stop (`--no-merge`)') < guarded_merge.star
 assert body.index('only after independent') < guarded_merge.start()
 assert body.index('green required checks') < guarded_merge.start()
 assert guarded_merge.end() < body.index('close the child with `forge-cli issue close`')
-assert body.index('close the child with `forge-cli issue close`') < body.index('Tick its tracker checkbox')
+assert body.index('close the child with `forge-cli issue close`') < body.index('forge-cli issue tracker tick')
+assert 'using a reviewed Markdown body file' not in body, 'tick with tracker tick, not a rewritten body'
 assert body.index('deliver the integration PR through') < body.index('Read back the integration PR merge and all children')
 assert body.index('Read back the integration PR merge and all children') < body.index('close the tracker through `forge-cli issue close`')
 PY
   ! grep -Eq 'plan-issue|plan-tooling|plan-archive' "$source"
   rendered_contract_assert_skill dispatch deliver-dispatch-plan
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'forge-cli issue close'
+  rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'forge-cli issue tracker tick'
   rendered_contract_assert_reference dispatch deliver-dispatch-plan references/outcome-routing.md
 }
 
 failures=0
 results_record_case 'dispatch.deliver-dispatch-plan.provider-program' \
-  'forge-cli local tracker, seeded PR read, checkpoint and closeout passed' provider_program_probe
+  "forge-cli local tracker, seeded PR read, checkpoint and closeout passed (tracker path: $DISPATCH_TRACKER_MODE)" provider_program_probe
 results_record_case 'dispatch.deliver-dispatch-plan.rendered-route' \
   'rendered dispatch routes through program issues without plan CLIs' rendered_route_probe
 exit "$failures"
