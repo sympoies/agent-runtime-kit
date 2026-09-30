@@ -4,8 +4,10 @@
 
 The tracker issue is the authoritative plan for one dispatch program. Its body
 contains a program key, purpose, resumption instructions, dated settled
-decisions, lane child issue checkboxes, dependency graph, open decisions, and
-checkpoint log. `core/policies/work-modes.md` owns the base program record.
+decisions, a phase table with one checkbox row per lane child issue, the
+dependency graph generated from those rows, open decisions, and checkpoint
+log. `core/policies/work-modes.md` owns the base program record, and
+`issue-follow-up`'s `references/program-mode.md` owns the phase row grammar.
 Use `workflow::tracking` and the applicable type and area labels.
 
 Create or edit the body with `forge-cli issue` and a Markdown body file. Read it

@@ -189,6 +189,7 @@ render, drift-audit, smoke-test, and coupled `nils-cli` detail.
 ├── tests/
 │   ├── golden/          # render-golden snapshots
 │   ├── drift/           # drift-audit fixtures
+│   ├── fixtures/        # vendorable fixture corpora (tracker row grammar)
 │   ├── runtime-smoke/   # runtime skill acceptance harness
 │   ├── projects/        # project-local overlay smoke fixtures
 │   ├── surfaces/        # surface-registry acceptance fixtures

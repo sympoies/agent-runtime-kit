@@ -1,0 +1,140 @@
+{
+  "rows": [
+    {
+      "id": "a",
+      "title": "Upper-case X is done",
+      "ref": {"owner": null, "repo": null, "number": 1},
+      "notes": null,
+      "after": [],
+      "done": true,
+      "phase": null
+    },
+    {
+      "id": "A",
+      "title": "Ids are case-sensitive",
+      "ref": {"owner": null, "repo": null, "number": 2},
+      "notes": null,
+      "after": ["a"],
+      "done": false,
+      "phase": null
+    },
+    {
+      "id": "T1",
+      "title": "The last marker wins · after hours",
+      "ref": null,
+      "notes": null,
+      "after": ["a"],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T2",
+      "title": "Parentheses before the ref stay in the title (kept)",
+      "ref": {"owner": null, "repo": null, "number": 3},
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T3",
+      "title": "Nested notes",
+      "ref": {"owner": null, "repo": null, "number": 4},
+      "notes": "see (a) and (b)",
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T4",
+      "title": "Only the last group is notes (title)",
+      "ref": null,
+      "notes": "notes",
+      "after": ["T3", "T2", "a"],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T5",
+      "title": "An unbalanced parenthesis stays in the title :)",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T6",
+      "title": "Run `deploy()` then verify()",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T7",
+      "title": "Extra spaces around the title are trimmed",
+      "ref": {"owner": "example", "repo": "alpha", "number": 5},
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T8",
+      "title": "A ref needs a colon and one space:#6",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T9",
+      "title": "A bullet dot is not the marker • after a",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T10",
+      "title": "A number alone is a title: 12",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T11",
+      "title": "An empty group is not notes ()",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T12",
+      "title": "Names may use dots, underscores and hyphens",
+      "ref": {"owner": "example-org", "repo": "alpha_beta.rs", "number": 7},
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    },
+    {
+      "id": "T13",
+      "title": "A number has no leading zero: #007",
+      "ref": null,
+      "notes": null,
+      "after": [],
+      "done": false,
+      "phase": "Titles"
+    }
+  ],
+  "graph": "graph LR\n  a\n  A\n  T1{{T1}}\n  T2\n  T3\n  T4{{T4}}\n  T5{{T5}}\n  T6{{T6}}\n  T7\n  T8{{T8}}\n  T9{{T9}}\n  T10{{T10}}\n  T11{{T11}}\n  T12\n  T13{{T13}}\n  a --> A\n  a --> T1\n  T3 --> T4\n  T2 --> T4\n  a --> T4"
+}

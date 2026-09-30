@@ -234,6 +234,7 @@ bash scripts/ci/skill-governance-audit.sh --fixture create
 bash scripts/ci/skill-governance-audit.sh --fixture remove
 bash tests/skill-exposure-contract/run.sh
 python3 tests/ci/test_devlog_capability.py
+python3 tests/ci/test_tracker_row_grammar_fixtures.py
 
 # docs/discussions is staging, not storage: a capture must stay deletable, so no
 # file outside that directory may reference one. The directory's own README and
