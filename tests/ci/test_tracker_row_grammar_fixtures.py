@@ -37,7 +37,7 @@ CODES = {
 
 LINE_END = " \t\r"  # removed from the end of every line
 TRIM = " \t"  # removed by every other trim in the grammar
-ID = r"[A-Za-z][A-Za-z0-9]*"
+ID = r"[A-Z][A-Za-z0-9]*"
 NAME = r"[A-Za-z0-9._-]+"
 ROW_MARKS = ("- [ ]", "- [x]", "- [X]")
 ROW = re.compile(rf"- \[([ xX])\] \*\*({ID})\*\*( .*)")

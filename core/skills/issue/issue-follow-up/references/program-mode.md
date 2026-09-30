@@ -127,7 +127,8 @@ row is unusual. The short form:
 ```
 
 - One row per line, starting at column one and never wrapped.
-- `<id>` is a letter followed by letters or digits, unique in the tracker.
+- `<id>` is an upper-case letter followed by letters or digits, unique in the
+  tracker. A lower-case first letter makes the row malformed.
 - `<ref>` is `owner/repo#N`, or `#N` for the tracker's own repository. A row
   without a ref is a gate: a release, a deploy, or a decision.
 - `(<notes>)` is optional, such as the delivering PR.

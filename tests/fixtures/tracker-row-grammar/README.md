@@ -83,6 +83,7 @@ whitespace or add a final line feed.
   read.
 - Ignored lines: plain bullets, `*` and ordered task items, indented task
   items, a deeper heading, and a bare `###`, which leaves the phase unchanged.
+- Ids are case-sensitive: `Ab` and `AB` are two rows.
 - A task item inside a code fence is a row.
 - Dependencies: the last ` · after` marker wins; `· afterwards` is not the
   marker; the list is trimmed; a comma may have spaces and a tab around it; a
@@ -127,6 +128,8 @@ linter.
 | --- | --- |
 | `invalid/malformed-row.md` | One row per way a row line fails the grammar |
 | `invalid/malformed-row--dependent.md` | A valid row that depends on the id a malformed row shows: that id is unknown |
+| `invalid/malformed-row--lower-case-id.md` | A bold token that starts with a lower-case letter (`end`, `a1`) is not an id, and a list that names it is malformed too |
+| `invalid/malformed-row--lower-case-after.md` | A lower-case token that appears only in an `after` list: the row is malformed, and no `unknown-dependency` is reported |
 | `invalid/duplicate-id.md` | An id reused twice |
 | `invalid/duplicate-id--with-after.md` | Duplicate rows still count for dependencies: one closes a cycle through the shared id, one names itself and a missing id |
 | `invalid/unknown-dependency.md` | A missing id, and an id that differs only in case |

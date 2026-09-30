@@ -1,7 +1,7 @@
 {
   "rows": [
     {
-      "id": "a",
+      "id": "Ab",
       "title": "Upper-case X is done",
       "ref": {"owner": null, "repo": null, "number": 1},
       "notes": null,
@@ -10,11 +10,11 @@
       "phase": null
     },
     {
-      "id": "A",
+      "id": "AB",
       "title": "Ids are case-sensitive",
       "ref": {"owner": null, "repo": null, "number": 2},
       "notes": null,
-      "after": ["a"],
+      "after": ["Ab"],
       "done": false,
       "phase": null
     },
@@ -32,7 +32,7 @@
       "title": "The last marker wins · after hours",
       "ref": null,
       "notes": null,
-      "after": ["a"],
+      "after": ["Ab"],
       "done": false,
       "phase": "Dependencies"
     },
@@ -50,7 +50,7 @@
       "title": "Two spaces after the marker",
       "ref": null,
       "notes": null,
-      "after": ["a"],
+      "after": ["Ab"],
       "done": false,
       "phase": "Dependencies"
     },
@@ -59,13 +59,13 @@
       "title": "A comma may have spaces and a tab around it",
       "ref": null,
       "notes": null,
-      "after": ["D1", "D2", "a"],
+      "after": ["D1", "D2", "Ab"],
       "done": false,
       "phase": "Dependencies"
     },
     {
       "id": "D5",
-      "title": "A bullet dot is not the marker • after a",
+      "title": "A bullet dot is not the marker • after Ab",
       "ref": null,
       "notes": null,
       "after": [],
@@ -253,5 +253,5 @@
       "phase": "No-break spaces"
     }
   ],
-  "graph": "graph LR\n  a\n  A\n  F1\n  D1{{D1}}\n  D2{{D2}}\n  D3{{D3}}\n  D4{{D4}}\n  D5{{D5}}\n  N1\n  N2\n  N3{{N3}}\n  N4\n  N5{{N5}}\n  N6{{N6}}\n  N7{{N7}}\n  N8{{N8}}\n  N9{{N9}}\n  N10{{N10}}\n  R1\n  R2{{R2}}\n  R3{{R3}}\n  R4{{R4}}\n  R5\n  R6{{R6}}\n  R7\n  R8{{R8}}\n  W1\n  W2{{W2}}\n  a --> A\n  a --> D1\n  a --> D3\n  D1 --> D4\n  D2 --> D4\n  a --> D4\n  N2 --> N3"
+  "graph": "graph LR\n  Ab\n  AB\n  F1\n  D1{{D1}}\n  D2{{D2}}\n  D3{{D3}}\n  D4{{D4}}\n  D5{{D5}}\n  N1\n  N2\n  N3{{N3}}\n  N4\n  N5{{N5}}\n  N6{{N6}}\n  N7{{N7}}\n  N8{{N8}}\n  N9{{N9}}\n  N10{{N10}}\n  R1\n  R2{{R2}}\n  R3{{R3}}\n  R4{{R4}}\n  R5\n  R6{{R6}}\n  R7\n  R8{{R8}}\n  W1\n  W2{{W2}}\n  Ab --> AB\n  Ab --> D1\n  Ab --> D3\n  D1 --> D4\n  D2 --> D4\n  Ab --> D4\n  N2 --> N3"
 }

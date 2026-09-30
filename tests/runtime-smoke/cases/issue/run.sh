@@ -133,18 +133,18 @@ run_issue_program_mode_probe() {
   tracker="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/tracker-create.json")"
   [ -n "$tracker" ] || return 1
 
-  for n in a b; do
+  for n in A B; do
     printf '## Program\n\nProgram key `demo`, item **%s**. Tracker: #%s.\n' "$n" "$tracker" >"$dir/child-$n.md"
     "${forge[@]}" issue create --title "Demo child $n" \
       --body-file "$dir/child-$n.md" \
       --label workflow::follow-up >"$dir/child-$n-create.json" 2>&1
   done
-  child_a="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/child-a-create.json")"
-  child_b="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/child-b-create.json")"
+  child_a="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/child-A-create.json")"
+  child_b="$(sed -n 's/.*"number":\([0-9][0-9]*\).*/\1/p' "$dir/child-B-create.json")"
   [ -n "$child_a" ] && [ -n "$child_b" ] || return 1
 
   # Fill the tracker with the real child numbers.
-  printf '## Phase table\n\n- [ ] **a** Demo child a: #%s\n- [ ] **b** Demo child b: #%s\n' "$child_a" "$child_b" >"$dir/tracker.md"
+  printf '## Phase table\n\n- [ ] **A** Demo child A: #%s\n- [ ] **B** Demo child B: #%s\n' "$child_a" "$child_b" >"$dir/tracker.md"
   "${forge[@]}" issue edit "$tracker" --body-file "$dir/tracker.md" >"$dir/tracker-edit.json" 2>&1
   "${forge[@]}" issue view "$tracker" >"$dir/tracker-view.json" 2>&1
   "${forge[@]}" issue view "$child_a" >"$dir/child-a-view.json" 2>&1

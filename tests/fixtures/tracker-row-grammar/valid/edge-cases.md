@@ -21,8 +21,8 @@ The heading match ignores ASCII case. These lines are not rows and are ignored:
   - [ ] **S3** An indented task item: #93
 #### A deeper heading does not start a phase
 
-- [X] **a** Upper-case X is done: #1
-- [ ] **A** Ids are case-sensitive: #2 · after a
+- [X] **Ab** Upper-case X is done: #1
+- [ ] **AB** Ids are case-sensitive: #2 · after Ab
 
 A code fence hides nothing, so the task item inside this one is a row:
 
@@ -32,11 +32,11 @@ A code fence hides nothing, so the task item inside this one is a row:
 
 ### Dependencies
 
-- [ ] **D1** The last marker wins · after hours · after a
+- [ ] **D1** The last marker wins · after hours · after Ab
 - [ ] **D2** Clean up · afterwards
-- [ ] **D3** Two spaces after the marker · after  a
-- [ ] **D4** A comma may have spaces and a tab around it · after D1,D2 ,	a
-- [ ] **D5** A bullet dot is not the marker • after a
+- [ ] **D3** Two spaces after the marker · after  Ab
+- [ ] **D4** A comma may have spaces and a tab around it · after D1,D2 ,	Ab
+- [ ] **D5** A bullet dot is not the marker • after Ab
 
 ### Notes and refs
 
@@ -91,8 +91,8 @@ graph LR
 
 ```mermaid
 graph LR
-  a
-  A
+  Ab
+  AB
   F1
   D1{{D1}}
   D2{{D2}}
@@ -119,12 +119,12 @@ graph LR
   R8{{R8}}
   W1
   W2{{W2}}
-  a --> A
-  a --> D1
-  a --> D3
+  Ab --> AB
+  Ab --> D1
+  Ab --> D3
   D1 --> D4
   D2 --> D4
-  a --> D4
+  Ab --> D4
   N2 --> N3
 ```
 

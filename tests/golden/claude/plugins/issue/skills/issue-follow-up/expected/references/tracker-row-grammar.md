@@ -41,11 +41,16 @@ is interpreted, so a code fence does not hide a heading or a row.
 | Part | Rule |
 | --- | --- |
 | Checkbox | `[ ]` is open. `[x]` or `[X]` is done. |
-| `<id>` | An ASCII letter followed by any number of ASCII letters or digits. Case-sensitive, and unique within the tracker. |
+| `<id>` | An upper-case ASCII letter followed by any number of ASCII letters or digits. Case-sensitive, and unique within the tracker. |
 | `<title>` | Free text, kept as written. Never empty. |
 | `<ref>` | `owner/repo#N`, or `#N` for the tracker's own repository. A row without a ref is a gate: a release, a deploy, or a decision. |
 | `(<notes>)` | Optional free text, such as the delivering PR. |
 | `· after` | Optional. The ids this row depends on. The mark is U+00B7 MIDDLE DOT. |
+
+An id is written into the graph as a Mermaid node identifier, and Mermaid's
+special words, such as `end`, all start with a lower-case letter; that is why
+an id starts with an upper-case one. A row whose bold token is not an id,
+such as `**end**` or `**a1**`, is malformed.
 
 A row starts with `- [<state>] **<id>**`, with single spaces exactly as
 shown, and the rest of the line starts with a space. Parse that rest from
@@ -56,7 +61,9 @@ the remaining text:
    `after`) that is followed by a space or ends the line. The list is the
    text after it, trimmed. It must be one or more ids separated by commas,
    where a comma may have spaces and tabs around it, and no id may repeat;
-   otherwise the row is malformed. Remove the clause.
+   otherwise the row is malformed. Every entry must itself be an id, so
+   ` · after a1` makes the row malformed; it is not an unknown dependency.
+   Remove the clause.
 2. **Notes.** If the remaining text ends with `)`, find the matching `(`,
    counting nested pairs. The group is the notes when that `(` exists, is
    not the first character of the remaining text, follows a space, and
