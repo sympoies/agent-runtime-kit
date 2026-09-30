@@ -54,7 +54,7 @@ class DoctorPolicyTest(unittest.TestCase):
                 module.verify(data, "codex", "historical", data["exit_code"])
 
     def test_historical_requires_matching_command_identity(self):
-        for command in ("agent-out", "plan-archive-extra", "plan-archive` injected"):
+        for command in ("agent-out", "plan-archive-extra", "plan-archive/other"):
             data = report(retired=True)
             data["findings"][0]["message"] = f"status=missing command=`{command}` required=>=1.0.0"
             with self.subTest(command=command), self.assertRaises(ValueError):
