@@ -108,20 +108,14 @@ runtime_collect_installed_skills() {
   esac
 }
 
-runtime_doctor_block_count() {
-  local doctor_log="$1"
-  local first_line
-  first_line="$(sed -n '1p' "$doctor_log")"
-  printf '%s\n' "$first_line" | sed -n 's/.* block=\([0-9][0-9]*\).*/\1/p'
-}
-
 runtime_install_product() {
   local repo_root="$1"
   local tmp_root="$2"
   local product="$3"
   local artifacts_dir="$4"
+  local doctor_policy="${5:-strict}"
   local live_home state_home expected observed declared sorted install_log doctor_log
-  local installed_doctor_json receipt_summary doctor_exit block_count expected_revision
+  local installed_doctor_json receipt_summary doctor_exit expected_revision
 
   live_home="$(runtime_live_home "$tmp_root" "$product")"
   state_home="$(runtime_state_home "$tmp_root" "$product")"
@@ -201,18 +195,13 @@ PY
     --product "$product" \
     --live-home "$live_home" \
     --state-home "$state_home" \
-    --no-overlay >"$doctor_log" 2>&1
+    --no-overlay --format json >"$doctor_log" 2>&1
   doctor_exit=$?
   set -e
 
-  block_count="$(runtime_doctor_block_count "$doctor_log")"
-  if [ -z "$block_count" ]; then
-    echo "runtime-smoke: could not parse doctor block count for $product (exit=$doctor_exit)" >&2
-    cat "$doctor_log" >&2
-    return 1
-  fi
-  if [ "$block_count" != "0" ]; then
-    echo "runtime-smoke: doctor reported blocking findings for $product (exit=$doctor_exit)" >&2
+  if ! python3 "$SCRIPT_DIR/lib/verify-doctor.py" \
+    "$doctor_log" "$product" "$doctor_policy" "$doctor_exit"; then
+    echo "runtime-smoke: doctor policy failed for $product (policy=$doctor_policy exit=$doctor_exit)" >&2
     cat "$doctor_log" >&2
     return 1
   fi
@@ -524,7 +513,7 @@ runtime_convergence_product() {
   printf 'operator-owned\n' >"$live_home/operator-owned.txt"
   cp "$live_home/operator-owned.txt" "$operator_surface"
 
-  runtime_install_product "$prior_root" "$tmp_root" "$product" "$artifacts_dir/baseline" || return 1
+  runtime_install_product "$prior_root" "$tmp_root" "$product" "$artifacts_dir/baseline" historical || return 1
   runtime_assert_macos_helpers_present "$live_home" "$product" || return 1
   baseline_skill_count="$(
     wc -l <"$artifacts_dir/baseline/${product}.observed-skills.txt" | tr -d '[:space:]'
@@ -573,7 +562,7 @@ runtime_convergence_product() {
     "$repo_root" "$prior_root" "$product" "$live_home" "$repo_root" \
     >"$artifacts_dir/${product}.rollback-agents-reset.log" 2>&1 || return 1
   runtime_install_product \
-    "$prior_root" "$tmp_root" "$product" "$artifacts_dir/rollback" || return 1
+    "$prior_root" "$tmp_root" "$product" "$artifacts_dir/rollback" historical || return 1
   runtime_assert_macos_helpers_present "$live_home" "$product" || return 1
   runtime_activate_product_registry \
     "$prior_root" "$product" "$live_home" "$state_home" "$artifacts_dir/rollback" || return 1

@@ -396,6 +396,16 @@ git diff -- tests/golden/
 
 Review the generated diff before committing it.
 
+## Historical convergence boundary
+
+The convergence fixture installs and rolls back an immutable 66-skill source.
+Under the explicit `v1.31.1` plan retirement, its old plan workflows are no
+longer executable. Baseline and rollback verify exactly the three missing plan
+CLI diagnostics; every other blocking finding still fails. Current-source
+installs require zero blocking findings. Warning admission, exact inventories,
+installed receipts, quarantine digests, registry ownership, and idempotence
+remain checked throughout the lifecycle.
+
 ## Validation
 
 Run the current full local gate:

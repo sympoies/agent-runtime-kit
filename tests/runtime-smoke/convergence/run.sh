@@ -336,7 +336,7 @@ runtime_convergence_hermes() {
   write_hermes_retired_ids "$repo_root" "$expected_retired"
 
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
-    "$artifacts_dir/baseline" || return 1
+    "$artifacts_dir/baseline" historical || return 1
   runtime_assert_macos_helpers_present "$live_home" hermes || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
   runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
@@ -383,7 +383,7 @@ runtime_convergence_hermes() {
     "$repo_root" "$baseline_root" hermes "$live_home" \
     >"$artifacts_dir/hermes.rollback-cleanup.log" 2>&1 || return 1
   runtime_install_product "$baseline_root" "$tmp_root" hermes \
-    "$artifacts_dir/rollback" || return 1
+    "$artifacts_dir/rollback" historical || return 1
   runtime_assert_macos_helpers_present "$live_home" hermes || return 1
   materialize_hermes_retired_copies "$baseline_root" "$repo_root" "$live_home" || return 1
   runtime_collect_installed_skills "$live_home" hermes >"$external_ids"
@@ -468,6 +468,8 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({
 PY
   RUNTIME_SMOKE_SKILL_COUNT="$current_skill_count"
 }
+
+python3 "$SCRIPT_DIR/lib/test_verify_doctor.py"
 
 PORTABLE_SOURCE_ROOT="$(runtime_prepare_portable_source "$REPO_ROOT" "$TMP_ROOT/portable-source")"
 BASELINE_REVISION="$(python3 - "$PORTABLE_SOURCE_ROOT/manifests/retired-hermes-skill-copies.json" <<'PY'
