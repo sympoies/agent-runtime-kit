@@ -17,7 +17,7 @@ spec.loader.exec_module(module)
 
 def report(retired=False, warn=0):
     findings = [{"product": "codex", "severity": "block", "check": "required-cli",
-                 "entry_id": binary, "message": f"status=missing command=`{binary}`"}
+                 "entry_id": binary, "message": f"status=missing command=`{binary}` required=>=1.0.0"}
                 for binary in sorted(module.RETIRED)] if retired else []
     return {"schema_version": "agent-runtime-cli.doctor.v1", "product": "codex",
             "block": len(findings), "warn": warn,
@@ -53,11 +53,21 @@ class DoctorPolicyTest(unittest.TestCase):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 module.verify(data, "codex", "historical", data["exit_code"])
 
+    def test_historical_requires_matching_command_identity(self):
+        for command in ("agent-out", "plan-archive-extra", "plan-archive` injected"):
+            data = report(retired=True)
+            data["findings"][0]["message"] = f"status=missing command=`{command}` required=>=1.0.0"
+            with self.subTest(command=command), self.assertRaises(ValueError):
+                module.verify(data, "codex", "historical", 2)
+
     def test_optimized_subprocess_still_rejects_unexpected_blocks(self):
         strict = report(retired=True)
         historical = copy.deepcopy(strict)
         historical["findings"][0]["entry_id"] = "agent-out"
-        for policy, data in (("strict", strict), ("historical", historical)):
+        wrong_command = copy.deepcopy(strict)
+        wrong_command["findings"][0]["message"] = "status=missing command=`agent-out` required=>=1.0.0"
+        for policy, data in (("strict", strict), ("historical", historical),
+                             ("historical", wrong_command)):
             with self.subTest(policy=policy), tempfile.TemporaryDirectory() as tmp:
                 fixture = pathlib.Path(tmp) / "doctor.json"
                 fixture.write_text(json.dumps(data))

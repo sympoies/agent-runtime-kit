@@ -33,7 +33,9 @@ def verify(report, product, policy, exit_code):
             ("required-cli", binary) for binary in RETIRED
         }, "unexpected historical blocking finding")
         require(all(item["product"] == product for item in findings), "historical finding product mismatch")
-        require(all(item["message"].startswith("status=missing ") for item in findings), "historical command is not missing")
+        require(all(item["message"].startswith(
+            f"status=missing command=`{item['entry_id']}` "
+        ) for item in findings), "historical missing command does not match its entry")
 
 
 if __name__ == "__main__":
