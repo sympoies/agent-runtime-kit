@@ -115,7 +115,7 @@ run_issue_program_mode_probe() {
   local store="$TMP_ROOT/issue-program-store"
   local dir="$ISSUE_ARTIFACTS_DIR/program"
   local forge=(forge-cli --provider local --store-root "$store" --repo local:program-demo --format json)
-  local tracker child_a child_b n
+  local tracker child_a child_b n tracker_commands
   require_issue_bin forge-cli || return 1
   rm -rf "$store"
   mkdir -p "$dir"
@@ -144,7 +144,14 @@ run_issue_program_mode_probe() {
   [ -n "$child_a" ] && [ -n "$child_b" ] || return 1
 
   # Fill the tracker with the real child numbers.
-  printf '## Phase table\n\n- [ ] **A** Demo child A: #%s\n- [ ] **B** Demo child B: #%s\n' "$child_a" "$child_b" >"$dir/tracker.md"
+  printf '## Phase table\n\n- [ ] **A** Demo child A: #%s\n- [ ] **B** Demo child B: #%s · after A\n' "$child_a" "$child_b" >"$dir/tracker.md"
+  tracker_commands=0
+  if forge-cli issue tracker --help >/dev/null 2>&1; then
+    tracker_commands=1
+    # forge-cli 1.31.2+ generates the dependency graph into the draft.
+    "${forge[@]}" issue tracker graph --body-file "$dir/tracker.md" --write >"$dir/tracker-graph.json" 2>&1
+    grep -Fq '  A --> B' "$dir/tracker.md"
+  fi
   "${forge[@]}" issue edit "$tracker" --body-file "$dir/tracker.md" >"$dir/tracker-edit.json" 2>&1
   "${forge[@]}" issue view "$tracker" >"$dir/tracker-view.json" 2>&1
   "${forge[@]}" issue view "$child_a" >"$dir/child-a-view.json" 2>&1
@@ -154,6 +161,22 @@ run_issue_program_mode_probe() {
   grep -Fq "#$child_b" "$dir/tracker-view.json"
   grep -q '"workflow::follow-up"' "$dir/child-a-view.json"
   grep -Fq "Tracker: #$tracker" "$dir/child-a-view.json"
+  [ "$tracker_commands" = 1 ] || return 0
+
+  # Lint the filled tracker, tick a closed child with its PR and checkpoint,
+  # then confirm every row agrees with its issue's state.
+  "${forge[@]}" issue tracker lint "$tracker" | jq -e '.ok == true and .data.row_count == 2' >/dev/null
+  "${forge[@]}" issue close "$child_a" >/dev/null
+  if "${forge[@]}" issue tracker lint "$tracker" --check-state >"$dir/tracker-lint-stale.json" 2>&1; then
+    return 1
+  fi
+  jq -e '.error.code == "tracker_findings" and
+    (.data.findings | map(.code) == ["state-mismatch"])' "$dir/tracker-lint-stale.json" >/dev/null
+  printf 'Child A closed; PR #7 merged.\n' >"$dir/tick-a.md"
+  "${forge[@]}" issue tracker tick "$tracker" --item A --pr '#7' --comment-file "$dir/tick-a.md" |
+    jq -e --arg row "- [x] **A** Demo child A: #$child_a (PR #7)" \
+      '.ok == true and .data.row_after == $row and .data.comment_posted == true' >/dev/null
+  "${forge[@]}" issue tracker lint "$tracker" --check-state | jq -e '.ok == true and .data.findings == []' >/dev/null
 }
 
 failures=0

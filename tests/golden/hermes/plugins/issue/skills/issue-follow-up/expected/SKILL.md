@@ -166,14 +166,17 @@ children still requires the user's decision.
    as children instead of duplicating them.
 3. Open the tracker first as a placeholder labeled `workflow::tracking`, then
    each child labeled `workflow::follow-up`, then replace the tracker body with
-   the full template listing the real child numbers.
+   the full template listing the real child numbers and run
+   `forge-cli issue tracker lint` on it.
 4. Outside a checkout of the target repository, pass
    `--provider github --repo owner/name` to `forge-cli`.
 5. De-identify children in public repositories: reference the program key, not
    private hosts, people, repositories, or links.
-6. Keep the tracker current: tick a child when it closes and post a one-line
-   tracker checkpoint. Close the tracker only after the program closeout in
-   `core/policies/work-modes.md` holds.
+6. Keep the tracker current with `forge-cli issue tracker` rather than hand
+   edits: `tick` a child when it closes, with its PR and a one-line checkpoint,
+   and `graph --write` after a dependency changes. Close the tracker only after
+   the program closeout in `core/policies/work-modes.md` holds and
+   `lint --check-state` reports no finding.
 
 ## Static HTTP Evidence
 
