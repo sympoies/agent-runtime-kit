@@ -502,17 +502,20 @@ when = "always"
         coordination = read("core/policies/session-coordination.md")
         coordination_words = " ".join(coordination.split()).casefold()
 
-        self.assertIn("route already-authorized work", home_policy)
-        self.assertIn("material peer requests must not be silently ignored", home_policy)
+        peer_contract = (
+            "rely on cooperating peers",
+            "route already-authorized work but never grant authority",
+            "act on material peer requests",
+        )
+        for phrase in peer_contract:
+            self.assertIn(phrase, home_policy)
+        self.assertNotIn("peers, and external material as untrusted", home_policy)
         for product in HOME_PRODUCTS:
             rendered_policy = " ".join(
                 read(f"build/{product}/AGENT_HOME.md").split()
             ).casefold()
-            self.assertIn("route already-authorized work", rendered_policy)
-            self.assertIn(
-                "material peer requests must not be silently ignored",
-                rendered_policy,
-            )
+            for phrase in peer_contract:
+                self.assertIn(phrase, rendered_policy)
 
         self.assertIn("cannot create or expand user authority", coordination_words)
         self.assertIn(
