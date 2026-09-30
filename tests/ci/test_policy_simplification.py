@@ -70,6 +70,47 @@ def required_relative_paths(payload: dict) -> list[str]:
 
 
 class PolicySimplificationContractTests(unittest.TestCase):
+    def test_program_workflow_labels_distinguish_delivery_artifacts(self) -> None:
+        def load_manifest(path: str) -> dict:
+            result = subprocess.run(
+                [
+                    "ruby", "-ryaml", "-rjson", "-e",
+                    "puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true))",
+                    str(ROOT / path),
+                ],
+                check=True, capture_output=True, text=True,
+            )
+            return json.loads(result.stdout)
+
+        rules = load_manifest("manifests/forge-label-classification-rules.yaml")
+        catalog = load_manifest("manifests/forge-labels.yaml")
+        labels = {row["name"]: row for row in catalog["labels"]}
+        smoke = read("tests/runtime-smoke/cases/dispatch/run.sh")
+        tracker_body = smoke.split('tracker.md" <<\'BODY\'\n', 1)[1].split("\nBODY", 1)[0]
+        child_body = smoke.split('child.md" <<BODY\n', 1)[1].split("\nBODY", 1)[0]
+        fixtures = (
+            ("issue", "Dispatch smoke tracker", tracker_body, "workflow::tracking"),
+            ("issue", "Dispatch smoke lane A", child_body, "workflow::follow-up"),
+            ("pr", "Dispatch lane A", child_body, "workflow::dispatch"),
+            ("mr", "Dispatch lane A", child_body, "workflow::dispatch"),
+        )
+        for artifact, title, body, expected in fixtures:
+            with self.subTest(artifact=artifact, expected=expected):
+                text = f"{title}\n{body}".casefold()
+                matches = [
+                    rule["label"] for rule in rules["rules"]["workflow"]
+                    if artifact in rule.get("applies_to", rules["scope"]["artifacts"])
+                    and (
+                        any(title.casefold().startswith(prefix.casefold())
+                            for prefix in rule.get("title_prefixes", []))
+                        or any(marker.casefold() in text for marker in rule.get("any", []))
+                    )
+                ]
+                self.assertEqual(matches, [expected])
+                self.assertIn(artifact, labels[expected]["applies_to"])
+        self.assertEqual(labels["workflow::tracking"]["applies_to"], ["issue"])
+        self.assertEqual(labels["workflow::dispatch"]["applies_to"], ["pr", "mr"])
+
     def test_dsh_uses_its_selected_home_policy_without_project_home_leakage(self) -> None:
         cases = (
             ("project-dev", "edit"),

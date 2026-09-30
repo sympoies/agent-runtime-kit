@@ -9,7 +9,7 @@ complements, rather than duplicates, the repository's other records:
 - `README.md`, `DEVELOPMENT.md`, and current policy describe today's contract.
   The devlog is an append-only historical narrative; update the canonical
   owner first when behavior or guidance changes.
-- Pull requests and plan records retain detailed delivery evidence. The devlog
+- Pull requests and issues retain detailed delivery evidence. The devlog
   summarizes milestones that remain useful after those records close.
 
 ## When to add an entry

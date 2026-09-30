@@ -540,8 +540,8 @@ skills:
         name: main-agent-mode
         render_to: plugins/conversation/skills/main-agent-mode/SKILL.md
     required_clis:
-      agent-session: ">=1.25.11"
-      main-agent: ">=1.25.11"
+      agent-session: ">=1.31.1"
+      main-agent: ">=1.31.1"
     state_out_mode: runtime
 
   - id: issue.issue-follow-up

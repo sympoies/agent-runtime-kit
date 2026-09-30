@@ -19,7 +19,7 @@ publishes is the standalone Linux container image at
 that image is versioned and cut.
 
 The local gate stack is mature. `scripts/ci/all.sh` runs an ordered gate stack
-covering plan/skill governance, nils-cli pin alignment, Codex/Claude/Hermes
+covering policy/skill governance, nils-cli pin alignment, Codex/Claude/Hermes
 render and golden diff, drift audit, surface-registry acceptance, the
 skill-surface shape diagnostic, sandbox install rehearsal, runtime-smoke,
 project-local overlay smoke, the shared hook contract, version-baseline
@@ -395,6 +395,16 @@ git diff -- tests/golden/
 ```
 
 Review the generated diff before committing it.
+
+## Historical convergence boundary
+
+The convergence fixture installs and rolls back an immutable 66-skill source.
+Under the explicit `v1.31.1` plan retirement, its old plan workflows are no
+longer executable. Baseline and rollback verify exactly the three missing plan
+CLI diagnostics; every other blocking finding still fails. Current-source
+installs require zero blocking findings. Warning admission, exact inventories,
+installed receipts, quarantine digests, registry ownership, and idempotence
+remain checked throughout the lifecycle.
 
 ## Validation
 

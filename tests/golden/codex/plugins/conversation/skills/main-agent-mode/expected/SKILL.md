@@ -13,7 +13,7 @@ Prereqs:
 
 - The user explicitly asks to enable or use Main Agent Mode for the bounded
   workflow. Ordinary implementation requests never activate this mode.
-- `agent-session >=1.25.11` is installed from a trusted compatible surface.
+- `agent-session >=1.31.1` is installed from a trusted compatible surface.
 - The trusted `main-agent` facade from the compatible nils-cli surface is
   executable and advertises the exact runtime-checkpoint and run-wide closeout
   capabilities below.
@@ -54,7 +54,7 @@ Failure modes:
 
 - Activation was not explicit, or the requested scope/done criteria are not
   sufficiently bounded to delegate safely.
-- The installed `agent-session` is missing or older than `1.25.11`.
+- The installed `agent-session` is missing or older than `1.31.1`.
 - The trusted `main-agent` facade is absent, incompatible, untrusted, does not
   advertise `main-agent.runtime-checkpoint-file.v1` and
   `main-agent.run-wide-closeout.v1`, or cannot authenticate the current
@@ -91,7 +91,7 @@ agent-session activity doctor --agent codex --format json
 ```
 
 
-Require `agent-session >=1.25.11`, a valid
+Require `agent-session >=1.31.1`, a valid
 `cli.main-agent.capabilities.v1` envelope with `ok:true`, whose
 `data.schema_version` is `main-agent.capabilities.v1` and whose
 `data.capabilities.runtime_checkpoint_file` is exactly

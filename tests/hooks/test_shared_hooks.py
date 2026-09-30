@@ -21605,6 +21605,11 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
 
             cli_env = dict(os.environ)
             cli_env.update(env)
+            # The hook fixture trusts this selected released package root.
+            # Its actual launcher subprocess needs the same bounded binding.
+            cli_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(
+                Path(git_cli).absolute().parent
+            )
             adopted_result = subprocess.run(
                 ["/bin/bash", "-c", adopt_command],
                 cwd=repo,
@@ -21820,6 +21825,11 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
 
                 cli_env = dict(os.environ)
                 cli_env.update(env)
+                # The hook fixture trusts this selected released package root.
+                # Its actual launcher subprocess needs the same bounded binding.
+                cli_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(
+                    Path(git_cli).absolute().parent
+                )
                 rejected = subprocess.run(
                     [
                         "/bin/bash",

@@ -90,7 +90,7 @@ labels:
   - name: "area::docs"
     group: area
     color: 0075ca
-    description: Policy, source docs, plans, and documentation surfaces.
+    description: Policy, source docs, and documentation surfaces.
     applies_to: [issue, pr, mr]
   - name: "area::ci"
     group: area
@@ -254,25 +254,20 @@ labels:
     description: Provider-neutral implementation or policy work.
     applies_to: [issue, pr, mr]
 
-  - name: "workflow::plan"
-    group: workflow
-    color: c5def5
-    description: Plan bundle, planning issue, or plan lifecycle record.
-    applies_to: [issue]
   - name: "workflow::dispatch"
     group: workflow
     color: d4c5f9
-    description: Dispatch plan or dispatch-lane workflow record.
-    applies_to: [issue, pr, mr]
+    description: Dispatch lane pull request or merge request.
+    applies_to: [pr, mr]
   - name: "workflow::tracking"
     group: workflow
     color: bfdadc
-    description: Lightweight issue-backed tracking workflow.
-    applies_to: [issue, pr, mr]
+    description: Program tracker with independently deliverable child issues.
+    applies_to: [issue]
   - name: "workflow::follow-up"
     group: workflow
     color: fef2c0
-    description: Follow-up issue or unresolved investigation timeline.
+    description: Program child issue or unresolved investigation timeline.
     applies_to: [issue]
 
   - name: "workflow::heuristic-records"

@@ -8,6 +8,7 @@ import json
 import hashlib
 import os
 import platform
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -47,6 +48,50 @@ def yaml_scalar(text: str, key: str) -> str:
 
 
 class NilsCliVersionPolicyTest(unittest.TestCase):
+    def check_work_context(self, **overrides: object) -> subprocess.CompletedProcess[str]:
+        candidate = {
+            "schema_version": "agent-session.work-context-input.v1",
+            "intent": "implementation",
+            "tier": "issue",
+            "repositories": ["sympoies/agent-runtime-kit"],
+            "scopes": [{"kind": "repository", "repository": "sympoies/agent-runtime-kit", "value": "."}],
+            "summary": "Released work-mode compatibility probe",
+            **overrides,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "candidate.json"
+            path.write_text(json.dumps(candidate), encoding="utf-8")
+            return subprocess.run(
+                ["agent-session", "--state-dir", str(Path(tmp) / "state"),
+                 "work-context", "check", "--candidate", str(path), "--format", "json"],
+                capture_output=True, text=True,
+            )
+
+    def test_released_surface_rejects_retired_work_contexts(self) -> None:
+        for tier in ("L0", "L1", "L2", "L3", "program-plan", "program/plan"):
+            with self.subTest(tier=tier):
+                result = self.check_work_context(tier=tier)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(json.loads(result.stdout)["error"]["code"], "invalid-work-context")
+        result = self.check_work_context(plan_refs=["docs/plans/retired-probe.md"])
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(json.loads(result.stdout)["error"]["code"], "invalid-work-context")
+
+    def test_released_surface_accepts_named_work_modes(self) -> None:
+        for tier in ("direct", "issue", "program", "program/dispatch"):
+            with self.subTest(tier=tier):
+                result = self.check_work_context(tier=tier)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIs(json.loads(result.stdout)["ok"], True)
+
+    def test_selected_release_does_not_ship_retired_plan_binaries(self) -> None:
+        runtime = shutil.which("agent-runtime")
+        self.assertIsNotNone(runtime)
+        release_bin = Path(runtime).resolve().parent
+        for binary in ("plan-issue", "plan-issue-local", "plan-tooling", "plan-archive"):
+            with self.subTest(binary=binary):
+                self.assertFalse((release_bin / binary).exists(), f"retired binary shipped: {binary}")
+
     def assert_gate_run_executes(
         self,
         run_block: str,
@@ -127,72 +172,40 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         manifest_data = load_workflow("docs/source/nils-cli-pin.yaml")
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
-        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.28.30")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.28.30")
+        self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.31.1")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.31.1")
         self.assertNotIn("pinned_tag:", manifest)
-        # v1.27.35 retired the previous v1.27.27 floor to admit the
-        # `block-agent-artifact-routing` handler id. That handler was since
-        # consolidated into `portable-paths-scan`, so the id no longer appears in
-        # the policy bundle and no longer justifies the floor by itself. The pin
-        # stays put deliberately: lowering a compatibility floor needs its own
-        # below-minimum evidence, not a hook refactor's side effect.
-        #
-        # v1.28.0 then advanced validated only: it makes the publication-bound
-        # provider-review profiles refuse to invent report metadata. Nothing
-        # below v1.27.35 became less usable, so minimum stays where it is and
-        # the two lanes no longer share archive digests.
-        #
-        # v1.28.28 advanced validated only again, for the devlog binary.
-        # core/policies/devlog-capability.md names that CLI as the mechanism for
-        # the development-log capability, and before this pin the validated
-        # release did not ship it, so the policy described a command the pinned
-        # surface did not have.
-        #
-        # v1.28.29 advanced validated only again, for `devlog fix`. The policy
-        # now names a repair path, and thirteen logs across this organization
-        # failed `devlog check` until it existed; before this pin the policy
-        # described a second command the pinned surface did not have. Minimum
-        # stayed at v1.27.35 throughout that run of validated-only bumps:
-        # nothing below it became less usable, and a host there simply has no
-        # devlog and falls back to the prose the policy already documents.
-        #
-        # v1.28.30 is the first bump since v1.27.35 to move BOTH roles, and the
-        # distinction is the point. The three delivery skills now delegate their
-        # review-loop compare-and-swap and their pending-review recovery to
-        # `pr review-loop observe --auto-state` / `--preflight` and
-        # `pr review --recover-pending` (sympoies/nils-cli#1740, #1741). A host
-        # below v1.28.30 rejects all three at parse time, so those skills are
-        # not degraded there — they cannot be followed at all, and admitting
-        # such a host would mean admitting one that cannot run the contract.
-        # That is what a compatibility retirement means, and the below-minimum
-        # evidence for it is recorded beside the floor in nils-cli-pin.yaml.
+        # Explicit plan retirement moves both roles: v1.31.0 still accepts
+        # retired new work contexts and ships all four plan binaries. The
+        # behavioral/package probes above protect the exact v1.31.1 floor;
+        # the pin records the captured released v1.31.0 regression failures.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "47b240c0bda266d0e9687ebc7ea76cc8138152e41d5280d4b2bc1347ab1813a5",
+            "02fd8807261a1ea35a3836873ee368d372de033168bf4075980977f753b5fa18",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "1b31827b822d4c3e148d45c895fe509b95ac1349da933154d2427a919f34ef2f",
+            "537d3f063bd6e72813edeb0c23b6905af70de12893f0c0304dedef5676a66398",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
         self.assertEqual(
-            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.28.30"
+            yaml_scalar(minimum_manifest, "minimum_supported_tag"), "v1.31.1"
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_amd64"),
-            "47b240c0bda266d0e9687ebc7ea76cc8138152e41d5280d4b2bc1347ab1813a5",
+            "02fd8807261a1ea35a3836873ee368d372de033168bf4075980977f753b5fa18",
         )
         self.assertEqual(
             yaml_scalar(minimum_manifest, "linux_arm64"),
-            "1b31827b822d4c3e148d45c895fe509b95ac1349da933154d2427a919f34ef2f",
+            "537d3f063bd6e72813edeb0c23b6905af70de12893f0c0304dedef5676a66398",
         )
         required_entries = manifest_data["required_clis"]
         required_clis = {entry["bin"]: entry["min"] for entry in required_entries}
         self.assertEqual(len(required_clis), len(required_entries))
-        self.assertEqual(required_clis["agent-session"], "1.25.11")
+        self.assertEqual(required_clis["agent-session"], "1.31.1")
         self.assertEqual(required_clis["semantic-commit"], "1.25.11")
-        self.assertEqual(required_clis["main-agent"], "1.25.11")
+        self.assertEqual(required_clis["main-agent"], "1.31.1")
         self.assertEqual(required_clis["forge-cli"], "1.28.30")
         self.assertEqual(required_clis["review-specialists"], "1.27.27")
         self.assertEqual(required_clis["git-cli"], "1.27.16")
@@ -336,7 +349,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.28.30", "v1.29.0"):
+        for candidate in ("v1.31.1", "v1.32.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -346,6 +359,9 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     text=True,
                 )
         for candidate in (
+            "v1.31.0",
+            "v1.28.30",
+            "v1.29.0",
             "v1.27.26",
             "v1.27.22",
             "v1.27.21",
@@ -708,7 +724,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.28.30", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.31.1", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(
