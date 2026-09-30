@@ -1,7 +1,7 @@
 # AGENT_HOME.md
 
 Home-scope fallback. A closer project/directory
-`CLAUDE.md` may extend or override it. Keep only invariants and routing; load detail on demand.
+`AGENTS.md` may extend or override it. Keep only invariants and routing; load detail on demand.
 
 ## Authority And Safety
 

@@ -56,7 +56,6 @@ test -d "$skill_dir"
 rg -n "$skill|.agents/skills/$skill" \
   "$project_root/.agents" \
   "$project_root/AGENTS.md" \
-  "$project_root/CLAUDE.md" \
   "$project_root/README.md" \
   "$project_root/docs" 2>/dev/null || true
 ```

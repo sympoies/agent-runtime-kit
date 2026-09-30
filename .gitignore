@@ -21,6 +21,5 @@ backup-*.zip
 
 # Override the user's global ignore so this repo can version its own
 # repo-local agent policy. agent-runtime-kit is the source of truth for the
-# runtime layer, so its AGENTS.md / CLAUDE.md must travel with the repo.
+# runtime layer, so its AGENTS.md must travel with the repo.
 !AGENTS.md
-!CLAUDE.md

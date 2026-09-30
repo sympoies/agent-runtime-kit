@@ -168,7 +168,6 @@ render, drift-audit, smoke-test, and coupled `nils-cli` detail.
 .
 ├── AGENT_HOME.md        # shared home-scope policy for Codex, Claude, and Hermes
 ├── AGENTS.md            # repo-local policy for this checkout
-├── CLAUDE.md            # Claude import wrapper for AGENTS.md
 ├── AGENT_DOCS.toml      # project-local agent-docs dispatch entries
 ├── DEVELOPMENT.md       # concise contributor principles and finish-line routing
 ├── RELEASING.md         # how the GHCR container image is versioned and cut
@@ -227,10 +226,8 @@ $HOME/.codex/AGENTS.md   $HOME/.claude/CLAUDE.md
 AGENT_HOME.md -- render/install --> $HERMES_HOME/skills/development-policy/SKILL.md
                                       ^ referenced by $HERMES_HOME/SOUL.md
 
-AGENTS.md       <- project-scope policy for this repo
-       ^
-       | @AGENTS.md import
-./CLAUDE.md
+AGENTS.md       <- project-scope policy for this repo, read natively by
+                   Codex, Claude Code, and Hermes
 ```
 
 `AGENT_HOME.md` intentionally has a different name from `AGENTS.md` and

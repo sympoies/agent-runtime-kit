@@ -1,7 +1,7 @@
 # AGENT_HOME.md
 
 Home-scope fallback. A closer project/directory
-{% if product == "codex" %}`AGENTS.md`{% elif product == "claude" %}`CLAUDE.md`{% elif product == "hermes" %}`AGENTS.md` / `.hermes.md`{% else %}`AGENTS.md` / `CLAUDE.md`{% endif %} may extend or override it. Keep only invariants and routing; load detail on demand.
+{% if product == "hermes" %}`AGENTS.md` / `.hermes.md`{% else %}`AGENTS.md`{% endif %} may extend or override it. Keep only invariants and routing; load detail on demand.
 
 ## Authority And Safety
 

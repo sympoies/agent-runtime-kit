@@ -85,7 +85,7 @@ surfaces:
           - "AGENT_HOME.md"
   - id: project-prompt
     ordinal: 2
-    name: "project prompt (`./AGENTS.md` / `./CLAUDE.md`)"
+    name: "project prompt (`./AGENTS.md`)"
     products:
       codex:
         state: shipped
@@ -107,10 +107,10 @@ surfaces:
           - AGENTS.md
       claude:
         state: shipped
-        mechanism: "repo working tree; `./CLAUDE.md` imports `./AGENTS.md` through Claude's `@AGENTS.md` syntax"
+        mechanism: "repo working tree; Claude Code reads `./AGENTS.md` natively, so no repo-root `CLAUDE.md` is needed"
         source_artifacts:
-          - "CLAUDE.md (@AGENTS.md import)"
-        min_product: "2.1.145"
+          - AGENTS.md
+        min_product: "2.1.277"
         min_nils_cli: "n/a"
         acceptance:
           - kind: ci
@@ -120,7 +120,7 @@ surfaces:
             note: "live Claude session in repo"
             descriptive_only: true
         source_manifest:
-          - "docs/source/harness-shape-claude.md#2-project-scope-prompt-claudemd"
+          - "docs/source/harness-shape-claude.md#2-project-scope-prompt-agentsmd"
           - AGENTS.md
 
       hermes:
