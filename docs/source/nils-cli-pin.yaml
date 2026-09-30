@@ -25,7 +25,7 @@ nils_cli:
   # removes those entrypoints and rejects those new inputs while retaining
   # readable historical state (sympoies/nils-cli#1948, #1952).
   # Below-minimum proof: the released v1.31.0 behavioral/package probes fail
-  # ten retirement assertions; the same probes pass under exact v1.31.1.
+  # retirement assertions; the same probes pass under exact v1.31.1.
   # Ordinary validated uptake does not move this compatibility floor.
   minimum_supported_tag: "v1.31.1"
   # Exact surface used by blocking validated CI and all packaged artifacts.

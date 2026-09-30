@@ -349,7 +349,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.28.30", "v1.29.0"):
+        for candidate in ("v1.31.1", "v1.32.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -359,6 +359,9 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     text=True,
                 )
         for candidate in (
+            "v1.31.0",
+            "v1.28.30",
+            "v1.29.0",
             "v1.27.26",
             "v1.27.22",
             "v1.27.21",

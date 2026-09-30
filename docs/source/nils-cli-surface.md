@@ -28,7 +28,7 @@ numbered/plan work contexts and nonempty plan references
 state remains readable. The `agent-session` and `main-agent` per-binary floors
 move to `1.31.1` because those new-write contracts changed.
 
-The released `v1.31.0` surface fails ten retirement behavioral/package
+The released `v1.31.0` surface fails the retirement behavioral/package
 assertions. Exact `v1.31.1` passes them. Successful full installation also
 removes stale copies of the four retired binaries; subset installation retains
 its subset scope. Archive history and the independent `nils-scrub` evidence
