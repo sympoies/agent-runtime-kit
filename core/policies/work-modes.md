@@ -102,7 +102,7 @@ The tracker issue must contain:
 - settled decisions, with dates;
 - a phase table: one checkbox row per child issue or gate (release, deploy,
   decision), with its item id, its issue link, and the ids it depends on;
-- the dependency graph, generated from the phase rows;
+- the dependency graph, derived from the phase rows;
 - open decisions;
 - a checkpoint log.
 
@@ -120,9 +120,11 @@ Operating rules:
 
 - Open the tracker first as a placeholder, open the children linking to it,
   then fill the tracker with the real child numbers.
-- Declare a dependency only on its phase row. The dependency graph is derived
-  output: regenerate it from the rows and never edit it by hand. The row
-  grammar is in `issue-follow-up`'s `references/program-mode.md`.
+- The phase row is the authoritative declaration of a dependency; a child's
+  depends-on line repeats it. The dependency graph is derived from the rows
+  by the rules in `issue-follow-up`'s `references/tracker-row-grammar.md`:
+  by tracker tooling when it is available, otherwise by writing those lines
+  from the rows. Never change the graph independently of the rows.
 - A child issue must be enough on its own to resume work after compaction or a
   handoff.
 - Children in public repositories carry no hostnames, personal names, or

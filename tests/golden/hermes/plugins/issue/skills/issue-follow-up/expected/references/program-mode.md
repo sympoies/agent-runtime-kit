@@ -69,8 +69,8 @@ Program key **`<key>`**. <What outcome the program delivers and why.>
 
 ## Dependency graph
 
-<One `mermaid` block generated from the phase table rows; see Phase Table Row
-Grammar. Never hand-edit it.>
+<One `mermaid` block derived from the phase table rows by the rules in
+`tracker-row-grammar.md`. Never change it independently of the rows.>
 
 ## Open decisions
 
@@ -115,67 +115,30 @@ Depends on <ids>. <Parallelism note.>
 <ids this item unblocks.>
 ```
 
-## Phase Table Row Grammar
+## Writing Phase Rows
 
-The phase table is machine-readable. A dependency is declared in a row's
-`after` clause and nowhere else, and the dependency graph is generated from
-the rows. Independent parsers implement this section, so it is exact. A
-child's `Depends on` line repeats its row's `after` list for the reader; the
-row is authoritative.
-
-### Lines And Sections
-
-Read the body as lines: split on line feeds, then drop trailing whitespace,
-including a carriage return, from each line. No other Markdown is
-interpreted, so a code fence does not hide a heading or a row.
-
-- The phase table starts after the first line equal to `## Phase table`,
-  compared without regard to ASCII case, and ends before the next line that
-  starts with `## `. The `## Dependency graph` section is found the same way.
-  A body without a phase table has no rows.
-- Inside the phase table, a line `### <name>` starts a phase. A phase only
-  groups the rows below it. Rows above the first phase heading have no phase.
-- A line that starts at column one with `- [ ]`, `- [x]`, or `- [X]` is a
-  row. Every other line is ignored: prose, blank lines, other bullets, deeper
-  headings, and anything indented. A row is one line; never wrap it.
-
-### Row
+`tracker-row-grammar.md`, next to this file, is the normative grammar: how a
+row is parsed, how the dependency graph is derived, and what a linter
+reports. Load it before writing or checking the graph block, and whenever a
+row is unusual. The short form:
 
 ```text
 - [ ] **<id>** <title>: <ref> (<notes>) · after <id>, <id>
 ```
 
-| Part | Rule |
-| --- | --- |
-| Checkbox | `[ ]` is open. `[x]` or `[X]` is done. |
-| `<id>` | An ASCII letter followed by any number of ASCII letters or digits. Case-sensitive, and unique within the tracker. |
-| `<title>` | Free text, kept as written. Never empty. |
-| `<ref>` | `owner/repo#N`, or `#N` for the tracker's own repository. A row without a ref is a gate: a release, a deploy, or a decision. |
-| `(<notes>)` | Optional free text, such as the delivering PR. |
-| `· after` | Optional. The ids this row depends on. The mark is U+00B7 MIDDLE DOT. |
+- One row per line, starting at column one and never wrapped.
+- `<id>` is a letter followed by letters or digits, unique in the tracker.
+- `<ref>` is `owner/repo#N`, or `#N` for the tracker's own repository. A row
+  without a ref is a gate: a release, a deploy, or a decision.
+- `(<notes>)` is optional, such as the delivering PR.
+- ` · after <ids>` lists the ids the row depends on; the mark is U+00B7
+  MIDDLE DOT. The phase row is the authoritative declaration of a
+  dependency, and the child's `Depends on` line repeats it.
 
-A row starts with `- [<state>] **<id>**`, with single spaces exactly as
-shown, and the rest of the line starts with a space. Parse that rest from
-right to left, so that a title may contain anything. After each step, trim
-spaces and tabs from both ends of the remaining text:
-
-1. **Dependencies.** Find the last ` · after` (space, middle dot, space,
-   `after`) that is followed by a space or ends the line. The text after it
-   must be one or more ids separated by commas, with optional spaces around a
-   comma and no id repeated; otherwise the row is malformed. Remove the
-   clause.
-2. **Notes.** If the remaining text ends with `)`, find the matching `(`,
-   counting nested pairs. If it exists, follows a space, and encloses
-   non-blank text, that text is the notes; remove the group. Otherwise the
-   row has no notes and the text is unchanged.
-3. **Ref.** If the remaining text ends with `: <ref>` (colon, one space,
-   ref), that is the ref and the text before the colon is the title.
-   Otherwise the row is a gate and the remaining text is the title. A row
-   with an empty title is malformed.
-
-In a ref, `owner` and `repo` use ASCII letters, digits, `.`, `_`, and `-`,
-and `N` is a positive decimal number with no leading zero. Two rows may name
-the same issue when it is delivered in two steps; their ids stay distinct.
+```markdown
+- [x] **S1** Row grammar: example/alpha#14 (PR example/alpha#16)
+- [ ] **REL** Release containing S1 · after S1
+```
 
 Three consequences to write rows by:
 
@@ -186,62 +149,10 @@ Three consequences to write rows by:
   title and turns the row into a gate. No finding reports it.
 - A title that itself ends with ` · after <word>` is read as a dependency.
 
-```markdown
-- [ ] **B1** Board leads with trackers: #21
-- [x] **A1** Local projection: example/alpha#14 (PR example/alpha#16) · after A0
-- [ ] **S2** `lint | graph | tick` commands: example/beta#7 · after S1
-- [ ] **REL** Release containing S2 · after S2
-```
-
-### Generated Dependency Graph
-
-The `## Dependency graph` section holds one fenced `mermaid` block. Tooling
-generates the block from the rows. Never edit it by hand: change the rows,
-then regenerate it. Keep nothing else in the section.
-
-```text
-graph LR
-  B1
-  S1
-  S2
-  REL{{REL}}
-  S1 --> S2
-  S2 --> REL
-```
-
-- The first line is `graph LR`. Every other line is indented by two spaces.
-- Node lines come next, one per row in table order: `<id>`, or
-  `<id>{{<id>}}` for a gate.
-- Edge lines come last, one per dependency, as
-  `<prerequisite> --> <dependent>`. Order them by the dependent's table
-  order, then by the order of its `after` list.
-- There is no styling, label, subgraph, comment, or blank line.
-
-The block is the lines between the first line in the section equal to three
-backticks followed by `mermaid` and the next line equal to three backticks.
-It is current when those lines equal the generated lines exactly. Lines
-outside the block are not compared. A block that is never closed is missing.
-
-### Findings
-
-Linters report a broken table with these codes:
-
-| Code | Reported |
-| --- | --- |
-| `malformed-row` | Once per row line that does not match the grammar. Such a row contributes no id and no dependency. |
-| `duplicate-id` | Once per row that reuses the id of an earlier row. |
-| `unknown-dependency` | Once per `after` id that is not the id of any row. |
-| `self-dependency` | Once per row that lists its own id in `after`. |
-| `cycle` | Once per largest set of two or more ids in which every id depends on every other, directly or through other rows. Unknown ids and self-dependencies do not form a cycle. |
-| `stale-graph` | Once, when the `mermaid` block is missing or is not current. Only a table with no other finding has a generated graph, so this code is never reported beside another. |
-
-### Fixtures
-
-`tests/fixtures/tracker-row-grammar/` in the `agent-runtime-kit` repository
-is the conformance corpus for this grammar: valid tracker bodies with their
-expected rows and graph, and invalid bodies with their expected findings. A
-repository that implements a parser copies the directory unchanged and tests
-against it. A change to this grammar changes the corpus in the same commit.
+The dependency graph block is derived from the rows by the generation rules
+in the grammar. Tracker tooling writes it when that tooling is available;
+otherwise write those lines from the rows. Never change the graph
+independently of the rows.
 
 ## Checkpoint Discipline
 
@@ -252,8 +163,8 @@ against it. A change to this grammar changes the corpus in the same commit.
 - Record a settled decision in the tracker's Decisions section before a child
   depends on it; open decisions stay in Open decisions until decided.
 - Tick a gate row when its release, deploy, or decision has happened.
-- Change a dependency only in a phase row's `after` clause, then regenerate
-  the dependency graph block.
+- Change a dependency in its phase row's `after` clause, then derive the
+  dependency graph block from the rows again.
 
 ## Closeout
 
