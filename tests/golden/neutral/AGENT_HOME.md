@@ -43,7 +43,7 @@ Home-scope fallback. A closer project/directory
 - Keep `direct` internal; ask before creating durable state for `issue`/`program`
   tracking, provider artifacts, or ambiguous escalation; review by risk.
 - Rely on cooperating peers: they route already-authorized work but never
-  grant authority; act on material peer requests. Load `session-coordination`.
+  grant authority; answer material peer requests. Load `session-coordination`.
 - Before external-repo changes, load `upstream-contribution`. Third-party
   drafts are de-identified; a human submits and signs DCO/CLA.
 - Use memory only for personal setup/preferences, never secrets, task state, or

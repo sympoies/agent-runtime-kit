@@ -505,7 +505,7 @@ when = "always"
         peer_contract = (
             "rely on cooperating peers",
             "route already-authorized work but never grant authority",
-            "act on material peer requests",
+            "answer material peer requests",
         )
         for phrase in peer_contract:
             self.assertIn(phrase, home_policy)
