@@ -353,9 +353,9 @@ CODEX_HOME="$ACCEPTANCE_CODEX_HOME" bash scripts/ci/validate-surfaces-manifest.s
 # Shape validation only. Live Codex Desktop discovery still requires
 # `codex debug prompt-input` in a fresh session — see the archived bundle
 # plans/github.com/sympoies/agent-runtime-kit/2026-06-20-codex-plugin-marketplace-adoption/
-# in serenvia/agent-plan-archive for the live acceptance protocol. The expected
-# check count is documented in that plan's execution state; bump
-# SHAPE_EXPECTED_MIN_CHECKS together with a recorded reason.
+# in serenvia/agent-plan-archive for historical acceptance evidence. The active
+# baseline is SHAPE_EXPECTED_MIN_CHECKS below; record changes and their reasons
+# in the owning PR and development log. Archived records remain read-only.
 # -----------------------------------------------------------------------------
 SHAPE_EXPECTED_MIN_CHECKS=20
 SHAPE_OUT_DIR="${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit}/out/ci-all"
@@ -399,10 +399,7 @@ if not isinstance(checks, int) or checks < expected_min:
     errors.append(
         "checks=%r below documented baseline %d "
         "(bump SHAPE_EXPECTED_MIN_CHECKS in scripts/ci/all.sh "
-        "and record the reason in the archived bundle "
-        "plans/github.com/sympoies/agent-runtime-kit/"
-        "2026-06-20-codex-plugin-marketplace-adoption/ "
-        "in serenvia/agent-plan-archive)"
+        "and record the reason in the owning PR and development log)"
         % (checks, expected_min)
     )
 if ok != checks:

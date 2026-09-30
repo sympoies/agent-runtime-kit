@@ -19,32 +19,24 @@ schema_version: 2
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
   #
-  # Raised from v1.27.35 to v1.28.30 as an explicit compatibility retirement,
-  # not ordinary uptake. The three delivery skills now delegate their
-  # review-loop compare-and-swap and their pending-review recovery to
-  # `pr review-loop observe --auto-state` / `--preflight` and
-  # `pr review --recover-pending` (sympoies/nils-cli#1740, #1741). A host below
-  # v1.28.30 rejects all three at parse time, so those skills cannot be followed
-  # on it at all — this is not a degraded mode, it is an unrunnable one.
-  #
-  # Below-minimum evidence, captured against the released v1.27.35 surface via
-  # scripts/dev/with-nils-version.sh:
-  #   forge-cli pr review-loop observe … --auto-state
-  #     -> unknown-subcommand: unexpected argument '--auto-state' found
-  #   forge-cli pr review-loop observe … --preflight
-  #     -> unknown-subcommand: unexpected argument '--preflight' found
-  #   forge-cli pr review … --recover-pending
-  #     -> unknown-subcommand: unexpected argument '--recover-pending' found
-  minimum_supported_tag: "v1.28.30"
+  # Explicit retirement of plan issue/tooling/archive commands and numbered
+  # or plan work modes. Released v1.31.0 still ships the four plan binaries
+  # and accepts new L0-L3/program/plan work contexts and plan_refs; v1.31.1
+  # removes those entrypoints and rejects those new inputs while retaining
+  # readable historical state (sympoies/nils-cli#1948, #1952).
+  # Below-minimum proof: the released v1.31.0 behavioral/package probes fail
+  # ten retirement assertions; the same probes pass under exact v1.31.1.
+  # Ordinary validated uptake does not move this compatibility floor.
+  minimum_supported_tag: "v1.31.1"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.28.30"
+  validated_tag: "v1.31.1"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "47b240c0bda266d0e9687ebc7ea76cc8138152e41d5280d4b2bc1347ab1813a5"
-    linux_arm64: "1b31827b822d4c3e148d45c895fe509b95ac1349da933154d2427a919f34ef2f"
+    linux_amd64: "02fd8807261a1ea35a3836873ee368d372de033168bf4075980977f753b5fa18"
+    linux_arm64: "537d3f063bd6e72813edeb0c23b6905af70de12893f0c0304dedef5676a66398"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -67,8 +59,8 @@ required_clis:
     # The shared hooks call `session prepare` and `session verify --phase`
     # without a capability probe, so the per-binary floor is the phase surface.
     min: "1.24.0"
-  - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, body-free fixed notifications, and direct-terminal-safe session coordination
-    min: "1.25.11"
+  - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, body-free fixed notifications, direct-terminal-safe session coordination, and named-only new work contexts without plan references
+    min: "1.31.1"
   - bin: agent-memory     # 768-byte startup recall + exact optional agent scope + trusted agent roots + frontmatter-aware producer candidates + dry-run-first promotion/archive and strict audits
     min: "1.26.4"
   - bin: evidence         # durable usage evidence archive surface: migrate (--host + blocked-record handling), mixed skill-usage v1/v2 owner provenance, unclassified-host block, working_repo_roots identity rescue, cwd/origin + slug identity hardening, purge retention, home-relativized skill paths, and prune-source --archived-only
@@ -77,8 +69,8 @@ required_clis:
     min: "1.27.16"
   - bin: semantic-commit  # governed signed commits, including effect-based default-branch delivery classification
     min: "1.25.11"
-  - bin: main-agent       # authenticated main-agent controller and worker lifecycle facade
-    min: "1.25.11"
+  - bin: main-agent       # authenticated main-agent controller and worker lifecycle facade with named-only new contracts without plan references
+    min: "1.31.1"
   - bin: zsh-kit          # runtime shell setup entrypoint + managed zshenv bootstrap for operator-supplied Zsh repos
     min: "1.0.9"
   - bin: agent-runtime    # schema-v2 version policy + home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning

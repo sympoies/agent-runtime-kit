@@ -230,24 +230,22 @@ rules:
       fallback: true
 
   workflow:
-    - label: workflow::plan
-      any:
-        - "plan:"
-        - "plan bundle"
-        - "planning issue"
-        - "current dashboard"
     - label: workflow::tracking
+      applies_to: [issue]
+      title_prefixes: ["tracker:"]
       any:
-        - "durable tracking surface"
-        - "tracking issue"
-        - "execution state"
-        - "linked prs"
+        - "program tracker"
+        - "## phase table"
     - label: workflow::dispatch
+      applies_to: [pr, mr]
       any:
         - "dispatch"
         - "lane"
     - label: workflow::follow-up
+      applies_to: [issue]
       any:
+        - "tracker issue"
+        - "program child"
         - "follow-up"
         - "unresolved"
         - "ready for implementation"

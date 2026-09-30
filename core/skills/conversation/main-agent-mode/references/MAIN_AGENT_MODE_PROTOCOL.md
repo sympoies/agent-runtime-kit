@@ -154,7 +154,7 @@ json` to prove this exact current session incarnation received its
 runtime-issued environment path and still has the trusted private checkpoint
 file. `runtime-checkpoint-unavailable` requires a managed resume or restart
 after deployment and forbids `init` or mutation from the stale incarnation.
-The `>=1.25.11` packaging floor alone does not prove this paired API. The launcher never
+The `>=1.31.1` packaging floor alone does not prove this paired API. The launcher never
 performs this target-owned step, never uses the target capability or claims on
 the target's behalf, and interference or deletion before that handoff is a
 failed ownership proof, not a recovery shortcut. A released or expired claim

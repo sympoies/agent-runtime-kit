@@ -19,7 +19,7 @@ publishes is the standalone Linux container image at
 that image is versioned and cut.
 
 The local gate stack is mature. `scripts/ci/all.sh` runs an ordered gate stack
-covering plan/skill governance, nils-cli pin alignment, Codex/Claude/Hermes
+covering policy/skill governance, nils-cli pin alignment, Codex/Claude/Hermes
 render and golden diff, drift audit, surface-registry acceptance, the
 skill-surface shape diagnostic, sandbox install rehearsal, runtime-smoke,
 project-local overlay smoke, the shared hook contract, version-baseline
