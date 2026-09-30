@@ -8,8 +8,8 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 
 ## Before editing
 
-- Read [`AGENTS.md`](AGENTS.md), the canonical repository policy.
-  [`CLAUDE.md`](CLAUDE.md) imports it for Claude Code.
+- Read [`AGENTS.md`](AGENTS.md), the canonical repository policy. Codex and
+  Claude Code both read it natively.
 - Use [`.agents/skills/project-runtime-development/SKILL.md`](.agents/skills/project-runtime-development/SKILL.md)
   for the repository-specific validation and self-improvement loop.
 - Identify the source owner and every rendered, manifest, fixture, golden, and

@@ -67,23 +67,24 @@ a uniform shape:
   claude` writes the rendered file, and `scripts/setup.sh` plus
   `scripts/sync-runtime-surfaces.sh --apply --product claude` wire
   `$HOME/.claude/CLAUDE.md` to
-  `<source_root>/build/claude/AGENT_HOME.md`. Filename is deliberately distinct
-  from project-local `CLAUDE.md` so Claude does not load duplicate policy in
-  this repo.
+  `<source_root>/build/claude/AGENT_HOME.md`. The source filename is
+  deliberately distinct from project-local `AGENTS.md` and `CLAUDE.md` so
+  Claude does not load it again as project policy in this repo.
 - Acceptance lane: covered by the cross-product home-policy cutover
   plans; no dedicated CI gate diffs the link target.
 - Support today: **shipped (rendered + linked)**.
 
-### 2. Project-scope prompt (`./CLAUDE.md`)
+### 2. Project-scope prompt (`./AGENTS.md`)
 
-- Claude reads from: `<repo>/CLAUDE.md` for repo-local policy.
-- Source: `./CLAUDE.md` in this repo is a one-line `@AGENTS.md` import (the
-  project-local shared policy file).
+- Claude reads from: `<repo>/AGENTS.md` natively since Claude Code 2.1.277.
+  When a repo-root `CLAUDE.md` also exists, Claude prefers it, so repositories
+  keep only `AGENTS.md` and do not add a `CLAUDE.md` import wrapper.
+- Source: `./AGENTS.md` in this repo, the project-local shared policy file.
 - Install mechanism: not installed by `agent-runtime`; it ships as part
   of the repo working tree.
 - Acceptance lane: covered indirectly by any test that opens this repo
   with Claude; no specific gate.
-- Support today: **shipped (imported, repo-local only)**.
+- Support today: **shipped (native, repo-local only)**.
 
 ### 3. Plugin manifest (`.claude-plugin/plugin.json`)
 
@@ -319,7 +320,7 @@ a uniform shape:
 | # | Surface | runtime-kit ships | Mechanism | Min Claude | Min nils-cli |
 |---|---|---|---|---|---|
 | 1 | `CLAUDE.md` (home) | yes | rendered home prompt symlink to `build/claude/AGENT_HOME.md` | 2.1.145 | v1.12.1 |
-| 2 | `./CLAUDE.md` (repo-local) | yes | one-line `@AGENTS.md` import | 2.1.145 | n/a |
+| 2 | `./AGENTS.md` (repo-local) | yes | native `AGENTS.md` discovery | 2.1.277 | n/a |
 | 3 | `.claude-plugin/plugin.json` | yes | rendered + copy-install | 2.1.145 | v0.17.5 |
 | 4 | `.claude-plugin/marketplace.json` | yes | rendered + copy-install | 2.1.145 | v0.17.5 |
 | 5 | `plugins/<p>/skills/<s>/` | yes | rendered + recursive symlink | 2.1.145 | v1.21.15 |

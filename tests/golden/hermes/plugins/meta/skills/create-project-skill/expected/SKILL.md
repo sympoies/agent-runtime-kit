@@ -98,8 +98,7 @@ $HOME/.hermes/plugins/meta/skills/create-project-skill/scripts/create-project-sk
    starts with `project-` (project-local) or `private-` (private overlay);
    reject any other prefix.
 4. Inspect `.agents/skills/`, `.agents/scripts/`, `.claude/`, project
-   `AGENTS.md` / `CLAUDE.md`, and nearby local skill conventions before
-   editing.
+   `AGENTS.md`, and nearby local skill conventions before editing.
 5. Refuse to overwrite existing skill directories, scripts, wrappers, symlinks,
    or project policy files unless the user explicitly approves replacement.
 6. Create `SKILL.md` with front matter, H1, Contract, Entrypoint or Scripts,

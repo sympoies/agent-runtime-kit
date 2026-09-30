@@ -14,7 +14,7 @@ Prereqs:
 - Resolve the target git repository from the current working directory or an
   explicit path.
 - Before writing, inspect the active repository policy and documentation
-  entrypoints: `AGENTS.md`, `CLAUDE.md`, `AGENT_DOCS.toml`, `README.md`,
+  entrypoints: `AGENTS.md`, `AGENT_DOCS.toml`, `README.md`,
   `DEVELOPMENT.md`, `CONTRIBUTING.md`, `docs/`, package manifests, CI config,
   and project-owned validation scripts when present.
 - Activate and follow the repository's required docs intent before editing.

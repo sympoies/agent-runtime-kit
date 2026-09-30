@@ -109,7 +109,8 @@ run_home_prompt_render_probe() {
   grep -Fq 'never waives repository rules' \
     "$REPO_ROOT/core/policies/files-hooks-validation.md"
   test -s "$REPO_ROOT/core/policies/execution-capsules.md"
-  grep -Fq "\`AGENTS.md\` / \`CLAUDE.md\` may extend or override it." "$neutral_home"
+  grep -Fq "\`AGENTS.md\` may extend or override it." "$neutral_home"
+  grep -Fq "\`AGENTS.md\` may extend or override it." "$claude_home"
   grep -Fq 'reviewer subagents' "$codex_home"
   grep -Fq '`request_user_input`' "$codex_home"
   grep -Fq '`AskUserQuestion`' "$claude_home"

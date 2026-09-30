@@ -7,9 +7,9 @@
   `$HOME/.codex/AGENTS.md` and by Claude via `$HOME/.claude/CLAUDE.md`
   (both symlinks point at this repo's rendered `AGENT_HOME.md`). Hermes loads
   the rendered development-policy skill referenced by its `SOUL.md`.
-- `./CLAUDE.md` in this repo is a one-line file containing `@AGENTS.md`,
-  using Claude Code's import syntax so Claude reads the same repo-local
-  rules without maintaining a second copy.
+- Codex, Claude Code, and Hermes all read this `AGENTS.md` natively. Do not
+  add a repo-root `CLAUDE.md`: Claude Code prefers it over `AGENTS.md` when
+  both exist, so a wrapper would only risk a second, drifting copy.
 
 ## Project Purpose
 
