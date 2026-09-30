@@ -21,9 +21,8 @@ Prerequisites:
 - `forge-cli >=1.28.30`, `git-cli >=1.25.13`, and
   `review-specialists >=1.27.27` are available. The forge floor supplies
   review-loop compare-and-swap, pending-review recovery, and guarded merge.
-  `forge-cli issue tracker` (1.31.2 or later) ticks and lints tracker rows; an
-  older `forge-cli` lacks it, so apply `issue-follow-up`'s
-  `references/tracker-row-grammar.md` by hand there.
+  Tracker lint, tick, graph, and their manual fallback follow
+  `issue-follow-up`'s `references/program-mode.md` (Tracker Commands).
 - The user has authorized provider artifacts and delivery. Release, deploy,
   activation, and other phase gates keep their own authority.
 
@@ -120,9 +119,9 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
 7. After each lane merge, verify the provider merge commit and integration
    branch head. Post a child checkpoint with the PR, checks, review, and
    merged head; close the child with `forge-cli issue close` only after its
-   acceptance holds. Tick its tracker row with `forge-cli issue tracker tick
-   <tracker> --item <id> --pr <lane-pr> --comment-file <file>`, where the file
-   holds the one-line checkpoint; do not rewrite the body by hand.
+   acceptance holds. Then tick its tracker row with
+   `forge-cli issue tracker tick`, recording the lane PR and a one-line
+   checkpoint, as Tracker Commands says.
 8. After all lanes merge, resolve integration conflicts in a managed worktree,
    run the integration validation, and deliver the integration PR through
    `deliver-pr`. The integration PR references the tracker without an
@@ -131,8 +130,8 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
 9. Read back the integration PR merge and all children. Canonise durable
    decisions in repository docs or the devlog, post the final tracker
    checkpoint, and close the tracker through `forge-cli issue close` only when
-   every child is closed or explicitly transferred and `forge-cli issue tracker
-   lint <tracker> --check-state` reports no finding. Then perform requested
+   every child is closed or explicitly transferred and the Tracker Commands
+   closeout state check reports no finding. Then perform requested
    post-merge duties and `core/policies/git-delivery.md` terminal cleanup.
    Verify each provider-confirmed delivered head before removing a checkout.
    Use `git-cli worktree remove <path-or-slug> --format json` only for a clean,

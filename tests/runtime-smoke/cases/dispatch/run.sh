@@ -12,14 +12,21 @@ set -euo pipefail
 . "$SCRIPT_DIR/lib/results.sh"
 # shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
 . "$SCRIPT_DIR/lib/rendered-contract.sh"
+# shellcheck source=tests/runtime-smoke/lib/tracker-commands.sh
+. "$SCRIPT_DIR/lib/tracker-commands.sh"
 
 DISPATCH_ARTIFACTS_DIR="$ARTIFACTS_DIR/dispatch"
 DISPATCH_STORE="$TMP_ROOT/dispatch-provider"
+DISPATCH_TRACKER_MODE="$(tracker_commands_mode)"
 mkdir -p "$DISPATCH_ARTIFACTS_DIR" "$DISPATCH_STORE"
 
 provider_program_probe() {
   local tracker child_a child_b view
   local common=(--provider local --repo local:dispatch-smoke --store-root "$DISPATCH_STORE" --format json)
+  if [ "$DISPATCH_TRACKER_MODE" = missing ]; then
+    echo "runtime-smoke dispatch: forge-cli is newer than minimum_supported_tag but 'issue tracker' is unavailable" >&2
+    return 1
+  fi
   cat >"$DISPATCH_ARTIFACTS_DIR/tracker.md" <<'BODY'
 ## Purpose
 Coordinate two lanes that must integrate on one branch.
@@ -143,7 +150,7 @@ PR
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
   forge-cli "${common[@]}" issue view "$child_b" |
     jq -e '.ok == true and .data.state == "closed"' >/dev/null
-  if forge-cli issue tracker --help >/dev/null 2>&1; then
+  if [ "$DISPATCH_TRACKER_MODE" = tracker ]; then
     # forge-cli 1.31.2+ ticks one row, records its PR, and posts the checkpoint.
     local lane pr
     for lane in A:7 B:9; do
@@ -223,7 +230,7 @@ PY
 
 failures=0
 results_record_case 'dispatch.deliver-dispatch-plan.provider-program' \
-  'forge-cli local tracker, seeded PR read, checkpoint and closeout passed' provider_program_probe
+  "forge-cli local tracker, seeded PR read, checkpoint and closeout passed (tracker path: $DISPATCH_TRACKER_MODE)" provider_program_probe
 results_record_case 'dispatch.deliver-dispatch-plan.rendered-route' \
   'rendered dispatch routes through program issues without plan CLIs' rendered_route_probe
 exit "$failures"

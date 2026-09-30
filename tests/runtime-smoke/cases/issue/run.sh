@@ -16,8 +16,12 @@ set -euo pipefail
 # shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
 . "$SCRIPT_DIR/lib/rendered-contract.sh"
+# shellcheck disable=SC1091
+# shellcheck source=tests/runtime-smoke/lib/tracker-commands.sh
+. "$SCRIPT_DIR/lib/tracker-commands.sh"
 
 ISSUE_ARTIFACTS_DIR="$ARTIFACTS_DIR/issue"
+ISSUE_TRACKER_MODE="$(tracker_commands_mode)"
 mkdir -p "$ISSUE_ARTIFACTS_DIR"
 
 require_issue_bin() {
@@ -115,8 +119,12 @@ run_issue_program_mode_probe() {
   local store="$TMP_ROOT/issue-program-store"
   local dir="$ISSUE_ARTIFACTS_DIR/program"
   local forge=(forge-cli --provider local --store-root "$store" --repo local:program-demo --format json)
-  local tracker child_a child_b n tracker_commands
+  local tracker child_a child_b n
   require_issue_bin forge-cli || return 1
+  if [ "$ISSUE_TRACKER_MODE" = missing ]; then
+    echo "runtime-smoke issue: forge-cli is newer than minimum_supported_tag but 'issue tracker' is unavailable" >&2
+    return 1
+  fi
   rm -rf "$store"
   mkdir -p "$dir"
 
@@ -145,9 +153,7 @@ run_issue_program_mode_probe() {
 
   # Fill the tracker with the real child numbers.
   printf '## Phase table\n\n- [ ] **A** Demo child A: #%s\n- [ ] **B** Demo child B: #%s · after A\n' "$child_a" "$child_b" >"$dir/tracker.md"
-  tracker_commands=0
-  if forge-cli issue tracker --help >/dev/null 2>&1; then
-    tracker_commands=1
+  if [ "$ISSUE_TRACKER_MODE" = tracker ]; then
     # forge-cli 1.31.2+ generates the dependency graph into the draft.
     "${forge[@]}" issue tracker graph --body-file "$dir/tracker.md" --write >"$dir/tracker-graph.json" 2>&1
     grep -Fq '  A --> B' "$dir/tracker.md"
@@ -161,7 +167,7 @@ run_issue_program_mode_probe() {
   grep -Fq "#$child_b" "$dir/tracker-view.json"
   grep -q '"workflow::follow-up"' "$dir/child-a-view.json"
   grep -Fq "Tracker: #$tracker" "$dir/child-a-view.json"
-  [ "$tracker_commands" = 1 ] || return 0
+  [ "$ISSUE_TRACKER_MODE" = tracker ] || return 0
 
   # Lint the filled tracker, tick a closed child with its PR and checkpoint,
   # then confirm every row agrees with its issue's state.
@@ -176,6 +182,11 @@ run_issue_program_mode_probe() {
   "${forge[@]}" issue tracker tick "$tracker" --item A --pr '#7' --comment-file "$dir/tick-a.md" |
     jq -e --arg row "- [x] **A** Demo child A: #$child_a (PR #7)" \
       '.ok == true and .data.row_after == $row and .data.comment_posted == true' >/dev/null
+  # Read the stored tracker back: the ticked row and the checkpoint persisted.
+  "${forge[@]}" issue view "$tracker" --with-comments |
+    jq -e --arg row "- [x] **A** Demo child A: #$child_a (PR #7)" \
+      '.ok == true and (.data.body | split("\n") | index($row) != null) and
+        (.data.comments | any(.body | contains("Child A closed; PR #7 merged.")))' >/dev/null
   "${forge[@]}" issue tracker lint "$tracker" --check-state | jq -e '.ok == true and .data.findings == []' >/dev/null
 }
 
@@ -183,6 +194,6 @@ failures=0
 record_case "issue.issue-follow-up" "forge-cli issue create/view/comment dry-run probes passed" run_issue_follow_up_probe
 record_case "issue.issue-triage" "forge-cli inbox issue triage dry-run probes passed" run_issue_triage_probe
 record_case "issue.outcome-routing.contract" "generic issue follow-up routes program children without plan-family mode" run_issue_outcome_routing_probe
-record_case "issue.program-mode.contract" "program mode opens a tracker placeholder, linked children, and a filled tracker on the local provider" run_issue_program_mode_probe
+record_case "issue.program-mode.contract" "program mode opens a tracker placeholder, linked children, and a filled tracker on the local provider (tracker path: $ISSUE_TRACKER_MODE)" run_issue_program_mode_probe
 
 exit "$failures"
