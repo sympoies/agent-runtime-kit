@@ -124,6 +124,15 @@ executable that word resolves to. Run it as its own tool call, after staging
 with `git add -- <paths>` in a separate call. Its help, `--dry-run`, and
 `--validate-only` forms are not affected.
 
+When one word could not be classified, the refusal names it as `word=`. An
+executable held in a variable (`bin=/path/tool; $bin …`) or run through `eval`
+is opaque because it could expand to `git` or `semantic-commit`; spell the
+command literally. After `source`, an alias, or a `PATH` change, the refusal
+also names the command that changed executable resolution; run the later
+command in a separate tool call or by absolute path. Read-only loops, `[[ ]]`
+tests, `${var%|*}` expansions, arithmetic, and here-doc input to `python3` or
+`cat` are classified as reads.
+
 Each refusal names the governed surface for the operation actually attempted,
 not the policy in general.
 

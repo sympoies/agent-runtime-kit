@@ -844,16 +844,97 @@ SEMANTIC_COMMIT_VALUE_OPTIONS = frozenset(
 )
 
 
+# `semantic-commit` options that take no value.
+SEMANTIC_COMMIT_FLAGS = frozenset(
+    {
+        "--allow-empty",
+        "--amend",
+        "--auto-fix",
+        "--automation",
+        "--json",
+        "--message-only",
+        "--no-edit",
+        "--no-progress",
+        "--no-summary",
+        "--no-unstaged",
+        "--non-interactive",
+        "--quiet",
+        "--require-clean",
+        "--signoff",
+    }
+)
+SEMANTIC_COMMIT_NON_AUTHORING_FLAGS = frozenset(
+    {"-h", "--help", "--dry-run", "--validate-only"}
+)
+# Expansion that can change how many words reach semantic-commit's parser:
+# parameter, command, or arithmetic expansion, a glob, an extglob, or a brace
+# list. Parsed words have lost their quotes, so a quoted literal that merely
+# contains one of these is treated the same way.
+_SEMANTIC_COMMIT_DYNAMIC_WORD_RE = re.compile(
+    r"[$`*?\[]|[+@!]\(|\{[^}]*(?:,|\.\.)[^}]*\}"
+)
+
+
+def _semantic_commit_word_is_dynamic(token: str) -> bool:
+    return bool(_SEMANTIC_COMMIT_DYNAMIC_WORD_RE.search(token))
+
+
+def semantic_commit_arguments_author(arguments: list[str]) -> bool:
+    """Whether a ``semantic-commit`` argv tail authors a commit.
+
+    A non-authoring flag counts only when every word before it is a literal,
+    known option or a known option's literal value, as in the DSH port
+    (sympoies/nils-cli#2016, #2020). A dynamic word can expand into a
+    value-taking option or into nothing, and an unknown option may take a
+    value; either can swallow the flag in semantic-commit's own parser. A
+    redirection is removed by the shell before semantic-commit parses, so in an
+    option slot it is skipped. Parsed words have lost their quotes, so one in a
+    value slot may be a real redirection (the value is then the next word) or a
+    quoted literal value; neither reading is provable, so it authors.
+    """
+    index = 1
+    while index < len(arguments):
+        token = arguments[index]
+        if _REDIRECT_TOKEN_RE.match(token):
+            index += 2 if _redirect_consumes_next(token) else 1
+            continue
+        if _semantic_commit_word_is_dynamic(token) or token == "--":
+            return True
+        if token in SEMANTIC_COMMIT_NON_AUTHORING_FLAGS:
+            return False
+        name = token.split("=", 1)[0] if token.startswith("--") else token
+        if token in {"-m", "-F"} or token in SEMANTIC_COMMIT_VALUE_OPTIONS:
+            if index + 1 < len(arguments):
+                value = arguments[index + 1]
+                if _semantic_commit_word_is_dynamic(value) or _REDIRECT_TOKEN_RE.match(
+                    value
+                ):
+                    return True
+            index += 2
+            continue
+        if name in SEMANTIC_COMMIT_VALUE_OPTIONS or (
+            token.startswith(("-m", "-F")) and len(token) > 2
+        ):
+            index += 1
+            continue
+        if token in SEMANTIC_COMMIT_FLAGS:
+            index += 1
+            continue
+        return True
+    return True
+
+
 def semantic_commit_invocation_effects(
     arguments: list[str],
 ) -> tuple[bool, bool, str]:
     """Return ``(authors_commit, writes_files, repo)`` for an argv tail.
 
-    Operational flags are recognized only after consuming values for every
-    supported value-taking option. This prevents a filename such as ``-h`` or
-    ``--dry-run`` from masquerading as an inspection flag. A dry-run or
-    validate-only invocation that writes ``--message-out`` needs checkout
-    writer admission but does not author a commit. Help exits before work.
+    Whether it authors is ``semantic_commit_arguments_author``: an operational
+    flag counts only after every earlier word is proven literal and known, so
+    a filename such as ``-h`` or ``--dry-run`` cannot masquerade as one. A
+    dry-run or validate-only invocation that writes ``--message-out`` needs
+    checkout writer admission but does not author a commit. Help exits before
+    work.
     """
 
     if not arguments or arguments[0] not in {
@@ -865,8 +946,6 @@ def semantic_commit_invocation_effects(
         return False, False, ""
 
     help_requested = False
-    dry_run = False
-    validate_only = False
     writes_message_out = False
     repo = ""
     index = 1
@@ -876,14 +955,6 @@ def semantic_commit_invocation_effects(
             break
         if token in {"-h", "--help"}:
             help_requested = True
-            index += 1
-            continue
-        if token == "--dry-run":
-            dry_run = True
-            index += 1
-            continue
-        if token == "--validate-only":
-            validate_only = True
             index += 1
             continue
 
@@ -907,11 +978,11 @@ def semantic_commit_invocation_effects(
             continue
         index += 1
 
+    if semantic_commit_arguments_author(arguments):
+        return True, True, repo
     if help_requested:
         return False, False, repo
-    authors_commit = not dry_run and not validate_only
-    writes_files = authors_commit or writes_message_out
-    return authors_commit, writes_files, repo
+    return False, writes_message_out, repo
 
 
 def semantic_commit_invocation_state(arguments: list[str]) -> tuple[bool, str]:
@@ -2042,6 +2113,60 @@ def _shield_dynamic_word_parentheses(command: str) -> str:
     return "".join(out)
 
 
+def _shield_parameter_expansion_operators(command: str) -> str:
+    """Keep ``;``, ``&``, and ``|`` inside an unquoted ``${...}`` in its word.
+
+    ``${m%|*}`` is one parameter expansion, but the tokenizer would split it at
+    the ``|`` and read ``*}`` as a command. An expansion that still carries a
+    ``$(`` or backtick is left alone, so a substitution body this text did not
+    extract stays visible to the tokenizer.
+    """
+    if "${" not in command:
+        return command
+    out: list[str] = []
+    quote = None
+    index = 0
+    length = len(command)
+    while index < length:
+        char = command[index]
+        if quote == "'":
+            out.append(char)
+            if char == "'":
+                quote = None
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length:
+            out.append(command[index : index + 2])
+            index += 2
+            continue
+        if quote == '"':
+            out.append(char)
+            if char == '"':
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            out.append(char)
+            index += 1
+            continue
+        if command.startswith("${", index):
+            try:
+                end = _parameter_expansion_end(command, index, 0, False)
+            except _SubstitutionTooDeep:
+                end = -1
+            span = command[index : end + 1] if end >= 0 else ""
+            if span and not any(marker in span for marker in ("$(", "`")):
+                out.append(
+                    "".join("\\" + c if c in ";&|" else c for c in span)
+                )
+                index = end + 1
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def shell_tokens(command: str) -> list[str]:
     return _checked_shell_tokens(command) or []
 
@@ -2050,7 +2175,11 @@ def _checked_shell_tokens(command: str) -> list[str] | None:
     """Return shell tokens, or ``None`` when the text cannot be tokenized."""
     try:
         lexer = shlex.shlex(
-            _shield_dynamic_word_parentheses(_shield_clobber_redirects(command)),
+            _shield_dynamic_word_parentheses(
+                _shield_parameter_expansion_operators(
+                    _shield_clobber_redirects(command)
+                )
+            ),
             posix=True,
             punctuation_chars=";&|()",
         )
@@ -2677,6 +2806,67 @@ def _heredoc_delimiters_on_line(line: str) -> list[tuple[str, bool, bool, bool, 
     return result
 
 
+# Commands that read a here-document as data or as their own non-shell
+# language. Only for these is an unquoted body reduced to the substitutions it
+# expands; any other command keeps its expandable body visible to the guards.
+HEREDOC_DATA_CONSUMERS = frozenset({"cat", "jq", "python", "python3", "tee"})
+_HEREDOC_DATA_CONSUMER_RE = re.compile(r"python3\.\d+")
+
+
+def _heredoc_feeds_data_consumer(line: str, op_start: int) -> bool:
+    """Whether a literal data consumer reads this body and nothing reads it on.
+
+    A consumer whose output feeds a pipe or a process substitution could hand
+    the body to a shell, so the body then stays visible as before.
+    """
+    if ">(" in line:
+        return False
+    invocation = invocation_tokens(_simple_command_spanning(line, op_start))
+    if not invocation or any(marker in invocation[0] for marker in "$`*?[~"):
+        return False
+    rest = _checked_shell_tokens(line[op_start:])
+    if rest is None or any(token in {"|", "|&"} for token in rest):
+        return False
+    executable = PurePosixPath(invocation[0]).name
+    return executable in HEREDOC_DATA_CONSUMERS or bool(
+        _HEREDOC_DATA_CONSUMER_RE.fullmatch(executable)
+    )
+
+
+def _has_unescaped(text: str, markers: tuple[str, ...]) -> bool:
+    index = 0
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text.startswith(markers, index):
+            return True
+        index += 1
+    return False
+
+
+def _expanded_heredoc_body_residue(body: list[str]) -> list[str]:
+    """Reduce an unquoted body fed to a data consumer to what it executes.
+
+    The body is data except for its command substitutions. Once those are
+    extracted to placeholders, only the placeholders remain, as one ``:`` line
+    in place, so each substitution is still classified where the shell runs it.
+    A body that still holds an unextracted substitution stays verbatim, and so
+    does one with a backslash-newline: the shell joins it before matching the
+    delimiter, so the body may end earlier than this line-based scan reads.
+    """
+    # Quotes are literal in an expanding body, so only the backslash run counts.
+    for line in body:
+        line = line.rstrip("\r")
+        if (len(line) - len(line.rstrip("\\"))) % 2:
+            return body
+    text = "\n".join(body)
+    if _has_unescaped(text, ("$(", "`")):
+        return body
+    placeholders = _COMMAND_SUBSTITUTION_PLACEHOLDER_RE.findall(text)
+    return [": " + " ".join(placeholders)] if placeholders else []
+
+
 def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
     """Drop here-doc body (and closing-delimiter) lines from ``command``.
 
@@ -2694,17 +2884,24 @@ def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
     ``$(...)`` and backticks, so they stay visible to the guards, preserving
     the intentional bias toward blocking genuinely ambiguous input; shell
     executor bodies (``bash <<EOF``) remain visible as script text in both
-    modes. ``simple_commands`` applies the inert strip unconditionally.
+    modes. An unquoted body fed to a ``HEREDOC_DATA_CONSUMERS`` command keeps
+    only its command substitutions, so prose or Python in it is not misread as
+    shell. ``simple_commands`` applies the inert strip unconditionally.
     """
     if "<<" not in command:
         return command
     lines = command.split("\n")
-    pending: list[tuple[str, bool, bool, bool, list[str]]] = []
+    pending: list[tuple[str, bool, bool, bool, bool, list[str]]] = []
     kept: list[str] = []
     logical_scan_parts: list[str] = []
     logical_raw_lines: list[str] = []
 
-    def close_body(preserve_body: bool, delimiter_quoted: bool, body: list[str]) -> None:
+    def close_body(
+        preserve_body: bool,
+        delimiter_quoted: bool,
+        data_consumer: bool,
+        body: list[str],
+    ) -> None:
         if preserve_body:
             if body:
                 kept.append(
@@ -2712,16 +2909,26 @@ def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
                 )
             return
         if inert_only and not delimiter_quoted:
+            if data_consumer:
+                kept.extend(_expanded_heredoc_body_residue(body))
+                return
             # Expandable body: keep it visible to the guards verbatim.
             kept.extend(body)
 
     for raw in lines:
         line = raw.rstrip("\r")
         if pending:
-            delimiter, strip_tabs, preserve_body, delimiter_quoted, body = pending[0]
+            (
+                delimiter,
+                strip_tabs,
+                preserve_body,
+                delimiter_quoted,
+                data_consumer,
+                body,
+            ) = pending[0]
             candidate = line.lstrip("\t") if strip_tabs else line
             if candidate == delimiter:
-                close_body(preserve_body, delimiter_quoted, body)
+                close_body(preserve_body, delimiter_quoted, data_consumer, body)
                 pending.pop(0)  # closing delimiter line: drop it
             else:
                 body.append(raw)
@@ -2739,15 +2946,31 @@ def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
             strip_tabs,
             preserve_body,
             delimiter_quoted,
-            _op_start,
+            op_start,
         ) in _heredoc_delimiters_on_line(logical_line):
-            pending.append((delimiter, strip_tabs, preserve_body, delimiter_quoted, []))
+            pending.append(
+                (
+                    delimiter,
+                    strip_tabs,
+                    preserve_body,
+                    delimiter_quoted,
+                    _heredoc_feeds_data_consumer(logical_line, op_start),
+                    [],
+                )
+            )
         kept.extend(logical_raw_lines)
         logical_scan_parts = []
         logical_raw_lines = []
     kept.extend(logical_raw_lines)
-    for _delimiter, _strip_tabs, preserve_body, delimiter_quoted, body in pending:
-        close_body(preserve_body, delimiter_quoted, body)
+    for (
+        _delimiter,
+        _strip_tabs,
+        preserve_body,
+        delimiter_quoted,
+        data_consumer,
+        body,
+    ) in pending:
+        close_body(preserve_body, delimiter_quoted, data_consumer, body)
     return "\n".join(kept)
 
 
@@ -3046,6 +3269,21 @@ def _command_substitution_end(text: str, index: int, nesting: int = 0) -> int:
     return -1
 
 
+def _escape_word_operators(text: str) -> str:
+    """Backslash-escape blanks and shell operators so ``text`` stays one word."""
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            out.append(text[index : index + 2])
+            index += 2
+            continue
+        out.append("\\" + char if char.isspace() or char in ";&|()<>'\"" else char)
+        index += 1
+    return "".join(out)
+
+
 def extract_command_substitutions(
     command: str, *, drop_comments: bool = False
 ) -> tuple[str, dict[str, str]]:
@@ -3093,9 +3331,23 @@ def extract_command_substitutions(
         nonlocal index
         if command.startswith("$((", index):
             inner_end = _command_substitution_end(command, index + 3)
-            if inner_end < 0 or command.startswith(")", inner_end + 1):
+            if inner_end < 0:
                 out.append("$((")
                 index += 3
+                return True
+            if command.startswith(")", inner_end + 1):
+                # Arithmetic expansion is one word. Its substitutions are
+                # extracted in source order; its operators and blanks are
+                # escaped so a leading `$x` never reads as a command word.
+                inner, inner_bodies = extract_command_substitutions(
+                    command[index + 3 : inner_end]
+                )
+                bodies.update(inner_bodies)
+                if in_double_quotes:
+                    out.append(f"$(({inner}))")
+                else:
+                    out.append(f"$\\(\\({_escape_word_operators(inner)}\\)\\)")
+                index = inner_end + 2
                 return True
         if command.startswith("$(", index):
             end = _command_substitution_end(command, index + 2)
@@ -3647,8 +3899,16 @@ def opaque_invocation_candidates(
     *,
     max_depth: int = 4,
 ) -> list[list[str]]:
-    """Return governed slices within a bounded opaque-wrapper work budget."""
+    """Return governed slices within a bounded opaque-wrapper work budget.
+
+    A literal ``[``/``[[`` test executes none of its operands, so they are not
+    scanned: a dynamic or glob operand list otherwise exhausts the depth budget
+    and reads as an unresolved nested command. A command substitution among
+    the operands is still classified as its own simple command.
+    """
     if not invocation_is_opaque(invocation):
+        return []
+    if len(invocation) > 1 and invocation[1] in LITERAL_TEST_COMMAND_WORDS:
         return []
     if len(invocation) > OPAQUE_CANDIDATE_TOKEN_LIMIT:
         return [[OPAQUE_NESTED_SHELL_COMMAND]]
