@@ -2757,8 +2757,13 @@ sync_product_activation() {
       live_home="$(product_live_home "$product")"
       state_home="$(product_state_home "$product")"
       sync_codex_plugin_registry "$live_home" "$state_home" || return $?
-      # Plugin commands may reserialize config.toml, including the owned hook
-      # block. Reconcile it after the last registry write before cutover.
+      # Plugin commands may reserialize config.toml. Codex treats comment
+      # lines directly above a table as part of it, so `marketplace remove`
+      # can delete the comment-only runtime-kit managed block (#215). Restore
+      # the managed surfaces, then reconcile the owned hook block last.
+      if [ "$APPLY" = "1" ]; then
+        install_product "$product" || return $?
+      fi
       sync_agent_hook_setup "$product"
       ;;
     hermes)
