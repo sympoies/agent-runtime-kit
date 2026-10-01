@@ -2544,6 +2544,75 @@ PY
   grep -q "claude settings hooks synced" "$out"
 }
 
+run_sync_runtime_surfaces_claude_agents_md_setting_probe() {
+  local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.claude-agents-md-setting.txt"
+  local script="$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
+  local root="$TMP_ROOT/sync-claude-agents-md-setting"
+  local claude_home="$root/claude-home"
+  local missing_home="$root/missing-home"
+  local invalid_home="$root/invalid-home"
+  local settings="$claude_home/settings.json"
+  local status
+
+  rm -rf "$root"
+  mkdir -p "$claude_home" "$missing_home" "$invalid_home"
+  cat >"$settings" <<'JSON'
+{
+  "theme": "dark",
+  "pluginConfigs": {
+    "other@market": {"options": {"keep": true}},
+    "agents-md@builtin": {"options": {"instructionFiles": "agents-md-only", "extra": 1}, "note": "kept"}
+  }
+}
+JSON
+  printf '{"theme": "light"}\n' >"$missing_home/settings.json"
+  printf '{"pluginConfigs": []}\n' >"$invalid_home/settings.json"
+
+  # shellcheck disable=SC1090,SC2034
+  (
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
+    set +e
+    SOURCE_ROOT="$REPO_ROOT"
+    APPLY=1
+    sync_claude_settings_hooks "$claude_home" || exit 11
+    sync_claude_settings_hooks "$claude_home" || exit 12
+    verify_claude_agents_md_setting "$claude_home" || exit 13
+    if verify_claude_agents_md_setting "$missing_home"; then
+      exit 14
+    fi
+    if sync_claude_settings_hooks "$invalid_home"; then
+      exit 15
+    fi
+    APPLY=0
+    sync_claude_settings_hooks "$missing_home" || exit 16
+  ) >"$out" 2>&1
+  status=$?
+  [ "$status" -eq 0 ] || return 1
+
+  python3 - "$settings" "$missing_home/settings.json" "$invalid_home/settings.json" <<'PY'
+import json
+import sys
+
+settings = json.load(open(sys.argv[1], encoding="utf-8"))
+assert settings["theme"] == "dark", settings
+plugin_configs = settings["pluginConfigs"]
+assert plugin_configs["other@market"] == {"options": {"keep": True}}, plugin_configs
+agents_md = plugin_configs["agents-md@builtin"]
+assert agents_md["note"] == "kept", agents_md
+assert agents_md["options"] == {
+    "instructionFiles": "claude-md-and-agents-md",
+    "extra": 1,
+}, agents_md
+# Dry-run must not write, and an invalid shape is refused untouched.
+assert json.load(open(sys.argv[2], encoding="utf-8")) == {"theme": "light"}
+assert json.load(open(sys.argv[3], encoding="utf-8")) == {"pluginConfigs": []}
+PY
+  grep -q "agents_md_instruction_files=claude-md-and-agents-md" "$out" &&
+    grep -q "claude agents-md setting verified" "$out" &&
+    grep -q "claude agents-md setting missing" "$out" &&
+    grep -q "pluginConfigs must be a JSON object" "$out"
+}
+
 run_sync_runtime_surfaces_claude_plugin_registry_probe() {
   local out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.claude-plugin-registry.txt"
   local script="$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
@@ -3488,6 +3557,7 @@ record_case "meta.sync-runtime-surfaces.recursive-stale" "prune-stale skips reti
 record_case "meta.sync-runtime-surfaces.review-report" "sync-runtime-surfaces reports prune=review-needed when prune-stale leaves stale candidates" run_sync_runtime_surfaces_prune_review_reporting_probe
 record_case "meta.sync-runtime-surfaces.hermes-wording" "sync-runtime-surfaces uses neutral non-destructive wording for hermes prune-skipped paths" run_sync_runtime_surfaces_prune_review_hermes_wording_probe
 record_case "meta.sync-runtime-surfaces.claude-hooks" "sync-runtime-surfaces merges Claude settings hooks without dropping custom hooks" run_sync_runtime_surfaces_claude_settings_hooks_probe
+record_case "meta.sync-runtime-surfaces.claude-agents-md" "sync-runtime-surfaces owns the Claude agents-md instructionFiles setting and verifies it" run_sync_runtime_surfaces_claude_agents_md_setting_probe
 record_case "meta.sync-runtime-surfaces.claude-registry" "sync-runtime-surfaces materializes and installs Claude plugins for skill visibility" run_sync_runtime_surfaces_claude_plugin_registry_probe
 record_case "meta.sync-runtime-surfaces.codex-marketplace" "sync-runtime-surfaces ships Codex marketplace entries with required policy metadata" run_sync_runtime_surfaces_codex_marketplace_shape_probe
 record_case "meta.sync-runtime-surfaces.codex-registry" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe

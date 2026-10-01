@@ -7,9 +7,16 @@
   `$HOME/.codex/AGENTS.md` and by Claude via `$HOME/.claude/CLAUDE.md`
   (both symlinks point at this repo's rendered `AGENT_HOME.md`). Hermes loads
   the rendered development-policy skill referenced by its `SOUL.md`.
-- Codex, Claude Code, and Hermes all read this `AGENTS.md` natively. Do not
-  add a repo-root `CLAUDE.md`: Claude Code prefers it over `AGENTS.md` when
-  both exist, so a wrapper would only risk a second, drifting copy.
+- Codex and Hermes read this `AGENTS.md` natively. Claude Code reads it only
+  because `scripts/sync-runtime-surfaces.sh` owns the user setting
+  `pluginConfigs["agents-md@builtin"].options.instructionFiles =
+  "claude-md-and-agents-md"`. Without it, Claude skips `AGENTS.md` whenever any
+  ancestor holds a `CLAUDE.md`, and fleet sessions run with a per-account
+  `CLAUDE_CONFIG_DIR`, so `~/.claude/CLAUDE.md` is such an ancestor for every
+  repo under `$HOME`. Details:
+  `docs/source/harness-shape-claude.md#2-project-scope-prompt-agentsmd`.
+- Do not add a repo-root `CLAUDE.md` import wrapper; it would only risk a
+  second, drifting copy.
 
 ## Project Purpose
 

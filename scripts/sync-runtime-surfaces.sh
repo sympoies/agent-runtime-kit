@@ -39,6 +39,11 @@ AGENT_HOOK_CONFIG=""
 AGENT_HOOK_POLICY=""
 AGENT_HOOK_STATE_DIR=""
 AGENT_HOOK_REMOVE=0
+# Claude's builtin agents-md plugin skips AGENTS.md whenever an ancestor holds a
+# CLAUDE.md. Under CLAUDE_CONFIG_DIR, ~/.claude/CLAUDE.md is such an ancestor
+# for every repo under $HOME, so the kit owns this user setting.
+CLAUDE_AGENTS_MD_PLUGIN="agents-md@builtin"
+CLAUDE_AGENTS_MD_INSTRUCTION_FILES="claude-md-and-agents-md"
 
 # -----------------------------------------------------------------------------
 # Help
@@ -1792,15 +1797,17 @@ sync_claude_settings_hooks() {
   fi
 
   log "syncing Claude settings hooks live_home=$live_home"
-  print_cmd python3 - "$fragment" "$settings_path" "$APPLY"
-  python3 - "$fragment" "$settings_path" "$APPLY" <<'PY'
+  print_cmd python3 - "$fragment" "$settings_path" "$APPLY" \
+    "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES"
+  python3 - "$fragment" "$settings_path" "$APPLY" \
+    "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES" <<'PY'
 import copy
 import json
 import os
 import stat
 import sys
 
-fragment_path, settings_path, apply_flag = sys.argv[1:4]
+fragment_path, settings_path, apply_flag, agents_md_plugin, instruction_files = sys.argv[1:6]
 
 
 def strip_line_comments(text):
@@ -1898,6 +1905,19 @@ def append_source_hooks(settings_hooks, source_hooks):
     return managed_count
 
 
+def ensure_agents_md_setting(settings):
+    node = settings
+    for key, label in (
+        ("pluginConfigs", "pluginConfigs"),
+        (agents_md_plugin, f"pluginConfigs.{agents_md_plugin}"),
+        ("options", f"pluginConfigs.{agents_md_plugin}.options"),
+    ):
+        node = node.setdefault(key, {})
+        if not isinstance(node, dict):
+            raise SystemExit(f"Claude settings {label} must be a JSON object: {settings_path}")
+    node["instructionFiles"] = instruction_files
+
+
 source_hooks = load_fragment(fragment_path)
 settings = load_settings(settings_path)
 settings_hooks = settings.setdefault("hooks", {})
@@ -1906,9 +1926,14 @@ if not isinstance(settings_hooks, dict):
 
 remove_managed_hooks(settings_hooks)
 managed_count = append_source_hooks(settings_hooks, source_hooks)
+ensure_agents_md_setting(settings)
+summary = (
+    f"managed_hooks={managed_count} "
+    f"agents_md_instruction_files={instruction_files} target={settings_path}"
+)
 
 if apply_flag != "1":
-    print(f"claude settings hooks dry-run: managed_hooks={managed_count} target={settings_path}")
+    print(f"claude settings hooks dry-run: {summary}")
     raise SystemExit(0)
 
 settings_dir = os.path.dirname(settings_path)
@@ -1922,7 +1947,36 @@ if os.path.exists(settings_path):
 else:
     os.chmod(tmp_path, 0o600)
 os.replace(tmp_path, settings_path)
-print(f"claude settings hooks synced: managed_hooks={managed_count} target={settings_path}")
+print(f"claude settings hooks synced: {summary}")
+PY
+}
+
+verify_claude_agents_md_setting() {
+  local live_home="$1"
+  local settings_path="$live_home/settings.json"
+
+  python3 - "$settings_path" "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES" <<'PY'
+import json
+import sys
+
+settings_path, agents_md_plugin, expected = sys.argv[1:4]
+actual = None
+try:
+    with open(settings_path, encoding="utf-8") as handle:
+        node = json.load(handle)
+    for key in ("pluginConfigs", agents_md_plugin, "options", "instructionFiles"):
+        node = node.get(key) if isinstance(node, dict) else None
+    actual = node
+except (OSError, ValueError):
+    pass
+if actual != expected:
+    print(
+        f"claude agents-md setting missing: expected pluginConfigs.{agents_md_plugin}"
+        f".options.instructionFiles={expected} actual={actual!r} target={settings_path}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(f"claude agents-md setting verified: instructionFiles={expected} target={settings_path}")
 PY
 }
 
@@ -4515,6 +4569,13 @@ run_verification() {
   for product in $(selected_products); do
     doctor_product "$product"
     doctor_agent_hook_product "$product"
+    if [ "$product" = "claude" ]; then
+      if [ "$APPLY" = "1" ]; then
+        verify_claude_agents_md_setting "$(product_live_home claude)"
+      else
+        log "claude agents-md setting verification planned"
+      fi
+    fi
   done
 
   verify_codex_prompt_input

@@ -104,7 +104,8 @@ a uniform shape:
   repo; this is why home policy uses `AGENT_HOME.md` instead of a
   source-root `AGENTS.md`.
 - Source: `./AGENTS.md` in this repo, which declares the repo-local
-  policy; Claude Code reads the same file natively.
+  policy; Claude Code reads the same file through its managed agents-md
+  setting.
 - Install mechanism: not installed by `agent-runtime`; it ships as part
   of the repo working tree.
 - Acceptance lane: covered indirectly by any Codex session opened in
