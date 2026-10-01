@@ -2831,6 +2831,11 @@ def _heredoc_feeds_data_consumer(line: str, op_start: int) -> bool:
     invocation = invocation_tokens(_simple_command_spanning(line, op_start))
     if not invocation or any(marker in invocation[0] for marker in "$`*?[~"):
         return False
+    # A relative or project path (`./cat`, `bin/python3`) may be any script.
+    if "/" in invocation[0] and not invocation[0].startswith(
+        HEREDOC_CONSUMER_SYSTEM_DIRS
+    ):
+        return False
     rest = _checked_shell_tokens(line[op_start:])
     if rest is None or any(token in {"|", "|&"} for token in rest):
         return False
@@ -2844,6 +2849,15 @@ HEREDOC_SHELL_WORDS = frozenset(
     {*SHELL_HEREDOC_EXECUTORS, "busybox", "csh", "fish", "mksh", "tcsh", "yash"}
 )
 HEREDOC_SHELL_BUILTINS = frozenset({".", "eval", "exec", "source"})
+HEREDOC_CONSUMER_SYSTEM_DIRS = ("/bin/", "/usr/bin/")
+# Words that can change what a bare consumer name resolves to.
+HEREDOC_RESOLUTION_WORDS = frozenset(
+    {
+        "alias", "autoload", "builtin", "command", "disable", "enable",
+        "function", "functions", "hash", "rehash", "unalias", "unfunction",
+    }
+)
+_RESOLUTION_ASSIGNMENT_RE = re.compile(r"^(?:PATH|path|commands)(?:\[[^\]]*\])?\+?=")
 
 
 def _command_runs_a_shell(text: str) -> bool:
@@ -2852,7 +2866,8 @@ def _command_runs_a_shell(text: str) -> bool:
     A body written to a file, grouped into a pipe, or substituted into another
     command can still reach a shell elsewhere in the command, so any shell name
     counts, and ``.``/``source``/``eval``/``exec`` count in command position.
-    Text that cannot be tokenized counts too.
+    So does an alias, function, hash, or PATH change, which can make a consumer
+    name run something else. Text that cannot be tokenized counts too.
     """
     tokens = _checked_shell_tokens(normalize_command_separators(text))
     if tokens is None:
@@ -2860,6 +2875,13 @@ def _command_runs_a_shell(text: str) -> bool:
     previous = ""
     for token in tokens:
         if PurePosixPath(token).name in HEREDOC_SHELL_WORDS:
+            return True
+        # A consumer name the command redefines may no longer be the consumer.
+        if (
+            token in HEREDOC_RESOLUTION_WORDS
+            or _RESOLUTION_ASSIGNMENT_RE.match(token)
+            or (previous == "(" and token == ")")
+        ):
             return True
         if token in HEREDOC_SHELL_BUILTINS and (
             not previous

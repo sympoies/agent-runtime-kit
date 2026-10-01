@@ -24333,6 +24333,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "echo $(( $x + 1 ))",
                 "D=/srv/missing; git -C $D count-objects -v",
                 "O=/srv/ops; python3 - <<EOF 2>&1 >/dev/null\nprint('$O')\nEOF",
+                "/usr/bin/python3 - <<EOF\nprint('$HOME')\nEOF",
             )
             for command in allowed:
                 with self.subTest(command=command):
@@ -24482,6 +24483,26 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 ),
                 (
                     '(cat <<EOF\ngit push origin HEAD:main\nEOF\n) > x.sh',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    './cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'bin/python3 - <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'alias cat=dash 2>/dev/null; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'PATH=/tmp/evil:$PATH; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'cat() { dash; }; cat <<EOF\ngit push origin HEAD:main\nEOF',
                     "[default-delivery: blocked]",
                 ),
                 (
