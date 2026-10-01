@@ -2745,7 +2745,7 @@ sync_product_activation() {
     claude)
       live_home="$(product_live_home "$product")"
       state_home="$(product_state_home "$product")"
-      sync_claude_settings_hooks "$live_home"
+      sync_claude_settings_hooks "$live_home" || return $?
       sync_claude_plugin_registry "$live_home" "$state_home"
       ;;
     codex)

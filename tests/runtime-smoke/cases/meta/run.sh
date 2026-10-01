@@ -2583,6 +2583,13 @@ JSON
     if sync_claude_settings_hooks "$invalid_home"; then
       exit 15
     fi
+    # A refused settings merge must fail activation so main rolls back.
+    sync_claude_plugin_registry() { return 0; }
+    product_live_home() { printf '%s\n' "$invalid_home"; }
+    product_state_home() { printf '%s\n' "$root/state"; }
+    if sync_product_activation claude; then
+      exit 17
+    fi
     APPLY=0
     sync_claude_settings_hooks "$missing_home" || exit 16
   ) >"$out" 2>&1
