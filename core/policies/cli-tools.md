@@ -46,7 +46,7 @@ inventory. Track repo-scoped third-party license obligations in
   (`agent-docs`, `semantic-commit`, `agent-out` — installed via the nils-cli
   Homebrew formula, not as standalone formulas)
 - Test: test iteration + feedback loops (`watchexec`, `ruff`)
-- Toolchain: runtimes + CLI installation (`node`, `pnpm`, `pipx`, `direnv`)
+- Toolchain: runtimes + CLI installation (`node`, `python3`, `pnpm`, `pipx`, `direnv`)
 - macOS Automation: UI/input-source automation (`hs`, `im-select`)
 - Media: image processing (`imagemagick`, `vips`)
 - Ops: logs + system triage (`lnav`, `btop`, `ncdu`)
@@ -187,12 +187,13 @@ install. See `docs/source/nils-cli-surface.md` for the pinned binary list.
 
 ## Dev toolchains and CLI installation
 
-| Tool     | Purpose                              | Use when                                                           | Avoid because this exists                                 |
-| -------- | ------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------- |
-| `node`   | Node.js runtime                      | Running JS/TS tools, scripts, and tests                            | Relying on outdated/system Node versions with drift       |
-| `pnpm`   | Fast, reproducible package manager   | Installing dependencies and running Node project scripts           | `npm install` drift and slower installs                   |
-| `pipx`   | Install Python CLIs in isolated envs | Installing Python CLI tools without polluting global site-packages | `pip install --user` (global conflicts and upgrades pain) |
-| `direnv` | Per-directory environment loading    | Auto-loading `.envrc` per project                                  | Manual `export` workflows and cross-project env leaks     |
+| Tool      | Purpose                                   | Use when                                                           | Avoid because this exists                                 |
+| --------- | ----------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| `node`    | Node.js runtime                           | Running JS/TS tools, scripts, and tests                            | Relying on outdated/system Node versions with drift       |
+| `python3` | Python 3.11+ (Homebrew `python@3`, macOS) | Running runtime-kit host scripts; they resolve it explicitly       | The macOS system `python3` (3.9), which lacks `tomllib`   |
+| `pnpm`    | Fast, reproducible package manager        | Installing dependencies and running Node project scripts           | `npm install` drift and slower installs                   |
+| `pipx`    | Install Python CLIs in isolated envs      | Installing Python CLI tools without polluting global site-packages | `pip install --user` (global conflicts and upgrades pain) |
+| `direnv`  | Per-directory environment loading         | Auto-loading `.envrc` per project                                  | Manual `export` workflows and cross-project env leaks     |
 
 ---
 

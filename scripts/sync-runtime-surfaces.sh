@@ -20,6 +20,8 @@ NO_PRUNE=0
 SOURCE_ROOT=""
 OWNED_SOURCE_ROOTS=()
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/runtime-python.sh
+. "$SCRIPT_DIR/lib/runtime-python.sh"
 CODEX_PROMPT_STATUS="not-run"
 HOME_PROMPT_STATUS="not-run"
 CLAUDE_PLUGIN_STATUS="not-run"
@@ -503,7 +505,7 @@ is_managed_runtime_kit_checkout_root() {
   # primary checkout. Its local origin still provides an exact ownership link
   # to that checkout; accept only that canonical path relation.
   if source_origin="$(
-    python3 - "$SOURCE_ROOT" <<'PY'
+    runtime_python - "$SOURCE_ROOT" <<'PY'
 import subprocess
 import sys
 
@@ -870,9 +872,9 @@ sync_agent_hook_handlers() {
   fi
 
   log "materializing trusted agent-hook handlers product=$product live_home=$live_home"
-  print_cmd python3 - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
     "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}"
-  python3 - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
+  runtime_python - "$source_hooks" "$live_hooks" "$product" "$APPLY" \
     "$SOURCE_ROOT" "${OWNED_SOURCE_ROOTS[@]+"${OWNED_SOURCE_ROOTS[@]}"}" <<'PY'
 import hashlib
 import json
@@ -1198,8 +1200,8 @@ sync_agent_hook_policy() {
   fi
 
   log "syncing agent-hook policy config=$AGENT_HOOK_CONFIG policy=$AGENT_HOOK_POLICY"
-  print_cmd python3 - "$source_policy" "$AGENT_HOOK_POLICY" "$AGENT_HOOK_CONFIG" "$AGENT_HOOK_STATE_DIR" "$APPLY"
-  python3 - "$source_policy" "$AGENT_HOOK_POLICY" "$AGENT_HOOK_CONFIG" "$AGENT_HOOK_STATE_DIR" "$APPLY" <<'PY'
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$source_policy" "$AGENT_HOOK_POLICY" "$AGENT_HOOK_CONFIG" "$AGENT_HOOK_STATE_DIR" "$APPLY"
+  runtime_python - "$source_policy" "$AGENT_HOOK_POLICY" "$AGENT_HOOK_CONFIG" "$AGENT_HOOK_STATE_DIR" "$APPLY" <<'PY'
 import hashlib
 import json
 import os
@@ -1368,7 +1370,7 @@ PY
 
 agent_hook_setup_json_value() {
   local field="$1"
-  python3 -c '
+  runtime_python -c '
 import json
 import sys
 
@@ -1517,8 +1519,8 @@ agent_hook_cutover_state() {
     return 0
   fi
 
-  print_cmd python3 - "$migration_root" "$product" "$provider_path" "$action"
-  python3 - "$migration_root" "$product" "$provider_path" "$action" <<'PY'
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$migration_root" "$product" "$provider_path" "$action"
+  runtime_python - "$migration_root" "$product" "$provider_path" "$action" <<'PY'
 import hashlib
 import json
 import os
@@ -1797,9 +1799,9 @@ sync_claude_settings_hooks() {
   fi
 
   log "syncing Claude settings hooks live_home=$live_home"
-  print_cmd python3 - "$fragment" "$settings_path" "$APPLY" \
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$fragment" "$settings_path" "$APPLY" \
     "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES"
-  python3 - "$fragment" "$settings_path" "$APPLY" \
+  runtime_python - "$fragment" "$settings_path" "$APPLY" \
     "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES" <<'PY'
 import copy
 import json
@@ -1955,7 +1957,7 @@ verify_claude_agents_md_setting() {
   local live_home="$1"
   local settings_path="$live_home/settings.json"
 
-  python3 - "$settings_path" "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES" <<'PY'
+  runtime_python - "$settings_path" "$CLAUDE_AGENTS_MD_PLUGIN" "$CLAUDE_AGENTS_MD_INSTRUCTION_FILES" <<'PY'
 import json
 import sys
 
@@ -2001,7 +2003,7 @@ claude_marketplace_json_path() {
 
 claude_marketplace_name() {
   local marketplace_json="$1"
-  python3 - "$marketplace_json" <<'PY'
+  runtime_python - "$marketplace_json" <<'PY'
 import json
 import re
 import sys
@@ -2017,7 +2019,7 @@ PY
 
 claude_marketplace_plugins() {
   local marketplace_json="$1"
-  python3 - "$marketplace_json" <<'PY'
+  runtime_python - "$marketplace_json" <<'PY'
 import json
 import sys
 
@@ -2055,8 +2057,8 @@ materialize_claude_plugin_marketplace() {
   local materialized_home="$2"
 
   log "materializing Claude plugin marketplace source=$marketplace_json target=$materialized_home"
-  print_cmd python3 - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY"
-  python3 - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY" <<'PY'
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY"
+  runtime_python - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY" <<'PY'
 import json
 import os
 import shutil
@@ -2130,7 +2132,7 @@ claude_marketplace_registered() {
   local marketplaces_json="$1"
   local marketplace="$2"
 
-  python3 - "$marketplaces_json" "$marketplace" <<'PY'
+  runtime_python - "$marketplaces_json" "$marketplace" <<'PY'
 import json
 import sys
 
@@ -2150,7 +2152,7 @@ claude_installed_plugin_refs_for_marketplace() {
   local installed_json="$1"
   local marketplace="$2"
 
-  python3 - "$installed_json" "$marketplace" <<'PY'
+  runtime_python - "$installed_json" "$marketplace" <<'PY'
 import json
 import re
 import sys
@@ -2184,7 +2186,7 @@ PY
 validate_claude_marketplace_registry_json() {
   local marketplaces_json="$1"
 
-  python3 - "$marketplaces_json" <<'PY'
+  runtime_python - "$marketplaces_json" <<'PY'
 import json
 import re
 import sys
@@ -2334,7 +2336,7 @@ codex_marketplace_json_path() {
 
 codex_marketplace_name() {
   local marketplace_json="$1"
-  python3 - "$marketplace_json" <<'PY'
+  runtime_python - "$marketplace_json" <<'PY'
 import json
 import sys
 
@@ -2349,7 +2351,7 @@ PY
 
 codex_marketplace_plugins() {
   local marketplace_json="$1"
-  python3 - "$marketplace_json" <<'PY'
+  runtime_python - "$marketplace_json" <<'PY'
 import json
 import sys
 
@@ -2405,8 +2407,8 @@ materialize_codex_plugin_marketplace() {
   local materialized_home="$2"
 
   log "materializing Codex plugin marketplace source=$marketplace_json target=$materialized_home"
-  print_cmd python3 - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY"
-  python3 - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY" <<'PY'
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY"
+  runtime_python - "$SOURCE_ROOT" "$marketplace_json" "$materialized_home" "$APPLY" <<'PY'
 import json
 import os
 import shutil
@@ -2498,7 +2500,7 @@ codex_marketplace_registered() {
   local marketplaces_json="$1"
   local marketplace="$2"
 
-  python3 - "$marketplaces_json" "$marketplace" <<'PY'
+  runtime_python - "$marketplaces_json" "$marketplace" <<'PY'
 import json
 import sys
 
@@ -2519,7 +2521,7 @@ codex_installed_plugin_refs_for_marketplace() {
   local installed_json="$1"
   local marketplace="$2"
 
-  python3 - "$installed_json" "$marketplace" <<'PY'
+  runtime_python - "$installed_json" "$marketplace" <<'PY'
 import json
 import re
 import sys
@@ -2556,7 +2558,7 @@ PY
 validate_codex_marketplace_registry_json() {
   local marketplaces_json="$1"
 
-  python3 - "$marketplaces_json" <<'PY'
+  runtime_python - "$marketplaces_json" <<'PY'
 import json
 import re
 import sys
@@ -2627,7 +2629,7 @@ preflight_codex_plugin_registry() {
       err "missing source Codex marketplace manifest: $source_marketplace_root"
       return 1
     }
-    source_marketplace_override="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$source_marketplace_root")"
+    source_marketplace_override="$(runtime_python -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$source_marketplace_root")"
     CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED=1
     log "Codex marketplace snapshot missing; preflighting against source marketplace: $source_marketplace_root"
   fi
@@ -2816,7 +2818,7 @@ account_prune_skipped() {
 }
 
 retired_managed_skill_ids() {
-  python3 - \
+  runtime_python - \
     "$SOURCE_ROOT/manifests/retired-skill-ids.json" \
     "$SOURCE_ROOT/manifests/retired-hermes-skill-copies.json" <<'PY'
 import json
@@ -2932,7 +2934,7 @@ quarantine_validate_and_remove_retired_tree() {
   local domain="$5"
   local skill="${6:-}"
 
-  python3 - "$SOURCE_ROOT" "$live_home" "$tree_path" "$kind" "$product" "$domain" "$skill" <<'PY'
+  runtime_python - "$SOURCE_ROOT" "$live_home" "$tree_path" "$kind" "$product" "$domain" "$skill" <<'PY'
 import ctypes
 import errno
 import os
@@ -3438,8 +3440,8 @@ cleanup_codex_legacy_flat_skill_root() {
   fi
 
   log "cleaning retired Codex flat skill root live_home=$live_home"
-  print_cmd python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY"
-  python3 - "$SOURCE_ROOT" "$legacy_root" "$APPLY" <<'PY'
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$SOURCE_ROOT" "$legacy_root" "$APPLY"
+  runtime_python - "$SOURCE_ROOT" "$legacy_root" "$APPLY" <<'PY'
 import os
 import pathlib
 import sys
@@ -3519,8 +3521,8 @@ cleanup_hermes_legacy_runtime_kit_skill_root() {
   fi
 
   log "cleaning retired Hermes local runtime-kit skill links live_home=$live_home"
-  print_cmd python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only"
-  python3 - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only" <<'PY'
+  print_cmd "${RUNTIME_PYTHON:-python3}" - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only"
+  runtime_python - "$SOURCE_ROOT" "$anchor_home" "$profile_name" "$APPLY" "$classify_only" <<'PY'
 import ctypes
 import errno
 import os
@@ -4491,7 +4493,7 @@ doctor_agent_hook_product() {
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
     --format json)"
-  status="$(printf '%s\n' "$doctor_json" | python3 -c '
+  status="$(printf '%s\n' "$doctor_json" | runtime_python -c '
 import json
 import sys
 
@@ -4624,7 +4626,8 @@ main() {
   local status
 
   parse_args "$@"
-  require_commands git python3
+  require_commands git
+  require_runtime_python
   resolve_source_root
   resolve_owned_source_roots
   resolve_agent_hook_paths

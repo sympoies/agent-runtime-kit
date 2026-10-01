@@ -26,6 +26,7 @@ profiles:
     - gh
     - glab
     - bat
+    - python
 
   recommended:
     - ripgrep
@@ -36,6 +37,7 @@ profiles:
     - gh
     - glab
     - bat
+    - python
     - glow
     - delta
     - ast-grep
@@ -56,6 +58,7 @@ profiles:
     - gh
     - glab
     - bat
+    - python
     - glow
     - delta
     - ast-grep
@@ -177,6 +180,12 @@ formulas:
     command: gitui
     linux_only_alternative: null
     categories: [vcs]
+  python:
+    brew: python@3
+    command: python3
+    linux_only_alternative: null
+    categories: [toolchain]
+    notes: "macOS only — Python 3.11+ for setup.sh and sync-runtime-surfaces.sh, which resolve it explicitly because the system python3 (3.9) usually precedes Homebrew on PATH. setup.sh skips it on non-Darwin hosts, whose system python3 is already new enough."
   ruff:
     brew: ruff
     command: ruff

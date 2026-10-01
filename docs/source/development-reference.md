@@ -92,6 +92,15 @@ bash scripts/setup.sh --profile core --skip-homebrew-install --dry-run
 bash scripts/setup.sh --profile core --skip-homebrew-install
 ```
 
+Both `setup.sh` and `sync-runtime-surfaces.sh` need Python 3.11+ and resolve it
+through `scripts/lib/runtime-python.sh` rather than trusting `python3` on
+`PATH`: `AGENT_RUNTIME_PYTHON` first, then `python3.14` … `python3.11`, then
+Homebrew's `python3` at its standard prefixes, then `python3` only when it is
+new enough. macOS login shells often put the system Python 3.9 ahead of
+Homebrew, so every profile installs Homebrew `python@3` on macOS; Linux hosts
+use their system `python3`. Without a suitable interpreter, both scripts stop
+before mutating anything and name what to install.
+
 The wrapper keeps the Homebrew / CLI-tool and home-prompt gates in shell, then
 feature-detects `agent-runtime bootstrap-host`. When the installed nils-cli
 surface provides that command, setup delegates runtime surface bootstrap to it
