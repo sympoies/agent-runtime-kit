@@ -24334,6 +24334,11 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "D=/srv/missing; git -C $D count-objects -v",
                 "O=/srv/ops; python3 - <<EOF 2>&1 >/dev/null\nprint('$O')\nEOF",
                 "/usr/bin/python3 - <<EOF\nprint('$HOME')\nEOF",
+                # A resolution-looking word that is only an argument changes
+                # nothing a consumer name resolves to.
+                "O=/tmp; python3 - <<EOF\nprint('$O')\nEOF\n"
+                "echo 'path=/x' | grep -o 'path=[^ ]*'",
+                "O=/tmp; python3 - <<EOF\nprint('$O')\nEOF\ngrep alias notes.txt",
             )
             for command in allowed:
                 with self.subTest(command=command):
@@ -24495,6 +24500,18 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 ),
                 (
                     'alias cat=dash 2>/dev/null; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'export PATH=/tmp/evil:$PATH; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'true && hash -p /tmp/evil/cat cat; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'X=1 alias cat=dash; cat <<EOF\ngit push origin HEAD:main\nEOF',
                     "[default-delivery:",
                 ),
                 (

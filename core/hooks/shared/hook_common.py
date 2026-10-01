@@ -2857,6 +2857,9 @@ HEREDOC_RESOLUTION_WORDS = frozenset(
         "function", "functions", "hash", "rehash", "unalias", "unfunction",
     }
 )
+HEREDOC_DECLARATION_WORDS = frozenset(
+    {"declare", "export", "local", "readonly", "typeset"}
+)
 _RESOLUTION_ASSIGNMENT_RE = re.compile(r"^(?:PATH|path|commands)(?:\[[^\]]*\])?\+?=")
 
 
@@ -2876,18 +2879,25 @@ def _command_runs_a_shell(text: str) -> bool:
     for token in tokens:
         if PurePosixPath(token).name in HEREDOC_SHELL_WORDS:
             return True
-        # A consumer name the command redefines may no longer be the consumer.
-        if (
-            token in HEREDOC_RESOLUTION_WORDS
-            or _RESOLUTION_ASSIGNMENT_RE.match(token)
-            or (previous == "(" and token == ")")
-        ):
-            return True
-        if token in HEREDOC_SHELL_BUILTINS and (
+        command_position = (
             not previous
             or is_shell_separator(previous)
             or previous in SHELL_CONTROL_PREFIX_TOKENS
+            or bool(ASSIGNMENT_RE.match(previous))
+        )
+        # A consumer name the command redefines may no longer be the consumer.
+        # Only a word the shell reads as a command or an assignment redefines
+        # anything; the same word as an argument (`grep -o 'path=x'`) is data.
+        if (
+            (command_position and token in HEREDOC_RESOLUTION_WORDS)
+            or (
+                _RESOLUTION_ASSIGNMENT_RE.match(token)
+                and (command_position or previous in HEREDOC_DECLARATION_WORDS)
+            )
+            or (previous == "(" and token == ")")
         ):
+            return True
+        if command_position and token in HEREDOC_SHELL_BUILTINS:
             return True
         previous = token
     return False
