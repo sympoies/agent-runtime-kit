@@ -24551,6 +24551,26 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     "[default-delivery:",
                 ),
                 (
+                    'env -u FOO PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'env -C /tmp PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'env --unset FOO PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    '/usr/bin/env PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'nice env PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
                     'PATH=/tmp/evil:$PATH; cat <<EOF\ngit push origin HEAD:main\nEOF',
                     "[default-delivery:",
                 ),

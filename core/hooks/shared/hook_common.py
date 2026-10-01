@@ -2882,7 +2882,10 @@ def _command_runs_a_shell(text: str) -> bool:
     if tokens is None:
         return True
     previous = ""
-    # Inside `env`'s leading options and NAME=value operands.
+    # After an `env` word (also behind a wrapper such as `nice`), until the end
+    # of that simple command:
+    # its options and NAME=value operands set the environment the consumer is
+    # resolved in, and their grammar is not parsed here.
     env_operands = False
     for token in tokens:
         if PurePosixPath(token).name in HEREDOC_SHELL_WORDS:
@@ -2894,13 +2897,10 @@ def _command_runs_a_shell(text: str) -> bool:
             or previous in HEREDOC_PRECOMMAND_WORDS
             or bool(_SHELL_ASSIGNMENT_WORD_RE.match(previous))
         )
-        if previous == "env" or (
-            env_operands
-            and (previous.startswith("-") or _SHELL_ASSIGNMENT_WORD_RE.match(previous))
-        ):
-            env_operands = True
-        else:
+        if is_shell_separator(token) or token in SHELL_CONTROL_PREFIX_TOKENS:
             env_operands = False
+        elif PurePosixPath(token).name == "env":
+            env_operands = True
         # A consumer name the command redefines may no longer be the consumer.
         # Only a word the shell reads as a command or an assignment redefines
         # anything; the same word as an argument (`grep -o 'path=x'`) is data.
