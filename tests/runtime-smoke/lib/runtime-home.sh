@@ -269,9 +269,9 @@ runtime_write_plugin_stubs() {
   cat >"$stub_bin/codex" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [ "${1:-}" = -c ]; then
+while [ "${1:-}" = -c ]; do
   shift 2
-fi
+done
 case "$*" in
   "plugin --help" | "plugin marketplace --help") exit 0 ;;
   "plugin list --json") printf '%s\n' '{"installed":[],"available":[]}' ; exit 0 ;;

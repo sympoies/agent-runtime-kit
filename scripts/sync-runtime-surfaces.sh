@@ -2634,7 +2634,10 @@ preflight_codex_plugin_registry() {
     log "Codex marketplace snapshot missing; preflighting against source marketplace: $source_marketplace_root"
   fi
   if [ "$CODEX_PREFLIGHT_MARKETPLACE_QUERY_DEFERRED" = "1" ]; then
-    installed_json="$(codex -c "marketplaces.$marketplace.source=$source_marketplace_override" plugin list --json)"
+    # Without source_type, a host that never registered the marketplace
+    # treats the override as a cached snapshot that does not exist (#213).
+    installed_json="$(codex -c "marketplaces.$marketplace.source=$source_marketplace_override" \
+      -c "marketplaces.$marketplace.source_type=\"local\"" plugin list --json)"
   else
     installed_json="$(codex plugin list --json)"
   fi
