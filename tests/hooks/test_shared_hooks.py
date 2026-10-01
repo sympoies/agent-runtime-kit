@@ -24535,6 +24535,22 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     "[default-delivery:",
                 ),
                 (
+                    'X+=1 alias cat=dash; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'x[1]=2 hash -p /tmp/evil/cat cat; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'env PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'env -i PATH=/tmp/evil cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
                     'PATH=/tmp/evil:$PATH; cat <<EOF\ngit push origin HEAD:main\nEOF',
                     "[default-delivery:",
                 ),

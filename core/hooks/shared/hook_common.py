@@ -2864,6 +2864,8 @@ HEREDOC_PRECOMMAND_WORDS = frozenset(
 HEREDOC_DECLARATION_WORDS = frozenset(
     {"declare", "export", "local", "readonly", "typeset"}
 )
+# A shell assignment word, including `NAME+=value` and `NAME[key]=value`.
+_SHELL_ASSIGNMENT_WORD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
 _RESOLUTION_ASSIGNMENT_RE = re.compile(r"^(?:PATH|path|commands)(?:\[[^\]]*\])?\+?=")
 
 
@@ -2880,6 +2882,8 @@ def _command_runs_a_shell(text: str) -> bool:
     if tokens is None:
         return True
     previous = ""
+    # Inside `env`'s leading options and NAME=value operands.
+    env_operands = False
     for token in tokens:
         if PurePosixPath(token).name in HEREDOC_SHELL_WORDS:
             return True
@@ -2888,8 +2892,15 @@ def _command_runs_a_shell(text: str) -> bool:
             or is_shell_separator(previous)
             or previous in SHELL_CONTROL_PREFIX_TOKENS
             or previous in HEREDOC_PRECOMMAND_WORDS
-            or bool(ASSIGNMENT_RE.match(previous))
+            or bool(_SHELL_ASSIGNMENT_WORD_RE.match(previous))
         )
+        if previous == "env" or (
+            env_operands
+            and (previous.startswith("-") or _SHELL_ASSIGNMENT_WORD_RE.match(previous))
+        ):
+            env_operands = True
+        else:
+            env_operands = False
         # A consumer name the command redefines may no longer be the consumer.
         # Only a word the shell reads as a command or an assignment redefines
         # anything; the same word as an argument (`grep -o 'path=x'`) is data.
@@ -2897,7 +2908,11 @@ def _command_runs_a_shell(text: str) -> bool:
             (command_position and token in HEREDOC_RESOLUTION_WORDS)
             or (
                 _RESOLUTION_ASSIGNMENT_RE.match(token)
-                and (command_position or previous in HEREDOC_DECLARATION_WORDS)
+                and (
+                    command_position
+                    or env_operands
+                    or previous in HEREDOC_DECLARATION_WORDS
+                )
             )
             or (previous == "(" and token == ")")
         ):
