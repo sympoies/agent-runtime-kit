@@ -121,6 +121,10 @@ REMEDY_SHELL_CONTEXT = (
     "Run the Git command on its own with an explicit repository. Example: "
     "`git -C /absolute/path push origin feat/topic`."
 )
+HEREDOC_TEXT_HINT = (
+    " If that word is here-document text, quote the delimiter (`<<'EOF'`) so "
+    "the body is data, or write it with a file tool."
+)
 # A one-shot waiver is spelled on the command it admits, never exported, so it
 # cannot outlive that invocation and stays visible in the transcript. It admits
 # only an unresolvable `semantic-commit` target, where the governed CLI still
@@ -147,10 +151,22 @@ REPO_HINT = (
 )
 GOVERNED_CONTEXT_EXECUTABLES = frozenset({"git", "semantic-commit"})
 EXPANDED_EXECUTABLE_PATH_RE = re.compile(
-    r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})/"
+    r"^(?:\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})|~[A-Za-z0-9._-]*)/"
     r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
 )
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
+# Reserved and precommand words that can precede an assignment the shell still
+# performs: `! PATH=...`, `then PATH=...`, `time PATH=...`, zsh `nocorrect`.
+ASSIGNMENT_PREFIX_WORDS = frozenset(
+    {
+        "!", "(", "{", "builtin", "command", "coproc", "do", "elif", "else",
+        "exec", "if", "noglob", "nocorrect", "then", "time", "-p", "until",
+        "while",
+    }
+)
+SHELL_ASSIGNMENT_WORD_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?="
+)
 GIT_OPTIONS_WITH_VALUE = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
 )
@@ -181,6 +197,9 @@ ENV_CONTEXT_OPTION_PREFIXES = (
     "--path=",
     "--split-string=",
 )
+# Plumbing that publishes refs without going through `git push`, so the push
+# classifier never sees its destination.
+GIT_RAW_PUBLISH_COMMANDS = frozenset({"http-push", "send-pack"})
 GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
     {
         "add",
@@ -202,6 +221,9 @@ GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
         "config",
         "describe",
         "diff",
+        "diff-files",
+        "diff-index",
+        "diff-tree",
         "difftool",
         "fetch",
         "for-each-ref",
@@ -218,6 +240,7 @@ GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
         "ls-tree",
         "maintenance",
         "merge",
+        "merge-base",
         "mergetool",
         "mv",
         "name-rev",
@@ -237,6 +260,7 @@ GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
         "rm",
         "shortlog",
         "show",
+        "show-branch",
         "show-ref",
         "sparse-checkout",
         "stash",
@@ -590,10 +614,15 @@ class GitProbe:
         completed, _status = self.run_with_status(cwd, *args)
         return completed
 
-    def builtin_commands(self, cwd: Path) -> frozenset[str]:
-        """Return installed builtins plus retained non-delivery helper commands."""
+    def builtin_commands(self) -> frozenset[str]:
+        """Return installed builtins plus retained non-delivery helper commands.
+
+        The builtin list is compiled into Git, so it is read from the filesystem
+        root: a `-C` target that does not resolve here (a shell variable, a
+        missing path) must not reduce it to the baseline for the whole command.
+        """
         if self._builtin_commands is None:
-            result = self.run(cwd, "--list-cmds=builtins")
+            result = self.run(Path("/"), "--list-cmds=builtins")
             discovered = (
                 frozenset(result.stdout.split())
                 if result is not None and result.returncode == 0
@@ -1596,15 +1625,25 @@ def shell_command_changes_executable_resolution(
 
     def resolution_assignment(token: str) -> bool:
         name, separator, _value = token.partition("=")
+        name = name.removesuffix("+")
         return bool(separator) and (
             name in {"PATH", "path"}
             or name.startswith("path[")
             or name.startswith("commands[")
         )
 
-    if any(resolution_assignment(token) for token in simple_command):
-        return True
-    if executable in {"export", "readonly", "declare", "typeset"}:
+    # Only a word in assignment position assigns: the leading words of the
+    # simple command, or a declaration builtin's operands. A `path=...` grep
+    # pattern or other argument is data.
+    words = invocation_without_redirections(simple_command)
+    while words and words[0] in ASSIGNMENT_PREFIX_WORDS:
+        words = words[1:]
+    for token in words:
+        if not SHELL_ASSIGNMENT_WORD_RE.match(token):
+            break
+        if resolution_assignment(token):
+            return True
+    if executable in {"export", "readonly", "declare", "typeset", "local"}:
         return any(resolution_assignment(token) for token in arguments)
     if executable == "unset":
         return any(
@@ -1686,6 +1725,7 @@ def classification_evidence(
     *,
     context_source: str = "",
     diagnostic: str = "",
+    word: str = "",
 ) -> str:
     """Return stable, compact evidence for a refusal's matched classifier."""
     fields = [f"rule={rule}", f"operation={operation}"]
@@ -1693,7 +1733,17 @@ def classification_evidence(
         fields.append(f"context={context_source}")
     if diagnostic:
         fields.append(f"diagnostic={diagnostic}")
+    if word:
+        fields.append(f"word={shell_word_label(word)}")
     return "Classification: " + "; ".join(fields) + "."
+
+
+def shell_word_label(word: str) -> str:
+    """Quote one shell word for a refusal, bounded so a payload cannot flood it."""
+    word = " ".join(word.split())
+    if len(word) > 80:
+        word = word[:77] + "..."
+    return f"`{word}`"
 
 
 def opaque_invocation_has_stable_non_governed_basename(
@@ -1701,10 +1751,10 @@ def opaque_invocation_has_stable_non_governed_basename(
 ) -> bool:
     """Whether expansion changes only a path prefix around a known-safe name.
 
-    ``$HOME/bin/tool`` still identifies ``tool`` lexically, while ``$tool`` or
-    ``$HOME/bin/$tool`` can resolve to a governed executable and remain
-    unverified. Command substitutions remain opaque because they can execute a
-    hidden command before producing the path.
+    ``$HOME/bin/tool`` and ``~/bin/tool`` still identify ``tool`` lexically,
+    while ``$tool`` or ``$HOME/bin/$tool`` can resolve to a governed executable
+    and remain unverified. Command substitutions remain opaque because they can
+    execute a hidden command before producing the path.
     """
     if len(invocation) < 2 or invocation[0] != OPAQUE_WRAPPER_COMMAND:
         return False
@@ -1888,6 +1938,40 @@ def default_branch(
     return resolution.name if resolution.corroborated else ""
 
 
+def raw_publish_detail(subcommand: str) -> str:
+    return (
+        f"`git {subcommand}` publishes refs outside the push classifier, so its "
+        f"destination was not checked. {REMEDY_FEATURE_PUSH}"
+    )
+
+
+def missing_cached_head_detail(cwd: Path, remote: str = "origin") -> str:
+    """Name an unset cached remote HEAD, the usual reason the default is unknown."""
+    return (
+        f"`refs/remotes/{remote}/HEAD` is not set in {cwd}, so its default "
+        f"branch is unknown. Cache it with `git -C {cwd} remote set-head "
+        f"{remote} --auto`, then retry."
+    )
+
+
+def unreadable_default_detail(
+    probe: GitProbe, cwd: Path, config_arguments: list[str]
+) -> str:
+    """Say which half of a default-branch comparison could not be read."""
+    resolution = resolve_default_branch(probe, cwd, config_arguments=config_arguments)
+    if resolution.unknown:
+        return missing_cached_head_detail(cwd)
+    if not current_branch(probe, cwd, config_arguments):
+        return "its checked-out branch could not be read (detached HEAD or no checkout)."
+    if not resolution.corroborated:
+        return (
+            "the cached default branch is not corroborated by the primary "
+            "worktree. Return the primary checkout to the default branch, or "
+            "refresh the cache with `git remote set-head origin --auto`."
+        )
+    return ""
+
+
 def semantic_commit_repo(
     arguments: list[str], base: Path, base_source: str
 ) -> tuple[Path, str]:
@@ -1935,10 +2019,14 @@ def semantic_commit_block_reason(
         f"semantic-commit {arguments[0]}",
         context_source=source,
     )
-    if not branch or resolution.unknown:
+    if resolution.unknown:
         return unresolved(
-            f"{evidence} {location} Its checked-out branch or cached default "
-            f"branch could not be read. {REPO_HINT}"
+            f"{evidence} {location} {missing_cached_head_detail(cwd)} {REPO_HINT}"
+        )
+    if not branch:
+        return unresolved(
+            f"{evidence} {location} Its checked-out branch could not be read "
+            f"(detached HEAD or no checkout). {REPO_HINT}"
         )
     if not resolution.corroborated:
         # The default is one of the candidate names. That is enough to clear a
@@ -2613,7 +2701,9 @@ def push_targets_default(
     return push_classification(probe, arguments, cwd, config_arguments)[0]
 
 
-def rewrite_verdict_reason(subcommand: str, target: bool | None) -> str:
+def rewrite_verdict_reason(
+    subcommand: str, target: bool | None, detail: str = ""
+) -> str:
     """Name what a default-branch rewrite verdict resolved, and its remedy."""
     if target is False:
         return ""
@@ -2629,9 +2719,10 @@ def rewrite_verdict_reason(subcommand: str, target: bool | None) -> str:
             f"{MARK_BLOCKED} `git {subcommand}` would move the checked-out "
             f"default branch. {remedy}"
         )
+    detail = detail or "the default branch or the checked-out branch could not be read."
     return (
-        f"{AMBIGUOUS_PREFIX} `git {subcommand}` was not classified: the default "
-        f"branch or the checked-out branch could not be read. {remedy}"
+        f"{AMBIGUOUS_PREFIX} `git {subcommand}` was not classified: {detail} "
+        f"{remedy}"
     )
 
 
@@ -2737,8 +2828,10 @@ def invocation_block_reason(
             )
         if subcommand == "push" and push_shape(action)[0]:
             return ""
-        known_builtin = subcommand != "push" and subcommand in probe.builtin_commands(
-            cwd
+        if subcommand in GIT_RAW_PUBLISH_COMMANDS:
+            return unclassifiable(raw_publish_detail(subcommand))
+        known_builtin = (
+            subcommand != "push" and subcommand in probe.builtin_commands()
         )
         if known_builtin and subcommand not in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
             return ""
@@ -2769,13 +2862,19 @@ def invocation_block_reason(
                 "/path/to/repository ...` target or run the Git command in a "
                 "separate tool call with that worktree as its workdir."
             )
-        if known_builtin:
-            return rewrite_verdict_reason(
-                subcommand,
-                git_default_branch_rewrite_targets_default(
-                    probe, subcommand, action, cwd, config_arguments
-                ),
+        def rewrite_reason(subcommand: str, action: list[str]) -> str:
+            target = git_default_branch_rewrite_targets_default(
+                probe, subcommand, action, cwd, config_arguments
             )
+            detail = (
+                unreadable_default_detail(probe, cwd, config_arguments)
+                if target is None
+                else ""
+            )
+            return rewrite_verdict_reason(subcommand, target, detail)
+
+        if known_builtin:
+            return rewrite_reason(subcommand, action)
         resolved = resolve_git_alias(
             probe, cwd, subcommand, action, config_arguments
         )
@@ -2785,14 +2884,11 @@ def invocation_block_reason(
                 f"classifiable command. {POLICY}"
             )
         subcommand, action = resolved
+        if subcommand in GIT_RAW_PUBLISH_COMMANDS:
+            return unclassifiable(raw_publish_detail(subcommand))
         if subcommand != "push":
             if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
-                return rewrite_verdict_reason(
-                    subcommand,
-                    git_default_branch_rewrite_targets_default(
-                        probe, subcommand, action, cwd, config_arguments
-                    ),
-                )
+                return rewrite_reason(subcommand, action)
             return ""
         if push_shape(action)[0]:
             return ""
@@ -2875,6 +2971,8 @@ def command_block_reason(
     shell_context_safe = initial_shell_context_safe
     executable_resolution_safe = initial_executable_resolution_safe
     executable_resolution_tainted = initial_executable_resolution_tainted
+    # The command that tainted executable resolution, named in the refusal.
+    resolution_taint_source = ""
     repository_context_unresolved = initial_repository_context_unresolved
     executable_identity_unresolved = initial_executable_identity_unresolved
     # Strict parsing drops comments and fails closed on untokenizable text.
@@ -2898,6 +2996,7 @@ def command_block_reason(
                 shell_context_safe,
                 executable_resolution_safe,
                 executable_resolution_tainted,
+                resolution_taint_source,
                 directory_resolved,
                 cwd,
                 base_source,
@@ -2911,6 +3010,7 @@ def command_block_reason(
                         shell_context_safe,
                         executable_resolution_safe,
                         executable_resolution_tainted,
+                        resolution_taint_source,
                         directory_resolved,
                         cwd,
                         base_source,
@@ -2923,10 +3023,17 @@ def command_block_reason(
             and invocation
             and not invocation[0].startswith("/")
         ):
+            word = invocation[1] if invocation[0] == OPAQUE_WRAPPER_COMMAND else invocation[0]
+            source = (
+                f" ({shell_word_label(resolution_taint_source)})"
+                if resolution_taint_source
+                else ""
+            )
             return unresolved(
-                f"{classification_evidence('opaque-shell-resolution', 'dynamic-executable')} "
-                "Earlier shell state can resolve this command word to `git` or "
-                "`semantic-commit`; use a separate tool call or an absolute executable."
+                f"{classification_evidence('opaque-shell-resolution', 'dynamic-executable', word=word)} "
+                f"Earlier shell state{source} can resolve {shell_word_label(word)} "
+                "to `git` or `semantic-commit`; run it in a separate tool call "
+                "or invoke it by absolute path."
             )
         (
             watch_payload,
@@ -3062,8 +3169,9 @@ def command_block_reason(
         wrapper_governed = process_wrapper_governed_invocation(simple_command)
         if wrapper_governed:
             if wrapper_governed[0] == OPAQUE_WRAPPER_COMMAND:
+                word = wrapper_governed[1] if len(wrapper_governed) > 1 else ""
                 return unresolved(
-                    f"{classification_evidence('opaque-process-wrapper', 'dynamic-executable')} "
+                    f"{classification_evidence('opaque-process-wrapper', 'dynamic-executable', word=word)} "
                     "A process wrapper can expand its target to `git` or "
                     "`semantic-commit`; use a literal wrapper target or a "
                     "separate tool call."
@@ -3086,21 +3194,32 @@ def command_block_reason(
             and not opaque_invocation_has_stable_non_governed_basename(invocation)
             and not opaque_invocation_is_literal_shell_test(invocation)
         ):
+            word = invocation[1] if len(invocation) > 1 else ""
             return unresolved(
-                f"{classification_evidence('opaque-executable', 'dynamic-executable')} "
-                "The executable name could expand to `git` or `semantic-commit`; "
-                "invoke a stable command name or absolute path."
+                f"{classification_evidence('opaque-executable', 'dynamic-executable', word=word)} "
+                f"The executable word {shell_word_label(word)} could expand to "
+                "`git` or `semantic-commit`; spell the command literally, as its "
+                "command name or absolute path (for a variable, the literal value "
+                f"assigned to it).{HEREDOC_TEXT_HINT if '<<' in command else ''}"
             )
         for candidate in opaque_candidates:
             if invocation_is_unresolved_nested(candidate):
-                return AMBIGUOUS_REASON
+                word = invocation[1] if len(invocation) > 1 else ""
+                return unresolved(
+                    f"{classification_evidence('opaque-nested-command', 'work-limit', word=word)} "
+                    f"The words after {shell_word_label(word)} could hide a nested "
+                    "command beyond the classifier's bounded work budget (nesting "
+                    "or word count); split the command or spell its executable "
+                    "words literally."
+                )
             reason = classify(candidate)
             if reason and not waiver_admits(candidate, reason, waiver):
                 return reason
-        executable_resolution_tainted = (
-            executable_resolution_tainted
-            or shell_command_changes_executable_resolution(simple_command)
-        )
+        if not executable_resolution_tainted and (
+            shell_command_changes_executable_resolution(simple_command)
+        ):
+            executable_resolution_tainted = True
+            resolution_taint_source = " ".join(simple_command)
         # A preceding shell command can alter PATH, zsh/bash command tables,
         # aliases, functions, hashes, or sourced state in ways this hook cannot
         # prove exhaustively. No later authoring invocation retains executable

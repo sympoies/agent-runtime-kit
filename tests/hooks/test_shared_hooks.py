@@ -1048,22 +1048,31 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-        # The conservative bias is preserved where real ambiguity exists: a
-        # shell-executor body is script text, and an unquoted delimiter still
-        # expands, so both stay visible to the guards.
-        executor = "bash <<'EOF'\ngit commit -m test\nEOF"
+        # An unquoted delimiter expands only its substitutions; fed to a data
+        # consumer, the rest of the body is data as well (issue #206).
         code, decision, stderr = run_hook(
-            "block-direct-git-commit.py", command_payload(executor)
+            "block-direct-git-commit.py",
+            command_payload("cat <<EOF\ngit commit -m test $HOME\nEOF"),
         )
         self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "semantic-commit")
+        self.assert_allowed(decision)
 
-        expandable = "cat <<EOF\ngit commit -m test\nEOF"
-        code, decision, stderr = run_hook(
-            "block-direct-git-commit.py", command_payload(expandable)
-        )
-        self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "semantic-commit")
+        # The conservative bias is preserved where real ambiguity exists: a
+        # shell-executor body is script text, a substitution in an expanding
+        # body runs, and a body for an unknown command or one whose output
+        # feeds a pipe stays visible to the guards.
+        for visible in (
+            "bash <<'EOF'\ngit commit -m test\nEOF",
+            "cat <<EOF\n$(git commit -m test)\nEOF",
+            "runner <<EOF\ngit commit -m test\nEOF",
+            "cat <<EOF | bash\ngit commit -m test\nEOF",
+        ):
+            with self.subTest(command=visible):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(visible)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "semantic-commit")
 
     def test_block_hooks_fail_closed_on_opaque_wrapper_candidates(self) -> None:
         cases = (
@@ -24234,6 +24243,519 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_admits_read_only_inventory_shapes(
+        self,
+    ) -> None:
+        # sympoies/agent-runtime-kit#206: cross-repository read-only
+        # inventories were refused as unverified delivery. Each shape below is
+        # a read the guard misparsed: a `[[`/`[` operand list exhausted the
+        # opaque-candidate scan, `${m%|*}` split at its `|`, a zsh `path=`
+        # look-alike inside a grep pattern counted as a PATH assignment, an
+        # unprobeable `-C` directory hid the `merge-base` builtin, a `~/`
+        # executable path read as dynamic, an arithmetic expansion led with a
+        # dynamic word, and an unquoted here-document body fed to a data
+        # consumer was tokenized as shell.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            allowed = (
+                "gh api repos/o/r/contents/README.md?ref=main --jq .content",
+                'gh api -X GET "repos/$r/contents/$p?ref=$b" --jq .content',
+                "while IFS='|' read -r r paths; do "
+                "b=$(awk -v r=\"$r\" '$1==r{print $2}' repos.txt); "
+                'for p in $paths; do [[ "$p" == *CLAUDE.md ]] || continue; '
+                'c=$(gh api "repos/$r/contents/$p?ref=$b" --jq .content '
+                "2>/dev/null | base64 -d 2>/dev/null | head -c 120); "
+                'echo "$r:$p => $c"; done; done < inventory.txt',
+                "while IFS='|' read -r r paths; do "
+                "b=$(awk -v r=\"$r\" '$1==r{print $2}' repos.txt); "
+                'for p in $paths; do [[ "$p" == *CLAUDE.md ]] || continue; '
+                'c=$(gh api -X GET "repos/$r/contents/$p?ref=$b" --jq .content); '
+                'echo "$r:$p => $c"; done; done < inventory.txt',
+                "while IFS='|' read -r r paths; do "
+                '[[ -z "$paths" ]] && continue; d=~/Project/$r; '
+                '[[ -d $d ]] || { echo "$r => (no local clone)"; continue; }; '
+                'for p in $paths; do [[ "$p" == *CLAUDE.md ]] || continue; '
+                "printf '%s:%s => %s\\n' \"$r\" \"$p\" "
+                '"$(git -C $d show HEAD:$p 2>/dev/null | head -c 100)"; '
+                "done; done < inventory.txt",
+                'while read d; do git -C "$d" show HEAD:FILE; done < repos.txt',
+                'for d in /a /b; do git -C "$d" log --oneline -3; done',
+                "R=/srv/repo; git -C $R cat-file -t HEAD 2>&1; for f in a b; do "
+                'a=$(git -C $R rev-parse "HEAD:$f"); '
+                'b=$(git -C $R rev-parse "HEAD~1:$f"); '
+                '[ "$a" = "$b" ] && echo "same $f" || echo "DIFF $f"; done',
+                "W4=/srv/worktree; git -C $W4 fetch -q origin; "
+                "git -C $W4 log --oneline origin/main -1; "
+                "git -C $W4 merge-base --is-ancestor origin/main HEAD "
+                '&& echo "on top of main" || echo "needs rebase"',
+                "S=85a7379c; for m in $(agent-session message inbox --session $S "
+                "--state unread --format json | jq -r '.data.messages[]? | "
+                '"\\(.message_id)|\\(.sender.session_id[0:8])"\'); do '
+                'id=${m%|*}; echo "== $id from ${m#*|}"; '
+                "agent-session message show --session $S --message $id "
+                "--format json | jq -r '.data.message.body.text'; "
+                "agent-session message ack --session $S --message $id "
+                "--if-revision 2 --idempotency-key ack-$id --format json "
+                ">/dev/null; done",
+                'for m in a b c; do agent-session message show "$m"; done',
+                'for s in 9c2dc137 0d3aa4a3; do echo "=== $s"; '
+                'if [[ $s == 9c2dc137* ]]; then ssh c8 "agent-session glance $s" '
+                "2>&1; else agent-session glance $s 2>&1; fi | "
+                "grep -v '^\\s*$' | tail -8; done",
+                'args="--oneline -3"; git log $args',
+                'for args in "" "--topic decision --title x"; do '
+                "diff <(printf 'a' | X=1 ~/Project/laoda/bin/laoda notify $args "
+                "2>&1) <(printf 'a' | X=1 ./bin/laoda notify $args 2>&1) "
+                '>/dev/null && echo "same: $args" || echo "DIFF: $args"; done',
+                "LAODA_TOOLS=/srv/w ~/Project/gamalife/bin/jusheng help | head -2",
+                "O=/srv/ops; python3 - <<EOF\n"
+                "import re\n"
+                "p='$O/README.md'\n"
+                "lines=open(p).read().split('\\n')\n"
+                "start=lines.index('## daily')+2\n"
+                "i=start\n"
+                "while i<len(lines) and re.match(r'^\\d+\\. ',lines[i]): i+=1\n"
+                "rest=[f\"{n+1}. \"+re.sub(r'^\\d+\\. ','',x) "
+                "for n,x in enumerate(lines[start:i])]\n"
+                "lines[start:i]=rest\n"
+                "open(p,'w').write('\\n'.join(lines))\n"
+                "EOF\n"
+                "sed -n '20,29p' $O/README.md",
+                "D=/srv/scratch; cat > $D/p.md <<EOF\n"
+                "Retire repo-root \\`CLAUDE.md\\` files in: "
+                "$(grep -v '^x$' $D/repos.txt | tr '\\n' ' ')\n"
+                "EOF",
+                "systemctl show review-broker -p ExecStart --value | "
+                "grep -o 'path=[^ ;]*\\|/[^ ;]*review_broker[^ ;]*' | head -3",
+                "echo $(( $(stat -c%s README.md) - 400000 ))",
+                "echo $(( $x + 1 ))",
+                "D=/srv/missing; git -C $D count-objects -v",
+                "O=/srv/ops; python3 - <<EOF 2>&1 >/dev/null\nprint('$O')\nEOF",
+                "/usr/bin/python3 - <<EOF\nprint('$HOME')\nEOF",
+            )
+            for command in allowed:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            still_classified = (
+                ("git push origin HEAD:main", "[default-delivery: blocked]"),
+                (
+                    'for d in /a; do git -C "$d" push origin HEAD:main; done',
+                    "[default-delivery:",
+                ),
+                (
+                    "semantic-commit commit --message 'fix: x'",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "forge-cli repo push-default --help; git push origin HEAD:main",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "action=push; git $action origin HEAD:main",
+                    "rule=opaque-governed-operation",
+                ),
+                ('args="origin HEAD:main"; git push $args', "[default-delivery:"),
+                (
+                    '[[ "$p" == *CLAUDE.md ]] && git push origin HEAD:main',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    '[ "$a" = "$b" ] && git push origin HEAD:main',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    '[[ "$(git push origin HEAD:main)" == x ]]',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "id=${m%|*}; git push origin HEAD:main",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'x=${y:-"$(git push origin HEAD:main)"}',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat <<EOF\n$(git push origin HEAD:main)\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "python3 - <<EOF\nprint('$(git push origin HEAD:main)')\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "python3 - <<EOF\nprint(`git push origin HEAD:main`)\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "bash <<EOF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "sudo bash <<EOF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "source /dev/stdin <<EOF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery:",
+                ),
+                (
+                    "echo $(( $(git push origin HEAD:main) + 1 ))",
+                    "[default-delivery: blocked]",
+                ),
+                ("~/bin/git push origin HEAD:main", "[default-delivery: blocked]"),
+                ("~/bin/$tool push origin HEAD:main", "rule=opaque-executable"),
+                (
+                    "path=(/tmp/evil $path); printf --version",
+                    "[default-delivery: unverified]",
+                ),
+                ("PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                ("PATH+=:/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                (
+                    "2>/dev/null PATH=/tmp/evil; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    "cat <<EOF | bash\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "tee >(bash) <<EOF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat <<EOF\nnote\nEO\\\nF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "bash <(cat <<EOF\ngit push origin HEAD:main\nEOF\n)",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "{ cat <<EOF\ngit push origin HEAD:main\nEOF\n} | bash",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat <<EOF > x.sh\ngit push origin HEAD:main\nEOF\nbash x.sh",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat <<EOF > x.sh\ngit push origin HEAD:main\nEOF\n"
+                    "chmod +x x.sh; ./x.sh",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat >> .git/hooks/post-checkout <<EOF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "tee x.sh <<EOF\ngit push origin HEAD:main\nEOF\nnohup ./x.sh",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF &>x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF >&x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF >& x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF 1<>x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    '{ cat <<EOF\ngit push origin HEAD:main\nEOF\n} > x.sh',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    '(cat <<EOF\ngit push origin HEAD:main\nEOF\n) > x.sh',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    './cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'bin/python3 - <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'alias cat=dash 2>/dev/null; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'PATH=/tmp/evil:$PATH; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'cat() { dash; }; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'echo "$(( $(git push origin HEAD:main) + 1 ))"',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "echo $${x;git push origin HEAD:main;true}",
+                    "[default-delivery: blocked]",
+                ),
+                ("git send-pack origin HEAD:main", "[default-delivery:"),
+                (
+                    "D=/srv/missing; git -C $D send-pack origin HEAD:main",
+                    "[default-delivery:",
+                ),
+                ("local PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                ("! PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                ("{ PATH=/tmp/evil; }; printf --version", "rule=opaque-shell-resolution"),
+                (
+                    "if true; then PATH=/tmp/evil; fi; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    "while PATH=/tmp/evil; do break; done; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
+                ("time PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                (
+                    "nocorrect PATH=/tmp/evil; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
+            )
+            for command, fragment in still_classified:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_keeps_semantic_commit_flag_bypasses_closed(
+        self,
+    ) -> None:
+        # The shapes sympoies/nils-cli#2016 and #2020 closed in the DSH port:
+        # a dynamic word, an unknown option, or a redirection in a value slot
+        # before `--help`, `--dry-run`, or `--validate-only` can swallow that
+        # flag in semantic-commit's own parser, so the invocation still authors
+        # a commit on the default branch.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subject = "--type feat --subject 'change behavior'"
+            authoring = (
+                f"semantic-commit commit {subject} $(printf %s --message-out) --help",
+                "semantic-commit commit --type feat $(printf %s --subject) --help",
+                f"semantic-commit commit {subject} $OUT --dry-run",
+                "semantic-commit commit $F --help",
+                'semantic-commit commit "$@" --help',
+                "semantic-commit commit ${=F} --validate-only",
+                "semantic-commit commit --message --help",
+                "semantic-commit commit -m --help",
+                "semantic-commit commit --message $M --help",
+                f"semantic-commit commit --unknown-option --dry-run {subject}",
+                f"semantic-commit commit {subject} --body-bullet >/dev/null --dry-run",
+                f"semantic-commit commit {subject} --body-bullet 2>/dev/null --help",
+                f"semantic-commit commit {subject} --trailer > /dev/null "
+                "--validate-only",
+                f"semantic-commit commit {subject} --trailer '<x' --trailer "
+                "--validate-only",
+                "semantic-commit commit --type feat --subject '>x' "
+                "--body-bullet --help",
+                f"semantic-commit commit {subject} --body-bullet '>x' "
+                "--body-bullet --dry-run",
+                f"semantic-commit commit {subject} --body-bullet \\>x "
+                "--body-bullet --dry-run",
+                f"semantic-commit commit {subject} --body-bullet '2>x' "
+                "--body-bullet --dry-run",
+                "semantic-commit commit -m 'feat: x' --message-out nofile(N) --dry-run",
+                "semantic-commit commit --type feat --subject x --body-bullet "
+                "nofile(N) --validate-only",
+                # semantic-commit rejects a positional word before any work, but
+                # the guard cannot prove that, so it stays authoring (as in the
+                # DSH port).
+                "semantic-commit squash HEAD~1 --dry-run",
+                "semantic-commit fixup HEAD~1 --help",
+            )
+            for command in authoring:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery:")
+
+            inspection = (
+                "semantic-commit commit --help",
+                "semantic-commit commit -h",
+                "semantic-commit commit --help >/dev/null",
+                "semantic-commit commit --help > /dev/null",
+                "semantic-commit commit 2>/dev/null --dry-run",
+                f"semantic-commit commit --dry-run {subject}",
+                "semantic-commit commit --validate-only --message 'feat: x'",
+                "semantic-commit commit --quiet --json --help",
+                "semantic-commit fixup --help",
+                "semantic-commit commit --dry-run --message 'feat(hooks): add x'",
+                "semantic-commit squash --dry-run --target HEAD~1",
+            )
+            for command in inspection:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+    def test_default_delivery_hook_names_the_word_it_could_not_classify(
+        self,
+    ) -> None:
+        # An unverified refusal is only actionable when it names the word the
+        # guard could not resolve and the rewrite that makes it classifiable.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            cases = (
+                (
+                    "bin=/srv/laoda/bin/laoda; $bin peek x",
+                    ("rule=opaque-executable", "word=`$bin`", "literal"),
+                ),
+                (
+                    'L="bin/laoda log"; $L "note"',
+                    ("rule=opaque-executable", "word=`$L`"),
+                ),
+                (
+                    "cat > notes.md <<EOF\n"
+                    "lanes 1-4 are merged (org/repo#204, org/other#305).\nEOF",
+                    ("rule=opaque-executable", "<<'EOF'"),
+                ),
+                (
+                    'for c in "agent-memory doctor"; do eval "$c"; done',
+                    ("rule=opaque-executable", "word=`$c`"),
+                ),
+                (
+                    "LAODA_ROOT=$PWD bash -c "
+                    "'source libexec/_resolve; resolve_session b1ab22df'",
+                    (
+                        "rule=opaque-shell-resolution",
+                        "word=`resolve_session`",
+                        "`source libexec/_resolve`",
+                    ),
+                ),
+            )
+            for command, fragments in cases:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    for fragment in fragments:
+                        self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_names_an_exhausted_candidate_budget(
+        self,
+    ) -> None:
+        # The opaque-candidate scan also stops at its word budget, not only at
+        # its depth limit, so the refusal names a work limit.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            command = "$tool " + " ".join(["word"] * 5000)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "operation=work-limit")
+            self.assertNotIn("depth", str((decision or {}).get("reason", "")))
+
+    def test_semantic_commit_effects_ignore_redirections(self) -> None:
+        # The shell removes a redirection before semantic-commit parses, so it
+        # never fills `--repo` or hides `--message-out`.
+        effects = hook_common.semantic_commit_invocation_effects
+        self.assertEqual(
+            effects(["commit", "2>/dev/null", "--dry-run", "--message-out", "f"]),
+            (False, True, ""),
+        )
+        self.assertEqual(
+            effects(["commit", ">", "/dev/null", "--repo", "/srv/r", "--dry-run"]),
+            (False, False, "/srv/r"),
+        )
+
+    def test_default_delivery_hook_names_a_missing_cached_origin_head(
+        self,
+    ) -> None:
+        # Without `refs/remotes/origin/HEAD` the default branch is unknown. The
+        # refusal must name that cause and its repair, not a generic "could
+        # not be read" that sends the agent to `--repo`.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            subprocess.run(
+                ["git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD"],
+                cwd=repo,
+                check=True,
+            )
+            for command in (
+                "semantic-commit commit --message 'fix: x'",
+                "git reset --hard HEAD",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: unverified]")
+                    self.assert_blocked(decision, "`refs/remotes/origin/HEAD`")
+                    self.assert_blocked(
+                        decision, f"`git -C {repo.resolve()} remote set-head origin --auto`"
+                    )
+
+    def test_opaque_candidates_skip_literal_test_operands(self) -> None:
+        # A `[`/`[[` operand is never executed, so its words cannot hide a
+        # governed command; a substitution among them is its own command.
+        for words in (
+            ["[[", '"$p"', "==", "*CLAUDE.md", "]]"],
+            ["[", "$a", "=", "$b", "]"],
+            ["[[", "$s", "==", "9c2dc137*", "]]"],
+        ):
+            with self.subTest(words=words):
+                self.assertEqual(
+                    hook_common.opaque_invocation_candidates(
+                        [hook_common.OPAQUE_WRAPPER_COMMAND, *words],
+                        {"git", "semantic-commit"},
+                    ),
+                    [],
+                )
+        for command in ('[ "$a" = "$b" ] && echo same', '[[ $p == *x ]] || true'):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-worktree.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
 
     def test_default_delivery_hook_classifies_quoted_command_substitutions(
         self,

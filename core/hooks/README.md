@@ -397,19 +397,22 @@ has no runtime-kit hook runner and does not support this enforcement.
 
 `block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
 It admits a non-governed executable when shell expansion changes only its path
-prefix (for example `$HOME/.local/bin/tool`) while retaining the literal
-basename; every suffix component must be literal, so a wholly dynamic
-executable, shell glob/brace/extglob syntax, or an expanded path ending in
-`git` or `semantic-commit` remains fail-closed. Refusals include the matched rule,
-extracted operation, and command-context provenance so an unverified target is
-distinguishable from a proven default-branch write.
+prefix (for example `$HOME/.local/bin/tool` or `~/.local/bin/tool`) while
+retaining the literal basename; every suffix component must be literal, so a
+wholly dynamic executable, shell glob/brace/extglob syntax, or an expanded path
+ending in `git` or `semantic-commit` remains fail-closed. Refusals include the
+matched rule, extracted operation, command-context provenance, and, when one
+word could not be classified, that word (`word=`), so an unverified target is
+distinguishable from a proven default-branch write and the word to spell
+literally is named.
 The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
 even without a variable prefix. The zsh extended-glob repetition, exclusion,
 and negation operators (`#`, `~`, and `^`) are opaque there as well. A lone `[`,
 the `[[` reserved word, and a zsh `$+name[key]` presence test with a literal key
 are literal test syntax that cannot name `git` or `semantic-commit`, so they stay
-classifiable; governed words among their arguments are still inspected.
+classifiable. A `[`/`[[` test never executes its operands, so they are not
+scanned for hidden commands; a substitution among them is still classified.
 `block-direct-git-commit.py` shares that literal-test helper and does not scan
 test operands for a Git subcommand, because the test never executes them.
 Both Git guards classify every command substitution the shell would run:
@@ -418,12 +421,21 @@ including in test operands and assignments. The shared tokenizer parses each
 body as its own simple command ahead of the command it expands and leaves a
 dynamic placeholder word in its place, so several substitutions in one command
 stay arguments instead of leaving a stray `$` in command position.
-A `)` inside `${...}` stays part of the expansion, and `$((cmd) )` is read as
-a substitution as bash reads it. Single-quoted text, shell comments, escaped
-markers, and quoted-delimiter here-doc bodies stay literal; an
-unquoted-delimiter here-doc body expands every substitution (it has no
-quotes or comments, so an apostrophe there stays literal), and inside a
-substitution its lines are classified like any other script text. Both Git
+A `)` inside `${...}` stays part of the expansion, as does a `|`, `;`, or `&`
+(`${m%|*}` is one word), and `$((cmd) )` is read as a substitution as bash
+reads it; an arithmetic `$(( ... ))` is one word whose substitutions are still
+classified. Single-quoted text, shell comments, escaped markers, and
+quoted-delimiter here-doc bodies stay literal; an unquoted-delimiter here-doc
+body expands every substitution (it has no quotes or comments, so an
+apostrophe there stays literal), and inside a substitution its lines are
+classified like any other script text. When that body feeds `cat`,
+`python`/`python3`, or `jq` by bare name or from `/bin` or `/usr/bin`, no pipe or process substitution reads its output
+on, the body has no line continuation, and nothing else in the command runs a
+shell (a shell name anywhere, or `.`/`source`/`eval`/`exec` in command
+position), redefines command resolution (an alias, function, hash, or `PATH`
+change), or redirects into a file (anything but `/dev/null` or a numeric
+`>&N` dup), only its substitutions are classified; the rest is data. A refusal caused by here-doc
+text suggests quoting the delimiter (`<<'EOF'`). Both Git
 guards parse strictly: shell comments are dropped before tokenizing (only a
 `#` after an unescaped blank, newline, `;`, or `&`, outside `[[ ]]` and any
 open parenthesized group, counts as a comment), and a
@@ -439,7 +451,11 @@ After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
 `disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.
 Redirections are ignored when judging such a command, so a query such as
-`alias name 2>/dev/null` stays query-only.
+`alias name 2>/dev/null` stays query-only. Only a word in assignment position
+assigns `PATH` or `path`: a leading assignment (also after `!`, `{`, `then`,
+`do`, `time`, or zsh `nocorrect`) or a declaration builtin's operand, never an
+argument such as a `grep -o 'path=[^ ]*'` pattern. `$${` is the `$$` PID
+expansion followed by a literal `{`, so it is not read as `${`.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also
@@ -451,7 +467,14 @@ retarget them. PreToolUse performs no live `ls-remote` or provider probe;
 implicit, all/mirror, delete, matching, wildcard, and missing-cache cases fail
 closed, while live remote truth remains owned by the delivery CLI. It leaves explicit feature-branch pushes,
 `git push --dry-run`, semantic-commit help/dry-run, and the governed `forge-cli
-repo push-default` invocation available. Exact authorized `semantic-commit
+repo push-default` invocation available. A semantic-commit `--help`,
+`--dry-run`, or `--validate-only` counts only when every word before it is a
+literal, known option or value: a dynamic word, an unknown option, or a
+redirection-like word in a value slot could swallow it in semantic-commit's
+own parser, so the invocation is classified as authoring. A zsh glob
+qualifier or alternation group (`word(N)`, `(a|b)`) counts as dynamic. Raw
+`git send-pack` and `git http-push` publish refs outside the push classifier
+and fail closed toward `git-cli push`. Exact authorized `semantic-commit
 default-branch` preview and mutation forms are admitted only through the active
 trusted managed CLI with a full expected HEAD, explicit absolute repository,
 primary checkout, authoritative
