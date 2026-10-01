@@ -3506,19 +3506,33 @@ run_execution_capsule_probe() {
 run_sync_runtime_surfaces_codex_hook_order_probe() {
   local out="$META_ARTIFACTS_DIR/codex-hook-order.txt"
   local scenario
-  for scenario in success registry-failure hook-failure; do
+  for scenario in success registry-failure install-failure hook-failure; do
     (
       SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
       product_live_home() { printf '%s\n' "$TMP_ROOT/codex-hook-order"; }
       product_state_home() { printf '%s\n' "$TMP_ROOT/codex-hook-state"; }
+      APPLY=1
       hook_state=converged
+      block_state=present
       sync_codex_plugin_registry() {
+        # Registry writes reserialize config.toml: they can drift the hook
+        # block and drop the comment-only runtime-kit managed block (#215).
         hook_state=drifted
+        block_state=missing
         [ "$scenario" != registry-failure ] || return 23
+      }
+      install_product() {
+        [ "$1" = codex ] || return 29
+        [ "$scenario" != registry-failure ] || return 30
+        [ "$block_state" = missing ] || return 31
+        [ "$scenario" != install-failure ] || return 28
+        block_state=present
       }
       sync_agent_hook_setup() {
         [ "$1" = codex ] || return 25
         [ "$scenario" != registry-failure ] || return 26
+        [ "$scenario" != install-failure ] || return 32
+        [ "$block_state" = present ] || return 33
         [ "$hook_state" = drifted ] || return 27
         [ "$scenario" != hook-failure ] || return 24
         hook_state=converged
@@ -3526,8 +3540,12 @@ run_sync_runtime_surfaces_codex_hook_order_probe() {
       result=0
       sync_product_activation codex || result=$?
       case "$scenario" in
-        success) [ "$result" = 0 ] && [ "$hook_state" = converged ] ;;
+        success)
+          [ "$result" = 0 ] && [ "$hook_state" = converged ] &&
+            [ "$block_state" = present ]
+          ;;
         registry-failure) [ "$result" = 23 ] ;;
+        install-failure) [ "$result" = 28 ] ;;
         hook-failure) [ "$result" = 24 ] ;;
       esac
     ) >>"$out" 2>&1 || return 1
@@ -3579,7 +3597,7 @@ record_case "meta.sync-runtime-surfaces.codex-marketplace" "sync-runtime-surface
 record_case "meta.sync-runtime-surfaces.codex-registry" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe
 record_case "meta.sync-runtime-surfaces.codex-missing" "sync-runtime-surfaces fails Codex plugin activation when the Codex CLI is unavailable" run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe
 record_case "meta.sync-runtime-surfaces.codex-preview" "sync-runtime-surfaces prints a Codex activation plan without executing it under dry-run" run_sync_runtime_surfaces_codex_plugin_registry_planned_probe
-record_case "meta.sync-runtime-surfaces.codex-hook-order" "Codex activation reconciles hooks after registry writes and preserves activation failures" run_sync_runtime_surfaces_codex_hook_order_probe
+record_case "meta.sync-runtime-surfaces.codex-hook-order" "Codex activation restores managed surfaces and reconciles hooks after registry writes and preserves activation failures" run_sync_runtime_surfaces_codex_hook_order_probe
 record_case "meta.product-leak-unused-allow" "product leak audit rejects allowlist entries without active rendered artifacts" run_product_leak_unused_allow_probe
 
 exit "$failures"
