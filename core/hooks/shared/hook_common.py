@@ -2857,6 +2857,15 @@ HEREDOC_RESOLUTION_WORDS = frozenset(
         "function", "functions", "hash", "rehash", "unalias", "unfunction",
     }
 )
+# Precommand modifiers whose next word is still the command: `builtin hash`.
+HEREDOC_PRECOMMAND_WORDS = frozenset(
+    {"-", "builtin", "command", "nocorrect", "noglob", "time"}
+)
+HEREDOC_DECLARATION_WORDS = frozenset(
+    {"declare", "export", "local", "readonly", "typeset"}
+)
+# A shell assignment word, including `NAME+=value` and `NAME[key]=value`.
+_SHELL_ASSIGNMENT_WORD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
 _RESOLUTION_ASSIGNMENT_RE = re.compile(r"^(?:PATH|path|commands)(?:\[[^\]]*\])?\+?=")
 
 
@@ -2873,21 +2882,42 @@ def _command_runs_a_shell(text: str) -> bool:
     if tokens is None:
         return True
     previous = ""
+    # After an `env` word (also behind a wrapper such as `nice`), until the end
+    # of that simple command:
+    # its options and NAME=value operands set the environment the consumer is
+    # resolved in, and their grammar is not parsed here.
+    env_operands = False
     for token in tokens:
         if PurePosixPath(token).name in HEREDOC_SHELL_WORDS:
             return True
-        # A consumer name the command redefines may no longer be the consumer.
-        if (
-            token in HEREDOC_RESOLUTION_WORDS
-            or _RESOLUTION_ASSIGNMENT_RE.match(token)
-            or (previous == "(" and token == ")")
-        ):
-            return True
-        if token in HEREDOC_SHELL_BUILTINS and (
+        command_position = (
             not previous
             or is_shell_separator(previous)
             or previous in SHELL_CONTROL_PREFIX_TOKENS
+            or previous in HEREDOC_PRECOMMAND_WORDS
+            or bool(_SHELL_ASSIGNMENT_WORD_RE.match(previous))
+        )
+        if is_shell_separator(token) or token in SHELL_CONTROL_PREFIX_TOKENS:
+            env_operands = False
+        elif PurePosixPath(token).name == "env":
+            env_operands = True
+        # A consumer name the command redefines may no longer be the consumer.
+        # Only a word the shell reads as a command or an assignment redefines
+        # anything; the same word as an argument (`grep -o 'path=x'`) is data.
+        if (
+            (command_position and token in HEREDOC_RESOLUTION_WORDS)
+            or (
+                _RESOLUTION_ASSIGNMENT_RE.match(token)
+                and (
+                    command_position
+                    or env_operands
+                    or previous in HEREDOC_DECLARATION_WORDS
+                )
+            )
+            or (previous == "(" and token == ")")
         ):
+            return True
+        if command_position and token in HEREDOC_SHELL_BUILTINS:
             return True
         previous = token
     return False
