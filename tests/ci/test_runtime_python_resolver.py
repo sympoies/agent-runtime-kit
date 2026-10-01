@@ -128,6 +128,23 @@ class RuntimePythonResolverTests(unittest.TestCase):
         )
         self.assert_stopped_before_mutation(result)
 
+    def test_setup_rejected_override_does_not_defer_to_macos_install(self) -> None:
+        # On macOS the profile install would provide python@3, but an explicit
+        # override that is too old must still stop setup before any install.
+        (self.bin / "uname").unlink()
+        write_executable(self.bin / "uname", "#!/bin/sh\necho Darwin\n")
+        result = self.run_bash(
+            [
+                "scripts/setup.sh",
+                "--profile",
+                "core",
+                "--skip-homebrew-install",
+                "--dry-run",
+            ],
+            AGENT_RUNTIME_PYTHON=str(self.bin / "python3"),
+        )
+        self.assert_stopped_before_mutation(result)
+
     def test_sync_stops_before_mutation_with_only_old_python3(self) -> None:
         result = self.run_bash(
             [

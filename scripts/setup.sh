@@ -334,7 +334,8 @@ preflight_runtime_python() {
     publish_runtime_python
     return 0
   fi
-  if runtime_python_install_planned; then
+  # A rejected explicit override stays rejected after any install.
+  if [ -z "${AGENT_RUNTIME_PYTHON:-}" ] && runtime_python_install_planned; then
     log "Python 3.11+ not found yet; profile=$PROFILE installs it with the CLI tools"
     return 0
   fi
