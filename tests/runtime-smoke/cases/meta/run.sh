@@ -751,9 +751,9 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$CODEX_STUB_LOG"
-if [ "${1:-}" = -c ]; then
+while [ "${1:-}" = -c ]; do
   shift 2
-fi
+done
 case "$*" in
   "plugin list --json")
     printf '{"installed":[],"available":[]}\n'
@@ -2832,6 +2832,15 @@ printf '%s\n' "$*" >>"$CODEX_STUB_LOG"
 source_override=0
 if [ "${1:-}" = -c ]; then
   [ "$2" = "marketplaces.codex-kit.source=\"$CODEX_STUB_SOURCE_ROOT\"" ] || exit 1
+  shift 2
+  # Like Codex CLI 0.159, an override without source_type is not a local
+  # marketplace: on a host that never registered codex-kit, Codex looks for a
+  # cached snapshot instead of reading the source root (#213).
+  if [ "${1:-}" != -c ] || [ "${2:-}" != 'marketplaces.codex-kit.source_type="local"' ]; then
+    echo 'Error: failed to load configured marketplace snapshot(s):' >&2
+    echo '- `codex-kit`: marketplace root does not contain a supported manifest' >&2
+    exit 1
+  fi
   source_override=1
   shift 2
 elif { [ "$*" = "plugin list --json" ] || [ "$*" = "plugin marketplace list --json" ]; } \
