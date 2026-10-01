@@ -121,6 +121,10 @@ REMEDY_SHELL_CONTEXT = (
     "Run the Git command on its own with an explicit repository. Example: "
     "`git -C /absolute/path push origin feat/topic`."
 )
+HEREDOC_TEXT_HINT = (
+    " If that word is here-document text, quote the delimiter (`<<'EOF'`) so "
+    "the body is data, or write it with a file tool."
+)
 # A one-shot waiver is spelled on the command it admits, never exported, so it
 # cannot outlive that invocation and stays visible in the transcript. It admits
 # only an unresolvable `semantic-commit` target, where the governed CLI still
@@ -3196,7 +3200,7 @@ def command_block_reason(
                 f"The executable word {shell_word_label(word)} could expand to "
                 "`git` or `semantic-commit`; spell the command literally, as its "
                 "command name or absolute path (for a variable, the literal value "
-                "assigned to it)."
+                f"assigned to it).{HEREDOC_TEXT_HINT if '<<' in command else ''}"
             )
         for candidate in opaque_candidates:
             if invocation_is_unresolved_nested(candidate):

@@ -2808,7 +2808,10 @@ def _heredoc_delimiters_on_line(line: str) -> list[tuple[str, bool, bool, bool, 
 # Commands that read a here-document as data or as their own non-shell
 # language. Only for these is an unquoted body reduced to the substitutions it
 # expands; any other command keeps its expandable body visible to the guards.
-HEREDOC_DATA_CONSUMERS = frozenset({"cat", "jq", "python", "python3", "tee"})
+HEREDOC_DATA_CONSUMERS = frozenset({"cat", "jq", "python", "python3"})
+_OUTPUT_REDIRECT_RE = re.compile(
+    rf"^\d*(?:>>|>{re.escape(CLOBBER_REDIRECT_MARKER)}|>|&>>|&>)(?P<target>.*)$"
+)
 _HEREDOC_DATA_CONSUMER_RE = re.compile(r"python3\.\d+")
 
 
@@ -2816,13 +2819,26 @@ def _heredoc_feeds_data_consumer(line: str, op_start: int) -> bool:
     """Whether a literal data consumer reads this body and nothing reads it on.
 
     A consumer whose output feeds a pipe or a process substitution could hand
-    the body to a shell, so the body then stays visible as before; so does
+    the body to a shell, and one that redirects it to a file writes a script
+    something may run later, so the body then stays visible as before; so does
     every body of a command that also runs a shell anywhere
-    (``_command_runs_a_shell``).
+    (``_command_runs_a_shell``). Output to ``/dev/null`` or a duplicated
+    descriptor writes no file.
     """
     if ">(" in line or "<(" in line:
         return False
-    invocation = invocation_tokens(_simple_command_spanning(line, op_start))
+    words = _simple_command_spanning(line, op_start)
+    for index, word in enumerate(words):
+        redirect = _OUTPUT_REDIRECT_RE.match(word)
+        if not redirect:
+            continue
+        target = redirect.group("target") or (
+            words[index + 1] if index + 1 < len(words) else ""
+        )
+        # An empty target is the tokenizer's split of a `>&` descriptor dup.
+        if target and target != "/dev/null" and not target.startswith("&"):
+            return False
+    invocation = invocation_tokens(words)
     if not invocation or any(marker in invocation[0] for marker in "$`*?[~"):
         return False
     rest = _checked_shell_tokens(line[op_start:])

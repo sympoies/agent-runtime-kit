@@ -24332,6 +24332,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "echo $(( $(stat -c%s README.md) - 400000 ))",
                 "echo $(( $x + 1 ))",
                 "D=/srv/missing; git -C $D count-objects -v",
+                "O=/srv/ops; python3 - <<EOF 2>&1 >/dev/null\nprint('$O')\nEOF",
             )
             for command in allowed:
                 with self.subTest(command=command):
@@ -24444,6 +24445,19 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 ),
                 (
                     "cat <<EOF > x.sh\ngit push origin HEAD:main\nEOF\nbash x.sh",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat <<EOF > x.sh\ngit push origin HEAD:main\nEOF\n"
+                    "chmod +x x.sh; ./x.sh",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat >> .git/hooks/post-checkout <<EOF\ngit push origin HEAD:main\nEOF",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "tee x.sh <<EOF\ngit push origin HEAD:main\nEOF\nnohup ./x.sh",
                     "[default-delivery: blocked]",
                 ),
                 (
@@ -24581,6 +24595,11 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 (
                     'L="bin/laoda log"; $L "note"',
                     ("rule=opaque-executable", "word=`$L`"),
+                ),
+                (
+                    "cat > notes.md <<EOF\n"
+                    "lanes 1-4 are merged (org/repo#204, org/other#305).\nEOF",
+                    ("rule=opaque-executable", "<<'EOF'"),
                 ),
                 (
                     'for c in "agent-memory doctor"; do eval "$c"; done',

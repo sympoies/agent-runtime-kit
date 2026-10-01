@@ -428,11 +428,13 @@ classified. Single-quoted text, shell comments, escaped markers, and
 quoted-delimiter here-doc bodies stay literal; an unquoted-delimiter here-doc
 body expands every substitution (it has no quotes or comments, so an
 apostrophe there stays literal), and inside a substitution its lines are
-classified like any other script text. When that body feeds `cat`, `tee`,
-`python`/`python3`, or `jq`, no pipe or process substitution reads the output
-on, the body has no line continuation, and nothing else in the command runs a
-shell (a shell name anywhere, or `.`/`source`/`eval`/`exec` in command
-position), only its substitutions are classified; the rest is data. Both Git
+classified like any other script text. When that body feeds `cat`,
+`python`/`python3`, or `jq`, the output goes to no file (only `/dev/null` or a
+descriptor dup), no pipe or process substitution reads it on, the body has no
+line continuation, and nothing else in the command runs a shell (a shell name
+anywhere, or `.`/`source`/`eval`/`exec` in command position), only its
+substitutions are classified; the rest is data. A refusal caused by here-doc
+text suggests quoting the delimiter (`<<'EOF'`). Both Git
 guards parse strictly: shell comments are dropped before tokenizing (only a
 `#` after an unescaped blank, newline, `;`, or `&`, outside `[[ ]]` and any
 open parenthesized group, counts as a comment), and a
