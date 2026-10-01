@@ -2809,8 +2809,11 @@ def _heredoc_delimiters_on_line(line: str) -> list[tuple[str, bool, bool, bool, 
 # language. Only for these is an unquoted body reduced to the substitutions it
 # expands; any other command keeps its expandable body visible to the guards.
 HEREDOC_DATA_CONSUMERS = frozenset({"cat", "jq", "python", "python3"})
-_OUTPUT_REDIRECT_RE = re.compile(
-    rf"^\d*(?:>>|>{re.escape(CLOBBER_REDIRECT_MARKER)}|>|&>>|&>)(?P<target>.*)$"
+# Any redirection that can open a file for writing: `>`, `>>`, `>|`, `&>`,
+# `&>>`, `>&word`, and `<>`. Only `/dev/null` and a numeric `>&N` / `>&-`
+# descriptor dup write no file.
+_WRITE_REDIRECT_RE = re.compile(
+    r"(?:&>>?|<>|>&|>>?\|?)[ \t]*(?P<target>[^\s;&|()<>]*)"
 )
 _HEREDOC_DATA_CONSUMER_RE = re.compile(r"python3\.\d+")
 
@@ -2819,26 +2822,13 @@ def _heredoc_feeds_data_consumer(line: str, op_start: int) -> bool:
     """Whether a literal data consumer reads this body and nothing reads it on.
 
     A consumer whose output feeds a pipe or a process substitution could hand
-    the body to a shell, and one that redirects it to a file writes a script
-    something may run later, so the body then stays visible as before; so does
-    every body of a command that also runs a shell anywhere
-    (``_command_runs_a_shell``). Output to ``/dev/null`` or a duplicated
-    descriptor writes no file.
+    the body to a shell, so the body then stays visible as before; so does
+    every body of a command that also runs a shell or writes a file anywhere
+    (``_command_runs_a_shell``, ``_command_writes_a_file``).
     """
     if ">(" in line or "<(" in line:
         return False
-    words = _simple_command_spanning(line, op_start)
-    for index, word in enumerate(words):
-        redirect = _OUTPUT_REDIRECT_RE.match(word)
-        if not redirect:
-            continue
-        target = redirect.group("target") or (
-            words[index + 1] if index + 1 < len(words) else ""
-        )
-        # An empty target is the tokenizer's split of a `>&` descriptor dup.
-        if target and target != "/dev/null" and not target.startswith("&"):
-            return False
-    invocation = invocation_tokens(words)
+    invocation = invocation_tokens(_simple_command_spanning(line, op_start))
     if not invocation or any(marker in invocation[0] for marker in "$`*?[~"):
         return False
     rest = _checked_shell_tokens(line[op_start:])
@@ -2878,6 +2868,24 @@ def _command_runs_a_shell(text: str) -> bool:
         ):
             return True
         previous = token
+    return False
+
+
+def _command_writes_a_file(text: str) -> bool:
+    """Whether command text outside here-doc bodies redirects into a file.
+
+    A body written to a file is a script something may run later, and a
+    redirection on a group's closing line applies to the here-doc inside it, so
+    any write redirection anywhere counts.
+    """
+    for match in _WRITE_REDIRECT_RE.finditer(text):
+        operator = match.group(0)
+        target = match.group("target")
+        if target == "/dev/null":
+            continue
+        if operator.startswith(">&") and re.fullmatch(r"\d+|-", target):
+            continue
+        return True
     return False
 
 
@@ -3024,7 +3032,7 @@ def strip_heredoc_bodies(
     ) in pending:
         close_body(preserve_body, delimiter_quoted, data_consumer, body)
     result = "\n".join(kept)
-    if reduced and _command_runs_a_shell(result):
+    if reduced and (_command_runs_a_shell(result) or _command_writes_a_file(result)):
         return strip_heredoc_bodies(
             command, inert_only=inert_only, reduce_data_bodies=False
         )

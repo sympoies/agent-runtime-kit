@@ -24461,6 +24461,30 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     "[default-delivery: blocked]",
                 ),
                 (
+                    'cat <<EOF &>x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF >&x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF >& x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'cat <<EOF 1<>x.sh\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    '{ cat <<EOF\ngit push origin HEAD:main\nEOF\n} > x.sh',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    '(cat <<EOF\ngit push origin HEAD:main\nEOF\n) > x.sh',
+                    "[default-delivery: blocked]",
+                ),
+                (
                     'echo "$(( $(git push origin HEAD:main) + 1 ))"',
                     "[default-delivery: blocked]",
                 ),
