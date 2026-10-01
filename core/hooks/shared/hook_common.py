@@ -2857,6 +2857,10 @@ HEREDOC_RESOLUTION_WORDS = frozenset(
         "function", "functions", "hash", "rehash", "unalias", "unfunction",
     }
 )
+# Precommand modifiers whose next word is still the command: `builtin hash`.
+HEREDOC_PRECOMMAND_WORDS = frozenset(
+    {"-", "builtin", "command", "nocorrect", "noglob", "time"}
+)
 HEREDOC_DECLARATION_WORDS = frozenset(
     {"declare", "export", "local", "readonly", "typeset"}
 )
@@ -2883,6 +2887,7 @@ def _command_runs_a_shell(text: str) -> bool:
             not previous
             or is_shell_separator(previous)
             or previous in SHELL_CONTROL_PREFIX_TOKENS
+            or previous in HEREDOC_PRECOMMAND_WORDS
             or bool(ASSIGNMENT_RE.match(previous))
         )
         # A consumer name the command redefines may no longer be the consumer.

@@ -24515,6 +24515,26 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     "[default-delivery:",
                 ),
                 (
+                    'builtin hash -p /tmp/evil/cat cat; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'noglob hash -p /tmp/evil/cat cat; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'nocorrect alias cat=dash; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    'time hash -p /tmp/evil/cat cat; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
+                    '- alias cat=dash; cat <<EOF\ngit push origin HEAD:main\nEOF',
+                    "[default-delivery:",
+                ),
+                (
                     'PATH=/tmp/evil:$PATH; cat <<EOF\ngit push origin HEAD:main\nEOF',
                     "[default-delivery:",
                 ),
