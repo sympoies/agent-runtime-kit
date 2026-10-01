@@ -17,8 +17,10 @@ Prereqs:
 - Live `--apply` refreshes run from a durable primary checkout, not a linked
   git worktree or a Codex transient worktree under `$CODEX_HOME/worktrees`.
 - First-time host bootstrap has already been handled by `scripts/setup.sh`.
-- `git` and `python3` are available. `agent-runtime >=0.22.4` is required for
-  `--apply` refreshes because live sync uses `agent-runtime prune-stale`.
+- `git` and Python 3.11+ are available; the script resolves the interpreter
+  itself (`AGENT_RUNTIME_PYTHON` overrides). `agent-runtime >=0.22.4` is
+  required for `--apply` refreshes because live sync uses
+  `agent-runtime prune-stale`.
 - The source checkout passes
   `bash scripts/ci/skill-governance-audit.sh --check-counts`; sync checks
   count freshness but never runs update mode.

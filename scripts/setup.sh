@@ -31,6 +31,8 @@ CODEX_PLUGIN_REGISTRY_SURFACE="not-run"
 DOCS_PREFLIGHT_SUMMARY="not-run"
 SCRIPT_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_TOOLS_MANIFEST="$SCRIPT_REPO_ROOT/manifests/cli-tools.yaml"
+# shellcheck source=scripts/lib/runtime-python.sh
+. "$SCRIPT_REPO_ROOT/scripts/lib/runtime-python.sh"
 
 # -----------------------------------------------------------------------------
 # Help
@@ -58,8 +60,8 @@ For daily runtime surface refreshes, see \`scripts/sync-runtime-surfaces.sh\`.
 Options:
   --profile core|recommended|full
       Pick the third-party CLI install set defined in manifests/cli-tools.yaml.
-      core         minimum daily-use floor (7 tools).
-      recommended  productivity tools every author touches (~17 tools).
+      core         minimum daily-use floor (9 tools; python is macOS-only).
+      recommended  productivity tools every author touches (~19 tools).
       full         everything from core/policies/cli-tools.md.
       Default: core.
   --skip-homebrew-install
@@ -253,7 +255,7 @@ formula_field_for_key() {
 skip_formula_for_host() {
   local key="$1"
   case "$key" in
-    hammerspoon | im-select)
+    hammerspoon | im-select | python)
       [ "$(uname -s)" != "Darwin" ]
       ;;
     *)
@@ -310,6 +312,49 @@ EOF_KEYS
     printf '%s' "$missing" | sed 's/^/  - /' >&2
     exit 127
   fi
+}
+
+# The core profile installs Homebrew python@3 on macOS, so a missing
+# interpreter only blocks setup when that install will not run.
+runtime_python_install_planned() {
+  [ "$SKIP_CLI_TOOLS" = "0" ] &&
+    ! skip_formula_for_host python &&
+    profile_keys "$PROFILE" | grep -x python >/dev/null
+}
+
+publish_runtime_python() {
+  # sync-runtime-surfaces.sh inherits the same interpreter.
+  export AGENT_RUNTIME_PYTHON="$RUNTIME_PYTHON"
+  log "using $("$RUNTIME_PYTHON" --version 2>&1 | head -n 1) at $RUNTIME_PYTHON"
+}
+
+# Runs before any mutation: fail now unless the profile install provides it.
+preflight_runtime_python() {
+  if resolve_runtime_python; then
+    publish_runtime_python
+    return 0
+  fi
+  if runtime_python_install_planned; then
+    log "Python 3.11+ not found yet; profile=$PROFILE installs it with the CLI tools"
+    return 0
+  fi
+  runtime_python_missing_message
+  exit 1
+}
+
+# Runs after the CLI tools install, before the repo clone and runtime surfaces.
+ensure_runtime_python() {
+  [ -z "$RUNTIME_PYTHON" ] || return 0
+  if resolve_runtime_python; then
+    publish_runtime_python
+    return 0
+  fi
+  if [ "$DRY_RUN" = "1" ]; then
+    warn "dry-run: Python 3.11+ is expected from the CLI tools install"
+    return 0
+  fi
+  runtime_python_missing_message
+  exit 1
 }
 
 ensure_repo_clone() {
@@ -525,7 +570,11 @@ run_agent_docs_preflight() {
     fi
     require_commands agent-docs
   fi
-  require_commands python3
+  if [ "$DRY_RUN" = "1" ] && [ -z "$RUNTIME_PYTHON" ]; then
+    warn "Python 3.11+ is not installed yet during dry-run; apply will enumerate declared intents after the CLI tools install"
+    DOCS_PREFLIGHT_SUMMARY="planned via agent-docs list --docs-home $REPO_HOME_DEFAULT --project-path $REPO_HOME_DEFAULT --format json"
+    return 0
+  fi
   if [ "$DRY_RUN" = "1" ] && [ ! -f "$list_docs_home/AGENT_DOCS.toml" ] && [ -f "$SCRIPT_REPO_ROOT/AGENT_DOCS.toml" ]; then
     list_docs_home="$SCRIPT_REPO_ROOT"
     warn "using $list_docs_home to enumerate agent-docs intents during dry-run because $REPO_HOME_DEFAULT is not cloned yet"
@@ -546,7 +595,7 @@ run_agent_docs_preflight() {
   fi
 
   set +e
-  intents="$(printf '%s\n' "$list_output" | python3 -c '
+  intents="$(printf '%s\n' "$list_output" | runtime_python -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -784,10 +833,12 @@ main() {
 
   log "$PROG_NAME starting (profile=$PROFILE skip_homebrew=$SKIP_HOMEBREW_INSTALL skip_cli_tools=$SKIP_CLI_TOOLS dry_run=$DRY_RUN)"
 
+  preflight_runtime_python
   ensure_homebrew
   detect_brew_prefix
   tap_and_install_nils_cli
   install_cli_tools_profile
+  ensure_runtime_python
   ensure_repo_clone
   render_home_prompts
   ensure_home_prompts

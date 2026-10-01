@@ -461,6 +461,9 @@ bash tests/hooks/run.sh
 # and then fails every tool call at runtime. Probe the real binary so the cliff
 # is a build failure instead of a broken developer machine (#90).
 python3 tests/ci/test_hook_dispatch_budget.py
+# setup.sh and sync-runtime-surfaces.sh must resolve Python 3.11+ themselves:
+# a macOS PATH can put the system 3.9 python3 ahead of Homebrew's (#211).
+python3 tests/ci/test_runtime_python_resolver.py
 
 # -----------------------------------------------------------------------------
 # Position 14 — version-baseline mirror consistency (deterministic, no network)
