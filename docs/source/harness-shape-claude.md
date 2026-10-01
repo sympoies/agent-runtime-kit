@@ -76,15 +76,32 @@ a uniform shape:
 
 ### 2. Project-scope prompt (`./AGENTS.md`)
 
-- Claude reads from: `<repo>/AGENTS.md` natively since Claude Code 2.1.277.
-  When a repo-root `CLAUDE.md` also exists, Claude prefers it, so repositories
-  keep only `AGENTS.md` and do not add a `CLAUDE.md` import wrapper.
+- Claude reads from: `<repo>/AGENTS.md` through the builtin
+  `agents-md@builtin` plugin (Claude Code 2.1.277 or later). By default the
+  plugin loads `AGENTS.md` only when no `CLAUDE.md`, `.claude/CLAUDE.md`, or
+  `CLAUDE.local.md` exists in the working directory or any ancestor; the
+  active config directory's own `CLAUDE.md` is exempt.
+- Why the default fails here: fleet sessions run with
+  `CLAUDE_CONFIG_DIR=~/.local/state/claude-accounts/<account>`, whose
+  `CLAUDE.md` and `settings.json` are symlinks into `~/.claude/`. Claude then
+  treats `~/.claude/CLAUDE.md` as an ordinary ancestor `.claude/CLAUDE.md`,
+  which suppresses `AGENTS.md` for every repository under `$HOME`.
+- Required setting: `scripts/sync-runtime-surfaces.sh` merges
+  `pluginConfigs["agents-md@builtin"].options.instructionFiles =
+  "claude-md-and-agents-md"` into `~/.claude/settings.json` without touching
+  other keys, and its apply verification fails when the value is missing.
+  Claude honors this key only in user, `--settings`, or managed settings, not
+  in project settings. With it, a repository that has both a `CLAUDE.md`
+  importing `@AGENTS.md` and `AGENTS.md` still loads one copy, but
+  repositories keep only `AGENTS.md` and do not add an import wrapper.
 - Source: `./AGENTS.md` in this repo, the project-local shared policy file.
 - Install mechanism: not installed by `agent-runtime`; it ships as part
-  of the repo working tree.
-- Acceptance lane: covered indirectly by any test that opens this repo
-  with Claude; no specific gate.
-- Support today: **shipped (native, repo-local only)**.
+  of the repo working tree. The enabling user setting is owned by
+  `sync_claude_settings_hooks` in `scripts/sync-runtime-surfaces.sh`.
+- Acceptance lane: `meta.sync-runtime-surfaces.claude-agents-md` covers the
+  settings merge and verification; loading itself is covered indirectly by
+  any Claude session opened in this repo.
+- Support today: **shipped (repo-local, requires the managed user setting)**.
 
 ### 3. Plugin manifest (`.claude-plugin/plugin.json`)
 

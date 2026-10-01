@@ -107,14 +107,15 @@ surfaces:
           - AGENTS.md
       claude:
         state: shipped
-        mechanism: "repo working tree; Claude Code reads `./AGENTS.md` natively, so no repo-root `CLAUDE.md` is needed"
+        mechanism: "repo working tree; Claude Code loads `./AGENTS.md` only with the sync-managed user setting `pluginConfigs.agents-md@builtin.options.instructionFiles = claude-md-and-agents-md`, so no repo-root `CLAUDE.md` is needed"
         source_artifacts:
           - AGENTS.md
+          - scripts/sync-runtime-surfaces.sh
         min_product: "2.1.277"
         min_nils_cli: "n/a"
         acceptance:
           - kind: ci
-            note: "—"
+            note: "meta.sync-runtime-surfaces.claude-agents-md smoke (settings merge + verify)"
             descriptive_only: true
           - kind: live
             note: "live Claude session in repo"

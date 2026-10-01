@@ -74,7 +74,8 @@ the acceptance lane, and the current ship state.
 
 - Hermes reads from: `AGENTS.md` or `.hermes.md` discovered from the working
   directory up to the git root.
-- Source: repo-local `AGENTS.md`, also read natively by Codex and Claude.
+- Source: repo-local `AGENTS.md`, also read natively by Codex and by Claude
+  through its managed agents-md setting.
 - Install mechanism: working tree only; no render step.
 - Support today: **shipped**.
 

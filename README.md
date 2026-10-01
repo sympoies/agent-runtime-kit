@@ -227,7 +227,8 @@ AGENT_HOME.md -- render/install --> $HERMES_HOME/skills/development-policy/SKILL
                                       ^ referenced by $HERMES_HOME/SOUL.md
 
 AGENTS.md       <- project-scope policy for this repo, read natively by
-                   Codex, Claude Code, and Hermes
+                   Codex and Hermes, and by Claude Code through the
+                   sync-managed agents-md user setting
 ```
 
 `AGENT_HOME.md` intentionally has a different name from `AGENTS.md` and
