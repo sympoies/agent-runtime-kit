@@ -867,11 +867,12 @@ SEMANTIC_COMMIT_NON_AUTHORING_FLAGS = frozenset(
     {"-h", "--help", "--dry-run", "--validate-only"}
 )
 # Expansion that can change how many words reach semantic-commit's parser:
-# parameter, command, or arithmetic expansion, a glob, an extglob, or a brace
+# parameter, command, or arithmetic expansion, a glob, an extglob, a zsh glob
+# qualifier (`word(N)` can expand to nothing) or alternation group, or a brace
 # list. Parsed words have lost their quotes, so a quoted literal that merely
 # contains one of these is treated the same way.
 _SEMANTIC_COMMIT_DYNAMIC_WORD_RE = re.compile(
-    r"[$`*?\[]|[+@!]\(|\{[^}]*(?:,|\.\.)[^}]*\}"
+    r"[$`*?\[]|[+@!]\(|\)$|\([^)]*\||\{[^}]*(?:,|\.\.)[^}]*\}"
 )
 
 
@@ -879,8 +880,10 @@ def _semantic_commit_word_is_dynamic(token: str) -> bool:
     return bool(_SEMANTIC_COMMIT_DYNAMIC_WORD_RE.search(token))
 
 
-def semantic_commit_arguments_author(arguments: list[str]) -> bool:
-    """Whether a ``semantic-commit`` argv tail authors a commit.
+def _scan_semantic_commit_arguments(
+    arguments: list[str],
+) -> tuple[bool, bool, bool, str]:
+    """Return ``(authors, help_requested, writes_message_out, repo)``.
 
     A non-authoring flag counts only when every word before it is a literal,
     known option or a known option's literal value, as in the DSH port
@@ -890,38 +893,55 @@ def semantic_commit_arguments_author(arguments: list[str]) -> bool:
     redirection is removed by the shell before semantic-commit parses, so in an
     option slot it is skipped. Parsed words have lost their quotes, so one in a
     value slot may be a real redirection (the value is then the next word) or a
-    quoted literal value; neither reading is provable, so it authors.
+    quoted literal value; neither reading is provable, so it authors. The rest
+    of the argv is still read for ``--repo`` and ``--message-out``.
     """
+    authors: bool | None = None
+    help_requested = False
+    writes_message_out = False
+    repo = ""
     index = 1
     while index < len(arguments):
         token = arguments[index]
         if _REDIRECT_TOKEN_RE.match(token):
             index += 2 if _redirect_consumes_next(token) else 1
             continue
-        if _semantic_commit_word_is_dynamic(token) or token == "--":
-            return True
+        if token == "--":
+            break
+        if authors is None and _semantic_commit_word_is_dynamic(token):
+            authors = True
         if token in SEMANTIC_COMMIT_NON_AUTHORING_FLAGS:
-            return False
-        name = token.split("=", 1)[0] if token.startswith("--") else token
-        if token in {"-m", "-F"} or token in SEMANTIC_COMMIT_VALUE_OPTIONS:
-            if index + 1 < len(arguments):
-                value = arguments[index + 1]
-                if _semantic_commit_word_is_dynamic(value) or _REDIRECT_TOKEN_RE.match(
-                    value
+            help_requested = help_requested or token in {"-h", "--help"}
+            if authors is None:
+                authors = False
+            index += 1
+            continue
+        attached = token.startswith("--") and "=" in token
+        option = token.split("=", 1)[0] if attached else token
+        if option in SEMANTIC_COMMIT_VALUE_OPTIONS or token in {"-m", "-F"}:
+            if attached:
+                value = token.split("=", 1)[1]
+                index += 1
+            else:
+                value = arguments[index + 1] if index + 1 < len(arguments) else ""
+                if authors is None and (
+                    _semantic_commit_word_is_dynamic(value)
+                    or _REDIRECT_TOKEN_RE.match(value)
                 ):
-                    return True
-            index += 2
+                    authors = True
+                index += 2
+            if option == "--message-out":
+                writes_message_out = True
+            elif option == "--repo" and value:
+                repo = value
             continue
-        if name in SEMANTIC_COMMIT_VALUE_OPTIONS or (
-            token.startswith(("-m", "-F")) and len(token) > 2
-        ):
+        if token.startswith(("-m", "-F")) and len(token) > 2:
             index += 1
             continue
-        if token in SEMANTIC_COMMIT_FLAGS:
-            index += 1
-            continue
-        return True
-    return True
+        if token not in SEMANTIC_COMMIT_FLAGS and authors is None:
+            authors = True
+        index += 1
+    return authors is not False, help_requested, writes_message_out, repo
 
 
 def semantic_commit_invocation_effects(
@@ -929,12 +949,12 @@ def semantic_commit_invocation_effects(
 ) -> tuple[bool, bool, str]:
     """Return ``(authors_commit, writes_files, repo)`` for an argv tail.
 
-    Whether it authors is ``semantic_commit_arguments_author``: an operational
-    flag counts only after every earlier word is proven literal and known, so
-    a filename such as ``-h`` or ``--dry-run`` cannot masquerade as one. A
-    dry-run or validate-only invocation that writes ``--message-out`` needs
-    checkout writer admission but does not author a commit. Help exits before
-    work.
+    Whether it authors follows ``_scan_semantic_commit_arguments``: an
+    operational flag counts only after every earlier word is proven literal and
+    known, so a filename such as ``-h`` or ``--dry-run`` cannot masquerade as
+    one. A dry-run or validate-only invocation that writes ``--message-out``
+    needs checkout writer admission but does not author a commit. Help exits
+    before work.
     """
 
     if not arguments or arguments[0] not in {
@@ -944,41 +964,10 @@ def semantic_commit_invocation_effects(
         "default-branch",
     }:
         return False, False, ""
-
-    help_requested = False
-    writes_message_out = False
-    repo = ""
-    index = 1
-    while index < len(arguments):
-        token = arguments[index]
-        if token == "--":
-            break
-        if token in {"-h", "--help"}:
-            help_requested = True
-            index += 1
-            continue
-
-        option = token.split("=", 1)[0] if token.startswith("--") else token
-        if option in SEMANTIC_COMMIT_VALUE_OPTIONS:
-            attached = token.startswith("--") and "=" in token
-            value = token.split("=", 1)[1] if attached else ""
-            if not attached and index + 1 < len(arguments):
-                value = arguments[index + 1]
-            if option == "--message-out":
-                writes_message_out = True
-            elif option == "--repo" and value:
-                repo = value
-            index += 1 if attached else 2
-            continue
-        if token in {"-m", "-F"}:
-            index += 2
-            continue
-        if (token.startswith("-m") or token.startswith("-F")) and len(token) > 2:
-            index += 1
-            continue
-        index += 1
-
-    if semantic_commit_arguments_author(arguments):
+    authors, help_requested, writes_message_out, repo = (
+        _scan_semantic_commit_arguments(arguments)
+    )
+    if authors:
         return True, True, repo
     if help_requested:
         return False, False, repo
@@ -2113,6 +2102,13 @@ def _shield_dynamic_word_parentheses(command: str) -> str:
     return "".join(out)
 
 
+def _odd_dollar_run_ends_at(text: str, index: int) -> bool:
+    start = index
+    while start > 0 and text[start - 1] == "$":
+        start -= 1
+    return (index - start) % 2 == 0
+
+
 def _shield_parameter_expansion_operators(command: str) -> str:
     """Keep ``;``, ``&``, and ``|`` inside an unquoted ``${...}`` in its word.
 
@@ -2150,7 +2146,10 @@ def _shield_parameter_expansion_operators(command: str) -> str:
             out.append(char)
             index += 1
             continue
-        if command.startswith("${", index):
+        if command.startswith("${", index) and _odd_dollar_run_ends_at(
+            command, index
+        ):
+            # `$${` is the `$$` PID expansion and a literal `{`, not `${`.
             try:
                 end = _parameter_expansion_end(command, index, 0, False)
             except _SubstitutionTooDeep:
@@ -2817,9 +2816,11 @@ def _heredoc_feeds_data_consumer(line: str, op_start: int) -> bool:
     """Whether a literal data consumer reads this body and nothing reads it on.
 
     A consumer whose output feeds a pipe or a process substitution could hand
-    the body to a shell, so the body then stays visible as before.
+    the body to a shell, so the body then stays visible as before; so does
+    every body of a command that also runs a shell anywhere
+    (``_command_runs_a_shell``).
     """
-    if ">(" in line:
+    if ">(" in line or "<(" in line:
         return False
     invocation = invocation_tokens(_simple_command_spanning(line, op_start))
     if not invocation or any(marker in invocation[0] for marker in "$`*?[~"):
@@ -2831,6 +2832,37 @@ def _heredoc_feeds_data_consumer(line: str, op_start: int) -> bool:
     return executable in HEREDOC_DATA_CONSUMERS or bool(
         _HEREDOC_DATA_CONSUMER_RE.fullmatch(executable)
     )
+
+
+HEREDOC_SHELL_WORDS = frozenset(
+    {*SHELL_HEREDOC_EXECUTORS, "busybox", "csh", "fish", "mksh", "tcsh", "yash"}
+)
+HEREDOC_SHELL_BUILTINS = frozenset({".", "eval", "exec", "source"})
+
+
+def _command_runs_a_shell(text: str) -> bool:
+    """Whether command text outside here-doc bodies may run a shell script.
+
+    A body written to a file, grouped into a pipe, or substituted into another
+    command can still reach a shell elsewhere in the command, so any shell name
+    counts, and ``.``/``source``/``eval``/``exec`` count in command position.
+    Text that cannot be tokenized counts too.
+    """
+    tokens = _checked_shell_tokens(normalize_command_separators(text))
+    if tokens is None:
+        return True
+    previous = ""
+    for token in tokens:
+        if PurePosixPath(token).name in HEREDOC_SHELL_WORDS:
+            return True
+        if token in HEREDOC_SHELL_BUILTINS and (
+            not previous
+            or is_shell_separator(previous)
+            or previous in SHELL_CONTROL_PREFIX_TOKENS
+        ):
+            return True
+        previous = token
+    return False
 
 
 def _has_unescaped(text: str, markers: tuple[str, ...]) -> bool:
@@ -2867,7 +2899,9 @@ def _expanded_heredoc_body_residue(body: list[str]) -> list[str]:
     return [": " + " ".join(placeholders)] if placeholders else []
 
 
-def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
+def strip_heredoc_bodies(
+    command: str, *, inert_only: bool = False, reduce_data_bodies: bool = True
+) -> str:
     """Drop here-doc body (and closing-delimiter) lines from ``command``.
 
     A here-doc body is data fed to a command, not executed by the shell, so its
@@ -2892,6 +2926,7 @@ def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
         return command
     lines = command.split("\n")
     pending: list[tuple[str, bool, bool, bool, bool, list[str]]] = []
+    reduced: list[bool] = []
     kept: list[str] = []
     logical_scan_parts: list[str] = []
     logical_raw_lines: list[str] = []
@@ -2909,8 +2944,9 @@ def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
                 )
             return
         if inert_only and not delimiter_quoted:
-            if data_consumer:
+            if data_consumer and reduce_data_bodies:
                 kept.extend(_expanded_heredoc_body_residue(body))
+                reduced.append(True)
                 return
             # Expandable body: keep it visible to the guards verbatim.
             kept.extend(body)
@@ -2971,7 +3007,12 @@ def strip_heredoc_bodies(command: str, *, inert_only: bool = False) -> str:
         body,
     ) in pending:
         close_body(preserve_body, delimiter_quoted, data_consumer, body)
-    return "\n".join(kept)
+    result = "\n".join(kept)
+    if reduced and _command_runs_a_shell(result):
+        return strip_heredoc_bodies(
+            command, inert_only=inert_only, reduce_data_bodies=False
+        )
+    return result
 
 
 def simple_commands(command: str, *, strip_heredocs: bool = False) -> list[list[str]]:

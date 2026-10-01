@@ -151,6 +151,15 @@ EXPANDED_EXECUTABLE_PATH_RE = re.compile(
     r"(?:[A-Za-z0-9._+@%=-]+/)*(?P<basename>[A-Za-z0-9._+@%=-]+)$"
 )
 DIRECTORY_EXPANSION_CHARACTERS = "$`*?[]~"
+# Reserved and precommand words that can precede an assignment the shell still
+# performs: `! PATH=...`, `then PATH=...`, `time PATH=...`, zsh `nocorrect`.
+ASSIGNMENT_PREFIX_WORDS = frozenset(
+    {
+        "!", "(", "{", "builtin", "command", "coproc", "do", "elif", "else",
+        "exec", "if", "noglob", "nocorrect", "then", "time", "-p", "until",
+        "while",
+    }
+)
 SHELL_ASSIGNMENT_WORD_RE = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?="
 )
@@ -184,6 +193,9 @@ ENV_CONTEXT_OPTION_PREFIXES = (
     "--path=",
     "--split-string=",
 )
+# Plumbing that publishes refs without going through `git push`, so the push
+# classifier never sees its destination.
+GIT_RAW_PUBLISH_COMMANDS = frozenset({"http-push", "send-pack"})
 GIT_NON_DELIVERY_COMMANDS_BASELINE = frozenset(
     {
         "add",
@@ -1619,7 +1631,10 @@ def shell_command_changes_executable_resolution(
     # Only a word in assignment position assigns: the leading words of the
     # simple command, or a declaration builtin's operands. A `path=...` grep
     # pattern or other argument is data.
-    for token in invocation_without_redirections(simple_command):
+    words = invocation_without_redirections(simple_command)
+    while words and words[0] in ASSIGNMENT_PREFIX_WORDS:
+        words = words[1:]
+    for token in words:
         if not SHELL_ASSIGNMENT_WORD_RE.match(token):
             break
         if resolution_assignment(token):
@@ -1917,6 +1932,13 @@ def default_branch(
     """
     resolution = resolve_default_branch(probe, cwd, remote, config_arguments)
     return resolution.name if resolution.corroborated else ""
+
+
+def raw_publish_detail(subcommand: str) -> str:
+    return (
+        f"`git {subcommand}` publishes refs outside the push classifier, so its "
+        f"destination was not checked. {REMEDY_FEATURE_PUSH}"
+    )
 
 
 def missing_cached_head_detail(cwd: Path, remote: str = "origin") -> str:
@@ -2802,6 +2824,8 @@ def invocation_block_reason(
             )
         if subcommand == "push" and push_shape(action)[0]:
             return ""
+        if subcommand in GIT_RAW_PUBLISH_COMMANDS:
+            return unclassifiable(raw_publish_detail(subcommand))
         known_builtin = (
             subcommand != "push" and subcommand in probe.builtin_commands()
         )
@@ -2856,6 +2880,8 @@ def invocation_block_reason(
                 f"classifiable command. {POLICY}"
             )
         subcommand, action = resolved
+        if subcommand in GIT_RAW_PUBLISH_COMMANDS:
+            return unclassifiable(raw_publish_detail(subcommand))
         if subcommand != "push":
             if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
                 return rewrite_reason(subcommand, action)
@@ -3176,10 +3202,11 @@ def command_block_reason(
             if invocation_is_unresolved_nested(candidate):
                 word = invocation[1] if len(invocation) > 1 else ""
                 return unresolved(
-                    f"{classification_evidence('opaque-nested-command', 'depth-limit', word=word)} "
+                    f"{classification_evidence('opaque-nested-command', 'work-limit', word=word)} "
                     f"The words after {shell_word_label(word)} could hide a nested "
-                    "command beyond the classifier's bounded depth; split the "
-                    "command or spell its executable words literally."
+                    "command beyond the classifier's bounded work budget (nesting "
+                    "or word count); split the command or spell its executable "
+                    "words literally."
                 )
             reason = classify(candidate)
             if reason and not waiver_admits(candidate, reason, waiver):

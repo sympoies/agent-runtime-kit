@@ -429,8 +429,10 @@ quoted-delimiter here-doc bodies stay literal; an unquoted-delimiter here-doc
 body expands every substitution (it has no quotes or comments, so an
 apostrophe there stays literal), and inside a substitution its lines are
 classified like any other script text. When that body feeds `cat`, `tee`,
-`python`/`python3`, or `jq` and no pipe or process substitution reads the
-output on, only its substitutions are classified; the rest is data. Both Git
+`python`/`python3`, or `jq`, no pipe or process substitution reads the output
+on, the body has no line continuation, and nothing else in the command runs a
+shell (a shell name anywhere, or `.`/`source`/`eval`/`exec` in command
+position), only its substitutions are classified; the rest is data. Both Git
 guards parse strictly: shell comments are dropped before tokenizing (only a
 `#` after an unescaped blank, newline, `;`, or `&`, outside `[[ ]]` and any
 open parenthesized group, counts as a comment), and a
@@ -447,8 +449,10 @@ After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
 flattened shell scan: nested removals never make an outer executable trusted.
 Redirections are ignored when judging such a command, so a query such as
 `alias name 2>/dev/null` stays query-only. Only a word in assignment position
-assigns `PATH` or `path`: a leading assignment or a declaration builtin's
-operand, never an argument such as a `grep -o 'path=[^ ]*'` pattern.
+assigns `PATH` or `path`: a leading assignment (also after `!`, `{`, `then`,
+`do`, `time`, or zsh `nocorrect`) or a declaration builtin's operand, never an
+argument such as a `grep -o 'path=[^ ]*'` pattern. `$${` is the `$$` PID
+expansion followed by a literal `{`, so it is not read as `${`.
 It resolves the selected remote's cached local default branch and blocks raw `git push`
 forms that target it, including force, force-with-lease, deletion, wildcard,
 matching-branch (`:` / `+:`), and implicit current-default pushes. It also
@@ -464,7 +468,10 @@ repo push-default` invocation available. A semantic-commit `--help`,
 `--dry-run`, or `--validate-only` counts only when every word before it is a
 literal, known option or value: a dynamic word, an unknown option, or a
 redirection-like word in a value slot could swallow it in semantic-commit's
-own parser, so the invocation is classified as authoring. Exact authorized `semantic-commit
+own parser, so the invocation is classified as authoring. A zsh glob
+qualifier or alternation group (`word(N)`, `(a|b)`) counts as dynamic. Raw
+`git send-pack` and `git http-push` publish refs outside the push classifier
+and fail closed toward `git-cli push`. Exact authorized `semantic-commit
 default-branch` preview and mutation forms are admitted only through the active
 trusted managed CLI with a full expected HEAD, explicit absolute repository,
 primary checkout, authoritative

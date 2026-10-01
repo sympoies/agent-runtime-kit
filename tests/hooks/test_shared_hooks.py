@@ -24331,6 +24331,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "grep -o 'path=[^ ;]*\\|/[^ ;]*review_broker[^ ;]*' | head -3",
                 "echo $(( $(stat -c%s README.md) - 400000 ))",
                 "echo $(( $x + 1 ))",
+                "D=/srv/missing; git -C $D count-objects -v",
             )
             for command in allowed:
                 with self.subTest(command=command):
@@ -24433,6 +24434,47 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     "cat <<EOF\nnote\nEO\\\nF\ngit push origin HEAD:main\nEOF",
                     "[default-delivery: blocked]",
                 ),
+                (
+                    "bash <(cat <<EOF\ngit push origin HEAD:main\nEOF\n)",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "{ cat <<EOF\ngit push origin HEAD:main\nEOF\n} | bash",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "cat <<EOF > x.sh\ngit push origin HEAD:main\nEOF\nbash x.sh",
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    'echo "$(( $(git push origin HEAD:main) + 1 ))"',
+                    "[default-delivery: blocked]",
+                ),
+                (
+                    "echo $${x;git push origin HEAD:main;true}",
+                    "[default-delivery: blocked]",
+                ),
+                ("git send-pack origin HEAD:main", "[default-delivery:"),
+                (
+                    "D=/srv/missing; git -C $D send-pack origin HEAD:main",
+                    "[default-delivery:",
+                ),
+                ("local PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                ("! PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                ("{ PATH=/tmp/evil; }; printf --version", "rule=opaque-shell-resolution"),
+                (
+                    "if true; then PATH=/tmp/evil; fi; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
+                (
+                    "while PATH=/tmp/evil; do break; done; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
+                ("time PATH=/tmp/evil; printf --version", "rule=opaque-shell-resolution"),
+                (
+                    "nocorrect PATH=/tmp/evil; printf --version",
+                    "rule=opaque-shell-resolution",
+                ),
             )
             for command, fragment in still_classified:
                 with self.subTest(command=command):
@@ -24481,6 +24523,14 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "--body-bullet --dry-run",
                 f"semantic-commit commit {subject} --body-bullet '2>x' "
                 "--body-bullet --dry-run",
+                "semantic-commit commit -m 'feat: x' --message-out nofile(N) --dry-run",
+                "semantic-commit commit --type feat --subject x --body-bullet "
+                "nofile(N) --validate-only",
+                # semantic-commit rejects a positional word before any work, but
+                # the guard cannot prove that, so it stays authoring (as in the
+                # DSH port).
+                "semantic-commit squash HEAD~1 --dry-run",
+                "semantic-commit fixup HEAD~1 --help",
             )
             for command in authoring:
                 with self.subTest(command=command):
@@ -24502,6 +24552,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "semantic-commit commit --validate-only --message 'feat: x'",
                 "semantic-commit commit --quiet --json --help",
                 "semantic-commit fixup --help",
+                "semantic-commit commit --dry-run --message 'feat(hooks): add x'",
+                "semantic-commit squash --dry-run --target HEAD~1",
             )
             for command in inspection:
                 with self.subTest(command=command):
@@ -24554,6 +24606,37 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     self.assertEqual(code, 0, stderr)
                     for fragment in fragments:
                         self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_names_an_exhausted_candidate_budget(
+        self,
+    ) -> None:
+        # The opaque-candidate scan also stops at its word budget, not only at
+        # its depth limit, so the refusal names a work limit.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            command = "$tool " + " ".join(["word"] * 5000)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(command),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "operation=work-limit")
+            self.assertNotIn("depth", str((decision or {}).get("reason", "")))
+
+    def test_semantic_commit_effects_ignore_redirections(self) -> None:
+        # The shell removes a redirection before semantic-commit parses, so it
+        # never fills `--repo` or hides `--message-out`.
+        effects = hook_common.semantic_commit_invocation_effects
+        self.assertEqual(
+            effects(["commit", "2>/dev/null", "--dry-run", "--message-out", "f"]),
+            (False, True, ""),
+        )
+        self.assertEqual(
+            effects(["commit", ">", "/dev/null", "--repo", "/srv/r", "--dry-run"]),
+            (False, False, "/srv/r"),
+        )
 
     def test_default_delivery_hook_names_a_missing_cached_origin_head(
         self,
