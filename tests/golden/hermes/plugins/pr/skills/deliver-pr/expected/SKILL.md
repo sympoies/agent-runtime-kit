@@ -188,33 +188,19 @@ plan-branch target and lane checkpoint authority belong to that outcome.
 
 ## Review owner selection
 
-Before starting pre-merge review, resolve `AGENT_REVIEWER_SESSION` or the
-coordinator's explicit designated reviewer assignment using
-`core/policies/session-coordination.md`. With no assignment, use the existing
-self-run review and command blocks below unchanged.
+Resolve `AGENT_REVIEWER_SESSION` or the coordinator's explicit assignment
+through `core/policies/session-coordination.md`. No assignment uses the existing
+self-run review and command blocks unchanged.
 
-With an assignment, hand off repository/PR identity, base and head SHA,
-test-first evidence, validation actually run, known limits, and explicit
-ledger/publication ownership through the authenticated mailbox. Stop at
-`awaiting designated review`; do not enter the self-run scope, ledger, or
-publication blocks below. The reviewer owns the risk-selected specialist wave,
-governed publication, finding observation before repair push, and closed-set
-closure. The worker remains available for repairs.
+The designated reviewer owns specialists, publication, ledger observation
+before repair push, and closure. Hand off the policy's PR/base/head,
+test-first evidence, validation, limits, and ownership fields through the
+mailbox, then stop at `awaiting designated review`. Skip self-run blocks below.
+Only CLI-verified current-head publication admits merge. Return unavailable
+reviewers to the coordinator without self-approval.
 
-Only a mechanically verified published review outcome and ledger for the
-current provider head admit this path to the ordinary merge gates. Mailbox
-`pass`, stale-head publication, missing capability, and reviewer unavailability
-do not. Return unavailable/closed reviewers and bounded timeout to the
-coordinator without self-approval. Exactly one writer owns each PR head;
-reassignment requires explicit handover. Checks, final review-state read-back,
-convergence, threads, tasks, expected-head merge, and cleanup remain mandatory.
-
-The assigned macro's `awaiting_designated_review` failure retains the created
-or adopted PR number/URL; use that reviewable for the handoff below. Resolve
-`DESIGNATED_REVIEW_AUTHOR` from coordinator configuration (the governed App or
-portable reviewer identity). Prepare the private `REVIEW_HANDOFF_BODY_FILE`
-with the policy's required evidence and reply fields before sending it. This
-branch does not enter any of the existing self-run blocks.
+Use the assigned macro failure's retained PR number/URL. Configure
+`DESIGNATED_REVIEW_AUTHOR` and prepare private `REVIEW_HANDOFF_BODY_FILE`.
 
 ```bash
 # Designated-review route only.
@@ -250,22 +236,16 @@ if [ -n "${AGENT_REVIEWER_SESSION:-}" ]; then
   agent-session message send --from "$AGENT_SESSION_ID" \
     "${REVIEWER_MAILBOX_ARGS[@]}" --body-file "$REVIEW_HANDOFF_BODY_FILE" \
     --idempotency-key "review-handoff-$PR_NUMBER-$HANDOFF_HEAD" || exit $?
-  # Await the correlated reviewer result through bounded mailbox waits. On a
-  # repair, require its old-head observation receipt before pushing. On
-  # unavailability, record review-handoff return and report to the coordinator.
-  # Re-run this read-only admission after closure; mailbox pass is insufficient.
+  # Bounded mailbox wait and repair/return follow session-coordination policy.
+  # Recheck after closure; mailbox pass is insufficient.
   forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
     pr review-handoff check "$PR_NUMBER" --expected-head "$HANDOFF_HEAD" || exit $?
 fi
 ```
 
-A missing CLI capability stops only the assigned branch. The compatibility
-floor and all unassigned invocations below remain unchanged. `check` verifies
-the provider head, latest appointed-author canonical report after handover,
-and the reviewer-owned closed ledger. The final merge repeats those checks.
-A failed mailbox send retains writer ownership; return or retry the explicit
-handoff, never enter self-review. Reassignment is a coordinator operation with
-retained head/tip CAS; an existing handoff is never overwritten implicitly.
+Capability failure affects only assignment; keep the floor and unassigned
+commands unchanged. After closure, recheck, skip self-review, and satisfy the
+ordinary merge gates. Retry/return never implicitly changes ownership.
 
 ## Review Profile Selection
 
