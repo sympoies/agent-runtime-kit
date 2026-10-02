@@ -202,46 +202,10 @@ reviewers to the coordinator without self-approval.
 Use the assigned macro failure's retained PR number/URL. Configure
 `DESIGNATED_REVIEW_AUTHOR` and prepare private `REVIEW_HANDOFF_BODY_FILE`.
 
-```bash
-# Designated-review route only.
-if [ -n "${AGENT_REVIEWER_SESSION:-}" ]; then
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    pr review-handoff --help >/dev/null 2>&1 || {
-    echo "awaiting designated review: CLI capability unavailable; return to coordinator" >&2
-    exit 69
-  }
-  : "${DESIGNATED_REVIEW_AUTHOR:?bind the configured native review author}"
-  : "${REVIEW_HANDOFF_BODY_FILE:?prepare the private evidence handoff}"
-  HANDOFF_VIEW="$(forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    --format json pr view "$PR_NUMBER")" || exit $?
-  HANDOFF_HEAD="$(printf '%s\n' "$HANDOFF_VIEW" | \
-    jq -er 'select(.ok == true) | .data.head_sha')" || exit $?
-  HANDOFF_BASE_SHA="$(git rev-parse "$BASE_REF")" || exit $?
-  HANDOFF_STATE="$(forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
-    --format json pr review-handoff inspect "$PR_NUMBER")" || exit $?
-  if printf '%s\n' "$HANDOFF_STATE" | jq -e '.ok == true and .data.handoff == null' >/dev/null; then
-    HANDOFF_TIP="$(printf '%s\n' "$HANDOFF_STATE" | \
-      jq -er 'select(.ok == true) | .data.state_tip_digest // "none"')" || exit $?
-    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-      pr review-handoff assign "$PR_NUMBER" \
-      --reviewer-session "$AGENT_REVIEWER_SESSION" \
-      --review-author "$DESIGNATED_REVIEW_AUTHOR" \
-      --base-sha "$HANDOFF_BASE_SHA" --expected-head "$HANDOFF_HEAD" \
-      --expected-state "$HANDOFF_TIP" || exit $?
-  fi
-  REVIEWER_MAILBOX_ARGS=(--to "${AGENT_REVIEWER_SESSION%%@*}")
-  case "$AGENT_REVIEWER_SESSION" in
-    *@*) REVIEWER_MAILBOX_ARGS+=(--to-machine "${AGENT_REVIEWER_SESSION#*@}") ;;
-  esac
-  agent-session message send --from "$AGENT_SESSION_ID" \
-    "${REVIEWER_MAILBOX_ARGS[@]}" --body-file "$REVIEW_HANDOFF_BODY_FILE" \
-    --idempotency-key "review-handoff-$PR_NUMBER-$HANDOFF_HEAD" || exit $?
-  # Bounded mailbox wait and repair/return follow session-coordination policy.
-  # Recheck after closure; mailbox pass is insufficient.
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-    pr review-handoff check "$PR_NUMBER" --expected-head "$HANDOFF_HEAD" || exit $?
-fi
-```
+Run the assigned-only command fence in
+`references/DESIGNATED_REVIEW_HANDOFF.md`; validate active ownership before
+sending private evidence and bind mailbox replay to the assignment digest.
+
 
 Capability failure affects only assignment; keep the floor and unassigned
 commands unchanged. After closure, recheck, skip self-review, and satisfy the

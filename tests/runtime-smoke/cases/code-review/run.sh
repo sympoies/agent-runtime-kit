@@ -663,6 +663,7 @@ run_designated_review_contract_probe() {
   grep -Fq 'before a repair is pushed' "$policy" || return 1
   grep -Fq 'coordinator' "$policy" || return 1
   grep -Fq 'correlated `completed` or `failed`' "$policy" || return 1
+  rendered_contract_assert_reference pr deliver-pr references/DESIGNATED_REVIEW_HANDOFF.md
   rendered_contract_assert_all_contain pr deliver-pr 'awaiting designated review'
   rendered_contract_assert_all_contain code-review code-review-specialists 'designated reviewer'
 }

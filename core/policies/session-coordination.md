@@ -112,15 +112,26 @@ owner still owns checks, final provider read-back, convergence, thread/task and
 expected-head gates, merge, and terminal cleanup.
 
 Stable assignment, writer fencing, and published-current-head admission belong
-to the released `forge-cli pr review-handoff assign|inspect|check|return` surface.
-Bind the configured public review author explicitly; mailbox addresses remain
-private, and only opaque session digests reach the provider ledger. Preserve
-`AGENT_REVIEWER_SESSION` in both parents. On an observed reviewer failure, the
-worker records `review-handoff return` with the retained tip and bounded reason
-before reporting the coordinator decision. Do not emulate them with a second local
-ledger or weaken a merge guard. If that capability is absent, the assigned path
-fails closed and reports the dependency to the coordinator; the unassigned
-path continues through its existing commands.
+to released `forge-cli pr review-handoff assign|inspect|check|surrender|recover`.
+`inspect` binds the configured reviewer, public author, and current head before
+a private send; provider base and assignment digest/generation come from that
+read. Bind `AGENT_REVIEW_ASSIGNMENT_GENERATION` in the reviewer environment.
+Opaque session digests reach the provider ledger; mailbox addresses stay private.
+
+Ownership moves by explicit records. Ordinary reassignment requires a
+reviewer-owned `surrender` of the current generation. An unavailable/closed
+reviewer requires the owning coordinator's separate `recover`, with retained
+head/tip and a bounded reason; it records revocation and increments generation.
+Only then may the coordinator assign a fresh interval. Stale-generation writes
+fail on tip/generation re-read. If recovery races an already-admitted old write,
+the higher recovery generation wins; the CLI reports ignored stale children.
+Same-generation and unassigned forks still fail closed. Never reconstruct or
+silently merge competing state. Mailbox replay keys include the assignment
+record digest and head, distinguishing repositories and same-head handovers.
+
+Do not emulate this with a second ledger or weaken merge guards. Missing
+capability fails closed only for assignment and reports to the coordinator;
+unassigned commands and self-run behavior remain unchanged.
 
 ## Long-running mailbox checkpoints
 
