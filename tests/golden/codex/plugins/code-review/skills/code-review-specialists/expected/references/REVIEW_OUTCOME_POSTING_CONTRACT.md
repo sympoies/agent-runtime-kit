@@ -36,6 +36,18 @@ delivery-owner outcomes are post-disposition comments posted after the owner has
 synthesized findings, decided repairs or tradeoffs, and chosen the final review
 decision.
 
+## Designated publication owner
+
+A designated reviewer session takes explicit ownership of the ledger and
+publication for the assigned PR head under
+`core/policies/session-coordination.md`. It runs the same publication contract
+below, including publisher identity, head binding, and findings-before-repair
+ordering. The worker does not publish a competing report, append an
+observation, or substitute a mailbox verdict for provider evidence. Handover
+and final replies carry the published review URL, author, exact head, and
+ledger tip for independent read-back. Without an assignment, the existing
+parent publication path remains unchanged.
+
 ## Canonical Report Artifacts
 
 Render the complete body and actionable thread file from the same admitted,

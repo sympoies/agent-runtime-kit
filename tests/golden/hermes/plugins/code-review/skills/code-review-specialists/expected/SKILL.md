@@ -109,6 +109,15 @@ Every value rendered into a provider body is published verbatim, so
 must be portable identifiers — a repository-relative path, a command, or a run
 id — and never an absolute local path or a `$HOME`-prefixed artifact path.
 
+## Review parent selection
+
+For delivery with a designated reviewer session, that reviewer owns this
+read-only wave and the parent publication/ledger duties. The worker hands off
+under `core/policies/session-coordination.md` and stays available for repairs;
+it does not run a duplicate wave. Without an assignment, the delivery owner
+remains the parent and follows the existing workflow below. This does not
+permit skipping review or allow specialist children to write provider state.
+
 ## Mode Selection
 
 The caller requests the review outcome; the workflow selects context and depth.

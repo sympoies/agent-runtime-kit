@@ -16,3 +16,9 @@ from `manifests/agents.yaml`.
   reviewer name, do not spawn a generic child. Report the host capability
   limitation, run the same review through the inline fallback, and state that
   fallback in the result.
+
+For pre-merge delivery with a designated reviewer session, the delivery owner
+does not dispatch this wave. The designated reviewer is its parent and follows
+this same selector contract. Resolve assignment and explicit writer handover
+under `core/policies/session-coordination.md`; without an assignment the
+existing self-run delegation remains unchanged. Review remains mandatory.

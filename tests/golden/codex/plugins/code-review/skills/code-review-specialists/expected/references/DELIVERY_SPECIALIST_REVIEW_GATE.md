@@ -16,6 +16,19 @@ without making low-level close skills mandatory review orchestrators.
   comments, mark draft reviewables ready, merge, close issues, or clean
   branches.
 
+## Designated reviewer route
+
+Resolve assignment and explicit single-writer handover under
+`core/policies/session-coordination.md` before running this gate. With a
+designated reviewer, the worker stops at `awaiting designated review`; the
+reviewer runs this same quick/full gate, observes findings before repair push,
+publishes the governed/portable review, and owns closure. The worker verifies
+the published current-head outcome and ledger through the released mechanical
+gate before proceeding. A mailbox verdict alone never passes. Stale evidence,
+unreachable or closed reviewers, and missing gate capability return control
+to the coordinator without self-approval. No assignment leaves the existing
+self-run gate unchanged. All final provider merge gates still apply.
+
 ## Mandatory Gate
 
 Every end-to-end delivery PR or MR receives a pre-merge review. Pre-merge is the

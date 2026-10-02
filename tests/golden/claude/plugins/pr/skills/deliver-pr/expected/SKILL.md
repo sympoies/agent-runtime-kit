@@ -186,6 +186,87 @@ The user requests the PR/MR outcome, not a lifecycle helper.
 Dispatch lane PR creation remains an internal `program/dispatch` role because its
 plan-branch target and lane checkpoint authority belong to that outcome.
 
+## Review owner selection
+
+Before starting pre-merge review, resolve `AGENT_REVIEWER_SESSION` or the
+coordinator's explicit designated reviewer assignment using
+`core/policies/session-coordination.md`. With no assignment, use the existing
+self-run review and command blocks below unchanged.
+
+With an assignment, hand off repository/PR identity, base and head SHA,
+test-first evidence, validation actually run, known limits, and explicit
+ledger/publication ownership through the authenticated mailbox. Stop at
+`awaiting designated review`; do not enter the self-run scope, ledger, or
+publication blocks below. The reviewer owns the risk-selected specialist wave,
+governed publication, finding observation before repair push, and closed-set
+closure. The worker remains available for repairs.
+
+Only a mechanically verified published review outcome and ledger for the
+current provider head admit this path to the ordinary merge gates. Mailbox
+`pass`, stale-head publication, missing capability, and reviewer unavailability
+do not. Return unavailable/closed reviewers and bounded timeout to the
+coordinator without self-approval. Exactly one writer owns each PR head;
+reassignment requires explicit handover. Checks, final review-state read-back,
+convergence, threads, tasks, expected-head merge, and cleanup remain mandatory.
+
+The assigned macro's `awaiting_designated_review` failure retains the created
+or adopted PR number/URL; use that reviewable for the handoff below. Resolve
+`DESIGNATED_REVIEW_AUTHOR` from coordinator configuration (the governed App or
+portable reviewer identity). Prepare the private `REVIEW_HANDOFF_BODY_FILE`
+with the policy's required evidence and reply fields before sending it. This
+branch does not enter any of the existing self-run blocks.
+
+```bash
+# Designated-review route only.
+if [ -n "${AGENT_REVIEWER_SESSION:-}" ]; then
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    pr review-handoff --help >/dev/null 2>&1 || {
+    echo "awaiting designated review: CLI capability unavailable; return to coordinator" >&2
+    exit 69
+  }
+  : "${DESIGNATED_REVIEW_AUTHOR:?bind the configured native review author}"
+  : "${REVIEW_HANDOFF_BODY_FILE:?prepare the private evidence handoff}"
+  HANDOFF_VIEW="$(forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER")" || exit $?
+  HANDOFF_HEAD="$(printf '%s\n' "$HANDOFF_VIEW" | \
+    jq -er 'select(.ok == true) | .data.head_sha')" || exit $?
+  HANDOFF_BASE_SHA="$(git rev-parse "$BASE_REF")" || exit $?
+  HANDOFF_STATE="$(forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr review-handoff inspect "$PR_NUMBER")" || exit $?
+  if printf '%s\n' "$HANDOFF_STATE" | jq -e '.ok == true and .data.handoff == null' >/dev/null; then
+    HANDOFF_TIP="$(printf '%s\n' "$HANDOFF_STATE" | \
+      jq -er 'select(.ok == true) | .data.state_tip_digest // "none"')" || exit $?
+    forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+      pr review-handoff assign "$PR_NUMBER" \
+      --reviewer-session "$AGENT_REVIEWER_SESSION" \
+      --review-author "$DESIGNATED_REVIEW_AUTHOR" \
+      --base-sha "$HANDOFF_BASE_SHA" --expected-head "$HANDOFF_HEAD" \
+      --expected-state "$HANDOFF_TIP" || exit $?
+  fi
+  REVIEWER_MAILBOX_ARGS=(--to "${AGENT_REVIEWER_SESSION%%@*}")
+  case "$AGENT_REVIEWER_SESSION" in
+    *@*) REVIEWER_MAILBOX_ARGS+=(--to-machine "${AGENT_REVIEWER_SESSION#*@}") ;;
+  esac
+  agent-session message send --from "$AGENT_SESSION_ID" \
+    "${REVIEWER_MAILBOX_ARGS[@]}" --body-file "$REVIEW_HANDOFF_BODY_FILE" \
+    --idempotency-key "review-handoff-$PR_NUMBER-$HANDOFF_HEAD" || exit $?
+  # Await the correlated reviewer result through bounded mailbox waits. On a
+  # repair, require its old-head observation receipt before pushing. On
+  # unavailability, record review-handoff return and report to the coordinator.
+  # Re-run this read-only admission after closure; mailbox pass is insufficient.
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-handoff check "$PR_NUMBER" --expected-head "$HANDOFF_HEAD" || exit $?
+fi
+```
+
+A missing CLI capability stops only the assigned branch. The compatibility
+floor and all unassigned invocations below remain unchanged. `check` verifies
+the provider head, latest appointed-author canonical report after handover,
+and the reviewer-owned closed ledger. The final merge repeats those checks.
+A failed mailbox send retains writer ownership; return or retry the explicit
+handoff, never enter self-review. Reassignment is a coordinator operation with
+retained head/tip CAS; an existing handoff is never overwritten implicitly.
+
 ## Review Profile Selection
 
 Pre-merge remains mandatory. Select the smallest safe profile after checks and
