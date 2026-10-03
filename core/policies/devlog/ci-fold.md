@@ -8,9 +8,10 @@ that setting into the portable `DEVLOG_LAYOUT` environment before a harness or
 session launcher runs:
 
 ```bash
-bash "$AGENT_KIT_SRC/scripts/render-runtime-env.sh" > "$AGENT_HOME/runtime.env"
+AGENT_KIT_ENV_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit/runtime.env"
+bash "$AGENT_KIT_SRC/scripts/render-runtime-env.sh" > "$AGENT_KIT_ENV_FILE"
 # Source this at shell/service startup, including non-interactive shells.
-. "$AGENT_HOME/runtime.env"
+. "$AGENT_KIT_ENV_FILE"
 # Or apply the exact same render at the launch boundary:
 bash "$AGENT_KIT_SRC/scripts/with-runtime-env.sh" agent-session start --agent codex
 ```
