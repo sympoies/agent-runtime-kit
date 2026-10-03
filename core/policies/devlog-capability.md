@@ -71,8 +71,24 @@ mkdir -p docs/devlog          # docs/source/devlog for a source/render split
 devlog index    # keep the month list in the index in sync from then on
 ```
 
-Detection picks it up from there. Nothing else has to be declared — not in the
-repository, and not in this policy.
+Detection picks it up from there. With the kit switch off, this remains the
+whole enable ritual.
+
+When the kit fragment rule is enabled, a new indexed log also needs:
+
+1. Released `nils-cli >=1.31.14` on entry writers and CI runners.
+2. The scheduled default-branch fold job from the
+   [fold recipe](devlog/ci-fold.md), with a repository-scoped App installation,
+   Contents: write, verified commits, and a narrowly authorized protection
+   exception. Install and prove this job before entries arrive.
+3. Fragment-aware validation through `devlog check`. Fetch the default branch
+   and pass `--base origin/<default-branch>` in PR CI to check merged-fragment
+   immutability. Do not keep a month-only custom validator.
+4. The same kit launch environment on each managed host and session. Do not
+   introduce repository-local layout settings.
+
+A maintainer enables a repository's log; the maintainer separately owns the
+kit-wide rollout. Do not flip the switch as part of repository enablement.
 
 Everything below applies only when detection succeeds.
 
@@ -119,9 +135,48 @@ Keep the canonical owner current first. The log records history; it does not own
 the current contract, policy, setup, or runbook. If a behavior changed, the
 document that defines that behavior is updated in the same change.
 
+## Kit-wide layout switch
+
+`AGENT_RUNTIME_DEVLOG_FRAGMENTS=1` in the shared managed launch environment is
+one kit-level opt-in. Unset or `0` is off. The kit's
+`scripts/render-runtime-env.sh` renders `export DEVLOG_LAYOUT=fragments` only
+when on; when off it renders a shell no-op and leaves inherited environment
+unchanged. `scripts/with-runtime-env.sh <launcher> ...` applies that render before
+Codex, Claude, Hermes, or `agent-session` starts, so child tools inherit it.
+Direct launches must source the same rendered environment at shell/service
+startup. The [fold recipe](devlog/ci-fold.md) describes the host/session and CI
+wiring. No product-specific or repository-specific layout choice is added.
+
+The switch stays off until the maintainer authorizes rollout after merge.
+Before enablement, prove the sandbox scenario and real-provider acceptance,
+provision each existing indexed log's fold job and checks, and close the
+[fragment-only PR enforcement dependency](https://github.com/sympoies/nils-cli/issues/2082).
+The current `devlog check --base` rejects edited merged fragments but accepts
+structurally valid month-file changes. That is a tool gap, not permission to
+edit months and not a reason to implement a parallel kit checker.
+
+With the switch on:
+
+- Write entries with `devlog new` only. It creates a unique file under
+  `pending/`; an explicit `--slug` must be unique for the change.
+- Never edit a month file or fold on a PR branch. The scheduled default-branch
+  CI job is the only fold owner; it folds entries dated before today and
+  updates the month index.
+- Fragments are immutable after merge. Do not edit or delete a merged pending
+  file; a correction is a new entry. A factual correction to a folded month
+  needs the maintainer's separately authorized maintenance route.
+- `search`, `check`, and `index` see unfolded entries. `new` does not need an
+  agent-authored index update; the fold job owns month/index writes.
+
+With the switch off, the existing month writer, CLI fallback, validation and
+agent delivery flow remain unchanged. An independently inherited
+`DEVLOG_LAYOUT` is left alone; managed deployments must not set a conflicting
+repository override.
+
 ## Mechanism
 
-Use the `devlog` CLI. Entry insertion is positional under a month heading, the
+Use the `devlog` CLI. In the default month layout, entry insertion is positional
+under a month heading, the
 month index has to stay in sync, and the section shape and heading levels are
 Markdown-lint-visible; those are mutations that belong to a contract rather than
 to an agent editing a file by hand.
@@ -190,10 +245,13 @@ Run it once when a repository adopts this capability, and afterwards only when
 `check` reports something. It is not part of the write path: `new` already
 produces the shape `check` accepts.
 
-When the CLI is not installed, fall back to the repository's
+With the kit switch off, when the CLI is not installed, fall back to the repository's
 `docs/devlog/README.md` (or `docs/source/devlog/README.md`) conventions and edit
 the month file directly. The fallback is the same contract written in prose, so
-the result is identical; the CLI exists so it does not depend on care.
+the result is identical; the CLI exists so it does not depend on care. With the switch on, a missing
+or older CLI blocks entry creation; report it instead of editing a month file.
+Structural repairs that touch months under the enabled rule need the same
+separately authorized maintenance route; `fix` is not an entry-PR bypass.
 
 ## Never
 
