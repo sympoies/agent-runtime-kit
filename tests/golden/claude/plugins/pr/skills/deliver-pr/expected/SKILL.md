@@ -186,6 +186,32 @@ The user requests the PR/MR outcome, not a lifecycle helper.
 Dispatch lane PR creation remains an internal `program/dispatch` role because its
 plan-branch target and lane checkpoint authority belong to that outcome.
 
+## Review owner selection
+
+Resolve `AGENT_REVIEWER_SESSION` or the coordinator's explicit assignment
+through `core/policies/session-coordination.md`. No assignment uses the existing
+self-run review and command blocks unchanged.
+
+The designated reviewer owns specialists, publication, ledger observation
+before repair push, and closure. Hand off the policy's PR/base/head,
+test-first evidence, validation, limits, and ownership fields through the
+mailbox, then stop at `awaiting designated review`. Skip self-run blocks below.
+Only CLI-verified current-head publication admits merge. Return unavailable
+reviewers to the coordinator without self-approval.
+
+Use the assigned macro failure's retained PR number/URL. Configure
+`DESIGNATED_REVIEW_AUTHOR` and prepare private `REVIEW_HANDOFF_BODY_FILE`.
+
+Run the assigned-only command fence in
+`references/DESIGNATED_REVIEW_HANDOFF.md`; validate active ownership before
+sending private evidence and bind mailbox replay to the assignment digest.
+
+
+Capability failure affects only assignment; keep the floor and unassigned
+commands unchanged. After closure, recheck, skip self-review, and satisfy the
+ordinary merge gates. Retry never transfers ownership; use reviewer surrender
+or coordinator recovery explicitly.
+
 ## Review Profile Selection
 
 Pre-merge remains mandatory. Select the smallest safe profile after checks and

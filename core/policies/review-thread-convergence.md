@@ -134,3 +134,13 @@ Outcomes that drive a thread sweep should reference this policy rather than
 restating it: the runtime-kit `deliver-pr` pre-merge sweep,
 `code-review-specialists` follow-up mode, and project-local review-cleanup
 outcomes such as symphony-board `project-review-cleanup`.
+
+## Designated reviewer ownership
+
+When delivery assigns a designated reviewer, that reviewer owns the discovery
+wave, ledger observation before repair publication, and closed-set closure.
+The worker makes authorized repairs and reports the new head; it does not
+start another discovery wave or publish a competing review outcome. Follow
+`core/policies/session-coordination.md` for explicit single-writer handover and
+coordinator return on reviewer unavailability. Assignment does not relax the
+current-head, publication, ledger, or finite-closure requirements.

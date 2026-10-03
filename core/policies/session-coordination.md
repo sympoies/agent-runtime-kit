@@ -61,6 +61,78 @@ authorization or replace `project-dev`, provider rules, user consent, or formal
   task owner still verifies the claimed diff, validation, delivery state, or
   cleanup before reporting completion.
 
+## Designated review handoff
+
+Delivery resolves an optional designated reviewer before starting pre-merge
+review: `AGENT_REVIEWER_SESSION=<session-id>[@machine]` or an explicit
+coordinator assignment. Conflicting assignments require coordinator resolution;
+an empty assignment preserves the existing self-run review path. Assignment
+routes already-authorized work and grants no new authority.
+
+With a designated reviewer, the worker does not start a specialist-review wave,
+append review-ledger observations, or publish review outcomes. It hands those
+responsibilities explicitly to the reviewer and remains available for repairs.
+There is exactly one ledger and publication writer per PR head. The reviewer
+runs the ordinary risk-selected review and governed/portable publication
+contract; read-only specialist children never become publication writers.
+
+The worker sends a file-backed authenticated mailbox request containing:
+
+- Repository identity and provider, PR number and URL, issue URL if applicable.
+- Base ref and base SHA, head ref and exact head SHA.
+- Contract delta, test-first evidence (command, expected and observed failure,
+  exit status), validation actually run and results, and known limits.
+- Reviewer assignment, coordinator and worker return addresses, requested
+  disposition, bounded response deadline, and the explicit writer handover.
+- Existing published review URLs, open finding fingerprints, and ledger tip
+  when adopting an existing review round; no reconstructed history.
+
+The reviewer initially replies on that chain with `accepted`, `deferred`,
+`declined`, or `needs-user-authority` (or direct `completed` when already
+proven). After `accepted`, send a correlated `completed` or `failed` terminal
+head-bound result: repository and PR URL, reviewed
+base/head SHA, verdict, selected lenses, published review URL and author,
+ledger tip and head, finding dispositions, validation inspected, known limits,
+and the next repair or coordinator decision. A mailbox `pass` is routing
+evidence; the worker verifies the provider publication and ledger independently.
+
+The worker waits at `awaiting designated review`. A stale review, missing
+publication, unavailable review capability, unreachable or closed reviewer,
+refusal, or bounded timeout returns control to the coordinator with the PR and
+head preserved. Never turn these conditions into self-approval or silently
+start a self-run wave. Reassignment requires explicit coordinator handover and
+fresh ownership proof; elapsed time cannot transfer ownership.
+
+The reviewer observes admitted findings in the provider ledger before a repair is pushed.
+The worker waits for the exact-head observation receipt, repairs only admitted
+findings, validates, and reports the new head. The reviewer owns closed-set
+closure and its publication, using the retained ledger tip for compare-and-swap.
+Neither a mailbox verdict nor an old-head review permits merge. The delivery
+owner still owns checks, final provider read-back, convergence, thread/task and
+expected-head gates, merge, and terminal cleanup.
+
+Stable assignment, writer fencing, and published-current-head admission belong
+to released `forge-cli pr review-handoff assign|inspect|check|surrender|recover`.
+`inspect` binds the configured reviewer, public author, and current head before
+a private send; provider base and assignment digest/generation come from that
+read. Bind `AGENT_REVIEW_ASSIGNMENT_GENERATION` in the reviewer environment.
+Opaque session digests reach the provider ledger; mailbox addresses stay private.
+
+Ownership moves by explicit records. Ordinary reassignment requires a
+reviewer-owned `surrender` of the current generation. An unavailable/closed
+reviewer requires the owning coordinator's separate `recover`, with retained
+head/tip and a bounded reason; it records revocation and increments generation.
+Only then may the coordinator assign a fresh interval. Stale-generation writes
+fail on tip/generation re-read. If recovery races an already-admitted old write,
+the higher recovery generation wins; the CLI reports ignored stale children.
+Same-generation and unassigned forks still fail closed. Never reconstruct or
+silently merge competing state. Mailbox replay keys include the assignment
+record digest and head, distinguishing repositories and same-head handovers.
+
+Do not emulate this with a second ledger or weaken merge guards. Missing
+capability fails closed only for assignment and reports to the coordinator;
+unassigned commands and self-run behavior remain unchanged.
+
 ## Long-running mailbox checkpoints
 
 - During long-running managed work, do not wait for the whole task to become

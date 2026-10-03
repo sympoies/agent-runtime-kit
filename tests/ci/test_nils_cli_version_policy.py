@@ -173,25 +173,25 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.31.1")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.31.2")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.31.15")
         self.assertNotIn("pinned_tag:", manifest)
         # Explicit plan retirement moved both roles to v1.31.1: v1.31.0 still
         # accepts retired new work contexts and ships all four plan binaries.
         # The behavioral/package probes above protect the exact v1.31.1 floor;
         # the pin records the captured released v1.31.0 regression failures.
         #
-        # v1.31.2 advanced validated only, for `forge-cli issue tracker`. The
-        # program-tracker skills prefer it and keep the grammar-defined manual
-        # path for an older forge-cli, so nothing at v1.31.1 became unusable:
+        # v1.31.15 advances validated only for optional designated-review gates.
+        # Unassigned delivery retains the existing self-run path; assigned
+        # delivery fails closed when the capability is absent:
         # minimum and every required_clis floor stay where they are, and the
         # two lanes no longer share archive digests.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "7af4e8e17ca3bc78bbc7766f93e308c4a0608680bf8516e33747ccf76c07df86",
+            "773343a25d72fba9fbe975dfad3b53a07426544268ddd851cdffd99e88f6cb89",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "d76784470b4216d61df335e0a442fd9601629ba4aabe6432a68ba5b5ee72eefe",
+            "d53959fae1c484f57b5c79993a344f6559945a4a7c8bad009873ef6798d20dbb",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
@@ -355,7 +355,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.31.2", "v1.32.0"):
+        for candidate in ("v1.31.15", "v1.31.16", "v1.32.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -365,6 +365,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     text=True,
                 )
         for candidate in (
+            "v1.31.14",
+            "v1.31.2",
             "v1.31.1",
             "v1.31.0",
             "v1.28.30",
@@ -731,7 +733,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.31.2", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.31.15", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(

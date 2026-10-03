@@ -611,6 +611,70 @@ run_code_review_outcome_routing_probe() {
   rendered_contract_assert_product_omits code-review code-review-specialists hermes '`multi_agent_v1.spawn_agent`'
 }
 
+run_unassigned_delivery_command_regression() {
+  # #219 changes review ownership only. Keep every existing copyable Bash
+  # invocation byte-identical on the unassigned path, including provider argv,
+  # ledger ordering/CAS and publication modes; prose cannot satisfy this check.
+  python3 - "$REPO_ROOT" <<'PYCODE'
+import hashlib
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1])
+paths = [root / "core/skills/pr/deliver-pr/SKILL.md.tera"]
+paths += [root / "build" / product / "plugins/pr/skills/deliver-pr/SKILL.md"
+          for product in ("codex", "claude", "hermes")]
+expected = "5861ef5323822144091aa188f3059621d3421dfcf08e28d3a11ec0734736bd4b"
+for path in paths:
+    blocks = [block for block in re.findall(r"```bash\n(.*?)\n```", path.read_text(), re.S)
+              if not block.startswith("# Designated-review route only.")]
+    actual = hashlib.sha256("\n".join(blocks).encode()).hexdigest()
+    if actual != expected:
+        raise SystemExit("unassigned delivery command contract changed: " + str(path.relative_to(root)))
+PYCODE
+}
+
+run_designated_review_route_probe() {
+  python3 "$REPO_ROOT/tests/runtime-smoke/cases/code-review/designated-route.py" \
+    "$REPO_ROOT" "$CODE_REVIEW_ARTIFACTS_DIR/designated-route"
+}
+
+run_designated_review_contract_probe() {
+  local policy="$REPO_ROOT/core/policies/session-coordination.md"
+  local delegation="$REPO_ROOT/core/policies/code-review-delegation-codex.md"
+  local convergence="$REPO_ROOT/core/policies/review-thread-convergence.md"
+  local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
+  local gate="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
+  local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+  local owner
+
+  for owner in "$policy" "$delegation" "$convergence" "$delivery" "$skill" "$gate" "$posting"; do
+    grep -Fq 'designated reviewer' "$owner" || return 1
+  done
+  local handoff="$REPO_ROOT/core/skills/pr/deliver-pr/references/DESIGNATED_REVIEW_HANDOFF.md"
+  for owner in "$delivery" "$handoff"; do
+    if grep -Eq 'review-handoff return|Retry/return|repair/return' "$owner"; then
+      echo "retired designated-review return terminology" >&2
+      return 1
+    fi
+  done
+  grep -Fq 'AGENT_REVIEWER_SESSION' "$policy" || return 1
+  grep -Fq 'exactly one ledger and publication writer per PR head' "$policy" || return 1
+  grep -Fq 'awaiting designated review' "$delivery" || return 1
+  grep -Fq 'mailbox verdict alone' "$gate" || return 1
+  grep -Fq 'test-first evidence' "$policy" || return 1
+  grep -Fq 'base SHA' "$policy" || return 1
+  grep -Fq 'ledger tip' "$policy" || return 1
+  grep -Fq 'before a repair is pushed' "$policy" || return 1
+  grep -Fq 'coordinator' "$policy" || return 1
+  grep -Fq 'correlated `completed` or `failed`' "$policy" || return 1
+  rendered_contract_assert_reference pr deliver-pr references/DESIGNATED_REVIEW_HANDOFF.md
+  rendered_contract_assert_all_contain pr deliver-pr 'awaiting designated review'
+  rendered_contract_assert_all_contain code-review code-review-specialists 'designated reviewer'
+}
+
 run_review_convergence_contract_probe() {
   local home_policy="$REPO_ROOT/AGENT_HOME.md"
   local skill="$REPO_ROOT/core/skills/code-review/code-review-specialists/SKILL.md.tera"
@@ -715,6 +779,9 @@ run_provider_review_metadata_contract_probe() {
 }
 
 failures=0
+record_case "code-review.unassigned-delivery.commands" "unassigned delivery Bash invocations remain byte-identical across products" run_unassigned_delivery_command_regression
+record_case "code-review.designated-review.route" "designated route stops on missing capability or publication and retries the private mailbox" run_designated_review_route_probe
+record_case "code-review.designated-review.contract" "designated reviewer ownership and handoff are mandatory across source and products" run_designated_review_contract_probe
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.actionability-contract" "every reviewer finding explicitly classifies actionability for native thread publication" run_reviewer_actionability_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
