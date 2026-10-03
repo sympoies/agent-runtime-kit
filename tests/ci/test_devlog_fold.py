@@ -3,6 +3,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -22,6 +23,49 @@ class FoldPublisherTests(unittest.TestCase):
         with patch.object(self.module, 'prepare_fold', return_value=('base', 'tree', [])), patch.object(self.module, 'api') as api:
             self.assertEqual(self.module.publish('example/project', 'main', 'docs/devlog')['status'], 'noop')
             api.assert_not_called()
+
+    def test_git_rename_detection_preserves_fragment_deletions(self):
+        # A single-entry month resembles its fragment enough for Git to classify
+        # it as a rename. The API tree still needs both paths: add and delete.
+        with tempfile.TemporaryDirectory() as raw:
+            original = os.getcwd()
+            try:
+                os.chdir(raw)
+                def command(*args):
+                    return subprocess.run(['git', *args], check=True,
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                command('init', '--initial-branch=main')
+                command('config', 'user.name', 'Fixture Writer')
+                command('config', 'user.email', 'fixture@example.invalid')
+                command('config', 'commit.gpgsign', 'false')
+                log = Path('docs/devlog')
+                (log / 'pending').mkdir(parents=True)
+                (log / 'README.md').write_text('# Development log\n')
+                fragment = log / 'pending/2001-01-01-entry.md'
+                content = '# Entry\n' + ''.join(f'Entry detail {n}\n' for n in range(50))
+                fragment.write_text(content)
+                command('add', '.')
+                command('commit', '-m', 'Fixture seed')
+                command('remote', 'add', 'origin', raw)
+                month = log / '2001-01.md'
+                run = subprocess.run
+                def fold(args, **kwargs):
+                    if args[0] != 'devlog':
+                        return run(args, **kwargs)
+                    if args[1] == 'fold':
+                        month.write_text('# Development log - 2001-01\n' + content)
+                        fragment.unlink()
+                    return subprocess.CompletedProcess(args, 0)
+                with patch.dict(os.environ, {'GH_TOKEN': 'synthetic-token'}), \
+                        patch.object(self.module.subprocess, 'run', side_effect=fold), \
+                        patch.object(self.module, 'api', return_value={'sha': 'blob'}):
+                    _, _, changes = self.module.prepare_fold('example/project', 'main', str(log))
+                paths = {item['path']: item['sha'] for item in changes}
+                self.assertIn(str(fragment), paths, 'Rename detection omitted the old fragment path')
+                self.assertIsNone(paths[str(fragment)])
+                self.assertEqual(paths[str(month)], 'blob')
+            finally:
+                os.chdir(original)
 
     def test_verified_commit_has_no_custom_identity_and_fast_forward_only(self):
         with patch.object(self.module, 'prepare_fold', return_value=('base', 'tree', [{'path': 'docs/devlog/2001-01.md', 'content': 'month'}])), patch.object(self.module, 'api', side_effect=[{'sha': 'newtree'}, {'sha': 'newcommit', 'verification': {'verified': True}}, {}]) as api:

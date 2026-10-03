@@ -68,7 +68,8 @@ def prepare_fold(repo, branch, log_dir):
                    env={**tool_env(), 'DEVLOG_LAYOUT': 'fragments'})
     subprocess.run(['devlog', 'check', '--dir', log_dir, '--base', base], check=True, env=tool_env())
     git('add', '--all', '--', log_dir)
-    names = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z', '--', log_dir]).split(b'\0')
+    # API trees need explicit old-path deletions even when Git detects a rename.
+    names = subprocess.check_output(['git', 'diff', '--cached', '--no-renames', '--name-only', '-z', '--', log_dir]).split(b'\0')
     changes = []
     for raw in names:
         if not raw:
