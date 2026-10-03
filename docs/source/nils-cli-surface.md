@@ -11,7 +11,7 @@
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
 - Head commit: `546cc97a8dc768fe6a2d0a00ee1dcd59a7094019`
-  (`chore(release): bump cli versions to 1.31.2`)
+  (`chore(release): bump cli versions to 1.31.15 (#2085)`)
 - Release:
   [`v1.31.15`](https://github.com/sympoies/nils-cli/releases/tag/v1.31.15),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
