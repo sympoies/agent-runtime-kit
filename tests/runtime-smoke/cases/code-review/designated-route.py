@@ -26,7 +26,11 @@ scenario=os.environ['ROUTE_SCENARIO']
 if name=='git': print('b'*40); sys.exit(0)
 if name=='agent-session': sys.exit(1 if scenario=='mailbox-failure' else 0)
 if '--help' in args: sys.exit(2 if scenario=='old-cli' else 0)
-if 'view' in args: print(json.dumps({'ok': True,'data':{'head_sha':'a'*40}})); sys.exit(0)
+if 'view' in args:
+    counter=Path(os.environ['ROUTE_VIEWS'])
+    count=int(counter.read_text())+1
+    counter.write_text(str(count))
+    print(json.dumps({'ok':True,'data':{'head_sha':('a' if count==1 else 'd')*40}})); sys.exit(0)
 if 'inspect' in args:
     generation = 2 if scenario == 'recovered' else 1
     handoff = None if scenario == 'initial' else {'reviewer_digest':'configured','assignment_generation':generation}
@@ -40,6 +44,7 @@ if 'assign' in args:
     if any(k not in args or args[args.index(k)+1]!=v for k,v in required.items()): sys.exit(65)
     print(json.dumps({'ok':True,'data':{'status':'awaiting-designated-review','handoff':{'assignment_generation':1},'handoff_digest':'sha256:'+'1'*64}})); sys.exit(0)
 if 'check' in args:
+    if '--expected-head' not in args or args[args.index('--expected-head')+1]!='d'*40: sys.exit(65)
     sys.exit(0 if scenario in ('published','retry','recovered') else (69 if scenario in ('returned','surrendered') else 65))
 sys.exit(64)
 '''
@@ -50,8 +55,10 @@ for tool in ('forge-cli', 'agent-session', 'git'):
 
 def run(scenario, assigned=True, disposition="completed", handoff_only=False):
     commands.write_text('')
+    views=scratch / 'views'
+    views.write_text('0')
     env = dict(os.environ, PATH=str(bin_dir)+os.pathsep+os.environ['PATH'],
-               ROUTE_SCENARIO=scenario, ROUTE_COMMANDS=str(commands),
+               ROUTE_SCENARIO=scenario, ROUTE_COMMANDS=str(commands), ROUTE_VIEWS=str(views),
                PROVIDER='github', OWNER_REPO='example/project', PR_NUMBER='7', BASE_REF='origin/main',
                AGENT_SESSION_ID='worker-session', DESIGNATED_REVIEW_AUTHOR='review-app[bot]',
                REVIEW_HANDOFF_BODY_FILE='handoff.md', DESIGNATED_REVIEW_DISPOSITION=disposition)
@@ -77,6 +84,9 @@ for scenario, expected in [('initial',65),('stale',65),('published',0),('recover
     assert '--expected-head '+ 'a'*40 in calls, calls
     assert (' assign ' in calls) == (scenario=='initial'), calls
     assert calls.index(' inspect ') < calls.index('message send') < calls.index(' check '), calls
+    assert sum(' pr view ' in line for line in calls.splitlines())==2, calls
+    check_call=next(line for line in calls.splitlines() if ' check ' in line)
+    assert '--expected-head '+'d'*40 in check_call, check_call
     assert '--review-author review-app[bot]' in calls, calls
     assert '--base-sha '+ 'b'*40 not in calls, calls
     generation=2 if scenario=='recovered' else 1
