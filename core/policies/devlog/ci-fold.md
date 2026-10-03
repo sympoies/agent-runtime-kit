@@ -26,7 +26,10 @@ For GitHub Actions, provision the same setting as an organization variable
 named `AGENT_RUNTIME_DEVLOG_FRAGMENTS` for managed repositories. Repository
 variables must not override it; an explicitly isolated acceptance repository
 may override it while testing. A deployment owner must reconcile host/service
-and organization values before enablement. This PR does not set either value.
+and organization values before enablement. GitHub gives repository variables
+precedence over organization variables; this recipe relies on trusted repository
+administrators to preserve the shared setting. A repository-level override is
+unsupported outside the approved disposable fixture. This PR does not set either value.
 The off render is `:` and leaves inherited environment unchanged; the fold job
 is skipped before any checkout or authentication.
 Existing month writing and delivery remain active while off, including compatibility with older supported tools.
@@ -102,7 +105,8 @@ all log validation to the released tool. Both directory conventions work.
 `check --base` currently enforces merged-fragment immutability, not the ban on
 month edits in PRs. Adopt the tool-owned fragment-only mode after
 [nils-cli #2082](https://github.com/sympoies/nils-cli/issues/2082) is released;
-that dependency blocks production enablement. Do not implement a competing
+its implementation is tracked in [nils-cli PR #2084](https://github.com/sympoies/nils-cli/pull/2084).
+That dependency and the maintainer's rollout decision block production enablement. Do not implement a competing
 kit-side check or claim that ordinary `check` already enforces this policy.
 
 ## Acceptance before enablement
