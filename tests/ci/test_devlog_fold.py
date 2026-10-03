@@ -76,11 +76,13 @@ class FoldPublisherTests(unittest.TestCase):
             self.assertEqual(commit['parents'], ['base'])
             self.assertEqual(api.call_args_list[2].args[2], {'sha': 'newcommit', 'force': False})
 
-    def test_unsigned_commit_is_never_published(self):
-        with patch.object(self.module, 'prepare_fold', return_value=('base', 'tree', [{'path': 'docs/devlog/2001-01.md', 'content': 'month'}])), patch.object(self.module, 'api', side_effect=[{'sha': 'newtree'}, {'sha': 'bad', 'verification': {'verified': False}}]) as api:
-            with self.assertRaisesRegex(RuntimeError, 'verified'):
-                self.module.publish('example/project', 'main', 'docs/devlog')
-            self.assertEqual(api.call_count, 2)
+    def test_unverified_commit_is_never_published(self):
+        for commit in ({'sha': 'bad', 'verification': {'verified': False}},
+                       {'sha': 'bad', 'verification': {}}, {'sha': 'bad'}):
+            with self.subTest(commit=commit), patch.object(self.module, 'prepare_fold', return_value=('base', 'tree', [{'path': 'docs/devlog/2001-01.md', 'content': 'month'}])), patch.object(self.module, 'api', side_effect=[{'sha': 'newtree'}, commit]) as api:
+                with self.assertRaisesRegex(RuntimeError, 'verified'):
+                    self.module.publish('example/project', 'main', 'docs/devlog')
+                self.assertEqual(api.call_count, 2)
 
     def test_moved_branch_refetches_and_reruns_fold(self):
         error = self.module.ApiError(422)

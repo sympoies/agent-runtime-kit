@@ -3,23 +3,26 @@ name: Devlog fold
 on:
   workflow_call:
     inputs:
+      authentication:
+        description: 'Fold actor: app (default) or explicit github-token'
+        type: string
+        default: app
       log-dir:
         type: string
         default: docs/devlog
     secrets:
       BOT_APP_ID:
-        required: true
+        required: false
       BOT_APP_PRIVATE_KEY:
-        required: true
+        required: false
 
-permissions:
-  contents: read
-  id-token: write
+# Inherit the caller's explicit grant: contents: read for App mode,
+# contents: write for github-token mode, and id-token: write for both.
 
 jobs:
   fold:
     # The centrally supplied switch is off when absent. Do not set repo overrides
-    # outside an explicitly isolated acceptance fixture.
+    # outside an explicitly isolated acceptance fixture or registered pilot.
     if: vars.AGENT_RUNTIME_DEVLOG_FRAGMENTS == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -27,6 +30,26 @@ jobs:
       group: devlog-fold-${{ github.repository }}
       cancel-in-progress: false
     steps:
+      - name: Validate fold authentication
+        env:
+          FOLD_AUTHENTICATION: ${{ inputs.authentication }}
+          BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+          BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          case "$FOLD_AUTHENTICATION" in
+            app)
+              if [ -z "$BOT_APP_ID" ] || [ -z "$BOT_APP_PRIVATE_KEY" ]; then
+                echo 'App mode requires BOT_APP_ID and BOT_APP_PRIVATE_KEY' >&2
+                exit 64
+              fi
+              ;;
+            github-token) ;;
+            *)
+              echo 'authentication must be app or github-token' >&2
+              exit 64
+              ;;
+          esac
       - name: Resolve this reusable workflow's immutable source
         id: source
         run: |
@@ -74,6 +97,7 @@ jobs:
           printf '%s\n' "$bindir" >> "$GITHUB_PATH"
       - name: Mint repository-scoped fold token
         id: app
+        if: inputs.authentication == 'app'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
@@ -82,7 +106,7 @@ jobs:
       - name: Fold and publish a verified commit
         working-directory: repository
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ inputs.authentication == 'github-token' && github.token || steps.app.outputs.token }}
           AGENT_RUNTIME_DEVLOG_FRAGMENTS: ${{ vars.AGENT_RUNTIME_DEVLOG_FRAGMENTS }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           LOG_DIR: ${{ inputs.log-dir }}

@@ -76,16 +76,19 @@ whole enable ritual.
 
 When the kit fragment rule is enabled, a new indexed log also needs:
 
-1. Released `nils-cli >=1.31.14` on entry writers and CI runners.
+1. Released `nils-cli >=1.31.16` on entry writers and PR CI runners.
 2. The scheduled default-branch fold job from the
-   [fold recipe](devlog/ci-fold.md), with a repository-scoped App installation,
+   [fold recipe](devlog/ci-fold.md). The actor uses a repository-scoped App
+   installation or an explicitly approved workflow token. Both routes need
    Contents: write, verified commits, and a narrowly authorized protection
    exception. Install and prove this job before entries arrive.
 3. Fragment-aware validation through `devlog check`. Fetch the default branch
-   and pass `--base origin/<default-branch>` in PR CI to check merged-fragment
-   immutability. Do not keep a month-only custom validator.
+   and pass `--base origin/<default-branch> --fragments-only` in PR CI to reject
+   month edits and check merged-fragment immutability. Do not keep a month-only
+   custom validator.
 4. The same kit launch environment on each managed host and session. Do not
-   introduce repository-local layout settings.
+   introduce repository-local layout settings. A registered isolated pilot
+   scopes the existing switch as described in the recipe.
 
 A maintainer enables a repository's log; the maintainer separately owns the
 kit-wide rollout. Do not flip the switch as part of repository enablement.
@@ -148,12 +151,19 @@ startup. The [fold recipe](devlog/ci-fold.md) describes the host/session and CI
 wiring. No product-specific or repository-specific layout choice is added.
 
 The switch stays off until the maintainer authorizes rollout after merge.
-Before enablement, prove the sandbox scenario and real-provider acceptance,
-provision each existing indexed log's fold job and checks, and close the
-[fragment-only PR enforcement dependency](https://github.com/sympoies/nils-cli/issues/2082).
-The current `devlog check --base` rejects edited merged fragments but accepts
-structurally valid month-file changes. That is a tool gap, not permission to
-edit months and not a reason to implement a parallel kit checker.
+Before fleet enablement, prove the sandbox scenario and complete real-provider
+acceptance, and provision each existing indexed log's fold job and checks.
+Released nils-cli 1.31.16 provides the tool-owned `--fragments-only` enforcement
+in [PR #2084](https://github.com/sympoies/nils-cli/pull/2084).
+
+The maintainer may register an isolated repository pilot before fleet rollout.
+Its rollout record must name the exact repository, owner, acceptance conditions,
+and exit condition. Only that repository may override the CI variable; its
+dedicated sessions use the existing switch at their launch boundary. Shared
+host/service and organization settings stay off. The
+[fold recipe](devlog/ci-fold.md#registered-isolated-pilot) owns the pilot's
+concurrent-PR and verified-fold acceptance, scope, and rollback. A pilot does
+not substitute for protected-provider acceptance before fleet promotion.
 
 With the switch on:
 
@@ -171,7 +181,7 @@ With the switch on:
 With the switch off, the existing month writer, CLI fallback, validation and
 agent delivery flow remain unchanged. An independently inherited
 `DEVLOG_LAYOUT` is left alone; managed deployments must not set a conflicting
-repository override.
+repository override outside the approved fixture or registered pilot.
 
 ## Mechanism
 
