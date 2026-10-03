@@ -211,7 +211,7 @@ description = "Run the canonical kit gate stack once; it already includes hook, 
 # checks. Consuming repositories declare their own paths; unmatched files stay
 # fail-closed instead of inheriting language-specific guesses from this kit.
 [path_classes]
-production = ["AGENT_DOCS.toml", "core/hooks/**", "core/skills/**/*.tera", "scripts/**", "targets/**", "manifests/**"]
+production = ["AGENT_DOCS.toml", "core/hooks/**", "core/skills/**/*.tera", "scripts/**", "targets/**", "manifests/**", "docker/Dockerfile"]
 test = ["tests/**"]
 docs = ["AGENT_HOME.md", "README.md", "DEVELOPMENT.md", "SUPPORT_MATRIX.md", "core/policies/**", "core/skills/**/README.md", "core/skills/**/references/**", "docs/**"]
 generated = ["build/**"]

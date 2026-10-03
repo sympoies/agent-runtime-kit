@@ -29,15 +29,17 @@ nils_cli:
   # Ordinary validated uptake does not move this compatibility floor.
   minimum_supported_tag: "v1.31.1"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  # v1.31.2 adds `forge-cli issue tracker lint|graph|tick`; validated only.
-  validated_tag: "v1.31.2"
+  # v1.31.15 supplies the optional designated-review handoff/admission surface.
+  # Older admitted releases retain the unassigned route; assignment probes the
+  # capability and fails closed before sending a handoff when it is absent.
+  validated_tag: "v1.31.15"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "7af4e8e17ca3bc78bbc7766f93e308c4a0608680bf8516e33747ccf76c07df86"
-    linux_arm64: "d76784470b4216d61df335e0a442fd9601629ba4aabe6432a68ba5b5ee72eefe"
+    linux_amd64: "773343a25d72fba9fbe975dfad3b53a07426544268ddd851cdffd99e88f6cb89"
+    linux_arm64: "d53959fae1c484f57b5c79993a344f6559945a4a7c8bad009873ef6798d20dbb"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
