@@ -61,10 +61,11 @@ class WorkflowSourceTests(unittest.TestCase):
     def test_called_workflow_revision_is_provider_bound(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/devlog-fold.yml').read_text())
         steps = workflow['jobs']['fold']['steps']
-        source = steps[0]['run']
+        source = next(step['run'] for step in steps if step.get('id') == 'source')
         code = source.split("python3 - <<'PY_SOURCE'\n", 1)[1].rsplit('PY_SOURCE', 1)[0]
         self.assertNotIn('kit-ref', json.dumps(workflow))
-        self.assertEqual(steps[1]['with']['ref'], '${{ steps.source.outputs.sha }}')
+        checkout = next(step for step in steps if step['name'] == 'Checkout trusted kit owner')
+        self.assertEqual(checkout['with']['ref'], '${{ steps.source.outputs.sha }}')
         owner = 'sympoies/agent-runtime-kit/.github/workflows/devlog-fold.yml'
         cases = [({'job_workflow_ref': owner + '@main', 'job_workflow_sha': 'a' * 40}, True),
                  ({'job_workflow_ref': 'other/kit/.github/workflows/devlog-fold.yml@main', 'job_workflow_sha': 'a' * 40}, False),
@@ -88,6 +89,56 @@ class WorkflowSourceTests(unittest.TestCase):
         self.assertLess(names.index('Resolve checksum-pinned fold tools without the App token'),
                         names.index('Mint repository-scoped fold token'))
         self.assertNotIn('with-nils-version', steps[-1]['run'])
+
+
+class WorkflowAuthenticationTests(unittest.TestCase):
+    def setUp(self):
+        self.workflow = yaml.safe_load((ROOT / '.github/workflows/devlog-fold.yml').read_text())
+        # PyYAML's YAML 1.1 loader treats the Actions key `on` as a boolean.
+        self.call = self.workflow.get('on', self.workflow.get(True))['workflow_call']
+        self.steps = self.workflow['jobs']['fold']['steps']
+
+    def test_app_is_default_and_minting_is_explicit(self):
+        self.assertEqual(self.call['inputs']['authentication']['default'], 'app')
+        for secret in ('BOT_APP_ID', 'BOT_APP_PRIVATE_KEY'):
+            self.assertFalse(self.call['secrets'][secret]['required'])
+        mint = next(step for step in self.steps if step.get('id') == 'app')
+        self.assertEqual(mint['if'], "inputs.authentication == 'app'")
+        self.assertEqual(mint['with']['permission-contents'], 'write')
+
+    def test_mode_and_app_credentials_are_validated_before_checkout(self):
+        validation = self.steps[0]
+        self.assertEqual(validation['name'], 'Validate fold authentication')
+        self.assertEqual(validation['env'], {
+            'FOLD_AUTHENTICATION': '${{ inputs.authentication }}',
+            'BOT_APP_ID': '${{ secrets.BOT_APP_ID }}',
+            'BOT_APP_PRIVATE_KEY': '${{ secrets.BOT_APP_PRIVATE_KEY }}',
+        })
+        cases = [('app', '123', 'synthetic-private-key', 0),
+                 ('app', '', 'synthetic-private-key', 64),
+                 ('app', '123', '', 64),
+                 ('app', '', '', 64),
+                 ('github-token', '', '', 0),
+                 ('github-token', '123', 'synthetic-private-key', 0),
+                 ('unknown', '123', 'synthetic-private-key', 64),
+                 ('', '', '', 64)]
+        for mode, app_id, key, expected in cases:
+            with self.subTest(mode=mode, app_id_present=bool(app_id), key_present=bool(key)):
+                result = subprocess.run(['bash', '-c', validation['run']], text=True,
+                                        capture_output=True, env={**os.environ,
+                                            'FOLD_AUTHENTICATION': mode,
+                                            'BOT_APP_ID': app_id, 'BOT_APP_PRIVATE_KEY': key})
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertNotIn('synthetic-private-key', result.stdout + result.stderr)
+
+    def test_publication_uses_workflow_token_only_in_explicit_mode(self):
+        publish = self.steps[-1]
+        self.assertEqual(publish['env']['GH_TOKEN'],
+                         "${{ inputs.authentication == 'github-token' && github.token || steps.app.outputs.token }}")
+
+    def test_callee_inherits_caller_permissions_without_read_only_downgrade(self):
+        self.assertNotIn('permissions', self.workflow)
+        self.assertNotIn('permissions', self.workflow['jobs']['fold'])
 
 
 if __name__ == '__main__':

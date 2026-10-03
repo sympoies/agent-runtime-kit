@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trusted CI fold owner. Create verified App commits, retry only a moved branch."""
+"""Trusted CI fold owner. Create verified bot commits, retry only a moved branch."""
 import argparse
 import base64
 import json
@@ -33,7 +33,7 @@ def api(method, endpoint, payload=None):
 
 
 def tool_env():
-    # Only execution and locale settings reach downloaded tools. Neither App
+    # Only execution and locale settings reach downloaded tools. Neither fold
     # tokens, Actions OIDC request credentials nor other provider variables do.
     allowed = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR')
     return {key: os.environ[key] for key in allowed if key in os.environ}
@@ -42,7 +42,7 @@ def tool_env():
 def git(*args):
     env = tool_env()
     if args and args[0] == 'fetch':
-        # Supply App credentials only to this fetch, without repository config
+        # Supply fold credentials only to this fetch, without repository config
         # or secret-bearing argv/URLs that an exception could print.
         credential = base64.b64encode(('x-access-token:' + os.environ['GH_TOKEN']).encode()).decode()
         env.update({'GIT_CONFIG_COUNT': '1',
@@ -98,7 +98,7 @@ def publish(repo, branch, log_dir, max_attempts=3):
         commit = api('POST', f'repos/{repo}/git/commits',
                      {'message': 'docs(devlog): fold pending entries', 'tree': created_tree['sha'], 'parents': [base]})
         if not commit.get('verification', {}).get('verified'):
-            raise RuntimeError('App fold commit is not verified; refusing publication')
+            raise RuntimeError('Fold commit is not verified; refusing publication')
         try:
             api('PATCH', f'repos/{repo}/git/refs/heads/{urllib.parse.quote(branch, safe="")}',
                 {'sha': commit['sha'], 'force': False})
