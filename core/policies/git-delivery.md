@@ -264,6 +264,27 @@ destination, compare-and-swap, and read-back. The local receipt never bypasses
 project deploy or release gates. The live expected-base and exact one-commit
 range checks still must pass.
 
+## Scheduled devlog fold exception
+
+Once the maintainer enables the kit fragment rule and provisions a repository's
+fold job, that job may update its protected default branch without an
+agent-authored managed-worktree commit. This bounded CI exception applies only
+to the indexed development log: fold eligible pending entries, update month
+files and their index, and consume the folded fragments. It grants no agent
+permission to edit month files in a PR, push other content, bypass hooks, merge
+feature work, release, or enable the kit switch.
+
+The trusted default-branch job must run `devlog fold` and `devlog check`, create
+no commit when the fold is empty, and publish only App-authenticated commits
+whose provider verification is true. Provision the App as the narrowly scoped
+protection exception, or use an independently approved auto-merge PR route;
+never weaken required signatures or branch protections for other actors.
+A rejected fast-forward update caused by a moved default branch is refetched
+and folded again from the new tip, with a bounded retry budget. Other failures
+stop. No force update or agent-side fallback is authorized.
+
+The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptance.
+
 ## Commits
 
 - The `semantic-commit` body gate enforces 1-2 bullets on non-trivial commits;

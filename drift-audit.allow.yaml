@@ -31,3 +31,5 @@ unsafe_allow:
     reason: "Help text contains an example output filename with an embedded date; the high-entropy match is the date string, not a credential."
   - path: "core/policies/cli-tools.md"
     reason: "Cross-project tool-reference policy doc; its MCP-server-credentials section is guidance about keeping API keys out of config files and uses the words secret and key plus env-var placeholder examples (FIRECRAWL_API_KEY) that trip the keyword_prefix heuristic. These are documentation examples and guidance, not credentials."
+  - path: "core/policies/devlog/ci-fold.md"
+    reason: "Public workflow recipe names credential-free GitHub secret placeholders and token-permission guidance, plus a published nils-cli archive checksum; it contains no credential values."

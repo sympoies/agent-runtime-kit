@@ -22,7 +22,11 @@ value.
 
 ## Conventions
 
-- One file per month: `docs/source/devlog/YYYY-MM.md`, newest entry first.
+- With the kit fragment switch off, one file per month:
+  `docs/source/devlog/YYYY-MM.md`, newest entry first.
+- With the switch on, write entries through `devlog new` into `pending/`.
+  Never edit month files in a PR; the scheduled CI job folds them. See
+  [the canonical capability](../../../core/policies/devlog-capability.md).
 - Write in English, like the rest of the repository.
 - Keep current docs current. The devlog records history; it does not own the
   current runtime contract, policy, setup, or runbook.
