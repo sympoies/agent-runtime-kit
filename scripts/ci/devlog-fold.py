@@ -33,7 +33,10 @@ def api(method, endpoint, payload=None):
 
 
 def tool_env():
-    return {key: value for key, value in os.environ.items() if key not in ('GH_TOKEN', 'GITHUB_TOKEN')}
+    # Only execution and locale settings reach downloaded tools. Neither App
+    # tokens, Actions OIDC request credentials nor other provider variables do.
+    allowed = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR')
+    return {key: os.environ[key] for key in allowed if key in os.environ}
 
 
 def git(*args):

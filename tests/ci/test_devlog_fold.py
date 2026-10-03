@@ -55,11 +55,13 @@ class FoldPublisherTests(unittest.TestCase):
                 self.assertEqual(prepare.call_count, 1)
 
     def test_fetch_auth_is_ephemeral_and_other_children_have_no_token(self):
-        with patch.dict(os.environ, {'GH_TOKEN': 'synthetic-token', 'GITHUB_TOKEN': 'other-synthetic-token'}), patch.object(self.module.subprocess, 'check_output', return_value='base') as command:
+        with patch.dict(os.environ, {'PATH': '/usr/bin', 'GH_TOKEN': 'synthetic-token', 'GITHUB_TOKEN': 'other-synthetic-token', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'synthetic-oidc-token', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'https://example.invalid/token'}, clear=True), patch.object(self.module.subprocess, 'check_output', return_value='base') as command:
             self.module.git('fetch', 'origin', 'main')
             env = command.call_args.kwargs['env']
             self.assertNotIn('GH_TOKEN', env)
             self.assertNotIn('GITHUB_TOKEN', env)
+            self.assertFalse('ACTIONS_ID_TOKEN_REQUEST_TOKEN' in env, 'OIDC request credential inherited')
+            self.assertFalse('ACTIONS_ID_TOKEN_REQUEST_URL' in env, 'OIDC request endpoint inherited')
             self.assertEqual(env['GIT_CONFIG_KEY_0'], 'http.https://github.com/.extraheader')
             self.assertNotIn('synthetic-token', str(command.call_args.args))
             self.module.git('rev-parse', 'HEAD')

@@ -27,7 +27,7 @@ variables must not override it; an explicitly isolated acceptance repository
 may override it while testing. A deployment owner must reconcile host/service
 and organization values before enablement. This PR does not set either value.
 The off render is `:` and leaves inherited environment unchanged; the fold job
-is skipped before checkout or token minting.
+is skipped before any checkout or authentication.
 Existing month writing and delivery remain active while off, including compatibility with older supported tools.
 
 ## Scheduled caller
