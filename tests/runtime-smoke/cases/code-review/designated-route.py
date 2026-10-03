@@ -10,6 +10,9 @@ scratch.mkdir(parents=True, exist_ok=True)
 text = (root / 'core/skills/pr/deliver-pr/references/DESIGNATED_REVIEW_HANDOFF.md').read_text()
 block = next(b for b in re.findall(r'```bash\n(.*?)\n```', text, re.S)
              if b.startswith('# Designated-review route only.'))
+assert 'pr review-handoff check' not in block, 'handoff must stop before asynchronous closure'
+closure = next(b for b in re.findall(r'```bash\n(.*?)\n```', text, re.S)
+               if b.startswith('# Designated-review closure only.'))
 commands = scratch / 'commands'
 bin_dir = scratch / 'bin'
 bin_dir.mkdir(exist_ok=True)
@@ -45,18 +48,24 @@ for tool in ('forge-cli', 'agent-session', 'git'):
     path.write_text(stub)
     path.chmod(0o755)
 
-def run(scenario, assigned=True):
+def run(scenario, assigned=True, disposition="completed", handoff_only=False):
     commands.write_text('')
     env = dict(os.environ, PATH=str(bin_dir)+os.pathsep+os.environ['PATH'],
                ROUTE_SCENARIO=scenario, ROUTE_COMMANDS=str(commands),
                PROVIDER='github', OWNER_REPO='example/project', PR_NUMBER='7', BASE_REF='origin/main',
                AGENT_SESSION_ID='worker-session', DESIGNATED_REVIEW_AUTHOR='review-app[bot]',
-               REVIEW_HANDOFF_BODY_FILE='handoff.md')
+               REVIEW_HANDOFF_BODY_FILE='handoff.md', DESIGNATED_REVIEW_DISPOSITION=disposition)
     env.pop('AGENT_REVIEWER_SESSION', None)
     if assigned: env['AGENT_REVIEWER_SESSION']='reviewer-session@review-machine'
-    result = subprocess.run(['bash','-c',block],env=env,capture_output=True,text=True)
+    script = block if handoff_only else block+'\n'+closure
+    result = subprocess.run(['bash','-c',script],env=env,capture_output=True,text=True)
     return result.returncode, commands.read_text()
 
+status, calls = run('published', handoff_only=True)
+assert status == 0 and 'message send' in calls and ' check ' not in calls, (status, calls)
+for disposition in ('', 'accepted', 'failed', 'declined', 'deferred', 'timeout'):
+    status, calls = run('published', disposition=disposition)
+    assert status == 69 and ' check ' not in calls, (disposition, status, calls)
 status, calls = run('published', False)
 assert status == 0 and calls == '', (status, calls)
 status, calls = run('old-cli')
@@ -86,4 +95,4 @@ second_key=next(line.split('--idempotency-key ')[1] for line in second.splitline
 assert first_key != second_key, (first_key,second_key)
 _, replay=run('published')
 assert replay==first, (replay,first)
-print('designated route: unassigned, old CLI, provider base, ownership states, generation keys and retry passed')
+print('designated route: unassigned, old CLI, provider base, ownership states, generation keys, bounded closure phase and retry passed')

@@ -209,7 +209,8 @@ sending private evidence and bind mailbox replay to the assignment digest.
 
 Capability failure affects only assignment; keep the floor and unassigned
 commands unchanged. After closure, recheck, skip self-review, and satisfy the
-ordinary merge gates. Retry/return never implicitly changes ownership.
+ordinary merge gates. Retry never transfers ownership; use reviewer surrender
+or coordinator recovery explicitly.
 
 ## Review Profile Selection
 

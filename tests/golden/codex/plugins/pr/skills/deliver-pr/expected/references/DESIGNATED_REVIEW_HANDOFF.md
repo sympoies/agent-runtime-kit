@@ -49,26 +49,36 @@ if [ -n "${AGENT_REVIEWER_SESSION:-}" ]; then
   agent-session message send --from "$AGENT_SESSION_ID" \
     "${REVIEWER_MAILBOX_ARGS[@]}" --body-file "$REVIEW_HANDOFF_BODY_FILE" \
     --idempotency-key "review-handoff-$HANDOFF_DIGEST-$HANDOFF_HEAD" || exit $?
-  # Bounded mailbox wait and repair/return follow session-coordination policy.
-  # Recheck after closure; mailbox pass is insufficient.
-  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
-    pr review-handoff check "$PR_NUMBER" --expected-head "$HANDOFF_HEAD" || exit $?
 fi
 ```
 
-`inspect` validates the requested reviewer, public author, and current head
-before any private send. An inactive or conflicting assignment returns control
-to the coordinator; never overwrite it implicitly. A failed send retains the
-same assignment. Its record digest includes repository identity, and the key
-binds that ownership generation and head so a replacement at the same head
-gets a new message while an identical retry is idempotent.
+Stop at `awaiting designated review`. The parent uses the handoff's response
+and completion deadlines to wait for a correlated initial disposition and,
+after `accepted`, a correlated `completed` or `failed` result. Correlate the
+reply with the request, reviewer, PR, assignment generation, and reviewed head;
+inspect the exact authenticated mailbox body. Delivery, read receipts, activity,
+and elapsed time are insufficient. On deferred, declined, failed, closed,
+unreachable, or timeout, retain the PR and receipts and return to the coordinator.
+Ownership changes only through reviewer surrender or explicit coordinator
+recovery. Do not run closure while waiting or after a negative disposition.
 
-The reviewer binds `AGENT_REVIEW_ASSIGNMENT_GENERATION` from the inspected
-handoff before appending or publishing. Ordinary handover requires its
-`surrender` record. Only the owning coordinator may use explicit `recover`
-with the retained head/tip and a bounded reason after reviewer unavailability;
-that revokes the generation and never permits self-review. A subsequent
-coordinator `assign` creates a fresh interval and the route can be retried.
-On repair, require the old-head observation receipt before pushing. After
-closure, re-read the provider head and run `check` again before ordinary merge
-gates. Mailbox pass alone does not admit merge.
+After correlated `completed`, the parent sets
+`DESIGNATED_REVIEW_DISPOSITION=completed` and runs this separate closure fence.
+Re-read the provider head after repairs; the CLI must prove published review
+and owned closed ledger for that exact head. A mailbox pass alone is insufficient.
+
+```bash
+# Designated-review closure only.
+if [ -n "${AGENT_REVIEWER_SESSION:-}" ]; then
+  [ "${DESIGNATED_REVIEW_DISPOSITION:-}" = completed ] || {
+    echo "awaiting designated review: correlated completion required" >&2
+    exit 69
+  }
+  CLOSURE_VIEW="$(forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" \
+    --format json pr view "$PR_NUMBER")" || exit $?
+  CLOSURE_HEAD="$(printf '%s\n' "$CLOSURE_VIEW" | \
+    jq -er 'select(.ok == true) | .data.head_sha')" || exit $?
+  forge-cli --provider "$PROVIDER" --repo "$OWNER_REPO" --format json \
+    pr review-handoff check "$PR_NUMBER" --expected-head "$CLOSURE_HEAD" || exit $?
+fi
+```

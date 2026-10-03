@@ -653,6 +653,13 @@ run_designated_review_contract_probe() {
   for owner in "$policy" "$delegation" "$convergence" "$delivery" "$skill" "$gate" "$posting"; do
     grep -Fq 'designated reviewer' "$owner" || return 1
   done
+  local handoff="$REPO_ROOT/core/skills/pr/deliver-pr/references/DESIGNATED_REVIEW_HANDOFF.md"
+  for owner in "$delivery" "$handoff"; do
+    if grep -Eq 'review-handoff return|Retry/return|repair/return' "$owner"; then
+      echo "retired designated-review return terminology" >&2
+      return 1
+    fi
+  done
   grep -Fq 'AGENT_REVIEWER_SESSION' "$policy" || return 1
   grep -Fq 'exactly one ledger and publication writer per PR head' "$policy" || return 1
   grep -Fq 'awaiting designated review' "$delivery" || return 1
