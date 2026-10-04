@@ -2517,6 +2517,29 @@ raise SystemExit(1)
 PY
 }
 
+codex_marketplace_root_matches() {
+  runtime_python - "$1" "$2" "$3" <<'PY'
+import json
+import os
+import sys
+
+entries = json.loads(sys.argv[1]).get("marketplaces", [])
+expected = os.path.abspath(sys.argv[3])
+for entry in entries:
+    if entry.get("name") == sys.argv[2]:
+        root = entry.get("root")
+        raise SystemExit(0 if isinstance(root, str) and os.path.abspath(root) == expected else 1)
+raise SystemExit(1)
+PY
+}
+
+run_codex_registry_write() {
+  print_cmd codex "$@"
+  [ "$APPLY" = "1" ] || return 0
+  runtime_python "$SCRIPT_DIR/lib/codex-config-guard.py" \
+    "${CODEX_HOME:-$HOME/.codex}/config.toml" -- codex "$@"
+}
+
 codex_installed_plugin_refs_for_marketplace() {
   local installed_json="$1"
   local marketplace="$2"
@@ -2682,10 +2705,12 @@ sync_codex_plugin_registry() {
   local plugin
   local plugin_count=0
   local refresh_count=0
+  local desired_refs
 
   marketplace_json="$(codex_marketplace_json_path "$live_home")"
   marketplace="$(codex_marketplace_name "$marketplace_json")"
   materialized_home="$(codex_materialized_marketplace_home "$state_home" "$marketplace")"
+  desired_refs="$(codex_marketplace_plugins "$marketplace_json")"
 
   if [ "$APPLY" = "1" ]; then
     if [ "$CODEX_PLUGIN_PREFLIGHT_DONE" != "1" ] ||
@@ -2710,24 +2735,36 @@ sync_codex_plugin_registry() {
     installed_refs="$CODEX_PREFLIGHT_INSTALLED_REFS"
     while IFS= read -r plugin_ref; do
       [ -n "$plugin_ref" ] || continue
-      run_cmd codex plugin remove "$plugin_ref"
-      refresh_count=$((refresh_count + 1))
+      plugin="${plugin_ref%@*}"
+      if printf '%s\n' "$desired_refs" | grep -Fxq -- "$plugin"; then
+        refresh_count=$((refresh_count + 1))
+      else
+        run_codex_registry_write plugin remove "$plugin_ref" || return $?
+      fi
     done <<EOF_REFRESH_CODEX_PLUGINS
 $installed_refs
 EOF_REFRESH_CODEX_PLUGINS
 
-    if codex_marketplace_registered "$marketplaces_json" "$marketplace"; then
-      run_cmd codex plugin marketplace remove "$marketplace"
+    # Removing or replacing an existing marketplace can discard an adjacent
+    # foreign owner's delimiter. Materialization already refreshed this root;
+    # register only a new/relocated root, guarded by exact provider bytes.
+    if ! codex_marketplace_root_matches "$marketplaces_json" "$marketplace" "$materialized_home"; then
+      # Codex refuses an add from a different source until the old registration
+      # is removed. If that unavoidable write loses markers, the guard restores
+      # its snapshot and refuses the add and all subsequent activation steps.
+      if codex_marketplace_registered "$marketplaces_json" "$marketplace"; then
+        run_codex_registry_write plugin marketplace remove "$marketplace" || return $?
+      fi
+      run_codex_registry_write plugin marketplace add "$materialized_home" || return $?
     fi
   else
-    run_cmd codex plugin marketplace remove "$marketplace"
+    run_codex_registry_write plugin marketplace add "$materialized_home"
   fi
-  run_cmd codex plugin marketplace add "$materialized_home"
 
   while IFS= read -r plugin; do
     [ -n "$plugin" ] || continue
     plugin_ref="$plugin@$marketplace"
-    run_cmd codex plugin add "$plugin_ref"
+    run_codex_registry_write plugin add "$plugin_ref" || return $?
     plugin_count=$((plugin_count + 1))
   done <<EOF_CODEX_PLUGINS
 $(codex_marketplace_plugins "$marketplace_json")

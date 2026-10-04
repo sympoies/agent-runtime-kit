@@ -211,6 +211,25 @@ verify hook health with `agent-hook doctor`. Keep
 `scripts/setup.sh` for first-time host bootstrap and CLI tool installation; it
 delegates the same plugin registry and hook activation after bootstrap.
 
+Codex refresh keeps a marketplace registration when its root already matches
+the materialized copy, refreshes active plugins through `plugin add`, and removes
+only stale installed managed plugins. Codex 0.160.0 can delete a preceding
+foreign managed delimiter when removing or replacing a marketplace table.
+Every registry write therefore snapshots the provider config and conserves the
+census of exact standalone managed marker lines, without an owner whitelist.
+On marker loss, it restores the exact pre-step bytes and mode, emits a
+digest/count receipt, and stops with exit 65 before later activation. It never
+reconstructs another owner's block or relaxes `agent-hook` validation. Literal
+marker-shaped lines inside TOML strings are conservatively included in the
+census; layout interpretation remains with `agent-hook`.
+
+Run refresh with other provider-config writers idle. Restoration uses a
+content/identity recheck followed by atomic replacement, rather than a kernel
+fence against concurrent writers. If the post-step target cannot be safely read
+or restoration encounters drift, the private `.codex-config-snapshot.*` file is
+retained for operator inspection and the command stops. Keep that recovery
+state private and resolve the refusal before retrying.
+
 Retired managed-surface cleanup has two separate sources of truth:
 `manifests/retired-skill-ids.json` owns the product-neutral ID boundary used by
 Codex, Claude, and Hermes cleanup, while

@@ -2795,6 +2795,7 @@ run_sync_runtime_surfaces_codex_plugin_registry_probe() {
     "$source_root/build/codex/plugins/meta/skills/demo-symlink" \
     "$source_root/build/codex/plugins/evidence/skills/demo" \
     "$stub_bin"
+  chmod 700 "$codex_home"
   cat >"$source_root/targets/codex/.agents/plugins/marketplace.json" <<'JSON'
 {
   "name": "codex-kit",
@@ -2860,7 +2861,11 @@ case "$*" in
     if [ "${CODEX_STUB_UNREGISTERED:-0}" = 1 ] && [ "$source_override" = 0 ]; then
       printf '{"marketplaces":[]}\n'
     else
-      printf '{"marketplaces":[{"name":"codex-kit","root":"/old-state-home"}]}\n'
+      if [ "${CODEX_STUB_RELOCATED:-0}" = 1 ]; then
+        printf '{"marketplaces":[{"name":"codex-kit","root":"/old-state-home"}]}\n'
+      else
+        printf '{"marketplaces":[{"name":"codex-kit","root":"%s"}]}\n' "$CODEX_STUB_MARKETPLACE"
+      fi
     fi
     ;;
 esac
@@ -2882,15 +2887,15 @@ SH
   grep -q "Codex marketplace snapshot missing; preflighting against source marketplace" "$out"
   grep -q -- '-c marketplaces.codex-kit.source=' "$stub_log"
   grep -q "syncing Codex plugin registry marketplace=codex-kit source=$materialized_home" "$out"
-  grep -q "plugin marketplace remove codex-kit" "$stub_log"
-  grep -q "plugin marketplace add $materialized_home" "$stub_log"
-  grep -q "plugin remove meta@codex-kit" "$stub_log"
+  if grep -q "plugin marketplace remove codex-kit\|plugin marketplace add\|plugin remove meta@codex-kit" "$stub_log"; then
+    echo "refresh rewrote a current marketplace or removed an active plugin" >&2
+    return 1
+  fi
   grep -q "plugin remove legacy@codex-kit" "$stub_log"
   grep -q "plugin add meta@codex-kit" "$stub_log"
   grep -q "plugin add evidence@codex-kit" "$stub_log"
-  # The refresh removes installed codex-kit entries, including stale ones, but
-  # must not remove plugins from other marketplaces or plugins that are not
-  # installed.
+  # Only stale installed managed entries are removed. Active entries refresh
+  # through add, and unrelated marketplaces remain untouched.
   if grep -q "plugin remove evidence@codex-kit" "$stub_log"; then
     echo "refresh removed evidence@codex-kit which was not installed" >&2
     exit 1
@@ -2920,6 +2925,20 @@ SH
     echo 'Codex refresh removed a marketplace that was not registered' >&2
     return 1
   fi
+  grep -q "plugin marketplace add $materialized_home" "$stub_log"
+
+  : >"$stub_log"
+  (
+    SYNC_RUNTIME_SURFACES_LIB=1 . "$script"
+    APPLY=1
+    SOURCE_ROOT="$source_root"
+    PATH="$stub_bin:$PATH" CODEX_STUB_LOG="$stub_log" \
+      CODEX_STUB_MARKETPLACE="$materialized_home" \
+      CODEX_STUB_SOURCE_ROOT="$source_root/targets/codex" \
+      CODEX_STUB_RELOCATED=1 \
+      sync_codex_plugin_registry "$codex_home" "$state_home"
+  ) >"$out.relocated" 2>&1
+  grep -q "plugin marketplace remove codex-kit" "$stub_log"
   grep -q "plugin marketplace add $materialized_home" "$stub_log"
 
   set +e
