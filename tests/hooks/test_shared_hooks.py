@@ -28363,6 +28363,222 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertTrue(linked_lock.exists())
             self.assertEqual(linked_lock.stat().st_ino, lock_inode)
 
+    def test_checkout_lease_advisory_removal_retains_target_without_fence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/remove")
+            state = root / "state"
+            remove = self._checkout_lease_payload(
+                "delivery", primary, tool_name="Bash",
+                command=f"git-cli worktree remove {shlex.quote(str(linked))} --format json",
+            )
+            for mode in ("", "advisory", "off"):
+                with self.subTest(mode=mode or "default"):
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", remove, cwd=primary,
+                        env={"AGENT_RUNTIME_STATE_HOME": str(state),
+                             "AGENT_SESSION_COORDINATION_MODE": mode},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "target lease fencing is unavailable")
+                    self.assertTrue(linked.exists())
+                    self.assertEqual(self._checkout_lease_files(state), [])
+            for mode in ("advisory", "enforce"):
+                for command in ("git-cli worktree remove --help",
+                                "git-cli worktree remove -h"):
+                    with self.subTest(mode=mode, command=command):
+                        help_payload = dict(remove, tool_input={"command": command})
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", help_payload, cwd=primary,
+                            env={"AGENT_RUNTIME_STATE_HOME": str(state),
+                                 "AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+                        self.assertEqual(self._checkout_lease_files(state), [])
+
+    def test_checkout_lease_removal_diagnostic_does_not_claim_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/diagnostic")
+            state = root / "state"
+            payload = self._checkout_lease_payload(
+                "delivery", primary, tool_name="Bash",
+                command=f"git-cli worktree remove {shlex.quote(str(linked))} --format json",
+            )
+            environment = dict(os.environ, AGENT_RUNTIME_STATE_HOME=str(state),
+                               AGENT_SESSION_COORDINATION_MODE="advisory")
+            environment.pop("AGENT_SESSION_ID", None)
+            result = subprocess.run(
+                [sys.executable, str(HOOK_DIR / "checkout-lease-guard.py"),
+                 "diagnose-removal"], input=json.dumps(payload), cwd=primary,
+                env=environment, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostic = json.loads(result.stdout)
+            self.assertEqual(diagnostic["schema"], "agent-runtime.worktree-removal-attestation.v1")
+            self.assertEqual(diagnostic["target"]["root"], str(linked.resolve()))
+            self.assertFalse(diagnostic["guard_available"])
+            self.assertFalse(diagnostic["execution_fenced"])
+            self.assertFalse(diagnostic["cleanup_authorized"])
+            self.assertFalse(diagnostic["owner_incarnation_verified"])
+            self.assertEqual(diagnostic["disposition"], "retain")
+            self.assertEqual(self._checkout_lease_files(state), [])
+            self.assertFalse(state.exists())
+            self.assertFalse((linked / ".git").is_dir())
+
+    def test_checkout_lease_removal_retains_dirty_target_even_for_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/dirty")
+            env = {"AGENT_RUNTIME_STATE_HOME": str(root / "state")}
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("owner", linked / "README.md"),
+                cwd=linked, env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            (linked / "pending.txt").write_text("retain this work\n", encoding="utf-8")
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {shlex.quote(str(linked))}",
+                ), cwd=primary, env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "dirty removal target")
+            self.assertEqual((linked / "pending.txt").read_text(), "retain this work\n")
+
+    def test_checkout_lease_removal_diagnostic_reports_target_replacement(self) -> None:
+        module = self._load("removal_diagnostic_drift", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                primary = root / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/drift")
+                payload = self._checkout_lease_payload(
+                    "owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {shlex.quote(str(linked))}",
+                )
+                payload["tool_input"]["cwd"] = str(primary)
+
+                def replace_target(*args):
+                    linked.rename(root / "retained-original")
+                    linked.mkdir()
+                    return None
+
+                with mock.patch.dict(os.environ, {
+                    "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                    "AGENT_SESSION_COORDINATION_MODE": "advisory",
+                }), mock.patch.object(module, "load_lease", side_effect=replace_target):
+                    result = module.diagnose_worktree_removal(payload)
+                self.assertEqual(result["disposition"], "retain")
+                self.assertFalse(result["target_stable"])
+                self.assertFalse(result["execution_fenced"])
+                self.assertIn("identity changed", result["reason"])
+                self.assertTrue((root / "retained-original" / "README.md").exists())
+                self.assertFalse((root / "state").exists())
+        finally:
+            sys.modules.pop("removal_diagnostic_drift", None)
+
+    def test_checkout_lease_removal_refuses_primary_nested_and_locked_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/protected")
+            nested = linked / "nested"
+            nested.mkdir()
+            for target in (primary, nested):
+                with self.subTest(target=target.name):
+                    code, decision, stderr = run_enforced_hook(
+                        "checkout-lease-guard.py",
+                        self._checkout_lease_payload(
+                            "owner", primary, tool_name="Bash",
+                            command=f"git-cli worktree remove {shlex.quote(str(target))}",
+                        ), cwd=primary,
+                        env={"AGENT_RUNTIME_STATE_HOME": str(root / "state")},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "exact registered linked checkout root")
+            subprocess.run(["git", "worktree", "lock", str(linked)],
+                           cwd=primary, check=True)
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload(
+                    "owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {shlex.quote(str(linked))}",
+                ), cwd=primary,
+                env={"AGENT_RUNTIME_STATE_HOME": str(root / "state")},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "locked removal target")
+            self.assertTrue(linked.exists())
+
+    def test_checkout_lease_bounded_managed_removal_and_foreign_refusal(self) -> None:
+        # Actual released lifecycle execution is limited to reconstructible,
+        # isolated fixture worktrees. The production runtime is never activated.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            environment = dict(os.environ, AGENT_HOME=str(root / "managed"))
+            for key in ("AGENT_SESSION_ID", "AGENT_SESSION_STATE_DIR",
+                        "AGENT_SESSION_RUNTIME_ID"):
+                environment.pop(key, None)
+            targets = []
+            for slug in ("bounded-removal", "protected-removal"):
+                added = subprocess.run(
+                    ["git-cli", "worktree", "add", slug, "--kind", "bug", "--format", "json"],
+                    cwd=primary, env=environment, text=True, capture_output=True,
+                    check=True,
+                )
+                targets.append(Path(json.loads(added.stdout)["data"]["path"]))
+            removable, protected = targets
+            lease_env = {"AGENT_RUNTIME_STATE_HOME": str(root / "leases")}
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("foreign", protected / "README.md"),
+                cwd=protected, env=lease_env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            for target, blocked in ((protected, True), (removable, False)):
+                command = f"git-cli worktree remove {shlex.quote(str(target))} --format json"
+                code, decision, stderr = run_enforced_hook(
+                    "checkout-lease-guard.py",
+                    self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                                                 command=command),
+                    cwd=primary, env=lease_env,
+                )
+                self.assertEqual(code, 0, stderr)
+                if blocked:
+                    self.assert_blocked(decision, "another agent session")
+                    self.assertTrue(target.exists())
+                else:
+                    self.assert_allowed(decision)
+                    removed = subprocess.run(
+                        ["git-cli", "worktree", "remove", str(target), "--format", "json"],
+                        cwd=primary, env=environment, text=True, capture_output=True,
+                        check=True,
+                    )
+                    self.assertTrue(json.loads(removed.stdout)["ok"])
+                    self.assertFalse(target.exists())
+                    self.assertTrue(protected.exists())
+            listed = subprocess.run(["git", "worktree", "list", "--porcelain"],
+                                    cwd=primary, text=True, capture_output=True, check=True)
+            self.assertNotIn(str(removable), listed.stdout)
+            self.assertIn(str(protected), listed.stdout)
+
     def test_checkout_lease_worktree_remove_targets_the_foreign_lease(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

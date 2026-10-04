@@ -17,21 +17,19 @@ Dispositions
 - ``protected``       branch was explicitly named by ``--protect-branch``;
                       retained even when its history is fully in the base.
 - ``safe-merged``     branch tip is an ancestor of the base (nothing ahead);
-                      its history is fully in the base. Safe to prune.
+                      its history is fully in the base; still requires owner/terminal proof.
 - ``safe-superseded`` branch is ahead by commit SHA, but every commit is
                       patch-equivalent to one already in the base (``git
-                      cherry`` reports them all as ``-``). Safe to prune.
+                      cherry`` reports them all as ``-``); still requires owner/terminal proof.
 - ``rescue-candidate``branch has commits whose patch is NOT in the base. This
                       MAY still be already-on-base content that arrived via a
                       different commit (patch-id is unreliable — see the net
                       two-dot diff in ``evidence``), or it may be genuine
                       unmerged work. Requires human judgment; never auto-pruned.
                       The ``evidence.likely_superseded`` flag is only an
-                      advisory patch-id hint: the skill confirms supersession
-                      definitively with a rebase probe (rebasing the branch onto
-                      the base and checking whether every commit drops as an
-                      already-applied cherry-pick), which this read-only scanner
-                      does not run.
+                      advisory patch-id hint. The skill checks exact-head
+                      provider delivery truth without rebasing inventory;
+                      neither classification proves original-owner release.
 
 Each repo record also carries ``base_freshness`` (``base``/``upstream``/
 ``behind_upstream``) when the base has an upstream, so the caller can tell that
@@ -278,7 +276,7 @@ def classify(
     if dirty:
         record["disposition"] = "dirty"
         record["suggested_action"] = (
-            "inspect uncommitted changes; commit or discard before removing"
+            "retain unchanged and route uncommitted changes to their original owner"
         )
         return record
     if record["locked"]:
@@ -300,7 +298,7 @@ def classify(
     if ahead == 0 and is_ancestor(repo, tip, base):
         record["disposition"] = "safe-merged"
         record["suggested_action"] = (
-            "git-cli worktree remove + delete branch (fully in base)"
+            "history fully in base; verify owner release and terminal proof before removal"
         )
         return record
 
@@ -309,8 +307,7 @@ def classify(
     if not unique:
         record["disposition"] = "safe-superseded"
         record["suggested_action"] = (
-            "git-cli worktree remove + delete branch "
-            "(all commits patch-equivalent in base)"
+            "history patch-equivalent in base; verify owner release and terminal proof"
         )
         return record
 
@@ -325,7 +322,7 @@ def classify(
         record["suggested_action"] = (
             "likely already on base via another commit (net diff is "
             f"{'empty' if evidence['identical'] else 'subtractive'}); "
-            "review then close/discard"
+            "read exact-head provider truth; retain until owner and terminal proof"
         )
         record["likely_superseded"] = True
     else:
