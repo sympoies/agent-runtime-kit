@@ -5334,8 +5334,11 @@ def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
         return False
     # Git reports a physical root. Preserve the same relative spelling when
     # system ancestors resolve differently, while rejecting aliases inside it.
+    # Choose the outermost root spelling: an internal alias pointing back to
+    # the root must remain part of the relative path rather than hide itself.
     lexical_root = next(
-        (parent for parent in named.parents if artifact_physical(parent) == repo_root),
+        (parent for parent in reversed(named.parents)
+         if artifact_physical(parent) == repo_root),
         None,
     )
     if lexical_root is None or named.relative_to(lexical_root) != relative:

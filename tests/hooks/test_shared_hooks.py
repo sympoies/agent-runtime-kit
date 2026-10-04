@@ -31065,6 +31065,35 @@ exit 66
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "agent-out")
 
+    def test_artifact_routing_tracked_source_does_not_allow_internal_root_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            (repo / "alias").symlink_to(".", target_is_directory=True)
+            for target in (
+                "alias/crates/agent-out/tests/integration/retention.rs",
+                "alias/alias/crates/agent-out/tests/integration/retention.rs",
+            ):
+                with self.subTest(target=target):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                        cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_allows_external_checkout_root_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            alias = Path(tmp) / "checkout-alias"
+            alias.symlink_to(repo, target_is_directory=True)
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                {"tool_name": "Edit", "tool_input": {"file_path": str(
+                    alias / "crates/agent-out/tests/integration/retention.rs")}},
+                cwd=repo)
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
     def test_artifact_routing_blocks_repo_local_agent_out_bash_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._artifact_routing_repo(tmp)
