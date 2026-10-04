@@ -418,10 +418,29 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
   provider-unverified, or otherwise ambiguous state is retained and reported;
   never force removal merely to make the local tree look tidy.
 - Managed worktree removal must run through a supported hooked shell. The
-  checkout lease guard resolves the removal target, claims or refreshes its
-  lease, and blocks a live foreign owner before `git-cli` executes. If the
-  target lease cannot be verified or the hook is unavailable, retain the
-  worktree and report the failed proof instead of removing it.
+  checkout lease guard resolves the exact registered linked target, refuses
+  dirty or locked targets even for their owner, claims or refreshes its lease,
+  and blocks a live foreign owner before `git-cli` executes. Outside `enforce`
+  mode, managed removal is blocked rather than treating the advisory bypass as
+  proof. Do not activate enforcement just to get past cleanup. If target lease
+  fencing cannot be verified or the hook is unavailable, retain and report.
+- The lease owner supports `checkout-lease-guard.py diagnose-removal` with the
+  proposed PreToolUse shell payload on stdin. Its target-bound
+  `agent-runtime.worktree-removal-attestation.v1` diagnostic observes the root,
+  Git directory, common directory, HEAD, checkout instance and existing lease
+  without acquiring or refreshing ownership. It always reports
+  `execution_fenced=false` and `cleanup_authorized=false`: this observation,
+  hook registration, and a successful lifecycle command are never execution
+  receipts. The v1/v2 lease does not prove a managed session incarnation.
+- Keep delivery classification separate from producer release. A squash-merged
+  PR whose provider head exactly matches the local head establishes delivered
+  content without rebasing the inventory branch. It does not release an active
+  owner, rollback hold, open follow-up PR, or pending evidence/parent duty.
+  Obtain explicit authenticated original-owner release bound to the target,
+  checkout instance, head and managed incarnation, with the parent duties
+  acknowledged. Missing reports and disappeared sessions mean unknown release
+  state and retention; never synthesize success or adopt ownership from absence.
+  An unpushed or provider-mismatched head also remains retained.
 - Run exactly one managed worktree removal as the shell command's sole mutation.
   Do not combine removals or combine removal with branch deletion, redirection,
   or another checkout write; execute each lifecycle step separately so its

@@ -3,7 +3,8 @@
 
 The lease is an opt-in strict coordination layer selected with
 ``AGENT_SESSION_COORDINATION_MODE=enforce``. Advisory, off, invalid, and absent
-mode values never acquire or block on a lease. In enforce mode the guard
+mode values never acquire leases; managed removal refuses their unavailable
+target fence. Ordinary edits stay advisory. In enforce mode the guard
 recognizes only explicit edit tools and high-confidence shell mutations.
 Read-only inspection stays available. Stop performs an audit only: it never
 removes a worktree, branch, or lease.
@@ -447,11 +448,23 @@ def target_checkouts(payload: Mapping[str, Any], tool: str) -> list[Checkout]:
     elif tool in COMMAND_TOOLS:
         command = command_from(payload)
         targets = managed_worktree_remove_targets(command, base)
+        removal = bool(targets)
         if not targets:
             targets = semantic_commit_repo_targets(command, base)
         if targets:
             for target in targets:
                 checkout = checkout_from(target)
+                if removal:
+                    if (
+                        checkout is None or checkout.root != target or checkout.primary
+                        or target not in listed_worktree_paths(base)
+                    ):
+                        raise MutationScopeError(
+                            "removal target is not an exact registered linked checkout root"
+                        )
+                    reason = removal_target_reason(checkout)
+                    if reason:
+                        raise MutationScopeError(reason)
                 if checkout is not None:
                     checkouts[str(checkout.root)] = checkout
         else:
@@ -632,6 +645,10 @@ def git_invocation_mutates(arguments: list[str]) -> bool:
 
 
 def git_cli_invocation_mutates(arguments: list[str]) -> bool:
+    if arguments[:2] == ["worktree", "remove"] and any(
+        argument in {"-h", "--help"} for argument in arguments[2:]
+    ):
+        return False
     if arguments and arguments[0] == "sync-branch":
         action = arguments[1:]
         return not (
@@ -661,6 +678,7 @@ def is_managed_worktree_remove(invocation: list[str]) -> bool:
         len(invocation) >= 4
         and os.path.basename(invocation[0]) == "git-cli"
         and invocation[1:3] == ["worktree", "remove"]
+        and not any(argument in {"-h", "--help"} for argument in invocation[3:])
     )
 
 
@@ -2962,12 +2980,127 @@ def stop_audit(payload: Mapping[str, Any]) -> int:
     return ALLOW
 
 
+def removal_target_reason(checkout: Checkout) -> str:
+    if (checkout.git_dir / "locked").exists():
+        return "locked removal target must be retained"
+    if checkout_dirty(checkout):
+        return "dirty removal target must be retained, including this session's changes"
+    operation = git_operation(checkout)
+    return f"removal target has a pending Git operation ({operation})" if operation else ""
+
+
+def removal_path_identity(path: Path) -> tuple[int, int]:
+    metadata = path.stat()
+    return metadata.st_dev, metadata.st_ino
+
+
+def diagnose_worktree_removal(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Observe one target without acquiring a lease or authorizing removal.
+
+    This is a pre-removal diagnostic, not an execution receipt. In particular,
+    the v1/v2 checkout lease cannot attest a managed session incarnation or
+    completion of provider, rollback, and parent-owned evidence duties.
+    """
+    mode = os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower()
+    result: dict[str, Any] = {
+        "schema": "agent-runtime.worktree-removal-attestation.v1",
+        "evidence_kind": "diagnostic",
+        "guard_mode": mode or "default",
+        "guard_available": mode == "enforce",
+        "execution_fenced": False,
+        "cleanup_authorized": False,
+        "owner_incarnation_verified": False,
+        "disposition": "retain",
+        "target_stable": False,
+        "target": None,
+        "lease": None,
+        "reason": "target lease fencing is unavailable outside enforce mode",
+    }
+    try:
+        if hook_event(payload) != "PreToolUse" or tool_name(payload) not in COMMAND_TOOLS:
+            raise LeaseError("diagnostic requires a removal shell tool payload")
+        targets = managed_worktree_remove_targets(command_from(payload), payload_base(payload))
+        if len(targets) != 1:
+            raise LeaseError("diagnostic requires exactly one managed removal target")
+        target = targets[0]
+        checkout = checkout_from(target)
+        if checkout is None or checkout.root != target or checkout.primary:
+            raise LeaseError("removal target is not an exact linked checkout root")
+        if target not in listed_worktree_paths(payload_base(payload)):
+            raise LeaseError("removal target is not registered in this repository")
+        head = run_git(checkout.root, "rev-parse", "--verify", "HEAD")
+        if head.returncode != 0:
+            raise LeaseError("removal target HEAD could not be verified")
+        instance = read_instance(checkout, create=False)
+        identities = [removal_path_identity(path)
+                      for path in (checkout.root, checkout.git_dir)]
+        result["target"] = {
+            "root": str(checkout.root),
+            "git_dir": str(checkout.git_dir),
+            "common_dir": str(checkout.common_dir),
+            "head": head.stdout.strip(),
+            "checkout_instance": instance or None,
+            "root_identity": list(identities[0]),
+            "git_dir_identity": list(identities[1]),
+        }
+        lease = load_lease(checkout_state_dir(checkout, create=False) / "lease.json", checkout)
+        session_key = session_marker_key(payload)
+        now = time.time()
+        if lease:
+            result["lease"] = {
+                "schema": lease["schema"],
+                "owner_key": lease["session_key"],
+                "checkout_instance": lease["checkout_instance"],
+                "expires_at": lease["expires_at"],
+                "live": float(lease["expires_at"]) > now,
+                "matches_requester": bool(session_key and lease["session_key"] == session_key),
+                "matches_target_instance": bool(instance and lease["checkout_instance"] == instance),
+            }
+        if mode == "enforce":
+            reason = removal_target_reason(checkout) or live_foreign_lease_reason(
+                lease, instance=instance, session_key=session_key, now=now,
+            ) or checkout_admission_reason(checkout)
+            result["reason"] = reason or (
+                "diagnostic only; execution hook, original owner release, managed "
+                "incarnation, provider truth and parent duties remain unverified"
+            )
+        head_after = run_git(checkout.root, "rev-parse", "--verify", "HEAD")
+        if (
+            checkout_from(target) != checkout
+            or read_instance(checkout, create=False) != instance
+            or head_after.returncode != 0 or head_after.stdout != head.stdout
+            or [removal_path_identity(path)
+                for path in (checkout.root, checkout.git_dir)] != identities
+        ):
+            raise LeaseError("removal target identity changed during diagnostic")
+        result["target_stable"] = True
+    except (LeaseError, OSError) as exc:
+        result["reason"] = str(exc)
+    return result
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == DIRTY_ADOPTION_LAUNCHER_ACTION:
         return run_dirty_adoption_launcher(sys.argv[2:])
-    if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
-        return ALLOW
     payload = read_payload()
+    if len(sys.argv) == 2 and sys.argv[1] == "diagnose-removal":
+        sys.stdout.write(json.dumps(diagnose_worktree_removal(payload), sort_keys=True) + "\n")
+        return ALLOW
+    if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
+        # Advisory edits do not acquire leases. Removal, however, must never
+        # mistake that silent bypass for proof that its target was fenced.
+        if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
+            command = command_from(payload)
+            if any(
+                is_managed_worktree_remove(invocation_tokens(tokens))
+                for tokens in parsed_shell_commands(command)
+            ):
+                emit_block(
+                    "Managed worktree removal target lease fencing is unavailable "
+                    "outside enforce mode. Retain the target and report the missing "
+                    "proof; hook registration or command success is not an attestation."
+                )
+        return ALLOW
     event = hook_event(payload)
     if event == "Stop":
         return stop_audit(payload)
