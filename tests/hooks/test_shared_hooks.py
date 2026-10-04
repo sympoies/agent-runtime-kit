@@ -30978,6 +30978,122 @@ exit 66
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         return repo
 
+    def _artifact_routing_tracked_worktree(self, tmp: str) -> Path:
+        primary = Path(tmp) / "primary"
+        self._init_checkout_lease_repo(primary)
+        for relative in (
+            "crates/agent-out/tests/integration/retention.rs",
+            "agent-out/tracked-scratch.md",
+            ".cache/agent-out/tracked-scratch.md",
+        ):
+            source = primary / relative
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("tracked fixture\n", encoding="utf-8")
+        subprocess.run(["git", "add", "--", "crates", "agent-out", ".cache"],
+                       cwd=primary, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "tracked source fixture"],
+                       cwd=primary, check=True)
+        return self._add_checkout_lease_worktree(primary, "fix/tracked-source")
+
+    def test_artifact_routing_allows_existing_tracked_source_in_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            target = "crates/agent-out/tests/integration/retention.rs"
+            payloads = (
+                {"tool_name": "Write", "tool_input": {"file_path": target}},
+                {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                {"tool_name": "MultiEdit",
+                 "tool_input": {"file_path": target, "edits": []}},
+                {"tool_name": "apply_patch", "tool_input": {"input": (
+                    "*** Begin Patch\n"
+                    f"*** Update File: {target}\n"
+                    "@@\n-tracked fixture\n+changed fixture\n*** End Patch\n"
+                )}},
+                command_payload(f"echo changed > {target}"),
+            )
+            self.assertTrue((repo / ".git").is_file())
+            for payload in payloads:
+                with self.subTest(tool=payload["tool_name"]):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, payload, cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                {"tool_name": "Edit",
+                 "tool_input": {"file_path": "tests/integration/retention.rs"}},
+                cwd=repo / "crates" / "agent-out")
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_artifact_routing_tracked_source_does_not_allow_scratch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            payloads = (
+                {"tool_name": "Write", "tool_input": {
+                    "file_path": "crates/agent-out/tests/integration/new.rs"}},
+                {"tool_name": "Write", "tool_input": {
+                    "file_path": "crates/agent-out/tests/integration/retention?.rs"}},
+                command_payload("mkdir -p crates/agent-out/scratch/new"),
+                {"tool_name": "Edit", "tool_input": {
+                    "file_path": "agent-out/tracked-scratch.md"}},
+                {"tool_name": "Edit", "tool_input": {
+                    "file_path": ".cache/agent-out/tracked-scratch.md"}},
+            )
+            for payload in payloads:
+                with self.subTest(payload=payload):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, payload, cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_tracked_source_does_not_allow_symlink_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            source = repo / "crates" / "agent-out"
+            (repo / "notes").symlink_to(source, target_is_directory=True)
+            (source / "alias.rs").symlink_to(source / "tests/integration/retention.rs")
+            for target in (
+                "notes/tests/integration/retention.rs",
+                "crates/agent-out/alias.rs",
+            ):
+                with self.subTest(target=target):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                        cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_tracked_source_does_not_allow_internal_root_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            (repo / "alias").symlink_to(".", target_is_directory=True)
+            for target in (
+                "alias/crates/agent-out/tests/integration/retention.rs",
+                "alias/alias/crates/agent-out/tests/integration/retention.rs",
+            ):
+                with self.subTest(target=target):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK,
+                        {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                        cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+
+    def test_artifact_routing_allows_external_checkout_root_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            alias = Path(tmp) / "checkout-alias"
+            alias.symlink_to(repo, target_is_directory=True)
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                {"tool_name": "Edit", "tool_input": {"file_path": str(
+                    alias / "crates/agent-out/tests/integration/retention.rs")}},
+                cwd=repo)
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
     def test_artifact_routing_blocks_repo_local_agent_out_bash_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._artifact_routing_repo(tmp)

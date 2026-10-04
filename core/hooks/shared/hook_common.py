@@ -5320,6 +5320,49 @@ def is_agent_out_path(path: Path) -> bool:
     return ARTIFACT_FORBIDDEN_SEGMENT in path.parts
 
 
+def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
+    """Allow an exact tracked regular file, never scratch roots or aliases."""
+    try:
+        relative = target.relative_to(repo_root)
+    except ValueError:
+        return False
+    if not relative.parts or relative.parts[0] in {
+        ARTIFACT_FORBIDDEN_SEGMENT, ARTIFACT_CACHE_SEGMENT
+    }:
+        return False
+    if named.is_symlink() or not target.is_file():
+        return False
+    # Git reports a physical root. Preserve the same relative spelling when
+    # system ancestors resolve differently, while rejecting aliases inside it.
+    # Choose the outermost root spelling: an internal alias pointing back to
+    # the root must remain part of the relative path rather than hide itself.
+    lexical_root = next(
+        (parent for parent in reversed(named.parents)
+         if artifact_physical(parent) == repo_root),
+        None,
+    )
+    if lexical_root is None or named.relative_to(lexical_root) != relative:
+        return False
+    try:
+        tracked = subprocess.run(
+            ["git", "--literal-pathspecs", "ls-files", "--stage", "-z", "--",
+             relative.as_posix()],
+            cwd=repo_root, capture_output=True, check=False,
+        )
+    except (OSError, ValueError):
+        return False
+    entries = tracked.stdout.split(b"\0")
+    if tracked.returncode != 0 or len(entries) != 2 or entries[-1]:
+        return False
+    metadata, separator, filename = entries[0].partition(b"\t")
+    fields = metadata.split()
+    return bool(
+        separator and filename == os.fsencode(relative.as_posix())
+        and len(fields) == 3 and fields[0] in {b"100644", b"100755"}
+        and fields[2] == b"0"
+    )
+
+
 def repo_local_cache_scratch(path: Path, repo_root: Path | None) -> bool:
     """True for a checkout's `.cache/` write outside the marker subtree.
 
@@ -5354,18 +5397,21 @@ def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
     lexical = [artifact_normalized(path, workdir) for path in paths]
     resolved = [artifact_physical(path) for path in lexical]
 
-    for named, target in zip(lexical, resolved):
-        if is_agent_out_path(named) or is_agent_out_path(target):
-            return ARTIFACT_AGENT_OUT_REASON.format(path=named)
-
-    # Only pay for the repository lookup when a `.cache` write is in play.
+    # Git source may itself contain an agent-out component. Resolve its index
+    # only for guarded candidates; ordinary writes keep the no-Git fast path.
     if not any(
-        ARTIFACT_CACHE_SEGMENT in path.parts for path in (*lexical, *resolved)
+        is_agent_out_path(path) or ARTIFACT_CACHE_SEGMENT in path.parts
+        for path in (*lexical, *resolved)
     ):
         return None
 
     toplevel = git_toplevel(str(workdir))
     repo_root = artifact_physical(Path(toplevel)) if toplevel else None
+    for named, target in zip(lexical, resolved):
+        if is_agent_out_path(named) or is_agent_out_path(target):
+            if repo_root is not None and tracked_artifact_source(named, target, repo_root):
+                continue
+            return ARTIFACT_AGENT_OUT_REASON.format(path=named)
     for path in resolved:
         if repo_local_cache_scratch(path, repo_root):
             return ARTIFACT_CACHE_REASON.format(path=path)

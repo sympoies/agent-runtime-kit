@@ -49,8 +49,10 @@ runbooks and CLIs.
 - Put temporary/debug artifacts in a project-owned output path or an
   `agent-out project --topic <topic> --mkdir` directory outside the repository.
   Never commit runtime evidence, receipts, credentials, logs, or caches. Never
-  create an `agent-out` directory: the command owns the path, and a directory
-  by that name is always a misroute.
+  create an `agent-out` directory for scratch: the command owns the path.
+  An exact existing Git-tracked regular source file may have a nested
+  `agent-out` component. That exception does not admit untracked scratch,
+  repo-root artifact directories, symlink aliases, or cache routes.
 - A checkout's `.cache/` is not scratch space. Only `.cache/agent-validation/`
   is repo-local by design, holding the validation marker each repository
   declares in `AGENT_DOCS.toml`; route everything else to the allocated
