@@ -1,0 +1,472 @@
+[
+  {
+    "id": "issue-comment",
+    "command": "gh issue comment 7 --body fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "issue-close",
+    "command": "gh issue close 7 --body fixture",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "issue-edit",
+    "command": "gh issue edit 7 --body fixture",
+    "hint": "forge-cli issue edit"
+  },
+  {
+    "id": "issue-create",
+    "command": "gh issue create 7 --body fixture",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "issue-reopen",
+    "command": "gh issue reopen 7 --body fixture",
+    "hint": "forge-cli issue reopen"
+  },
+  {
+    "id": "pr-merge",
+    "command": "gh pr merge 7 --body fixture",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "pr-edit",
+    "command": "gh pr edit 7 --body fixture",
+    "hint": "forge-cli pr edit"
+  },
+  {
+    "id": "pr-comment",
+    "command": "gh pr comment 7 --body fixture",
+    "hint": "forge-cli pr comment"
+  },
+  {
+    "id": "pr-close",
+    "command": "gh pr close 7 --body fixture",
+    "hint": "forge-cli pr close"
+  },
+  {
+    "id": "pr-ready",
+    "command": "gh pr ready 7 --body fixture",
+    "hint": "forge-cli pr ready"
+  },
+  {
+    "id": "pr-review",
+    "command": "gh pr review 7 --body fixture",
+    "hint": "forge-cli pr review"
+  },
+  {
+    "id": "pr-reopen",
+    "command": "gh pr reopen 7 --body fixture",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "release-create",
+    "command": "gh release create v1.0.0",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "release-upload",
+    "command": "gh release upload v1.0.0 asset.txt",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "workflow-run",
+    "command": "gh workflow run checks.yml",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "comment-edit",
+    "command": "gh issue comment 7 --edit-last --body fixture",
+    "hint": "forge-cli has no comment edit/delete command"
+  },
+  {
+    "id": "comment-delete",
+    "command": "gh pr comment 7 --delete-last",
+    "hint": "forge-cli has no comment edit/delete command"
+  },
+  {
+    "id": "api-post",
+    "command": "gh api repos/example/project/issues/7/comments -X POST",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "api-patch",
+    "command": "gh api repos/example/project/issues/7/comments --method PATCH",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "api-delete",
+    "command": "gh api repos/example/project/issues/7/comments -XDELETE",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "api-implicit-raw",
+    "command": "gh api repos/example/project/issues/7/comments -f body=fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "api-implicit-typed",
+    "command": "gh api repos/example/project/issues/7/comments -F body=fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "api-attached-field",
+    "command": "gh api repos/example/project/issues/7/comments -fbody=fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "api-long-field",
+    "command": "gh api repos/example/project/issues/7/comments --raw-field=body=fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "api-input",
+    "command": "gh api repos/example/project/issues/7/comments --input body.json",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "api-edit-comment",
+    "command": "gh api repos/example/project/issues/comments/8 -XPATCH -fbody=x",
+    "hint": "forge-cli has no comment edit/delete command"
+  },
+  {
+    "id": "api-release",
+    "command": "gh api repos/example/project/releases -XPOST",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "api-dispatch",
+    "command": "gh api repos/example/project/actions/workflows/checks.yml/dispatches -XPOST",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "graphql-mutation",
+    "command": "gh api graphql -f 'query=mutation { addComment(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-mutation-get",
+    "command": "gh api graphql -XGET -f 'query=mutation { addComment(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-file",
+    "command": "gh api graphql -F query=@query.graphql",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-input",
+    "command": "gh api graphql --input query.json",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "nested-bash",
+    "command": "bash -c 'gh issue close 7'",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "nested-zsh",
+    "command": "env -i zsh -lc 'bash -c \"gh pr merge 7\"'",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "command-substitution",
+    "command": "printf '%s' \"$(gh issue edit 7 --title fixture)\"",
+    "hint": "forge-cli issue edit"
+  },
+  {
+    "id": "global-repo",
+    "command": "gh --repo example/project issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "curl-post",
+    "command": "curl -X POST https://api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-implicit",
+    "command": "curl --data '{\"body\":\"fixture\"}' https://api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-request-equals",
+    "command": "curl --request=POST --url=https://api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-lookalike",
+    "command": "curl -X POST https://api.github.com.example.org/fixture",
+    "hint": null
+  },
+  {
+    "id": "curl-read",
+    "command": "curl https://api.github.com/repos/example/project/issues",
+    "hint": null
+  },
+  {
+    "id": "api-read",
+    "command": "gh api repos/example/project/issues",
+    "hint": null
+  },
+  {
+    "id": "api-explicit-get-fields",
+    "command": "gh api repos/example/project/issues -f state=open -X GET",
+    "hint": null
+  },
+  {
+    "id": "api-get-before-fields",
+    "command": "gh api -XGET repos/example/project/issues -f state=open",
+    "hint": null
+  },
+  {
+    "id": "api-head",
+    "command": "gh api repos/example/project/issues --method=HEAD",
+    "hint": null
+  },
+  {
+    "id": "graphql-query",
+    "command": "gh api graphql -f 'query=query { viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-shorthand-query",
+    "command": "gh api graphql -F 'query={ viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "read-issue-view",
+    "command": "gh issue view",
+    "hint": null
+  },
+  {
+    "id": "read-pr-view",
+    "command": "gh pr view",
+    "hint": null
+  },
+  {
+    "id": "read-pr-checks",
+    "command": "gh pr checks",
+    "hint": null
+  },
+  {
+    "id": "read-release-list",
+    "command": "gh release list",
+    "hint": null
+  },
+  {
+    "id": "read-workflow-list",
+    "command": "gh workflow list",
+    "hint": null
+  },
+  {
+    "id": "forge-issue-comment",
+    "command": "forge-cli issue comment 7 --body-file body.md",
+    "hint": null
+  },
+  {
+    "id": "forge-pr-merge",
+    "command": "forge-cli pr merge 7",
+    "hint": null
+  },
+  {
+    "id": "forge-then-raw",
+    "command": "forge-cli issue view 7; gh issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "pr-skill-no-identity-bypass",
+    "command": "AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft",
+    "hint": "forge-cli pr create"
+  },
+  {
+    "id": "principal-unset-no-bypass",
+    "command": "env -u FORGE_IDENTITY_PRINCIPAL gh issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "graphql-mixed-document",
+    "command": "gh api graphql -f 'query=query Read { viewer { login } } mutation Write { addComment(input: {}) { clientMutationId } }' -f operationName=Write",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-absolute-mutation",
+    "command": "gh api https://api.github.com/graphql -XGET -f 'query=mutation { addComment(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-commented-query",
+    "command": "gh api graphql -f 'query=# fixture\nquery { viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-string-mutation",
+    "command": "gh api graphql -f 'query=query { repository(name: \"mutation\", owner: \"example\") { name } }'",
+    "hint": null
+  },
+  {
+    "id": "forge-git-owner",
+    "command": "forge-cli repo push-default --expected-base 0123456789012345678901234567890123456789 --reason-file reason.md",
+    "hint": null
+  },
+  {
+    "id": "issue-develop-write",
+    "command": "gh issue develop 7 --name topic",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "issue-develop-list",
+    "command": "gh issue develop 7 --list",
+    "hint": null
+  },
+  {
+    "id": "curl-data-ascii",
+    "command": "curl --data-ascii body=fixture https://api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-form-string",
+    "command": "curl --form-string body=fixture https://api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-first-transfer-write",
+    "command": "curl -X POST https://api.github.com/repos/example/project/issues/7/comments --next -X GET https://example.org/",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-next-transfer-write",
+    "command": "curl -X GET https://example.org/ --next -d body=fixture https://api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-get-fields",
+    "command": "curl --get --data state=open https://api.github.com/repos/example/project/issues",
+    "hint": null
+  },
+  {
+    "id": "curl-head-fields",
+    "command": "curl --head --data state=open https://api.github.com/repos/example/project/issues",
+    "hint": null
+  },
+  {
+    "id": "graphql-preview-before-endpoint",
+    "command": "gh api --preview feature graphql -f 'query=query { viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-cache-before-endpoint",
+    "command": "gh api --cache 1h graphql -f 'query=query { viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "comment-help-body",
+    "command": "gh issue comment 7 --body --help",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "comment-help",
+    "command": "gh issue comment --help",
+    "hint": null
+  },
+  {
+    "id": "curl-schemeless-post",
+    "command": "curl -d body=fixture api.github.com/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-schemeless-read",
+    "command": "curl api.github.com/repos/example/project/issues",
+    "hint": null
+  },
+  {
+    "id": "close-help-comment",
+    "command": "gh issue close 7 --comment -h",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "graphql-preview-equals-query",
+    "command": "gh api --preview=feature graphql -f 'query=query { viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-cache-mutation",
+    "command": "gh api --cache 1h graphql -f 'query=mutation { addComment(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "issue-create-alias",
+    "command": "gh issue new --title fixture --body fixture",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "pr-create-alias",
+    "command": "AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr new --draft",
+    "hint": "forge-cli pr create"
+  },
+  {
+    "id": "wrapper-timeout",
+    "command": "timeout 5 gh issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "wrapper-nice",
+    "command": "nice gh issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "wrapper-nohup",
+    "command": "nohup gh issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "wrapper-stdbuf",
+    "command": "stdbuf -oL gh issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "wrapper-read",
+    "command": "timeout 5 gh issue view 7",
+    "hint": null
+  },
+  {
+    "id": "wrapper-nested-shell",
+    "command": "timeout 5 bash -c 'gh issue close 7'",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "curl-two-url-options",
+    "command": "curl -d body=fixture --url=https://api.github.com/repos/example/project/issues/7/comments --url=https://example.org/",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-schemeless-port",
+    "command": "curl --proto-default https -d body=fixture api.github.com:443/repos/example/project/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "release-help-notes-value",
+    "command": "gh release create v1 --notes --help",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "workflow-help-ref-value",
+    "command": "gh workflow run checks.yml --ref --help",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "graphql-string-hash-mutation",
+    "command": "gh api graphql -f 'query=query Read { repository(owner: \"example#fixture\", name: \"project\") { name } } mutation Write { addComment(input: {}) { clientMutationId } }' -f operationName=Write",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-string-hash-read",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"example#fixture\", name: \"project\") { name } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-block-string-read",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example # mutation fixture\"\"\", name: \"project\") { name } }'",
+    "hint": null
+  }
+]

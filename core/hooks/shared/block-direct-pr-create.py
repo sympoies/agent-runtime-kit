@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block direct GitHub PR and GitLab MR creation.
+"""PreToolUse: guard PR/MR creation and identity-bound raw GitHub writes.
 
 Shared runtime-kit logic accepts the neutral `AGENT_RUNTIME_PR_SKILL` marker.
 The value is still an exact-name allow-list, not a broad bypass.
@@ -8,9 +8,13 @@ The value is still an exact-name allow-list, not a broad bypass.
 from __future__ import annotations
 
 import os
+import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 # Codex may execute hooks through a source symlink; keep the checkout clean.
 sys.dont_write_bytecode = True
@@ -26,6 +30,9 @@ from hook_common import (
     opaque_invocation_candidates,
     read_payload,
     simple_commands,
+    simple_commands_with_nested_shells,
+    is_managed_cli_home_bin,
+    resolves_within_its_directory,
 )
 
 _BUILTIN_PR_SKILLS: frozenset[str] = frozenset(
@@ -264,11 +271,310 @@ def command_creates_pr_or_mr(
     return None
 
 
+# This is a shell guard, not an interpreter or credential boundary. Only the
+# launch environment and authenticated broker projection establish binding;
+# command-local env clearing and the PR-skill marker cannot remove it.
+GITHUB_WRITES = {
+    "issue": {"create", "new", "develop", "comment", "close", "edit", "reopen", "delete",
+              "lock", "unlock", "pin", "unpin", "transfer"},
+    "pr": {"create", "new", "comment", "close", "edit", "reopen", "merge", "ready",
+           "review", "lock", "unlock", "revert", "update-branch"},
+    "release": {"create", "upload", "edit", "delete", "delete-asset"},
+    "workflow": {"run", "enable", "disable"},
+}
+SUPPORTED_WRITES = {
+    "issue": {"create", "comment", "close", "edit", "reopen"},
+    "pr": {"create", "comment", "close", "edit", "merge", "ready", "review"},
+}
+MISSING_COMMANDS = "https://github.com/sympoies/nils-cli/issues/2138"
+
+
+def write_hint(group: str, verb: str = "") -> str:
+    if verb in SUPPORTED_WRITES.get(group, set()):
+        return f"Use `forge-cli {group} {verb}` through the owning workflow."
+    missing = {
+        "release": "release", "workflow": "workflow",
+        "comment-mutation": "comment edit/delete",
+    }.get(group)
+    if missing:
+        return (
+            f"forge-cli has no {missing} command yet ({MISSING_COMMANDS}). "
+            "Ask the workflow owner to use an explicitly authorized, identity-aware "
+            "delivery path or defer until the typed command is available; do not "
+            "fall back to the host's default gh account."
+        )
+    return (
+        "Use the matching typed `forge-cli issue` or `forge-cli pr` command "
+        "through the owning workflow. If unavailable, ask the workflow owner "
+        f"for an identity-aware path ({MISSING_COMMANDS})."
+    )
+
+
+def api_hint(endpoint: str, method: str) -> str:
+    path = urlsplit(endpoint).path.strip("/")
+    if "/releases" in path:
+        return write_hint("release")
+    if "/actions/" in path or path.endswith("/dispatches"):
+        return write_hint("workflow")
+    if re.search(r"/(?:issues|pulls)/comments/[^/]+$", path):
+        return write_hint("comment-mutation")
+    if re.search(r"/issues/[^/]+/comments$", path) and method == "POST":
+        return write_hint("issue", "comment")
+    if re.search(r"/pulls/[^/]+/merge$", path):
+        return write_hint("pr", "merge")
+    if re.search(r"/pulls/[^/]+/reviews$", path):
+        return write_hint("pr", "review")
+    if re.search(r"/(issues|pulls)(?:/[^/]+)?$", path):
+        group = "pr" if "/pulls" in path else "issue"
+        return write_hint(group, "create" if method == "POST" else "edit")
+    return write_hint("api")
+
+
+def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str], list[str], bool]:
+    """Explicit methods override implicit fields regardless of flag order."""
+    method = ""
+    endpoints: list[str] = []
+    fields: list[str] = []
+    input_body = False
+    read_method = ""
+    value_flags = {"-X", "--request" if curl else "--method"}
+    field_flags = ({"-d", "--data", "--data-ascii", "--data-raw", "--data-binary", "--data-urlencode",
+                    "--json", "-F", "--form", "--form-string"} if curl else
+                   {"-f", "-F", "--field", "--raw-field"})
+    other_values = ({"-H", "--header", "-o", "--output", "-u", "--user", "--proto-default"} if curl else
+                    {"-H", "--header", "--hostname", "--jq", "-q", "--template", "-t",
+                     "--cache", "--preview", "-p"})
+    i = 0
+    while i < len(args):
+        token = args[i]
+        flag, sep, value = token.partition("=")
+        if curl and token in {"-G", "--get", "-I", "--head"}:
+            read_method = "HEAD" if token in {"-I", "--head"} else "GET"
+        elif flag in value_flags | field_flags | other_values | {"--input", "--url"}:
+            if not sep:
+                i += 1
+                value = args[i] if i < len(args) else ""
+            if flag in value_flags:
+                method = value.upper()
+            elif flag in field_flags:
+                fields.append(value)
+            elif flag == "--input":
+                input_body = True
+            elif flag == "--url":
+                endpoints.append(value)
+        elif token.startswith("-X") and len(token) > 2:
+            method = token[2:].lstrip("=").upper()
+        elif token.startswith(("-d", "-F") if curl else ("-f", "-F")) and len(token) > 2:
+            fields.append(token[2:])
+        elif not token.startswith("-") and (curl or not endpoints):
+            endpoints.append(token)
+        i += 1
+    return method or read_method or ("POST" if fields or input_body else "GET"), endpoints, fields, input_body
+
+
+def gh_switches(args: list[str]) -> set[str]:
+    """Switches outside value slots; a body of '--help' is still a write."""
+    values = {"--body", "-b", "--body-file", "-F", "--title", "-t", "--comment", "-c",
+              "--reason", "-r", "--assignee", "-a", "--label", "-l", "--milestone", "-m",
+              "--project", "-p", "--template", "-T", "--recover", "--name", "--base",
+              "--head", "--reviewer", "--subject", "--repo", "-R", "--add-assignee",
+              "--remove-assignee", "--add-label", "--remove-label", "--add-project",
+              "--remove-project", "--method", "-X", "--field", "-f", "--raw-field",
+              "--input", "--header", "-H", "--hostname", "--jq", "-q", "--cache", "--preview"}
+    switches: set[str] = set()
+    i = 0
+    while i < len(args):
+        token = args[i]
+        flag, sep, _ = token.partition("=")
+        if flag in values:
+            i += 1 if sep else 2
+            continue
+        if token.startswith("-"):
+            switches.add(flag)
+        i += 1
+    return switches
+
+
+def raw_write_hint(tokens: list[str]) -> str | None:
+    invocation = invocation_tokens(tokens)
+    if not invocation:
+        return None
+    executable = basename(invocation[0])
+    if executable == "gh":
+        args = cli_subcommands(tokens, "gh")
+        switches = gh_switches(args)
+        # Only an unambiguous help-only form is exempt. In a larger argv,
+        # '--help' can be data for a value option (e.g. release --notes).
+        if len(args) == 3 and args[2] in {"--help", "-h"}:
+            return None
+        if len(args) >= 2 and args[1] in GITHUB_WRITES.get(args[0], set()):
+            if args[:2] == ["issue", "develop"] and "--list" in switches:
+                return None
+            if args[1] == "comment" and switches & {"--edit-last", "--delete-last"}:
+                return write_hint("comment-mutation")
+            return write_hint(args[0], "create" if args[1] == "new" else args[1])
+        if args[:1] != ["api"]:
+            return None
+        method, endpoints, fields, input_body = request_parts(args[1:])
+        endpoint = endpoints[0] if endpoints else ""
+        if urlsplit(endpoint).path.strip("/") == "graphql":
+            queries = [field.partition("=")[2] for field in fields if field.startswith("query=")]
+            # Inline query documents are reads even though GraphQL uses POST.
+            # Files and variable documents cannot be proved read-only here.
+            if not input_body and len(queries) == 1:
+                # A '#' inside a string is data, not a comment. Mask both
+                # ordinary and block strings before stripping real comments.
+                query_tokens = re.sub(
+                    r'"""(?:\\.|(?!""")[\s\S])*"""|"(?:\\.|[^"\\])*"',
+                    '""', queries[0],
+                )
+                query_tokens = re.sub(r"(?m)#.*$", "", query_tokens).lstrip()
+                if not re.search(r"\bmutation\b", query_tokens) and (
+                    query_tokens.startswith("{") or re.match(r"query(?:\s|\(|\{|$)", query_tokens)
+                ):
+                    return None
+            return write_hint("api")
+        if method not in {"GET", "HEAD", "OPTIONS"}:
+            return api_hint(endpoint, method)
+    elif executable == "curl":
+        # --next resets curl's local request options; one transfer's GET must
+        # never hide an earlier POST, nor inherit its method into a later read.
+        groups: list[list[str]] = [[]]
+        for token in invocation[1:]:
+            if token in {"--next", "-:"}:
+                groups.append([])
+            else:
+                groups[-1].append(token)
+        for group in groups:
+            method, endpoints, _, _ = request_parts(group, curl=True)
+            if method in {"GET", "HEAD", "OPTIONS"}:
+                continue
+            for target in endpoints:
+                try:
+                    parsed = urlsplit(target if "://" in target else "//" + target)
+                    if parsed.hostname == "api.github.com":
+                        return api_hint(target, method)
+                except ValueError:
+                    continue
+    return None
+
+
+def provider_invocation(tokens: list[str]) -> list[str]:
+    """Unwrap common literal process launchers without executing them."""
+    invocation = invocation_tokens(tokens)
+    for _ in range(5):
+        if not invocation:
+            break
+        wrapper = basename(invocation[0])
+        if wrapper not in {"timeout", "gtimeout", "nice", "nohup", "stdbuf"}:
+            break
+        index = 1
+        value_options = {"-s", "--signal", "-k", "--kill-after", "-n", "--adjustment", "-i", "-o", "-e"}
+        while index < len(invocation) and invocation[index].startswith("-"):
+            option = invocation[index]
+            if option == "--":
+                index += 1
+                break
+            index += 2 if option in value_options else 1
+        if wrapper in {"timeout", "gtimeout"}:
+            index += 1  # duration precedes the launched command
+        invocation = invocation_tokens(invocation[index:])
+    return invocation
+
+
+def command_raw_write(command: str, depth: int = 0) -> str | None:
+    for tokens in simple_commands_with_nested_shells(command):
+        invocation = provider_invocation(tokens)
+        hint = raw_write_hint(invocation)
+        if hint:
+            return hint
+        nested = nested_shell_payload(invocation)
+        if nested and invocation != invocation_tokens(tokens) and depth < 5:
+            hint = command_raw_write(nested, depth + 1)
+            if hint:
+                return hint
+        for candidate in opaque_invocation_candidates(invocation, {"gh", "curl"}):
+            hint = raw_write_hint(candidate)
+            if hint:
+                return hint
+    return None
+
+
+def trusted_broker() -> str | None:
+    candidate = shutil.which("agent-session")
+    if not candidate or not os.path.isabs(candidate):
+        return None
+    resolved = os.path.realpath(candidate)
+    if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+        return None
+    directory = os.path.dirname(candidate)
+    configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
+    if configured:
+        roots = {os.path.realpath(p) for p in configured.split(os.pathsep) if p}
+        return resolved if os.path.realpath(directory) in roots else None
+    for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
+        cellar = os.path.join(prefix, "Cellar", "nils-cli")
+        if directory == os.path.join(prefix, "bin") and (
+            resolves_within_its_directory(candidate, resolved)
+            or os.path.commonpath((resolved, cellar)) == cellar
+        ):
+            return resolved
+    if (directory == "/usr/bin" or is_managed_cli_home_bin(directory)) and resolves_within_its_directory(candidate, resolved):
+        return resolved
+    return None
+
+
+def identity_binding() -> str:
+    """bound/unbound/unverified; never read credentials or public board state."""
+    if os.environ.get("FORGE_IDENTITY_PRINCIPAL", "").strip():
+        return "bound"
+    session = os.environ.get("AGENT_SESSION_ID", "").strip()
+    incarnation = os.environ.get("AGENT_SESSION_RUNTIME_ID", "").strip()
+    if not session or not incarnation:
+        return "unbound"
+    executable = trusted_broker()
+    if not executable:
+        return "unverified"
+    try:
+        result = subprocess.run(
+            [executable, "broker", "identity", "--session", session, "--format", "json"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if len(result.stdout) > 65536:
+            return "unverified"
+        record = json.loads(result.stdout)
+        if not isinstance(record, dict):
+            return "unverified"
+        if result.returncode != 0 or record.get("ok") is not True:
+            error = record.get("error", {})
+            if isinstance(error, dict) and error.get("code") == "identity_session_binding_missing":
+                return "unbound"
+            return "unverified"
+        data = record.get("data")
+        if (record.get("schema_version") == "cli.agent-session.broker-identity.v1"
+            and isinstance(data, dict)
+            and data.get("schema_version") == "agent-session.forge-binding.v1"
+            and data.get("session_id") == session
+            and data.get("session_incarnation") == incarnation
+            and isinstance(data.get("initiator"), str) and data["initiator"]):
+            return "bound"
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return "unverified"
+
+
 def main() -> int:
     command = command_from(read_payload())
     if not command:
         return ALLOW
 
+    hint = command_raw_write(command)
+    if hint:
+        binding = identity_binding()
+        if binding != "unbound":
+            detail = "Identity-bound session" if binding == "bound" else "Session forge binding could not be authenticated"
+            emit_block(f"[forge-write: blocked] {detail}: raw GitHub writes are denied. {hint}")
+            return ALLOW
     reason = command_creates_pr_or_mr(command)
     if reason:
         if reason == BLOCK_REASON_PR:

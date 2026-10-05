@@ -323,6 +323,9 @@ AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT",)
 def scrub_ambient_envs(full_env: dict[str, str]) -> None:
     for name in AMBIENT_GATE_ENVS + AMBIENT_TRUST_ENVS:
         full_env.pop(name, None)
+    for name in ("FORGE_IDENTITY_PRINCIPAL", "AGENT_SESSION_RUNTIME_ID",
+                 "AGENT_SESSION_CAPABILITY_FILE"):
+        full_env.pop(name, None)
 
 
 def gate_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
@@ -540,6 +543,83 @@ def codex_link_map_hook_body() -> str:
 
 
 class SharedHookTests(unittest.TestCase):
+    def test_authenticated_forge_write_fixtures(self) -> None:
+        cases = json.loads((REPO_ROOT / "tests/hooks/fixtures/forge-writes.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            broker = Path(tmp) / "agent-session"
+            broker.write_text(
+                "#!/usr/bin/env python3\nimport json, sys\n"
+                "assert sys.argv[1:] == ['broker', 'identity', '--session', 'fixture-session', '--format', 'json']\n"
+                "print(json.dumps({'ok': True, 'schema_version': 'cli.agent-session.broker-identity.v1', "
+                "'data': {'schema_version': 'agent-session.forge-binding.v1', "
+                "'session_id': 'fixture-session', 'session_incarnation': 'fixture-runtime', "
+                "'initiator': 'fixture-initiator'}}))\n"
+            )
+            broker.chmod(0o755)
+            for case in cases:
+                with self.subTest(case=case["id"]):
+                    code, decision, stderr = run_hook(
+                        "block-direct-pr-create.py", command_payload(case["command"]),
+                        env={"FORGE_IDENTITY_PRINCIPAL": "",
+                             "AGENT_SESSION_ID": "fixture-session",
+                             "AGENT_SESSION_RUNTIME_ID": "fixture-runtime",
+                             "AGENT_RUNTIME_TRUSTED_CLI_ROOT": tmp,
+                             "PATH": tmp + os.pathsep + os.environ["PATH"]},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if case["hint"]:
+                        self.assert_blocked(decision, case["hint"])
+                    else:
+                        self.assert_allowed(decision)
+
+    def test_forge_binding_authentication_failures(self) -> None:
+        spec = importlib.util.spec_from_file_location("forge_write_guard", HOOK_DIR / "block-direct-pr-create.py")
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        binding = {"schema_version": "agent-session.forge-binding.v1",
+                   "session_id": "fixture-session", "session_incarnation": "fixture-runtime",
+                   "initiator": "fixture-initiator"}
+        success = {"schema_version": "cli.agent-session.broker-identity.v1", "ok": True, "data": binding}
+        cases = (
+            (success, 0, "bound"),
+            ({**success, "data": {**binding, "session_id": "other-session"}}, 0, "unverified"),
+            ({**success, "data": {**binding, "session_incarnation": "stale-runtime"}}, 0, "unverified"),
+            ({**success, "schema_version": "public-board.v1"}, 0, "unverified"),
+            ({"ok": False, "error": {"code": "identity_session_binding_missing"}}, 1, "unbound"),
+            ({"ok": False, "error": {"code": "capability-invalid"}}, 1, "unverified"),
+            ([], 0, "unverified"),
+        )
+        env = {"AGENT_SESSION_ID": "fixture-session", "AGENT_SESSION_RUNTIME_ID": "fixture-runtime"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(module, "trusted_broker", return_value="/fixture/agent-session"):
+            for body, exit_code, expected in cases:
+                with self.subTest(body=body), mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], exit_code, json.dumps(body), "")):
+                    self.assertEqual(module.identity_binding(), expected)
+            for body in ("invalid JSON", "x" * 65537):
+                with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, body, "")):
+                    self.assertEqual(module.identity_binding(), "unverified")
+            with mock.patch.object(module.subprocess, "run", side_effect=subprocess.TimeoutExpired("agent-session", 2)):
+                self.assertEqual(module.identity_binding(), "unverified")
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(module, "trusted_broker", return_value=None):
+            self.assertEqual(module.identity_binding(), "unverified")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(module.identity_binding(), "unbound")
+
+    def test_identity_bound_forge_write_fixtures(self) -> None:
+        cases = json.loads((REPO_ROOT / "tests/hooks/fixtures/forge-writes.json").read_text())
+        for case in cases:
+            for bound in (False, True):
+                with self.subTest(case=case["id"], bound=bound):
+                    code, decision, stderr = run_hook(
+                        "block-direct-pr-create.py", command_payload(case["command"]),
+                        env={"FORGE_IDENTITY_PRINCIPAL": "fixture-principal" if bound else ""},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if bound and case["hint"]:
+                        self.assert_blocked(decision, case["hint"])
+                    else:
+                        self.assert_allowed(decision)
+
     def assert_blocked(self, decision: dict[str, object] | None, fragment: str) -> None:
         self.assertIsNotNone(decision)
         assert decision is not None
