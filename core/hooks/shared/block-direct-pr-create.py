@@ -336,8 +336,10 @@ def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str
     endpoints: list[str] = []
     fields: list[str] = []
     input_body = False
+    upload = False
     read_method = ""
     value_flags = {"-X", "--request" if curl else "--method"}
+    upload_flags = {"-T", "--upload-file"} if curl else set()
     field_flags = ({"-d", "--data", "--data-ascii", "--data-raw", "--data-binary", "--data-urlencode",
                     "--json", "-F", "--form", "--form-string"} if curl else
                    {"-f", "-F", "--field", "--raw-field"})
@@ -350,7 +352,7 @@ def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str
         flag, sep, value = token.partition("=")
         if curl and token in {"-G", "--get", "-I", "--head"}:
             read_method = "HEAD" if token in {"-I", "--head"} else "GET"
-        elif flag in value_flags | field_flags | other_values | {"--input", "--url"}:
+        elif flag in value_flags | field_flags | upload_flags | other_values | {"--input", "--url"}:
             if not sep:
                 i += 1
                 value = args[i] if i < len(args) else ""
@@ -358,18 +360,58 @@ def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str
                 method = value.upper()
             elif flag in field_flags:
                 fields.append(value)
+            elif flag in upload_flags:
+                upload = True
             elif flag == "--input":
                 input_body = True
             elif flag == "--url":
                 endpoints.append(value)
         elif token.startswith("-X") and len(token) > 2:
             method = token[2:].lstrip("=").upper()
+        elif curl and token.startswith("-T") and len(token) > 2:
+            upload = True
         elif token.startswith(("-d", "-F") if curl else ("-f", "-F")) and len(token) > 2:
             fields.append(token[2:])
         elif not token.startswith("-") and (curl or not endpoints):
             endpoints.append(token)
         i += 1
-    return method or read_method or ("POST" if fields or input_body else "GET"), endpoints, fields, input_body
+    implicit_method = "PUT" if upload else read_method or ("POST" if fields or input_body else "GET")
+    return method or implicit_method, endpoints, fields, input_body
+
+
+def graphql_tokens(document: str) -> str | None:
+    """Mask strings and comments in one pass; incomplete strings are unverified."""
+    tokens: list[str] = []
+    i = 0
+    while i < len(document):
+        if document[i] == "#":
+            while i < len(document) and document[i] not in "\r\n":
+                i += 1
+        elif document[i] == '"':
+            block = document.startswith('"""', i)
+            i += 3 if block else 1
+            while i < len(document):
+                if block and document.startswith('\\"""', i):
+                    i += 4
+                elif block and document.startswith('"""', i):
+                    i += 3
+                    break
+                elif not block and document[i] == '"':
+                    i += 1
+                    break
+                elif not block and document[i] == "\\":
+                    i += 2
+                elif not block and document[i] in "\r\n":
+                    return None
+                else:
+                    i += 1
+            else:
+                return None
+            tokens.append('""')
+        else:
+            tokens.append(document[i])
+            i += 1
+    return "".join(tokens)
 
 
 def gh_switches(args: list[str]) -> set[str]:
@@ -422,17 +464,13 @@ def raw_write_hint(tokens: list[str]) -> str | None:
             # Inline query documents are reads even though GraphQL uses POST.
             # Files and variable documents cannot be proved read-only here.
             if not input_body and len(queries) == 1:
-                # A '#' inside a string is data, not a comment. Mask both
-                # ordinary and block strings before stripping real comments.
-                query_tokens = re.sub(
-                    r'"""(?:\\.|(?!""")[\s\S])*"""|"(?:\\.|[^"\\])*"',
-                    '""', queries[0],
-                )
-                query_tokens = re.sub(r"(?m)#.*$", "", query_tokens).lstrip()
-                if not re.search(r"\bmutation\b", query_tokens) and (
-                    query_tokens.startswith("{") or re.match(r"query(?:\s|\(|\{|$)", query_tokens)
-                ):
-                    return None
+                query_tokens = graphql_tokens(queries[0])
+                if query_tokens is not None:
+                    query_tokens = query_tokens.lstrip()
+                    if not re.search(r"\bmutation\b", query_tokens) and (
+                        query_tokens.startswith("{") or re.match(r"query(?:\s|\(|\{|$)", query_tokens)
+                    ):
+                        return None
             return write_hint("api")
         if method not in {"GET", "HEAD", "OPTIONS"}:
             return api_hint(endpoint, method)

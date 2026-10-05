@@ -543,6 +543,29 @@ def codex_link_map_hook_body() -> str:
 
 
 class SharedHookTests(unittest.TestCase):
+    def test_graphql_masking_has_bounded_runtime(self) -> None:
+        # A strict child deadline bounds a regression in the classifier itself,
+        # without timing the shared shell parser or authenticated broker.
+        probe = (
+            "import importlib.util, json, sys\n"
+            "sys.dont_write_bytecode = True\n"
+            "spec = importlib.util.spec_from_file_location('forge_guard', sys.argv[1])\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+            "document = json.load(sys.stdin)\n"
+            "print(json.dumps(module.raw_write_hint(['gh', 'api', 'graphql', '-f', 'query=' + document])))\n"
+        )
+        for repetitions in (28, 200000):
+            with self.subTest(repetitions=repetitions):
+                document = 'query { field(argument: """' + '\\a' * repetitions
+                result = subprocess.run(
+                    [sys.executable, "-c", probe, str(HOOK_DIR / "block-direct-pr-create.py")],
+                    input=json.dumps(document), capture_output=True, text=True,
+                    timeout=1, env=gate_env({"PYTHONPATH": str(HOOK_DIR)}),
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("forge-cli", json.loads(result.stdout))
+
     def test_authenticated_forge_write_fixtures(self) -> None:
         cases = json.loads((REPO_ROOT / "tests/hooks/fixtures/forge-writes.json").read_text())
         with tempfile.TemporaryDirectory() as tmp:

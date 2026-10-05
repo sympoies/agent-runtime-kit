@@ -22,7 +22,10 @@ Bound sessions deny `gh issue`/`pr` mutations, release writes, workflow writes,
 REST API writes (including implicit POST from fields or input), GraphQL
 mutations, and GitHub API writes through `curl`. REST GET/HEAD/OPTIONS,
 inline GraphQL queries, and ordinary read commands remain available. Explicit
-REST methods take precedence over fields regardless of flag order. Refusals
+REST methods take precedence over fields and curl uploads regardless of flag
+order. Curl `-T`/`--upload-file` implies PUT; `--next` resets transfer options.
+GraphQL strings and comments are masked in one pass; incomplete strings are
+refused because the document cannot be proved read-only. Refusals
 name the matching typed `forge-cli` operation when available. The PR-skill
 marker and command-local environment clearing do not bypass identity binding.
 `forge-cli` invocations remain available: the hook inspects submitted shell

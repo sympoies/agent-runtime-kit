@@ -468,5 +468,85 @@
     "id": "graphql-block-string-read",
     "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example # mutation fixture\"\"\", name: \"project\") { name } }'",
     "hint": null
+  },
+  {
+    "id": "curl-upload-short",
+    "command": "curl -T body.json https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-attached",
+    "command": "curl -Tbody.json https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-long",
+    "command": "curl --upload-file body.json https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-equals",
+    "command": "curl --upload-file=body.json https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-url-before",
+    "command": "curl https://api.github.com/repos/example/project/contents/fixture.txt -T body.json",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-url-option",
+    "command": "curl --url=https://api.github.com/repos/example/project/contents/fixture.txt --upload-file body.json",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-after-next",
+    "command": "curl -XGET https://example.org/ --next -T body.json https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-before-next",
+    "command": "curl -T body.json https://api.github.com/repos/example/project/contents/fixture.txt --next -XGET https://example.org/",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-explicit-post",
+    "command": "curl -T body.json -XPOST https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-upload-get-before",
+    "command": "curl -XGET -T body.json https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": null
+  },
+  {
+    "id": "curl-upload-get-after",
+    "command": "curl --upload-file=body.json --request GET https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": null
+  },
+  {
+    "id": "curl-upload-next-reset",
+    "command": "curl -T body.json https://example.org/ --next https://api.github.com/repos/example/project/contents/fixture.txt",
+    "hint": null
+  },
+  {
+    "id": "curl-upload-file-not-url",
+    "command": "curl -T https://api.github.com/repos/example/project/contents/fixture.txt https://example.org/",
+    "hint": null
+  },
+  {
+    "id": "graphql-escaped-string-read",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"example \\\"quoted\\\" # mutation\", name: \"project\") { name } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-escaped-block-read",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example \\\"\"\" # mutation fixture\"\"\", name: \"project\") { name } }'",
+    "hint": null
+  },
+  {
+    "id": "graphql-mutation-after-escaped-block",
+    "command": "gh api graphql -f 'query=query Read { repository(owner: \"\"\"example \\\"\"\" # fixture\"\"\", name: \"project\") { name } } mutation Write { addComment(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
   }
 ]
