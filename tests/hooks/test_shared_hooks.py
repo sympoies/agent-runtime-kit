@@ -12301,7 +12301,7 @@ exit 64
 
             # Untrusted structured error codes are not copied into hook output.
             fail_log = root / "fail.log"
-            secret_code = "ERROR-CODE-7F21"
+            fixture_code = "err-7f21"
             self._write_fake_agent_docs(
                 bin_dir,
                 f"""#!/usr/bin/env bash
@@ -12309,7 +12309,7 @@ set -euo pipefail
 printf '%s\\n' "$*" >> {shlex.quote(str(fail_log))}
 if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
 if [[ "$*" == *"session prepare"* ]]; then
-  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":false,"error":{{"code":"{secret_code}","message":"strict preflight failed"}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":false,"error":{{"code":"{fixture_code}","message":"strict preflight failed"}}}}'
   exit 65
 fi
 exit 64
@@ -12324,7 +12324,7 @@ exit 64
             assert decision is not None
             reason = str(decision.get("reason", ""))
             self.assertIn("preparation did not verify", reason)
-            self.assertNotIn(secret_code, reason)
+            self.assertNotIn(fixture_code, reason)
             # The submitted shell body is consumed, not re-dispatched.
             self.assertIn("consumed", reason)
 
