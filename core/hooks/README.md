@@ -8,49 +8,39 @@ The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
 requires different behavior.
 
-`block-direct-pr-create.py` also guards raw GitHub writes when the launch
-environment has a non-empty `FORGE_IDENTITY_PRINCIPAL` or the live
-`agent-session broker identity` projection authenticates the session and runtime
-incarnation. It does not infer binding from public board records. The broker
-probe is local, bounded to two seconds, and reads no forge credentials. A
-managed session whose binding cannot be authenticated fails closed for a
-recognized raw write; the broker's explicit missing-binding response keeps
-unbound behavior. Sessions without binding metadata keep the existing PR/MR
-creation and default-delivery guards.
+`block-direct-pr-create.py` refuses every `gh issue` and `gh pr`
+invocation in Codex and Claude agent sessions, including reads and help.
+It also refuses raw GitHub writes: release/workflow writes, non-GET `gh api`
+requests (including implicit POST from fields or input), GraphQL mutations,
+and GitHub API writes through `curl`. Identity binding is irrelevant;
+the guard does not query the session broker or read forge credentials.
 
-Bound sessions deny `gh issue`/`pr` mutations, release writes, workflow writes,
-REST API writes (including implicit POST from fields or input), GraphQL
-mutations, and GitHub API writes through `curl`. REST GET/HEAD/OPTIONS,
-inline GraphQL queries, and ordinary read commands remain available. Explicit
-REST methods take precedence over fields and curl uploads regardless of flag
-order. Curl `-T`/`--upload-file` implies PUT; `--next` resets transfer options.
-GraphQL strings and comments are masked in one pass; incomplete strings are
-refused because the document cannot be proved read-only. Refusals
-name the matching typed `forge-cli` operation when available. The PR-skill
-marker and command-local environment clearing do not bypass identity binding.
-`forge-cli` invocations remain available: the hook inspects submitted shell
-source, not the governed executable's internal `gh` or `git` subprocesses.
-Appending a raw write to a forge-cli call still triggers the guard.
+REST GET requests remain available. GraphQL GET requires a literal read
+document; opaque input and mutations are refused. GraphQL POST is refused even
+for a query. Explicit REST methods take precedence over fields and curl uploads
+regardless of flag order. Curl `-T`/`--upload-file` implies PUT; `--next`
+resets transfer options. GraphQL strings and comments are masked in one pass;
+incomplete strings are refused because the document cannot be proved read-only.
 
-The [missing typed commands](https://github.com/sympoies/nils-cli/issues/2138)
-include releases/assets, workflow dispatch, and native comment edit/delete.
-Their refusals explicitly say that forge-cli has no matching command. Prefer
-adding the typed, identity-bound command before activating an affected workflow;
-until then, defer it or have its owner arrange a separately authorized,
-identity-aware delivery path. This hook provides no environment-marker bypass,
-credential selection, or permission to use the host's default account.
+Refusals name the matching typed `forge-cli` operation when available and link
+[missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
+Unsupported operations must wait for their typed equivalent. The PR-skill
+marker and command-local environment clearing cannot exempt raw GitHub
+operations. The exact marker allow-list remains available for GitLab MR
+creation. `forge-cli` invocations remain available: the hook inspects submitted
+shell source, not the governed executable's internal `gh` or `git`
+subprocesses. Appending a raw GitHub operation to a forge-cli call still
+triggers the guard.
 
 This is a guard, not a Bash sandbox. It recognizes literal command forms,
 ordinary wrappers, command substitutions, and nested shell command strings
 through the shared bounded parser. It does not execute or inspect sourced files,
-arbitrary scripts, aliases/functions, dynamically constructed commands, or
-opaque GraphQL input files. Opaque GraphQL documents are refused in bound
-sessions because they cannot be proved read-only. The curl host check covers
-the exact public `api.github.com` authority; custom enterprise API hosts need
-an owning configured guard. Provider authentication and authorization remain
-the final boundary. Any downstream runtime that copies these shared hooks
-must mirror the conditional contract and fixtures; this repository has no
-separate downstream deployment owner.
+arbitrary scripts, aliases/functions, or dynamically constructed commands.
+The curl host check covers the exact public `api.github.com` authority;
+custom enterprise API hosts need an owning configured guard. Provider
+authentication and authorization remain the final boundary. Any downstream
+runtime that copies these shared hooks must mirror the contract and fixtures;
+this repository has no separate downstream deployment owner.
 
 The finish-line hooks credit declared validation only after an observed
 successful exit. `PreToolUse` wraps each matched Bash command with a tokenized

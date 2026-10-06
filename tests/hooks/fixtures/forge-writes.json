@@ -222,32 +222,32 @@
   {
     "id": "api-head",
     "command": "gh api repos/example/project/issues --method=HEAD",
-    "hint": null
+    "hint": "forge-cli"
   },
   {
     "id": "graphql-query",
-    "command": "gh api graphql -f 'query=query { viewer { login } }'",
+    "command": "gh api graphql -f 'query=query { viewer { login } }' -XGET",
     "hint": null
   },
   {
     "id": "graphql-shorthand-query",
-    "command": "gh api graphql -F 'query={ viewer { login } }'",
+    "command": "gh api graphql -F 'query={ viewer { login } }' -XGET",
     "hint": null
   },
   {
     "id": "read-issue-view",
     "command": "gh issue view",
-    "hint": null
+    "hint": "forge-cli issue view"
   },
   {
     "id": "read-pr-view",
     "command": "gh pr view",
-    "hint": null
+    "hint": "forge-cli pr view"
   },
   {
     "id": "read-pr-checks",
     "command": "gh pr checks",
-    "hint": null
+    "hint": "forge-cli pr checks"
   },
   {
     "id": "read-release-list",
@@ -296,12 +296,12 @@
   },
   {
     "id": "graphql-commented-query",
-    "command": "gh api graphql -f 'query=# fixture\nquery { viewer { login } }'",
+    "command": "gh api graphql -f 'query=# fixture\nquery { viewer { login } }' -XGET",
     "hint": null
   },
   {
     "id": "graphql-string-mutation",
-    "command": "gh api graphql -f 'query=query { repository(name: \"mutation\", owner: \"example\") { name } }'",
+    "command": "gh api graphql -f 'query=query { repository(name: \"mutation\", owner: \"example\") { name } }' -XGET",
     "hint": null
   },
   {
@@ -317,7 +317,7 @@
   {
     "id": "issue-develop-list",
     "command": "gh issue develop 7 --list",
-    "hint": null
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
   },
   {
     "id": "curl-data-ascii",
@@ -351,12 +351,12 @@
   },
   {
     "id": "graphql-preview-before-endpoint",
-    "command": "gh api --preview feature graphql -f 'query=query { viewer { login } }'",
+    "command": "gh api --preview feature graphql -f 'query=query { viewer { login } }' -XGET",
     "hint": null
   },
   {
     "id": "graphql-cache-before-endpoint",
-    "command": "gh api --cache 1h graphql -f 'query=query { viewer { login } }'",
+    "command": "gh api --cache 1h graphql -f 'query=query { viewer { login } }' -XGET",
     "hint": null
   },
   {
@@ -367,7 +367,7 @@
   {
     "id": "comment-help",
     "command": "gh issue comment --help",
-    "hint": null
+    "hint": "forge-cli issue comment"
   },
   {
     "id": "curl-schemeless-post",
@@ -386,7 +386,7 @@
   },
   {
     "id": "graphql-preview-equals-query",
-    "command": "gh api --preview=feature graphql -f 'query=query { viewer { login } }'",
+    "command": "gh api --preview=feature graphql -f 'query=query { viewer { login } }' -XGET",
     "hint": null
   },
   {
@@ -427,7 +427,7 @@
   {
     "id": "wrapper-read",
     "command": "timeout 5 gh issue view 7",
-    "hint": null
+    "hint": "forge-cli issue view"
   },
   {
     "id": "wrapper-nested-shell",
@@ -461,12 +461,12 @@
   },
   {
     "id": "graphql-string-hash-read",
-    "command": "gh api graphql -f 'query=query { repository(owner: \"example#fixture\", name: \"project\") { name } }'",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"example#fixture\", name: \"project\") { name } }' -XGET",
     "hint": null
   },
   {
     "id": "graphql-block-string-read",
-    "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example # mutation fixture\"\"\", name: \"project\") { name } }'",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example # mutation fixture\"\"\", name: \"project\") { name } }' -XGET",
     "hint": null
   },
   {
@@ -536,17 +536,157 @@
   },
   {
     "id": "graphql-escaped-string-read",
-    "command": "gh api graphql -f 'query=query { repository(owner: \"example \\\"quoted\\\" # mutation\", name: \"project\") { name } }'",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"example \\\"quoted\\\" # mutation\", name: \"project\") { name } }' -XGET",
     "hint": null
   },
   {
     "id": "graphql-escaped-block-read",
-    "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example \\\"\"\" # mutation fixture\"\"\", name: \"project\") { name } }'",
+    "command": "gh api graphql -f 'query=query { repository(owner: \"\"\"example \\\"\"\" # mutation fixture\"\"\", name: \"project\") { name } }' -XGET",
     "hint": null
   },
   {
     "id": "graphql-mutation-after-escaped-block",
     "command": "gh api graphql -f 'query=query Read { repository(owner: \"\"\"example \\\"\"\" # fixture\"\"\", name: \"project\") { name } } mutation Write { addComment(input: {}) { clientMutationId } }'",
     "hint": "forge-cli"
+  },
+  {
+    "id": "read-issue-list",
+    "command": "gh issue list --state open",
+    "hint": "forge-cli issue list"
+  },
+  {
+    "id": "read-pr-list",
+    "command": "gh pr list --state open",
+    "hint": "forge-cli pr list"
+  },
+  {
+    "id": "read-pr-status",
+    "command": "gh pr status",
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+  },
+  {
+    "id": "read-pr-diff",
+    "command": "gh pr diff 7",
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+  },
+  {
+    "id": "read-pr-checkout",
+    "command": "gh pr checkout 7",
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+  },
+  {
+    "id": "issue-help",
+    "command": "gh issue --help",
+    "hint": "forge-cli issue --help"
+  },
+  {
+    "id": "pr-help",
+    "command": "gh pr --help",
+    "hint": "forge-cli pr --help"
+  },
+  {
+    "id": "pr-view-help",
+    "command": "gh pr view --help",
+    "hint": "forge-cli pr view"
+  },
+  {
+    "id": "issue-bare",
+    "command": "gh issue",
+    "hint": "forge-cli issue --help"
+  },
+  {
+    "id": "pr-bare",
+    "command": "gh pr",
+    "hint": "forge-cli pr --help"
+  },
+  {
+    "id": "issue-status-missing",
+    "command": "gh issue status",
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+  },
+  {
+    "id": "pr-reopen-missing",
+    "command": "gh pr reopen 7",
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+  },
+  {
+    "id": "read-issue-nested",
+    "command": "bash -c 'gh issue view 7'",
+    "hint": "forge-cli issue view"
+  },
+  {
+    "id": "read-pr-global-repo",
+    "command": "gh -Rexample/project pr list",
+    "hint": "forge-cli pr list"
+  },
+  {
+    "id": "read-pr-substitution",
+    "command": "printf \"%s\" \"$(gh pr view 7)\"",
+    "hint": "forge-cli pr view"
+  },
+  {
+    "id": "read-pr-marker-no-bypass",
+    "command": "AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr view 7",
+    "hint": "forge-cli pr view"
+  },
+  {
+    "id": "api-options",
+    "command": "gh api repos/example/project/issues -XOPTIONS",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-query-post",
+    "command": "gh api graphql -f 'query=query { viewer { login } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-query-explicit-post",
+    "command": "gh api graphql -XPOST -f 'query={ viewer { login } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-patch",
+    "command": "curl -XPATCH https://api.github.com/repos/example/project/issues/7",
+    "hint": "forge-cli issue edit"
+  },
+  {
+    "id": "curl-delete",
+    "command": "curl -XDELETE https://api.github.com/repos/example/project/issues/comments/8",
+    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+  },
+  {
+    "id": "forge-issue-read",
+    "command": "forge-cli issue view 7",
+    "hint": null
+  },
+  {
+    "id": "forge-pr-read",
+    "command": "forge-cli pr view 7",
+    "hint": null
+  },
+  {
+    "id": "forge-inbox-read",
+    "command": "forge-cli inbox list",
+    "hint": null
+  },
+  {
+    "id": "forge-with-provider-text",
+    "command": "forge-cli issue comment 7 --body 'gh issue close 7'",
+    "hint": null
+  },
+  {
+    "id": "forge-then-raw-read",
+    "command": "forge-cli pr view 7; gh pr view 7",
+    "hint": "forge-cli pr view"
+  },
+  {
+    "id": "api-pulls-get-fields",
+    "command": "gh api repos/example/project/pulls -f state=open -XGET",
+    "hint": null
+  },
+  {
+    "id": "api-help",
+    "command": "gh api --help",
+    "hint": null
   }
 ]

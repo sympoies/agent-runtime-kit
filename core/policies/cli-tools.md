@@ -22,6 +22,7 @@ inventory. Track repo-scoped third-party license obligations in
 - Find files: `fd` (use `tree`/`eza` for human-readable structure listings)
 - Read files: `bat`; preview Markdown: `glow`
 - Review diffs: `delta` (with `git`)
+- In every agent session, refuse all `gh issue`/`gh pr` commands (including reads) and raw GitHub writes; use `forge-cli`, with missing equivalents tracked in [nils-cli#2138](https://github.com/sympoies/nils-cli/issues/2138).
 - API exploration: `xh`/`httpie` + `jq`; use `curl` for minimal-dependency calls
 - Browser tooling: native Browser/Chrome tools first; `playwright` for
   deterministic verification; `agent-browser` only as an optional legacy CLI
@@ -85,7 +86,7 @@ inventory. Track repo-scoped third-party license obligations in
 | Tool    | Purpose              | Use when                                                                 | Avoid because this exists                                 |
 | ------- | -------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------- |
 | `git`   | Core version control | Branching, diffs, rebases, history, bisect                               | Editing `.git/` by hand or doing risky GUI-only workflows |
-| `gh`    | GitHub CLI           | Creating/reviewing PRs, checking CI, fetching PR metadata                | Repetitive manual web UI steps that drift from templates  |
+| `gh`    | GitHub provider backend | Internal `forge-cli` provider calls; follow the agent-session rule above | Direct issue/PR commands and raw GitHub writes |
 | `gitui` | Git TUI              | Safely staging partial changes and inspecting status/diffs interactively | Blind staging and accidental over-inclusion of changes    |
 
 ---
