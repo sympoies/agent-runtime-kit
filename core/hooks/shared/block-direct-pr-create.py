@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block direct GitHub PR and GitLab MR creation.
+"""PreToolUse: guard raw GitHub operations and direct GitLab MR creation.
 
 Shared runtime-kit logic accepts the neutral `AGENT_RUNTIME_PR_SKILL` marker.
-The value is still an exact-name allow-list, not a broad bypass.
+The exact-name allow-list applies only to GitLab MR creation.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import os
 import re
 import sys
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 # Codex may execute hooks through a source symlink; keep the checkout clean.
 sys.dont_write_bytecode = True
@@ -26,14 +27,9 @@ from hook_common import (
     opaque_invocation_candidates,
     read_payload,
     simple_commands,
+    simple_commands_with_nested_shells,
 )
 
-_BUILTIN_PR_SKILLS: frozenset[str] = frozenset(
-    {
-        "deliver-pr",
-        "pr:deliver-pr",
-    }
-)
 _BUILTIN_MR_SKILLS: frozenset[str] = frozenset(
     {
         "deliver-pr",
@@ -63,16 +59,15 @@ def _load_overlay_skills() -> frozenset[str]:
 
 
 _OVERLAY_SKILLS = _load_overlay_skills()
-ALLOWED_PR_SKILLS: frozenset[str] = _BUILTIN_PR_SKILLS | _OVERLAY_SKILLS
 ALLOWED_MR_SKILLS: frozenset[str] = _BUILTIN_MR_SKILLS | _OVERLAY_SKILLS
 MARKER_ENV_NAMES = ("AGENT_RUNTIME_PR_SKILL",)
 
 BLOCK_REASON_PR = (
-    "Do not run gh pr create directly. Open PRs through the deliver-pr "
-    "workflow with `forge-cli pr deliver` (or `forge-cli pr create` for a "
-    "create-only record) so the body follows the standard template and the "
-    "call is traceable. Skill bypass: prefix the command with "
-    "AGENT_RUNTIME_PR_SKILL=<exact allowed skill name>."
+    "Raw gh issue/pr operations and GitHub writes are refused in every agent "
+    "session. Use the matching `forge-cli issue` or `forge-cli pr` command "
+    "through the owning workflow; create PRs with `forge-cli pr deliver` "
+    "or `forge-cli pr create`. Missing equivalents are tracked in "
+    "https://github.com/sympoies/nils-cli/issues/2138."
 )
 
 BLOCK_REASON_MR = (
@@ -92,10 +87,9 @@ GLAB_API_POST_PARAMETER_FLAGS = {"-F", "--field", "-f", "--raw-field", "--form"}
 # followed by a sub-resource segment must NOT match, or sub-resource POSTs
 # (review comments, replies, reviews, reactions, MR notes) are wrongly blocked
 # as PR/MR creates (agent-runtime-kit#474). Blocking the trailing-slash form
-# (.../pulls/, .../merge_requests/) too is defense-in-depth: GitHub/GitLab 404
-# it today, but the guard must not depend on upstream routing strictness.
+# (.../merge_requests/) too is defense-in-depth: the guard must not depend
+# on upstream routing strictness.
 MR_ENDPOINT_RE = re.compile(r"(?:^|/)merge_requests/?(?:$|[?#])")
-PULLS_ENDPOINT_RE = re.compile(r"(?:^|/)repos/[^/\s]+/[^/\s]+/pulls/?(?:$|[?#])")
 
 
 def basename(token: str) -> str:
@@ -135,18 +129,6 @@ def cli_subcommands(simple_command: list[str], command_name: str) -> list[str]:
 def invokes_gh_pr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "gh")
     return args[:2] == ["pr", "create"]
-
-
-def api_has_pulls_endpoint(args: list[str]) -> bool:
-    return any(PULLS_ENDPOINT_RE.search(token) for token in args)
-
-
-def invokes_gh_api_pr_create(simple_command: list[str]) -> bool:
-    args = cli_subcommands(simple_command, "gh")
-    if args[:1] != ["api"]:
-        return False
-    api_args = args[1:]
-    return api_method_is_post(api_args) and api_has_pulls_endpoint(api_args)
 
 
 def invokes_glab_mr_create(simple_command: list[str]) -> bool:
@@ -206,7 +188,6 @@ def marker_value_before_invocation(
 def command_creates_pr_or_mr(
     command: str,
     *,
-    inherited_pr_marker: str | None = None,
     inherited_mr_marker: str | None = None,
     depth: int = 0,
     max_depth: int = 5,
@@ -219,22 +200,14 @@ def command_creates_pr_or_mr(
             if invocation_is_unresolved_nested(candidate):
                 return BLOCK_REASON_PR
             executable = basename(candidate[0])
-            if executable == "gh" and (
-                invokes_gh_pr_create(candidate) or invokes_gh_api_pr_create(candidate)
-            ):
+            if executable == "gh" and invokes_gh_pr_create(candidate):
                 return BLOCK_REASON_PR
             if executable == "glab" and (
                 invokes_glab_mr_create(candidate)
                 or invokes_glab_api_mr_create(candidate)
             ):
                 return BLOCK_REASON_MR
-        pr_marker = marker_value_before_command(
-            simple_command, "gh", inherited_pr_marker
-        )
-        if (
-            invokes_gh_pr_create(simple_command)
-            or invokes_gh_api_pr_create(simple_command)
-        ) and pr_marker not in ALLOWED_PR_SKILLS:
+        if invokes_gh_pr_create(simple_command):
             return BLOCK_REASON_PR
         mr_marker = marker_value_before_command(
             simple_command, "glab", inherited_mr_marker
@@ -250,9 +223,6 @@ def command_creates_pr_or_mr(
                 return BLOCK_REASON_PR
             blocked = command_creates_pr_or_mr(
                 payload,
-                inherited_pr_marker=marker_value_before_invocation(
-                    simple_command, inherited_pr_marker
-                ),
                 inherited_mr_marker=marker_value_before_invocation(
                     simple_command, inherited_mr_marker
                 ),
@@ -264,17 +234,297 @@ def command_creates_pr_or_mr(
     return None
 
 
+# Classify submitted shell source, never forge-cli's internal provider calls.
+# Identity binding and environment markers cannot exempt raw GitHub commands.
+GITHUB_WRITES = {
+    "release": {"create", "upload", "edit", "delete", "delete-asset"},
+    "workflow": {"run", "enable", "disable"},
+}
+SUPPORTED_OPERATIONS = {
+    "issue": {"create", "comment", "close", "edit", "reopen", "view", "list"},
+    "pr": {"create", "comment", "close", "edit", "merge", "ready", "review",
+           "view", "list", "checks"},
+}
+MISSING_COMMANDS = "https://github.com/sympoies/nils-cli/issues/2138"
+
+
+def write_hint(group: str, verb: str = "") -> str:
+    if group in {"issue", "pr"} and verb in {"", "--help", "-h", "help"}:
+        return f"Use `forge-cli {group} --help` to choose a typed command."
+    if verb in SUPPORTED_OPERATIONS.get(group, set()):
+        if group == "pr" and verb == "create":
+            return (
+                "Use `forge-cli pr deliver` through the owning workflow, or "
+                "`forge-cli pr create` for a create-only record."
+            )
+        return f"Use `forge-cli {group} {verb}` through the owning workflow."
+    missing = {
+        "release": "release", "workflow": "workflow",
+        "comment-mutation": "comment edit/delete",
+    }.get(group)
+    if not missing and group in {"issue", "pr"}:
+        missing = f"{group} {verb}"
+    if missing:
+        help_command = f"forge-cli {group} --help" if group in {"issue", "pr"} else "forge-cli --help"
+        return (
+            f"forge-cli has no {missing} command yet ({MISSING_COMMANDS}). "
+            f"Use `{help_command}` for supported operations and defer this "
+            "operation until its typed equivalent is available."
+        )
+    return (
+        "Use the matching typed `forge-cli issue` or `forge-cli pr` command "
+        "through the owning workflow. Missing API equivalents are tracked in "
+        f"{MISSING_COMMANDS}; defer unsupported operations."
+    )
+
+
+def api_hint(endpoint: str, method: str) -> str:
+    path = urlsplit(endpoint).path.strip("/")
+    if "/releases" in path:
+        return write_hint("release")
+    if "/actions/" in path or path.endswith("/dispatches"):
+        return write_hint("workflow")
+    if re.search(r"/(?:issues|pulls)/comments/[^/]+$", path):
+        return write_hint("comment-mutation")
+    if re.search(r"/issues/[^/]+/comments$", path) and method == "POST":
+        return write_hint("issue", "comment")
+    if re.search(r"/pulls/[^/]+/merge$", path):
+        return write_hint("pr", "merge")
+    if re.search(r"/pulls/[^/]+/reviews$", path):
+        return write_hint("pr", "review")
+    if re.search(r"/(issues|pulls)(?:/[^/]+)?$", path):
+        group = "pr" if "/pulls" in path else "issue"
+        verb = "create" if method == "POST" else "delete" if method == "DELETE" else "edit"
+        return write_hint(group, verb)
+    return write_hint("api")
+
+
+def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str], list[str], bool]:
+    """Explicit methods override implicit fields regardless of flag order."""
+    method = ""
+    endpoints: list[str] = []
+    fields: list[str] = []
+    input_body = False
+    upload = False
+    read_method = ""
+    value_flags = {"-X", "--request" if curl else "--method"}
+    upload_flags = {"-T", "--upload-file"} if curl else set()
+    field_flags = ({"-d", "--data", "--data-ascii", "--data-raw", "--data-binary", "--data-urlencode",
+                    "--json", "-F", "--form", "--form-string"} if curl else
+                   {"-f", "-F", "--field", "--raw-field"})
+    other_values = ({"-H", "--header", "-o", "--output", "-u", "--user", "--proto-default"} if curl else
+                    {"-H", "--header", "--hostname", "--jq", "-q", "--template", "-t",
+                     "--cache", "--preview", "-p"})
+    i = 0
+    while i < len(args):
+        token = args[i]
+        flag, sep, value = token.partition("=")
+        if curl and token in {"-G", "--get", "-I", "--head"}:
+            read_method = "HEAD" if token in {"-I", "--head"} else "GET"
+        elif flag in value_flags | field_flags | upload_flags | other_values | {"--input", "--url"}:
+            if not sep:
+                i += 1
+                value = args[i] if i < len(args) else ""
+            if flag in value_flags:
+                method = value.upper()
+            elif flag in field_flags:
+                fields.append(value)
+            elif flag in upload_flags:
+                upload = True
+            elif flag == "--input":
+                input_body = True
+            elif flag == "--url":
+                endpoints.append(value)
+        elif token.startswith("-X") and len(token) > 2:
+            method = token[2:].lstrip("=").upper()
+        elif curl and token.startswith("-T") and len(token) > 2:
+            upload = True
+        elif token.startswith(("-d", "-F") if curl else ("-f", "-F")) and len(token) > 2:
+            fields.append(token[2:])
+        elif not token.startswith("-") and (curl or not endpoints):
+            endpoints.append(token)
+        i += 1
+    implicit_method = "PUT" if upload else read_method or ("POST" if fields or input_body else "GET")
+    return method or implicit_method, endpoints, fields, input_body
+
+
+def graphql_tokens(document: str) -> str | None:
+    """Mask strings and comments in one pass; incomplete strings are unverified."""
+    tokens: list[str] = []
+    i = 0
+    while i < len(document):
+        if document[i] == "#":
+            while i < len(document) and document[i] not in "\r\n":
+                i += 1
+        elif document[i] == '"':
+            block = document.startswith('"""', i)
+            i += 3 if block else 1
+            while i < len(document):
+                if block and document.startswith('\\"""', i):
+                    i += 4
+                elif block and document.startswith('"""', i):
+                    i += 3
+                    break
+                elif not block and document[i] == '"':
+                    i += 1
+                    break
+                elif not block and document[i] == "\\":
+                    i += 2
+                elif not block and document[i] in "\r\n":
+                    return None
+                else:
+                    i += 1
+            else:
+                return None
+            tokens.append('""')
+        else:
+            tokens.append(document[i])
+            i += 1
+    return "".join(tokens)
+
+
+def gh_switches(args: list[str]) -> set[str]:
+    """Switches outside value slots; a body of '--help' is still a write."""
+    values = {"--body", "-b", "--body-file", "-F", "--title", "-t", "--comment", "-c",
+              "--reason", "-r", "--assignee", "-a", "--label", "-l", "--milestone", "-m",
+              "--project", "-p", "--template", "-T", "--recover", "--name", "--base",
+              "--head", "--reviewer", "--subject", "--repo", "-R", "--add-assignee",
+              "--remove-assignee", "--add-label", "--remove-label", "--add-project",
+              "--remove-project", "--method", "-X", "--field", "-f", "--raw-field",
+              "--input", "--header", "-H", "--hostname", "--jq", "-q", "--cache", "--preview"}
+    switches: set[str] = set()
+    i = 0
+    while i < len(args):
+        token = args[i]
+        flag, sep, _ = token.partition("=")
+        if flag in values:
+            i += 1 if sep else 2
+            continue
+        if token.startswith("-"):
+            switches.add(flag)
+        i += 1
+    return switches
+
+
+def raw_write_hint(tokens: list[str]) -> str | None:
+    # These tokens already name a process argv, not a new shell boundary.
+    invocation = invocation_tokens(tokens, shell_boundary=False)
+    if not invocation:
+        return None
+    executable = basename(invocation[0])
+    if executable == "gh":
+        args = cli_subcommands(tokens, "gh")
+        switches = gh_switches(args)
+        if args[:1] in (["issue"], ["pr"]):
+            verb_index = skip_cli_global_options(args, 1)
+            verb = args[verb_index] if verb_index < len(args) else ""
+            if verb == "comment" and switches & {"--edit-last", "--delete-last"}:
+                return write_hint("comment-mutation")
+            return write_hint(args[0], "create" if verb == "new" else verb)
+        # Only an unambiguous help-only form is exempt. In a larger argv,
+        # '--help' can be data for a value option (e.g. release --notes).
+        if len(args) == 3 and args[2] in {"--help", "-h"}:
+            return None
+        if len(args) >= 2 and args[1] in GITHUB_WRITES.get(args[0], set()):
+            return write_hint(args[0], "create" if args[1] == "new" else args[1])
+        if args[:1] != ["api"]:
+            return None
+        method, endpoints, fields, input_body = request_parts(args[1:])
+        endpoint = endpoints[0] if endpoints else ""
+        if method != "GET":
+            return api_hint(endpoint, method)
+        if urlsplit(endpoint).path.strip("/") == "graphql":
+            queries = [field.partition("=")[2] for field in fields if field.startswith("query=")]
+            # Only explicit GET with a literal read document is admitted.
+            # Files and variable documents cannot be proved read-only here.
+            if not input_body and len(queries) == 1:
+                query_tokens = graphql_tokens(queries[0])
+                if query_tokens is not None:
+                    query_tokens = query_tokens.lstrip()
+                    if not re.search(r"\bmutation\b", query_tokens) and (
+                        query_tokens.startswith("{") or re.match(r"query(?:\s|\(|\{|$)", query_tokens)
+                    ):
+                        return None
+            return write_hint("api")
+    elif executable == "curl":
+        # --next resets curl's local request options; one transfer's GET must
+        # never hide an earlier POST, nor inherit its method into a later read.
+        groups: list[list[str]] = [[]]
+        for token in invocation[1:]:
+            if token in {"--next", "-:"}:
+                groups.append([])
+            else:
+                groups[-1].append(token)
+        for group in groups:
+            method, endpoints, _, _ = request_parts(group, curl=True)
+            if method in {"GET", "HEAD", "OPTIONS"}:
+                continue
+            for target in endpoints:
+                try:
+                    parsed = urlsplit(target if "://" in target else "//" + target)
+                    if parsed.hostname == "api.github.com":
+                        return api_hint(target, method)
+                except ValueError:
+                    continue
+    return None
+
+
+def provider_invocation(tokens: list[str]) -> list[str]:
+    """Unwrap common literal process launchers without executing them."""
+    invocation = invocation_tokens(tokens)
+    for _ in range(5):
+        if not invocation:
+            break
+        wrapper = basename(invocation[0])
+        if wrapper not in {"timeout", "gtimeout", "nice", "nohup", "stdbuf"}:
+            break
+        index = 1
+        value_options = {"-s", "--signal", "-k", "--kill-after", "-n", "--adjustment", "-i", "-o", "-e"}
+        while index < len(invocation) and invocation[index].startswith("-"):
+            option = invocation[index]
+            if option == "--":
+                index += 1
+                break
+            index += 2 if option in value_options else 1
+        if wrapper in {"timeout", "gtimeout"}:
+            index += 1  # duration precedes the launched command
+        invocation = invocation_tokens(invocation[index:], shell_boundary=False)
+    return invocation
+
+
+def command_raw_write(command: str, depth: int = 0) -> str | None:
+    for tokens in simple_commands_with_nested_shells(command):
+        invocation = provider_invocation(tokens)
+        hint = raw_write_hint(invocation)
+        if hint:
+            return hint
+        nested = nested_shell_payload(invocation)
+        if nested and invocation != invocation_tokens(tokens) and depth < 5:
+            hint = command_raw_write(nested, depth + 1)
+            if hint:
+                return hint
+        for candidate in opaque_invocation_candidates(invocation, {"gh", "curl"}):
+            hint = raw_write_hint(candidate)
+            if hint:
+                return hint
+    return None
+
+
 def main() -> int:
     command = command_from(read_payload())
     if not command:
         return ALLOW
 
+    hint = command_raw_write(command)
+    if hint:
+        emit_block(
+            "[forge-write: blocked] Raw gh issue/pr operations and GitHub "
+            f"writes are refused in every agent session. {hint}"
+        )
+        return ALLOW
     reason = command_creates_pr_or_mr(command)
     if reason:
-        if reason == BLOCK_REASON_PR:
-            emit_block(BLOCK_REASON_PR)
-        else:
-            emit_block(BLOCK_REASON_MR)
+        emit_block(reason)
     return ALLOW
 
 

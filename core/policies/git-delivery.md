@@ -479,10 +479,9 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
 
 ## Issues, PRs, And MRs
 
-- For agent-owned provider issues, PRs, and MRs, use the active workflow or
-  `forge-cli` surface instead of raw provider commands. Direct `gh pr create`
-  or `glab mr create` are blocked by hook; PR/MR delivery goes through the
-  active delivery skill.
+- In every agent session, refuse all `gh issue`/`gh pr` commands (including reads) and raw GitHub writes; use `forge-cli`, with missing equivalents tracked in [nils-cli#2138](https://github.com/sympoies/nils-cli/issues/2138).
+- Direct `glab mr create` remains blocked by hook; PR/MR delivery goes through
+  the active delivery skill.
 - PR/MR bodies come from the active delivery skill / `agent-runtime pr-body
   render` (the canonical formatter; minimum `## Summary` + `## Test plan`). Do
   not hand-write body scaffolding or copy the formatter's section table into

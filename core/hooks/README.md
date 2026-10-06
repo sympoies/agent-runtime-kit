@@ -8,6 +8,40 @@ The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
 requires different behavior.
 
+`block-direct-pr-create.py` refuses every `gh issue` and `gh pr`
+invocation in Codex and Claude agent sessions, including reads and help.
+It also refuses raw GitHub writes: release/workflow writes, non-GET `gh api`
+requests (including implicit POST from fields or input), GraphQL mutations,
+and GitHub API writes through `curl`. Identity binding is irrelevant;
+the guard does not query the session broker or read forge credentials.
+
+REST GET requests remain available. GraphQL GET requires a literal read
+document; opaque input and mutations are refused. GraphQL POST is refused even
+for a query. Explicit REST methods take precedence over fields and curl uploads
+regardless of flag order. Curl `-T`/`--upload-file` implies PUT; `--next`
+resets transfer options. GraphQL strings and comments are masked in one pass;
+incomplete strings are refused because the document cannot be proved read-only.
+
+Refusals name the matching typed `forge-cli` operation when available and link
+[missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
+Unsupported operations must wait for their typed equivalent. The PR-skill
+marker and command-local environment clearing cannot exempt raw GitHub
+operations. The exact marker allow-list remains available for GitLab MR
+creation. `forge-cli` invocations remain available: the hook inspects submitted
+shell source, not the governed executable's internal `gh` or `git`
+subprocesses. Appending a raw GitHub operation to a forge-cli call still
+triggers the guard.
+
+This is a guard, not a Bash sandbox. It recognizes literal command forms,
+ordinary wrappers, command substitutions, and nested shell command strings
+through the shared bounded parser. It does not execute or inspect sourced files,
+arbitrary scripts, aliases/functions, or dynamically constructed commands.
+The curl host check covers the exact public `api.github.com` authority;
+custom enterprise API hosts need an owning configured guard. Provider
+authentication and authorization remain the final boundary. Any downstream
+runtime that copies these shared hooks must mirror the contract and fixtures;
+this repository has no separate downstream deployment owner.
+
 The finish-line hooks credit declared validation only after an observed
 successful exit. `PreToolUse` wraps each matched Bash command with a tokenized
 EXIT recorder that persists bounded outcome metadata and preserves the

@@ -323,6 +323,9 @@ AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT",)
 def scrub_ambient_envs(full_env: dict[str, str]) -> None:
     for name in AMBIENT_GATE_ENVS + AMBIENT_TRUST_ENVS:
         full_env.pop(name, None)
+    for name in ("FORGE_IDENTITY_PRINCIPAL", "AGENT_SESSION_RUNTIME_ID",
+                 "AGENT_SESSION_CAPABILITY_FILE"):
+        full_env.pop(name, None)
 
 
 def gate_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
@@ -540,6 +543,71 @@ def codex_link_map_hook_body() -> str:
 
 
 class SharedHookTests(unittest.TestCase):
+    def test_graphql_masking_has_bounded_runtime(self) -> None:
+        # A strict child deadline bounds a regression in the classifier itself,
+        # without timing the shared shell parser.
+        probe = (
+            "import importlib.util, json, sys\n"
+            "sys.dont_write_bytecode = True\n"
+            "spec = importlib.util.spec_from_file_location('forge_guard', sys.argv[1])\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+            "document = json.load(sys.stdin)\n"
+            "print(json.dumps(module.raw_write_hint(['gh', 'api', 'graphql', '-XGET', '-f', 'query=' + document])))\n"
+        )
+        for repetitions in (28, 200000):
+            with self.subTest(repetitions=repetitions):
+                document = 'query { field(argument: """' + '\\a' * repetitions
+                result = subprocess.run(
+                    [sys.executable, "-c", probe, str(HOOK_DIR / "block-direct-pr-create.py")],
+                    input=json.dumps(document), capture_output=True, text=True,
+                    timeout=1, env=gate_env({"PYTHONPATH": str(HOOK_DIR)}),
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("forge-cli", json.loads(result.stdout))
+
+    def test_managed_sessions_forge_operation_fixtures_without_broker(self) -> None:
+        cases = json.loads((REPO_ROOT / "tests/hooks/fixtures/forge-writes.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            broker = Path(tmp) / "agent-session"
+            broker.write_text(
+                "#!/usr/bin/env python3\nfrom pathlib import Path\n"
+                f"Path({str(Path(tmp) / 'broker-called')!r}).touch()\n"
+                "raise SystemExit(1)\n"
+            )
+            broker.chmod(0o755)
+            for case in cases:
+                with self.subTest(case=case["id"]):
+                    code, decision, stderr = run_hook(
+                        "block-direct-pr-create.py", command_payload(case["command"]),
+                        env={"FORGE_IDENTITY_PRINCIPAL": "",
+                             "AGENT_SESSION_ID": "fixture-session",
+                             "AGENT_SESSION_RUNTIME_ID": "fixture-runtime",
+                             "AGENT_RUNTIME_TRUSTED_CLI_ROOT": tmp,
+                             "PATH": tmp + os.pathsep + os.environ["PATH"]},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if case["hint"]:
+                        self.assert_blocked(decision, case["hint"])
+                    else:
+                        self.assert_allowed(decision)
+            self.assertFalse((Path(tmp) / "broker-called").exists())
+
+    def test_all_sessions_forge_operation_fixtures(self) -> None:
+        cases = json.loads((REPO_ROOT / "tests/hooks/fixtures/forge-writes.json").read_text())
+        for case in cases:
+            for bound in (False, True):
+                with self.subTest(case=case["id"], bound=bound):
+                    code, decision, stderr = run_hook(
+                        "block-direct-pr-create.py", command_payload(case["command"]),
+                        env={"FORGE_IDENTITY_PRINCIPAL": "fixture-principal" if bound else ""},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if case["hint"]:
+                        self.assert_blocked(decision, case["hint"])
+                    else:
+                        self.assert_allowed(decision)
+
     def assert_blocked(self, decision: dict[str, object] | None, fragment: str) -> None:
         self.assertIsNotNone(decision)
         assert decision is not None
@@ -925,7 +993,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "bash -lc 'gh pr create --draft'",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-commit.py",
@@ -940,7 +1008,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "diff <(gh pr create --draft) /dev/null",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -975,7 +1043,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "exec -ca renamed gh pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1017,7 +1085,8 @@ class SharedHookTests(unittest.TestCase):
                 assert decision is not None
                 reason = str(decision.get("reason", ""))
                 self.assertIn("forge-cli pr create", reason)
-                self.assertIn("AGENT_RUNTIME_PR_SKILL", reason)
+                if command.startswith("glab"):
+                    self.assertIn("AGENT_RUNTIME_PR_SKILL", reason)
 
     def test_block_hooks_ignore_inert_heredoc_prose(self) -> None:
         # A quoted-delimiter here-doc body is data with no expansion at all;
@@ -1089,7 +1158,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "agent-run exec --future-option gh pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-commit.py",
@@ -1099,7 +1168,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "agent-run exec --future-option bash -c 'gh pr create --draft'",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1149,7 +1218,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "/usr/bin/time --fo=V bash -c 'gh pr create --draft'",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1193,7 +1262,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "env - gh pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-commit.py",
@@ -1208,7 +1277,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "env --ignore-signal=PIPE gh pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1253,7 +1322,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 nested("gh pr create --draft"),
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1303,7 +1372,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 nested("gh pr create --draft"),
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1353,7 +1422,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "CMD=gh env -S '${CMD} pr create --draft'",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -1363,7 +1432,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "export CMD=gh; env -S \"'${CMD}' pr create --draft\"",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -1373,7 +1442,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "env -S \"'`printf gh`' pr create --draft\"",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-commit.py",
@@ -1388,7 +1457,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "env -S '# ignored' gh pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-commit.py",
@@ -1403,7 +1472,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "env -S 'gh\\_pr create --draft'",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -1451,7 +1520,7 @@ class SharedHookTests(unittest.TestCase):
         cases = (
             ("block-direct-git-commit.py", "bash -c 'git status'"),
             ("block-direct-git-worktree.py", "bash -c 'git worktree list'"),
-            ("block-direct-pr-create.py", "sh -c 'gh pr view 123'"),
+            ("block-direct-pr-create.py", "sh -c 'forge-cli pr view 123'"),
             ("block-direct-git-commit.py", "/usr/bin/time --future-option printf ok"),
             ("block-direct-git-worktree.py", "exec --future-option printf ok"),
             ("block-direct-pr-create.py", "agent-run exec --future-option printf ok"),
@@ -1861,13 +1930,13 @@ class SharedHookTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "uv run --locked python")
 
-    def test_blocks_direct_pr_create_unless_neutral_marker(self) -> None:
+    def test_github_has_no_skill_marker_bypass_and_gitlab_retains_it(self) -> None:
         code, decision, stderr = run_hook(
             "block-direct-pr-create.py",
             command_payload("gh pr create --draft"),
         )
         self.assertEqual(code, 0, stderr)
-        self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
+        self.assert_blocked(decision, "forge-cli")
 
         for marker in (
             "AGENT_RUNTIME_PR_SKILL=deliver-pr",
@@ -1878,7 +1947,7 @@ class SharedHookTests(unittest.TestCase):
                 command_payload(f"{marker} gh pr create --draft"),
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            self.assert_blocked(decision, "forge-cli")
 
         for retired_marker in (
             "AGENT_RUNTIME_PR_SKILL=create-pr",
@@ -1891,7 +1960,7 @@ class SharedHookTests(unittest.TestCase):
                 command_payload(f"{retired_marker} gh pr create --draft"),
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
+            self.assert_blocked(decision, "forge-cli")
 
         # Retired legacy product markers must no longer bypass the gate.
         for legacy in (
@@ -1903,7 +1972,7 @@ class SharedHookTests(unittest.TestCase):
                 command_payload(f"{legacy} gh pr create --draft"),
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
+            self.assert_blocked(decision, "forge-cli")
 
         for command in (
             "gh pr create --draft --body 'AGENT_RUNTIME_PR_SKILL=deliver-pr'",
@@ -1918,14 +1987,14 @@ class SharedHookTests(unittest.TestCase):
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
+                self.assert_blocked(decision, "forge-cli")
 
         code, decision, stderr = run_hook(
             "block-direct-pr-create.py",
             command_payload("env AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft"),
         )
         self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
+        self.assert_blocked(decision, "forge-cli")
 
         code, decision, stderr = run_hook(
             "block-direct-pr-create.py",
@@ -1934,7 +2003,7 @@ class SharedHookTests(unittest.TestCase):
             ),
         )
         self.assertEqual(code, 0, stderr)
-        self.assert_allowed(decision)
+        self.assert_blocked(decision, "forge-cli")
 
         for command in (
             "env -S 'AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr create --draft'",
@@ -1947,14 +2016,14 @@ class SharedHookTests(unittest.TestCase):
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_allowed(decision)
+                self.assert_blocked(decision, "forge-cli")
 
         blocked_pr_mr_commands = (
-            "gh api -X POST /repos/graysurf/agent-runtime-kit/pulls -f title=x -f head=topic -f base=main",
-            "gh api --method POST repos/graysurf/agent-runtime-kit/pulls -f title=x -f head=topic -f base=main",
-            "gh api repos/graysurf/agent-runtime-kit/pulls -f title=x -f head=topic -f base=main",
-            "gh api repos/graysurf/agent-runtime-kit/pulls -ftitle=x -fhead=topic -fbase=main",
-            "gh api repos/graysurf/agent-runtime-kit/pulls -Ftitle=x -Fhead=topic -Fbase=main",
+            "gh api -X POST /repos/example/project/pulls -f title=x -f head=topic -f base=main",
+            "gh api --method POST repos/example/project/pulls -f title=x -f head=topic -f base=main",
+            "gh api repos/example/project/pulls -f title=x -f head=topic -f base=main",
+            "gh api repos/example/project/pulls -ftitle=x -fhead=topic -fbase=main",
+            "gh api repos/example/project/pulls -Ftitle=x -Fhead=topic -Fbase=main",
             "glab mr create --draft",
             "bash -lc 'glab mr create --draft'",
             "glab api -X POST /projects/1/merge_requests",
@@ -1966,10 +2035,10 @@ class SharedHookTests(unittest.TestCase):
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
+                self.assert_blocked(decision, "forge-cli")
 
         for command in (
-            "env AGENT_RUNTIME_PR_SKILL=pr:deliver-pr gh api -X POST /repos/graysurf/agent-runtime-kit/pulls -f title=x -f head=topic -f base=main",
+            "env AGENT_RUNTIME_PR_SKILL=pr:deliver-pr gh api -X POST /repos/example/project/pulls -f title=x -f head=topic -f base=main",
             "AGENT_RUNTIME_PR_SKILL=pr:deliver-pr glab mr create --draft",
             "env AGENT_RUNTIME_PR_SKILL=pr:deliver-pr glab api -X POST /projects/1/merge_requests",
         ):
@@ -1979,29 +2048,32 @@ class SharedHookTests(unittest.TestCase):
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_allowed(decision)
+                if " glab " in command:
+                    self.assert_allowed(decision)
+                else:
+                    self.assert_blocked(decision, "forge-cli")
 
-    def test_pr_create_gate_allows_pr_mr_subresources(self) -> None:
+    def test_github_subresource_writes_refused_and_gitlab_subresources_allowed(self) -> None:
         # Regression for agent-runtime-kit#474: the pulls / merge_requests
         # endpoint regexes used a trailing [/?#] class, so they over-matched the
         # whole /pulls/... and /merge_requests/... subtree. A POST to any
         # sub-resource (review comments, replies, reviews, reactions, notes) was
-        # wrongly blocked as a PR/MR create. Only the bare create endpoint
-        # (end-of-path, or followed by a query/fragment) must be blocked.
+        # wrongly blocked as a PR/MR create. GitLab retains that contract;
+        # all GitHub API writes are now refused, including subresources.
         still_blocked = (
             # GitHub PR create endpoint at end of path.
-            "gh api --method POST repos/graysurf/agent-runtime-kit/pulls "
+            "gh api --method POST repos/example/project/pulls "
             "-f title=x -f head=topic -f base=main",
             # GitHub PR create endpoint with a trailing query string.
-            "gh api --method POST 'repos/graysurf/agent-runtime-kit/pulls?per_page=1' "
+            "gh api --method POST 'repos/example/project/pulls?per_page=1' "
             "-f title=x -f head=topic -f base=main",
             # GitHub PR create endpoint with a fragment (locks in the '#' half
             # of the trailing class).
-            "gh api --method POST 'repos/graysurf/agent-runtime-kit/pulls#frag' "
+            "gh api --method POST 'repos/example/project/pulls#frag' "
             "-f title=x -f head=topic -f base=main",
             # GitHub PR create endpoint with a single trailing slash (a bare
             # create form; defense-in-depth even though GitHub 404s it).
-            "gh api --method POST repos/graysurf/agent-runtime-kit/pulls/ "
+            "gh api --method POST repos/example/project/pulls/ "
             "-f title=x -f head=topic -f base=main",
             # GitLab MR create endpoint at end of path.
             "glab api -X POST /projects/1/merge_requests -f title=x "
@@ -2021,23 +2093,23 @@ class SharedHookTests(unittest.TestCase):
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "AGENT_RUNTIME_PR_SKILL")
+                self.assert_blocked(decision, "forge-cli")
 
-        now_allowed = (
+        subresource_commands = (
             # GitHub PR review-comment reaction (the case from the report).
             "gh api --method POST "
-            "repos/graysurf/agent-runtime-kit/pulls/comments/123/reactions "
+            "repos/example/project/pulls/comments/123/reactions "
             "-f content=+1",
             # GitHub PR review-comment reply.
             "gh api --method POST "
-            "repos/graysurf/agent-runtime-kit/pulls/476/comments/9/replies "
+            "repos/example/project/pulls/476/comments/9/replies "
             "-f body=ack",
             # GitHub PR review submission.
             "gh api --method POST "
-            "repos/graysurf/agent-runtime-kit/pulls/476/reviews -f event=APPROVE",
+            "repos/example/project/pulls/476/reviews -f event=APPROVE",
             # GitHub PR requested reviewers (another /pulls sub-resource).
             "gh api --method POST "
-            "repos/graysurf/agent-runtime-kit/pulls/476/requested_reviewers "
+            "repos/example/project/pulls/476/requested_reviewers "
             "-f reviewers=octocat",
             # GitLab MR note.
             "glab api -X POST /projects/1/merge_requests/5/notes -f body=ack",
@@ -2045,14 +2117,17 @@ class SharedHookTests(unittest.TestCase):
             "glab api -X POST /projects/1/merge_requests/5/award_emoji "
             "-f name=thumbsup",
         )
-        for command in now_allowed:
+        for command in subresource_commands:
             with self.subTest(allowed=command):
                 code, decision, stderr = run_hook(
                     "block-direct-pr-create.py",
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_allowed(decision)
+                if command.startswith("gh "):
+                    self.assert_blocked(decision, "forge-cli")
+                else:
+                    self.assert_allowed(decision)
 
     def test_block_hooks_handle_env_wrappers_and_shell_terminators(self) -> None:
         cases = (
@@ -2064,7 +2139,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "env -S 'gh pr create --draft'",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             (
                 "block-direct-git-worktree.py",
@@ -2124,7 +2199,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "cd repo\ngh pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
@@ -2168,7 +2243,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 "gh \\\n pr create --draft",
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
             # Bash also removes a backslash-LF continuation INSIDE double quotes,
             # so a quoted subcommand split this way still runs the forbidden
@@ -2186,7 +2261,7 @@ class SharedHookTests(unittest.TestCase):
             (
                 "block-direct-pr-create.py",
                 'gh pr "cre\\\nate" --draft',
-                "AGENT_RUNTIME_PR_SKILL",
+                "forge-cli",
             ),
         )
         for hook, command, fragment in cases:
