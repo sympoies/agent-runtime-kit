@@ -12301,7 +12301,7 @@ exit 64
 
             # Untrusted structured error codes are not copied into hook output.
             fail_log = root / "fail.log"
-            secret_code = "sensitive-error-code-that-must-not-leak"
+            secret_code = "ERROR-CODE-7F21"
             self._write_fake_agent_docs(
                 bin_dir,
                 f"""#!/usr/bin/env bash
