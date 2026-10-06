@@ -265,10 +265,11 @@ def write_hint(group: str, verb: str = "") -> str:
     if not missing and group in {"issue", "pr"}:
         missing = f"{group} {verb}"
     if missing:
+        help_command = f"forge-cli {group} --help" if group in {"issue", "pr"} else "forge-cli --help"
         return (
             f"forge-cli has no {missing} command yet ({MISSING_COMMANDS}). "
-            f"Defer this operation until the typed `forge-cli {missing}` "
-            "equivalent is available; do not fall back to raw GitHub commands."
+            f"Use `{help_command}` for supported operations and defer this "
+            "operation until its typed equivalent is available."
         )
     return (
         "Use the matching typed `forge-cli issue` or `forge-cli pr` command "
@@ -415,7 +416,8 @@ def raw_write_hint(tokens: list[str]) -> str | None:
         args = cli_subcommands(tokens, "gh")
         switches = gh_switches(args)
         if args[:1] in (["issue"], ["pr"]):
-            verb = args[1] if len(args) > 1 else ""
+            verb_index = skip_cli_global_options(args, 1)
+            verb = args[verb_index] if verb_index < len(args) else ""
             if verb == "comment" and switches & {"--edit-last", "--delete-last"}:
                 return write_hint("comment-mutation")
             return write_hint(args[0], "create" if verb == "new" else verb)

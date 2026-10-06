@@ -688,5 +688,35 @@
     "id": "api-help",
     "command": "gh api --help",
     "hint": null
+  },
+  {
+    "id": "issue-repo-before-verb",
+    "command": "gh issue --repo example/project view 7",
+    "hint": "forge-cli issue view"
+  },
+  {
+    "id": "issue-repo-attached-before-verb",
+    "command": "gh issue -Rexample/project list",
+    "hint": "forge-cli issue list"
+  },
+  {
+    "id": "issue-repo-equals-before-verb",
+    "command": "gh issue --repo=example/project close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "pr-repo-before-verb",
+    "command": "gh pr -R example/project view 7",
+    "hint": "forge-cli pr view"
+  },
+  {
+    "id": "pr-repo-attached-before-verb",
+    "command": "gh pr -Rexample/project checks 7",
+    "hint": "forge-cli pr checks"
+  },
+  {
+    "id": "pr-repo-equals-before-verb",
+    "command": "gh pr --repo=example/project create --draft",
+    "hint": "forge-cli pr create"
   }
 ]
