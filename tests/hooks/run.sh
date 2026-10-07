@@ -23,6 +23,7 @@ assert_source_hook_cache_absent() {
 }
 
 assert_source_hook_cache_absent
+python3 tests/hooks/test_retired_orchestration.py
 test_status=0
 python3 tests/hooks/test_shared_hooks.py "$@" || test_status=$?
 assert_source_hook_cache_absent

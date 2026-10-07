@@ -342,7 +342,6 @@ def gate_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     return full_env
 
 
-
 def run_controller(
     arguments: list[str], *, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -11066,7 +11065,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-    def test_pre_edit_intent_gate_allows_only_trusted_main_agent_readiness_commands(
+    def test_pre_edit_intent_gate_allows_only_trusted_session_readiness_commands(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11109,22 +11108,11 @@ exit 64
             ripgrep = bin_dir / "rg"
             ripgrep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             ripgrep.chmod(0o755)
-            main_agent = bin_dir / "main-agent"
-            main_agent_script = """#!/bin/sh
-if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
-exit 0
-"""
-            main_agent.write_text(main_agent_script, encoding="utf-8")
-            main_agent.chmod(0o755)
-
             private_dir = root / "private"
             private_dir.mkdir()
             claim_file = private_dir / "work-context.json"
             claim_file.write_text("{}\n", encoding="utf-8")
             claim_file.chmod(0o600)
-            packet_file = private_dir / "orchestration-packet.json"
-            packet_file.write_text("{}\n", encoding="utf-8")
-            packet_file.chmod(0o600)
             capability_file = private_dir / "capability"
             capability_file.write_text("fixture\n", encoding="utf-8")
             capability_file.chmod(0o600)
@@ -11139,14 +11127,14 @@ exit 0
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "AGENT_RUNTIME_PRODUCT": "codex",
                 "CODEX_AGENT_STATE_HOME": str(repo / "state"),
-                "AGENT_SESSION_ID": "main-agent-readiness",
+                "AGENT_SESSION_ID": "session-readiness",
                 "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
             trusted_agent_run = str(agent_run.resolve())
             claim = (
                 "agent-session work-context claim "
-                "--session main-agent-readiness "
+                "--session session-readiness "
                 f"--file {claim_file.resolve()} "
                 f"--capability-file {capability_file.resolve()} "
                 "--idempotency-key readiness-claim-0001 --format json"
@@ -11162,47 +11150,6 @@ exit 0
                 f"--file {claim_file.resolve()} ",
                 f"--file {claim_file.resolve()} --if-revision 1 ",
             )
-            init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-absent --idempotency-key readiness-init-0001 --format json"
-            )
-            revision_fenced_init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-revision 1 --idempotency-key readiness-init-0002 --format json"
-            )
-            rebind = (
-                "main-agent rebind --if-revision 1 "
-                "--idempotency-key readiness-rebind-0001 --format json"
-            )
-            quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--idempotency-key readiness-quick-0001 --format json"
-            )
-            tiered_quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--tier issue --idempotency-key readiness-quick-0002 --format json"
-            )
-            bootstrap = (
-                "main-agent bootstrap --idempotency-key "
-                "readiness-bootstrap-0001 --format json"
-            )
-            self_recover = (
-                "main-agent self recover --idempotency-key "
-                "readiness-recover-0001 --format json"
-            )
-            worker_wait = (
-                "main-agent worker wait assignment-1234 --until submitted "
-                "--timeout 30s --format json"
-            )
-            worker_wait_variants = (
-                "main-agent worker wait --any --until terminal --format json",
-                "main-agent worker wait assignment-1234 --until blocked "
-                "--timeout 1s --format json",
-                "main-agent worker wait --any --until submitted "
-                "--timeout 60s --format json",
-                "main-agent worker wait assignment-1234 --until terminal "
-                "--format json",
-            )
             allowed = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
@@ -11212,38 +11159,6 @@ exit 0
                 claim,
                 literal_claim,
                 revision_fenced_claim,
-                "main-agent --version",
-                "main-agent capabilities --provider codex --format json",
-                "main-agent capabilities --provider claude --format json",
-                "main-agent self readiness --format json",
-                f"{main_agent.resolve()} capabilities --provider codex --format json",
-                f"{main_agent.resolve()} self readiness --format json",
-                "main-agent self show --format json",
-                "main-agent rehydrate --format json",
-                "main-agent rehydrate --format markdown",
-                "main-agent status --format json",
-                "main-agent worker list --format json",
-                "main-agent worker show assignment-1234 --format json",
-                worker_wait,
-                *worker_wait_variants,
-                "main-agent worker diagnose assignment-1234 --format json",
-                "main-agent worker supervise assignment-1234 --format json",
-                bootstrap,
-                self_recover,
-                init,
-                revision_fenced_init,
-                rebind,
-                quick,
-                tiered_quick,
-                *(
-                    tiered_quick.replace("--tier issue", f"--tier {mode}")
-                    for mode in (
-                        "direct",
-                        "issue",
-                        "program",
-                        "program/dispatch",
-                    )
-                ),
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
@@ -11251,24 +11166,12 @@ exit 0
             for command in allowed:
                 with self.subTest(allowed=command):
                     payload = command_payload(command)
-                    payload["session_id"] = "main-agent-readiness"
+                    payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
-
-            main_agent.write_text(
-                main_agent_script.replace("1.24.5", "1.24.6"), encoding="utf-8"
-            )
-            payload = command_payload("main-agent status --format json")
-            payload["session_id"] = "main-agent-readiness"
-            code, decision, stderr = run_hook(
-                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "project-dev")
-            main_agent.write_text(main_agent_script, encoding="utf-8")
 
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
@@ -11280,56 +11183,11 @@ exit 0
             foreign_agent_run = foreign_bin / "agent-run"
             foreign_agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             foreign_agent_run.chmod(0o755)
-            foreign_main_agent = foreign_bin / "main-agent"
-            foreign_main_agent.write_text(main_agent_script, encoding="utf-8")
-            foreign_main_agent.chmod(0o755)
-
             blocked = (
+                "main-agent self readiness --format json",
+                "main-agent bootstrap --idempotency-key retirement-0001 --format json",
+
                 "agent-session --help",
-                "main-agent --help",
-                "main-agent capabilities --format json",
-                "main-agent capabilities --format markdown",
-                "main-agent capabilities --provider hermes --format json",
-                "main-agent capabilities --format json --provider codex",
-                "main-agent self readiness --format markdown",
-                "main-agent capabilities --format json extra",
-                "main-agent status --format json extra",
-                bootstrap.replace("readiness-bootstrap-0001", "short"),
-                bootstrap.replace("--format json", "--format markdown"),
-                bootstrap.replace(
-                    "readiness-bootstrap-0001", "'bad key!'"
-                ),
-                self_recover.replace("--idempotency-key", "--key"),
-                worker_wait.replace("--until submitted", "--until working"),
-                worker_wait.replace("--timeout 30s", "--timeout 0s"),
-                worker_wait.replace("--timeout 30s", "--timeout 61s"),
-                "main-agent worker diagnose ../foreign --format json",
-                "main-agent worker supervise assignment-1234 --format json extra",
-                "main-agent checkpoint --file packet.json --if-revision 1 --idempotency-key checkpoint-0001 --format json",
-                init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                init.replace(" --if-absent", ""),
-                init.replace("readiness-init-0001", "short"),
-                rebind + " extra",
-                rebind.replace("--if-revision 1 ", ""),
-                rebind.replace("--if-revision 1", "--if-revision 01"),
-                rebind.replace(
-                    "--if-revision 1 --idempotency-key readiness-rebind-0001",
-                    "--idempotency-key readiness-rebind-0001 --if-revision 1",
-                ),
-                quick + " extra",
-                quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                quick.replace("--assignment-file", "--packet-file"),
-                quick.replace("readiness-quick-0001", "short"),
-                tiered_quick.replace("--tier issue", "--tier L0"),
-                tiered_quick.replace("--tier issue", "--tier program/plan"),
-                tiered_quick.replace("--tier issue", "--tier Direct"),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
-                revision_fenced_init.replace(
-                    "--if-revision 1 --idempotency-key readiness-init-0002",
-                    "--idempotency-key readiness-init-0002 --if-revision 1",
-                ),
-                revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
                 "agent-session -V",
                 "agent-session --version | cat",
                 f"agent-session --version > {root / 'version.txt'}",
@@ -11351,7 +11209,7 @@ exit 0
                 "agent-session activity setup --agent codex --repair --dry-run",
                 "agent-session activity setup --agent codex --repair --dry-run --apply --format json",
                 "agent-session activity setup --agent codex --repair --dry-run --format json extra",
-                claim.replace("--session main-agent-readiness ", ""),
+                claim.replace("--session session-readiness ", ""),
                 claim.replace("--file " + str(claim_file.resolve()) + " ", ""),
                 claim.replace(
                     "--capability-file " + str(capability_file.resolve()) + " ", ""
@@ -11359,7 +11217,7 @@ exit 0
                 claim.replace("--idempotency-key readiness-claim-0001 ", ""),
                 claim.replace(" --format json", ""),
                 claim.replace(
-                    "--session main-agent-readiness", "--session another-session"
+                    "--session session-readiness", "--session another-session"
                 ),
                 claim.replace(str(claim_file.resolve()), "work-context.json"),
                 claim.replace(
@@ -11426,7 +11284,7 @@ exit 0
             for command in blocked:
                 with self.subTest(blocked=command):
                     payload = command_payload(command)
-                    payload["session_id"] = "main-agent-readiness"
+                    payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
@@ -11446,7 +11304,6 @@ exit 0
             for candidate in (shadow_bin, foreign_bin):
                 for command in (
                     "agent-session --version",
-                    "main-agent status --format json",
                     claim,
                     f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 ):
@@ -11454,7 +11311,7 @@ exit 0
                         readiness_companion_shadow=candidate, command=command
                     ):
                         payload = command_payload(command)
-                        payload["session_id"] = "main-agent-readiness"
+                        payload["session_id"] = "session-readiness"
                         code, decision, stderr = run_hook(
                             "pre-edit-intent-gate.py",
                             payload,
@@ -11471,20 +11328,18 @@ exit 0
             alias_bin.mkdir()
             (alias_bin / "agent-session").symlink_to(agent_session.resolve())
             (alias_bin / "agent-run").symlink_to(agent_run.resolve())
-            (alias_bin / "main-agent").symlink_to(main_agent.resolve())
             alias_env = {
                 **env,
                 "PATH": f"{alias_bin}{os.pathsep}{env['PATH']}",
             }
             alias_commands = (
                 "agent-session --version",
-                "main-agent status --format json",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
             )
             for command in alias_commands:
                 with self.subTest(foreign_same_release_alias=command):
                     payload = command_payload(command)
-                    payload["session_id"] = "main-agent-readiness"
+                    payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py",
                         payload,
@@ -11495,7 +11350,7 @@ exit 0
                     self.assert_blocked(decision, "project-dev")
 
             payload = command_payload("python3 -c 'print(1)'")
-            payload["session_id"] = "main-agent-readiness"
+            payload["session_id"] = "session-readiness"
             code, decision, stderr = run_hook(
                 "pre-edit-intent-gate.py",
                 payload,
@@ -11507,102 +11362,11 @@ exit 0
             assert decision is not None
             self.assertNotIn("Route 1", str(decision.get("reason", "")))
 
-    def test_main_agent_capability_failure_recovery_argv_is_finite(self) -> None:
-        allowed = (
-            ["main-agent", "--version"],
-            [
-                "main-agent",
-                "capabilities",
-                "--provider",
-                "codex",
-                "--format",
-                "json",
-            ],
-            [
-                "main-agent",
-                "capabilities",
-                "--provider",
-                "claude",
-                "--format",
-                "json",
-            ],
-            ["main-agent", "self", "readiness", "--format", "json"],
-            ["main-agent", "self", "show", "--format", "json"],
-            [
-                "main-agent",
-                "self",
-                "recover",
-                "--idempotency-key",
-                "recovery-key-0001",
-                "--format",
-                "json",
-            ],
-            ["main-agent", "rehydrate", "--format", "json"],
-            ["main-agent", "status", "--format", "json"],
-            [
-                "main-agent",
-                "rebind",
-                "--if-revision",
-                "10",
-                "--idempotency-key",
-                "recovery-key-0002",
-                "--format",
-                "json",
-            ],
-        )
-        blocked = (
-            ["pwd"],
-            ["main-agent", "--help"],
-            ["main-agent", "capabilities", "--format", "json"],
-            ["main-agent", "capabilities", "--format", "markdown"],
-            [
-                "main-agent",
-                "capabilities",
-                "--provider",
-                "hermes",
-                "--format",
-                "json",
-            ],
-            [
-                "main-agent",
-                "capabilities",
-                "--format",
-                "json",
-                "--provider",
-                "codex",
-            ],
-            ["main-agent", "capabilities", "--format", "json", "extra"],
-            ["main-agent", "self", "readiness", "--format", "markdown"],
-            ["main-agent", "self", "show", "--format", "json", "extra"],
-            [
-                "main-agent",
-                "self",
-                "recover",
-                "--idempotency-key",
-                "short",
-                "--format",
-                "json",
-            ],
-            ["main-agent", "worker", "start", "--help"],
-            ["main-agent", "account-handoff", "--help"],
-            ["agent-session", "send", "worker", "--key", "enter"],
-            ["git", "add", "."],
-        )
-        for words in allowed:
-            with self.subTest(allowed=words):
-                self.assertTrue(
-                    hook_common.main_agent_capability_recovery_argv(list(words))
-                )
-        for words in blocked:
-            with self.subTest(blocked=words):
-                self.assertFalse(
-                    hook_common.main_agent_capability_recovery_argv(list(words))
-                )
 
     def test_normalized_cli_argv_accepts_only_bare_or_absolute_named_cli(
         self,
     ) -> None:
-        for executable_name in ("main-agent", "agent-session"):
+        for executable_name in ("agent-run", "agent-session"):
             with self.subTest(executable_name=executable_name, spelling="bare"):
                 words = [executable_name, "status"]
                 self.assertIs(
@@ -11657,7 +11421,6 @@ exit 0
                     "agent-docs",
                     "agent-session",
                     "agent-run",
-                    "main-agent",
                 ):
                     executable = directory / name
                     executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -11665,7 +11428,7 @@ exit 0
 
             linked_bin = root / "linked-bin"
             linked_bin.mkdir()
-            for name in ("agent-docs", "agent-session", "agent-run", "main-agent"):
+            for name in ("agent-docs", "agent-session", "agent-run"):
                 (linked_bin / name).symlink_to(release_bin / name)
 
             base_env = {
@@ -11673,7 +11436,7 @@ exit 0
                 "PATH": f"{linked_bin}{os.pathsep}{os.environ.get('PATH', '')}",
             }
             with mock.patch.dict(os.environ, base_env, clear=False):
-                for name in ("agent-session", "agent-run", "main-agent"):
+                for name in ("agent-session", "agent-run"):
                     with self.subTest(valid_shared_symlink_surface=name):
                         self.assertEqual(
                             gate.trusted_release_companion(
@@ -11688,7 +11451,7 @@ exit 0
 
             alias_bin = root / "foreign-alias-bin"
             alias_bin.mkdir()
-            for name in ("agent-session", "agent-run", "main-agent"):
+            for name in ("agent-session", "agent-run"):
                 (alias_bin / name).symlink_to(release_bin / name)
             with mock.patch.dict(
                 os.environ,
@@ -11698,7 +11461,7 @@ exit 0
                 },
                 clear=False,
             ):
-                for name in ("agent-session", "agent-run", "main-agent"):
+                for name in ("agent-session", "agent-run"):
                     with self.subTest(foreign_lexical_alias=name):
                         self.assertIsNone(
                             gate.trusted_release_companion(
@@ -11713,7 +11476,7 @@ exit 0
             mixed_bin = root / "mixed-bin"
             mixed_bin.mkdir()
             (mixed_bin / "agent-docs").symlink_to(release_bin / "agent-docs")
-            for name in ("agent-session", "agent-run", "main-agent"):
+            for name in ("agent-session", "agent-run"):
                 (mixed_bin / name).symlink_to(foreign_release_bin / name)
             with mock.patch.dict(
                 os.environ,
@@ -11723,7 +11486,7 @@ exit 0
                 },
                 clear=False,
             ):
-                for name in ("agent-session", "agent-run", "main-agent"):
+                for name in ("agent-session", "agent-run"):
                     with self.subTest(foreign_resolved_release=name):
                         self.assertIsNone(
                             gate.trusted_release_companion(
@@ -13205,7 +12968,7 @@ exit 64
                 None,
                 "provider-pr-unresolved",
             ),
-            # A delivery that would merge stays with the Main Agent.
+            # A delivery that would merge stays with the coordinator.
             ("forge-cli pr deliver --kind feature --title x", None, "provider-pr-unresolved"),
             # Ambiguous or unprovable heads and repositories fail closed.
             (
@@ -13260,7 +13023,7 @@ exit 64
             ("forge-cli pr comment 7 --body-file x.md", "provider-pr", provider("pr", 7)),
             ("forge-cli pr review 7", "provider-pr", provider("pr", 7)),
             ("forge-cli issue comment 12 --body-file x.md", "provider-issue", provider("issue", 12)),
-            # The Main Agent owns new issues.
+            # The coordinator owns new issues.
             ("forge-cli issue create --title x", None, "provider-issue-unresolved"),
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -13873,24 +13636,7 @@ exit 64
                 0,
                 f"source-linked claim failed: stdout={claimed.stdout} stderr={claimed.stderr}",
             )
-            # nils-cli's own Main Agent bootstrap acceptance proves that only
-            # authenticated bootstrap can mint this private grant. This
-            # cross-product fixture injects the already-minted registry state
-            # so it can focus on the runtime hook -> source-linked admission
-            # and completion boundary.
-            registry = json.loads(registry_path.read_text(encoding="utf-8"))
-            alpha_claim = next(
-                claim
-                for claim in registry["claims"]
-                if claim["session_id"] == "alpha" and claim["state"] == "active"
-            )
-            alpha_claim["checkout_shell_grant"] = True
-            registry_path.write_text(
-                json.dumps(registry) + "\n", encoding="utf-8"
-            )
-            registry_path.chmod(0o600)
-
-            shell_payload = command_payload("touch src/generated.txt")
+            shell_payload = write_payload(str(repo / "src" / "generated.txt"), "fixture\n")
             shell_payload.update(
                 {
                     "cwd": str(repo),
@@ -13929,7 +13675,7 @@ exit 64
                 if operation["session_id"] == "alpha"
             ]
             self.assertEqual(len(alpha_operations), 1)
-            self.assertEqual(alpha_operations[0]["operation"], "shell")
+            self.assertEqual(alpha_operations[0]["operation"], "write")
             self.assertEqual(alpha_operations[0]["state"], "completed")
 
             # Pull-request head targets: a surface below the capability floor
@@ -17481,322 +17227,8 @@ exit 64
             self.assertIsNone(operation)
             self.assertEqual(reason, "provider-pr-unresolved")
 
-    def test_session_coordination_guard_admits_private_checkpoint_creation(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            subprocess.run(
-                [
-                    "git",
-                    "remote",
-                    "add",
-                    "origin",
-                    "https://example.invalid/example/repo.git",
-                ],
-                cwd=repo,
-                check=True,
-            )
-            bin_dir = root / "bin"
-            bin_dir.mkdir()
-            agent_session = bin_dir / "agent-session"
-            agent_session.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
-if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
-if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}'
-  exit 0
-fi
-exit 64
-""",
-                encoding="utf-8",
-            )
-            agent_session.chmod(0o755)
-            capability = root / "capability"
-            capability.write_text("secret\n", encoding="utf-8")
-            capability.chmod(0o600)
-            state_dir = root / "session-state"
-            session_dir = state_dir / "sessions" / "managed-session"
-            checkpoint_dir = session_dir / "coordination"
-            checkpoint_dir.mkdir(parents=True)
-            session_dir.chmod(0o700)
-            checkpoint_dir.chmod(0o700)
-            runtime_id = "worker-incarnation-one"
-            checkpoint = checkpoint_dir / (
-                "main-agent-checkpoint-"
-                f"{hashlib.sha256(runtime_id.encode()).hexdigest()}.json"
-            )
-            checkpoint.write_text("", encoding="utf-8")
-            checkpoint.chmod(0o600)
-            env = {
-                "AGENT_RUNTIME_PRODUCT": "codex",
-                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
-                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
-                "AGENT_SESSION_ID": "managed-session",
-                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
-                "AGENT_SESSION_STATE_DIR": str(state_dir),
-                "AGENT_SESSION_RUNTIME_ID": runtime_id,
-                "AGENT_SESSION_CHECKPOINT_FILE": str(checkpoint),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-            checkpoint_body = json.dumps(
-                {
-                    "schema_version": "main-agent.checkpoint-input.v1",
-                    "summary": "implementation complete",
-                    "next_action": "await review",
-                    "state": "submitted",
-                    "result_summary": "focused validation passed",
-                }
-            ) + "\n"
 
-            def invoke(
-                payload: dict[str, Any], env_override: dict[str, str] | None = None
-            ) -> tuple[int, dict[str, object] | None, str]:
-                payload.update(
-                    {
-                        "cwd": str(repo),
-                        "session_id": "product-session",
-                        "tool_use_id": "private-checkpoint",
-                        "hook_event_name": "PreToolUse",
-                    }
-                )
-                return run_enforced_hook(
-                    "session-coordination-guard.py",
-                    payload,
-                    cwd=repo,
-                    env=env_override or env,
-                )
-
-            cases = (
-                (
-                    "write",
-                    write_payload(str(checkpoint), checkpoint_body),
-                ),
-                (
-                    "redirect",
-                    command_payload(
-                        "printf '%s\\n' "
-                        f"{shlex.quote(checkpoint_body.rstrip())} > "
-                        f"{shlex.quote(str(checkpoint))}"
-                    ),
-                ),
-            )
-            for name, payload in cases:
-                with self.subTest(route=name):
-                    code, decision, stderr = invoke(payload)
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
-                    self.assertTrue(checkpoint.is_file())
-                    self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
-                    if name == "write":
-                        checkpoint.write_text(checkpoint_body, encoding="utf-8")
-                    else:
-                        subprocess.run(
-                            ["bash", "-c", payload["tool_input"]["command"]],
-                            cwd=repo,
-                            check=True,
-                        )
-                    self.assertEqual(
-                        json.loads(checkpoint.read_text(encoding="utf-8")),
-                        json.loads(checkpoint_body),
-                    )
-                    self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
-
-            legacy_checkpoint = (
-                root
-                / "agent-home"
-                / "out"
-                / "projects"
-                / "example__repo"
-                / "run-1"
-                / "checkpoint.json"
-            )
-            legacy_checkpoint.parent.mkdir(parents=True)
-            alternate_checkpoint = checkpoint_dir / "alternate.json"
-            expansion_body = json.dumps(
-                {
-                    "schema_version": "main-agent.checkpoint-input.v1",
-                    "summary": f"$(touch {root / 'expansion-ran'})",
-                    "next_action": "await review",
-                }
-            )
-            double_quoted_body = expansion_body.replace("\\", "\\\\").replace(
-                '"', '\\"'
-            )
-            rejected = (
-                (
-                    "legacy-project-output",
-                    write_payload(str(legacy_checkpoint), checkpoint_body),
-                    env,
-                ),
-                (
-                    "alternate-target",
-                    write_payload(str(alternate_checkpoint), checkpoint_body),
-                    env,
-                ),
-                (
-                    "scalar-json",
-                    write_payload(str(checkpoint), "[]\n"),
-                    env,
-                ),
-                (
-                    "oversized",
-                    write_payload(
-                        str(checkpoint),
-                        json.dumps({"summary": "x" * (64 * 1024)}),
-                    ),
-                    env,
-                ),
-                (
-                    "compound-command",
-                    command_payload(
-                        "printf '%s\\n' "
-                        f"{shlex.quote(checkpoint_body.rstrip())} > "
-                        f"{shlex.quote(str(checkpoint))} && touch escaped"
-                    ),
-                    env,
-                ),
-                (
-                    "double-quoted-expansion",
-                    command_payload(
-                        f"""printf '%s\\n' "{double_quoted_body}" > {checkpoint}"""
-                    ),
-                    env,
-                ),
-                (
-                    "backtick-expansion",
-                    command_payload(
-                        f"""printf '%s\\n' "{{\\"summary\\":\\"`touch {root / 'backtick-ran'}`\\"}}" > {checkpoint}"""
-                    ),
-                    env,
-                ),
-                (
-                    "parameter-expansion",
-                    command_payload(
-                        f"""printf '%s\\n' "{{\\"summary\\":\\"$HOME\\"}}" > {checkpoint}"""
-                    ),
-                    env,
-                ),
-                (
-                    "runtime-mismatch",
-                    write_payload(str(checkpoint), checkpoint_body),
-                    {**env, "AGENT_SESSION_RUNTIME_ID": "other-incarnation"},
-                ),
-                (
-                    "issued-path-mismatch",
-                    write_payload(str(checkpoint), checkpoint_body),
-                    {**env, "AGENT_SESSION_CHECKPOINT_FILE": str(alternate_checkpoint)},
-                ),
-            )
-            for name, payload, case_env in rejected:
-                with self.subTest(rejected=name):
-                    code, decision, stderr = invoke(payload, case_env)
-                    self.assertEqual(code, 0, stderr)
-                    self.assertIsNotNone(decision)
-                    assert decision is not None
-                    self.assertEqual(decision.get("decision"), "block")
-            self.assertFalse((root / "expansion-ran").exists())
-            self.assertFalse((root / "backtick-ran").exists())
-
-            state_link = root / "linked-session-state"
-            state_link.symlink_to(state_dir, target_is_directory=True)
-            linked_checkpoint = (
-                state_link
-                / "sessions"
-                / "managed-session"
-                / "coordination"
-                / checkpoint.name
-            )
-            linked_env = {
-                **env,
-                "AGENT_SESSION_STATE_DIR": str(state_link),
-                "AGENT_SESSION_CHECKPOINT_FILE": str(linked_checkpoint),
-            }
-            code, decision, stderr = invoke(
-                write_payload(str(linked_checkpoint), checkpoint_body),
-                linked_env,
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
-
-            checkpoint.chmod(0o644)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-            checkpoint.chmod(0o600)
-
-            hardlink_source = checkpoint_dir / "hardlink-source.json"
-            hardlink_source.write_text(checkpoint_body, encoding="utf-8")
-            hardlink_source.chmod(0o600)
-            checkpoint.unlink()
-            checkpoint.hardlink_to(hardlink_source)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-            checkpoint.unlink()
-            checkpoint.write_text("", encoding="utf-8")
-            checkpoint.chmod(0o600)
-
-            symlink_source = checkpoint_dir / "symlink-source.json"
-            symlink_source.write_text("", encoding="utf-8")
-            symlink_source.chmod(0o600)
-            checkpoint.unlink()
-            checkpoint.symlink_to(symlink_source)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-            checkpoint.unlink()
-            checkpoint.write_text("", encoding="utf-8")
-            checkpoint.chmod(0o600)
-
-            checkpoint_dir.chmod(0o755)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-
-    def test_session_coordination_checkpoint_probe_skips_non_candidates(self) -> None:
-        spec = importlib.util.spec_from_file_location(
-            "session_coordination_checkpoint_probe_under_test",
-            HOOK_DIR / "session-coordination-guard.py",
-        )
-        assert spec is not None and spec.loader is not None
-        guard = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(guard)
-        with (
-            mock.patch.dict(
-                os.environ,
-                {"AGENT_SESSION_CHECKPOINT_FILE": "/private/checkpoint.json"},
-                clear=False,
-            ),
-            mock.patch.object(guard, "runtime_checkpoint_path") as trusted_path,
-        ):
-            cases = (
-                ("Edit", {"tool_name": "Edit", "tool_input": {}}),
-                (
-                    "Write",
-                    write_payload("/private/ordinary.json", '{"ordinary":true}'),
-                ),
-                ("Bash", command_payload("git status --short")),
-            )
-            for tool, payload in cases:
-                with self.subTest(tool=tool):
-                    self.assertIsNone(guard.runtime_checkpoint_write(payload, tool))
-            trusted_path.assert_not_called()
-
-    def test_session_coordination_handler_advertises_checkpoint_capability(
+    def test_session_coordination_handler_has_no_retired_checkpoint_capability(
         self,
     ) -> None:
         completed = subprocess.run(
@@ -17815,11 +17247,7 @@ exit 64
             json.loads(completed.stdout),
             {
                 "schema_version": "runtime-kit.handler-capabilities.v1",
-                "capabilities": {
-                    "runtime_checkpoint_write": (
-                        "runtime-kit.checkpoint-write-admission.v1"
-                    )
-                },
+                "capabilities": {},
             },
         )
 
@@ -18177,383 +17605,6 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "active work-context claim")
 
-    def test_session_coordination_guard_allows_only_exact_main_agent_bootstrap(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            bin_dir = root / "bin"
-            bin_dir.mkdir()
-            agent_session = bin_dir / "agent-session"
-            agent_session.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
-if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
-exit 64
-""",
-                encoding="utf-8",
-            )
-            agent_session.chmod(0o755)
-            main_agent = bin_dir / "main-agent"
-            main_agent_script = """#!/bin/sh
-if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
-exit 0
-"""
-            main_agent.write_text(main_agent_script, encoding="utf-8")
-            main_agent.chmod(0o755)
-
-            private_dir = root / "private"
-            private_dir.mkdir()
-            packet_file = private_dir / "orchestration-packet.json"
-            packet_file.write_text("{}\n", encoding="utf-8")
-            packet_file.chmod(0o600)
-            repository_packet = repo / "orchestration-packet.json"
-            repository_packet.write_text("{}\n", encoding="utf-8")
-            repository_packet.chmod(0o600)
-            public_packet = private_dir / "public-orchestration-packet.json"
-            public_packet.write_text("{}\n", encoding="utf-8")
-            public_packet.chmod(0o644)
-            capability_file = private_dir / "capability"
-            capability_file.write_text("fixture\n", encoding="utf-8")
-            capability_file.chmod(0o600)
-            shadow_dir = root / "shadow"
-            shadow_dir.mkdir()
-            shadow_main_agent = shadow_dir / "main-agent"
-            shadow_main_agent.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            shadow_main_agent.chmod(0o755)
-
-            env = {
-                "AGENT_RUNTIME_PRODUCT": "codex",
-                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
-                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
-                "AGENT_SESSION_ID": "managed-session",
-                "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
-                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-            init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-absent --idempotency-key main-agent-init-0001 --format json"
-            )
-            revision_fenced_init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-revision 1 --idempotency-key main-agent-init-0002 --format json"
-            )
-            rebind = (
-                "main-agent rebind --if-revision 1 "
-                "--idempotency-key main-agent-rebind-0001 --format json"
-            )
-            quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--idempotency-key main-agent-quick-0001 --format json"
-            )
-            tiered_quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--tier issue --idempotency-key main-agent-quick-0002 --format json"
-            )
-            bootstrap = (
-                "main-agent bootstrap --idempotency-key "
-                "main-agent-bootstrap-0001 --format json"
-            )
-            # `main-agent worker start` writes the worker prompt with an
-            # absolute path so the worker pins the exact launching build. If
-            # that spelling is not admitted, no managed worker can ever run its
-            # mandated first command and the whole run stalls before bootstrap.
-            pinned_bootstrap = (
-                f"{main_agent.resolve()} bootstrap --idempotency-key "
-                "main-agent-bootstrap-0002 --format json"
-            )
-            self_recover = (
-                "main-agent self recover --idempotency-key "
-                "main-agent-recover-0001 --format json"
-            )
-            worker_wait = (
-                "main-agent worker wait assignment-1234 --until submitted "
-                "--timeout 30s --format json"
-            )
-            worker_wait_variants = (
-                "main-agent worker wait --any --until terminal --format json",
-                "main-agent worker wait assignment-1234 --until blocked "
-                "--timeout 1s --format json",
-                "main-agent worker wait --any --until submitted "
-                "--timeout 60s --format json",
-                "main-agent worker wait assignment-1234 --until terminal "
-                "--format json",
-            )
-            checkpoint = (
-                f"main-agent checkpoint --file {packet_file.resolve()} "
-                "--if-revision 1 --idempotency-key checkpoint-0001 --format json"
-            )
-            allowed = (
-                "main-agent --version",
-                "main-agent capabilities --provider codex --format json",
-                "main-agent capabilities --provider claude --format json",
-                f"{main_agent.resolve()} capabilities --provider codex --format json",
-                "main-agent self readiness --format json",
-                f"{main_agent.resolve()} self readiness --format json",
-                "main-agent self show --format json",
-                "main-agent rehydrate --format json",
-                "main-agent rehydrate --format markdown",
-                "main-agent status --format json",
-                "main-agent worker list --format json",
-                "main-agent worker show assignment-1234 --format json",
-                worker_wait,
-                *worker_wait_variants,
-                "main-agent worker diagnose assignment-1234 --format json",
-                "main-agent worker supervise assignment-1234 --format json",
-                bootstrap,
-                pinned_bootstrap,
-                self_recover,
-                init,
-                revision_fenced_init,
-                rebind,
-                quick,
-                tiered_quick,
-                *(
-                    tiered_quick.replace("--tier issue", f"--tier {mode}")
-                    for mode in (
-                        "direct",
-                        "issue",
-                        "program",
-                        "program/dispatch",
-                    )
-                ),
-                checkpoint,
-            )
-            typed_bootstrap_authorization = {
-                "schema_version": (
-                    "runtime-kit.session-coordination-bootstrap-authorization.v1"
-                ),
-                "authorization": "typed-main-agent-bootstrap-authorized",
-            }
-            for index, command in enumerate(allowed):
-                with self.subTest(allowed=command):
-                    payload = command_payload(command)
-                    payload.update(
-                        {
-                            "cwd": str(repo),
-                            "session_id": "product-session",
-                            "tool_use_id": f"main-agent-bootstrap-allowed-{index}",
-                            "hook_event_name": "PreToolUse",
-                        }
-                    )
-                    code, decision, stderr = run_enforced_hook(
-                        "session-coordination-guard.py",
-                        payload,
-                        cwd=repo,
-                        env=env,
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    if command in (bootstrap, pinned_bootstrap):
-                        self.assertEqual(decision, typed_bootstrap_authorization)
-                    else:
-                        self.assert_allowed(decision)
-
-            capability_file.chmod(0o644)
-            payload = command_payload(pinned_bootstrap)
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-bootstrap-invalid-capability",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertNotEqual(decision, typed_bootstrap_authorization)
-            capability_file.chmod(0o600)
-
-            foreign_bin = root / "foreign-bin"
-            foreign_bin.mkdir()
-            foreign_main_agent = foreign_bin / "main-agent"
-            foreign_main_agent.write_text(main_agent_script, encoding="utf-8")
-            foreign_main_agent.chmod(0o755)
-            payload = command_payload("main-agent status --format json")
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-foreign-release-root",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py",
-                payload,
-                cwd=repo,
-                env={
-                    **env,
-                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": os.pathsep.join(
-                        (str(foreign_bin), str(bin_dir))
-                    ),
-                    "PATH": f"{foreign_bin}{os.pathsep}{env['PATH']}",
-                },
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "active work-context claim")
-
-            main_agent.write_text(
-                main_agent_script.replace("1.24.5", "1.24.6"), encoding="utf-8"
-            )
-            payload = command_payload("main-agent status --format json")
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-version-mismatch",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "active work-context claim")
-            payload = command_payload(pinned_bootstrap)
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-bootstrap-version-mismatch",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertNotEqual(decision, typed_bootstrap_authorization)
-            main_agent.write_text(main_agent_script, encoding="utf-8")
-
-            blocked = (
-                "main-agent --version extra",
-                "main-agent capabilities --format json",
-                "main-agent capabilities --format markdown",
-                "main-agent capabilities --provider hermes --format json",
-                "main-agent capabilities --format json --provider codex",
-                "main-agent self readiness --format markdown",
-                "main-agent capabilities --format json extra",
-                "main-agent self show --format markdown",
-                "main-agent self show --format json extra",
-                "main-agent rehydrate --format yaml",
-                "main-agent worker show ../foreign --format json",
-                "main-agent worker list --format json extra",
-                bootstrap.replace("main-agent-bootstrap-0001", "short"),
-                bootstrap.replace("--format json", "--format markdown"),
-                bootstrap.replace(
-                    "main-agent-bootstrap-0001", "'bad key!'"
-                ),
-                self_recover.replace("--idempotency-key", "--key"),
-                worker_wait.replace("--until submitted", "--until working"),
-                worker_wait.replace("--timeout 30s", "--timeout 0s"),
-                worker_wait.replace("--timeout 30s", "--timeout 61s"),
-                "main-agent worker diagnose ../foreign --format json",
-                "main-agent worker supervise assignment-1234 --format json extra",
-                init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                init.replace(str(packet_file.resolve()), str(repository_packet.resolve())),
-                init.replace(" --if-absent", ""),
-                init.replace(
-                    "--if-absent --idempotency-key main-agent-init-0001",
-                    "--idempotency-key main-agent-init-0001 --if-absent",
-                ),
-                init.replace("main-agent-init-0001", "short"),
-                quick + " extra",
-                quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                quick.replace("--assignment-file", "--packet-file"),
-                quick.replace("main-agent-quick-0001", "short"),
-                tiered_quick.replace("--tier issue", "--tier L0"),
-                tiered_quick.replace("--tier issue", "--tier program/plan"),
-                tiered_quick.replace("--tier issue", "--tier Direct"),
-                init.replace("--format json", "--format markdown"),
-                init + " extra",
-                rebind + " extra",
-                rebind.replace("--if-revision 1 ", ""),
-                rebind.replace("--if-revision 1", "--if-revision 01"),
-                rebind.replace(
-                    "--if-revision 1 --idempotency-key main-agent-rebind-0001",
-                    "--idempotency-key main-agent-rebind-0001 --if-revision 1",
-                ),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
-                revision_fenced_init.replace(
-                    "--if-revision 1 --idempotency-key main-agent-init-0002",
-                    "--idempotency-key main-agent-init-0002 --if-revision 1",
-                ),
-                revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
-                f"{shadow_main_agent} status --format json",
-                # An untrusted absolute build and a relative spelling must stay
-                # rejected even though the pinned trusted path is admitted.
-                f"{shadow_main_agent} bootstrap --idempotency-key "
-                "main-agent-bootstrap-0003 --format json",
-                "./main-agent bootstrap --idempotency-key "
-                "main-agent-bootstrap-0004 --format json",
-                "/tmp/$(touch>/tmp/owner-bypass)/main-agent bootstrap "
-                "--idempotency-key main-agent-bootstrap-0005 --format json",
-                "/${ATTACKER_BIN}/main-agent bootstrap --idempotency-key "
-                "main-agent-bootstrap-0006 --format json",
-                "main-agent status --format json | cat",
-                f"main-agent status --format json > {root / 'status.json'}",
-                "sh -c 'main-agent status --format json'",
-                checkpoint.replace(
-                    str(packet_file.resolve()), "orchestration-packet.json"
-                ),
-                checkpoint.replace(
-                    str(packet_file.resolve()), str(repository_packet.resolve())
-                ),
-                checkpoint.replace(
-                    str(packet_file.resolve()), str(public_packet.resolve())
-                ),
-                checkpoint.replace("--if-revision 1", "--if-revision 01"),
-                checkpoint.replace("--if-revision 1", "--if-revision -1"),
-                checkpoint.replace(
-                    "--if-revision 1", "--if-revision 18446744073709551616"
-                ),
-                checkpoint.replace("--if-revision", "--revision"),
-                checkpoint.replace(
-                    "--if-revision 1 --idempotency-key checkpoint-0001",
-                    "--idempotency-key checkpoint-0001 --if-revision 1",
-                ),
-                checkpoint.replace("checkpoint-0001", "short"),
-                checkpoint.replace("checkpoint-0001", "'bad key!'"),
-                checkpoint.replace("--format json", "--format markdown"),
-                checkpoint + " extra",
-                (
-                    f"main-agent worker start --assignment-file {packet_file.resolve()} "
-                    "--if-run-revision 1 --idempotency-key worker-start-0001 "
-                    "--format json"
-                ),
-                (
-                    "main-agent collaborate assignment-1234 --session worker-5678 "
-                    "--if-revision 1 --idempotency-key collaborate-0001 --format json"
-                ),
-                "main-agent close --if-revision 1 --idempotency-key close-0001 --format json",
-            )
-            for index, command in enumerate(blocked):
-                with self.subTest(blocked=command):
-                    payload = command_payload(command)
-                    payload.update(
-                        {
-                            "cwd": str(repo),
-                            "session_id": "product-session",
-                            "tool_use_id": f"main-agent-bootstrap-blocked-{index}",
-                            "hook_event_name": "PreToolUse",
-                        }
-                    )
-                    code, decision, stderr = run_enforced_hook(
-                        "session-coordination-guard.py",
-                        payload,
-                        cwd=repo,
-                        env=env,
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "active work-context claim")
 
     def test_session_coordination_guard_allows_only_exact_projected_lifecycle_commands(
         self,
@@ -30707,7 +29758,6 @@ exit 66
                 self.assert_blocked(decision, fragment)
                 retained = json.loads(lease_file.read_text(encoding="utf-8"))
                 self.assertEqual(retained["session_key"], original_lease["session_key"])
-
 
 
     def _load(self, module_name: str, filename: str):

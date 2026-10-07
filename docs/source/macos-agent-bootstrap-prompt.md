@@ -210,8 +210,7 @@ agent-runtime doctor \
 
 # Verify the agent-hook control-plane installed correctly. Expect each product
 # to report status:"converged" and supported:true. Use agent-hook doctor here,
-# not "agent-session activity doctor" (that command is a main-agent-mode
-# readiness probe and can report configured:false on a healthy managed block).
+# activity configuration is a separate check from managed hook convergence.
 agent-hook doctor --format json
 
 # Verify the installed nils-cli surface satisfies the pinned version floor.

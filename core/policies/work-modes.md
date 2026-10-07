@@ -17,7 +17,7 @@ artifact boundaries. It supersedes the retired numbered tier ladder.
 | Axis | Question | Values |
 | --- | --- | --- |
 | Tracking mode | Which durable record does the work need? | `direct` / `issue` / `program` |
-| Execution | Who does the work? | `inline` / `subagents` / `main-agent` |
+| Execution | Who does the work? | `inline` / `subagents` |
 | Review depth | How risky is the diff? | Risk-selected quick or full review (unchanged) |
 
 Choose each axis separately. A `program` can run `inline`. A `direct` change
@@ -69,26 +69,12 @@ tracker is the plan.
 
 ## Execution Mapping
 
-| Mode | Default execution | With `main-agent` |
-| --- | --- | --- |
-| `direct` | `inline` | Delegate one worker only on an explicit `delegate-all` request |
-| `issue` | `inline` or one delegated worker | One isolated worker; the same issue remains the outcome |
-| `program` | `inline`, or `main-agent` for waves of parallel children | See below |
-| `program/dispatch` | Per `deliver-dispatch-plan` | One worker per lane; the dispatch acceptance boundary remains |
-
-A `program` run under `main-agent` works like this:
-
-- **One run per wave**, not one run for the whole program. Gates between waves
-  (release, deploy, decision) need fresh user authority.
-- **One worker per child issue.** Each packet names its child issue, and the
-  packet's `depends_on` mirrors the tracker's dependency graph.
-- **The tracker is the only authoritative plan.** Run state is execution
-  state; do not keep a second authoritative dependency graph in it.
-- **Accept before merge**, against the tracker's settled decisions. Return
-  code findings to the same worker. After acceptance, tick the tracker and
-  post a checkpoint.
-- **Do not release or upgrade** the runtime the controller or its workers use
-  while a run is active. Schedule releases between waves.
+| Mode | Execution |
+| --- | --- |
+| `direct` | `inline`, or explicitly requested subagents |
+| `issue` | `inline` or a delegated worker |
+| `program` | `inline` or subagents for independent children |
+| `program/dispatch` | Per `deliver-dispatch-plan` |
 
 Subagents are an execution mode, not a tracking mode. Running existing issues
 with subagents keeps their mode unless a shared tracker is actually needed.
@@ -256,6 +242,4 @@ Rules that keep this true:
   `discussion-to-implementation-doc` owns captures.
 - `deliver-pr` owns default provider PR/MR delivery. `git-delivery.md` owns the
   direct-main and default-branch exceptions.
-- `main-agent-mode` owns execution under `main-agent`; this file owns which
-  mode that execution serves.
 - `forge-label-taxonomy.md` owns label selection.
