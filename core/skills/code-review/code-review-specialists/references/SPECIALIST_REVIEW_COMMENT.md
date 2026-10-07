@@ -22,7 +22,8 @@ the provider-guarded command.
 
 - In `portable` mode, post one specialist review comment after its lens returns
   when provider-visible progress is desired. In `governed` mode, retain the
-  selected lens wave and publish one combined owner-App report. The guarded
+  selected lens wave and publish one combined report through the configured
+  reviewer identity. The guarded
   `personal-escape` mode likewise publishes one combined exact-head report.
 - If the lens reports findings, repair and commit in the owning workflow, rerun
   focused validation and that lens, then publish the follow-up through the same

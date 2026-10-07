@@ -29,7 +29,8 @@ Reviewer subagents remain read-only. The owning parent, dispatch, or delivery
 workflow writes every provider-visible comment. Quick-finding and specialist
 review comments are pre-disposition `comments-only` reports. The portable route
 may post one after its lens returns; the governed GitHub route retains every
-selected lens and posts one combined owner-App report after the wave. A clean
+selected lens and posts one combined report through the configured reviewer
+identity after the wave. A clean
 quick pass skips that redundant progress post and appears once in the final
 outcome with `--lens quick`. Combined
 delivery-owner outcomes are post-disposition comments posted after the owner has
@@ -166,7 +167,7 @@ match carries no live conversation to duplicate.
 
 This is a cross-run property; it does not weaken the within-run ordering below.
 On the first run, the portable route posts a finding when its lens returns; the
-governed GitHub route waits for its selected wave and posts one combined App
+governed GitHub route waits for its selected wave and posts one combined reviewer
 report. Idempotency only stops a *later* re-run — a retry after a transient
 failure, or a follow-up pass on the same head — from duplicating threads that
 already exist. It relieves the workflow of hand-guarding against duplicate posts
@@ -178,10 +179,11 @@ A review finding is both work-progress and evidence: it is the cause a fix
 commit responds to. Before repairing or committing, preserve it through the
 provider route selected below. In the portable fallback, post it the moment the
 lens that produced it returns. In a governed GitHub environment, do not post a
-per-lens full report through the personal identity. Retain each lens result in
+per-lens full report outside the configured publisher. Retain each lens result in
 the review-ledger input, then publish one combined pre-repair review-generation
-report through the owner App after the selected lens wave completes and before
-repair. The adapter's personal step remains metadata-only.
+report through the configured reviewer identity after the selected lens wave
+completes and before repair. A separate provenance step, if the adapter has one,
+remains metadata-only.
 
 Never invert this. Do not repair and commit first and post the comment after. A
 comment posted after its fix reads as caused by nothing, inverts the PR/MR
@@ -201,13 +203,14 @@ findings and full-profile review, the required posting order is:
 1. After each reviewer lens returns, the parent adds it to the delivery ledger
    input. The portable fallback also posts a compact single-lens review comment
    with that semantic `--lens`. The governed GitHub route waits for the selected
-   wave, then publishes one combined owner-App report for that reviewed head;
-   it never publishes the report body through the personal identity.
+   wave, then publishes one combined report through the configured reviewer
+   identity for that reviewed head;
+   it never publishes the report body through the PR author's identity.
 2. If the lens blocks delivery, the parent repairs in the delivery branch,
    commits, reruns validation, and reruns the affected lens.
 3. The parent publishes the follow-up through the same route: a compact
-   same-lens comment for portable delivery, or one combined owner-App report
-   after the governed closure wave.
+   same-lens comment for portable delivery, or one combined report through the
+   configured reviewer identity after the governed closure wave.
 4. After all selected lenses pass or are explicitly dispositioned, the parent
    posts one combined delivery-owner outcome with the selected lenses and final
    `--decision`.
@@ -261,11 +264,15 @@ the environment selects a GitHub review identity independent from the PR author
 for combined native approval outcomes. When the environment also provides a
 governed `forge-review-publish` adapter, the owning workflow delegates GitHub
 publication to it. The adapter publishes the complete report body exactly once
-as the owner App's native review, including actionable diff threads, then uses
-the canonical personal identity only for a concise `--metadata-only`
-breadcrumb. That personal invocation must not pass `--comment-file`; it binds
-`--expected-head`, `--native-review-url`, and `--native-review-author` and
-verifies the native review before mutation. A portable installation that does
+as a native review through the configured reviewer identity, including
+actionable diff threads. Human reviews use a reviewer user account independent
+from the PR author; automatic reviews may use an App. Human native decisions,
+comments and reviewer-owned ledger observations use that same reviewer account.
+Designated handoffs bind the actual author's login in `--review-author`; this
+flag verifies authorship and does not select credentials. If an adapter emits a
+separate `--metadata-only` breadcrumb, that call must omit `--comment-file`, bind
+`--expected-head`, `--native-review-url`, and `--native-review-author`, and verify
+the native review before mutation. A portable installation that does
 not require the governed identity or publisher posts the combined decision as
 an outcome note instead of attempting native self-approval.
 
@@ -275,7 +282,8 @@ cannot write the review, stop and surface the provider error.
 Resolve one workflow-local publication mode before any provider write. Do not
 accept an ambient mode or authorization value as a maintainer decision:
 
-- `governed`: GitHub owner-App publication is available and required.
+- `governed`: publication through the configured independent reviewer identity
+  is available and required.
 - `portable`: the installation has no governed identity capability or publisher.
 - `personal-escape`: a governed attempt failed before any native mutation and a
   maintainer explicitly authorized one reasoned personal-identity delivery.
@@ -362,11 +370,11 @@ forge-review-publish --provider github --repo "$OWNER_REPO" \
   --format json
 ```
 
-The adapter owns credentials, native-review read-back, receipt/resume, and the
-personal metadata-only call. Public skills never set its private identity
+The adapter owns credential selection, native-review read-back, receipt/resume,
+and any separate metadata-only call. Public skills never set its private identity
 profiles. Use the portable direct commands automatically only when the resolved
 mode is `portable`; a missing adapter in governed-required mode is an error.
-Never claim the two-identity publication contract was exercised outside
+Never claim the governed independent-identity contract was exercised outside
 `governed` mode.
 
 A configured publisher failure is not publisher absence. The default response
@@ -396,7 +404,8 @@ fi
 ```
 
 Portable fallback only — single quick-finding or specialist-lens report. A
-governed GitHub workflow does not post a per-lens full report through the personal identity:
+governed GitHub workflow publishes one combined report through its configured
+reviewer identity:
 
 ```bash
 [ "$REVIEW_PUBLICATION_MODE" = portable ] || {

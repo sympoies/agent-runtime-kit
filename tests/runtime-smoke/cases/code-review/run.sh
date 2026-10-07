@@ -118,6 +118,15 @@ run_portable_review_identity_contract_probe() {
     "$REPO_ROOT/core/skills"; then
     return 1
   fi
+  # Every active reference must agree on account-backed human review.
+  for review_contract in "$gate" "$posting" "$specialist" "$outcome" "$delivery"; do
+    if grep -Eq 'owner-App report|owner App carries|The App review carries|personal identity records metadata-only' "$review_contract"; then
+      echo "retired App-only human publication contract: $review_contract" >&2
+      return 1
+    fi
+  done
+  grep -Fq 'Human reviews use a reviewer user account independent' "$posting"
+  grep -Fq 'flag verifies authorship and does not select credentials' "$posting"
   grep -Fq 'AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED' "$posting"
   grep -Fq 'AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED' "$posting"
   grep -Fq 'REVIEW_PUBLICATION_MODE=personal-escape' "$posting"
@@ -142,13 +151,13 @@ run_portable_review_identity_contract_probe() {
   grep -Fq -- '--native-review-url' "$posting"
   grep -Fq -- '--native-review-author' "$posting"
   grep -Fq 'complete report body exactly once' "$posting"
-  grep -Fq 'must not pass `--comment-file`' "$posting"
+  grep -Fq 'must omit `--comment-file`' "$posting"
   grep -Fq 'ISSUE_MIRROR_ARGS=()' "$posting"
   grep -Fq '[[ -n "${ISSUE:-}" ]]' "$posting"
   grep -Fq '"${ISSUE_MIRROR_ARGS[@]}"' "$posting"
   bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
   ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
-  grep -Fq 'does not post a per-lens full report through the personal identity' "$posting"
+  grep -Fq 'governed GitHub workflow publishes one combined report through its configured' "$posting"
   grep -Fq 'Resolve `REVIEW_PUBLICATION_MODE`' "$gate"
   grep -Fq 'A required but missing publisher' "$gate"
   grep -Fq 'Only `portable` mode posts one report per lens' "$gate"
@@ -162,7 +171,7 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
-  grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
+  grep -Fq 'publish the combined report through the configured reviewer' "$delivery"
   for owner in "$delivery" "$dispatch"; do
     grep -Fq -- '--profile provider-review' "$owner"
     grep -Fq -- '--metadata-only' "$owner"
