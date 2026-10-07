@@ -1929,6 +1929,10 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
         "$plugin_manifest"
       mkdir -p "$live_home/plugins/cache"
       printf 'preserve unrelated plugin state\n' >"$live_home/plugins/cache/user-state.txt"
+      local retired_mode="$live_home/plugins/conversation/skills/main-agent-mode"
+      mkdir -p "$retired_mode/references"
+      ln -s "$previous_source/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md" "$retired_mode/SKILL.md"
+      ln -s "$previous_source/build/$product/plugins/conversation/skills/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md" "$retired_mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
       mixed_retired="$live_home/plugins/meta/skills/agent-docs/SKILL.md"
       mixed_retained="$live_home/plugins/meta/skills/bootstrap/SKILL.md"
       case "$product" in
@@ -1956,6 +1960,7 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
     if [ -n "$plugin_manifest" ]; then
       test -L "$plugin_manifest"
       test -L "$mixed_retired"
+      test -L "$retired_mode/SKILL.md"
       test -L "$mixed_retained"
       test -L "$mixed_manifest"
       grep -q "would remove retired managed plugin link tree" "$out"
@@ -1973,6 +1978,7 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
       test ! -e "$live_home/plugins/browser"
       test -f "$live_home/plugins/cache/user-state.txt"
       test ! -e "$mixed_retired"
+      test ! -e "$retired_mode"
       test -L "$mixed_retained"
       test -L "$mixed_manifest"
       test -d "$live_home/plugins/meta"

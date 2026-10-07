@@ -41,6 +41,7 @@
     "dispatch.execute-plan-tracking-issue",
     "dispatch.review-dispatch-lane-pr",
     "dispatch.execute-dispatch-lane",
-    "dispatch.deliver-plan-tracking-issue"
+    "dispatch.deliver-plan-tracking-issue",
+    "conversation.main-agent-mode"
   ]
 }
