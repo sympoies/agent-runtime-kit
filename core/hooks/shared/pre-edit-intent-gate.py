@@ -1903,16 +1903,17 @@ def main() -> int:
             if subcommand == "prepare":
                 # Atomic primitive: the prepare envelope already reports
                 # activation + strict-preflight verification, so trust it without
-                # firing a second `session verify` probe. A failing envelope
-                # surfaces the CLI's own error code for structured recovery.
-                ok, code = consume_prepare_result(
+                # firing a second `session verify` probe. Failure details stay
+                # generic because the CLI-provided error code is untrusted text.
+                ok, _code = consume_prepare_result(
                     completed, product=product, required_intents=tuple(intents)
                 )
                 if not ok:
                     emit_block(
                         f"Trusted {prepared} preparation did not verify inside the "
                         f"hook (exit={completed.returncode}); the shell command was "
-                        f"consumed and not executed. [reason: {code}]"
+                        "consumed and not executed. "
+                        "[reason: preparation-verification-failed]"
                     )
                     return ALLOW
                 emit_block(
@@ -1932,7 +1933,7 @@ def main() -> int:
             if completed.returncode != 0 or not verified:
                 emit_block(
                     f"Trusted {prepared} activation did not verify inside the hook "
-                    f"(exit={completed.returncode}, verification={code}); the shell "
+                    f"(exit={completed.returncode}); the shell "
                     "command was consumed and not executed. "
                     "[reason: activation-verify-failed]"
                 )
@@ -2016,9 +2017,9 @@ def main() -> int:
         return ALLOW
 
     if mode == "advisory":
-        remaining: list[tuple[str, str]] = []
+        remaining: list[str] = []
         prepared_targets: list[str] = []
-        for repo_root, verification_code in failures:
+        for repo_root, _verification_code in failures:
             prepare_args = shlex.split(
                 recovery_command(
                     repo_root=repo_root,
@@ -2028,17 +2029,17 @@ def main() -> int:
                     phase=phase,
                 )
             )
-            completed, outcome = run_probe(prepare_args)
+            completed, _outcome = run_probe(prepare_args)
             if completed is None:
-                remaining.append((repo_root, f"prepare-{outcome}"))
+                remaining.append(repo_root)
                 continue
-            ok, code = consume_prepare_result(
+            ok, _code = consume_prepare_result(
                 completed, product=product, required_intents=("project-dev",)
             )
             if ok:
                 prepared_targets.append(repo_root)
             else:
-                remaining.append((repo_root, code or verification_code))
+                remaining.append(repo_root)
         if not remaining:
             targets = ", ".join(f"`{target}`" for target in sorted(prepared_targets))
             next_actions = " ".join(
@@ -2057,9 +2058,7 @@ def main() -> int:
                 mode_warning=mode_warning,
             )
             return ALLOW
-        details = "; ".join(
-            f"`{repo_root}` ({code})" for repo_root, code in sorted(remaining)
-        )
+        details = ", ".join(f"`{repo_root}`" for repo_root in sorted(remaining))
         recoveries = " ".join(
             f"For `{repo_root}`, run `"
             + recovery_command(
@@ -2070,7 +2069,7 @@ def main() -> int:
                 phase=phase,
             )
             + "`."
-            for repo_root, _code in sorted(remaining)
+            for repo_root in sorted(remaining)
         )
         emit_advisory(
             "Project-dev advisory preparation was unavailable for "
@@ -2111,7 +2110,7 @@ def main() -> int:
                 f"Route 2 (exact-target project-dev): run `{prepare_route}`, then "
                 "rerun the exact original command. No legacy read-only allowlist "
                 "entry was added. [reason: project-dev-required] "
-                f"Verification code: {failures[0][1]}."
+                "Project-dev verification did not succeed."
             )
             return ALLOW
     reason = (
@@ -2124,9 +2123,9 @@ def main() -> int:
         "executable and complete session context. If a Git operation is stuck mid-run, a "
         "sole `git <op> --abort` recovers in place without preparation. "
     )
-    for repo_root, code in sorted(failures):
+    for repo_root, _code in sorted(failures):
         reason += (
-            f"Target `{repo_root}` failed with `{code}`. Run `"
+            f"Project-dev verification failed for target `{repo_root}`. Run `"
             + recovery_command(
                 repo_root=repo_root,
                 executable=agent_docs_executable,

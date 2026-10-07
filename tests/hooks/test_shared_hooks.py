@@ -10579,7 +10579,8 @@ exit 64
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "[reason: project-dev-required]")
-            self.assertIn("intent-not-active-or-stale", str(decision))
+            self.assertIn("Project-dev verification failed for target", str(decision))
+            self.assertNotIn("intent-not-active-or-stale", str(decision))
 
             code, advisory, stderr = run_hook(
                 "pre-edit-intent-gate.py",
@@ -12197,8 +12198,8 @@ exit 64
 
         The trusted preparation primitive activates and strict-preflights in a
         single call and returns a stable JSON result, so the hook must not fire a
-        second `session verify` probe. A failing prepare surfaces the CLI's
-        structured error code, not generic prose.
+        second `session verify` probe. Failure messages use fixed text and do not
+        copy arbitrary structured error codes from the CLI.
         """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -12298,8 +12299,9 @@ exit 64
                     self.assertNotIn("session verify", log_text)
                     self.assertNotIn("FALLBACK-VERIFY-SHOULD-NOT-RUN", reason)
 
-            # A failing prepare surfaces the CLI's structured error code.
+            # Untrusted structured error codes are not copied into hook output.
             fail_log = root / "fail.log"
+            fixture_code = "err-7f21"
             self._write_fake_agent_docs(
                 bin_dir,
                 f"""#!/usr/bin/env bash
@@ -12307,7 +12309,7 @@ set -euo pipefail
 printf '%s\\n' "$*" >> {shlex.quote(str(fail_log))}
 if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
 if [[ "$*" == *"session prepare"* ]]; then
-  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":false,"error":{{"code":"preflight-unsatisfied","message":"strict preflight failed"}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":false,"error":{{"code":"{fixture_code}","message":"strict preflight failed"}}}}'
   exit 65
 fi
 exit 64
@@ -12321,7 +12323,8 @@ exit 64
             self.assertEqual(code, 0, stderr)
             assert decision is not None
             reason = str(decision.get("reason", ""))
-            self.assertIn("[reason: preflight-unsatisfied]", reason)
+            self.assertIn("preparation did not verify", reason)
+            self.assertNotIn(fixture_code, reason)
             # The submitted shell body is consumed, not re-dispatched.
             self.assertIn("consumed", reason)
 
@@ -12348,7 +12351,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             assert decision is not None
             reason = str(decision.get("reason", ""))
-            self.assertIn("[reason: prepare-not-verified]", reason)
+            self.assertIn("[reason: preparation-verification-failed]", reason)
             self.assertNotIn("[reason: prepared]", reason)
 
     def _phase_gate_env(self, repo: Path, bin_dir: Path) -> dict[str, str]:
@@ -19555,6 +19558,13 @@ exit 64
                 "sleep 0.2\necho 'agent-docs 1.21.17'",
                 "intent-verification-timeout",
             ),
+            "untrusted-structured-error": (
+                """if [[ "$*" == *"--version"* ]]; then echo 'agent-docs 1.21.17'; exit 0; fi
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+printf '%s\\n' '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"sensitive-verification-code-that-must-not-leak"}}'
+exit 65""",
+                "sensitive-verification-code-that-must-not-leak",
+            ),
         }
         for name, (body, verification_code) in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
@@ -19580,7 +19590,53 @@ exit 64
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "[reason: project-dev-required]")
-                self.assertIn(f"`{verification_code}`", str(decision))
+                self.assertNotIn(verification_code, str(decision))
+
+    def test_pre_edit_intent_gate_advisory_redacts_agent_docs_error_codes(self) -> None:
+        verify_code = "sensitive-verification-code-that-must-not-leak"
+        prepare_code = "sensitive-preparation-code-that-must-not-leak"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
+            bin_dir = repo / "bin"
+            bin_dir.mkdir()
+            self._write_fake_agent_docs(
+                bin_dir,
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--version"* ]]; then echo 'agent-docs 1.21.17'; exit 0; fi
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{{"code":"{verify_code}"}}}}'
+  exit 65
+fi
+if [[ "$*" == *"session prepare"* ]]; then
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":false,"error":{{"code":"{prepare_code}"}}}}'
+  exit 65
+fi
+exit 64
+""",
+            )
+            payload = write_payload("src/lib.rs", "x\\n")
+            payload["session_id"] = "advisory-redaction"
+            code, decision, stderr = run_hook(
+                "pre-edit-intent-gate.py",
+                payload,
+                cwd=repo,
+                env={
+                    "AGENT_RUNTIME_PRODUCT": "codex",
+                    "AGENT_RUNTIME_PROJECT_DEV_MODE": "advisory",
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                },
+            )
+            self.assertEqual(code, 0, stderr)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            reason = str(decision)
+            self.assertIn("Project-dev advisory preparation was unavailable", reason)
+            self.assertNotIn(verify_code, reason)
+            self.assertNotIn(prepare_code, reason)
 
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
