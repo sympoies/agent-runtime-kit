@@ -268,8 +268,8 @@ as a native review through the configured reviewer identity, including
 actionable diff threads. Human reviews use a reviewer user account independent
 from the PR author; automatic reviews may use an App. Human native decisions,
 comments and reviewer-owned ledger observations use that same reviewer account.
-Designated handoffs bind the actual author's login in `--review-author`; this
-flag verifies authorship and does not select credentials. If an adapter emits a
+Designated handoffs bind the actual review author's login in `--review-author`;
+this flag verifies authorship and does not select credentials. If an adapter emits a
 separate `--metadata-only` breadcrumb, that call must omit `--comment-file`, bind
 `--expected-head`, `--native-review-url`, and `--native-review-author`, and verify
 the native review before mutation. A portable installation that does

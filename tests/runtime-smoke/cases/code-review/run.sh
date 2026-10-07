@@ -119,8 +119,8 @@ run_portable_review_identity_contract_probe() {
     return 1
   fi
   # Every active reference must agree on account-backed human review.
-  for review_contract in "$gate" "$posting" "$specialist" "$outcome" "$delivery"; do
-    if grep -Eq 'owner-App report|owner App carries|The App review carries|personal identity records metadata-only' "$review_contract"; then
+  for review_contract in "$gate" "$posting" "$specialist" "$outcome" "$delivery" "$dispatch"; do
+    if grep -Eq 'owner-App report|owner App carries|The App review carries|personal identity records metadata-only|publish through the App' "$review_contract"; then
       echo "retired App-only human publication contract: $review_contract" >&2
       return 1
     fi
@@ -174,6 +174,8 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'publish the combined report through the configured reviewer' "$delivery"
   for owner in "$delivery" "$dispatch"; do
     grep -Fq -- '--profile provider-review' "$owner"
+    grep -Fq 'configured reviewer' "$owner"
+    grep -Fq "actual review author's login" "$owner"
     grep -Fq -- '--metadata-only' "$owner"
     grep -Fq -- '--comment-file' "$owner"
     ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$owner"
