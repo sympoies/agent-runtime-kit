@@ -96,9 +96,14 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
    `code-review-specialists` profile. On GitHub, publish the canonical
    `--profile provider-review` bundle with `--mode delivery`, `--reviewable`,
    `--lens-verdict`, `--scope`, and a portable `--evidence-reviewed` value.
-   In governed mode, publish through the App and keep the personal identity
-   `--metadata-only` without `--comment-file`. Observe the review-loop ledger
-   at that head;
+   In governed mode, publish human native reviews, comments, and reviewer-owned
+   ledger observations through the configured reviewer user account, independent
+   from the PR author. Reserve App identities for automatic review. Bind
+   `--review-author` to the actual review author's login; this flag verifies
+   authorship and does not select credentials. If a separate `--metadata-only`
+   breadcrumb is needed, omit `--comment-file` and bind the published native
+   review URL, expected author, and head. Observe the review-loop ledger at that
+   head;
    repair or disposition all findings before approval. Use `forge-cli pr
    reviews` for current-head native feedback. On GitLab, use the supported
    outcome-note route and pass `--review-convergence=false` at merge.
