@@ -1416,7 +1416,20 @@ run_review_thread_cleanup_github_probe() {
   grep -q '"schema_version":"cli.forge-cli.pr.review-threads.resolve.v1"' "$resolve_out"
   grep -q '"schema_version":"cli.forge-cli.pr.review-threads.reply.v1"' "$reply_out"
   grep -q 'resolveReviewThread' "$resolve_out"
-  grep -q 'addPullRequestReviewThreadReply' "$reply_out"
+  # Admitted releases use either GraphQL or a REST reply to the thread's root
+  # comment. Assert the intended thread/body rather than one transport spelling.
+  jq -e '
+    .ok == true and
+    (.data.plan | index("body=Acknowledged.") != null) and
+    (
+      ((.data.plan | any(.[]; contains("addPullRequestReviewThreadReply"))) and
+       (.data.plan | index("tid=PRRT_runtimesmoke") != null)) or
+      ((.data.plan | any(.[]; endswith("/pulls/123/comments/${root_comment_id}/replies"))) and
+       (.data.plan | index("POST") != null) and
+       (.data.target_plan | index("tid=PRRT_runtimesmoke") != null) and
+       .data.root_comment_id_source == "/data/node/comments/nodes/0/fullDatabaseId")
+    )
+  ' "$reply_out" >/dev/null
 }
 
 run_review_thread_cleanup_gitlab_probe() {
