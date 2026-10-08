@@ -37,6 +37,9 @@ branch.
 
 A repository with a tracked, regular top-level `.agent-collab` file containing
 exactly `collab-protocol: 1` on one line is a collaboration message ledger.
+The marker qualifies only from the committed tree of the remote's default
+branch. A marker present only in the working tree, index, or a non-default
+branch does not qualify.
 The marker belongs in ledger repositories, not in their tooling/template
 source repositories; a `PROTOCOL.md` filename alone is not a marker.
 
@@ -50,9 +53,11 @@ change unrelated repositories, publish releases, or rewrite ledger history.
 Unmarked repositories retain the ordinary delivery rules.
 
 The default-delivery PreToolUse hook classifies the submitted shell command,
-not Python subprocesses. A literal `python3 tools/collab.py ...` already passes;
-its internal Git calls do not need a hook exemption. Hook admission alone does
-not verify the marker or authorize this route in an unmarked repository.
+not Python subprocesses. A literal `python3 tools/collab.py ...` already passes
+the default-delivery hook; its internal Git calls need no exemption from that
+hook. Other hooks still apply, including the Python runner policy in a
+repository with `uv.lock`. Hook admission alone does not verify the marker or
+authorize this route in an unmarked repository.
 Direct default-branch pushes remain refused even when the marker is present.
 
 ## Resolving The Remote's Default Branch
