@@ -21432,6 +21432,55 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, fragment)
 
+    def test_default_delivery_collaboration_marker_grants_no_push_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for marked in (True, False):
+                with self.subTest(marked=marked):
+                    repo = Path(tmp) / ("marked" if marked else "unmarked")
+                    self._init_checkout_lease_repo(repo)
+                    if marked:
+                        (repo / ".agent-collab").write_text(
+                            "collab-protocol: 1\n", encoding="utf-8",
+                        )
+                        for arguments in (
+                            ["add", "--", ".agent-collab"],
+                            ["commit", "-q", "-m", "ledger marker fixture"],
+                            ["push", "-q", "origin", "main"],
+                        ):
+                            subprocess.run(
+                                ["git", *arguments], cwd=repo, check=True,
+                                capture_output=True,
+                            )
+                    tracked = subprocess.run(
+                        ["git", "ls-files", "--", ".agent-collab"], cwd=repo,
+                        check=True, capture_output=True, text=True,
+                    )
+                    self.assertEqual(bool(tracked.stdout.strip()), marked)
+                    remote_marker = subprocess.run(
+                        ["git", "--git-dir", str(repo.parent / f"{repo.name}-origin.git"),
+                         "show", "HEAD:.agent-collab"],
+                        capture_output=True,
+                    )
+                    self.assertEqual(remote_marker.returncode == 0, marked)
+                    if marked:
+                        self.assertEqual(remote_marker.stdout, b"collab-protocol: 1\n")
+                    # The default-delivery hook sees the invocation, not its
+                    # Python subprocesses. Policy owns the tool's authority.
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload("python3 tools/collab.py post draft.md"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+                    for command in ("git push", "git push origin HEAD:main"):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command), cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "[default-delivery:")
+
     def test_default_delivery_hook_blocks_default_branch_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
