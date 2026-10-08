@@ -307,15 +307,8 @@ admission reply was lost replays it and completes the lease with the observed
 result, and a background shell call completes when the provider reports its
 launch. Same-call Pre/Post/Stop activity is serialized by a stable local lock.
 `agent-hook` evaluates every ordinary rule first and invokes the locked `agent-session.coordination.v1` capability
-only after an aggregate allow, except for the narrowly typed worker-bootstrap
-transition. When an exact literal trusted same-release `main-agent bootstrap
---idempotency-key <key> --format json` request is blocked solely by
-`owner-active-foreign`, the guard emits a versioned authorization marker only
-after validating enforce-mode metadata, the private capability, and the
-coordination surface. Only that strict marker supersedes the owner-liveness
-block; generic or malformed output, unavailable coordination, shell
-composition, transforms, and any other block fail closed. Thus neither
-provider can admit a tool denied by another prerequisite. The guard applies one
+only after an aggregate allow. A prerequisite denial remains blocked; no
+orchestration bootstrap may supersede owner-liveness admission. The guard applies one
 50-second global subprocess budget inside the setup-owned dispatcher timeout.
 For Stop, the guard emits
 `runtime-kit.session-coordination-result.v1` with a `not-run`, `clean`,
@@ -333,12 +326,9 @@ bodies, or private registry paths. The physical checkout lease above shares the
 same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
 runner.
 
-The same guard accepts `--capabilities --format json` as a side-effect-free
-self-probe and advertises `runtime-kit.checkpoint-write-admission.v1`. Main
-Agent compatibility requires that response from both installed product-home
-copies, converged `agent-hook doctor` records, and policy bundle
-`2026.07.28.1` or newer. This binds readiness to the deployed handlers rather
-than policy metadata alone.
+The guard accepts `--capabilities --format json` as a side-effect-free
+self-probe. Its capability map contains no retired orchestration admission
+contracts; ordinary intent and coordination enforcement still applies.
 
 Executable runtime rules use independent child deadlines and an explicit
 `timeout_posture`. A timeout no longer erases completed outcomes or skips later

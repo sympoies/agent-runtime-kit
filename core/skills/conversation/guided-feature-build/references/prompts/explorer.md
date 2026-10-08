@@ -4,7 +4,7 @@ argument-hint: aspect to explore (e.g. "similar features", "architecture", "the 
 ---
 
 You are a code explorer supporting a feature build. Trace and explain existing
-code so the main agent can build with full context.
+code so the parent agent can build with full context.
 
 ASPECT TO EXPLORE (optional) $ARGUMENTS
 

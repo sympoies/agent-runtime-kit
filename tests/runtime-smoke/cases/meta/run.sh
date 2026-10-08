@@ -1250,6 +1250,19 @@ run_sync_runtime_surfaces_prune_fixture_probe() {
   ln -s /var/empty/foreign-skill "$claude_foreign"
   printf 'user note\n' >"$claude_regular"
 
+  # Retired mode links are managed; adjacent user files remain untouched.
+  for product in codex claude; do
+    local retired_home="$TMP_ROOT/sync-prune/$product-home"
+    local retired_skill="$retired_home/plugins/conversation/skills/main-agent-mode"
+    mkdir -p "$retired_skill/references" "$retired_home/plugins/conversation/skills/user-note"
+    ln -s "$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md" "$retired_skill/SKILL.md"
+    ln -s "$REPO_ROOT/build/$product/plugins/conversation/skills/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md" "$retired_skill/references/MAIN_AGENT_MODE_PROTOCOL.md"
+    printf 'user note\n' >"$retired_home/plugins/conversation/skills/user-note/SKILL.md"
+    agent-runtime prune-stale --source-root "$REPO_ROOT" --product "$product" \
+      --live-home "$retired_home" --dry-run >"$META_ARTIFACTS_DIR/prune-$product-preview.txt"
+    test -L "$retired_skill/SKILL.md"
+  done
+
   {
     agent-runtime prune-stale \
       --source-root "$REPO_ROOT" \
@@ -1286,6 +1299,11 @@ run_sync_runtime_surfaces_prune_fixture_probe() {
   test ! -d "$claude_stale_dir"
   test -L "$claude_foreign"
   test -f "$claude_regular"
+  for product in codex claude; do
+    test ! -d "$TMP_ROOT/sync-prune/$product-home/plugins/conversation/skills/main-agent-mode"
+    test -f "$TMP_ROOT/sync-prune/$product-home/plugins/conversation/skills/user-note/SKILL.md"
+  done
+
 }
 
 run_sync_runtime_surfaces_prior_owned_root_probe() {
@@ -1911,6 +1929,10 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
         "$plugin_manifest"
       mkdir -p "$live_home/plugins/cache"
       printf 'preserve unrelated plugin state\n' >"$live_home/plugins/cache/user-state.txt"
+      local retired_mode="$live_home/plugins/conversation/skills/main-agent-mode"
+      mkdir -p "$retired_mode/references"
+      ln -s "$previous_source/build/$product/plugins/conversation/skills/main-agent-mode/SKILL.md" "$retired_mode/SKILL.md"
+      ln -s "$previous_source/build/$product/plugins/conversation/skills/main-agent-mode/references/MAIN_AGENT_MODE_PROTOCOL.md" "$retired_mode/references/MAIN_AGENT_MODE_PROTOCOL.md"
       mixed_retired="$live_home/plugins/meta/skills/agent-docs/SKILL.md"
       mixed_retained="$live_home/plugins/meta/skills/bootstrap/SKILL.md"
       case "$product" in
@@ -1938,6 +1960,7 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
     if [ -n "$plugin_manifest" ]; then
       test -L "$plugin_manifest"
       test -L "$mixed_retired"
+      test -L "$retired_mode/SKILL.md"
       test -L "$mixed_retained"
       test -L "$mixed_manifest"
       grep -q "would remove retired managed plugin link tree" "$out"
@@ -1955,6 +1978,7 @@ run_sync_runtime_surfaces_retired_managed_links_probe() {
       test ! -e "$live_home/plugins/browser"
       test -f "$live_home/plugins/cache/user-state.txt"
       test ! -e "$mixed_retired"
+      test ! -e "$retired_mode"
       test -L "$mixed_retained"
       test -L "$mixed_manifest"
       test -d "$live_home/plugins/meta"

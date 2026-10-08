@@ -17,10 +17,6 @@
     {
       "id": "handoff-session-prompt",
       "source": "core/skills/conversation/handoff-session-prompt"
-    },
-    {
-      "id": "main-agent-mode",
-      "source": "core/skills/conversation/main-agent-mode"
     }
   ]
 }

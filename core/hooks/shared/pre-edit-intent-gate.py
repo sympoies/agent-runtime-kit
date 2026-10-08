@@ -30,7 +30,6 @@ import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
@@ -56,8 +55,6 @@ from hook_common import (
     invocation_tokens,
     is_managed_cli_home_bin,
     is_git_recovery_argv,
-    main_agent_preclaim_argv,
-    normalized_main_agent_argv,
     patch_text_candidates,
     read_payload,
     session_id_from_payload,
@@ -67,15 +64,6 @@ from hook_common import (
 
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
-# Tracking-mode values accepted for `--tier` (core/policies/work-modes.md).
-WORK_MODE_TIERS = frozenset(
-    {
-        "direct",
-        "issue",
-        "program",
-        "program/dispatch",
-    }
-)
 # Workflow-phase scoping (issue #601 P1 slice 3d). A mutation is verified against
 # the phase-scoped project-dev doc subset instead of the whole intent, so an edit
 # no longer forces the delivery/review runbooks. Direct edits and generic
@@ -306,14 +294,6 @@ def run_probe(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None,
         return None, "timeout"
     except (OSError, ValueError, subprocess.SubprocessError):
         return None, "crash"
-
-
-def parsed_version(text: str) -> tuple[int, int, int] | None:
-    match = re.search(r"(?:^|\s)(\d+)\.(\d+)\.(\d+)(?:\s|$|\()", text)
-    if not match:
-        return None
-    major, minor, patch = (int(part) for part in match.groups())
-    return major, minor, patch
 
 
 def phase_for(tool: str, command_words: list[str] | None) -> str | None:
@@ -822,134 +802,22 @@ def trusted_private_input_file(raw: str, repositories: list[str]) -> bool:
     return not any(path_within(raw, repository) for repository in repositories)
 
 
-def trusted_private_packet(raw: str, repositories: list[str]) -> bool:
-    if not raw.endswith(".json") or not trusted_private_input_file(raw, repositories):
-        return False
-    try:
-        metadata = os.stat(raw, follow_symlinks=False)
-    except OSError:
-        return False
-    return (
-        stat.S_ISREG(metadata.st_mode)
-        and metadata.st_uid == os.geteuid()
-        and stat.S_IMODE(metadata.st_mode) == 0o600
-    )
-
-
-def companion_versions_match(first: str, second: str) -> bool:
-    first_probe, _ = run_probe([first, "--version"])
-    second_probe, _ = run_probe([second, "--version"])
-    if (
-        first_probe is None
-        or second_probe is None
-        or first_probe.returncode != 0
-        or second_probe.returncode != 0
-    ):
-        return False
-    first_version = parsed_version(first_probe.stdout + "\n" + first_probe.stderr)
-    second_version = parsed_version(second_probe.stdout + "\n" + second_probe.stderr)
-    return first_version is not None and first_version == second_version
-
-
 def lifecycle_revision(value: str) -> bool:
     if re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None:
         return False
     return int(value) <= (2**64 - 1)
 
 
-def lifecycle_idempotency_key(value: str) -> bool:
-    return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
-
-
-def main_agent_readiness_invocation(
+def session_readiness_invocation(
     words: list[str],
     *,
     repositories: list[str],
     agent_docs_executable: str,
     current_session: str,
 ) -> bool:
-    """Admit only the exact non-repository Main Agent Mode bootstrap shapes."""
+    """Admit only exact trusted session readiness and claim bootstrap shapes."""
     if not words:
         return False
-
-    # `main-agent worker start` writes the worker prompt with an absolute
-    # `main-agent` path so the worker pins the exact launching build. Recognise
-    # that spelling here too, then require it to resolve to the same trusted
-    # companion before comparing shapes against the bare name.
-    normalized = normalized_main_agent_argv(words)
-    if normalized is not None:
-        main_agent = trusted_release_companion(
-            "main-agent",
-            agent_docs_executable=agent_docs_executable,
-            repositories=repositories,
-        )
-        agent_session = trusted_release_companion(
-            "agent-session",
-            agent_docs_executable=agent_docs_executable,
-            repositories=repositories,
-        )
-        capability_file = os.environ.get(
-            "AGENT_SESSION_CAPABILITY_FILE", ""
-        ).strip()
-        if (
-            not main_agent
-            or not agent_session
-            or not companion_versions_match(main_agent, agent_session)
-            or not current_session
-            or not trusted_private_input_file(capability_file, repositories)
-        ):
-            return False
-        if words[0] != "main-agent" and os.path.realpath(
-            words[0]
-        ) != os.path.realpath(main_agent):
-            return False
-        words = normalized
-        if main_agent_preclaim_argv(words):
-            return True
-        if words[:2] == ["main-agent", "quick"]:
-            # quick acquires the work-context claim as its first durable act
-            # (like init), so its exact pre-claim shape is admitted here. --tier
-            # is optional; the CLI applies its default tracking mode.
-            if (
-                len(words) < 4
-                or words[2] != "--assignment-file"
-                or not trusted_private_packet(words[3], repositories)
-            ):
-                return False
-            if len(words) == 8:
-                return (
-                    words[4] == "--idempotency-key"
-                    and lifecycle_idempotency_key(words[5])
-                    and words[6:] == ["--format", "json"]
-                )
-            return (
-                len(words) == 10
-                and words[4] == "--tier"
-                and words[5] in WORK_MODE_TIERS
-                and words[6] == "--idempotency-key"
-                and lifecycle_idempotency_key(words[7])
-                and words[8:] == ["--format", "json"]
-            )
-        if (
-            len(words) < 4
-            or words[:3] != ["main-agent", "init", "--packet-file"]
-            or not trusted_private_packet(words[3], repositories)
-        ):
-            return False
-        if len(words) == 9:
-            return (
-                words[4:6] == ["--if-absent", "--idempotency-key"]
-                and lifecycle_idempotency_key(words[6])
-                and words[7:] == ["--format", "json"]
-            )
-        return (
-            len(words) == 10
-            and words[4] == "--if-revision"
-            and lifecycle_revision(words[5])
-            and words[6] == "--idempotency-key"
-            and lifecycle_idempotency_key(words[7])
-            and words[8:] == ["--format", "json"]
-        )
 
     if words[0] == "agent-session":
         if trusted_release_companion(
@@ -1813,7 +1681,7 @@ def main() -> int:
             )
         return ALLOW
 
-    if command_words and main_agent_readiness_invocation(
+    if command_words and session_readiness_invocation(
         command_words,
         repositories=repos,
         agent_docs_executable=agent_docs_executable,

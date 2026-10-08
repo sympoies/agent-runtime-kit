@@ -217,16 +217,6 @@ SKILL_BODY_OVERRIDES = {
         ),
         "tracking": "graysurf/agent-runtime-kit#140 (upstream delegation landed; residue is contract prose)",
     },
-    "skill-body.conversation.main-agent-mode": {
-        "allow": 47 * KIB,
-        "reason": (
-            "Lane/worker orchestration contract carried entirely in prose. "
-            "#140 is the first gate to measure it; the ceiling is the measured "
-            "size rounded up one KiB, and no reduction has been "
-            "designed. #140 owns the decision."
-        ),
-        "tracking": "graysurf/agent-runtime-kit#140 (measured, no reduction scheduled)",
-    },
     "skill-body.computer-use.macos-desktop": {
         "allow": 22 * KIB,
         "reason": (
