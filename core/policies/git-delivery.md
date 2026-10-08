@@ -446,10 +446,12 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
   never force removal merely to make the local tree look tidy.
 - From the primary checkout, run exactly one sanctioned cleanup command:
   `git-cli worktree remove <path-or-slug> --safe --format json`. The supported
-  shell hook delegates this sole, trusted invocation to the CLI's execution
-  fence in advisory and enforce modes. Older CLIs reject `--safe` before their
+  shell hook warns and allows removal in non-enforce modes; in enforce mode
+  it delegates this sole, trusted invocation to the CLI's execution fence. Older CLIs reject `--safe` before their
   legacy removal path; upgrade through the normal release owner rather than
-  removing the flag or changing coordination mode.
+  removing the flag or changing coordination mode. Release the companion CLI
+  before activating the non-enforce hook allowance; older unmarked removal
+  commands can still reach legacy forced deletion.
 - The CLI holds the target checkout lease lock and session registry lock through
   removal. It requires an exact registered managed target, a clean stable
   checkout outside a Git operation, no active checkout lease (including the

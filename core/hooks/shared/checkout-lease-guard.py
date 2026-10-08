@@ -3,8 +3,9 @@
 
 The lease is an opt-in strict coordination layer selected with
 ``AGENT_SESSION_COORDINATION_MODE=enforce``. Advisory, off, invalid, and absent
-mode values never acquire leases. A sole trusted ``git-cli worktree remove
---safe`` delegates fencing to the lifecycle owner in every mode. Ordinary edits
+mode values never acquire leases; removal warns and allows, leaving safety
+to the lifecycle CLI. In enforce mode, a sole trusted ``git-cli worktree remove
+--safe`` delegates fencing to the lifecycle owner. Ordinary edits
 stay advisory. In enforce mode the guard
 recognizes only explicit edit tools and high-confidence shell mutations.
 Read-only inspection stays available. Stop performs an audit only: it never
@@ -3131,6 +3132,23 @@ def main() -> int:
     if len(sys.argv) == 2 and sys.argv[1] == "diagnose-removal":
         sys.stdout.write(json.dumps(diagnose_worktree_removal(payload), sort_keys=True) + "\n")
         return ALLOW
+    if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
+        # Non-enforce coordination observes rather than denies. Execution safety
+        # belongs to the lifecycle CLI, including dirty and live-owner refusal.
+        if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
+            if any(
+                is_managed_worktree_remove(invocation_tokens(tokens))
+                or is_branch_worktree_cleanup(invocation_tokens(tokens))
+                for tokens in parsed_shell_commands(command_from(payload))
+            ):
+                emit_system_message(
+                    "Managed worktree removal is advisory outside enforce mode; "
+                    "this hook establishes no target lease fence. Use the released "
+                    "`git-cli worktree remove <target> --safe --format json` path "
+                    "and retain targets when the CLI cannot prove safe cleanup. "
+                    "Hook allowance is not an execution attestation."
+                )
+        return ALLOW
     if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
         command = command_from(payload)
         if any(is_branch_worktree_cleanup(invocation_tokens(tokens))
@@ -3149,21 +3167,6 @@ def main() -> int:
             except LeaseError as exc:
                 emit_block(lease_error_block_reason(exc))
                 return ALLOW
-    if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
-        # Advisory edits do not acquire leases. Removal, however, must never
-        # mistake that silent bypass for proof that its target was fenced.
-        if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
-            command = command_from(payload)
-            if any(
-                is_managed_worktree_remove(invocation_tokens(tokens))
-                for tokens in parsed_shell_commands(command)
-            ):
-                emit_block(
-                    "Managed worktree removal target lease fencing is unavailable "
-                    "outside enforce mode. Retain the target and report the missing "
-                    "proof; hook registration or command success is not an attestation."
-                )
-        return ALLOW
     event = hook_event(payload)
     if event == "Stop":
         return stop_audit(payload)

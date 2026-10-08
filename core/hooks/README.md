@@ -216,16 +216,20 @@ recovery remains available. In particular, `semantic-commit` help and dry-run
 forms do not acquire a writer lease unless the command includes the
 file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
-authoritative `git-cli` inventory, and removal must be the command's sole
-mutation with exactly one removal target. In every mode a trusted
-`git-cli worktree remove <target> --safe --format json` delegates to the CLI's
-execution fence without claiming a writer lease in PreToolUse. The CLI holds
-checkout/session locks and proves clean, stable, managed, idle and delivered
-state before removal. Older binaries reject `--safe`; advisory removal without
-it stays blocked. Incomplete process or ownership visibility retains the
-worktree. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
-agent shells because older CLIs bypass fencing; remove each target with the
-sole sanctioned command, then clean up branches separately. Nested repositories and submodules
+authoritative `git-cli` inventory. Outside enforce mode, recognized managed
+removal emits advisory guidance and allows the command without acquiring a
+lease or claiming execution proof. This includes legacy and compound removal
+shapes; the lifecycle CLI owns safety, and other independent hooks still apply.
+In enforce mode, removal must be the command's sole mutation with exactly one
+removal target. A trusted `git-cli worktree remove <target> --safe --format json`
+delegates to the CLI's execution fence without claiming a writer lease in
+PreToolUse. The CLI must prove clean, stable, managed, idle and delivered state
+before removal. Older binaries reject `--safe`; keep it present in cleanup
+commands and release the companion CLI before activating advisory allowance.
+Incomplete process or ownership visibility retains the worktree. Enforce-mode
+batch `git-cli branch cleanup --remove-worktrees` remains blocked; remove each
+target with the sole sanctioned command, then clean up branches separately.
+Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
 lease. The primary checkout may acquire one only while clean, on its resolved
 default branch, and outside a pre-existing Git operation. The owning session
@@ -532,7 +536,8 @@ or the read-only `diagnose-removal` result.
 
 Before backlog cleanup:
 
-1. The release owner must deliver and release the companion CLI fence. Verify
+1. Before activating non-enforce hook allowance, the release owner must deliver
+   and release the companion CLI fence. Verify
    that the installed `git-cli worktree remove --help` advertises `--safe` on
    every cleanup host; an older binary must reject the flag. Keep it present.
    Do not substitute an unreleased binary or change pins to an unpublished
