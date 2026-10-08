@@ -178,7 +178,7 @@ one existing managed removal as the command's sole mutation, with the tool's
 top-level workdir set to the target repository's primary checkout:
 
 ```bash
-git-cli worktree remove <exact-path> --format json
+git-cli worktree remove <exact-path> --safe --format json
 ```
 
 Retain the bound command, actual result and post-removal read-back. A dry run

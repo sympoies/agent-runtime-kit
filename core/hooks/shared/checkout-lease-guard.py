@@ -3,8 +3,9 @@
 
 The lease is an opt-in strict coordination layer selected with
 ``AGENT_SESSION_COORDINATION_MODE=enforce``. Advisory, off, invalid, and absent
-mode values never acquire leases; managed removal refuses their unavailable
-target fence. Ordinary edits stay advisory. In enforce mode the guard
+mode values never acquire leases. A sole trusted ``git-cli worktree remove
+--safe`` delegates fencing to the lifecycle owner in every mode. Ordinary edits
+stay advisory. In enforce mode the guard
 recognizes only explicit edit tools and high-confidence shell mutations.
 Read-only inspection stays available. Stop performs an audit only: it never
 removes a worktree, branch, or lease.
@@ -720,6 +721,9 @@ def worktree_remove_target_argument(invocation: list[str]) -> str:
         if argument.startswith("--format="):
             index += 1
             continue
+        if argument == "--safe":
+            index += 1
+            continue
         if argument.startswith("-"):
             raise MutationScopeError(
                 f"managed worktree removal option is unsupported: {argument}"
@@ -1026,6 +1030,29 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
     if not target_arguments:
         return []
     return [resolve_worktree_remove_target(target_arguments[0], base)]
+
+
+def safe_managed_removal(command: str, base: Path) -> bool:
+    """Delegate exactly one stable removal to the CLI's execution fence.
+
+    --safe is required even though new CLIs always fence removal: old binaries
+    reject this unknown option before their legacy force-removal path. A hook
+    observation never claims to be the execution proof.
+    """
+    targets = managed_worktree_remove_targets(command, base)
+    if not targets:
+        return False
+    for tokens in parsed_shell_commands(command):
+        invocation = invocation_without_redirections(invocation_tokens(tokens))
+        if is_managed_worktree_remove(invocation):
+            return (
+                "--safe" in invocation[3:]
+                and "--" not in invocation[3:]
+                and invocation_environment_is_stable(tokens, "git-cli")
+                and not any(is_assignment(token) for token in tokens)
+                and resolved_executable_matches(invocation[0], "git-cli", managed_cli=True)
+            )
+    return False
 
 
 def semantic_commit_invocation_repo_target(invocation: list[str]) -> str | None:
@@ -3086,6 +3113,16 @@ def main() -> int:
     if len(sys.argv) == 2 and sys.argv[1] == "diagnose-removal":
         sys.stdout.write(json.dumps(diagnose_worktree_removal(payload), sort_keys=True) + "\n")
         return ALLOW
+    if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
+        command = command_from(payload)
+        if any(is_managed_worktree_remove(invocation_tokens(tokens))
+               for tokens in parsed_shell_commands(command)):
+            try:
+                if safe_managed_removal(command, payload_base(payload)):
+                    return ALLOW
+            except LeaseError as exc:
+                emit_block(lease_error_block_reason(exc))
+                return ALLOW
     if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
         # Advisory edits do not acquire leases. Removal, however, must never
         # mistake that silent bypass for proof that its target was fenced.

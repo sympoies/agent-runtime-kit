@@ -139,7 +139,7 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
    closeout state check reports no finding. Then perform requested
    post-merge duties and `core/policies/git-delivery.md` terminal cleanup.
    Verify each provider-confirmed delivered head before removing a checkout.
-   Use `git-cli worktree remove <path-or-slug> --format json` only for a clean,
+   Use `git-cli worktree remove <path-or-slug> --safe --format json` only for a clean,
    unowned managed worktree. Retain dirty, locked, or unverifiable worktrees
    and report the exact reason.
 

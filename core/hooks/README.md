@@ -217,7 +217,13 @@ forms do not acquire a writer lease unless the command includes the
 file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
-mutation with exactly one removal target. Nested repositories and submodules
+mutation with exactly one removal target. In every mode a trusted
+`git-cli worktree remove <target> --safe --format json` delegates to the CLI's
+execution fence without claiming a writer lease in PreToolUse. The CLI holds
+checkout/session locks and proves clean, stable, managed, idle and delivered
+state before removal. Older binaries reject `--safe`; advisory removal without
+it stays blocked. Incomplete process or ownership visibility retains the
+worktree. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
 lease. The primary checkout may acquire one only while clean, on its resolved
 default branch, and outside a pre-existing Git operation. The owning session
