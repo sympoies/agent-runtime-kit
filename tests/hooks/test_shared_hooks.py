@@ -28407,6 +28407,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     f"git-cli worktree remove {target} --safe && touch README.md",
                     f"git-cli worktree remove {target} --safe; git-cli worktree remove {target} --safe",
                     f"git-cli worktree remove {target} --safe > README.md",
+                    "git-cli branch cleanup --remove-worktrees",
+                    "git-cli branch delete-merged -w",
                 ):
                     with self.subTest(command=command):
                         payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)

@@ -691,6 +691,19 @@ def is_managed_worktree_add(invocation: list[str]) -> bool:
     )
 
 
+def is_branch_worktree_cleanup(invocation: list[str]) -> bool:
+    invocation = invocation_without_redirections(invocation)
+    return (
+        len(invocation) >= 4
+        and os.path.basename(invocation[0]) == "git-cli"
+        and invocation[1] == "branch"
+        and invocation[2] in {"cleanup", "delete-merged"}
+        and not any(argument in {"-h", "--help"} for argument in invocation[3:])
+        and any(argument == "--remove-worktrees" or argument == "-w"
+                for argument in invocation[3:])
+    )
+
+
 def worktree_remove_target_argument(invocation: list[str]) -> str:
     # Drop redirections and their operands first: the agent Bash tool wraps every
     # command as `eval '…' < /dev/null && pwd -P >| <cwd>`, so the recursed
@@ -3115,6 +3128,14 @@ def main() -> int:
         return ALLOW
     if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
         command = command_from(payload)
+        if any(is_branch_worktree_cleanup(invocation_tokens(tokens))
+               for tokens in parsed_shell_commands(command)):
+            emit_block(
+                "Batch branch cleanup cannot attest sole managed removal on older "
+                "CLIs. Remove each eligible worktree with `git-cli worktree remove "
+                "<target> --safe --format json`, then clean up its branch separately."
+            )
+            return ALLOW
         if any(is_managed_worktree_remove(invocation_tokens(tokens))
                for tokens in parsed_shell_commands(command)):
             try:

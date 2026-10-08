@@ -113,7 +113,7 @@ assert_delivery_skills_own_terminal_worktree_cleanup() {
     core/skills/pr/deliver-pr/SKILL.md.tera \
     core/skills/dispatch/deliver-dispatch-plan/SKILL.md.tera; do
     if ! grep -q 'core/policies/git-delivery.md' "$REPO_ROOT/$skill" ||
-      ! grep -q 'git-cli worktree remove <path-or-slug> --format json' "$REPO_ROOT/$skill" ||
+      ! grep -q 'git-cli worktree remove <path-or-slug> --safe --format json' "$REPO_ROOT/$skill" ||
       ! grep -q 'provider-confirmed delivered head' "$REPO_ROOT/$skill"; then
       echo "runtime-smoke pr: $skill omits safe terminal worktree cleanup" >&2
       rc=1

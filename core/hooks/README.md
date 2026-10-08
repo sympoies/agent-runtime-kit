@@ -223,7 +223,9 @@ execution fence without claiming a writer lease in PreToolUse. The CLI holds
 checkout/session locks and proves clean, stable, managed, idle and delivered
 state before removal. Older binaries reject `--safe`; advisory removal without
 it stays blocked. Incomplete process or ownership visibility retains the
-worktree. Nested repositories and submodules
+worktree. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
+agent shells because older CLIs bypass fencing; remove each target with the
+sole sanctioned command, then clean up branches separately. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
 lease. The primary checkout may acquire one only while clean, on its resolved
 default branch, and outside a pre-existing Git operation. The owning session
