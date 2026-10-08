@@ -33,6 +33,33 @@ Raw `git` remains the right tool for reads, for staging, and for anything with
 no owner above. The guard only classifies commands that could move the default
 branch.
 
+## Collaboration Ledgers
+
+A repository with a tracked, regular top-level `.agent-collab` file containing
+exactly `collab-protocol: 1` on one line is a collaboration message ledger.
+The marker qualifies only from the committed tree of the remote's default
+branch. A marker present only in the working tree, index, or a non-default
+branch does not qualify.
+The marker belongs in ledger repositories, not in their tooling/template
+source repositories; a `PROTOCOL.md` filename alone is not a marker.
+
+For ledger operations, the repository's `tools/collab.py` owns authoring,
+synchronization, provider calls, and direct default-branch delivery: one commit
+per message under its protocol. Use only that tool; agents must never invoke
+raw `git` or `gh`/`glab` there. The code-repository PR/MR flow, managed-worktree
+commit route, and `forge-cli repo push-default` exception do not apply to these
+operations. The marker grants no general delivery bypass or authority to
+change unrelated repositories, publish releases, or rewrite ledger history.
+Unmarked repositories retain the ordinary delivery rules.
+
+The default-delivery PreToolUse hook classifies the submitted shell command,
+not Python subprocesses. A literal `python3 tools/collab.py ...` already passes
+the default-delivery hook; its internal Git calls need no exemption from that
+hook. Other hooks still apply, including the Python runner policy in a
+repository with `uv.lock`. Hook admission alone does not verify the marker or
+authorize this route in an unmarked repository.
+Direct default-branch pushes remain refused even when the marker is present.
+
 ## Resolving The Remote's Default Branch
 
 The guard has to know which branch is the default before it can say whether a
