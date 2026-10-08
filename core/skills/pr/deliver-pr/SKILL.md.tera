@@ -598,7 +598,8 @@ and does not mutate native approval state.
 For identity and issue mirroring: resolve the tri-state publication mode in
 `REVIEW_OUTCOME_POSTING_CONTRACT.md` before any write. Only `portable` mode
 posts a compact review after each lens and focused rerun. `governed` mode waits
-for the selected wave and publishes one combined owner-App report;
+for the selected wave and publishes one combined report through the configured
+reviewer identity;
 `personal-escape` requires explicit authorization and publishes one combined
 exact-head report followed by a non-native outcome note. Pass only the portable
 `--provider`, `--decision`, and `--lens` semantics; do not set private
@@ -692,10 +693,11 @@ all child and integration evidence is verified.
    compact review comment through `forge-cli pr review` (a native `COMMENT`
    review event via `--submit-review` on GitHub) with `--decision comments-only`
    and that semantic `--lens` (`quick` for a quick finding). In a governed
-   GitHub environment, do not post per-lens full reports through the personal identity.
+   GitHub environment, publish the combined report through the configured reviewer
+   identity after the selected wave.
    After the selected lens wave completes and before repair, publish
-   one combined pre-repair report through `forge-review-publish`; its personal
-   phase is metadata-only. The parent delivery workflow posts; reviewer
+   one combined pre-repair report through `forge-review-publish` using the
+   configured reviewer identity. The parent delivery workflow posts; reviewer
    subagents never call the provider. In either route, provider-visible finding
    evidence must exist before the repair in step 12 (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
@@ -760,9 +762,14 @@ all child and integration evidence is verified.
    pre-mutation publisher failure. Direct `forge-cli pr review` is never an
    implicit fallback from `governed`. The
    governed publisher posts the complete
-   canonical body exactly once through the owner App and records only
-   exact-head-verified `--metadata-only` provenance through the personal
-   identity; the personal call never receives the report `--comment-file`.
+   canonical body exactly once through the configured reviewer identity,
+   independent from the PR author. Human review reports, native decisions,
+   comments and reviewer-owned ledger observations use the configured reviewer
+   user account; automatic reviews may use an App. Bind designated handoffs to
+   the actual review author's login. Credential selection remains environment
+   owned; `--review-author` verifies authorship and does not switch credentials.
+   If the adapter records a separate `--metadata-only` breadcrumb, bind and
+   verify its native review before that mutation and omit `--comment-file`.
    A required-but-missing or failed publisher blocks by default. Only after
    explicit maintainer authorization, a non-empty reason, and proof of
    `no-native-mutation` may delivery publish the combined report as an
