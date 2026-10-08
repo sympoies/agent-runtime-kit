@@ -1055,7 +1055,12 @@ def safe_managed_removal(command: str, base: Path) -> bool:
     targets = managed_worktree_remove_targets(command, base)
     if not targets:
         return False
-    for tokens in parsed_shell_commands(command):
+    commands = parsed_shell_commands(command)
+    # Even read-only peers can change PATH, shell functions, or proof-state roots.
+    # Resolve and delegate only the sole executable command we inspected.
+    if len(commands) != 1:
+        return False
+    for tokens in commands:
         invocation = invocation_without_redirections(invocation_tokens(tokens))
         if is_managed_worktree_remove(invocation):
             return (
