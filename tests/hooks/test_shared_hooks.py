@@ -12537,6 +12537,86 @@ exit 64
             ):
                 self.assertNotIn(private, reason)
 
+    def test_retired_checkpoint_writes_require_authenticated_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = "managed-session"
+            runtime = "runtime-instance"
+            state = root / "session-state"
+            coordination = state / "sessions" / session / "coordination"
+            coordination.mkdir(parents=True)
+            for directory in (state, state / "sessions", coordination.parent, coordination):
+                directory.chmod(0o700)
+            checkpoint = coordination / (
+                f"main-agent-checkpoint-{hashlib.sha256(runtime.encode()).hexdigest()}.json"
+            )
+            checkpoint.write_text("{}\n", encoding="utf-8")
+            checkpoint.chmod(0o600)
+            capability = root / "capability"
+            capability.write_text("fixture-capability\n", encoding="utf-8")
+            capability.chmod(0o600)
+            bin_dir = root / "bin"
+            bin_dir.mkdir(mode=0o700)
+            calls = root / "calls.log"
+            executable = bin_dir / "agent-session"
+            executable.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {shlex.quote(str(calls))}
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.32.1'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\\n' '{{"ok":false,"error":{{"code":"claim-not-found"}}}}'
+  exit 1
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": session,
+                "AGENT_SESSION_RUNTIME_ID": runtime,
+                "AGENT_SESSION_STATE_DIR": str(state),
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_CHECKPOINT_FILE": str(checkpoint),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            # Match the former exception's exact issued path, private modes,
+            # JSON object, and canonical printf shape so it would have bypassed.
+            content = '{"ready":true}'
+            printf_format = shlex.quote(r"%s\n")
+            payloads = (
+                write_payload(str(checkpoint), content),
+                command_payload(
+                    f"printf {printf_format} {shlex.quote(content)} "
+                    f"> {shlex.quote(str(checkpoint))}"
+                ),
+            )
+            for payload in payloads:
+                with self.subTest(tool=payload["tool_name"]):
+                    calls.write_text("", encoding="utf-8")
+                    payload.update(
+                        session_id="provider-session",
+                        tool_use_id=f"checkpoint-{payload['tool_name']}",
+                        hook_event_name="PreToolUse",
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py", payload, cwd=root, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "active work-context claim")
+                    logged = calls.read_text(encoding="utf-8").splitlines()
+                    claim_reads = [line for line in logged if "work-context show" in line]
+                    self.assertEqual(len(claim_reads), 1, logged)
+                    self.assertIn(f"--session {session}", claim_reads[0])
+                    self.assertIn(f"--capability-file {capability}", claim_reads[0])
+                    self.assertFalse(any("work-context admit" in line for line in logged))
+                    self.assertEqual(checkpoint.read_text(encoding="utf-8"), "{}\n")
+
     def test_session_coordination_default_is_advisory_and_never_blocks_mutation(
         self,
     ) -> None:

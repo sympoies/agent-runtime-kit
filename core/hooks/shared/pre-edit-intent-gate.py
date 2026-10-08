@@ -30,7 +30,6 @@ import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
@@ -295,14 +294,6 @@ def run_probe(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None,
         return None, "timeout"
     except (OSError, ValueError, subprocess.SubprocessError):
         return None, "crash"
-
-
-def parsed_version(text: str) -> tuple[int, int, int] | None:
-    match = re.search(r"(?:^|\s)(\d+)\.(\d+)\.(\d+)(?:\s|$|\()", text)
-    if not match:
-        return None
-    major, minor, patch = (int(part) for part in match.groups())
-    return major, minor, patch
 
 
 def phase_for(tool: str, command_words: list[str] | None) -> str | None:
