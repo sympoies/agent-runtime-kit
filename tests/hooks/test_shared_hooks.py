@@ -21432,6 +21432,37 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, fragment)
 
+    def test_default_delivery_collaboration_marker_grants_no_push_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            marker = repo / ".agent-collab"
+            marker.write_text("collab-protocol: 1\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "--", ".agent-collab"], cwd=repo, check=True,
+                capture_output=True,
+            )
+            # PreToolUse sees the tool invocation, not its Python subprocesses.
+            # Admission is unchanged by the marker; policy owns tool authority.
+            for marked in (True, False):
+                if not marked:
+                    marker.unlink()
+                with self.subTest(marked=marked):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload("python3 tools/collab.py post draft.md"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+                    for command in ("git push", "git push origin HEAD:main"):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command), cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "[default-delivery:")
+
     def test_default_delivery_hook_blocks_default_branch_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
