@@ -444,13 +444,23 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
 - Recheck local status immediately before cleanup. Dirty, locked, missing,
   provider-unverified, or otherwise ambiguous state is retained and reported;
   never force removal merely to make the local tree look tidy.
-- Managed worktree removal must run through a supported hooked shell. The
-  checkout lease guard resolves the exact registered linked target, refuses
-  dirty or locked targets even for their owner, claims or refreshes its lease,
-  and blocks a live foreign owner before `git-cli` executes. Outside `enforce`
-  mode, managed removal is blocked rather than treating the advisory bypass as
-  proof. Do not activate enforcement just to get past cleanup. If target lease
-  fencing cannot be verified or the hook is unavailable, retain and report.
+- From the primary checkout, run exactly one sanctioned cleanup command:
+  `git-cli worktree remove <path-or-slug> --safe --format json`. The supported
+  shell hook delegates this sole, trusted invocation to the CLI's execution
+  fence in advisory and enforce modes. Older CLIs reject `--safe` before their
+  legacy removal path; upgrade through the normal release owner rather than
+  removing the flag or changing coordination mode.
+- The CLI holds the target checkout lease lock and session registry lock through
+  removal. It requires an exact registered managed target, a clean stable
+  checkout outside a Git operation, no active checkout lease (including the
+  requester), no live session binding or nonterminal operation, and complete
+  process cwd/open-file visibility. Missing tools, malformed state, incomplete
+  process visibility, identity drift, and unavailable remote/provider proof
+  retain the target with a reason. Unmanaged removal remains forbidden.
+- Delivery proof uses the current remote default HEAD or a provider-confirmed
+  merged PR/MR whose head exactly matches the target HEAD. Unpushed and unmerged
+  commits are retained. Squash/rebase merges do not require rewriting the local
+  branch. The CLI never forces removal and leaves the branch ref intact.
 - The lease owner supports `checkout-lease-guard.py diagnose-removal` with the
   proposed PreToolUse shell payload on stdin. Its target-bound
   `agent-runtime.worktree-removal-attestation.v1` diagnostic observes the root,
@@ -459,15 +469,12 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
   `execution_fenced=false` and `cleanup_authorized=false`: this observation,
   hook registration, and a successful lifecycle command are never execution
   receipts. The v1/v2 lease does not prove a managed session incarnation.
-- Keep delivery classification separate from producer release. A squash-merged
-  PR whose provider head exactly matches the local head establishes delivered
-  content without rebasing the inventory branch. It does not release an active
-  owner, rollback hold, open follow-up PR, or pending evidence/parent duty.
-  Obtain explicit authenticated original-owner release bound to the target,
-  checkout instance, head and managed incarnation, with the parent duties
-  acknowledged. Missing reports and disappeared sessions mean unknown release
-  state and retention; never synthesize success or adopt ownership from absence.
-  An unpushed or provider-mismatched head also remains retained.
+- Keep delivery classification separate from producer release. Provider merge
+  proof does not release an active checkout lease, session binding, rollback
+  hold, or pending parent duty. Finish the owning workflow first and release
+  ownership through its sanctioned lifecycle. Absence of a report alone never
+  establishes completion; the cleanup command independently proves idle local
+  ownership and exact-head delivery.
 - Run exactly one managed worktree removal as the shell command's sole mutation.
   Do not combine removals or combine removal with branch deletion, redirection,
   or another checkout write; execute each lifecycle step separately so its
@@ -475,7 +482,7 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
 - For a primary checkout, switch a clean completed branch back to the intended
   base and fast-forward it from the provider before deleting the disposable
   local branch. For a managed linked worktree, run `git-cli worktree remove
-  <path-or-slug> --format json` from the primary checkout. Direct mutating
+  <path-or-slug> --safe --format json` from the primary checkout. Direct mutating
   `git worktree` remains forbidden. The session's final Stop releases a clean
   primary-checkout lease and prunes lease state left by a successfully removed
   managed worktree.

@@ -803,10 +803,11 @@ all child and integration evidence is verified.
     post-merge deployment, activation, archive, evidence, and local closeout
     duties, then apply `core/policies/git-delivery.md` terminal cleanup. Recheck
     status and provider merge/head truth. Restore a clean primary checkout to
-    base, or invoke `git-cli worktree remove <path-or-slug> --format json` from
+    base, or invoke `git-cli worktree remove <path-or-slug> --safe --format json` from
     the primary checkout through the supported hooked shell; the target-aware
-    lease guard must confirm no live foreign owner before removal. If that proof
-    or hook is unavailable, retain the worktree. Delete the local
+    hook delegates to the CLI execution fence, which must prove clean, managed,
+    idle and delivered state. If that proof or hook is unavailable, retain the
+    worktree. Delete the local
     branch only when its tip equals the provider-confirmed delivered head;
     otherwise retain and report it. When the merge left the primary checkout's
     default branch behind its remote, advance it with

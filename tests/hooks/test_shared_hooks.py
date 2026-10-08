@@ -27543,6 +27543,79 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertTrue(linked_lock.exists())
             self.assertEqual(linked_lock.stat().st_ino, lock_inode)
 
+    def test_checkout_lease_advisory_safe_removal_delegates_to_execution_fence(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("safe_removal_test", HOOK_DIR / "checkout-lease-guard.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/safe-removal")
+                payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {shlex.quote(str(linked))} --safe --format json")
+                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                     mock.patch.object(module, "read_payload", return_value=payload), \
+                     mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                     mock.patch.object(module, "emit_block") as blocked:
+                    module.main()
+                blocked.assert_not_called()
+                self.assertTrue(linked.exists(), "PreToolUse never performs cleanup")
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_safe_removal_rejects_bypass_and_compound_shapes(self) -> None:
+        spec = importlib.util.spec_from_file_location("safe_removal_shapes", HOOK_DIR / "checkout-lease-guard.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/safe-shapes")
+                target = shlex.quote(str(linked))
+                for command in (
+                    f"git-cli worktree remove {target}",
+                    f"git-cli worktree remove {target} -- --safe",
+                    f"AGENT_SESSION_STATE_DIR=/unknown git-cli worktree remove {target} --safe",
+                    f"export PATH=/untrusted/bin:$PATH; git-cli worktree remove {target} --safe",
+                    f"export AGENT_SESSION_STATE_DIR=/empty-state; git-cli worktree remove {target} --safe",
+                    f"export AGENT_RUNTIME_CHECKOUT_LEASE_STATE_HOME=/empty-leases; git-cli worktree remove {target} --safe",
+                    f"unset AGENT_SESSION_STATE_DIR; git-cli worktree remove {target} --safe",
+                    f"source /untrusted/setup; git-cli worktree remove {target} --safe",
+                    f"echo ready; git-cli worktree remove {target} --safe",
+                    f"git-cli worktree remove {target} --safe && touch README.md",
+                    f"git-cli worktree remove {target} --safe; git-cli worktree remove {target} --safe",
+                    f"git-cli worktree remove {target} --safe > README.md",
+                    "git-cli branch cleanup --remove-worktrees",
+                    "git-cli branch delete-merged -w",
+                ):
+                    with self.subTest(command=command):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                        with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                             mock.patch.object(module, "read_payload", return_value=payload), \
+                             mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                             mock.patch.object(module, "emit_block") as blocked:
+                            module.main()
+                        blocked.assert_called()
+                payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {target} --safe")
+                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                     mock.patch.object(module, "read_payload", return_value=payload), \
+                     mock.patch.object(module, "resolved_executable_matches", return_value=False), \
+                     mock.patch.object(module, "emit_block") as blocked:
+                    module.main()
+                blocked.assert_called()
+                self.assertTrue(linked.exists())
+        finally:
+            sys.modules.pop(spec.name, None)
+
     def test_checkout_lease_advisory_removal_retains_target_without_fence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
