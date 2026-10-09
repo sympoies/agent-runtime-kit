@@ -28640,8 +28640,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             # Reached lease evaluation (foreign owner), not a parse/scope refusal.
             self.assert_blocked(decision, "another agent session")
 
-            # Genuine co-resident repository writes are still rejected as not the
-            # sole mutation, even inside the wrapper: an executable mutation, an
+            # Genuine co-resident repository writes are still rejected, even
+            # inside the wrapper: raw deletion, an
             # absolute in-repo redirect, a relative redirect (unsafe under `cd`,
             # so fail closed), and a dynamic redirect target.
             in_repo = shlex.quote(str(primary / "README.md"))
@@ -28664,7 +28664,12 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "sole mutating command")
+                    expected_reason = (
+                        "Raw deletion changes directory context"
+                        if co_resident.startswith("rm ")
+                        else "sole mutating command"
+                    )
+                    self.assert_blocked(decision, expected_reason)
 
     def test_checkout_lease_worktree_add_survives_harness_command_wrapper(
         self,
