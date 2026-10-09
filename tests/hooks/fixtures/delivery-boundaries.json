@@ -1,0 +1,37 @@
+[
+  {
+    "hook": "block-direct-git-commit.py",
+    "command": "git commit --amend --no-edit",
+    "reason": "semantic-commit"
+  },
+  {
+    "hook": "block-direct-git-worktree.py",
+    "command": "git worktree add ../other",
+    "reason": "git-cli worktree"
+  },
+  {
+    "hook": "block-direct-pr-create.py",
+    "command": "gh pr create --title repair",
+    "reason": "forge-cli pr deliver"
+  },
+  {
+    "hook": "block-unsafe-default-delivery.py",
+    "command": "git push --force origin HEAD:main",
+    "reason": "forge-cli repo push-default"
+  },
+  {
+    "hook": "block-unsafe-default-delivery.py",
+    "command": "git push --mirror origin",
+    "reason": "forge-cli repo push-default"
+  },
+  {
+    "hook": "block-unsafe-default-delivery.py",
+    "command": "git merge --ff-only feature/unpublished",
+    "reason": "git-cli sync-default"
+  },
+  {
+    "hook": "block-unsafe-default-delivery.py",
+    "command": "semantic-commit commit --message \"fix: repair\"",
+    "reason": "Do not author or push"
+  }
+]

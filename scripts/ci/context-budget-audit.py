@@ -12,6 +12,7 @@ Surfaces and targets come from the issue's quantitative acceptance budgets
 
   * rendered always-on home policy  (build/<product>/AGENT_HOME.md)  <= 4 KiB + 256 B
   * resolved project-dev edit-phase required reading                 <= 20 KiB
+  * resolved project-dev delivery required reading per product      <= 48 KiB
   * startup memory context (header + profile)                        <= 1.25 KiB
   * new context on an unchanged repeat prompt                        == 0 bytes
   * each rendered skill body (build/*/plugins/*/skills/*/SKILL.md)    <= 16 KiB
@@ -168,6 +169,18 @@ BUDGETS = [
 ]
 
 
+# Delivery is measured through the catalog, not a manually mirrored path list.
+# Preserve a separate surface per adapter so a product-specific expansion fails.
+for product in ("codex", "claude", "hermes"):
+    BUDGETS.append({
+        "id": "delivery-phase-required-reading.project-dev.%s" % product,
+        "description": "Resolved project-dev delivery required reading for %s." % product,
+        "measure": ("agent-docs", "project-dev", "delivery", product),
+        "target": 48 * KIB,
+        "override": None,
+    })
+
+
 # Surfaces that must stay actively measured (file / doc-set). Downgrading one to
 # a non-measured kind (pending / behavioral) or deleting it silently drops
 # enforcement, so ``check`` treats that as a coverage failure -- the gate defends
@@ -178,6 +191,9 @@ REQUIRED_MEASURED_IDS = frozenset({
     "rendered-agent-home.hermes",
     "rendered-agent-home.neutral",
     "edit-phase-required-reading.project-dev",
+    "delivery-phase-required-reading.project-dev.codex",
+    "delivery-phase-required-reading.project-dev.claude",
+    "delivery-phase-required-reading.project-dev.hermes",
 })
 
 _MEASURED_KINDS = ("file", "doc-set", "agent-docs", "skill-body")

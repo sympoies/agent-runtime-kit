@@ -2,333 +2,88 @@
 
 ## Purpose
 
-This conditional delivery runbook owns agent-authored Git and provider state:
-commit signing, managed worktrees, default-branch exceptions, provider
-compare-and-swap, branch naming, cleanup, and PR/MR routing. Load it for the
-`project-dev` delivery phase, not for ordinary inspection or editing.
-
-`AGENT_HOME.md` carries the always-on safety boundary. Governed CLIs and hooks
-own exact command parsing and deterministic state checks; this file explains
-authorization, mode choice, and recovery. Prefer current CLI help over copying
-command syntax into other prompts.
+Required `project-dev` delivery boundaries. `AGENT_HOME.md` carries the always-on
+invariants; governed CLIs and hooks own parsing and deterministic checks.
+Read [Git delivery reference](references/git-delivery.md) only for the relevant
+exception, refusal, or recovery. Current CLI help owns command syntax.
 
 ## Git Mutation Ownership
 
-Every Git mutation an agent performs has one owner. Reach for the owner first;
-raw `git` for these operations is what the delivery guard is built to distrust,
-because a raw invocation cannot prove what it will touch.
-
 | Mutation | Owner |
 | --- | --- |
-| Commit | `semantic-commit commit` (`fixup`, `squash`) |
-| Managed worktree add/remove | `git-cli worktree` |
+| Commit, fixup, squash | `semantic-commit` |
+| Managed worktree lifecycle | `git-cli worktree` |
 | Publish a branch | `git-cli push` |
-| Adopt the remote's default branch locally | `git-cli sync-default` |
-| Adopt a published non-default branch locally | `git-cli sync-branch` |
-| PR/MR record, review, merge | `forge-cli pr` |
+| Adopt the published default / non-default branch | `git-cli sync-default` / `git-cli sync-branch` |
+| PR/MR record, review, merge | `forge-cli pr` and the active `deliver-pr` workflow |
 | One local-only default-branch commit | `semantic-commit default-branch` |
 | Publish the default branch | `forge-cli repo push-default` |
 
-Raw `git` remains the right tool for reads, for staging, and for anything with
-no owner above. The guard only classifies commands that could move the default
-branch.
+Use raw Git for reads, staging, and operations without an owner above. Never
+bypass hooks, signing, branch protection, access controls, or concurrency guards.
+Raw commit/worktree/provider creation paths cannot replace the governed owners.
+Raw default-branch push and default-branch authoring (`commit`, `fixup`, `squash`,
+`cherry-pick`, `merge`, `pull`, `reset`, `update-ref`) remain blocked by effect;
+`--ff-only` does not prove remote publication. Force, delete, all-refs and mirror
+pushes cannot become an exceptional default-branch delivery.
 
-## Collaboration Ledgers
+## Delivery Authority
 
-A repository with a tracked, regular top-level `.agent-collab` file containing
-exactly `collab-protocol: 1` on one line is a collaboration message ledger.
-The marker qualifies only from the committed tree of the remote's default
-branch. A marker present only in the working tree, index, or a non-default
-branch does not qualify.
-The marker belongs in ledger repositories, not in their tooling/template
-source repositories; a `PROTOCOL.md` filename alone is not a marker.
+| Outcome | Current-task authority | Required route and proof |
+| --- | --- | --- |
+| PR/MR (provider default) | Explicit current-task provider-delivery request, or an approved workflow owning delivery | Signed commit on a non-default managed worktree; active delivery workflow; checks/reviews and provider head/merge read-back |
+| Direct-main (`direct` only) | Explicit request to commit and push the default branch | Exactly one verified signed commit on a non-default managed worktree; `forge-cli repo push-default` bound to the full expected remote base and a reason file; matching `observed_remote_sha` receipt |
+| Default-branch (`direct` local completion) | Exact approval for one local-only default-branch commit | `semantic-commit default-branch` in the clean primary checkout, explicit absolute `--repo`, full `--expect-head`, new outside-repository receipt; `provider_delivered=false` |
 
-For ledger operations, the repository's `tools/collab.py` owns authoring,
-synchronization, provider calls, and direct default-branch delivery: one commit
-per message under its protocol. Use only that tool; agents must never invoke
-raw `git` or `gh`/`glab` there. The code-repository PR/MR flow, managed-worktree
-commit route, and `forge-cli repo push-default` exception do not apply to these
-operations. The marker grants no general delivery bypass or authority to
-change unrelated repositories, publish releases, or rewrite ledger history.
-Unmarked repositories retain the ordinary delivery rules.
+Implementation alone grants no provider authority. Size, urgency, and "hotfix"
+do not authorize exceptions. Authority expires with the current task. If the
+scope exceeds one commit, the expected base moves, signing fails, checkout
+state is unsafe, or the mode is uncertain, retain the branch and route the
+needed decision. Local completion must finish in the current run; a later push
+needs new authority and governed receipt adoption, never an inferred bypass.
 
-The default-delivery PreToolUse hook classifies the submitted shell command,
-not Python subprocesses. A literal `python3 tools/collab.py ...` already passes
-the default-delivery hook; its internal Git calls need no exemption from that
-hook. Other hooks still apply, including the Python runner policy in a
-repository with `uv.lock`. Hook admission alone does not verify the marker or
-authorize this route in an unmarked repository.
-Direct default-branch pushes remain refused even when the marker is present.
+Never enable `extensions.worktreeConfig`, set per-worktree author or signing
+configuration, disable signing, or continue when signing fails. Advisory/off
+project-dev preparation does not relax independent delivery or ownership guards.
+Default-delivery hooks use cached local metadata and fail closed on unresolved
+identity; live remote truth belongs to the governed CLI. Hermes has no hook
+runner; policy and CLI contracts still apply.
 
-## Resolving The Remote's Default Branch
+A one-shot inline delivery waiver admits only an unresolvable `semantic-commit`
+target, with a normalized reason of at least 12 characters recorded in the
+receipt. It cannot waive a proven violation, raw Git, or force/mirror/delete/
+all-refs pushes. Ambient/exported waivers are refused; the rule stays locked.
+Read the [reference](references/git-delivery.md#one-shot-delivery-waiver) before
+using this narrow admission path.
 
-The guard has to know which branch is the default before it can say whether a
-push would move it. It resolves that locally, from the cached
-`refs/remotes/<remote>/HEAD` corroborated by the primary worktree's branch,
-because a cached head is locally writable and a stale or planted one would
-reclassify a default-branch push as a feature push.
+## Bounded Exceptions
 
-How firmly it resolves decides what a refusal can claim, and the three states
-are not interchangeable:
+- Collaboration ledger operations use only the repository's `tools/collab.py`
+  when a tracked regular top-level `.agent-collab` on the remote default tree
+  contains exactly `collab-protocol: 1`. Working-tree/index/feature-only markers
+  do not qualify. No raw Git/provider path, unrelated delivery, release, or
+  history rewrite is authorized. Read the ledger section in the reference.
+- A maintainer-provisioned scheduled devlog fold job may update only the indexed
+  log through `devlog fold` / `check`, verified App-authenticated commits and a
+  narrow protection exception (or an independently approved auto-merge route).
+  No agent-side push, month edits, force update, release, or rollout follows
+  from this exception. Read [the fold owner](devlog/ci-fold.md).
 
-- **Corroborated** — cache and primary worktree agree. A destination can be
-  proven to be the default, or proven not to be.
-- **Uncorroborated** — a cached name the primary worktree does not confirm,
-  which is the ordinary state when the primary checkout is parked on a feature
-  branch. The default is one of those two names, so a destination that is
-  neither is admitted, and either candidate stays unverified. This is why a
-  parked primary checkout no longer makes every push in the repository
-  unclassifiable.
-- **Unknown** — no cached head at all. No branch destination is decidable, and
-  the primary worktree's branch is not accepted as a substitute: a repository
-  whose primary checkout sits on a feature branch would otherwise make the real
-  default look like a safe destination.
+## Commits And Provider Records
 
-Two classes of push need no default-branch name at all. A destination outside
-`refs/heads/` — a tag, a note — cannot move a branch whatever the default turns
-out to be, so it is admitted in every state. An `--all` or `--mirror` push moves
-every branch there is, so it is refused in every state.
-
-A push that cannot be classified names the condition that tripped. "The default
-branch could not be resolved" is not actionable on its own, and steering such a
-caller to a governed surface that fails the same way is worse than saying
-nothing.
-
-### Publishing to an empty remote
-
-A remote that advertises no refs has no default branch, so publishing its first
-branch cannot move one. Nothing in the resolution above can establish that from
-local state, and the usual remedy is a dead end: `git remote set-head <remote>
---auto` has no remote HEAD to read, and `forge-cli repo push-default` needs an
-expected base that does not exist yet. Publishing the first branch of an empty
-remote is therefore a governed bootstrap publish, whose safety argument is the
-emptiness itself — checked against the remote, never inferred from missing
-remote-tracking refs, which a fresh clone also lacks. It creates a ref and
-forces nothing.
-
-## Default-branch Fast-forward Sync
-
-`git-cli sync-default` is the sole owner for advancing the local default branch
-onto a commit already published on its remote. Raw `git merge` and `git pull`
-remain refused even with `--ff-only`: a remote-tracking ref is locally writable,
-and `pull` accepts local repository paths, so local state alone cannot prove the
-source commit was published. The governed owner binds the operation to the
-configured remote and verifies the fast-forward before moving the branch.
-
-## Published Non-default Branch Sync
-
-`git-cli sync-branch` owns fast-forwarding the checked-out, published
-non-default branch to its same-named remote ref. It is intended for persistent
-integration branches such as `mainline`: the branch must track its own ref on
-the selected remote, the remote default branch is refused, and the only
-mutation is a clean-checkout `merge --ff-only` after an exact single-branch
-fetch. It never authors, rebases, resets, pushes, or changes upstream state.
-
-When a persistent integration worktree participates in cleanup scans, pass its
-exact branch name to `worktree-triage --protect-branch <branch>`. Protection is
-explicit and repeatable; it keeps a fully merged integration branch out of the
-safe-removal set without changing the selected comparison base.
-
-## Reading A Delivery Refusal
-
-Every refusal leads with one of two markers, and they mean different things:
-
-- `[default-delivery: blocked]` — the command was classified and is forbidden.
-  Change what you are doing, not how you spell it.
-- `[default-delivery: unverified]` — the command could not be classified, so it
-  failed closed. Restating it more explicitly usually resolves it; the message
-  names the condition that could not be resolved.
-
-The most common `unverified` cause is a shell-context change: a `cd`, `pushd`,
-`source`, or Git environment assignment earlier in the same command line makes
-the Git context unverifiable for everything after it. Run the Git command on its
-own with an explicit repository — `git -C /absolute/path …` — or in a separate
-tool call.
-
-An authoring `semantic-commit` after any other command in the same tool call is
-`unverified` with `rule=executable-resolution`: the guard cannot prove which
-executable that word resolves to. Run it as its own tool call, after staging
-with `git add -- <paths>` in a separate call. Its help, `--dry-run`, and
-`--validate-only` forms are not affected.
-
-When one word could not be classified, the refusal names it as `word=`. An
-executable held in a variable (`bin=/path/tool; $bin …`) or run through `eval`
-is opaque because it could expand to `git` or `semantic-commit`; spell the
-command literally. After `source`, an alias, or a `PATH` change, the refusal
-also names the command that changed executable resolution; run the later
-command in a separate tool call or by absolute path. Read-only loops, `[[ ]]`
-tests, `${var%|*}` expansions, arithmetic, and here-doc input to `python3` or
-`cat` are classified as reads.
-
-Each refusal names the governed surface for the operation actually attempted,
-not the policy in general.
-
-## Delivery Mode Decision Matrix
-
-| Mode | Authorization | Authoring and delivery | Terminal evidence |
-| --- | --- | --- | --- |
-| PR (provider default) | Explicit current-task provider-delivery request, or an approved workflow that already owns PR/MR delivery | Signed `semantic-commit` on a non-default managed-worktree branch, then the active `deliver-pr` path | PR/MR URL, delivered head, reviews/checks, and provider merge read-back |
-| Direct-main (`direct` exception) | The maintainer explicitly requests direct commit and push to the default branch in the current task | Exactly one signed `semantic-commit` on a non-default managed-worktree branch, then `forge-cli repo push-default --expected-base <full-sha> --reason-file <path>` | Structured receipt whose post-push `observed_remote_sha` equals the delivered head |
-| Default-branch (`direct` local completion) | The maintainer explicitly requests one local-only default-branch commit in the current task | Exact `semantic-commit default-branch` in the clean primary checkout; no provider call | `cli.semantic-commit.default-branch.v1` receipt with `provider_delivered=false` |
-
-Implementation alone does not authorize provider mutation. Never infer
-direct-main authorization from a change being small, obvious,
-urgent, or described as a hotfix. The authorization expires with the current
-task. If the change grows beyond one commit, its expected base moves, signing
-cannot be verified, the checkout is dirty, or the delivery mode is uncertain,
-retain the managed branch and request the needed delivery decision.
-
-`AGENT_RUNTIME_PROJECT_DEV_MODE` changes only workflow preparation guidance.
-Advisory or off project-dev mode does not relax this delivery matrix, commit
-signing, checkout ownership, branch, provider, or user-authorization controls;
-their independent hooks and governed CLIs continue to decide admission.
-Never enable `extensions.worktreeConfig` or set per-worktree author or signing
-configuration for tracked agent work. If signing fails, stop and report the
-failure; do not change identity or signing configuration to continue.
-
-Never infer default-branch authorization from the same words. It permits one
-signed commit only, must finish in the current run, and is not provider
-delivery. If it grows to multiple commits or cannot complete locally, retain
-the managed branch and re-triage.
-
-The direct-main primitive permits only a verified fast-forward update. It
-requires the selected remote to have exactly one actual push URL (including any
-configured `pushurl`), binds that destination to the provider repository, and
-fails closed if any effective `url.*.insteadOf` or `url.*.pushInsteadOf` rule
-could rewrite the expanded destination a second time, including an empty
-universal match. It requires the exact expected remote base, validates one
-locally verified signed commit plus a non-empty regular reason file of at most
-2,000 bytes, and pins the base read, push, and remote-SHA read-back to that URL.
-Provider and Git subprocesses are time- and output-bounded, and Git's inherited
-push expansion is disabled for the delivery. After proving ancestry, the CLI
-internally binds `--force-with-lease` to that exact old object ID as a
-compare-and-swap; callers cannot supply, relax, or retry that lease. The command
-exposes no force, delete, retry, or direct merge option. Raw
-`git push` to the resolved default branch and the mutating `semantic-commit`
-`commit`, `fixup`, and `squash` subcommands on the checked-out default branch
-are blocked by hook
-on supported Codex/Claude hosts, including Git's wildcard and matching-branch
-refspec forms. Explicit feature-branch refspecs and documented read-only
-help/dry-run forms remain available. Raw `cherry-pick`, `merge`, `pull`,
-`reset`, and `update-ref` on the checked-out default branch are classified by
-effect and fail closed; `git-cli sync-default` is the remote-bound fast-forward
-owner (see "Default-branch Fast-forward Sync"). The PreToolUse hook uses cached local
-default-branch metadata only and performs no `ls-remote` or other network
-probe. Missing or ambiguous cache state fails closed; live truth belongs to
-`forge-cli`. Hermes has no hook runner; policy and the governed CLI
-contract remain authoritative there.
-
-### Naming the delivery target
-
-A `semantic-commit` invocation is classified against the repository it actually
-commits in, not the tool workdir. Bind a cross-repository target with
-`--repo <absolute path>`, which every mutating subcommand including
-`default-branch` accepts. The exceptional command always carries an explicit
-absolute `--repo`; shell retargeting is not an authorized route.
-A relative, expanded, globbed, or `~` destination, a nested shell, and any
-command-local `GIT_*`/`HOME` override do not resolve a governed target, and
-neither does any shell-context change ahead of a raw `git` path. A blocked
-verdict names the resolved repository, how it resolved, and the first failing
-precondition, so the invocation can be corrected instead of retried blind.
-
-### One-shot delivery waiver
-
-When the target genuinely cannot be made resolvable, one command may state a
-reason inline:
-
-```
-AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER='<why this target is authorized>' \
-  semantic-commit default-branch ...
-```
-
-The waiver is read only from that command's own assignment prefix, so it cannot
-outlive the invocation; an exported variable, a separate `export`, and an
-ambient environment value are all refused. It admits only the unresolvable
-class, only for `semantic-commit`, and only with a stated reason of at least 12
-characters measured the way the receipt measures it: control characters become
-spaces and whitespace runs collapse, so padding cannot clear the minimum. A
-proven default-branch target, every raw `git` path, and every force, mirror,
-delete, or all-refs push stay blocked, because no governed CLI re-verifies those
-downstream. The reason is recorded in the default-branch receipt as
-`data.delivery_waiver`, and the guard and the receipt writer must keep the same
-minimum so an admitted delivery is never left without recorded evidence.
-
-This is an admission path inside the handler, not a rule override: the rule
-stays `override_class = "locked"`, fail-closed, and cannot be disabled or
-downgraded by configuration.
-
-### Default-branch completion
-
-Use `semantic-commit default-branch` only after the current request explicitly
-authorizes this local outcome. Bind the invocation to the full current `HEAD`,
-an explicit absolute `--repo`, and a new receipt path allocated outside the
-repository through `agent-out`. The CLI requires the primary worktree, an
-attached branch, staged-only changes, no Git operation, and usable signing. A
-remote-free repository must have no branch upstream metadata. With configured
-remotes, the checked-out branch, its configured upstream, and the cached remote
-default identity must agree, and the cached upstream object must equal `HEAD`.
-Missing, already-ahead, behind, diverged, or ambiguous cached identity fails
-closed. It performs no fetch, `ls-remote`, push, or provider lookup.
-
-Before mutation, the same command may run with `--dry-run` and no
-`--receipt-out`; the `cli.semantic-commit.default-branch.preview.v1` result
-proves only local preconditions and creates no commit or receipt. Mutation
-requires `--receipt-out`, forbids combining it with `--dry-run`, and creates
-exactly one signed commit from the caller-bound `--expect-head`.
-
-The successful receipt records privacy-safe repository and object identities,
-signature verification, cached upstream relation, and that provider delivery
-is still false. Never commit this receipt. Receipt finalization failure after a
-successful commit is a partial success: keep the commit for inspection and do
-not reset or amend it automatically.
-
-A later provider push is a new authorized action. Use
-`forge-cli repo push-default --default-branch-receipt <path>` with a fresh
-expected remote base and reason file. Receipt adoption is the only exception
-that permits `push-default` from the checked-out default branch; it rechecks
-the live remote, exact parent/head/tree, one-commit ancestry, signature,
-destination, compare-and-swap, and read-back. The local receipt never bypasses
-project deploy or release gates. The live expected-base and exact one-commit
-range checks still must pass.
-
-## Scheduled devlog fold exception
-
-Once the maintainer enables the kit fragment rule and provisions a repository's
-fold job, that job may update its protected default branch without an
-agent-authored managed-worktree commit. This bounded CI exception applies only
-to the indexed development log: fold eligible pending entries, update month
-files and their index, and consume the folded fragments. It grants no agent
-permission to edit month files in a PR, push other content, bypass hooks, merge
-feature work, release, or enable the kit switch.
-
-The trusted default-branch job must run `devlog fold` and `devlog check`, create
-no commit when the fold is empty, and publish only App-authenticated commits
-whose provider verification is true. Provision the App as the narrowly scoped
-protection exception, or use an independently approved auto-merge PR route;
-never weaken required signatures or branch protections for other actors.
-A rejected fast-forward update caused by a moved default branch is refetched
-and folded again from the new tip, with a bounded retry budget. Other failures
-stop. No force update or agent-side fallback is authorized.
-
-The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptance.
-
-## Commits
-
-- The `semantic-commit` body gate enforces 1-2 bullets on non-trivial commits;
-  trivial commits may omit the body.
-- Author commits only on a non-default managed-worktree branch. This applies to
-  both PR and direct-main delivery; direct-main changes are not authored in the
-  primary checkout. The sole exception is the exact authorized default-branch
-  command and receipt contract above.
-- Each body bullet must start with a dash, one following space, and an uppercase
-  ASCII letter, or a two-space continuation line. A lowercase word, a
-  backticked identifier, or a leading double-dash flag is rejected as the opener;
-  auto-fix capitalizes a lowercase opening word but cannot rescue a flag or
-  backtick start, so lead with a capitalized verb or noun there. The
-  `semantic-commit --help` output carries exact flag examples and error strings.
-- Draft an accurate 1-2 sentence summary grounded in the actual diff before
-  committing or opening a record; never derive a title or body from
-  `git log -1`.
+- Stage only owned paths. Use `semantic-commit`; non-trivial bodies require
+  1-2 bullets with uppercase ASCII openers (two-space continuation permitted).
+  Draft an accurate summary from the actual diff, never `git log -1`.
+- Branch prefix must match delivery kind. `git-cli worktree add --kind` derives
+  it; use CLI help for the mapping. Slugs are lowercase, hyphenated, 3-6 words.
+- Use the active workflow / `forge-cli` for issues, PRs and MRs. Bodies use
+  `agent-runtime pr-body render`, with at least `## Summary` + `## Test plan`.
+  Select labels from the project's catalog through
+  [label policy](forge-label-taxonomy.md).
+- Required checks, risk-selected review, current-head review disposition,
+  ledger, thread/task convergence, expected-head binding and merge read-back
+  remain owned by `deliver-pr` and `forge-cli`. Never substitute a custom loop
+  or silently downgrade a failed governed review publisher.
 
 ## Worktrees
 
@@ -495,93 +250,21 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
   terminal duties, handing the captured checkout identity to that parent. The outermost successful workflow performs cleanup
   exactly once; failed or readiness-only workflows retain the checkout.
 
-## Branches
-
-- Branch names carry a Conventional-Commits-style prefix matching the eventual
-  PR kind, since `forge-cli pr deliver/create --kind` enforces the pairing
-  (`feature->feat/`, `bug->fix/`, `chore->chore/`, `docs->docs/`, `ci->ci/`,
-  `refactor->refactor/`). Slugs are lowercase, hyphenated, three to six words; a
-  ticket id `ABC-123` becomes `feat/abc-123-<slug>`.
-- `git-cli worktree add <slug>` derives the branch from the base ref
-  automatically. It defaults to `feat/<slug>`; pass
-  `--kind <feature|bug|chore|docs|ci|refactor>` to select the matching prefix
-  (e.g. `--kind bug` -> `fix/<slug>`) so the worktree branch already satisfies
-  the `forge-cli --kind` rule at delivery — no rename step. The kind→prefix
-  mapping is shared with `forge-cli` via `nils_common::git::PrKind` (nils-cli
-  `>= v1.0.4`), so the two surfaces cannot drift. Manual branch creation in a
-  shared checkout is rarely needed.
-
-## Issues, PRs, And MRs
-
-- For agent-owned provider issues, PRs, and MRs, use the active workflow or
-  `forge-cli` surface instead of raw provider commands. Direct `gh pr create`
-  or `glab mr create` are blocked by hook; PR/MR delivery goes through the
-  active delivery skill.
-- PR/MR bodies come from the active delivery skill / `agent-runtime pr-body
-  render` (the canonical formatter; minimum `## Summary` + `## Test plan`). Do
-  not hand-write body scaffolding or copy the formatter's section table into
-  policy files.
-
 ## Parent Workflow Routing
 
-Commit mutation and repository pre-PR validation are internal phases of the
-implementation and governed PR outcome. Parent workflows stage only their owned
-changes and invoke `semantic-commit`; they do not ask the user to select a commit
-helper. Before provider mutation, the PR parent runs the repository-owned
-`.agents/scripts/pre-pr.sh` dispatcher when present and stops on failure. Keep
-the deterministic CLI and repository dispatcher directly callable for
-diagnostics without exposing either as a separate delivery outcome.
+Commit preparation and repository pre-PR validation are internal delivery
+phases. Run the repository-owned `.agents/scripts/pre-pr.sh` dispatcher when
+present before provider mutation; stop on failure. Stage through a separate
+shell call whose top-level `workdir` is the target repository, then invoke
+repo-scoped `semantic-commit` as its command's sole mutation. A blocked shell
+retarget is a routing instruction; use a target-rooted managed session if the
+host cannot attest the target, then report a capability blocker if unavailable.
 
-For a second repository, the parent must stage its owned paths itself through a
-standalone shell tool call whose top-level `workdir` is that repository, then
-invoke the repo-scoped `semantic-commit` as a separate sole mutation. A blocked
-`git -C` or shell-embedded cwd change is a routing instruction, not a request
-for the user to stage on the agent's behalf. If no attested target-workdir
-surface exists, use a target-rooted managed session; only report a capability
-blocker after that route is unavailable.
-
-## Labels
-
-- Labels describe the record's type, area, state or size, and workflow for
-  triage and automation.
-- When the active project provides `manifests/forge-labels.yaml`, select labels
-  from that catalog and follow `core/policies/forge-label-taxonomy.md`; current
-  CLI / skill surfaces handle ensure, validation, and application details.
-
-## Test-First Evidence Gate
-
-- The test-first gate is enforced in the released `forge-cli` surface, not a
-  client-side hook: when `[test_first].require` resolves true, `forge-cli pr
-  create` / `pr deliver` require `--test-first-evidence <dir>` for `--kind
-  feature` / `bug` records (both the create and adopt paths, and the
-  `--dry-run` preflight). `docs` / `chore` / `ci` / `refactor` are exempt.
-- The retained PR and dispatch parent outcomes (`deliver-pr` and
-  `deliver-dispatch-plan`) thread that flag
-  through their internal create/deliver phases for `--kind feature` / `bug` and
-  omit it for exempt kinds. Point it at the `verify`-clean directory produced
-  by the policy-owned `test-first-evidence` CLI flow.
-- The gate is **off by default**. It is opt-in via `[test_first] require =
-  true` in either a repo `.forge-cli.toml` or the user-global
-  `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit
-  flag > repo config > global config > default (off). A global opt-in turns the
-  gate on for every repo without a per-repo file.
-- The evidence directory must hold a strict-verification-clean
-  `test-first-evidence.record.v2`: testable classification, actual contract
-  delta, affected-test decision, meaningful failing fields or a complete
-  waiver, scoped passing validation, and explicit residual gaps. The parent
-  workflow owns classification, affected-test and waiver judgment, suite
-  convergence, and residual-gap disclosure;
-  `core/policies/evidence-control-plane.md` owns routing, while the
-  `test-first-evidence` CLI owns storage and strict verification.
-- Record v1 remains readable but is ineligible for feature/bug delivery. Re-run
-  the v2 lifecycle rather than inferring missing impact and ownership facts.
-- A non-testable waiver records why meaningful red cannot exist and substitute
-  validation. Deferred test debt additionally requires follow-up and expiry;
-  neither path removes final-validation or residual-gap requirements.
-- Failures surface as `test_first_evidence_required`,
-  `test_first_evidence_v1`, `test_first_evidence_classification`,
-  `test_first_evidence_incomplete`, or `test_first_evidence_unreadable` (exit
-  `DATA`). Pin and consumed-surface detail live in
-  `docs/source/nils-cli-surface.md`; the full engineering contract lives in
-  `core/policies/evidence-control-plane.md`, and record mechanics live in the
-  `test-first-evidence` CLI.
+Load [evidence-control-plane](evidence-control-plane.md) when retained test-first
+proof, a delivery gate, audit, handoff, or other durable evidence is required.
+Its conditional status never waives a gate. `forge-cli` owns opt-in feature/bug
+`test-first-evidence.record.v2` admission on create/adopt/dry-run; other kinds are
+exempt. Meaningful red or an honest waiver, affected-test judgment, scoped final
+validation and residual-gap disclosure remain required by the engineering
+contract. Storage/schema/typed failures belong to CLI help and the
+[on-demand reference](references/git-delivery.md#test-first-evidence-gate).
