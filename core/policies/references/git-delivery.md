@@ -163,7 +163,7 @@ refspec forms. Explicit feature-branch refspecs and documented read-only
 help/dry-run forms remain available. Raw `cherry-pick`, `merge`, `pull`,
 `reset`, and `update-ref` on the checked-out default branch are classified by
 effect and fail closed; `git-cli sync-default` is the remote-bound fast-forward
-owner (see "Default-branch Fast-forward Sync"). The PreToolUse hook uses cached local
+owner (read `git-cli sync-default --help`). The PreToolUse hook uses cached local
 default-branch metadata only and performs no `ls-remote` or other network
 probe. Missing or ambiguous cache state fails closed; live truth belongs to
 `forge-cli`. Hermes has no hook runner; policy and the governed CLI
