@@ -253,16 +253,34 @@ when = "always"
             edit_contract,
         )
 
-    def test_delivery_phase_retains_the_governed_runbooks(self) -> None:
-        required = required_relative_paths(preflight("project-dev", phase="delivery"))
+    def test_delivery_phase_requires_boundaries_and_routes_conditional_evidence(self) -> None:
+        for product in SHARED_HOME_PRODUCTS:
+            payload = preflight("project-dev", phase="delivery", product=product)
+            required = required_relative_paths(payload)
+            self.assertEqual(required, sorted([
+                "core/policies/devlog-capability.md",
+                "core/policies/files-hooks-validation.md",
+                "core/policies/git-delivery.md",
+                "core/policies/work-modes.md",
+            ]))
+            evidence = next(d for d in payload["documents"]
+                            if d["path"].endswith("evidence-control-plane.md"))
+            self.assertFalse(evidence["required"])
+            self.assertEqual(evidence["status"], "present")
+            self.assertLessEqual(sum((ROOT / p).stat().st_size for p in required),
+                                 48 * 1024)
+        delivery = read("core/policies/git-delivery.md")
+        self.assertIn("evidence-control-plane.md", delivery)
+        self.assertIn("test-first", delivery)
+        self.assertIn("handoff", delivery)
 
-        for path in (
-            "core/policies/evidence-control-plane.md",
-            "core/policies/files-hooks-validation.md",
-            "core/policies/git-delivery.md",
-            "core/policies/work-modes.md",
-        ):
-            self.assertIn(path, required)
+    def test_delivery_policies_are_bounded_and_keep_on_demand_owners(self) -> None:
+        for policy, ceiling in (("git-delivery", 20 * 1024),
+                                ("work-modes", 5 * 1024)):
+            self.assertLessEqual((ROOT / f"core/policies/{policy}.md").stat().st_size,
+                                 ceiling)
+            self.assertIn(f"references/{policy}.md", read(f"core/policies/{policy}.md"))
+            self.assertTrue(read(f"core/policies/references/{policy}.md"))
 
     def test_upstream_contribution_route_and_hard_boundaries_are_semantically_owned(
         self,

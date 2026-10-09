@@ -568,6 +568,19 @@ class SharedHookTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"AGENT_SESSION_ID": ""}, clear=False):
             self.assertEqual(session_id_from_payload(payload), "provider-session")
 
+    def test_delivery_boundary_negative_fixtures(self) -> None:
+        cases = json.loads((Path(__file__).parent / "fixtures" /
+                            "delivery-boundaries.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            for case in cases:
+                with self.subTest(command=case["command"]):
+                    code, decision, stderr = run_hook(
+                        case["hook"], command_payload(case["command"]), cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, case["reason"])
+
     def test_blocks_direct_git_commit(self) -> None:
         code, decision, stderr = run_hook(
             "block-direct-git-commit.py",
