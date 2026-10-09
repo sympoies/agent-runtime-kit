@@ -730,12 +730,20 @@ def worktree_remove_target_argument(invocation: list[str]) -> str:
                 raise MutationScopeError(
                     "managed worktree removal --format needs a value"
                 )
+            if invocation[index + 1] not in {"text", "json"}:
+                raise MutationScopeError(
+                    "managed worktree removal --format must be text or json"
+                )
             index += 2
             continue
         if argument.startswith("--format="):
+            if argument.split("=", 1)[1] not in {"text", "json"}:
+                raise MutationScopeError(
+                    "managed worktree removal --format must be text or json"
+                )
             index += 1
             continue
-        if argument == "--safe":
+        if argument in {"--safe", "--acknowledge-backup-omissions"}:
             index += 1
             continue
         if argument.startswith("-"):

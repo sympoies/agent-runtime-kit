@@ -6,6 +6,7 @@ import contextlib
 import errno
 import hashlib
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -27575,6 +27576,75 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 self.assertEqual(self._checkout_lease_files(root / "state"), [])
         finally:
             sys.modules.pop("trusted_removal_modes", None)
+
+    def test_trusted_removal_backup_acknowledgement_permutations(self) -> None:
+        module = self._load("trusted_removal_acknowledgement", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                primary = root / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-acknowledgement")
+                target = shlex.quote(str(linked))
+                for safe in ((), ("--safe",)):
+                    for format_args in ((), ("--format text",), ("--format json",),
+                                        ("--format=text",), ("--format=json",)):
+                        options = (target, "--acknowledge-backup-omissions") + safe + format_args
+                        for arguments in itertools.permutations(options):
+                            removal = "git-cli worktree remove " + " ".join(arguments)
+                            for prefix in ("", f"cd {shlex.quote(str(primary))} && "):
+                                for mode in ("", "off", "advisory", "enforce"):
+                                    command = prefix + removal
+                                    with self.subTest(mode=mode, command=command):
+                                        payload = self._checkout_lease_payload(
+                                            "owner", primary, tool_name="Bash", command=command
+                                        )
+                                        with mock.patch.dict(os.environ, {
+                                            "AGENT_SESSION_COORDINATION_MODE": mode,
+                                            "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                                        }), mock.patch.object(module, "read_payload", return_value=payload), \
+                                             mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                                             mock.patch.object(module, "emit_block") as blocked:
+                                            module.main()
+                                        blocked.assert_not_called()
+                self.assertTrue(linked.exists(), "PreToolUse never removes a worktree")
+                self.assertEqual(self._checkout_lease_files(root / "state"), [])
+        finally:
+            sys.modules.pop("trusted_removal_acknowledgement", None)
+
+    def test_trusted_removal_refuses_unrelated_flags_and_formats(self) -> None:
+        module = self._load("trusted_removal_options", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-options")
+                for mode in ("", "off", "advisory", "enforce"):
+                    for options in ("--force", "-f", "--dry-run", "--format yaml",
+                                    "--format=yaml", "--format", "--format=",
+                                    "--acknowledge-backup-omissions=true"):
+                        command = (f"git-cli worktree remove {shlex.quote(str(linked))} "
+                                   f"--acknowledge-backup-omissions {options}")
+                        with self.subTest(mode=mode, options=options):
+                            payload = self._checkout_lease_payload(
+                                "owner", primary, tool_name="Bash", command=command
+                            )
+                            with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": mode}), \
+                                 mock.patch.object(module, "read_payload", return_value=payload), \
+                                 mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                                 mock.patch.object(module, "emit_block") as blocked:
+                                module.main()
+                            blocked.assert_called_once()
+                # Exercise format validation independently of acknowledgement admission.
+                for option in ("--format yaml", "--format=yaml", "--format="):
+                    with self.subTest(option=option):
+                        with self.assertRaises(module.MutationScopeError):
+                            module.worktree_remove_target_argument(
+                                ["git-cli", "worktree", "remove", str(linked)] + shlex.split(option)
+                            )
+                self.assertTrue(linked.exists())
+        finally:
+            sys.modules.pop("trusted_removal_options", None)
 
     def test_raw_removal_override_stays_blocked(self) -> None:
         for mode in ("advisory", "enforce"):
