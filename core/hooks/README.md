@@ -218,12 +218,14 @@ file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
 mutation with exactly one removal target. In every mode a trusted
-`git-cli worktree remove <target> --safe --format json` delegates to the CLI's
-execution fence without claiming a writer lease in PreToolUse. The CLI holds
-checkout/session locks and proves clean, stable, managed, idle and delivered
-state before removal. Older binaries reject `--safe`; advisory removal without
-it stays blocked. Incomplete process or ownership visibility retains the
-worktree. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
+`git-cli worktree remove <target> --format json` delegates fencing and
+preservation to the CLI without claiming a writer lease in PreToolUse.
+`--safe` is optional; literal `cd <primary> && git-cli worktree remove <target>`
+also works. Enforce mode still rejects a live foreign target lease but admits
+the caller's own lease. Raw `git worktree remove` remains blocked even with
+`ALLOW_DIRECT_GIT_WORKTREE=1`, and raw `rm` of a registered checkout is refused.
+Older CLIs may retain stricter removal checks; hook admission does not bypass
+their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
 agent shells because older CLIs bypass fencing; remove each target with the
 sole sanctioned command, then clean up branches separately. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a

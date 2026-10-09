@@ -163,6 +163,12 @@ def invokes_git_worktree(
             or git_worktree_action(candidate) in MUTATING_WORKTREE_COMMANDS
             for candidate in opaque_invocation_candidates(invocation, {"git"})
         )
+        # Removal must preserve work through git-cli even in an emergency.
+        if git_worktree_action(simple_command) == "remove" or any(
+            git_worktree_action(candidate) == "remove"
+            for candidate in opaque_invocation_candidates(invocation, {"git"})
+        ):
+            return True
         if (
             (
                 git_worktree_action(simple_command) in MUTATING_WORKTREE_COMMANDS

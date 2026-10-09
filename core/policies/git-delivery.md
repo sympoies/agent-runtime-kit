@@ -435,65 +435,34 @@ The [fold recipe](devlog/ci-fold.md) owns workflow wiring and provider acceptanc
 
 ### Terminal local cleanup
 
-- Capture the checkout root, branch, delivery mode, and delivered head SHA.
-  Cleanup becomes eligible only after provider truth is read back and matches
-  that head: PR/MR merge truth for the default path, or the governed
-  `observed_remote_sha` receipt for direct-main. Linked issue closeout, archive
-  duties, requested deployment/activation, evidence migration, and other
-  parent-owned terminal work must also be complete.
-- Recheck local status immediately before cleanup. Dirty, locked, missing,
-  provider-unverified, or otherwise ambiguous state is retained and reported;
-  never force removal merely to make the local tree look tidy.
-- From the primary checkout, run exactly one sanctioned cleanup command:
-  `git-cli worktree remove <path-or-slug> --safe --format json`. The supported
-  shell hook delegates this sole, trusted invocation to the CLI's execution
-  fence in advisory and enforce modes. Older CLIs reject `--safe` before their
-  legacy removal path; upgrade through the normal release owner rather than
-  removing the flag or changing coordination mode.
-- The CLI holds the target checkout lease lock and session registry lock through
-  removal. It requires an exact registered managed target, a clean stable
-  checkout outside a Git operation, no active checkout lease (including the
-  requester), no live session binding or nonterminal operation, and complete
-  process cwd/open-file visibility. Missing tools, malformed state, incomplete
-  process visibility, identity drift, and unavailable remote/provider proof
-  retain the target with a reason. Unmanaged removal remains forbidden.
-- Delivery proof uses the current remote default HEAD or a provider-confirmed
-  merged PR/MR whose head exactly matches the target HEAD. Unpushed and unmerged
-  commits are retained. Squash/rebase merges do not require rewriting the local
-  branch. The CLI never forces removal and leaves the branch ref intact.
-- The lease owner supports `checkout-lease-guard.py diagnose-removal` with the
-  proposed PreToolUse shell payload on stdin. Its target-bound
-  `agent-runtime.worktree-removal-attestation.v1` diagnostic observes the root,
-  Git directory, common directory, HEAD, checkout instance and existing lease
-  without acquiring or refreshing ownership. It always reports
-  `execution_fenced=false` and `cleanup_authorized=false`: this observation,
-  hook registration, and a successful lifecycle command are never execution
-  receipts. The v1/v2 lease does not prove a managed session incarnation.
-- Keep delivery classification separate from producer release. Provider merge
-  proof does not release an active checkout lease, session binding, rollback
-  hold, or pending parent duty. Finish the owning workflow first and release
-  ownership through its sanctioned lifecycle. Absence of a report alone never
-  establishes completion; the cleanup command independently proves idle local
-  ownership and exact-head delivery.
-- Run exactly one managed worktree removal as the shell command's sole mutation.
-  Do not combine removals or combine removal with branch deletion, redirection,
-  or another checkout write; execute each lifecycle step separately so its
-  lease scope stays explicit.
-- For a primary checkout, switch a clean completed branch back to the intended
-  base and fast-forward it from the provider before deleting the disposable
-  local branch. For a managed linked worktree, run `git-cli worktree remove
-  <path-or-slug> --safe --format json` from the primary checkout. Direct mutating
-  `git worktree` remains forbidden. The session's final Stop releases a clean
-  primary-checkout lease and prunes lease state left by a successfully removed
-  managed worktree.
-- `git-cli worktree remove` intentionally leaves the branch. Delete it only
-  after the provider-confirmed delivered head or direct-main remote-SHA receipt
-  matches the local branch tip. This explicit proof permits cleanup after a squash merge, where
-  `git branch -d` cannot infer provider equivalence from ancestry alone.
-- A child PR workflow defers cleanup when its `program/dispatch` parent or
-  another requested post-merge workflow still owns
-  terminal duties, handing the captured checkout identity to that parent. The outermost successful workflow performs cleanup
-  exactly once; failed or readiness-only workflows retain the checkout.
+1. The owner removes its own managed worktree immediately after delivery or
+   when abandoning it.
+2. Anyone else may remove a managed worktree only after seven days without
+   file activity, excluding build directories. Explicitly protected persistent
+   branches and the primary checkout remain outside cleanup scope.
+3. Always use `git-cli worktree remove <path-or-slug> --format json`. The trusted
+   CLI owns collision fencing and automatic preservation of unsaved work;
+   it releases the caller's own lease and refuses live foreign holders. Dirty,
+   unpushed, unmerged, pending-review, missing-report, missing-owner-release,
+   and advisory-mode state are not cleanup retention reasons.
+
+Run one removal per shell command, with no other mutation. Literal `cd <primary>
+&& git-cli worktree remove <path>` is supported in every coordination mode;
+`--safe` is optional. Raw `git worktree remove` and filesystem deletion bypass
+preservation and remain forbidden, including with `ALLOW_DIRECT_GIT_WORKTREE=1`.
+
+Record the CLI receipt, including `backup_ref` when present, and report any
+`removal-*` refusal and the named holder or other failure. Do not force removal
+or retry through a raw route. Older installed CLI versions may retain stricter
+checks until their normal release upgrade; hook admission does not bypass them.
+
+Provider read-back, issue closeout, archive, deployment, activation and other
+parent duties remain delivery responsibilities, separate from removal eligibility.
+The CLI receipt is the removal evidence; a hook diagnostic grants no authority.
+The CLI leaves the branch intact. Delete a disposable branch separately only
+when its tip matches the provider-confirmed delivered head or governed
+`observed_remote_sha` receipt. For a clean primary checkout, restore the intended
+base and use `git-cli sync-default` before deleting a completed local branch.
 
 ## Branches
 

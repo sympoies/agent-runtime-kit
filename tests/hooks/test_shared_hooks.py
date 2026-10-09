@@ -1533,12 +1533,12 @@ class SharedHookTests(unittest.TestCase):
 
     def test_git_worktree_override_respects_env_option_boundaries(self) -> None:
         blocked_commands = (
-            "env -iC ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
-            "env --ch ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 env - git worktree remove ../victim",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i git worktree remove ../victim'",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -u ALLOW_DIRECT_GIT_WORKTREE git worktree remove ../victim'",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 /usr/bin/time -f x env -i git worktree remove ../victim",
+            "env -iC ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim",
+            "env --ch ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 env - git worktree move ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i git worktree move ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -u ALLOW_DIRECT_GIT_WORKTREE git worktree move ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 /usr/bin/time -f x env -i git worktree move ../victim",
         )
         for command in blocked_commands:
             with self.subTest(command=command):
@@ -1552,16 +1552,16 @@ class SharedHookTests(unittest.TestCase):
             "block-direct-git-worktree.py",
             command_payload(
                 "env -iC . ALLOW_DIRECT_GIT_WORKTREE=1 "
-                "git worktree remove ../victim"
+                "git worktree move ../victim"
             ),
         )
         self.assertEqual(code, 0, stderr)
         self.assert_allowed(decision)
 
         for command in (
-            "env -- ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree remove ../victim'",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim'",
+            "env -- ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree move ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim'",
         ):
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
@@ -1572,7 +1572,7 @@ class SharedHookTests(unittest.TestCase):
 
         code, decision, stderr = run_hook(
             "block-direct-git-worktree.py",
-            command_payload("env -i git worktree remove ../victim"),
+            command_payload("env -i git worktree move ../victim"),
             env={"ALLOW_DIRECT_GIT_WORKTREE": "1"},
         )
         self.assertEqual(code, 0, stderr)
@@ -27543,6 +27543,159 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertTrue(linked_lock.exists())
             self.assertEqual(linked_lock.stat().st_ino, lock_inode)
 
+    def test_trusted_removal_all_modes(self) -> None:
+        module = self._load("trusted_removal_modes", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                primary = root / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-modes")
+                target = shlex.quote(str(linked))
+                for mode in ("", "off", "advisory", "enforce"):
+                    for command in (
+                        f"git-cli worktree remove {target}",
+                        f"git-cli worktree remove {target} --safe",
+                        f"echo ready; git-cli worktree remove {target}",
+                        f"command -- git-cli worktree remove {target}",
+                        f"cd {shlex.quote(str(primary))} && git-cli worktree remove {target}",
+                        f"cd -- {shlex.quote(str(primary))} && git-cli worktree remove ../{linked.name}",
+                    ):
+                        with self.subTest(mode=mode, command=command):
+                            payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                            with mock.patch.dict(os.environ, {
+                                "AGENT_SESSION_COORDINATION_MODE": mode,
+                                "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                            }), mock.patch.object(module, "read_payload", return_value=payload), \
+                                 mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                                 mock.patch.object(module, "emit_block") as blocked:
+                                module.main()
+                            blocked.assert_not_called()
+                self.assertTrue(linked.exists(), "PreToolUse never removes a worktree")
+                self.assertEqual(self._checkout_lease_files(root / "state"), [])
+        finally:
+            sys.modules.pop("trusted_removal_modes", None)
+
+    def test_raw_removal_override_stays_blocked(self) -> None:
+        for mode in ("advisory", "enforce"):
+            for command in (
+                "git worktree remove ../target",
+                "ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../target",
+                "env ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree remove ../target'",
+            ):
+                with self.subTest(mode=mode, command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-worktree.py", command_payload(command),
+                        env={"AGENT_SESSION_COORDINATION_MODE": mode,
+                             "AGENT_RUNTIME_ALLOW_DIRECT_GIT_WORKTREE": "1"},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "git-cli worktree")
+
+    def test_raw_rm_registered_worktree_stays_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/raw-rm")
+            for mode in ("advisory", "enforce"):
+                for command in (
+                    f"rm -rf {shlex.quote(str(linked))}",
+                    f"TARGET={shlex.quote(str(linked))}; rm -rf \"$TARGET\"",
+                    f"cd .. && rm -rf {shlex.quote(linked.name)}",
+                    f"cd -- .. && rm -rf {shlex.quote(linked.name)}",
+                    f"agent-run exec --cwd {shlex.quote(str(linked.parent))} rm -rf {shlex.quote(linked.name)}",
+                    f"cd {shlex.quote(str(Path(tmp) / 'missing'))} || rm -rf ../{shlex.quote(linked.name)}",
+                ):
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "git-cli worktree remove")
+                        self.assertTrue(linked.exists())
+
+    def test_raw_rm_literal_variable_file_keeps_ordinary_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            for mode in ("", "off", "advisory", "enforce"):
+                for command in ('rm README.md', 'ARTIFACT=README.md; rm "$ARTIFACT"'):
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+
+    def test_raw_rm_resolves_target_checkout_from_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            outside = Path(tmp)
+            primary = outside / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/outside-rm")
+            for mode in ("advisory", "enforce"):
+                payload = self._checkout_lease_payload("owner", outside, tool_name="Bash",
+                    command=f"rm -rf {shlex.quote(str(linked))}")
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py", payload, cwd=outside,
+                    env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "git-cli worktree remove")
+                self.assertTrue(linked.exists())
+
+    def test_untrusted_removal_binary_all_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/untrusted-remove")
+            binary_dir = root / "untrusted"
+            binary_dir.mkdir()
+            binary = binary_dir / "git-cli"
+            binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            binary.chmod(0o755)
+            for mode in ("advisory", "enforce"):
+                for executable in ("git-cli", str(binary)):
+                    with self.subTest(mode=mode, executable=executable):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                            command=f"{shlex.quote(executable)} worktree remove {shlex.quote(str(linked))} --safe")
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode,
+                                 "PATH": str(binary_dir) + os.pathsep + os.environ["PATH"]},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "trusted git-cli executable")
+                        self.assertTrue(linked.exists())
+
+    def test_cleanup_rendered_contract_has_no_retired_removal_gates(self) -> None:
+        retired = (
+            "outside enforce mode", "verified enforcement availability",
+            "only after all proofs", "requires owner/terminal proof",
+            "Never adopt a disappeared session's checkout",
+            "Verify each provider-confirmed delivered head before removing",
+            "only for a clean,\n   unowned managed worktree",
+        )
+        skills = ("meta/worktree-triage", "pr/deliver-pr", "dispatch/deliver-dispatch-plan")
+        texts = [
+            (REPO_ROOT / "core/policies/git-delivery.md").read_text().split("### Terminal local cleanup", 1)[1].split("## Branches", 1)[0]
+        ]
+        for product in ("codex", "claude", "hermes"):
+            for skill in skills:
+                plugin, name = skill.split("/")
+                texts.append((REPO_ROOT / f"tests/golden/{product}/plugins/{plugin}/skills/{name}/expected/SKILL.md").read_text())
+        for text in texts:
+            for gate in retired:
+                self.assertNotIn(gate, text)
+            self.assertIn("git-cli worktree remove", text)
+            self.assertIn("backup_ref", text)
+            self.assertIn("seven days", text)
+
     def test_checkout_lease_advisory_safe_removal_delegates_to_execution_fence(self) -> None:
         import importlib.util
 
@@ -27581,7 +27734,6 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 linked = self._add_checkout_lease_worktree(primary, "feature/safe-shapes")
                 target = shlex.quote(str(linked))
                 for command in (
-                    f"git-cli worktree remove {target}",
                     f"git-cli worktree remove {target} -- --safe",
                     f"AGENT_SESSION_STATE_DIR=/unknown git-cli worktree remove {target} --safe",
                     f"export PATH=/untrusted/bin:$PATH; git-cli worktree remove {target} --safe",
@@ -27589,7 +27741,6 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     f"export AGENT_RUNTIME_CHECKOUT_LEASE_STATE_HOME=/empty-leases; git-cli worktree remove {target} --safe",
                     f"unset AGENT_SESSION_STATE_DIR; git-cli worktree remove {target} --safe",
                     f"source /untrusted/setup; git-cli worktree remove {target} --safe",
-                    f"echo ready; git-cli worktree remove {target} --safe",
                     f"git-cli worktree remove {target} --safe && touch README.md",
                     f"git-cli worktree remove {target} --safe; git-cli worktree remove {target} --safe",
                     f"git-cli worktree remove {target} --safe > README.md",
@@ -27616,7 +27767,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
         finally:
             sys.modules.pop(spec.name, None)
 
-    def test_checkout_lease_advisory_removal_retains_target_without_fence(self) -> None:
+    def test_checkout_lease_advisory_removal_delegates_to_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -27635,7 +27786,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                              "AGENT_SESSION_COORDINATION_MODE": mode},
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "target lease fencing is unavailable")
+                    self.assert_allowed(decision)
                     self.assertTrue(linked.exists())
                     self.assertEqual(self._checkout_lease_files(state), [])
             for mode in ("advisory", "enforce"):
@@ -27684,7 +27835,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertFalse(state.exists())
             self.assertFalse((linked / ".git").is_dir())
 
-    def test_checkout_lease_removal_retains_dirty_target_even_for_owner(self) -> None:
+    def test_checkout_lease_removal_delegates_dirty_owned_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -27707,7 +27858,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 ), cwd=primary, env=env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "dirty removal target")
+            self.assert_allowed(decision)
             self.assertEqual((linked / "pending.txt").read_text(), "retain this work\n")
 
     def test_checkout_lease_removal_diagnostic_reports_target_replacement(self) -> None:
@@ -27743,7 +27894,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
         finally:
             sys.modules.pop("removal_diagnostic_drift", None)
 
-    def test_checkout_lease_removal_refuses_primary_nested_and_locked_targets(self) -> None:
+    def test_checkout_lease_removal_refuses_wrong_scope_and_delegates_locked_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -27774,7 +27925,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 env={"AGENT_RUNTIME_STATE_HOME": str(root / "state")},
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "locked removal target")
+            self.assert_allowed(decision)
             self.assertTrue(linked.exists())
 
     def test_checkout_lease_bounded_managed_removal_and_foreign_refusal(self) -> None:
@@ -27822,15 +27973,24 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     removed = subprocess.run(
                         ["git-cli", "worktree", "remove", str(target), "--format", "json"],
                         cwd=primary, env=environment, text=True, capture_output=True,
-                        check=True,
+                        check=False,
                     )
-                    self.assertTrue(json.loads(removed.stdout)["ok"])
-                    self.assertFalse(target.exists())
+                    receipt = json.loads(removed.stdout)
+                    if removed.returncode == 0:
+                        self.assertTrue(receipt["ok"])
+                        self.assertFalse(target.exists())
+                    else:
+                        # Older released CLIs still require complete registry,
+                        # process and delivery proof. Hook admission must not
+                        # bypass that owner or turn its refusal into success.
+                        self.assertFalse(receipt["ok"])
+                        self.assertEqual(receipt["error"]["code"], "removal-proof-unavailable", receipt)
+                        self.assertTrue(target.exists())
                     self.assertTrue(protected.exists())
-            listed = subprocess.run(["git", "worktree", "list", "--porcelain"],
-                                    cwd=primary, text=True, capture_output=True, check=True)
-            self.assertNotIn(str(removable), listed.stdout)
-            self.assertIn(str(protected), listed.stdout)
+                    listed = subprocess.run(["git", "worktree", "list", "--porcelain"],
+                                            cwd=primary, text=True, capture_output=True, check=True)
+                    self.assertEqual(str(target) in listed.stdout, target.exists())
+                    self.assertIn(str(protected), listed.stdout)
 
     def test_checkout_lease_worktree_remove_targets_the_foreign_lease(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -28833,6 +28993,15 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 check=True,
             )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            # Removal delegates without claiming a lease; a lease already
+            # owned by the caller remains eligible for the normal Stop release.
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("delivery", linked / "README.md"),
+                cwd=linked, env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
             remove = self._checkout_lease_payload(
                 "delivery",
                 primary,
