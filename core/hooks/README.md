@@ -216,16 +216,20 @@ recovery remains available. In particular, `semantic-commit` help and dry-run
 forms do not acquire a writer lease unless the command includes the
 file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
-authoritative `git-cli` inventory, and removal must be the command's sole
-mutation with exactly one removal target. In every mode a trusted
-`git-cli worktree remove <target> --safe --format json` delegates to the CLI's
-execution fence without claiming a writer lease in PreToolUse. The CLI holds
-checkout/session locks and proves clean, stable, managed, idle and delivered
-state before removal. Older binaries reject `--safe`; advisory removal without
-it stays blocked. Incomplete process or ownership visibility retains the
-worktree. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
-agent shells because older CLIs bypass fencing; remove each target with the
-sole sanctioned command, then clean up branches separately. Nested repositories and submodules
+authoritative `git-cli` inventory. Outside enforce mode, recognized managed
+removal emits advisory guidance and allows the command without acquiring a
+lease or claiming execution proof. This includes legacy and compound removal
+shapes; the lifecycle CLI owns safety, and other independent hooks still apply.
+In enforce mode, removal must be the command's sole mutation with exactly one
+removal target. A trusted `git-cli worktree remove <target> --safe --format json`
+delegates to the CLI's execution fence without claiming a writer lease in
+PreToolUse. The CLI must prove clean, stable, managed, idle and delivered state
+before removal. Older binaries reject `--safe`; keep it present in cleanup
+commands and release the companion CLI before activating advisory allowance.
+Incomplete process or ownership visibility retains the worktree. Enforce-mode
+batch `git-cli branch cleanup --remove-worktrees` remains blocked; remove each
+target with the sole sanctioned command, then clean up branches separately.
+Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
 lease. The primary checkout may acquire one only while clean, on its resolved
 default branch, and outside a pre-existing Git operation. The owning session
@@ -518,3 +522,102 @@ Install surfaces:
   empty.
 - `scripts/sync-runtime-surfaces.sh` installs the shared digest-pinned policy
   and delegates exact Codex/Claude provider ingress to `agent-hook setup`.
+
+## Managed cleanup rollout
+
+Use the CLI-owned `--safe` execution fence for cleanup in advisory sessions.
+Changing coordination mode is a broader workflow migration, not a cleanup
+prerequisite. The hook-side support and the companion CLI implementation are
+separate deliveries: see [runtime-kit PR #239](https://github.com/sympoies/agent-runtime-kit/pull/239)
+and [the CLI owner](https://github.com/sympoies/nils-cli/issues/2236).
+An installed hook accepting the command does not prove that the installed CLI
+implements it. Do not infer availability from the hook, a release number alone,
+or the read-only `diagnose-removal` result.
+
+Before backlog cleanup:
+
+1. Before activating non-enforce hook allowance, the release owner must deliver
+   and release the companion CLI fence. Verify
+   that the installed `git-cli worktree remove --help` advertises `--safe` on
+   every cleanup host; an older binary must reject the flag. Keep it present.
+   Do not substitute an unreleased binary or change pins to an unpublished
+   version as a rollout shortcut.
+2. Through the normal runtime sync owner, dry-run then install the hook and
+   refreshed cleanup skills from the merged kit source. Confirm Codex and
+   Claude provider ingress through `agent-hook setup`. All participating local
+   sessions and the cleanup command must resolve the same session registry and
+   checkout lease state roots; preserve `AGENT_SESSION_STATE_DIR` and the
+   configured checkout lease state override/fallback. The companion uses that
+   lease root as a physical lifecycle namespace independent of session
+   `--state-dir`. Linked worktrees persistently bind one canonical session
+   inventory root; a conflicting root retains the target. Keep binding and
+   lock files intact. Drain older managed sessions and relaunch them with the
+   matching released commands and selected inventory before cleanup. An empty
+   alternate state directory is not evidence that the target is idle.
+3. Prove disposable fixture acceptance on each supported operating system:
+   idle, clean, merged managed target removal succeeds; a live cwd/open file,
+   live managed session binding, active lease (including the requester), dirty
+   target, or undelivered HEAD retains the target. The cleanup account needs
+   `lsof` and complete process visibility, remote Git access, and provider
+   access for exact-head squash/rebase merge proof. Missing tools, warnings,
+   timeouts, or incomplete visibility retain the target.
+4. Inventory and classify the backlog through `worktree-triage`. Finish parent
+   delivery/rollback duties and have original owners release their bindings
+   through their owning lifecycle before cleanup. A merged branch or expired
+   retention period alone cannot establish release. Retain dirty or ambiguous
+   targets; this path does not authorize disposable-dirty removal or expiry-only
+   deletion.
+5. From the primary checkout, submit one sole shell command per eligible target:
+   `git-cli worktree remove <path-or-slug> --safe --format json`. Retain each JSON
+   result privately with the captured target/head and delivery evidence, then
+   verify inventory disappearance. A refusal is a retained target requiring
+   resolution of its stated proof failure. Do not retry without `--safe`, use
+   batch `--remove-worktrees`, force deletion, or override state roots. Branch
+   deletion is a separate lifecycle step after exact-tip delivery proof.
+
+The [terminal cleanup policy](../policies/git-delivery.md#terminal-local-cleanup)
+owns cleanup eligibility and receipts. A hook diagnostic always has
+`execution_fenced=false` and `cleanup_authorized=false`; it is not an execution
+receipt. A successful CLI result proves its completed lifecycle call, while
+parent duties still require their own evidence. Roll back an unavailable or
+failing rollout by retaining the backlog and correcting the failed prerequisite.
+
+## What a fleet-wide enforce switch requires
+
+Select `agent-session start|run --coordination-mode enforce` at the managed
+launch boundary; do not merely export the mode around a cleanup command.
+The launch must supply its own authenticated `AGENT_SESSION_ID`, private regular
+mode-0600 `AGENT_SESSION_CAPABILITY_FILE`, and `AGENT_SESSION_STATE_DIR`, with a
+ready broker and a released trusted CLI supporting `claim`, `show`, `check`,
+`renew`, `release`, `admit`, `complete`, and `reconcile`. Install the matching PreTool, PostTool success/
+failure, and Stop ingress for Codex and Claude. Hermes has no kit hook runner
+and cannot provide the same enforcement guarantee. Missing metadata or an
+unavailable coordination surface may emit no-enforcement guidance rather than
+block; the environment variable alone is never proof of enforced participation.
+
+Each worker needs an authenticated active raw claim covering its repository,
+exact checkout, edit paths, and provider targets before mutation. Optional
+advisory context is not a substitute for verifying that claim. Claims must be
+renewed and replaced through their compare-and-swap lifecycle. Head-specific PR
+creation needs the worker's authorized head scope; numbered provider mutations
+need the corresponding provider scope. Preserve tool-call execution identity
+through PostTool completion, and retain/reconcile uncertain operation proofs
+before admitting later work. See [session coordination](../policies/session-coordination.md#explicit-enforcement).
+
+Beyond removal, enforce acquires physical writer leases for edits and recognized
+shell mutations; live foreign leases, unowned dirty state, and pending Git
+operations block acquisition. Clean primary-checkout acquisition requires its
+resolved default branch. Semantic admission also blocks missing/expired claims,
+uncovered scopes, conflicts, shell retargeting, opaque shell effects, and
+unresolved provider targets. Read-only audited commands remain available, and
+sole managed-worktree creation and Git abort/quit remain recovery routes.
+Dirty adoption is separately opt-in; switching mode does not adopt existing
+changes. Stop audits ownership and operation completion rather than deleting
+worktrees.
+
+Existing advisory workers can therefore lose mutation access after a blanket
+switch. Pilot the complete claim/admission/completion flow, drain or relaunch
+old sessions, and verify shared state and recovery before wider enforcement.
+Neither enforce leases nor provider merge truth alone prove that an advisory
+session has left a target or that parent duties are complete; use the supported
+execution fence for cleanup in either mode.

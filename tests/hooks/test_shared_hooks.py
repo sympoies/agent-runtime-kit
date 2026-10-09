@@ -27543,7 +27543,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertTrue(linked_lock.exists())
             self.assertEqual(linked_lock.stat().st_ino, lock_inode)
 
-    def test_checkout_lease_advisory_safe_removal_delegates_to_execution_fence(self) -> None:
+    def test_checkout_lease_enforce_safe_removal_delegates_to_execution_fence(self) -> None:
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("safe_removal_test", HOOK_DIR / "checkout-lease-guard.py")
@@ -27558,12 +27558,17 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 linked = self._add_checkout_lease_worktree(primary, "feature/safe-removal")
                 payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
                     command=f"git-cli worktree remove {shlex.quote(str(linked))} --safe --format json")
-                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "enforce",
+                                                   "AGENT_RUNTIME_STATE_HOME": str(Path(tmp) / "state")}), \
                      mock.patch.object(module, "read_payload", return_value=payload), \
-                     mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                     mock.patch.object(module, "resolved_executable_matches", return_value=True) as trusted, \
+                     mock.patch.object(module, "acquire_or_refresh") as acquired, \
                      mock.patch.object(module, "emit_block") as blocked:
                     module.main()
                 blocked.assert_not_called()
+                trusted.assert_called_once()
+                acquired.assert_not_called()
+                self.assertFalse((Path(tmp) / "state").exists())
                 self.assertTrue(linked.exists(), "PreToolUse never performs cleanup")
         finally:
             sys.modules.pop(spec.name, None)
@@ -27598,17 +27603,19 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 ):
                     with self.subTest(command=command):
                         payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
-                        with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                        with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "enforce"}), \
                              mock.patch.object(module, "read_payload", return_value=payload), \
                              mock.patch.object(module, "resolved_executable_matches", return_value=True), \
-                             mock.patch.object(module, "emit_block") as blocked:
+                             mock.patch.object(module, "acquire_or_refresh", return_value="foreign checkout owner"), \
+                     mock.patch.object(module, "emit_block") as blocked:
                             module.main()
                         blocked.assert_called()
                 payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
                     command=f"git-cli worktree remove {target} --safe")
-                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "enforce"}), \
                      mock.patch.object(module, "read_payload", return_value=payload), \
                      mock.patch.object(module, "resolved_executable_matches", return_value=False), \
+                     mock.patch.object(module, "acquire_or_refresh", return_value="foreign checkout owner"), \
                      mock.patch.object(module, "emit_block") as blocked:
                     module.main()
                 blocked.assert_called()
@@ -27616,7 +27623,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
         finally:
             sys.modules.pop(spec.name, None)
 
-    def test_checkout_lease_advisory_removal_retains_target_without_fence(self) -> None:
+    def test_checkout_lease_non_enforce_removal_warns_without_claiming_fence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -27627,7 +27634,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 "delivery", primary, tool_name="Bash",
                 command=f"git-cli worktree remove {shlex.quote(str(linked))} --format json",
             )
-            for mode in ("", "advisory", "off"):
+            for mode in ("", "advisory", "off", "invalid"):
                 with self.subTest(mode=mode or "default"):
                     code, decision, stderr = run_hook(
                         "checkout-lease-guard.py", remove, cwd=primary,
@@ -27635,7 +27642,9 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                              "AGENT_SESSION_COORDINATION_MODE": mode},
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "target lease fencing is unavailable")
+                    self.assertEqual(set(decision), {"systemMessage"})
+                    self.assertIn("removal is advisory", str(decision.get("systemMessage", "")))
+                    self.assertIn("not an execution attestation", str(decision.get("systemMessage", "")))
                     self.assertTrue(linked.exists())
                     self.assertEqual(self._checkout_lease_files(state), [])
             for mode in ("advisory", "enforce"):
