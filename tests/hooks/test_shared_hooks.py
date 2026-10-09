@@ -27686,6 +27686,75 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                         self.assert_blocked(decision, "git-cli worktree remove")
                         self.assertTrue(linked.exists())
 
+    def test_raw_deletion_verbs_registered_worktree_stay_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/deletion-verbs")
+            target = shlex.quote(str(linked))
+            env = {"AGENT_RUNTIME_STATE_HOME": str(root / "state")}
+            owner = self._checkout_lease_payload("owner", linked / "README.md")
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py", owner, cwd=linked, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            commands = (
+                f"unlink {target}", f"shred --remove {target}",
+                f"find {target} -delete", f"find {target} -depth -delete",
+                f"find {target} -mindepth 1 -delete", "find -delete",
+                rf"find {target} \( -type f \) -delete",
+                f"find {target} '(' -type f ')' -delete",
+                f"find {target} -exec rm -rf {{}} +",
+                rf"find {target} -exec unlink {{}} \;",
+                f"find {target} -exec shred --remove {{}} +",
+                f"find {target} -execdir rm -rf {{}} +",
+                rf"find {target} -exec echo {{}} \; -delete",
+                f"find {target} -exec echo {{}} ';' -delete",
+                f"find {shlex.quote(str(root))} -exec rm -rf {target} +",
+                rf"find {target} -ok unlink {{}} \;",
+                rf"find {target} -okdir shred --remove {{}} \;",
+                f"TARGET={target}; find \"$TARGET\" -delete",
+                f"cd .. && find {shlex.quote(linked.name)} -delete",
+                f"agent-run exec --cwd {shlex.quote(str(linked.parent))} find {shlex.quote(linked.name)} -delete",
+            )
+            for mode in ("advisory", "enforce"):
+                for command in commands:
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload(
+                            "owner", linked, tool_name="Bash", command=command
+                        )
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=linked,
+                            env={**env, "AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "git-cli worktree remove")
+                        self.assertTrue(linked.exists())
+
+    def test_raw_deletion_verbs_keep_ordinary_file_and_read_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            for mode in ("advisory", "enforce"):
+                for command in ("unlink README.md", "shred --remove README.md",
+                                "find README.md -delete", "find README.md -exec rm {} +",
+                                "find . -print", "find . -name -delete -print",
+                                "find . -exec echo -delete {} +",
+                                "find . -exec rm README.md +",
+                                "find . -fprintf output.txt -delete"):
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload(
+                            "owner", primary, tool_name="Bash", command=command
+                        )
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+
     def test_raw_rm_literal_variable_file_keeps_ordinary_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             primary = Path(tmp) / "primary"

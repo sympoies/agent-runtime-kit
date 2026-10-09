@@ -225,7 +225,17 @@ may appear in any order around the target; unrelated flags are refused. Literal
 `cd <primary> && git-cli worktree remove <target>` also works. Enforce mode
 still rejects a live foreign target lease but admits
 the caller's own lease. Raw `git worktree remove` remains blocked even with
-`ALLOW_DIRECT_GIT_WORKTREE=1`, and raw `rm` of a registered checkout is refused.
+`ALLOW_DIRECT_GIT_WORKTREE=1`. Raw filesystem deletion detection is based on
+command patterns: `rm`, `unlink`, `shred`, and `find` with `-delete` or a direct
+`rm`/`unlink`/`shred` payload in `-exec`, `-execdir`, `-ok`, or `-okdir`. Search
+roots bound substituted find targets; literal payload targets use ordinary
+path resolution. These patterns refuse registered checkout roots and their
+ancestors, unresolved targets, and ambiguous directory contexts; ordinary
+literal file deletion remains admitted. This detector does not inspect
+interpreter code such as `python -c` with `shutil.rmtree` or `perl -e`, and
+`rsync --delete` and `mv` are outside its command-pattern contract. It is not a
+sandbox for arbitrary programs. Agents must still use the preserving lifecycle
+command to remove registered worktrees.
 Older CLIs may retain stricter removal checks; hook admission does not bypass
 their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
 agent shells because older CLIs bypass fencing; remove each target with the
