@@ -111,4 +111,3 @@ Rules that keep this true:
 | Several existing issues run with subagents, with no shared tracker needed | Keep their modes; ad-hoc execution |
 | A migration whose lanes must integrate before main | `program/dispatch` |
 | A doc that records "do Y later", not yet scheduled | Capture; mode undecided until picked up |
-
