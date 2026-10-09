@@ -547,8 +547,13 @@ Before backlog cleanup:
    Claude provider ingress through `agent-hook setup`. All participating local
    sessions and the cleanup command must resolve the same session registry and
    checkout lease state roots; preserve `AGENT_SESSION_STATE_DIR` and the
-   configured checkout lease state override/fallback. An empty alternate state
-   directory is not evidence that the target is idle.
+   configured checkout lease state override/fallback. The companion uses that
+   lease root as a physical lifecycle namespace independent of session
+   `--state-dir`. Linked worktrees persistently bind one canonical session
+   inventory root; a conflicting root retains the target. Keep binding and
+   lock files intact. Drain older managed sessions and relaunch them with the
+   matching released commands and selected inventory before cleanup. An empty
+   alternate state directory is not evidence that the target is idle.
 3. Prove disposable fixture acceptance on each supported operating system:
    idle, clean, merged managed target removal succeeds; a live cwd/open file,
    live managed session binding, active lease (including the requester), dirty
