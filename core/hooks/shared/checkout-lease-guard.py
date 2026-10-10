@@ -3,9 +3,9 @@
 
 The lease is an opt-in strict coordination layer selected with
 ``AGENT_SESSION_COORDINATION_MODE=enforce``. Advisory, off, invalid, and absent
-mode values never acquire leases. A sole trusted ``git-cli worktree remove
---safe`` delegates fencing to the lifecycle owner in every mode. Ordinary edits
-stay advisory. In enforce mode the guard
+mode values never acquire leases. A trusted ``git-cli worktree remove``
+delegates fencing and preservation to the lifecycle owner in every mode.
+Ordinary edits stay advisory. In enforce mode the guard
 recognizes only explicit edit tools and high-confidence shell mutations.
 Read-only inspection stays available. Stop performs an audit only: it never
 removes a worktree, branch, or lease.
@@ -51,6 +51,7 @@ from hook_common import (
     invocation_without_redirections,
     is_assignment,
     is_git_recovery_argv,
+    marker_environment_before_invocation,
     nested_shell_payload,
     opaque_invocation_has_unresolved_nested,
     output_redirect_targets,
@@ -729,12 +730,20 @@ def worktree_remove_target_argument(invocation: list[str]) -> str:
                 raise MutationScopeError(
                     "managed worktree removal --format needs a value"
                 )
+            if invocation[index + 1] not in {"text", "json"}:
+                raise MutationScopeError(
+                    "managed worktree removal --format must be text or json"
+                )
             index += 2
             continue
         if argument.startswith("--format="):
+            if argument.split("=", 1)[1] not in {"text", "json"}:
+                raise MutationScopeError(
+                    "managed worktree removal --format must be text or json"
+                )
             index += 1
             continue
-        if argument == "--safe":
+        if argument in {"--safe", "--acknowledge-backup-omissions"}:
             index += 1
             continue
         if argument.startswith("-"):
@@ -1005,7 +1014,8 @@ def shell_command_exceeds_redirect_budget(command: str) -> bool:
 def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
     commands = parsed_shell_commands(command)
     over_redirect_budget = shell_command_exceeds_redirect_budget(command)
-    target_arguments: list[str] = []
+    target_arguments: list[tuple[str, Path]] = []
+    has_removal = any(is_managed_worktree_remove(invocation_tokens(tokens)) for tokens in commands)
     other_mutation = shell_command_has_parenthesized_redirect_word(command)
     for tokens in commands:
         if invocation_command_position_is_dynamic(tokens):
@@ -1019,6 +1029,15 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
             raise MutationScopeError(
                 "shell mutation target scope is unresolved and cannot be leased safely"
             )
+        if has_removal and invocation[:1] == ["cd"]:
+            arguments = invocation[1:]
+            if arguments[:1] == ["--"]:
+                arguments = arguments[1:]
+            if len(arguments) != 1 or any(
+                character in arguments[0] for character in DYNAMIC_ARGUMENT_CHARS
+            ):
+                raise MutationScopeError("worktree removal directory context is unresolved")
+            base = canonical_path(arguments[0], base)
         if not is_managed_worktree_remove(invocation):
             if not over_redirect_budget:
                 other_mutation = other_mutation or coresident_command_is_repo_mutation(
@@ -1031,7 +1050,7 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
             )
         if command_writes_repo(tokens, base):
             other_mutation = True
-        target_arguments.append(worktree_remove_target_argument(invocation))
+        target_arguments.append((worktree_remove_target_argument(invocation), base))
     if len(target_arguments) > 1:
         raise MutationScopeError(
             "exactly one managed worktree removal is allowed per shell command"
@@ -1042,31 +1061,48 @@ def managed_worktree_remove_targets(command: str, base: Path) -> list[Path]:
         )
     if not target_arguments:
         return []
-    return [resolve_worktree_remove_target(target_arguments[0], base)]
+    return [resolve_worktree_remove_target(*target_arguments[0])]
 
 
-def safe_managed_removal(command: str, base: Path) -> bool:
-    """Delegate exactly one stable removal to the CLI's execution fence.
-
-    --safe is required even though new CLIs always fence removal: old binaries
-    reject this unknown option before their legacy force-removal path. A hook
-    observation never claims to be the execution proof.
-    """
+def trusted_managed_removal(command: str, base: Path) -> bool:
+    """Delegate one removal to trusted git-cli without acquiring its target lease."""
+    commands = parsed_shell_commands(command)
+    # Literal cd is safe for this target-aware owner. Shell setup can change
+    # executable resolution or proof roots and cannot share this delegation.
+    for tokens in commands:
+        invocation = invocation_without_redirections(invocation_tokens(tokens))
+        if not invocation:
+            return False
+        executable = os.path.basename(invocation[0])
+        if executable == "cd":
+            arguments = invocation[1:]
+            if arguments[:1] == ["--"]:
+                arguments = arguments[1:]
+            if len(arguments) != 1 or any(
+                character in arguments[0] for character in DYNAMIC_ARGUMENT_CHARS
+            ):
+                return False
+        elif not is_managed_worktree_remove(invocation) and executable not in {
+            "echo", "printf", "pwd", ":", "true",
+        }:
+            return False
     targets = managed_worktree_remove_targets(command, base)
     if not targets:
-        return False
-    commands = parsed_shell_commands(command)
-    # Even read-only peers can change PATH, shell functions, or proof-state roots.
-    # Resolve and delegate only the sole executable command we inspected.
-    if len(commands) != 1:
         return False
     for tokens in commands:
         invocation = invocation_without_redirections(invocation_tokens(tokens))
         if is_managed_worktree_remove(invocation):
+            environment_names = {
+                "PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "AGENT_HOME",
+                "AGENT_SESSION_STATE_DIR", "AGENT_RUNTIME_CHECKOUT_LEASE_STATE_HOME",
+                "AGENT_RUNTIME_STATE_HOME", "AGENT_RUNTIME_TRUSTED_CLI_ROOT",
+            }
+            inherited = {name: os.environ[name] for name in environment_names if name in os.environ}
+            effective = marker_environment_before_invocation(tokens, environment_names, inherited)
             return (
-                "--safe" in invocation[3:]
-                and "--" not in invocation[3:]
-                and invocation_environment_is_stable(tokens, "git-cli")
+                effective == inherited
+                and tokens[:2] != ["command", "-p"]
+                and invocation_environment_is_stable(invocation, "git-cli")
                 and not any(is_assignment(token) for token in tokens)
                 and resolved_executable_matches(invocation[0], "git-cli", managed_cli=True)
             )
@@ -3124,6 +3160,141 @@ def diagnose_worktree_removal(payload: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+RAW_DELETION_VERBS = frozenset({"rm", "unlink", "shred"})
+FIND_EXEC_END = "__agent_runtime_find_exec_end__"
+
+
+def raw_deletion_arguments(invocation: list[str]) -> list[str] | None:
+    """Resolve operands of supported deletion patterns, not arbitrary programs."""
+    if not invocation:
+        return None
+    executable = os.path.basename(invocation[0])
+    if executable in RAW_DELETION_VERBS:
+        return [argument for argument in invocation[1:] if not argument.startswith("-")]
+    if executable != "find":
+        return None
+    arguments = invocation[1:]
+    paths: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"-H", "-L", "-P", "--"} or argument.startswith("-O"):
+            index += 1
+        elif argument == "-D":
+            index += 2
+        elif argument == "-f" and index + 1 < len(arguments):
+            paths.append(arguments[index + 1])
+            index += 2
+        elif argument.startswith("-") or argument in {"!", "(", "__find_expression_open__"}:
+            break
+        else:
+            paths.append(argument)
+            index += 1
+    destructive = False
+    deletes_search_results = False
+    extra_targets: list[str] = []
+    # Predicate operands and exec payloads are data: a name or echo argument
+    # equal to -delete must not become a deletion action.
+    predicates_with_value = {
+        "-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename",
+        "-regex", "-iregex", "-lname", "-ilname", "-type", "-xtype",
+        "-user", "-group", "-uid", "-gid", "-inum", "-links", "-perm",
+        "-size", "-amin", "-atime", "-cmin", "-ctime", "-mmin", "-mtime",
+        "-newer", "-anewer", "-cnewer", "-newermt", "-maxdepth", "-mindepth",
+        "-regextype", "-printf", "-fprint", "-fprint0", "-fls",
+    }
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "-delete":
+            destructive = True
+            deletes_search_results = True
+        elif argument in {"-exec", "-execdir", "-ok", "-okdir"}:
+            end = index + 1
+            while end < len(arguments) and arguments[end] not in {"+", FIND_EXEC_END}:
+                end += 1
+            payload = invocation_tokens(arguments[index + 1:end])
+            if payload and os.path.basename(payload[0]) in RAW_DELETION_VERBS:
+                destructive = True
+                for target in raw_deletion_arguments(payload) or []:
+                    if "{}" in target:
+                        deletes_search_results = True
+                        continue  # The search roots bound substituted find results.
+                    if argument in {"-execdir", "-okdir"} and not Path(target).is_absolute():
+                        target = "$unresolved_find_directory"
+                    extra_targets.append(target)
+            index = end
+        elif argument == "-fprintf":
+            index += 2
+        elif argument in predicates_with_value:
+            index += 1
+        index += 1
+    if not destructive:
+        return None
+    return ((paths or ["."]) if deletes_search_results else []) + extra_targets
+
+
+def raw_worktree_deletion_reason(command: str, base: Path) -> str:
+    """Keep registered checkout deletion on the preserving lifecycle route."""
+    # The shared lexer discards quoted/escaped control tokens as separators.
+    # Preserve literal find exec terminators and expression parentheses so
+    # predicates stay with their search roots, including in shell wrappers.
+    literal_controls = {
+        ";": FIND_EXEC_END,
+        "(": "__find_expression_open__",
+        ")": "__find_expression_close__",
+    }
+    deletion_source = re.sub(
+        r"""(?<!\S)(?:\\([;()])|(['"])([;()])\2)(?=\s|$)""",
+        lambda match: literal_controls[match.group(1) or match.group(3)],
+        command,
+    )
+    commands = parsed_shell_commands(deletion_source)
+    if not any(raw_deletion_arguments(invocation_without_redirections(invocation_tokens(tokens)))
+               is not None for tokens in commands):
+        return ""
+    roots = listed_worktree_paths(base) if checkout_from(base) else []
+    guidance = "Use git-cli worktree remove to preserve registered worktrees; use literal targets for ordinary file deletion."
+    # Resolve only a literal assignment followed by the sole deletion command. Do not
+    # infer variable values from branches, failed commands or shell setup.
+    variables: dict[str, str] = {}
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+    lexer.whitespace_split = True
+    try:
+        lexical = list(lexer)
+    except ValueError:
+        lexical = []
+    if (len(lexical) >= 3 and is_assignment(lexical[0]) and lexical[1] == ";"
+            and not any(token in {";", "&&", "||", "|", "&", "(", ")"} for token in lexical[2:])):
+        name, value = lexical[0].split("=", 1)
+        if not any(character in value for character in DYNAMIC_ARGUMENT_CHARS):
+            variables[name] = value
+    for tokens in commands:
+        invocation = invocation_without_redirections(invocation_tokens(tokens))
+        if not invocation:
+            continue
+        executable = os.path.basename(invocation[0])
+        if executable in {"cd", "source", ".", "pushd", "popd"}:
+            return "Raw deletion changes directory context. " + guidance
+        arguments = raw_deletion_arguments(invocation)
+        if arguments is None:
+            continue
+        if any(token in {"-C", "--chdir", "--cwd"} or token.startswith(("--cwd=", "--chdir="))
+               for token in tokens):
+            return "Raw deletion wrapper directory context is unresolved. " + guidance
+        for argument in arguments:
+            variable = re.fullmatch(r"\$(?:([A-Za-z_]\w*)|\{([A-Za-z_]\w*)\})", argument)
+            if variable:
+                argument = variables.get(variable.group(1) or variable.group(2), argument)
+            if any(character in argument for character in DYNAMIC_ARGUMENT_CHARS):
+                return "Raw deletion target is unresolved. " + guidance
+            target = canonical_path(argument, base)
+            checkout = checkout_from(target)
+            target_roots = listed_worktree_paths(checkout.root) if checkout else []
+            if any(target == root or target in root.parents for root in roots + target_roots):
+                return "Do not delete a registered worktree with raw filesystem commands. " + guidance
+    return ""
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == DIRTY_ADOPTION_LAUNCHER_ACTION:
         return run_dirty_adoption_launcher(sys.argv[2:])
@@ -3131,38 +3302,55 @@ def main() -> int:
     if len(sys.argv) == 2 and sys.argv[1] == "diagnose-removal":
         sys.stdout.write(json.dumps(diagnose_worktree_removal(payload), sort_keys=True) + "\n")
         return ALLOW
+    mode = os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower()
     if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
         command = command_from(payload)
+        try:
+            reason = raw_worktree_deletion_reason(command, payload_base(payload))
+            if reason:
+                emit_block(reason)
+                return ALLOW
+        except LeaseError as exc:
+            emit_block(lease_error_block_reason(exc))
+            return ALLOW
         if any(is_branch_worktree_cleanup(invocation_tokens(tokens))
                for tokens in parsed_shell_commands(command)):
             emit_block(
                 "Batch branch cleanup cannot attest sole managed removal on older "
                 "CLIs. Remove each eligible worktree with `git-cli worktree remove "
-                "<target> --safe --format json`, then clean up its branch separately."
+                "<target> --format json`, then clean up its branch separately."
             )
             return ALLOW
         if any(is_managed_worktree_remove(invocation_tokens(tokens))
                for tokens in parsed_shell_commands(command)):
             try:
-                if safe_managed_removal(command, payload_base(payload)):
+                targets = managed_worktree_remove_targets(command, payload_base(payload))
+                if mode == "enforce":
+                    for target in targets:
+                        checkout = checkout_from(target)
+                        if checkout is None or checkout.root != target or checkout.primary:
+                            raise MutationScopeError(
+                                "removal target is not an exact registered linked checkout root"
+                            )
+                        lease = load_lease(checkout_state_dir(checkout, create=False) / "lease.json", checkout)
+                        reason = live_foreign_lease_reason(
+                            lease, instance=read_instance(checkout, create=False),
+                            session_key=session_marker_key(payload), now=time.time(),
+                        )
+                        if reason:
+                            emit_block(reason)
+                            return ALLOW
+                if trusted_managed_removal(command, payload_base(payload)):
                     return ALLOW
+                emit_block(
+                    "Managed worktree removal requires a trusted git-cli executable "
+                    "and stable shell context; use a literal git-cli command with an explicit target."
+                )
+                return ALLOW
             except LeaseError as exc:
                 emit_block(lease_error_block_reason(exc))
                 return ALLOW
-    if os.environ.get("AGENT_SESSION_COORDINATION_MODE", "").strip().lower() != "enforce":
-        # Advisory edits do not acquire leases. Removal, however, must never
-        # mistake that silent bypass for proof that its target was fenced.
-        if hook_event(payload) == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
-            command = command_from(payload)
-            if any(
-                is_managed_worktree_remove(invocation_tokens(tokens))
-                for tokens in parsed_shell_commands(command)
-            ):
-                emit_block(
-                    "Managed worktree removal target lease fencing is unavailable "
-                    "outside enforce mode. Retain the target and report the missing "
-                    "proof; hook registration or command success is not an attestation."
-                )
+    if mode != "enforce":
         return ALLOW
     event = hook_event(payload)
     if event == "Stop":

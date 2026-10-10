@@ -112,10 +112,10 @@ Outputs:
 - A merged PR/MR through `forge-cli pr merge`, unless `--no-merge` is supplied.
 - Ordinary issue closeout follows `issue-follow-up`; a program or dispatch
   owner closes its tracker after all children and integration gates complete.
-- When this is the outermost successful workflow, a terminal local cleanup
-  result: the clean primary checkout is restored to base, or the safe merged
-  managed worktree is removed through `git-cli worktree remove`; retained
-  unsafe state includes its reason and recovery command.
+- After delivery, the owner removes its managed worktree through
+  `git-cli worktree remove` and reports the receipt and any `backup_ref`.
+  A clean primary checkout is restored to base. Refusals retain the target
+  with the named holder or failure; never retry with force.
 
 Failure modes:
 
@@ -158,9 +158,8 @@ Failure modes:
   `$HOME/...` and omit remote-useless local artifact paths before retrying.
 - A PR/MR body uses a provider auto-close keyword against a program tracker
   or dispatch issue before its closeout gates complete.
-- Terminal cleanup cannot prove a clean checkout, provider-confirmed merge of
-  the captured delivered head, or safe ownership. Retain the worktree and
-  branch, report the failed proof, and do not force removal.
+- `git-cli worktree remove` returns a `removal-*` refusal. Report the named
+  live holder or other failure, retain the target, and do not retry with force.
 
 ## Lifecycle Mode Selection
 
@@ -799,24 +798,19 @@ all child and integration evidence is verified.
     closes the issue with `forge-cli issue close` when ready.
 19. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
     commit, chained closeout result, and any fallback used in delivery notes.
-20. If this workflow is the outermost terminal owner, finish any requested
-    post-merge deployment, activation, archive, evidence, and local closeout
-    duties, then apply `core/policies/git-delivery.md` terminal cleanup. Recheck
-    status and provider merge/head truth. Restore a clean primary checkout to
-    base, or invoke `git-cli worktree remove <path-or-slug> --safe --format json` from
-    the primary checkout through the supported hooked shell; the target-aware
-    hook delegates to the CLI execution fence, which must prove clean, managed,
-    idle and delivered state. If that proof or hook is unavailable, retain the
-    worktree. Delete the local
-    branch only when its tip equals the provider-confirmed delivered head;
-    otherwise retain and report it. When the merge left the primary checkout's
-    default branch behind its remote, advance it with
-    `git-cli sync-default --format json`; that surface owns the remote-bound
-    fast-forward, and raw `git merge` / `git pull` on the default branch stay
-    refused even with `--ff-only` because local state cannot prove publication.
-    If an outer `program/dispatch` workflow remains, hand it
-    the captured identity and defer
-    this step.
+20. After delivery, remove the owner's managed worktree with
+    `git-cli worktree remove <path-or-slug> --format json` through the supported
+    hooked shell. The trusted CLI fences live holders and preserves unsaved
+    work, releasing the caller's own lease. Apply `core/policies/git-delivery.md`
+    cleanup scope for other owners: seven days idle, excluding build directories.
+    Record the receipt and any `backup_ref`. Report a `removal-*` refusal and
+    its named holder or other failure; do not retry with force. Dirty, unpushed,
+    unmerged, pending-review and advisory-mode state do not require retention.
+    Complete requested post-merge duties and hand their evidence to any parent
+    independently of removal. Restore a clean primary checkout to base instead
+    of removing it. Delete a disposable local branch separately only when its
+    tip matches the provider-confirmed delivered head; otherwise retain it.
+    Advance a behind default branch with `git-cli sync-default --format json`.
 
 ## Boundary
 
@@ -826,7 +820,7 @@ The issue or dispatch owner owns linked issue closeout. The workflow owner
 owns scope judgment, code changes, local validation, review-profile and
 pre-merge gate decisions,
 repair loops, delivery outcome comments, and any temporary provider fallback
-decision. The outermost workflow also owns terminal local cleanup after all
-downstream duties; child delivery workflows hand off rather than clean early.
+decision. Each owner removes its managed worktree after delivery; child delivery
+workflows hand off delivery evidence independently of their own cleanup.
 Provider auto-close keywords against program trackers and dispatch issues
 remain banned until their parent closeout is complete.
