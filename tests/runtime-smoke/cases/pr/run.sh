@@ -207,63 +207,62 @@ assert_delivery_skills_use_native_review_convergence() {
     rc=1
   fi
 
-  for skill in core/skills/pr/deliver-pr/SKILL.md.tera; do
-    if ! grep -q 'forge-cli >=1.28.30' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not require forge-cli 1.28.30" >&2
-      rc=1
-    fi
-    if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill omits native review summary inspection" >&2
-      rc=1
-    fi
-    if ! grep -q 'review_convergence_activity_changed' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill omits typed late-activity retry routing" >&2
-      rc=1
-    fi
-    if ! grep -q 'github_pending_review_exists' "$REPO_ROOT/$skill" ||
-      ! grep -q -- '--expected-head' "$REPO_ROOT/$skill" ||
-      ! grep -q -- '--recover-pending' "$REPO_ROOT/$skill" ||
-      ! grep -q 'pending_review_body_mismatch' "$REPO_ROOT/$skill" ||
-      ! grep -q '^EXPECTED_REVIEW_HEAD=' "$REPO_ROOT/$skill" ||
-      ! grep -q '^readonly EXPECTED_REVIEW_HEAD$' "$REPO_ROOT/$skill" ||
-      ! grep -q '^EXPECTED_REVIEW_BODY=' "$REPO_ROOT/$skill" ||
-      ! grep -q '^readonly EXPECTED_REVIEW_BODY$' "$REPO_ROOT/$skill" ||
-      ! grep -q -- '--comment="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill omits delegated pending-review recovery" >&2
-      rc=1
-    fi
-    if ! grep -q 'review_convergence_head_changed' "$REPO_ROOT/$skill" ||
-      ! grep -q 're-run validation and affected review' "$REPO_ROOT/$skill" ||
-      ! grep -Eq 'requires rebinding (lane )?delivery' "$REPO_ROOT/$skill" ||
-      ! grep -q 'the new head' "$REPO_ROOT/$skill" ||
-      ! grep -q 'new owner outcome' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill can reuse stale validation or approval after head drift" >&2
-      rc=1
-    fi
-    if ! grep -q 'summary_truncated' "$REPO_ROOT/$skill" ||
-      ! grep -q 'full review body' "$REPO_ROOT/$skill" ||
-      ! grep -q 'stop if it is unavailable' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill can semantically disposition a truncated review summary" >&2
-      rc=1
-    fi
-    if ! grep -Fq '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not preserve GitLab delivery under a user-global GitHub convergence policy" >&2
-      rc=1
-    fi
-    if ! grep -q 'do not require ledger artifacts' "$REPO_ROOT/$skill" ||
-      ! grep -q 'outcome-note path' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not state the GitLab ledger alternative at the normative workflow boundary" >&2
-      rc=1
-    fi
-    if ! grep -q '"${REVIEW_CONVERGENCE_ARGS\[@\]}"' "$REPO_ROOT/$skill"; then
-      echo "runtime-smoke pr: $skill does not pass its provider convergence override to merge" >&2
-      rc=1
-    fi
-  done
+  skill=core/skills/pr/deliver-pr/SKILL.md.tera
+  if ! grep -q 'forge-cli >=1.28.30' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill does not require forge-cli 1.28.30" >&2
+    rc=1
+  fi
+  if ! grep -q 'forge-cli pr reviews' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill omits native review summary inspection" >&2
+    rc=1
+  fi
+  if ! grep -q 'review_convergence_activity_changed' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill omits typed late-activity retry routing" >&2
+    rc=1
+  fi
+  if ! grep -q 'github_pending_review_exists' "$REPO_ROOT/$skill" ||
+    ! grep -q -- '--expected-head' "$REPO_ROOT/$skill" ||
+    ! grep -q -- '--recover-pending' "$REPO_ROOT/$skill" ||
+    ! grep -q 'pending_review_body_mismatch' "$REPO_ROOT/$skill" ||
+    ! grep -q '^EXPECTED_REVIEW_HEAD=' "$REPO_ROOT/$skill" ||
+    ! grep -q '^readonly EXPECTED_REVIEW_HEAD$' "$REPO_ROOT/$skill" ||
+    ! grep -q '^EXPECTED_REVIEW_BODY=' "$REPO_ROOT/$skill" ||
+    ! grep -q '^readonly EXPECTED_REVIEW_BODY$' "$REPO_ROOT/$skill" ||
+    ! grep -q -- '--comment="$EXPECTED_REVIEW_BODY"' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill omits delegated pending-review recovery" >&2
+    rc=1
+  fi
+  if ! grep -q 'review_convergence_head_changed' "$REPO_ROOT/$skill" ||
+    ! grep -q 're-run validation and affected review' "$REPO_ROOT/$skill" ||
+    ! grep -Eq 'requires rebinding (lane )?delivery' "$REPO_ROOT/$skill" ||
+    ! grep -q 'the new head' "$REPO_ROOT/$skill" ||
+    ! grep -q 'new owner outcome' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill can reuse stale validation or approval after head drift" >&2
+    rc=1
+  fi
+  if ! grep -q 'summary_truncated' "$REPO_ROOT/$skill" ||
+    ! grep -q 'full review body' "$REPO_ROOT/$skill" ||
+    ! grep -q 'stop if it is unavailable' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill can semantically disposition a truncated review summary" >&2
+    rc=1
+  fi
+  if ! grep -Fq '[ "$PROVIDER" = gitlab ] && REVIEW_CONVERGENCE_ARGS=(--review-convergence=false)' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill does not preserve GitLab delivery under a user-global GitHub convergence policy" >&2
+    rc=1
+  fi
+  if ! grep -q 'do not require ledger artifacts' "$REPO_ROOT/$skill" ||
+    ! grep -q 'outcome-note path' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill does not state the GitLab ledger alternative at the normative workflow boundary" >&2
+    rc=1
+  fi
+  if ! grep -q '"${REVIEW_CONVERGENCE_ARGS\[@\]}"' "$REPO_ROOT/$skill"; then
+    echo "runtime-smoke pr: $skill does not pass its provider convergence override to merge" >&2
+    rc=1
+  fi
   # The recovery recipe is destructive, so validate its executable ordering
   # and fail-closed semantics rather than merely checking marker tokens.
   if ! python3 - "$REPO_ROOT" \
-    core/skills/pr/deliver-pr/SKILL.md.tera <<'PY'; then
+    core/skills/pr/deliver-pr/SKILL.md.tera <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -884,6 +883,7 @@ for relative in sys.argv[2:]:
             continue
         raise SystemExit(f"{relative}: validator accepted missing {mutation}")
 PY
+  then
     echo "runtime-smoke pr: delivery skills weaken guarded pending-review recovery" >&2
     rc=1
   fi

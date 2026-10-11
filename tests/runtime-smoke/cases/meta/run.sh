@@ -1329,6 +1329,7 @@ SH
     APPLY=1
     NO_PRUNE=0
     CODEX_HOME="$live_home"
+    # shellcheck disable=SC2034 # Read by the sourced sync implementation.
     OWNED_SOURCE_ROOTS=("$prior_root")
     PATH="$stub_bin:$PATH"
     PRUNE_ARGS_LOG="$args_log"
@@ -2284,6 +2285,7 @@ SH
     SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
     SOURCE_ROOT="$REPO_ROOT"
     APPLY=1
+    # shellcheck disable=SC2034 # Read by the sourced sync implementation.
     NO_PRUNE=0
     CODEX_HOME="$integration_modified_home"
     PATH="$stub_bin:$PATH"
@@ -3561,9 +3563,11 @@ run_sync_runtime_surfaces_codex_hook_order_probe() {
   local scenario
   for scenario in success registry-failure install-failure hook-failure; do
     (
+      # shellcheck disable=SC1091
       SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
       product_live_home() { printf '%s\n' "$TMP_ROOT/codex-hook-order"; }
       product_state_home() { printf '%s\n' "$TMP_ROOT/codex-hook-state"; }
+      # shellcheck disable=SC2034 # Read by the sourced sync implementation.
       APPLY=1
       hook_state=converged
       block_state=present

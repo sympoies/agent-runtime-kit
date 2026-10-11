@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deterministic probes for provider issue workflow skills.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2016,SC2329
 
 set -euo pipefail
 
@@ -109,7 +109,7 @@ run_issue_outcome_routing_probe() {
 
   grep -Fq 'forge-cli issue' "$skill"
   grep -Fq '### Program Mode' "$skill"
-  ! grep -Fq 'Plan-Family Finding Mode' "$skill"
+  ! grep -Fq 'Plan-Family Finding Mode' "$skill" || return 1
   rendered_contract_assert_skill issue issue-follow-up
   rendered_contract_assert_all_contain issue issue-follow-up '### Program Mode'
   rendered_contract_assert_all_omit issue issue-follow-up 'plan-issue-finding'
