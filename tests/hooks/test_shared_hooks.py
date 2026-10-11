@@ -18493,7 +18493,8 @@ exit 64
                     "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_allowed(decision)
+                self.assert_blocked(decision, "project-dev")
+                self.assertNotIn("agent-docs-command-untrusted", str(decision))
 
                 # The scrub must not swallow a root the fixture asked for: the
                 # same read-only command stays blocked when the test itself
