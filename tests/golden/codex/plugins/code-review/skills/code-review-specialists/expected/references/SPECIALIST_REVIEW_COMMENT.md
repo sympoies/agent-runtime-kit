@@ -48,7 +48,7 @@ the provider-guarded command.
 - Evidence reviewed: validation, diff, provider checks, or prior findings
 
 | Finding | Severity | Confidence | Evidence | Recommendation |
-| --- | --- | --- | --- | --- |
+| --- | --- | ---: | --- | --- |
 | Missing edge-case test | medium | 0.86 | file/path + command | Add regression coverage |
 ```
 
