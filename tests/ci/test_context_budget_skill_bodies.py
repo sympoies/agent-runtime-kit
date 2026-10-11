@@ -84,6 +84,44 @@ def write_body(root, product, plugin, skill, size):
     return path
 
 
+class DeliveryReadingBudget(unittest.TestCase):
+    def test_each_product_delivery_phase_is_required_audit_coverage(self):
+        for product in ("codex", "claude", "hermes"):
+            sid = f"delivery-phase-required-reading.project-dev.{product}"
+            self.assertIn(sid, audit.REQUIRED_MEASURED_IDS)
+            spec = next(s for s in audit.BUDGETS if s["id"] == sid)
+            self.assertEqual(spec["measure"],
+                             ("agent-docs", "project-dev", "delivery", product))
+            self.assertEqual(spec["target"], 48 * 1024)
+            self.assertIsNone(spec["override"])
+
+    def test_delivery_budget_measures_new_required_docs_and_blocks_overage(self):
+        if shutil.which("agent-docs") is None:
+            self.skipTest("agent-docs is not installed")
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "boundary.md").write_text("boundary\n")
+            (root / "extra.md").write_text("x" * (48 * 1024))
+            (root / "AGENT_DOCS.toml").write_text(
+                '\n'.join(
+                    f'[[document]]\ncontext = "project-dev"\nscope = "project"\n'
+                    f'path = "{name}"\nrequired = true\nwhen = "always"\nphase = "delivery"\n'
+                    for name in ("boundary.md", "extra.md")))
+            original = audit.REPO_ROOT
+            try:
+                audit.REPO_ROOT = raw
+                for product in ("codex", "claude", "hermes"):
+                    measured, detail = audit.measure_bytes(
+                        ("agent-docs", "project-dev", "delivery", product))
+                    self.assertEqual(measured, 48 * 1024 + len("boundary\n"))
+                    self.assertIn("2 resolved required docs", detail)
+                    self.assertEqual(audit.classify(48 * 1024, measured, None)[0],
+                                     "FAIL")
+            finally:
+                audit.REPO_ROOT = original
+
+
 class SkillBodyDiscovery(unittest.TestCase):
     def setUp(self):
         if not build_tree_present():
