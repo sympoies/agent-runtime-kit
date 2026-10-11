@@ -11024,8 +11024,8 @@ exit 64
             prepare_edit_cmd = prepare_cmd.replace(
                 " --format json", " --phase edit --format json"
             )
-            # A read-only `git status` is now admitted without project-dev, so
-            # the recovery-message assertion uses a genuine mutation command.
+            # The fallback requires preparation for unverified reads and writes;
+            # this assertion checks the mutation recovery command.
             payload = command_payload("printf x > out.txt")
             payload["session_id"] = "intent-recovery"
 
@@ -11201,7 +11201,7 @@ exit 64
             # These direct fallback calls have no verified capability.
             # Real managed queries are admitted by the released dispatcher,
             # covered by the paired-capability consumer test.
-            allowed = (
+            unverified_reads = (
                 "git status --short",
                 preflight,
                 wrong_project_preflight,
@@ -11214,8 +11214,8 @@ exit 64
                 "forge-cli issue create --help",
                 "forge-cli --version",
             )
-            for command in allowed:
-                with self.subTest(allowed=command):
+            for command in unverified_reads:
+                with self.subTest(unverified_read=command):
                     payload = command_payload(command)
                     payload["session_id"] = "shell-bootstrap"
                     code, decision, stderr = run_hook(
@@ -11428,31 +11428,36 @@ exit 64
                 f"--file {claim_file.resolve()} ",
                 f"--file {claim_file.resolve()} --if-revision 1 ",
             )
-            allowed = (
+            former_readiness_reads = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
                 "agent-session activity doctor --agent claude --format json",
                 "agent-session activity setup --agent codex --repair --dry-run --format json",
                 "agent-session activity setup --agent claude --repair --dry-run --format json",
-                claim,
-                literal_claim,
-                revision_fenced_claim,
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
             )
-            for command in allowed:
-                with self.subTest(allowed=command):
+            claim_bootstraps = (claim, literal_claim, revision_fenced_claim)
+            for command in claim_bootstraps:
+                with self.subTest(claim_bootstrap=command):
                     payload = command_payload(command)
                     payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    if command in (claim, literal_claim, revision_fenced_claim):
-                        self.assert_allowed(decision)
-                    else:
-                        self.assert_blocked(decision, "project-dev")
+                    self.assert_allowed(decision)
+
+            for command in former_readiness_reads:
+                with self.subTest(unverified_read=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "session-readiness"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
 
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
@@ -11613,10 +11618,7 @@ exit 64
                 **env,
                 "PATH": f"{alias_bin}{os.pathsep}{env['PATH']}",
             }
-            alias_commands = (
-                "agent-session --version",
-                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
-            )
+            alias_commands = claim_bootstraps
             for command in alias_commands:
                 with self.subTest(foreign_same_release_alias=command):
                     payload = command_payload(command)
@@ -18403,7 +18405,7 @@ exit 64
                 "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
-            allowed = (
+            unverified_reads = (
                 base + "preflight --intent memory",
                 base + "preflight --intent browser-test",
                 base + "status",
@@ -18413,8 +18415,8 @@ exit 64
                 base + "session status",
                 base + "session verify --require-intent memory",
             )
-            for command in allowed:
-                with self.subTest(allowed=command):
+            for command in unverified_reads:
+                with self.subTest(unverified_read=command):
                     payload = command_payload(command)
                     payload["session_id"] = "adocs-read"
                     code, decision, stderr = run_hook(

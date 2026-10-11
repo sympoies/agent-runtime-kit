@@ -37,9 +37,7 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
-    SHELL_EFFECT_MUTATION,
     apply_patch_paths,
-    classify_shell_effect,
     command_from,
     command_context,
     effective_workdir,
@@ -82,9 +80,6 @@ UNQUOTED_SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~")
 DOUBLE_QUOTED_SHELL_CONTROL = frozenset("`$")
 HELP_FLAGS = frozenset({"-h", "--help"})
 
-AGENT_DOCS_GLOBAL_VALUE_OPTIONS = frozenset(
-    {"--docs-home", "--project-path", "--worktree-fallback"}
-)
 AGENT_DOCS_WRITE_FLAGS = frozenset({"-o", "--output"})
 DYNAMIC_WORKDIR_CHARACTERS = frozenset("$`*?[{(")
 PROJECT_DEV_MODE_ENV = "AGENT_RUNTIME_PROJECT_DEV_MODE"
@@ -593,9 +588,6 @@ def session_claim_bootstrap_invocation(
             )
             is not None
         )
-
-
-
     return False
 
 
@@ -614,15 +606,15 @@ def agent_docs_near_miss_invocation(
         return False
     if "preflight" in words:
         return not preparation_only
-    return "session" in words and any(
-        token in ({"prepare", "activate"} if preparation_only else {"prepare", "activate", "verify"})
-        for token in words
-    )
+    subcommands = {"prepare", "activate"}
+    if not preparation_only:
+        subcommands.add("verify")
+    return "session" in words and any(token in subcommands for token in words)
 
 
 def resolved_executable(name: str) -> str | None:
     candidate = shutil.which(name)
-    if not candidate:
+    if not candidate or not os.path.isabs(candidate):
         return None
     resolved = os.path.realpath(candidate)
     if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
@@ -749,13 +741,14 @@ def contract_preflight_command(
     phase: str | None = None,
 ) -> str:
     """Exact read-only command for the contract a preparation just activated."""
-    args = agent_docs_args(repo_root, executable) + [
+    args = ["builtin", "command"] + agent_docs_args(repo_root, executable) + [
         "preflight",
         "--intent",
         intent,
     ]
     if phase:
         args += ["--phase", phase]
+    args += ["--format", "json"]
     return shlex.join(args)
 
 
@@ -1548,18 +1541,8 @@ def main() -> int:
         )
         return ALLOW
 
-    # Effect classification selects recovery feedback only. Read admission
-    # belongs exclusively to the dispatcher capability, not this fallback.
-    command_effect = (
-        classify_shell_effect(command, read_only_invocation=lambda _words: False)
-        if tool in COMMAND_TOOLS
-        else None
-    )
-    if (
-        command_effect is not None
-        and command_effect.kind != SHELL_EFFECT_MUTATION
-        and len(repos) == 1
-    ):
+    # Offer finite recovery routes without classifying or admitting reads here.
+    if tool in COMMAND_TOOLS and len(repos) == 1:
         agent_run_executable = trusted_release_companion(
             "agent-run",
             agent_docs_executable=agent_docs_executable,
@@ -1592,9 +1575,10 @@ def main() -> int:
     reason = (
         "This command has no verified read-only capability bypass; no "
         "repository mutation was observed, but this shell shape could not be proven "
-        "read-only. Prepare project-dev before retrying. Read-only inspection "
-        "and trusted agent-docs preparation for any declared intent are admitted "
-        "through the dispatcher capability. "
+        "read-only. Prepare project-dev before retrying. Verified read-only "
+        "`builtin command` requests to an absolute trusted producer use the "
+        "dispatcher capability. Exact `session prepare` commands for declared "
+        "intents use the preparation bootstrap. "
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
         "executable and complete session context. If a Git operation is stuck mid-run, a "
         "sole `git <op> --abort` recovers in place without preparation. "
