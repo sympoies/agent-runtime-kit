@@ -318,7 +318,9 @@ def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str
     # Consume only known no-value short switches at the front of a cluster.
     # Leave the remainder intact for the existing value-option parser, so data
     # such as a header containing -XPOST can never become another option.
-    short_switches = set("afGgIikjlLMnNqJORsSvV012346BZp#") if curl else {"i"}
+    short_switches = ({"a", "f", "G", "g", "I", "i", "k", "j", "l", "L", "M", "n", "N",
+                       "q", "J", "O", "R", "s", "S", "v", "V", "0", "1", "2", "3", "4",
+                       "6", "B", "Z", "p", "#"} if curl else {"i"})
     i = 0
     while i < len(args):
         token = args[i]
