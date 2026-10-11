@@ -541,6 +541,13 @@ Desktop session. When the source surface grows new entries, bump
 `SHAPE_EXPECTED_MIN_CHECKS` only if the doctor-reported check count changes,
 and record the reason in the bump commit.
 
+The executable hook consumer suite accepts `AGENT_HOOK_BIN` for an independently
+built binary. Its managed-query shadow fixture also requires a matching,
+executable `agent-docs` beside the resolved `agent-hook` binary. Build or install
+both binaries together; a standalone `agent-hook` copy cannot prove managed-query
+parity. The fixture diagnoses a missing prerequisite before comparing product
+verdicts and still checks the mutation and unsupported-command shadow cases.
+
 For targeted checks:
 
 ```bash
