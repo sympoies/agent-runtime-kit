@@ -3384,6 +3384,8 @@ run_worktree_triage_probe() {
     # Protection never hides a dirty checkout that still needs rescue.
     git worktree add -q wt-protected-dirty -b protected-dirty main
     printf 'uncommitted\n' >wt-protected-dirty/dirty.txt
+    git worktree add -q wt-dirty -b dirty-work main
+    printf 'uncommitted\n' >wt-dirty/dirty.txt
   )
   python3 "$helper" --repo "$repo" --base origin/main \
     --protect-branch protected-dirty --protect-branch integration-branch \
@@ -3403,6 +3405,14 @@ protected = next(w for w in data["worktrees"] if w.get("branch") == "integration
 assert protected["protected"] is True, protected
 dirty = next(w for w in data["worktrees"] if w.get("branch") == "protected-dirty")
 assert dirty["protected"] is True, dirty
+assert by.get("dirty-work") == "dirty", by
+for row in data["worktrees"]:
+    if row["disposition"] in {"dirty", "safe-merged", "safe-superseded", "rescue-candidate"} and not row["protected"]:
+        action = row["suggested_action"]
+        assert "git-cli worktree remove" in action, row
+        assert "seven days" in action, row
+        assert "backup_ref" in action, row
+        assert "owner release" not in action and "terminal proof" not in action and "provider truth" not in action, row
 PY
 
   mkdir -p "$managed/repo-one" "$managed/repo-two" "$repo2"

@@ -125,7 +125,9 @@ an integration branch because lane PRs cannot safely land on main separately.
    merged head; close the child with `forge-cli issue close` only after its
    acceptance holds. Then tick its tracker row with
    `forge-cli issue tracker tick`, recording the lane PR and a one-line
-   checkpoint, as Tracker Commands says.
+   checkpoint, as Tracker Commands says. Each lane owner removes its managed
+   worktree immediately after delivery through `git-cli worktree remove`,
+   independently of tracker closeout.
 8. After all lanes merge, resolve integration conflicts in a managed worktree,
    run the integration validation, and deliver the integration PR through
    `deliver-pr`. The integration PR references the tracker without an
@@ -137,10 +139,13 @@ an integration branch because lane PRs cannot safely land on main separately.
    every child is closed or explicitly transferred and the Tracker Commands
    closeout state check reports no finding. Then perform requested
    post-merge duties and `core/policies/git-delivery.md` terminal cleanup.
-   Verify each provider-confirmed delivered head before removing a checkout.
-   Use `git-cli worktree remove <path-or-slug> --safe --format json` only for a clean,
-   unowned managed worktree. Retain dirty, locked, or unverifiable worktrees
-   and report the exact reason.
+   Each owner removes its managed worktree after delivery with
+   `git-cli worktree remove <path-or-slug> --format json`. Other owners may
+   remove only worktrees idle for seven days, excluding build directories.
+   The trusted CLI fences live holders and preserves unsaved work; report
+   the receipt and any `backup_ref`. A `removal-*` refusal names the holder
+   or other failure: retain the target, report it, and do not retry with force.
+   Removal eligibility does not depend on tracker closeout or provider read-back.
 
 ## Boundary
 
