@@ -2840,7 +2840,9 @@ def _expanded_heredoc_body_residue(body: list[str]) -> list[str]:
 _HEREDOC_BODY_MARKER = "__agent_runtime_heredoc_body_"
 
 
-def _indirect_heredoc_executes(tokens: list[str], marker: str) -> bool:
+def _indirect_heredoc_executes(
+    tokens: list[str], marker: str, marker_names: frozenset[str]
+) -> bool:
     """Follow a literal body's consumer in body-free command text.
 
     This only controls blocking classification, never validation credit. The
@@ -2862,8 +2864,7 @@ def _indirect_heredoc_executes(tokens: list[str], marker: str) -> bool:
         end = index
         while end < len(tokens) and not boundary(tokens[end]):
             end += 1
-        words = [word for word in tokens[start:end]
-                 if not word.startswith(_HEREDOC_BODY_MARKER)]
+        words = [word for word in tokens[start:end] if word not in marker_names]
         invocation = invocation_tokens(words)
         # doas has no shared transparent-launcher contract. Recognize only its
         # literal, option-free shell form here; other forms remain opaque.
@@ -3008,6 +3009,10 @@ def strip_heredoc_bodies(
     skeleton: list[str] = []
     indirect: list[tuple[str, int, list[str]]] = []
     pending_markers: list[str | None] = []
+    marker_namespace = _HEREDOC_BODY_MARKER
+    marker_counter = itertools.count()
+    while marker_namespace in command:
+        marker_namespace += "_"
 
     def close_body(
         preserve_body: bool,
@@ -3070,7 +3075,7 @@ def strip_heredoc_bodies(
             marker = None
             if (inert_only and delimiter_quoted and not preserve_body
                     and not re.match(r"[1-9]\d*<<", logical_line[op_start:])):
-                marker = f"{_HEREDOC_BODY_MARKER}{len(indirect) + len(pending)}__"
+                marker = f"{marker_namespace}{next(marker_counter)}__"
                 markers.append((op_start, marker))
             pending_markers.append(marker)
             pending.append(
@@ -3100,9 +3105,26 @@ def strip_heredoc_bodies(
     ) in pending:
         close_body(preserve_body, delimiter_quoted, data_consumer, body)
     if indirect:
-        tokens = shell_tokens(normalize_command_separators("\n".join(skeleton)))
+        while True:
+            tokens = shell_tokens(normalize_command_separators("\n".join(skeleton)))
+            if not any(tokens.count(marker) > 1 for marker, _, _ in indirect):
+                break
+            # Quote concatenation can forge a decoded token without spelling
+            # it literally in the input. Rebind only the synthetic namespace,
+            # which is absent from the original text, until token identities
+            # are unique as well.
+            replacement = marker_namespace + "_"
+            while replacement in command:
+                replacement += "_"
+            skeleton = [line.replace(marker_namespace, replacement) for line in skeleton]
+            indirect = [
+                (marker.replace(marker_namespace, replacement), position, body)
+                for marker, position, body in indirect
+            ]
+            marker_namespace = replacement
+        marker_names = frozenset(marker for marker, _, _ in indirect)
         for marker, position, body in reversed(indirect):
-            if marker in tokens and _indirect_heredoc_executes(tokens, marker):
+            if marker in tokens and _indirect_heredoc_executes(tokens, marker, marker_names):
                 kept[position:position] = [strip_heredoc_bodies("\n".join(body), inert_only=True)]
     result = "\n".join(kept)
     if reduced and (_command_runs_a_shell(result) or _command_writes_a_file(result)):

@@ -23839,6 +23839,45 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "[default-delivery:")
 
+            # A caller-controlled word must never identify an internal body.
+            # Include quote concatenation and a collision with the first
+            # namespace a raw-text-only collision check would choose.
+            for preamble in (
+                "echo __agent_runtime_heredoc_body_0__; ",
+                ": __agent_runtime_heredoc_body_0__\n",
+                "echo '__agent_runtime_heredoc_body_0__'; ",
+                "echo '__agent_runtime_'heredoc_body_0__; ",
+                "echo '__agent_runtime_heredoc_body_'_0__; ",
+            ):
+                for shape in (shapes[7], shapes[9], shapes[13]):
+                    for body, blocked in (
+                        ("git push origin HEAD:main", True),
+                        ("/usr/bin/git status --short", False),
+                    ):
+                        command = preamble + shape.format(body=body)
+                        with self.subTest(forged_marker=command):
+                            code, decision, stderr = run_hook(
+                                "block-unsafe-default-delivery.py",
+                                command_payload(command),
+                                cwd=repo,
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            if blocked:
+                                self.assert_blocked(decision, "[default-delivery:")
+                            else:
+                                self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(
+                    "cat 3<<'DATA' <<'READ'\nnotes\nDATA\nnotes\nREAD\n"
+                    "cat <<'SCRIPT' | bash\ngit push origin HEAD:main\nSCRIPT"
+                ),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery:")
+
     def test_default_delivery_hook_admits_read_only_inventory_shapes(
         self,
     ) -> None:
