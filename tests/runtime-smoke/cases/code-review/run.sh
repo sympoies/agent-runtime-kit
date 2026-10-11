@@ -181,10 +181,8 @@ run_portable_review_identity_contract_probe() {
     ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$owner"
   done
   grep -Fq -- '--decision comments-only' "$gate"
-  for owner in "$delivery"; do
-    grep -Fq 'pull request head changed before personal escape outcome' "$owner"
-    grep -Fq 'pr view "$PR_NUMBER"' "$owner"
-  done
+  grep -Fq 'pull request head changed before personal escape outcome' "$delivery"
+  grep -Fq 'pr view "$PR_NUMBER"' "$delivery"
 
   for contract in "$posting" "$specialist" "$outcome" "$delivery"; do
     ! grep -Fq 'posts each finding the moment its lens returns' "$contract"
@@ -787,6 +785,30 @@ run_provider_review_metadata_contract_probe() {
   # path or `$HOME` prefix is never an acceptable evidence identifier.
   grep -Fq 'never an absolute local path' "$skill" || return 1
   grep -Fq 'never an absolute local path' "$posting" || return 1
+
+  # Consume the actual hand-written example through its released owner. Golden
+  # parity alone can reproduce a template that the publication guard rejects.
+  require_code_review_bin forge-cli || return 1
+  local specialist="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_COMMENT.md"
+  local example="$CODE_REVIEW_ARTIFACTS_DIR/specialist-template-example.md"
+  python3 - "$specialist" "$example" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+example = re.search(r"```markdown\n(.*?)\n```", source, re.S)
+if example is None:
+    raise SystemExit("specialist comment has no Markdown example")
+body = example.group(1).replace(
+    "pass | findings | blocked | follow-up-pass", "findings"
+)
+Path(sys.argv[2]).write_text(body + "\n", encoding="utf-8")
+PY
+  forge-cli --provider local --repo local:specialist-template --format json \
+    pr review validate --specialist-report --comment-file "$example" \
+    >"$CODE_REVIEW_ARTIFACTS_DIR/specialist-template-validation.json"
+  grep -Fq -- '--specialist-report' "$skill" || return 1
 }
 
 failures=0
