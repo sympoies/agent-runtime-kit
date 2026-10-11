@@ -43,6 +43,7 @@ runbooks and CLIs.
 
 ## Files And Sensitive Output
 
+- Isolate fixture Git: [details](../hooks/README.md).
 - Follow project conventions for durable files and generated output. Do not
   create a discussion, plan, decision record, or broad index entry unless asked
   or clearly reusable.

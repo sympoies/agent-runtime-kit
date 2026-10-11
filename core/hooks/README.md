@@ -493,6 +493,17 @@ PATH, `cd`, executable resolution) only within that body: a governed
 classification it has without the substitution. The commit guard's
 program-lookup scan stays conservative and still counts PATH changes inside
 substitution bodies.
+The commit guard also refuses literal `git config --global` writes unless
+`GIT_CONFIG_GLOBAL` selects a temporary or `AGENT_HOME/out` child without
+symlink redirects. It recognizes inline environment assignments, literal
+unconditional exports, and their scope in nested shell strings and substitutions. Global
+reads and repository-local configuration remain allowed. System writes are
+always refused because `GIT_CONFIG_GLOBAL` does not redirect `--system`.
+Fixture setup must also use `GIT_CONFIG_NOSYSTEM=1`; `HOME` alone leaves the
+real XDG Git configuration exposed. Dynamic target paths remain unresolved:
+pass a literal output target or establish it in the hook's inherited environment.
+Conditional or subprocess setup cannot prove the inherited target; use an
+inline target assignment on the Git invocation instead.
 After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
 `disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.
