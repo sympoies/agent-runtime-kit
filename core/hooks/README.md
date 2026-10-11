@@ -284,6 +284,22 @@ and `sudo` shell/login/chdir/chroot modes remain opaque rather than transparent;
 the raw-deletion contract covers recognized literal payloads. Default-delivery
 keeps its broader process-wrapper context and depth accounting while sharing the
 `nice`/`nohup` option grammar.
+
+Blocking classifiers retain terminated quoted here-document bodies when their
+literal consumer feeds a shell: supported transparent shell launchers, the
+option-free `doas` shell form, `source`/`.` reading `/dev/stdin` or `/dev/fd/0`,
+stdin-reading `cat`/`tee` piped directly or through a group/subshell into a shell,
+and `cat` inside a shell's `<(...)` script argument. A literal `cat` output file
+followed by that same path's shell/source or direct execution is also inspected.
+Explicit non-stdin descriptors, replaced stdin, redirected pipe output, other
+`cat` file operands, document prose, and interpreter-language bodies stay data.
+These indirect bodies do not earn validation credit. Source commands retain
+existing executable-resolution checks; absolute executable paths keep read
+controls verifiable. Shell input redirections are removed from `xargs` argv,
+while its input-derived operation remains unknown and cannot prove a governed
+read. Dynamic routing and scripts constructed by other languages remain outside
+this mechanical classifier.
+
 Older CLIs may retain stricter removal checks; hook admission does not bypass
 their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
 agent shells because older CLIs bypass fencing; remove each target with the

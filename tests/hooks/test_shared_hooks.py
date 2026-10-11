@@ -7894,6 +7894,19 @@ exit 64
             with self.subTest(actual=actual):
                 self.assertTrue(command_matches_validation(actual, declared))
 
+    def test_command_match_does_not_credit_indirect_heredoc_text(self) -> None:
+        declared = "bash scripts/ci/all.sh"
+        for actual in (
+            f"source /dev/stdin <<'EOF'\n{declared}\nEOF",
+            f". /dev/fd/0 <<'EOF'\n{declared}\nEOF",
+            f"cat <<'EOF' | bash\n{declared}\nEOF",
+            f"(cat <<'EOF'\n{declared}\nEOF\n) | sh",
+            f"bash <(cat <<'EOF'\n{declared}\nEOF\n)",
+            f"cat <<'EOF' > x.sh\n{declared}\nEOF\nbash x.sh",
+        ):
+            with self.subTest(actual=actual):
+                self.assertFalse(command_matches_validation(actual, declared))
+
     def test_finish_line_gate_enforces_every_declared_validation_intent(self) -> None:
         self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
@@ -23745,6 +23758,86 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_hook_classifies_indirect_quoted_heredocs(self) -> None:
+        # Issue #210: classify literal shell input without treating document
+        # prose or an interpreter's own language as shell commands.
+        shapes = (
+            "sudo bash <<'EOF'\n{body}\nEOF",
+            "doas sh <<'EOF'\n{body}\nEOF",
+            "env bash <<'EOF'\n{body}\nEOF",
+            "command sh <<'EOF'\n{body}\nEOF",
+            "exec bash <<'EOF'\n{body}\nEOF",
+            "nice bash <<'EOF'\n{body}\nEOF",
+            "nohup sh <<'EOF'\n{body}\nEOF",
+            "source /dev/stdin <<'EOF'\n{body}\nEOF",
+            ". /dev/fd/0 <<'EOF'\n{body}\nEOF",
+            "cat <<'EOF' | bash\n{body}\nEOF",
+            "{{ cat <<'EOF'\n{body}\nEOF\n}} | bash",
+            "(cat <<'EOF'\n{body}\nEOF\n) | sh",
+            "bash <(cat <<'EOF'\n{body}\nEOF\n)",
+            "cat <<'EOF' > x.sh\n{body}\nEOF\nbash x.sh",
+            "cat <<'EOF' > x.sh\n{body}\nEOF\n./x.sh",
+            "cat <<'EOF' > x.sh\n{body}\nEOF\nnohup ./x.sh",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            for shape in shapes:
+                for body, blocked in (
+                    ("git push origin HEAD:main", True),
+                    ("/usr/bin/git status --short", False),
+                ):
+                    command = shape.format(body=body)
+                    with self.subTest(command=command):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command),
+                            cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        if blocked:
+                            self.assert_blocked(decision, "[default-delivery:")
+                        else:
+                            self.assert_allowed(decision)
+
+            for command in (
+                "cat <<'EOF'\ngit push origin HEAD:main\nEOF",
+                "cat > notes.md <<'EOF'\ngit push origin HEAD:main\nEOF",
+                "cat <<'EOF' | grep bash\ngit push origin HEAD:main\nEOF",
+                "python3 - <<'EOF'\nprint('git push origin HEAD:main')\nEOF",
+                "bash ./reader.sh <<'EOF'\ngit push origin HEAD:main\nEOF",
+                "source ./reader.sh <<'EOF'\ngit push origin HEAD:main\nEOF",
+                "cat <<'EOF'\ngit push origin HEAD:main\nEOF\nbash -c 'git status'",
+                "cat > notes.md <<'EOF'\ngit push origin HEAD:main\nEOF\nbash other.sh",
+                "cat <<'EOF'\ngit push origin HEAD:main\nEOF\n"
+                "source /dev/stdin <<'READ'\n/usr/bin/git status\nREAD",
+                "cat <<'EOF' | bash -n\ngit push origin HEAD:main\nEOF",
+                "source /dev/stdin 3<<'EOF'\ngit push origin HEAD:main\nEOF",
+                "xargs git status <<'EOF'\n--short\nEOF",
+                "cat <<'EOF' > notes.md | bash\ngit push origin HEAD:main\nEOF",
+                "(cat <<'EOF' > notes.md\ngit push origin HEAD:main\nEOF\n) | bash",
+                "cat reader.sh <<'EOF' | bash\ngit push origin HEAD:main\nEOF",
+                "doas sh <<'EOF' </dev/null\ngit push origin HEAD:main\nEOF",
+                "source /dev/stdin <<'EOF' </dev/null\ngit push origin HEAD:main\nEOF",
+                "cat<<'EOF' | bash -n\ngit push origin HEAD:main\nEOF",
+            ):
+                with self.subTest(read=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload("xargs git <<'EOF'\npush origin HEAD:main\nEOF"),
+                cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery:")
 
     def test_default_delivery_hook_admits_read_only_inventory_shapes(
         self,
