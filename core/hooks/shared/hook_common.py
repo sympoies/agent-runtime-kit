@@ -4191,8 +4191,132 @@ def invocation_command_position_is_dynamic(
     )
 
 
+def launcher_target_index(tokens: list[str], index: int) -> int | None:
+    """Locate literal sudo/nice/nohup command payloads; queries execute none."""
+    command = PurePosixPath(tokens[index]).name
+    index += 1
+    while index < len(tokens):
+        token = tokens[index]
+        if invocation_command_position_is_dynamic([token], shell_boundary=False):
+            return -1
+        if token == "--":
+            return index + 1
+        if token in {"--help", "--version"}:
+            return None
+        if not token.startswith("-") or token == "-":
+            return index
+        if command == "nice":
+            if token in {"-n", "--adjustment"}:
+                if index + 1 >= len(tokens) or invocation_command_position_is_dynamic(
+                    [tokens[index + 1]], shell_boundary=False
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith("--adjustment=") or token.startswith("-n") or re.fullmatch(r"-\d+", token):
+                index += 1
+                continue
+        elif command == "sudo":
+            if token in {"-l", "-v", "-V", "-K", "--list", "--validate", "--remove-timestamp"}:
+                return None
+            if token in {"--user", "--group", "--prompt"}:
+                if index + 1 >= len(tokens) or invocation_command_position_is_dynamic(
+                    [tokens[index + 1]], shell_boundary=False
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith(("--user=", "--group=", "--prompt=")):
+                index += 1
+                continue
+            if token in {"--non-interactive", "--preserve-env", "--set-home", "--stdin", "--background", "--reset-timestamp"}:
+                index += 1
+                continue
+            if not token.startswith("--"):
+                next_index = _short_option_cluster_next_index(
+                    tokens, index, flag_options=frozenset("nEHASbk"),
+                    value_options=frozenset("ugp"),
+                )
+                if next_index is not None and next_index >= 0:
+                    if next_index > index + 1 and invocation_command_position_is_dynamic(
+                        [tokens[index + 1]], shell_boundary=False
+                    ):
+                        return -1
+                    index = next_index
+                    continue
+        return -1
+    return index
+
+
+XARGS_INPUT_TOKEN = "$__agent_runtime_xargs_input"
+
+
+def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
+    """Extract the literal program; model appended/replaced stdin as unknown."""
+    index += 1
+    replacement: str | None = None
+    long_values = {"--arg-file", "--delimiter", "--max-lines", "--max-args", "--max-procs", "--max-chars"}
+    long_flags = {"--null", "--no-run-if-empty", "--verbose", "--interactive", "--exit", "--show-limits"}
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            index += 1
+            break
+        if token in {"--help", "--version"}:
+            return []
+        if not token.startswith("-") or token == "-":
+            break
+        option, equals, value = token.partition("=")
+        if option == "--eof":  # Optional long values must use '='.
+            index += 1
+            continue
+        if option == "--replace":
+            replacement = value if equals else "{}"
+            index += 1
+            continue
+        if option in long_values:
+            if not equals and index + 1 >= len(tokens):
+                return _opaque_wrapper_invocation(tokens[index:])
+            index += 1 if equals else 2
+            continue
+        if token in long_flags:
+            index += 1
+            continue
+        if token.startswith("--"):
+            return _opaque_wrapper_invocation(tokens[index:])
+        cluster = token[1:]
+        for position, option in enumerate(cluster):
+            if option in "0rtpx":
+                continue
+            if option in "eil":  # Optional short values must be attached.
+                if option == "i":
+                    replacement = cluster[position + 1:] or "{}"
+                break
+            if option not in "adEILnPsJRS":
+                return _opaque_wrapper_invocation(tokens[index:])
+            value = cluster[position + 1:]
+            if not value:
+                index += 1
+                if index >= len(tokens):
+                    return _opaque_wrapper_invocation()
+                value = tokens[index]
+            if option in "IJ":
+                replacement = value
+            break
+        index += 1
+    payload = tokens[index:]
+    if not payload:
+        return []  # xargs defaults to echo, not an input-selected executable.
+    if replacement is not None:
+        if not replacement:
+            return _opaque_wrapper_invocation(payload)
+        return [token.replace(replacement, XARGS_INPUT_TOKEN) for token in payload]
+    return [*payload, XARGS_INPUT_TOKEN]
+
+
 def invocation_tokens(
-    simple_command: list[str], *, shell_boundary: bool = True
+    simple_command: list[str], *, shell_boundary: bool = True,
+    preserve_launchers: frozenset[str] = frozenset(),
 ) -> list[str]:
     index = _invocation_start_index(simple_command, shell_boundary=shell_boundary)
     if index >= len(simple_command):
@@ -4203,9 +4327,23 @@ def invocation_tokens(
         return _opaque_wrapper_invocation(simple_command[index:])
 
     command = PurePosixPath(simple_command[index]).name
+    if command in {"sudo", "nice", "nohup"} and command not in preserve_launchers:
+        target_index = launcher_target_index(simple_command, index)
+        if target_index is None:
+            return []
+        if target_index < 0:
+            return _opaque_wrapper_invocation(simple_command[index + 1:])
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
+    if command == "xargs" and command not in preserve_launchers:
+        payload = _xargs_target_tokens(simple_command, index)
+        if invocation_is_opaque(payload):
+            return payload
+        return invocation_tokens(payload, shell_boundary=False, preserve_launchers=preserve_launchers)
     if command == "env":
         return invocation_tokens(
-            env_target_tokens(simple_command, index + 1), shell_boundary=False
+            env_target_tokens(simple_command, index + 1), shell_boundary=False,
+            preserve_launchers=preserve_launchers,
         )
     if command == "time":
         target_index = _time_target_index(simple_command, index)
@@ -4213,21 +4351,24 @@ def invocation_tokens(
             return []
         if target_index < 0:
             return _opaque_wrapper_invocation(simple_command[index + 1 :])
-        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
     if command == "command":
         target_index = _command_target_index(simple_command, index)
         if target_index is None:
             return []
         if target_index < 0:
             return _opaque_wrapper_invocation(simple_command[index + 1 :])
-        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
     if command == "exec":
         target_index = _exec_target_index(simple_command, index)
         if target_index is None:
             return []
         if target_index < 0:
             return _opaque_wrapper_invocation(simple_command[index + 1 :])
-        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
 
     if index >= len(simple_command):
         return []
@@ -4241,7 +4382,8 @@ def invocation_tokens(
             if target_index < 0:
                 return _opaque_wrapper_invocation(simple_command[index + 2 :])
             return invocation_tokens(
-                simple_command[target_index:], shell_boundary=False
+                simple_command[target_index:], shell_boundary=False,
+                preserve_launchers=preserve_launchers,
             )
 
     return simple_command[index:]
@@ -4319,7 +4461,16 @@ def marker_environment_before_invocation(
         return state
 
     target_index: int | None = index
-    if command == "time":
+    if command in {"sudo", "nice", "nohup"}:
+        target_index = launcher_target_index(tokens, index)
+        if command == "sudo":
+            state.clear()  # sudo policy may reset inherited variables.
+    elif command == "xargs":
+        payload = _xargs_target_tokens(tokens, index)
+        if invocation_is_opaque(payload):
+            return {}
+        return marker_environment_before_invocation(payload, names, state)
+    elif command == "time":
         target_index = _time_target_index(tokens, index)
     elif command == "command":
         target_index = _command_target_index(tokens, index)

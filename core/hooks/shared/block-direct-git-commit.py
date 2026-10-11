@@ -20,6 +20,7 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    XARGS_INPUT_TOKEN,
     command_from,
     emit_block,
     invocation_is_unresolved_nested,
@@ -174,7 +175,7 @@ def shared_config_write(arguments: list[str]) -> str:
         return "ambiguous"
     if action in {"read", "get", "list"}:
         return ""
-    return scope if action or len(operands) >= 2 else ""
+    return scope if action or len(operands) >= 2 or XARGS_INPUT_TOKEN in operands else ""
 
 
 def isolated_global_config(value: str) -> bool:
@@ -400,6 +401,8 @@ def retargets_program_lookup(simple_command: list[str], invocation: list[str]) -
     falls back to a same-named configured alias.
     """
     prefix = tokens_before_git(simple_command, invocation)
+    if any(basename(token) == "sudo" for token in prefix):
+        return True
     if any(LOOKUP_ENV_NAME_RE.search(token) for token in prefix):
         return True
     if any(basename(token) == "env" for token in prefix) and any(

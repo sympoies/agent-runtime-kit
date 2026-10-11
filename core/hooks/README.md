@@ -270,6 +270,20 @@ interpreter code such as `python -c` with `shutil.rmtree` or `perl -e`, and
 `rsync --delete` and `mv` are outside its command-pattern contract. It is not a
 sandbox for arbitrary programs. Agents must still use the preserving lifecycle
 command to remove registered worktrees.
+The shared invocation parser also resolves literal `sudo`, `nice`, `nohup`, and
+`xargs` payloads. It respects launcher option values, `--`, and non-executing
+help/version forms. `nice` supports adjustment options; `sudo` supports ordinary
+non-shell execution with user/group/prompt options. Inherited environment
+markers and installed Git extension lookup are unproven through `sudo`; literal
+environment setup after the launcher can establish the configuration target.
+`xargs` append and GNU/BSD replacement forms mark input-derived operands as
+unknown, so deletion guards refuse unresolved targets while literal read
+programs remain readable. The parser does not evaluate pipeline input or scripts
+constructed from that input. Unsupported options, dynamic program selection,
+and `sudo` shell/login/chdir/chroot modes remain opaque rather than transparent;
+the raw-deletion contract covers recognized literal payloads. Default-delivery
+keeps its broader process-wrapper context and depth accounting while sharing the
+`nice`/`nohup` option grammar.
 Older CLIs may retain stricter removal checks; hook admission does not bypass
 their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
 agent shells because older CLIs bypass fencing; remove each target with the
