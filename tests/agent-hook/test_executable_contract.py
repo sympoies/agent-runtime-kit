@@ -525,6 +525,37 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         self.assertEqual(recent[0]["code"], "dispatch-completed")
         self.assertEqual(recent[0]["disposition"], "allow")
 
+    def test_read_only_shadow_missing_sibling_names_fixture_prerequisite(self) -> None:
+        prefix = self.root / "standalone-binary"
+        prefix.mkdir()
+        standalone = prefix / "agent-hook"
+        shutil.copy2(self.binary, standalone)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "AgentHookExecutableContractTests."
+                "test_read_only_capability_shadow_is_product_parity_evidence_only",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **self.env,
+                "AGENT_HOOK_BIN": str(standalone),
+                "AGENT_HOOK_TEST_OUTPUT_ROOT": str(self.root / "child-output"),
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "managed-query fixture requires an executable agent-docs sibling",
+            result.stderr,
+        )
+        self.assertIn("(case='managed-query')", result.stderr)
+        self.assertIn("FAILED (failures=1)", result.stderr)
+
     def test_read_only_capability_shadow_is_product_parity_evidence_only(self) -> None:
         agent_docs = self.binary.with_name("agent-docs")
         cases = (
@@ -558,35 +589,42 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             ),
         )
         for case_name, command, expected_action, expected_code in cases:
-            decisions = []
-            for product in ("codex", "claude"):
-                decision = self.json_result(
-                    self.run_hook(
-                        "dispatch",
-                        "--product",
-                        product,
-                        "--shadow",
-                        "--format",
-                        "json",
-                        payload={
-                            "hook_event_name": "PreToolUse",
-                            "tool_name": "Bash",
-                            "cwd": str(REPO_ROOT),
-                            "tool_input": {"command": command},
-                        },
+            with self.subTest(case=case_name):
+                if case_name == "managed-query":
+                    self.assertTrue(
+                        agent_docs.is_file() and os.access(agent_docs, os.X_OK),
+                        "managed-query fixture requires an executable agent-docs sibling "
+                        "beside AGENT_HOOK_BIN; build or install the matching agent-docs binary",
                     )
-                )
-                evidence = [
-                    row
-                    for row in decision["shadow"]
-                    if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only-shadow"
-                ]
-                self.assertEqual(len(evidence), 1, (case_name, product, decision))
-                self.assertEqual(evidence[0]["action"], expected_action)
-                self.assertEqual(evidence[0]["code"], expected_code)
-                self.assertEqual(decision["action"], "allow")
-                decisions.append(evidence[0])
-            self.assertEqual(decisions[0], decisions[1], case_name)
+                decisions = []
+                for product in ("codex", "claude"):
+                    decision = self.json_result(
+                        self.run_hook(
+                            "dispatch",
+                            "--product",
+                            product,
+                            "--shadow",
+                            "--format",
+                            "json",
+                            payload={
+                                "hook_event_name": "PreToolUse",
+                                "tool_name": "Bash",
+                                "cwd": str(REPO_ROOT),
+                                "tool_input": {"command": command},
+                            },
+                        )
+                    )
+                    evidence = [
+                        row
+                        for row in decision["shadow"]
+                        if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only-shadow"
+                    ]
+                    self.assertEqual(len(evidence), 1, (case_name, product, decision))
+                    self.assertEqual(evidence[0]["action"], expected_action)
+                    self.assertEqual(evidence[0]["code"], expected_code)
+                    self.assertEqual(decision["action"], "allow")
+                    decisions.append(evidence[0])
+                self.assertEqual(decisions[0], decisions[1], case_name)
 
     def test_trace_and_output_do_not_retain_private_provider_fields(self) -> None:
         sentinels = [
