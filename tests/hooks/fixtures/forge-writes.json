@@ -718,5 +718,80 @@
     "id": "pr-repo-equals-before-verb",
     "command": "gh pr --repo=example/project create --draft",
     "hint": "forge-cli pr create"
+  },
+  {
+    "id": "curl-cluster-method-attached",
+    "command": "curl -sXPOST https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-cluster-method-separate",
+    "command": "curl -sX POST https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-cluster-data",
+    "command": "curl -sSd '{\"body\":\"fixture\"}' https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-cluster-upload",
+    "command": "curl -sT fixture.json https://api.github.com/repos/o/r/contents/file",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "curl-cluster-form",
+    "command": "curl -sF body=fixture https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "curl-cluster-header-read",
+    "command": "curl -sSH '-XPOST' https://api.github.com/repos/o/r",
+    "hint": null
+  },
+  {
+    "id": "curl-cluster-explicit-get",
+    "command": "curl -sSXGET -d body=fixture https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": null
+  },
+  {
+    "id": "curl-cluster-get-fields",
+    "command": "curl -sSGd body=fixture https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": null
+  },
+  {
+    "id": "curl-cluster-head",
+    "command": "curl -sSI https://api.github.com/repos/o/r",
+    "hint": null
+  },
+  {
+    "id": "gh-cluster-method-attached",
+    "command": "gh api -iXPOST repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "gh-cluster-method-separate",
+    "command": "gh api -iX POST repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "gh-cluster-fields",
+    "command": "gh api -if body=fixture repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "gh-cluster-header-read",
+    "command": "gh api -iH '-XPOST' repos/o/r",
+    "hint": null
+  },
+  {
+    "id": "gh-cluster-graphql-read",
+    "command": "gh api -iXGET graphql -f 'query=query { viewer { login } }'",
+    "hint": null
+  },
+  {
+    "id": "curl-cluster-data-single-switch",
+    "command": "curl -sd body=fixture https://api.github.com/repos/o/r/issues/7/comments",
+    "hint": "forge-cli issue comment"
   }
 ]

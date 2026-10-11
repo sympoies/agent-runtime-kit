@@ -315,9 +315,24 @@ def request_parts(args: list[str], *, curl: bool = False) -> tuple[str, list[str
     other_values = ({"-H", "--header", "-o", "--output", "-u", "--user", "--proto-default"} if curl else
                     {"-H", "--header", "--hostname", "--jq", "-q", "--template", "-t",
                      "--cache", "--preview", "-p"})
+    # Consume only known no-value short switches at the front of a cluster.
+    # Leave the remainder intact for the existing value-option parser, so data
+    # such as a header containing -XPOST can never become another option.
+    short_switches = set("afGgIikjlLMnNqJORsSvV012346BZp#") if curl else {"i"}
     i = 0
     while i < len(args):
         token = args[i]
+        if token.startswith("-") and not token.startswith("--") and len(token) > 2:
+            offset = 1
+            while offset < len(token) and token[offset] in short_switches:
+                if curl and token[offset] in {"G", "I"}:
+                    read_method = "HEAD" if token[offset] == "I" else "GET"
+                offset += 1
+            if offset > 1:
+                if offset == len(token):
+                    i += 1
+                    continue
+                token = "-" + token[offset:]
         flag, sep, value = token.partition("=")
         if curl and token in {"-G", "--get", "-I", "--head"}:
             read_method = "HEAD" if token in {"-I", "--head"} else "GET"
