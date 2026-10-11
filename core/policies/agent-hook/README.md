@@ -40,20 +40,24 @@ overrides, and governed recovery. The scripts continue to own their existing
 state and output contracts until a separately tested typed capability replaces
 them.
 
-The shared Bash `execution.read-only.v1` rule is shadow-only. It asks the
+The shared Bash `execution.read-only.v1` rule owns read-only admission. It asks the
 released same-version verifier for evidence from exact `builtin command`
 invocations of an absolute `agent-run`, `agent-docs`, or `forge-cli` producer,
-but its result is trace evidence only. Legacy handlers remain the sole
-production admission authority in this policy version. Raw local exploration
-that mismatches the capability routes to `agent-run inspect`; managed queries
-route through the exact tool-owned operation-effect contracts. No mismatch may
-expand the legacy allowlist.
+and admits only the exact verified request. Its locked enforce rule bypasses
+only the paired `pre-edit-intent-gate`; every independent guard still runs.
+Missing, invalid, mutation or unsupported evidence falls through to that
+handler's normal exact-target preparation. Raw local exploration uses
+`agent-run inspect`; managed queries use their tool-owned operation-effect
+contracts. The fallback has no argv read-admission allowlist. Exact preparation,
+Git recovery and current-session claim mutations retain bounded bootstrap
+routes. Global shadow dispatch remains observation-only.
 
 Priority ranges are local to a product/event/matcher group:
 
 - `10`: authenticated agent-session activity recording.
 - `20`: semantic-conflict admission from trusted coordination state.
 - `30`: writer owner-liveness admission from trusted coordination state.
+- `90`: verified read-only admission paired to preparation at `100`.
 - `100` and above: legacy handlers in their current provider order, in steps
   of ten.
 - `900`: locked `agent-session.coordination.v1` transaction lifecycle,

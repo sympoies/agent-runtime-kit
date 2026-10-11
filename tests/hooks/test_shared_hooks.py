@@ -11198,11 +11198,9 @@ exit 64
                     )
                     self.assertNotIn("before mutating", str(decision).lower())
 
-            # Admitted without project-dev: read-only inspection, and trusted
-            # read-only agent-docs commands for any declared intent (including a
-            # different project-path or a read-only --product flag). These remove
-            # the false coupling that forced project-dev before another intent
-            # could even be prepared or read.
+            # These direct fallback calls have no verified capability.
+            # Real managed queries are admitted by the released dispatcher,
+            # covered by the paired-capability consumer test.
             allowed = (
                 "git status --short",
                 preflight,
@@ -11224,7 +11222,7 @@ exit 64
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "project-dev")
 
             repo_bin = repo / "bin"
             repo_bin.mkdir()
@@ -11345,7 +11343,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-    def test_pre_edit_intent_gate_allows_only_trusted_session_readiness_commands(
+    def test_pre_edit_intent_gate_claim_bootstrap_has_no_read_admission(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11451,7 +11449,10 @@ exit 64
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    if command in (claim, literal_claim, revision_fenced_claim):
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, "project-dev")
 
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
@@ -12022,7 +12023,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-    def test_pre_edit_intent_gate_admits_read_only_inspection_without_project_dev(
+    def test_pre_edit_intent_gate_requires_preparation_for_unverified_reads(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -12075,15 +12076,17 @@ exit 64
                 "rg --no-config TODO . | wc -l | head -n 1",
                 "nl -ba README.md | sed -n '1,20p'",
             )
+            # Raw argv is not capability evidence. Without verified preparation
+            # the fallback handler must not independently authorize these reads.
             for command in read_only:
-                with self.subTest(read_only=command):
+                with self.subTest(unverified_read=command):
                     payload = command_payload(command)
                     payload["session_id"] = "read-only-lane"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "project-dev")
 
             shadow_marker = repo / "shadow-rg-ran"
             shadow_bin = repo / "bin"
@@ -12157,6 +12160,28 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "project-dev")
+
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{"product":"codex","active_intents":["project-dev"],"verified":true}}'
+  exit 0
+fi
+exit 64
+""",
+            )
+            for command in read_only:
+                with self.subTest(prepared_read=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "read-only-lane"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
     def test_pre_edit_intent_gate_prepares_any_declared_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -18345,7 +18370,7 @@ exit 64
         self.assertEqual(unknown.kind, "unknown")
         git_root.assert_not_called()
 
-    def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
+    def test_pre_edit_intent_gate_defers_unverified_agent_docs_reads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -18396,7 +18421,7 @@ exit 64
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "project-dev")
 
             blocked = (
                 base + "preflight --intent memory --output /tmp/x",

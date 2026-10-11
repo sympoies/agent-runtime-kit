@@ -5,7 +5,7 @@
   "legacy_registration_count": 58,
   "rules": [
     {
-      "id": "runtime.shared.pre-tool-use.bash.read-only-shadow",
+      "id": "runtime.shared.pre-tool-use.bash.read-only",
       "products": [
         "codex",
         "claude"
@@ -16,19 +16,20 @@
       "matcher": "Bash",
       "capability": {
         "id": "execution.read-only.v1",
-        "reason_code": "read-only-capability"
+        "reason_code": "read-only-capability",
+        "fallback_handler_id": "pre-edit-intent-gate"
       },
-      "mode": "shadow",
+      "mode": "enforce",
       "priority": 90,
       "failure_posture": "closed",
       "timeout_posture": "closed",
       "override_class": "locked",
       "state_owner": "none",
-      "transformation": "shadow-evidence-only",
-      "recovery": "none",
+      "transformation": "paired-preparation-bypass",
+      "recovery": "exact-target-project-dev-fallback",
       "docs": "core/policies/agent-hook/README.md",
-      "test_owner": "tests/agent-hook/test_executable_contract.py::AgentHookExecutableContractTests.test_read_only_capability_shadow_is_product_parity_evidence_only",
-      "disposition": "added-read-only-shadow",
+      "test_owner": "tests/agent-hook/test_executable_contract.py::AgentHookExecutableContractTests.test_read_only_capability_bypasses_only_paired_preparation",
+      "disposition": "typed-read-only-admission",
       "legacy_handler": null
     },
     {
