@@ -6,6 +6,7 @@ import contextlib
 import errno
 import hashlib
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -343,7 +344,6 @@ def gate_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     if overrides:
         full_env.update(overrides)
     return full_env
-
 
 
 def run_controller(
@@ -1603,12 +1603,12 @@ class SharedHookTests(unittest.TestCase):
 
     def test_git_worktree_override_respects_env_option_boundaries(self) -> None:
         blocked_commands = (
-            "env -iC ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
-            "env --ch ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 env - git worktree remove ../victim",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i git worktree remove ../victim'",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -u ALLOW_DIRECT_GIT_WORKTREE git worktree remove ../victim'",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 /usr/bin/time -f x env -i git worktree remove ../victim",
+            "env -iC ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim",
+            "env --ch ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 env - git worktree move ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i git worktree move ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -u ALLOW_DIRECT_GIT_WORKTREE git worktree move ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 /usr/bin/time -f x env -i git worktree move ../victim",
         )
         for command in blocked_commands:
             with self.subTest(command=command):
@@ -1622,16 +1622,16 @@ class SharedHookTests(unittest.TestCase):
             "block-direct-git-worktree.py",
             command_payload(
                 "env -iC . ALLOW_DIRECT_GIT_WORKTREE=1 "
-                "git worktree remove ../victim"
+                "git worktree move ../victim"
             ),
         )
         self.assertEqual(code, 0, stderr)
         self.assert_allowed(decision)
 
         for command in (
-            "env -- ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree remove ../victim'",
-            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../victim'",
+            "env -- ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree move ../victim'",
+            "ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'env -i ALLOW_DIRECT_GIT_WORKTREE=1 git worktree move ../victim'",
         ):
             with self.subTest(command=command):
                 code, decision, stderr = run_hook(
@@ -1642,7 +1642,7 @@ class SharedHookTests(unittest.TestCase):
 
         code, decision, stderr = run_hook(
             "block-direct-git-worktree.py",
-            command_payload("env -i git worktree remove ../victim"),
+            command_payload("env -i git worktree move ../victim"),
             env={"ALLOW_DIRECT_GIT_WORKTREE": "1"},
         )
         self.assertEqual(code, 0, stderr)
@@ -11141,7 +11141,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-    def test_pre_edit_intent_gate_allows_only_trusted_main_agent_readiness_commands(
+    def test_pre_edit_intent_gate_allows_only_trusted_session_readiness_commands(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11184,22 +11184,11 @@ exit 64
             ripgrep = bin_dir / "rg"
             ripgrep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             ripgrep.chmod(0o755)
-            main_agent = bin_dir / "main-agent"
-            main_agent_script = """#!/bin/sh
-if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
-exit 0
-"""
-            main_agent.write_text(main_agent_script, encoding="utf-8")
-            main_agent.chmod(0o755)
-
             private_dir = root / "private"
             private_dir.mkdir()
             claim_file = private_dir / "work-context.json"
             claim_file.write_text("{}\n", encoding="utf-8")
             claim_file.chmod(0o600)
-            packet_file = private_dir / "orchestration-packet.json"
-            packet_file.write_text("{}\n", encoding="utf-8")
-            packet_file.chmod(0o600)
             capability_file = private_dir / "capability"
             capability_file.write_text("fixture\n", encoding="utf-8")
             capability_file.chmod(0o600)
@@ -11214,14 +11203,14 @@ exit 0
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "AGENT_RUNTIME_PRODUCT": "codex",
                 "CODEX_AGENT_STATE_HOME": str(repo / "state"),
-                "AGENT_SESSION_ID": "main-agent-readiness",
+                "AGENT_SESSION_ID": "session-readiness",
                 "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
             trusted_agent_run = str(agent_run.resolve())
             claim = (
                 "agent-session work-context claim "
-                "--session main-agent-readiness "
+                "--session session-readiness "
                 f"--file {claim_file.resolve()} "
                 f"--capability-file {capability_file.resolve()} "
                 "--idempotency-key readiness-claim-0001 --format json"
@@ -11237,47 +11226,6 @@ exit 0
                 f"--file {claim_file.resolve()} ",
                 f"--file {claim_file.resolve()} --if-revision 1 ",
             )
-            init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-absent --idempotency-key readiness-init-0001 --format json"
-            )
-            revision_fenced_init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-revision 1 --idempotency-key readiness-init-0002 --format json"
-            )
-            rebind = (
-                "main-agent rebind --if-revision 1 "
-                "--idempotency-key readiness-rebind-0001 --format json"
-            )
-            quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--idempotency-key readiness-quick-0001 --format json"
-            )
-            tiered_quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--tier issue --idempotency-key readiness-quick-0002 --format json"
-            )
-            bootstrap = (
-                "main-agent bootstrap --idempotency-key "
-                "readiness-bootstrap-0001 --format json"
-            )
-            self_recover = (
-                "main-agent self recover --idempotency-key "
-                "readiness-recover-0001 --format json"
-            )
-            worker_wait = (
-                "main-agent worker wait assignment-1234 --until submitted "
-                "--timeout 30s --format json"
-            )
-            worker_wait_variants = (
-                "main-agent worker wait --any --until terminal --format json",
-                "main-agent worker wait assignment-1234 --until blocked "
-                "--timeout 1s --format json",
-                "main-agent worker wait --any --until submitted "
-                "--timeout 60s --format json",
-                "main-agent worker wait assignment-1234 --until terminal "
-                "--format json",
-            )
             allowed = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
@@ -11287,38 +11235,6 @@ exit 0
                 claim,
                 literal_claim,
                 revision_fenced_claim,
-                "main-agent --version",
-                "main-agent capabilities --provider codex --format json",
-                "main-agent capabilities --provider claude --format json",
-                "main-agent self readiness --format json",
-                f"{main_agent.resolve()} capabilities --provider codex --format json",
-                f"{main_agent.resolve()} self readiness --format json",
-                "main-agent self show --format json",
-                "main-agent rehydrate --format json",
-                "main-agent rehydrate --format markdown",
-                "main-agent status --format json",
-                "main-agent worker list --format json",
-                "main-agent worker show assignment-1234 --format json",
-                worker_wait,
-                *worker_wait_variants,
-                "main-agent worker diagnose assignment-1234 --format json",
-                "main-agent worker supervise assignment-1234 --format json",
-                bootstrap,
-                self_recover,
-                init,
-                revision_fenced_init,
-                rebind,
-                quick,
-                tiered_quick,
-                *(
-                    tiered_quick.replace("--tier issue", f"--tier {mode}")
-                    for mode in (
-                        "direct",
-                        "issue",
-                        "program",
-                        "program/dispatch",
-                    )
-                ),
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
@@ -11326,24 +11242,12 @@ exit 0
             for command in allowed:
                 with self.subTest(allowed=command):
                     payload = command_payload(command)
-                    payload["session_id"] = "main-agent-readiness"
+                    payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
-
-            main_agent.write_text(
-                main_agent_script.replace("1.24.5", "1.24.6"), encoding="utf-8"
-            )
-            payload = command_payload("main-agent status --format json")
-            payload["session_id"] = "main-agent-readiness"
-            code, decision, stderr = run_hook(
-                "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "project-dev")
-            main_agent.write_text(main_agent_script, encoding="utf-8")
 
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
@@ -11355,56 +11259,11 @@ exit 0
             foreign_agent_run = foreign_bin / "agent-run"
             foreign_agent_run.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             foreign_agent_run.chmod(0o755)
-            foreign_main_agent = foreign_bin / "main-agent"
-            foreign_main_agent.write_text(main_agent_script, encoding="utf-8")
-            foreign_main_agent.chmod(0o755)
-
             blocked = (
+                "main-agent self readiness --format json",
+                "main-agent bootstrap --idempotency-key retirement-0001 --format json",
+
                 "agent-session --help",
-                "main-agent --help",
-                "main-agent capabilities --format json",
-                "main-agent capabilities --format markdown",
-                "main-agent capabilities --provider hermes --format json",
-                "main-agent capabilities --format json --provider codex",
-                "main-agent self readiness --format markdown",
-                "main-agent capabilities --format json extra",
-                "main-agent status --format json extra",
-                bootstrap.replace("readiness-bootstrap-0001", "short"),
-                bootstrap.replace("--format json", "--format markdown"),
-                bootstrap.replace(
-                    "readiness-bootstrap-0001", "'bad key!'"
-                ),
-                self_recover.replace("--idempotency-key", "--key"),
-                worker_wait.replace("--until submitted", "--until working"),
-                worker_wait.replace("--timeout 30s", "--timeout 0s"),
-                worker_wait.replace("--timeout 30s", "--timeout 61s"),
-                "main-agent worker diagnose ../foreign --format json",
-                "main-agent worker supervise assignment-1234 --format json extra",
-                "main-agent checkpoint --file packet.json --if-revision 1 --idempotency-key checkpoint-0001 --format json",
-                init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                init.replace(" --if-absent", ""),
-                init.replace("readiness-init-0001", "short"),
-                rebind + " extra",
-                rebind.replace("--if-revision 1 ", ""),
-                rebind.replace("--if-revision 1", "--if-revision 01"),
-                rebind.replace(
-                    "--if-revision 1 --idempotency-key readiness-rebind-0001",
-                    "--idempotency-key readiness-rebind-0001 --if-revision 1",
-                ),
-                quick + " extra",
-                quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                quick.replace("--assignment-file", "--packet-file"),
-                quick.replace("readiness-quick-0001", "short"),
-                tiered_quick.replace("--tier issue", "--tier L0"),
-                tiered_quick.replace("--tier issue", "--tier program/plan"),
-                tiered_quick.replace("--tier issue", "--tier Direct"),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
-                revision_fenced_init.replace(
-                    "--if-revision 1 --idempotency-key readiness-init-0002",
-                    "--idempotency-key readiness-init-0002 --if-revision 1",
-                ),
-                revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
                 "agent-session -V",
                 "agent-session --version | cat",
                 f"agent-session --version > {root / 'version.txt'}",
@@ -11426,7 +11285,7 @@ exit 0
                 "agent-session activity setup --agent codex --repair --dry-run",
                 "agent-session activity setup --agent codex --repair --dry-run --apply --format json",
                 "agent-session activity setup --agent codex --repair --dry-run --format json extra",
-                claim.replace("--session main-agent-readiness ", ""),
+                claim.replace("--session session-readiness ", ""),
                 claim.replace("--file " + str(claim_file.resolve()) + " ", ""),
                 claim.replace(
                     "--capability-file " + str(capability_file.resolve()) + " ", ""
@@ -11434,7 +11293,7 @@ exit 0
                 claim.replace("--idempotency-key readiness-claim-0001 ", ""),
                 claim.replace(" --format json", ""),
                 claim.replace(
-                    "--session main-agent-readiness", "--session another-session"
+                    "--session session-readiness", "--session another-session"
                 ),
                 claim.replace(str(claim_file.resolve()), "work-context.json"),
                 claim.replace(
@@ -11501,7 +11360,7 @@ exit 0
             for command in blocked:
                 with self.subTest(blocked=command):
                     payload = command_payload(command)
-                    payload["session_id"] = "main-agent-readiness"
+                    payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
@@ -11521,7 +11380,6 @@ exit 0
             for candidate in (shadow_bin, foreign_bin):
                 for command in (
                     "agent-session --version",
-                    "main-agent status --format json",
                     claim,
                     f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 ):
@@ -11529,7 +11387,7 @@ exit 0
                         readiness_companion_shadow=candidate, command=command
                     ):
                         payload = command_payload(command)
-                        payload["session_id"] = "main-agent-readiness"
+                        payload["session_id"] = "session-readiness"
                         code, decision, stderr = run_hook(
                             "pre-edit-intent-gate.py",
                             payload,
@@ -11546,20 +11404,18 @@ exit 0
             alias_bin.mkdir()
             (alias_bin / "agent-session").symlink_to(agent_session.resolve())
             (alias_bin / "agent-run").symlink_to(agent_run.resolve())
-            (alias_bin / "main-agent").symlink_to(main_agent.resolve())
             alias_env = {
                 **env,
                 "PATH": f"{alias_bin}{os.pathsep}{env['PATH']}",
             }
             alias_commands = (
                 "agent-session --version",
-                "main-agent status --format json",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
             )
             for command in alias_commands:
                 with self.subTest(foreign_same_release_alias=command):
                     payload = command_payload(command)
-                    payload["session_id"] = "main-agent-readiness"
+                    payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py",
                         payload,
@@ -11570,7 +11426,7 @@ exit 0
                     self.assert_blocked(decision, "project-dev")
 
             payload = command_payload("python3 -c 'print(1)'")
-            payload["session_id"] = "main-agent-readiness"
+            payload["session_id"] = "session-readiness"
             code, decision, stderr = run_hook(
                 "pre-edit-intent-gate.py",
                 payload,
@@ -11582,102 +11438,11 @@ exit 0
             assert decision is not None
             self.assertNotIn("Route 1", str(decision.get("reason", "")))
 
-    def test_main_agent_capability_failure_recovery_argv_is_finite(self) -> None:
-        allowed = (
-            ["main-agent", "--version"],
-            [
-                "main-agent",
-                "capabilities",
-                "--provider",
-                "codex",
-                "--format",
-                "json",
-            ],
-            [
-                "main-agent",
-                "capabilities",
-                "--provider",
-                "claude",
-                "--format",
-                "json",
-            ],
-            ["main-agent", "self", "readiness", "--format", "json"],
-            ["main-agent", "self", "show", "--format", "json"],
-            [
-                "main-agent",
-                "self",
-                "recover",
-                "--idempotency-key",
-                "recovery-key-0001",
-                "--format",
-                "json",
-            ],
-            ["main-agent", "rehydrate", "--format", "json"],
-            ["main-agent", "status", "--format", "json"],
-            [
-                "main-agent",
-                "rebind",
-                "--if-revision",
-                "10",
-                "--idempotency-key",
-                "recovery-key-0002",
-                "--format",
-                "json",
-            ],
-        )
-        blocked = (
-            ["pwd"],
-            ["main-agent", "--help"],
-            ["main-agent", "capabilities", "--format", "json"],
-            ["main-agent", "capabilities", "--format", "markdown"],
-            [
-                "main-agent",
-                "capabilities",
-                "--provider",
-                "hermes",
-                "--format",
-                "json",
-            ],
-            [
-                "main-agent",
-                "capabilities",
-                "--format",
-                "json",
-                "--provider",
-                "codex",
-            ],
-            ["main-agent", "capabilities", "--format", "json", "extra"],
-            ["main-agent", "self", "readiness", "--format", "markdown"],
-            ["main-agent", "self", "show", "--format", "json", "extra"],
-            [
-                "main-agent",
-                "self",
-                "recover",
-                "--idempotency-key",
-                "short",
-                "--format",
-                "json",
-            ],
-            ["main-agent", "worker", "start", "--help"],
-            ["main-agent", "account-handoff", "--help"],
-            ["agent-session", "send", "worker", "--key", "enter"],
-            ["git", "add", "."],
-        )
-        for words in allowed:
-            with self.subTest(allowed=words):
-                self.assertTrue(
-                    hook_common.main_agent_capability_recovery_argv(list(words))
-                )
-        for words in blocked:
-            with self.subTest(blocked=words):
-                self.assertFalse(
-                    hook_common.main_agent_capability_recovery_argv(list(words))
-                )
 
     def test_normalized_cli_argv_accepts_only_bare_or_absolute_named_cli(
         self,
     ) -> None:
-        for executable_name in ("main-agent", "agent-session"):
+        for executable_name in ("agent-run", "agent-session"):
             with self.subTest(executable_name=executable_name, spelling="bare"):
                 words = [executable_name, "status"]
                 self.assertIs(
@@ -11732,7 +11497,6 @@ exit 0
                     "agent-docs",
                     "agent-session",
                     "agent-run",
-                    "main-agent",
                 ):
                     executable = directory / name
                     executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -11740,7 +11504,7 @@ exit 0
 
             linked_bin = root / "linked-bin"
             linked_bin.mkdir()
-            for name in ("agent-docs", "agent-session", "agent-run", "main-agent"):
+            for name in ("agent-docs", "agent-session", "agent-run"):
                 (linked_bin / name).symlink_to(release_bin / name)
 
             base_env = {
@@ -11748,7 +11512,7 @@ exit 0
                 "PATH": f"{linked_bin}{os.pathsep}{os.environ.get('PATH', '')}",
             }
             with mock.patch.dict(os.environ, base_env, clear=False):
-                for name in ("agent-session", "agent-run", "main-agent"):
+                for name in ("agent-session", "agent-run"):
                     with self.subTest(valid_shared_symlink_surface=name):
                         self.assertEqual(
                             gate.trusted_release_companion(
@@ -11763,7 +11527,7 @@ exit 0
 
             alias_bin = root / "foreign-alias-bin"
             alias_bin.mkdir()
-            for name in ("agent-session", "agent-run", "main-agent"):
+            for name in ("agent-session", "agent-run"):
                 (alias_bin / name).symlink_to(release_bin / name)
             with mock.patch.dict(
                 os.environ,
@@ -11773,7 +11537,7 @@ exit 0
                 },
                 clear=False,
             ):
-                for name in ("agent-session", "agent-run", "main-agent"):
+                for name in ("agent-session", "agent-run"):
                     with self.subTest(foreign_lexical_alias=name):
                         self.assertIsNone(
                             gate.trusted_release_companion(
@@ -11788,7 +11552,7 @@ exit 0
             mixed_bin = root / "mixed-bin"
             mixed_bin.mkdir()
             (mixed_bin / "agent-docs").symlink_to(release_bin / "agent-docs")
-            for name in ("agent-session", "agent-run", "main-agent"):
+            for name in ("agent-session", "agent-run"):
                 (mixed_bin / name).symlink_to(foreign_release_bin / name)
             with mock.patch.dict(
                 os.environ,
@@ -11798,7 +11562,7 @@ exit 0
                 },
                 clear=False,
             ):
-                for name in ("agent-session", "agent-run", "main-agent"):
+                for name in ("agent-session", "agent-run"):
                     with self.subTest(foreign_resolved_release=name):
                         self.assertIsNone(
                             gate.trusted_release_companion(
@@ -12849,6 +12613,86 @@ exit 64
             ):
                 self.assertNotIn(private, reason)
 
+    def test_retired_checkpoint_writes_require_authenticated_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = "managed-session"
+            runtime = "runtime-instance"
+            state = root / "session-state"
+            coordination = state / "sessions" / session / "coordination"
+            coordination.mkdir(parents=True)
+            for directory in (state, state / "sessions", coordination.parent, coordination):
+                directory.chmod(0o700)
+            checkpoint = coordination / (
+                f"main-agent-checkpoint-{hashlib.sha256(runtime.encode()).hexdigest()}.json"
+            )
+            checkpoint.write_text("{}\n", encoding="utf-8")
+            checkpoint.chmod(0o600)
+            capability = root / "capability"
+            capability.write_text("fixture-capability\n", encoding="utf-8")
+            capability.chmod(0o600)
+            bin_dir = root / "bin"
+            bin_dir.mkdir(mode=0o700)
+            calls = root / "calls.log"
+            executable = bin_dir / "agent-session"
+            executable.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {shlex.quote(str(calls))}
+if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.32.1'; exit 0; fi
+if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
+if [[ "$*" == *"work-context show"* ]]; then
+  printf '%s\\n' '{{"ok":false,"error":{{"code":"claim-not-found"}}}}'
+  exit 1
+fi
+exit 64
+""",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            env = {
+                "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
+                "AGENT_SESSION_ID": session,
+                "AGENT_SESSION_RUNTIME_ID": runtime,
+                "AGENT_SESSION_STATE_DIR": str(state),
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                "AGENT_SESSION_CHECKPOINT_FILE": str(checkpoint),
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
+            # Match the former exception's exact issued path, private modes,
+            # JSON object, and canonical printf shape so it would have bypassed.
+            content = '{"ready":true}'
+            printf_format = shlex.quote(r"%s\n")
+            payloads = (
+                write_payload(str(checkpoint), content),
+                command_payload(
+                    f"printf {printf_format} {shlex.quote(content)} "
+                    f"> {shlex.quote(str(checkpoint))}"
+                ),
+            )
+            for payload in payloads:
+                with self.subTest(tool=payload["tool_name"]):
+                    calls.write_text("", encoding="utf-8")
+                    payload.update(
+                        session_id="provider-session",
+                        tool_use_id=f"checkpoint-{payload['tool_name']}",
+                        hook_event_name="PreToolUse",
+                    )
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py", payload, cwd=root, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "active work-context claim")
+                    logged = calls.read_text(encoding="utf-8").splitlines()
+                    claim_reads = [line for line in logged if "work-context show" in line]
+                    self.assertEqual(len(claim_reads), 1, logged)
+                    self.assertIn(f"--session {session}", claim_reads[0])
+                    self.assertIn(f"--capability-file {capability}", claim_reads[0])
+                    self.assertFalse(any("work-context admit" in line for line in logged))
+                    self.assertEqual(checkpoint.read_text(encoding="utf-8"), "{}\n")
+
     def test_session_coordination_default_is_advisory_and_never_blocks_mutation(
         self,
     ) -> None:
@@ -13280,7 +13124,7 @@ exit 64
                 None,
                 "provider-pr-unresolved",
             ),
-            # A delivery that would merge stays with the Main Agent.
+            # A delivery that would merge stays with the coordinator.
             ("forge-cli pr deliver --kind feature --title x", None, "provider-pr-unresolved"),
             # Ambiguous or unprovable heads and repositories fail closed.
             (
@@ -13335,7 +13179,7 @@ exit 64
             ("forge-cli pr comment 7 --body-file x.md", "provider-pr", provider("pr", 7)),
             ("forge-cli pr review 7", "provider-pr", provider("pr", 7)),
             ("forge-cli issue comment 12 --body-file x.md", "provider-issue", provider("issue", 12)),
-            # The Main Agent owns new issues.
+            # The coordinator owns new issues.
             ("forge-cli issue create --title x", None, "provider-issue-unresolved"),
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -13948,24 +13792,7 @@ exit 64
                 0,
                 f"source-linked claim failed: stdout={claimed.stdout} stderr={claimed.stderr}",
             )
-            # nils-cli's own Main Agent bootstrap acceptance proves that only
-            # authenticated bootstrap can mint this private grant. This
-            # cross-product fixture injects the already-minted registry state
-            # so it can focus on the runtime hook -> source-linked admission
-            # and completion boundary.
-            registry = json.loads(registry_path.read_text(encoding="utf-8"))
-            alpha_claim = next(
-                claim
-                for claim in registry["claims"]
-                if claim["session_id"] == "alpha" and claim["state"] == "active"
-            )
-            alpha_claim["checkout_shell_grant"] = True
-            registry_path.write_text(
-                json.dumps(registry) + "\n", encoding="utf-8"
-            )
-            registry_path.chmod(0o600)
-
-            shell_payload = command_payload("touch src/generated.txt")
+            shell_payload = write_payload(str(repo / "src" / "generated.txt"), "fixture\n")
             shell_payload.update(
                 {
                     "cwd": str(repo),
@@ -14004,7 +13831,7 @@ exit 64
                 if operation["session_id"] == "alpha"
             ]
             self.assertEqual(len(alpha_operations), 1)
-            self.assertEqual(alpha_operations[0]["operation"], "shell")
+            self.assertEqual(alpha_operations[0]["operation"], "write")
             self.assertEqual(alpha_operations[0]["state"], "completed")
 
             # Pull-request head targets: a surface below the capability floor
@@ -17556,322 +17383,8 @@ exit 64
             self.assertIsNone(operation)
             self.assertEqual(reason, "provider-pr-unresolved")
 
-    def test_session_coordination_guard_admits_private_checkpoint_creation(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            subprocess.run(
-                [
-                    "git",
-                    "remote",
-                    "add",
-                    "origin",
-                    "https://example.invalid/example/repo.git",
-                ],
-                cwd=repo,
-                check=True,
-            )
-            bin_dir = root / "bin"
-            bin_dir.mkdir()
-            agent_session = bin_dir / "agent-session"
-            agent_session.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
-if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
-if [[ "$*" == *"work-context show"* ]]; then
-  printf '%s\n' '{"ok":true,"data":{"schema_version":"agent-session.work-context.v1","session_id":"managed-session","session_incarnation":"incarnation-1","claim_id":"claim-1","revision":3,"state":"active"}}'
-  exit 0
-fi
-exit 64
-""",
-                encoding="utf-8",
-            )
-            agent_session.chmod(0o755)
-            capability = root / "capability"
-            capability.write_text("secret\n", encoding="utf-8")
-            capability.chmod(0o600)
-            state_dir = root / "session-state"
-            session_dir = state_dir / "sessions" / "managed-session"
-            checkpoint_dir = session_dir / "coordination"
-            checkpoint_dir.mkdir(parents=True)
-            session_dir.chmod(0o700)
-            checkpoint_dir.chmod(0o700)
-            runtime_id = "worker-incarnation-one"
-            checkpoint = checkpoint_dir / (
-                "main-agent-checkpoint-"
-                f"{hashlib.sha256(runtime_id.encode()).hexdigest()}.json"
-            )
-            checkpoint.write_text("", encoding="utf-8")
-            checkpoint.chmod(0o600)
-            env = {
-                "AGENT_RUNTIME_PRODUCT": "codex",
-                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
-                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
-                "AGENT_SESSION_ID": "managed-session",
-                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
-                "AGENT_SESSION_STATE_DIR": str(state_dir),
-                "AGENT_SESSION_RUNTIME_ID": runtime_id,
-                "AGENT_SESSION_CHECKPOINT_FILE": str(checkpoint),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-            checkpoint_body = json.dumps(
-                {
-                    "schema_version": "main-agent.checkpoint-input.v1",
-                    "summary": "implementation complete",
-                    "next_action": "await review",
-                    "state": "submitted",
-                    "result_summary": "focused validation passed",
-                }
-            ) + "\n"
 
-            def invoke(
-                payload: dict[str, Any], env_override: dict[str, str] | None = None
-            ) -> tuple[int, dict[str, object] | None, str]:
-                payload.update(
-                    {
-                        "cwd": str(repo),
-                        "session_id": "product-session",
-                        "tool_use_id": "private-checkpoint",
-                        "hook_event_name": "PreToolUse",
-                    }
-                )
-                return run_enforced_hook(
-                    "session-coordination-guard.py",
-                    payload,
-                    cwd=repo,
-                    env=env_override or env,
-                )
-
-            cases = (
-                (
-                    "write",
-                    write_payload(str(checkpoint), checkpoint_body),
-                ),
-                (
-                    "redirect",
-                    command_payload(
-                        "printf '%s\\n' "
-                        f"{shlex.quote(checkpoint_body.rstrip())} > "
-                        f"{shlex.quote(str(checkpoint))}"
-                    ),
-                ),
-            )
-            for name, payload in cases:
-                with self.subTest(route=name):
-                    code, decision, stderr = invoke(payload)
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
-                    self.assertTrue(checkpoint.is_file())
-                    self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
-                    if name == "write":
-                        checkpoint.write_text(checkpoint_body, encoding="utf-8")
-                    else:
-                        subprocess.run(
-                            ["bash", "-c", payload["tool_input"]["command"]],
-                            cwd=repo,
-                            check=True,
-                        )
-                    self.assertEqual(
-                        json.loads(checkpoint.read_text(encoding="utf-8")),
-                        json.loads(checkpoint_body),
-                    )
-                    self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
-
-            legacy_checkpoint = (
-                root
-                / "agent-home"
-                / "out"
-                / "projects"
-                / "example__repo"
-                / "run-1"
-                / "checkpoint.json"
-            )
-            legacy_checkpoint.parent.mkdir(parents=True)
-            alternate_checkpoint = checkpoint_dir / "alternate.json"
-            expansion_body = json.dumps(
-                {
-                    "schema_version": "main-agent.checkpoint-input.v1",
-                    "summary": f"$(touch {root / 'expansion-ran'})",
-                    "next_action": "await review",
-                }
-            )
-            double_quoted_body = expansion_body.replace("\\", "\\\\").replace(
-                '"', '\\"'
-            )
-            rejected = (
-                (
-                    "legacy-project-output",
-                    write_payload(str(legacy_checkpoint), checkpoint_body),
-                    env,
-                ),
-                (
-                    "alternate-target",
-                    write_payload(str(alternate_checkpoint), checkpoint_body),
-                    env,
-                ),
-                (
-                    "scalar-json",
-                    write_payload(str(checkpoint), "[]\n"),
-                    env,
-                ),
-                (
-                    "oversized",
-                    write_payload(
-                        str(checkpoint),
-                        json.dumps({"summary": "x" * (64 * 1024)}),
-                    ),
-                    env,
-                ),
-                (
-                    "compound-command",
-                    command_payload(
-                        "printf '%s\\n' "
-                        f"{shlex.quote(checkpoint_body.rstrip())} > "
-                        f"{shlex.quote(str(checkpoint))} && touch escaped"
-                    ),
-                    env,
-                ),
-                (
-                    "double-quoted-expansion",
-                    command_payload(
-                        f"""printf '%s\\n' "{double_quoted_body}" > {checkpoint}"""
-                    ),
-                    env,
-                ),
-                (
-                    "backtick-expansion",
-                    command_payload(
-                        f"""printf '%s\\n' "{{\\"summary\\":\\"`touch {root / 'backtick-ran'}`\\"}}" > {checkpoint}"""
-                    ),
-                    env,
-                ),
-                (
-                    "parameter-expansion",
-                    command_payload(
-                        f"""printf '%s\\n' "{{\\"summary\\":\\"$HOME\\"}}" > {checkpoint}"""
-                    ),
-                    env,
-                ),
-                (
-                    "runtime-mismatch",
-                    write_payload(str(checkpoint), checkpoint_body),
-                    {**env, "AGENT_SESSION_RUNTIME_ID": "other-incarnation"},
-                ),
-                (
-                    "issued-path-mismatch",
-                    write_payload(str(checkpoint), checkpoint_body),
-                    {**env, "AGENT_SESSION_CHECKPOINT_FILE": str(alternate_checkpoint)},
-                ),
-            )
-            for name, payload, case_env in rejected:
-                with self.subTest(rejected=name):
-                    code, decision, stderr = invoke(payload, case_env)
-                    self.assertEqual(code, 0, stderr)
-                    self.assertIsNotNone(decision)
-                    assert decision is not None
-                    self.assertEqual(decision.get("decision"), "block")
-            self.assertFalse((root / "expansion-ran").exists())
-            self.assertFalse((root / "backtick-ran").exists())
-
-            state_link = root / "linked-session-state"
-            state_link.symlink_to(state_dir, target_is_directory=True)
-            linked_checkpoint = (
-                state_link
-                / "sessions"
-                / "managed-session"
-                / "coordination"
-                / checkpoint.name
-            )
-            linked_env = {
-                **env,
-                "AGENT_SESSION_STATE_DIR": str(state_link),
-                "AGENT_SESSION_CHECKPOINT_FILE": str(linked_checkpoint),
-            }
-            code, decision, stderr = invoke(
-                write_payload(str(linked_checkpoint), checkpoint_body),
-                linked_env,
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
-
-            checkpoint.chmod(0o644)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-            checkpoint.chmod(0o600)
-
-            hardlink_source = checkpoint_dir / "hardlink-source.json"
-            hardlink_source.write_text(checkpoint_body, encoding="utf-8")
-            hardlink_source.chmod(0o600)
-            checkpoint.unlink()
-            checkpoint.hardlink_to(hardlink_source)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-            checkpoint.unlink()
-            checkpoint.write_text("", encoding="utf-8")
-            checkpoint.chmod(0o600)
-
-            symlink_source = checkpoint_dir / "symlink-source.json"
-            symlink_source.write_text("", encoding="utf-8")
-            symlink_source.chmod(0o600)
-            checkpoint.unlink()
-            checkpoint.symlink_to(symlink_source)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-            checkpoint.unlink()
-            checkpoint.write_text("", encoding="utf-8")
-            checkpoint.chmod(0o600)
-
-            checkpoint_dir.chmod(0o755)
-            code, decision, stderr = invoke(
-                write_payload(str(checkpoint), checkpoint_body)
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual((decision or {}).get("decision"), "block")
-
-    def test_session_coordination_checkpoint_probe_skips_non_candidates(self) -> None:
-        spec = importlib.util.spec_from_file_location(
-            "session_coordination_checkpoint_probe_under_test",
-            HOOK_DIR / "session-coordination-guard.py",
-        )
-        assert spec is not None and spec.loader is not None
-        guard = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(guard)
-        with (
-            mock.patch.dict(
-                os.environ,
-                {"AGENT_SESSION_CHECKPOINT_FILE": "/private/checkpoint.json"},
-                clear=False,
-            ),
-            mock.patch.object(guard, "runtime_checkpoint_path") as trusted_path,
-        ):
-            cases = (
-                ("Edit", {"tool_name": "Edit", "tool_input": {}}),
-                (
-                    "Write",
-                    write_payload("/private/ordinary.json", '{"ordinary":true}'),
-                ),
-                ("Bash", command_payload("git status --short")),
-            )
-            for tool, payload in cases:
-                with self.subTest(tool=tool):
-                    self.assertIsNone(guard.runtime_checkpoint_write(payload, tool))
-            trusted_path.assert_not_called()
-
-    def test_session_coordination_handler_advertises_checkpoint_capability(
+    def test_session_coordination_handler_has_no_retired_checkpoint_capability(
         self,
     ) -> None:
         completed = subprocess.run(
@@ -17890,11 +17403,7 @@ exit 64
             json.loads(completed.stdout),
             {
                 "schema_version": "runtime-kit.handler-capabilities.v1",
-                "capabilities": {
-                    "runtime_checkpoint_write": (
-                        "runtime-kit.checkpoint-write-admission.v1"
-                    )
-                },
+                "capabilities": {},
             },
         )
 
@@ -18252,383 +17761,6 @@ exit 64
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "active work-context claim")
 
-    def test_session_coordination_guard_allows_only_exact_main_agent_bootstrap(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            bin_dir = root / "bin"
-            bin_dir.mkdir()
-            agent_session = bin_dir / "agent-session"
-            agent_session.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == *"--version"* ]]; then echo 'agent-session 1.24.5'; exit 0; fi
-if [[ "$*" == *"work-context --help"* ]]; then echo 'show check admit complete reconcile'; exit 0; fi
-exit 64
-""",
-                encoding="utf-8",
-            )
-            agent_session.chmod(0o755)
-            main_agent = bin_dir / "main-agent"
-            main_agent_script = """#!/bin/sh
-if [ "${1:-}" = "--version" ]; then echo 'main-agent 1.24.5'; fi
-exit 0
-"""
-            main_agent.write_text(main_agent_script, encoding="utf-8")
-            main_agent.chmod(0o755)
-
-            private_dir = root / "private"
-            private_dir.mkdir()
-            packet_file = private_dir / "orchestration-packet.json"
-            packet_file.write_text("{}\n", encoding="utf-8")
-            packet_file.chmod(0o600)
-            repository_packet = repo / "orchestration-packet.json"
-            repository_packet.write_text("{}\n", encoding="utf-8")
-            repository_packet.chmod(0o600)
-            public_packet = private_dir / "public-orchestration-packet.json"
-            public_packet.write_text("{}\n", encoding="utf-8")
-            public_packet.chmod(0o644)
-            capability_file = private_dir / "capability"
-            capability_file.write_text("fixture\n", encoding="utf-8")
-            capability_file.chmod(0o600)
-            shadow_dir = root / "shadow"
-            shadow_dir.mkdir()
-            shadow_main_agent = shadow_dir / "main-agent"
-            shadow_main_agent.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            shadow_main_agent.chmod(0o755)
-
-            env = {
-                "AGENT_RUNTIME_PRODUCT": "codex",
-                "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
-                "AGENT_RUNTIME_STATE_HOME": str(root / "runtime-state"),
-                "AGENT_SESSION_ID": "managed-session",
-                "AGENT_SESSION_CAPABILITY_FILE": str(capability_file.resolve()),
-                "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-            init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-absent --idempotency-key main-agent-init-0001 --format json"
-            )
-            revision_fenced_init = (
-                f"main-agent init --packet-file {packet_file.resolve()} "
-                "--if-revision 1 --idempotency-key main-agent-init-0002 --format json"
-            )
-            rebind = (
-                "main-agent rebind --if-revision 1 "
-                "--idempotency-key main-agent-rebind-0001 --format json"
-            )
-            quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--idempotency-key main-agent-quick-0001 --format json"
-            )
-            tiered_quick = (
-                f"main-agent quick --assignment-file {packet_file.resolve()} "
-                "--tier issue --idempotency-key main-agent-quick-0002 --format json"
-            )
-            bootstrap = (
-                "main-agent bootstrap --idempotency-key "
-                "main-agent-bootstrap-0001 --format json"
-            )
-            # `main-agent worker start` writes the worker prompt with an
-            # absolute path so the worker pins the exact launching build. If
-            # that spelling is not admitted, no managed worker can ever run its
-            # mandated first command and the whole run stalls before bootstrap.
-            pinned_bootstrap = (
-                f"{main_agent.resolve()} bootstrap --idempotency-key "
-                "main-agent-bootstrap-0002 --format json"
-            )
-            self_recover = (
-                "main-agent self recover --idempotency-key "
-                "main-agent-recover-0001 --format json"
-            )
-            worker_wait = (
-                "main-agent worker wait assignment-1234 --until submitted "
-                "--timeout 30s --format json"
-            )
-            worker_wait_variants = (
-                "main-agent worker wait --any --until terminal --format json",
-                "main-agent worker wait assignment-1234 --until blocked "
-                "--timeout 1s --format json",
-                "main-agent worker wait --any --until submitted "
-                "--timeout 60s --format json",
-                "main-agent worker wait assignment-1234 --until terminal "
-                "--format json",
-            )
-            checkpoint = (
-                f"main-agent checkpoint --file {packet_file.resolve()} "
-                "--if-revision 1 --idempotency-key checkpoint-0001 --format json"
-            )
-            allowed = (
-                "main-agent --version",
-                "main-agent capabilities --provider codex --format json",
-                "main-agent capabilities --provider claude --format json",
-                f"{main_agent.resolve()} capabilities --provider codex --format json",
-                "main-agent self readiness --format json",
-                f"{main_agent.resolve()} self readiness --format json",
-                "main-agent self show --format json",
-                "main-agent rehydrate --format json",
-                "main-agent rehydrate --format markdown",
-                "main-agent status --format json",
-                "main-agent worker list --format json",
-                "main-agent worker show assignment-1234 --format json",
-                worker_wait,
-                *worker_wait_variants,
-                "main-agent worker diagnose assignment-1234 --format json",
-                "main-agent worker supervise assignment-1234 --format json",
-                bootstrap,
-                pinned_bootstrap,
-                self_recover,
-                init,
-                revision_fenced_init,
-                rebind,
-                quick,
-                tiered_quick,
-                *(
-                    tiered_quick.replace("--tier issue", f"--tier {mode}")
-                    for mode in (
-                        "direct",
-                        "issue",
-                        "program",
-                        "program/dispatch",
-                    )
-                ),
-                checkpoint,
-            )
-            typed_bootstrap_authorization = {
-                "schema_version": (
-                    "runtime-kit.session-coordination-bootstrap-authorization.v1"
-                ),
-                "authorization": "typed-main-agent-bootstrap-authorized",
-            }
-            for index, command in enumerate(allowed):
-                with self.subTest(allowed=command):
-                    payload = command_payload(command)
-                    payload.update(
-                        {
-                            "cwd": str(repo),
-                            "session_id": "product-session",
-                            "tool_use_id": f"main-agent-bootstrap-allowed-{index}",
-                            "hook_event_name": "PreToolUse",
-                        }
-                    )
-                    code, decision, stderr = run_enforced_hook(
-                        "session-coordination-guard.py",
-                        payload,
-                        cwd=repo,
-                        env=env,
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    if command in (bootstrap, pinned_bootstrap):
-                        self.assertEqual(decision, typed_bootstrap_authorization)
-                    else:
-                        self.assert_allowed(decision)
-
-            capability_file.chmod(0o644)
-            payload = command_payload(pinned_bootstrap)
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-bootstrap-invalid-capability",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertNotEqual(decision, typed_bootstrap_authorization)
-            capability_file.chmod(0o600)
-
-            foreign_bin = root / "foreign-bin"
-            foreign_bin.mkdir()
-            foreign_main_agent = foreign_bin / "main-agent"
-            foreign_main_agent.write_text(main_agent_script, encoding="utf-8")
-            foreign_main_agent.chmod(0o755)
-            payload = command_payload("main-agent status --format json")
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-foreign-release-root",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py",
-                payload,
-                cwd=repo,
-                env={
-                    **env,
-                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": os.pathsep.join(
-                        (str(foreign_bin), str(bin_dir))
-                    ),
-                    "PATH": f"{foreign_bin}{os.pathsep}{env['PATH']}",
-                },
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "active work-context claim")
-
-            main_agent.write_text(
-                main_agent_script.replace("1.24.5", "1.24.6"), encoding="utf-8"
-            )
-            payload = command_payload("main-agent status --format json")
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-version-mismatch",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "active work-context claim")
-            payload = command_payload(pinned_bootstrap)
-            payload.update(
-                {
-                    "cwd": str(repo),
-                    "session_id": "product-session",
-                    "tool_use_id": "main-agent-bootstrap-version-mismatch",
-                    "hook_event_name": "PreToolUse",
-                }
-            )
-            code, decision, stderr = run_enforced_hook(
-                "session-coordination-guard.py", payload, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assertNotEqual(decision, typed_bootstrap_authorization)
-            main_agent.write_text(main_agent_script, encoding="utf-8")
-
-            blocked = (
-                "main-agent --version extra",
-                "main-agent capabilities --format json",
-                "main-agent capabilities --format markdown",
-                "main-agent capabilities --provider hermes --format json",
-                "main-agent capabilities --format json --provider codex",
-                "main-agent self readiness --format markdown",
-                "main-agent capabilities --format json extra",
-                "main-agent self show --format markdown",
-                "main-agent self show --format json extra",
-                "main-agent rehydrate --format yaml",
-                "main-agent worker show ../foreign --format json",
-                "main-agent worker list --format json extra",
-                bootstrap.replace("main-agent-bootstrap-0001", "short"),
-                bootstrap.replace("--format json", "--format markdown"),
-                bootstrap.replace(
-                    "main-agent-bootstrap-0001", "'bad key!'"
-                ),
-                self_recover.replace("--idempotency-key", "--key"),
-                worker_wait.replace("--until submitted", "--until working"),
-                worker_wait.replace("--timeout 30s", "--timeout 0s"),
-                worker_wait.replace("--timeout 30s", "--timeout 61s"),
-                "main-agent worker diagnose ../foreign --format json",
-                "main-agent worker supervise assignment-1234 --format json extra",
-                init.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                init.replace(str(packet_file.resolve()), str(repository_packet.resolve())),
-                init.replace(" --if-absent", ""),
-                init.replace(
-                    "--if-absent --idempotency-key main-agent-init-0001",
-                    "--idempotency-key main-agent-init-0001 --if-absent",
-                ),
-                init.replace("main-agent-init-0001", "short"),
-                quick + " extra",
-                quick.replace(str(packet_file.resolve()), "orchestration-packet.json"),
-                quick.replace("--assignment-file", "--packet-file"),
-                quick.replace("main-agent-quick-0001", "short"),
-                tiered_quick.replace("--tier issue", "--tier L0"),
-                tiered_quick.replace("--tier issue", "--tier program/plan"),
-                tiered_quick.replace("--tier issue", "--tier Direct"),
-                init.replace("--format json", "--format markdown"),
-                init + " extra",
-                rebind + " extra",
-                rebind.replace("--if-revision 1 ", ""),
-                rebind.replace("--if-revision 1", "--if-revision 01"),
-                rebind.replace(
-                    "--if-revision 1 --idempotency-key main-agent-rebind-0001",
-                    "--idempotency-key main-agent-rebind-0001 --if-revision 1",
-                ),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision 01"),
-                revision_fenced_init.replace("--if-revision 1", "--if-revision -1"),
-                revision_fenced_init.replace(
-                    "--if-revision 1 --idempotency-key main-agent-init-0002",
-                    "--idempotency-key main-agent-init-0002 --if-revision 1",
-                ),
-                revision_fenced_init.replace("--if-revision 1", "--if-absent --if-revision 1"),
-                f"{shadow_main_agent} status --format json",
-                # An untrusted absolute build and a relative spelling must stay
-                # rejected even though the pinned trusted path is admitted.
-                f"{shadow_main_agent} bootstrap --idempotency-key "
-                "main-agent-bootstrap-0003 --format json",
-                "./main-agent bootstrap --idempotency-key "
-                "main-agent-bootstrap-0004 --format json",
-                "/tmp/$(touch>/tmp/owner-bypass)/main-agent bootstrap "
-                "--idempotency-key main-agent-bootstrap-0005 --format json",
-                "/${ATTACKER_BIN}/main-agent bootstrap --idempotency-key "
-                "main-agent-bootstrap-0006 --format json",
-                "main-agent status --format json | cat",
-                f"main-agent status --format json > {root / 'status.json'}",
-                "sh -c 'main-agent status --format json'",
-                checkpoint.replace(
-                    str(packet_file.resolve()), "orchestration-packet.json"
-                ),
-                checkpoint.replace(
-                    str(packet_file.resolve()), str(repository_packet.resolve())
-                ),
-                checkpoint.replace(
-                    str(packet_file.resolve()), str(public_packet.resolve())
-                ),
-                checkpoint.replace("--if-revision 1", "--if-revision 01"),
-                checkpoint.replace("--if-revision 1", "--if-revision -1"),
-                checkpoint.replace(
-                    "--if-revision 1", "--if-revision 18446744073709551616"
-                ),
-                checkpoint.replace("--if-revision", "--revision"),
-                checkpoint.replace(
-                    "--if-revision 1 --idempotency-key checkpoint-0001",
-                    "--idempotency-key checkpoint-0001 --if-revision 1",
-                ),
-                checkpoint.replace("checkpoint-0001", "short"),
-                checkpoint.replace("checkpoint-0001", "'bad key!'"),
-                checkpoint.replace("--format json", "--format markdown"),
-                checkpoint + " extra",
-                (
-                    f"main-agent worker start --assignment-file {packet_file.resolve()} "
-                    "--if-run-revision 1 --idempotency-key worker-start-0001 "
-                    "--format json"
-                ),
-                (
-                    "main-agent collaborate assignment-1234 --session worker-5678 "
-                    "--if-revision 1 --idempotency-key collaborate-0001 --format json"
-                ),
-                "main-agent close --if-revision 1 --idempotency-key close-0001 --format json",
-            )
-            for index, command in enumerate(blocked):
-                with self.subTest(blocked=command):
-                    payload = command_payload(command)
-                    payload.update(
-                        {
-                            "cwd": str(repo),
-                            "session_id": "product-session",
-                            "tool_use_id": f"main-agent-bootstrap-blocked-{index}",
-                            "hook_event_name": "PreToolUse",
-                        }
-                    )
-                    code, decision, stderr = run_enforced_hook(
-                        "session-coordination-guard.py",
-                        payload,
-                        cwd=repo,
-                        env=env,
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "active work-context claim")
 
     def test_session_coordination_guard_allows_only_exact_projected_lifecycle_commands(
         self,
@@ -22375,6 +21507,55 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, fragment)
+
+    def test_default_delivery_collaboration_marker_grants_no_push_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for marked in (True, False):
+                with self.subTest(marked=marked):
+                    repo = Path(tmp) / ("marked" if marked else "unmarked")
+                    self._init_checkout_lease_repo(repo)
+                    if marked:
+                        (repo / ".agent-collab").write_text(
+                            "collab-protocol: 1\n", encoding="utf-8",
+                        )
+                        for arguments in (
+                            ["add", "--", ".agent-collab"],
+                            ["commit", "-q", "-m", "ledger marker fixture"],
+                            ["push", "-q", "origin", "main"],
+                        ):
+                            subprocess.run(
+                                ["git", *arguments], cwd=repo, check=True,
+                                capture_output=True,
+                            )
+                    tracked = subprocess.run(
+                        ["git", "ls-files", "--", ".agent-collab"], cwd=repo,
+                        check=True, capture_output=True, text=True,
+                    )
+                    self.assertEqual(bool(tracked.stdout.strip()), marked)
+                    remote_marker = subprocess.run(
+                        ["git", "--git-dir", str(repo.parent / f"{repo.name}-origin.git"),
+                         "show", "HEAD:.agent-collab"],
+                        capture_output=True,
+                    )
+                    self.assertEqual(remote_marker.returncode == 0, marked)
+                    if marked:
+                        self.assertEqual(remote_marker.stdout, b"collab-protocol: 1\n")
+                    # The default-delivery hook sees the invocation, not its
+                    # Python subprocesses. Policy owns the tool's authority.
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload("python3 tools/collab.py post draft.md"),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+                    for command in ("git push", "git push origin HEAD:main"):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command), cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "[default-delivery:")
 
     def test_default_delivery_hook_blocks_default_branch_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -28438,7 +27619,369 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertTrue(linked_lock.exists())
             self.assertEqual(linked_lock.stat().st_ino, lock_inode)
 
-    def test_checkout_lease_advisory_removal_retains_target_without_fence(self) -> None:
+    def test_trusted_removal_all_modes(self) -> None:
+        module = self._load("trusted_removal_modes", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                primary = root / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-modes")
+                target = shlex.quote(str(linked))
+                for mode in ("", "off", "advisory", "enforce"):
+                    for command in (
+                        f"git-cli worktree remove {target}",
+                        f"git-cli worktree remove {target} --safe",
+                        f"echo ready; git-cli worktree remove {target}",
+                        f"command -- git-cli worktree remove {target}",
+                        f"cd {shlex.quote(str(primary))} && git-cli worktree remove {target}",
+                        f"cd -- {shlex.quote(str(primary))} && git-cli worktree remove ../{linked.name}",
+                    ):
+                        with self.subTest(mode=mode, command=command):
+                            payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                            with mock.patch.dict(os.environ, {
+                                "AGENT_SESSION_COORDINATION_MODE": mode,
+                                "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                            }), mock.patch.object(module, "read_payload", return_value=payload), \
+                                 mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                                 mock.patch.object(module, "emit_block") as blocked:
+                                module.main()
+                            blocked.assert_not_called()
+                self.assertTrue(linked.exists(), "PreToolUse never removes a worktree")
+                self.assertEqual(self._checkout_lease_files(root / "state"), [])
+        finally:
+            sys.modules.pop("trusted_removal_modes", None)
+
+    def test_trusted_removal_backup_acknowledgement_permutations(self) -> None:
+        module = self._load("trusted_removal_acknowledgement", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                primary = root / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-acknowledgement")
+                target = shlex.quote(str(linked))
+                for safe in ((), ("--safe",)):
+                    for format_args in ((), ("--format text",), ("--format json",),
+                                        ("--format=text",), ("--format=json",)):
+                        options = (target, "--acknowledge-backup-omissions") + safe + format_args
+                        for arguments in itertools.permutations(options):
+                            removal = "git-cli worktree remove " + " ".join(arguments)
+                            for prefix in ("", f"cd {shlex.quote(str(primary))} && "):
+                                for mode in ("", "off", "advisory", "enforce"):
+                                    command = prefix + removal
+                                    with self.subTest(mode=mode, command=command):
+                                        payload = self._checkout_lease_payload(
+                                            "owner", primary, tool_name="Bash", command=command
+                                        )
+                                        with mock.patch.dict(os.environ, {
+                                            "AGENT_SESSION_COORDINATION_MODE": mode,
+                                            "AGENT_RUNTIME_STATE_HOME": str(root / "state"),
+                                        }), mock.patch.object(module, "read_payload", return_value=payload), \
+                                             mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                                             mock.patch.object(module, "emit_block") as blocked:
+                                            module.main()
+                                        blocked.assert_not_called()
+                self.assertTrue(linked.exists(), "PreToolUse never removes a worktree")
+                self.assertEqual(self._checkout_lease_files(root / "state"), [])
+        finally:
+            sys.modules.pop("trusted_removal_acknowledgement", None)
+
+    def test_trusted_removal_refuses_unrelated_flags_and_formats(self) -> None:
+        module = self._load("trusted_removal_options", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-options")
+                for mode in ("", "off", "advisory", "enforce"):
+                    for options in ("--force", "-f", "--dry-run", "--format yaml",
+                                    "--format=yaml", "--format", "--format=",
+                                    "--acknowledge-backup-omissions=true"):
+                        command = (f"git-cli worktree remove {shlex.quote(str(linked))} "
+                                   f"--acknowledge-backup-omissions {options}")
+                        with self.subTest(mode=mode, options=options):
+                            payload = self._checkout_lease_payload(
+                                "owner", primary, tool_name="Bash", command=command
+                            )
+                            with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": mode}), \
+                                 mock.patch.object(module, "read_payload", return_value=payload), \
+                                 mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                                 mock.patch.object(module, "emit_block") as blocked:
+                                module.main()
+                            blocked.assert_called_once()
+                # Exercise format validation independently of acknowledgement admission.
+                for option in ("--format yaml", "--format=yaml", "--format="):
+                    with self.subTest(option=option):
+                        with self.assertRaises(module.MutationScopeError):
+                            module.worktree_remove_target_argument(
+                                ["git-cli", "worktree", "remove", str(linked)] + shlex.split(option)
+                            )
+                self.assertTrue(linked.exists())
+        finally:
+            sys.modules.pop("trusted_removal_options", None)
+
+    def test_raw_removal_override_stays_blocked(self) -> None:
+        for mode in ("advisory", "enforce"):
+            for command in (
+                "git worktree remove ../target",
+                "ALLOW_DIRECT_GIT_WORKTREE=1 git worktree remove ../target",
+                "env ALLOW_DIRECT_GIT_WORKTREE=1 bash -c 'git worktree remove ../target'",
+            ):
+                with self.subTest(mode=mode, command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-worktree.py", command_payload(command),
+                        env={"AGENT_SESSION_COORDINATION_MODE": mode,
+                             "AGENT_RUNTIME_ALLOW_DIRECT_GIT_WORKTREE": "1"},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "git-cli worktree")
+
+    def test_raw_rm_registered_worktree_stays_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/raw-rm")
+            for mode in ("advisory", "enforce"):
+                for command in (
+                    f"rm -rf {shlex.quote(str(linked))}",
+                    f"TARGET={shlex.quote(str(linked))}; rm -rf \"$TARGET\"",
+                    f"cd .. && rm -rf {shlex.quote(linked.name)}",
+                    f"cd -- .. && rm -rf {shlex.quote(linked.name)}",
+                    f"agent-run exec --cwd {shlex.quote(str(linked.parent))} rm -rf {shlex.quote(linked.name)}",
+                    f"cd {shlex.quote(str(Path(tmp) / 'missing'))} || rm -rf ../{shlex.quote(linked.name)}",
+                ):
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "git-cli worktree remove")
+                        self.assertTrue(linked.exists())
+
+    def test_raw_deletion_verbs_registered_worktree_stay_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/deletion-verbs")
+            target = shlex.quote(str(linked))
+            env = {"AGENT_RUNTIME_STATE_HOME": str(root / "state")}
+            owner = self._checkout_lease_payload("owner", linked / "README.md")
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py", owner, cwd=linked, env=env
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            commands = (
+                f"unlink {target}", f"shred --remove {target}",
+                f"find {target} -delete", f"find {target} -depth -delete",
+                f"find {target} -mindepth 1 -delete", "find -delete",
+                rf"find {target} \( -type f \) -delete",
+                f"find {target} '(' -type f ')' -delete",
+                f"find {target} -exec rm -rf {{}} +",
+                rf"find {target} -exec unlink {{}} \;",
+                f"find {target} -exec shred --remove {{}} +",
+                f"find {target} -execdir rm -rf {{}} +",
+                rf"find {target} -exec echo {{}} \; -delete",
+                f"find {target} -exec echo {{}} ';' -delete",
+                f"find {shlex.quote(str(root))} -exec rm -rf {target} +",
+                rf"find {target} -ok unlink {{}} \;",
+                rf"find {target} -okdir shred --remove {{}} \;",
+                f"TARGET={target}; find \"$TARGET\" -delete",
+                f"cd .. && find {shlex.quote(linked.name)} -delete",
+                f"agent-run exec --cwd {shlex.quote(str(linked.parent))} find {shlex.quote(linked.name)} -delete",
+            )
+            for mode in ("advisory", "enforce"):
+                for command in commands:
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload(
+                            "owner", linked, tool_name="Bash", command=command
+                        )
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=linked,
+                            env={**env, "AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "git-cli worktree remove")
+                        self.assertTrue(linked.exists())
+
+    def test_raw_deletion_verbs_keep_ordinary_file_and_read_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            for mode in ("advisory", "enforce"):
+                for command in ("unlink README.md", "shred --remove README.md",
+                                "find README.md -delete", "find README.md -exec rm {} +",
+                                "find . -print", "find . -name -delete -print",
+                                "find . -exec echo -delete {} +",
+                                "find . -exec rm README.md +",
+                                "find . -fprintf output.txt -delete"):
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload(
+                            "owner", primary, tool_name="Bash", command=command
+                        )
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+
+    def test_raw_rm_literal_variable_file_keeps_ordinary_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            for mode in ("", "off", "advisory", "enforce"):
+                for command in ('rm README.md', 'ARTIFACT=README.md; rm "$ARTIFACT"'):
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+
+    def test_raw_rm_resolves_target_checkout_from_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            outside = Path(tmp)
+            primary = outside / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/outside-rm")
+            for mode in ("advisory", "enforce"):
+                payload = self._checkout_lease_payload("owner", outside, tool_name="Bash",
+                    command=f"rm -rf {shlex.quote(str(linked))}")
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py", payload, cwd=outside,
+                    env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "git-cli worktree remove")
+                self.assertTrue(linked.exists())
+
+    def test_untrusted_removal_binary_all_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/untrusted-remove")
+            binary_dir = root / "untrusted"
+            binary_dir.mkdir()
+            binary = binary_dir / "git-cli"
+            binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            binary.chmod(0o755)
+            for mode in ("advisory", "enforce"):
+                for executable in ("git-cli", str(binary)):
+                    with self.subTest(mode=mode, executable=executable):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                            command=f"{shlex.quote(executable)} worktree remove {shlex.quote(str(linked))} --safe")
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": mode,
+                                 "PATH": str(binary_dir) + os.pathsep + os.environ["PATH"]},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "trusted git-cli executable")
+                        self.assertTrue(linked.exists())
+
+    def test_cleanup_rendered_contract_has_no_retired_removal_gates(self) -> None:
+        retired = (
+            "outside enforce mode", "verified enforcement availability",
+            "only after all proofs", "requires owner/terminal proof",
+            "Never adopt a disappeared session's checkout",
+            "Verify each provider-confirmed delivered head before removing",
+            "only for a clean,\n   unowned managed worktree",
+        )
+        skills = ("meta/worktree-triage", "pr/deliver-pr", "dispatch/deliver-dispatch-plan")
+        texts = [
+            (REPO_ROOT / "core/policies/git-delivery.md").read_text().split("### Terminal local cleanup", 1)[1].split("## Branches", 1)[0]
+        ]
+        for product in ("codex", "claude", "hermes"):
+            for skill in skills:
+                plugin, name = skill.split("/")
+                texts.append((REPO_ROOT / f"tests/golden/{product}/plugins/{plugin}/skills/{name}/expected/SKILL.md").read_text())
+        for text in texts:
+            for gate in retired:
+                self.assertNotIn(gate, text)
+            self.assertIn("git-cli worktree remove", text)
+            self.assertIn("backup_ref", text)
+            self.assertIn("seven days", text)
+
+    def test_checkout_lease_advisory_safe_removal_delegates_to_execution_fence(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("safe_removal_test", HOOK_DIR / "checkout-lease-guard.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/safe-removal")
+                payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {shlex.quote(str(linked))} --safe --format json")
+                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                     mock.patch.object(module, "read_payload", return_value=payload), \
+                     mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                     mock.patch.object(module, "emit_block") as blocked:
+                    module.main()
+                blocked.assert_not_called()
+                self.assertTrue(linked.exists(), "PreToolUse never performs cleanup")
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_safe_removal_rejects_bypass_and_compound_shapes(self) -> None:
+        spec = importlib.util.spec_from_file_location("safe_removal_shapes", HOOK_DIR / "checkout-lease-guard.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/safe-shapes")
+                target = shlex.quote(str(linked))
+                for command in (
+                    f"git-cli worktree remove {target} -- --safe",
+                    f"AGENT_SESSION_STATE_DIR=/unknown git-cli worktree remove {target} --safe",
+                    f"export PATH=/untrusted/bin:$PATH; git-cli worktree remove {target} --safe",
+                    f"export AGENT_SESSION_STATE_DIR=/empty-state; git-cli worktree remove {target} --safe",
+                    f"export AGENT_RUNTIME_CHECKOUT_LEASE_STATE_HOME=/empty-leases; git-cli worktree remove {target} --safe",
+                    f"unset AGENT_SESSION_STATE_DIR; git-cli worktree remove {target} --safe",
+                    f"source /untrusted/setup; git-cli worktree remove {target} --safe",
+                    f"git-cli worktree remove {target} --safe && touch README.md",
+                    f"git-cli worktree remove {target} --safe; git-cli worktree remove {target} --safe",
+                    f"git-cli worktree remove {target} --safe > README.md",
+                    "git-cli branch cleanup --remove-worktrees",
+                    "git-cli branch delete-merged -w",
+                ):
+                    with self.subTest(command=command):
+                        payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                        with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                             mock.patch.object(module, "read_payload", return_value=payload), \
+                             mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                             mock.patch.object(module, "emit_block") as blocked:
+                            module.main()
+                        blocked.assert_called()
+                payload = self._checkout_lease_payload("owner", primary, tool_name="Bash",
+                    command=f"git-cli worktree remove {target} --safe")
+                with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "advisory"}), \
+                     mock.patch.object(module, "read_payload", return_value=payload), \
+                     mock.patch.object(module, "resolved_executable_matches", return_value=False), \
+                     mock.patch.object(module, "emit_block") as blocked:
+                    module.main()
+                blocked.assert_called()
+                self.assertTrue(linked.exists())
+        finally:
+            sys.modules.pop(spec.name, None)
+
+    def test_checkout_lease_advisory_removal_delegates_to_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -28457,7 +28000,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                              "AGENT_SESSION_COORDINATION_MODE": mode},
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "target lease fencing is unavailable")
+                    self.assert_allowed(decision)
                     self.assertTrue(linked.exists())
                     self.assertEqual(self._checkout_lease_files(state), [])
             for mode in ("advisory", "enforce"):
@@ -28506,7 +28049,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             self.assertFalse(state.exists())
             self.assertFalse((linked / ".git").is_dir())
 
-    def test_checkout_lease_removal_retains_dirty_target_even_for_owner(self) -> None:
+    def test_checkout_lease_removal_delegates_dirty_owned_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -28529,7 +28072,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 ), cwd=primary, env=env,
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "dirty removal target")
+            self.assert_allowed(decision)
             self.assertEqual((linked / "pending.txt").read_text(), "retain this work\n")
 
     def test_checkout_lease_removal_diagnostic_reports_target_replacement(self) -> None:
@@ -28565,7 +28108,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
         finally:
             sys.modules.pop("removal_diagnostic_drift", None)
 
-    def test_checkout_lease_removal_refuses_primary_nested_and_locked_targets(self) -> None:
+    def test_checkout_lease_removal_refuses_wrong_scope_and_delegates_locked_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "primary"
@@ -28596,7 +28139,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 env={"AGENT_RUNTIME_STATE_HOME": str(root / "state")},
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "locked removal target")
+            self.assert_allowed(decision)
             self.assertTrue(linked.exists())
 
     def test_checkout_lease_bounded_managed_removal_and_foreign_refusal(self) -> None:
@@ -28644,15 +28187,24 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                     removed = subprocess.run(
                         ["git-cli", "worktree", "remove", str(target), "--format", "json"],
                         cwd=primary, env=environment, text=True, capture_output=True,
-                        check=True,
+                        check=False,
                     )
-                    self.assertTrue(json.loads(removed.stdout)["ok"])
-                    self.assertFalse(target.exists())
+                    receipt = json.loads(removed.stdout)
+                    if removed.returncode == 0:
+                        self.assertTrue(receipt["ok"])
+                        self.assertFalse(target.exists())
+                    else:
+                        # Older released CLIs still require complete registry,
+                        # process and delivery proof. Hook admission must not
+                        # bypass that owner or turn its refusal into success.
+                        self.assertFalse(receipt["ok"])
+                        self.assertEqual(receipt["error"]["code"], "removal-proof-unavailable", receipt)
+                        self.assertTrue(target.exists())
                     self.assertTrue(protected.exists())
-            listed = subprocess.run(["git", "worktree", "list", "--porcelain"],
-                                    cwd=primary, text=True, capture_output=True, check=True)
-            self.assertNotIn(str(removable), listed.stdout)
-            self.assertIn(str(protected), listed.stdout)
+                    listed = subprocess.run(["git", "worktree", "list", "--porcelain"],
+                                            cwd=primary, text=True, capture_output=True, check=True)
+                    self.assertEqual(str(target) in listed.stdout, target.exists())
+                    self.assertIn(str(protected), listed.stdout)
 
     def test_checkout_lease_worktree_remove_targets_the_foreign_lease(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -29302,8 +28854,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             # Reached lease evaluation (foreign owner), not a parse/scope refusal.
             self.assert_blocked(decision, "another agent session")
 
-            # Genuine co-resident repository writes are still rejected as not the
-            # sole mutation, even inside the wrapper: an executable mutation, an
+            # Genuine co-resident repository writes are still rejected, even
+            # inside the wrapper: raw deletion, an
             # absolute in-repo redirect, a relative redirect (unsafe under `cd`,
             # so fail closed), and a dynamic redirect target.
             in_repo = shlex.quote(str(primary / "README.md"))
@@ -29326,7 +28878,12 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                         env=env,
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "sole mutating command")
+                    expected_reason = (
+                        "Raw deletion changes directory context"
+                        if co_resident.startswith("rm ")
+                        else "sole mutating command"
+                    )
+                    self.assert_blocked(decision, expected_reason)
 
     def test_checkout_lease_worktree_add_survives_harness_command_wrapper(
         self,
@@ -29655,6 +29212,15 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 check=True,
             )
             env = {"AGENT_RUNTIME_STATE_HOME": str(state)}
+            # Removal delegates without claiming a lease; a lease already
+            # owned by the caller remains eligible for the normal Stop release.
+            code, decision, stderr = run_enforced_hook(
+                "checkout-lease-guard.py",
+                self._checkout_lease_payload("delivery", linked / "README.md"),
+                cwd=linked, env=env,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
             remove = self._checkout_lease_payload(
                 "delivery",
                 primary,
@@ -30782,7 +30348,6 @@ exit 66
                 self.assert_blocked(decision, fragment)
                 retained = json.loads(lease_file.read_text(encoding="utf-8"))
                 self.assertEqual(retained["session_key"], original_lease["session_key"])
-
 
 
     def _load(self, module_name: str, filename: str):

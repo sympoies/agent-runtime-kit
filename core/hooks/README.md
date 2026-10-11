@@ -251,7 +251,29 @@ forms do not acquire a writer lease unless the command includes the
 file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
-mutation with exactly one removal target. Nested repositories and submodules
+mutation with exactly one removal target. In every mode a trusted
+`git-cli worktree remove <target> --format json` delegates fencing and
+preservation to the CLI without claiming a writer lease in PreToolUse.
+Optional `--safe`, `--acknowledge-backup-omissions`, and `--format text|json`
+may appear in any order around the target; unrelated flags are refused. Literal
+`cd <primary> && git-cli worktree remove <target>` also works. Enforce mode
+still rejects a live foreign target lease but admits
+the caller's own lease. Raw `git worktree remove` remains blocked even with
+`ALLOW_DIRECT_GIT_WORKTREE=1`. Raw filesystem deletion detection is based on
+command patterns: `rm`, `unlink`, `shred`, and `find` with `-delete` or a direct
+`rm`/`unlink`/`shred` payload in `-exec`, `-execdir`, `-ok`, or `-okdir`. Search
+roots bound substituted find targets; literal payload targets use ordinary
+path resolution. These patterns refuse registered checkout roots and their
+ancestors, unresolved targets, and ambiguous directory contexts; ordinary
+literal file deletion remains admitted. This detector does not inspect
+interpreter code such as `python -c` with `shutil.rmtree` or `perl -e`, and
+`rsync --delete` and `mv` are outside its command-pattern contract. It is not a
+sandbox for arbitrary programs. Agents must still use the preserving lifecycle
+command to remove registered worktrees.
+Older CLIs may retain stricter removal checks; hook admission does not bypass
+their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
+agent shells because older CLIs bypass fencing; remove each target with the
+sole sanctioned command, then clean up branches separately. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
 lease. The primary checkout may acquire one only while clean, on its resolved
 default branch, and outside a pre-existing Git operation. The owning session
@@ -341,15 +363,8 @@ admission reply was lost replays it and completes the lease with the observed
 result, and a background shell call completes when the provider reports its
 launch. Same-call Pre/Post/Stop activity is serialized by a stable local lock.
 `agent-hook` evaluates every ordinary rule first and invokes the locked `agent-session.coordination.v1` capability
-only after an aggregate allow, except for the narrowly typed worker-bootstrap
-transition. When an exact literal trusted same-release `main-agent bootstrap
---idempotency-key <key> --format json` request is blocked solely by
-`owner-active-foreign`, the guard emits a versioned authorization marker only
-after validating enforce-mode metadata, the private capability, and the
-coordination surface. Only that strict marker supersedes the owner-liveness
-block; generic or malformed output, unavailable coordination, shell
-composition, transforms, and any other block fail closed. Thus neither
-provider can admit a tool denied by another prerequisite. The guard applies one
+only after an aggregate allow. A prerequisite denial remains blocked; no
+orchestration bootstrap may supersede owner-liveness admission. The guard applies one
 50-second global subprocess budget inside the setup-owned dispatcher timeout.
 For Stop, the guard emits
 `runtime-kit.session-coordination-result.v1` with a `not-run`, `clean`,
@@ -367,12 +382,9 @@ bodies, or private registry paths. The physical checkout lease above shares the
 same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
 runner.
 
-The same guard accepts `--capabilities --format json` as a side-effect-free
-self-probe and advertises `runtime-kit.checkpoint-write-admission.v1`. Main
-Agent compatibility requires that response from both installed product-home
-copies, converged `agent-hook doctor` records, and policy bundle
-`2026.07.28.1` or newer. This binds readiness to the deployed handlers rather
-than policy metadata alone.
+The guard accepts `--capabilities --format json` as a side-effect-free
+self-probe. Its capability map contains no retired orchestration admission
+contracts; ordinary intent and coordination enforcement still applies.
 
 Executable runtime rules use independent child deadlines and an explicit
 `timeout_posture`. A timeout no longer erases completed outcomes or skips later

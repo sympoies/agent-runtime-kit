@@ -107,7 +107,8 @@ retired_ids = json.loads(
     (root / "manifests/retired-skill-ids.json").read_text()
 )
 assert retired_ids["schema"] == "agent-runtime-kit.retired-skill-ids.v1"
-assert retired_ids["skills"] == progress["retired_ids"]
+# Preserve the frozen migration cohort; later retirements append live cleanup IDs.
+assert retired_ids["skills"] == progress["retired_ids"] + ["conversation.main-agent-mode"]
 
 retired_hermes = json.loads(
     (root / "manifests/retired-hermes-skill-copies.json").read_text()
@@ -253,7 +254,8 @@ assert report["product"] == product, (product, report.get("product"))
 skills = report["skills"]
 manifest = Path(sys.argv[3]).read_text()
 active_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", manifest, re.M)
-assert len(active_ids) == 28, (product, len(active_ids))
+assert len(active_ids) == 27, (product, len(active_ids))
+assert "conversation.main-agent-mode" not in active_ids
 pending_ids = set(
     re.findall(r"^    - ([a-z0-9.-]+)$", manifest.split("skills:", 1)[0], re.M)
 )
