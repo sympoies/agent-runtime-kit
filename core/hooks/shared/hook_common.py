@@ -4255,7 +4255,7 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
     """Extract the literal program; model appended/replaced stdin as unknown."""
     index += 1
     replacement: str | None = None
-    long_values = {"--arg-file", "--delimiter", "--max-lines", "--max-args", "--max-procs", "--max-chars"}
+    long_values = {"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars"}
     long_flags = {"--null", "--no-run-if-empty", "--verbose", "--interactive", "--exit", "--show-limits"}
     while index < len(tokens):
         token = tokens[index]
@@ -4267,7 +4267,7 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
         if not token.startswith("-") or token == "-":
             break
         option, equals, value = token.partition("=")
-        if option == "--eof":  # Optional long values must use '='.
+        if option in {"--eof", "--max-lines"}:  # Optional long values must use '='.
             index += 1
             continue
         if option == "--replace":

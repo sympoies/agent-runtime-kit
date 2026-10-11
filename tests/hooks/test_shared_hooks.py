@@ -28070,10 +28070,12 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             ) for deletion in (f"rm -rf {target}", f"find {target} -delete")]
             commands += [f"xargs rm -rf {target}", f"xargs -n1 rm -rf {target}",
                          f"xargs --eof rm -rf {target}", f"xargs --eof=STOP rm -rf {target}",
+                         f"xargs --max-lines rm -rf {target}", f"xargs --max-lines=1 rm -rf {target}",
                          f"xargs -I% rm -rf {target}", f"xargs --replace=% rm -rf {target}",
                          f"xargs find {target} -delete", "xargs rm -rf",
                          "xargs -I% rm -rf %", "xargs -J% rm -rf %",
                          f"printf '%s\\n' {target} | xargs rm -rf",
+                         f"printf '%s\\n' {target} | xargs --max-lines rm -rf",
                          f"find {target} -exec nice rm -rf {{}} +"]
             for mode in ("advisory", "enforce"):
                 for command in commands:
@@ -28096,6 +28098,7 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
             commands = ("sudo -n rm README.md", "nice -n5 rm README.md",
                         "nohup rm README.md", "nice find README.md -delete",
                         "xargs -I% rm README.md", "xargs echo rm -rf .",
+                        "xargs --max-lines echo rm -rf .", "xargs --max-lines=1 echo hi",
                         "nice echo rm -rf .", "sudo -u rm echo .",
                         "sudo --help", "nice --version", "nohup --help")
             for mode in ("advisory", "enforce"):
