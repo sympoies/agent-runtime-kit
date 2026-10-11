@@ -19,8 +19,8 @@ INVENTORY = REPO_ROOT / "manifests/hook-rules.yaml"
 POLICY = REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml"
 PARITY_CASES = REPO_ROOT / "tests/agent-hook/fixtures/parity-cases.json"
 COORDINATION_CASES = REPO_ROOT / "tests/agent-hook/fixtures/coordination-cases.json"
-READ_ONLY_SHADOW_CASES = (
-    REPO_ROOT / "tests/agent-hook/fixtures/read-only-shadow-cases.json"
+READ_ONLY_CUTOVER_CASES = (
+    REPO_ROOT / "tests/agent-hook/fixtures/read-only-cutover-cases.json"
 )
 LEGACY_REGISTRATIONS = (
     REPO_ROOT / "tests/agent-hook/fixtures/legacy-registrations.tsv"
@@ -102,7 +102,7 @@ COORDINATION_CAPABILITY_COUNTS = Counter(
     }
 )
 
-READ_ONLY_SHADOW_RULE_ID = "runtime.shared.pre-tool-use.bash.read-only-shadow"
+READ_ONLY_RULE_ID = "runtime.shared.pre-tool-use.bash.read-only"
 MEMORY_RULE_IDS = {
     "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory",
     "runtime.claude.session-start.startup-resume-clear.user-prompt-agent-memory",
@@ -450,7 +450,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
 
         added_rules = [rule for rule in rules if rule["legacy_handler"] is None]
         read_only_rules = [
-            rule for rule in added_rules if rule["id"] == READ_ONLY_SHADOW_RULE_ID
+            rule for rule in added_rules if rule["id"] == READ_ONLY_RULE_ID
         ]
         self.assertEqual(len(read_only_rules), 1)
         self.assertEqual(
@@ -459,8 +459,9 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         self.assertEqual(read_only_rules[0]["products"], ["codex", "claude"])
         self.assertEqual(read_only_rules[0]["events"], ["PreToolUse"])
         self.assertEqual(read_only_rules[0]["matcher"], "Bash")
-        self.assertEqual(read_only_rules[0]["mode"], "shadow")
-        self.assertEqual(read_only_rules[0]["disposition"], "added-read-only-shadow")
+        self.assertEqual(read_only_rules[0]["mode"], "enforce")
+        self.assertEqual(read_only_rules[0]["capability"]["fallback_handler_id"], "pre-edit-intent-gate")
+        self.assertEqual(read_only_rules[0]["disposition"], "typed-read-only-admission")
 
         memory_rules = [rule for rule in added_rules if rule["id"] in MEMORY_RULE_IDS]
         self.assertEqual(len(memory_rules), 2)
@@ -487,7 +488,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         coordination_rules = [
             rule
             for rule in added_rules
-            if rule["id"] not in {READ_ONLY_SHADOW_RULE_ID, *MEMORY_RULE_IDS}
+            if rule["id"] not in {READ_ONLY_RULE_ID, *MEMORY_RULE_IDS}
         ]
         self.assertEqual(len(coordination_rules), 31)
         self.assertEqual(
@@ -581,14 +582,14 @@ class AgentHookPolicyContractTests(unittest.TestCase):
                 self.assertIn(case["rule_id"], inventory_ids)
             self.assertRegex(case["owner_test"], r"^tests/")
 
-    def test_read_only_shadow_mismatches_have_finite_dispositions(self) -> None:
-        fixture = json.loads(READ_ONLY_SHADOW_CASES.read_text(encoding="utf-8"))
+    def test_read_only_cutover_mismatches_have_finite_dispositions(self) -> None:
+        fixture = json.loads(READ_ONLY_CUTOVER_CASES.read_text(encoding="utf-8"))
         self.assertEqual(
             fixture["schema_version"],
-            "agent-runtime-kit.read-only-shadow-cases.v1",
+            "agent-runtime-kit.read-only-cutover-cases.v1",
         )
-        self.assertEqual(fixture["rule_id"], READ_ONLY_SHADOW_RULE_ID)
-        self.assertEqual(fixture["production_authority"], "legacy-pre-edit-intent-gate")
+        self.assertEqual(fixture["rule_id"], READ_ONLY_RULE_ID)
+        self.assertEqual(fixture["production_authority"], "execution.read-only.v1")
         self.assertEqual(len(fixture["unknown_feedback_routes"]), 2)
         self.assertIn("agent-run inspect", fixture["unknown_feedback_routes"][0])
         self.assertIn("prepare project-dev", fixture["unknown_feedback_routes"][1])

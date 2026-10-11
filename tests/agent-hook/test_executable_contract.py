@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
@@ -617,7 +618,7 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                     evidence = [
                         row
                         for row in decision["shadow"]
-                        if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only-shadow"
+                        if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only"
                     ]
                     self.assertEqual(len(evidence), 1, (case_name, product, decision))
                     self.assertEqual(evidence[0]["action"], expected_action)
@@ -625,6 +626,123 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                     self.assertEqual(decision["action"], "allow")
                     decisions.append(evidence[0])
                 self.assertEqual(decisions[0], decisions[1], case_name)
+
+    def test_read_only_capability_bypasses_only_paired_preparation(self) -> None:
+        agent_docs = self.binary.with_name("agent-docs")
+        self.assertTrue(agent_docs.is_file() and os.access(agent_docs, os.X_OK))
+        generated = subprocess.run(
+            [sys.executable, "-c",
+             "import json, runpy, sys; sys.path.insert(0, sys.argv[1]); "
+             "gate = runpy.run_path(sys.argv[1] + '/pre-edit-intent-gate.py'); "
+             "print(json.dumps([gate['contract_preflight_command']("
+             "repo_root=sys.argv[2], executable=sys.argv[3], intent=intent, "
+             "phase=phase) for intent, phase in [('project-dev', None), "
+             "('task-tools', None), ('browser-test', None), ('project-dev', 'edit')]]))",
+             str(REPO_ROOT / "core/hooks/shared"), str(REPO_ROOT), str(agent_docs)],
+            env=self.env, cwd=REPO_ROOT, capture_output=True, text=True,
+            check=True, timeout=15,
+        )
+        managed_queries = json.loads(generated.stdout)
+        managed_query = managed_queries[0]
+        agent_run = self.binary.with_name("agent-run")
+        self.assertTrue(agent_run.is_file() and os.access(agent_run, os.X_OK))
+        inspection_argv = [str(agent_run), "inspect", "--cwd", str(REPO_ROOT),
+                           "--", "/bin/sh", "-c", "git status --short | wc -l"]
+        inspection_probe = subprocess.run(
+            inspection_argv, env=self.env, cwd=REPO_ROOT,
+            capture_output=True, text=True, check=False, timeout=15,
+        )
+        if inspection_probe.returncode != 0:
+            self.assertIn("error[", inspection_probe.stderr)
+            if sys.platform == "darwin":
+                self.assertEqual(inspection_probe.returncode, 69)
+                self.assertIn("error[sandbox-backend-unavailable]", inspection_probe.stderr)
+        inspection_query = shlex.join(["builtin", "command", *inspection_argv])
+        cross_target_query = managed_query.replace(
+            "--project-path " + shlex.quote(str(REPO_ROOT)),
+            "--project-path " + shlex.quote(str(self.root)),
+        )
+        source_blocks = POLICY.read_text(encoding="utf-8").split("[[rules]]")[1:]
+        for product in ("codex", "claude"):
+            with self.subTest(product=product):
+                selected = []
+                for block in source_blocks:
+                    rule = tomllib.loads("[[rules]]" + block)["rules"][0]
+                    if rule["events"] != ["PreToolUse"]:
+                        continue
+                    capability = rule["capability"]
+                    if capability["id"] == "execution.read-only.v1" or (
+                        capability["id"] == "runtime-kit.handler.v1"
+                        and capability["handler_id"] in {
+                            "pre-edit-intent-gate", "checkout-lease-guard"
+                        }
+                        and rule["matcher"] == "Bash"
+                    ):
+                        selected.append("[[rules]]" + block)
+                self.assertEqual(len(selected), 5)
+                self.write_policy("\n".join(selected))
+                self.install_fixture_handler(
+                    product, "pre-edit-intent-gate",
+                    '{"decision":"block","reason":"fixture-preparation-required"}',
+                )
+                self.install_fixture_handler(product, "checkout-lease-guard", "{}")
+                for command, expected in tuple(
+                    (query, "allow") for query in managed_queries
+                ) + (
+                    (cross_target_query, "allow"),
+                    ("printf changed > tracked.txt", "block"),
+                    ("echo unsupported", "block"),
+                ):
+                    with self.subTest(command=command):
+                        decision = self.json_result(self.run_hook(
+                            "dispatch", "--product", product, "--format", "json",
+                            payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                     "cwd": str(REPO_ROOT), "tool_input": {"command": command}},
+                            check=False,
+                        ))
+                        self.assertEqual(decision["action"], expected, decision)
+
+                with self.subTest(os_inspection=product):
+                    if inspection_probe.returncode != 0:
+                        self.skipTest("OS-enforced inspection is unavailable; fallback is checked separately")
+                    decision = self.json_result(self.run_hook(
+                        "dispatch", "--product", product, "--format", "json",
+                        payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                 "cwd": str(REPO_ROOT), "tool_input": {"command": inspection_query}},
+                        check=False,
+                    ))
+                    self.assertEqual(decision["action"], "allow", decision)
+
+                fallback_commands = ["printf changed > tracked.txt", "echo unsupported"]
+                if inspection_probe.returncode != 0:
+                    fallback_commands.append(inspection_query)
+                for response, expected in (
+                    ('{"decision":"block","reason":"fixture-preparation-required"}', "block"),
+                    ("{}", "allow"),
+                ):
+                    self.install_fixture_handler(product, "pre-edit-intent-gate", response)
+                    for command in fallback_commands:
+                        with self.subTest(fallback=command, preparation=expected):
+                            decision = self.json_result(self.run_hook(
+                                "dispatch", "--product", product, "--format", "json",
+                                payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                         "cwd": str(REPO_ROOT), "tool_input": {"command": command}},
+                                check=False,
+                            ))
+                            self.assertEqual(decision["action"], expected, decision)
+
+                # Verified reads bypass one paired rule, never another guard.
+                self.install_fixture_handler(
+                    product, "checkout-lease-guard",
+                    '{"decision":"block","reason":"fixture-independent-guard"}',
+                )
+                decision = self.json_result(self.run_hook(
+                    "dispatch", "--product", product, "--format", "json",
+                    payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                             "cwd": str(REPO_ROOT), "tool_input": {"command": managed_query}},
+                    check=False,
+                ))
+                self.assertEqual(decision["action"], "block", decision)
 
     def test_trace_and_output_do_not_retain_private_provider_fields(self) -> None:
         sentinels = [

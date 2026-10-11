@@ -169,9 +169,10 @@ staging, run `git add -- <owned-paths>` there and invoke `semantic-commit`
 separately. They explicitly reject shell `cd`, raw `git -C`, and nested
 `agent-run exec --cwd` as substitutes, and name a target-rooted managed session
 as the fallback when the host cannot attest a target workdir.
-Exact help/version argv for the
-managed `agent-docs` and `forge-cli` release surface remains read-only, while
-extra options, trailing arguments, and executable shadows fail closed. When
+Help/version reads use verified `execution.read-only.v1` evidence when the
+trusted producer supports that request; otherwise they require exact-target
+preparation. Raw argv alone grants no read bypass, and executable shadows
+fail closed. When
 verification blocks a single-repository edit or shell mutation, the reason
 includes a complete, copyable `session prepare` command — the atomic
 activate-plus-strict-preflight primitive — with the trusted executable and

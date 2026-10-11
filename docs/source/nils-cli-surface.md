@@ -373,9 +373,11 @@ entrypoints. The current binary inventory is in the table below.
   - The release also includes read-only operation descriptors and shadow
     evaluation, resumable review transactions, bounded review delivery,
     Linux `agent-run inspect`, typed fail-closed macOS inspection, and Codex
-    prompt recovery. The versioned runtime-kit policy now consumes the
-    shadow-only evaluator at its existing Bash ingress; production admission
-    remains the legacy decision.
+    prompt recovery. At that adoption, the versioned runtime-kit policy consumed
+    the shadow-only evaluator and production admission remained the legacy
+    decision. The current [cutover](https://github.com/sympoies/agent-runtime-kit/issues/193)
+    uses enforced verified read-only admission with exact-target preparation
+    fallback; the active minimum and validated releases support that pairing.
 - `v1.25.5` introduced the required setup-owned provider ingress, but it is now
   below the supported minimum. It passes the earlier schema and ingress gates
   yet rejects the committed policy because `execution.read-only.v1` is an

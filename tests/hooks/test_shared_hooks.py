@@ -11024,8 +11024,8 @@ exit 64
             prepare_edit_cmd = prepare_cmd.replace(
                 " --format json", " --phase edit --format json"
             )
-            # A read-only `git status` is now admitted without project-dev, so
-            # the recovery-message assertion uses a genuine mutation command.
+            # The fallback requires preparation for unverified reads and writes;
+            # this assertion checks the mutation recovery command.
             payload = command_payload("printf x > out.txt")
             payload["session_id"] = "intent-recovery"
 
@@ -11198,12 +11198,10 @@ exit 64
                     )
                     self.assertNotIn("before mutating", str(decision).lower())
 
-            # Admitted without project-dev: read-only inspection, and trusted
-            # read-only agent-docs commands for any declared intent (including a
-            # different project-path or a read-only --product flag). These remove
-            # the false coupling that forced project-dev before another intent
-            # could even be prepared or read.
-            allowed = (
+            # These direct fallback calls have no verified capability.
+            # Real managed queries are admitted by the released dispatcher,
+            # covered by the paired-capability consumer test.
+            unverified_reads = (
                 "git status --short",
                 preflight,
                 wrong_project_preflight,
@@ -11216,15 +11214,15 @@ exit 64
                 "forge-cli issue create --help",
                 "forge-cli --version",
             )
-            for command in allowed:
-                with self.subTest(allowed=command):
+            for command in unverified_reads:
+                with self.subTest(unverified_read=command):
                     payload = command_payload(command)
                     payload["session_id"] = "shell-bootstrap"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "project-dev")
 
             repo_bin = repo / "bin"
             repo_bin.mkdir()
@@ -11345,7 +11343,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-    def test_pre_edit_intent_gate_allows_only_trusted_session_readiness_commands(
+    def test_pre_edit_intent_gate_claim_bootstrap_has_no_read_admission(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11430,21 +11428,19 @@ exit 64
                 f"--file {claim_file.resolve()} ",
                 f"--file {claim_file.resolve()} --if-revision 1 ",
             )
-            allowed = (
+            former_readiness_reads = (
                 "agent-session --version",
                 "agent-session activity doctor --agent codex --format json",
                 "agent-session activity doctor --agent claude --format json",
                 "agent-session activity setup --agent codex --repair --dry-run --format json",
                 "agent-session activity setup --agent claude --repair --dry-run --format json",
-                claim,
-                literal_claim,
-                revision_fenced_claim,
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
                 f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- git status --short --branch",
                 "rg --no-config readiness .",
             )
-            for command in allowed:
-                with self.subTest(allowed=command):
+            claim_bootstraps = (claim, literal_claim, revision_fenced_claim)
+            for command in claim_bootstraps:
+                with self.subTest(claim_bootstrap=command):
                     payload = command_payload(command)
                     payload["session_id"] = "session-readiness"
                     code, decision, stderr = run_hook(
@@ -11452,6 +11448,16 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_allowed(decision)
+
+            for command in former_readiness_reads:
+                with self.subTest(unverified_read=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "session-readiness"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "project-dev")
 
             foreign_bin = root / "foreign-bin"
             foreign_bin.mkdir()
@@ -11612,10 +11618,7 @@ exit 64
                 **env,
                 "PATH": f"{alias_bin}{os.pathsep}{env['PATH']}",
             }
-            alias_commands = (
-                "agent-session --version",
-                f"builtin command {trusted_agent_run} inspect --cwd {repo.resolve()} -- rg --no-config readiness .",
-            )
+            alias_commands = claim_bootstraps
             for command in alias_commands:
                 with self.subTest(foreign_same_release_alias=command):
                     payload = command_payload(command)
@@ -12022,7 +12025,7 @@ exit 64
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
 
-    def test_pre_edit_intent_gate_admits_read_only_inspection_without_project_dev(
+    def test_pre_edit_intent_gate_requires_preparation_for_unverified_reads(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -12075,15 +12078,17 @@ exit 64
                 "rg --no-config TODO . | wc -l | head -n 1",
                 "nl -ba README.md | sed -n '1,20p'",
             )
+            # Raw argv is not capability evidence. Without verified preparation
+            # the fallback handler must not independently authorize these reads.
             for command in read_only:
-                with self.subTest(read_only=command):
+                with self.subTest(unverified_read=command):
                     payload = command_payload(command)
                     payload["session_id"] = "read-only-lane"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "project-dev")
 
             shadow_marker = repo / "shadow-rg-ran"
             shadow_bin = repo / "bin"
@@ -12157,6 +12162,28 @@ exit 64
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "project-dev")
+
+            self._write_fake_agent_docs(
+                bin_dir,
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
+if [[ "$*" == *"session verify"* ]]; then
+  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{"product":"codex","active_intents":["project-dev"],"verified":true}}'
+  exit 0
+fi
+exit 64
+""",
+            )
+            for command in read_only:
+                with self.subTest(prepared_read=command):
+                    payload = command_payload(command)
+                    payload["session_id"] = "read-only-lane"
+                    code, decision, stderr = run_hook(
+                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
     def test_pre_edit_intent_gate_prepares_any_declared_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -18345,7 +18372,7 @@ exit 64
         self.assertEqual(unknown.kind, "unknown")
         git_root.assert_not_called()
 
-    def test_pre_edit_intent_gate_admits_trusted_read_only_agent_docs(self) -> None:
+    def test_pre_edit_intent_gate_defers_unverified_agent_docs_reads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -18378,7 +18405,7 @@ exit 64
                 "CODEX_AGENT_STATE_HOME": str(repo / "state"),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
-            allowed = (
+            unverified_reads = (
                 base + "preflight --intent memory",
                 base + "preflight --intent browser-test",
                 base + "status",
@@ -18388,15 +18415,15 @@ exit 64
                 base + "session status",
                 base + "session verify --require-intent memory",
             )
-            for command in allowed:
-                with self.subTest(allowed=command):
+            for command in unverified_reads:
+                with self.subTest(unverified_read=command):
                     payload = command_payload(command)
                     payload["session_id"] = "adocs-read"
                     code, decision, stderr = run_hook(
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_allowed(decision)
+                    self.assert_blocked(decision, "project-dev")
 
             blocked = (
                 base + "preflight --intent memory --output /tmp/x",
@@ -18468,7 +18495,8 @@ exit 64
                     "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_allowed(decision)
+                self.assert_blocked(decision, "project-dev")
+                self.assertNotIn("agent-docs-command-untrusted", str(decision))
 
                 # The scrub must not swallow a root the fixture asked for: the
                 # same read-only command stays blocked when the test itself
