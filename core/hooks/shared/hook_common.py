@@ -2837,6 +2837,144 @@ def _expanded_heredoc_body_residue(body: list[str]) -> list[str]:
     return [": " + " ".join(placeholders)] if placeholders else []
 
 
+_HEREDOC_BODY_MARKER = "__agent_runtime_heredoc_body_"
+
+
+def _indirect_heredoc_executes(
+    tokens: list[str], marker: str, marker_names: frozenset[str]
+) -> bool:
+    """Follow a literal body's consumer in body-free command text.
+
+    This only controls blocking classification, never validation credit. The
+    marker identifies one redirection, so unrelated shells and document writes
+    cannot make every quoted body executable.
+    """
+    tokens = [part for token in tokens for part in (
+        list(token) if is_shell_separator(token) and any(char in token for char in "()")
+        else [token]
+    )]
+
+    def boundary(token: str) -> bool:
+        return is_shell_separator(token) or token in {"{", "}"}
+
+    def command_at(index: int) -> tuple[int, int, list[str]]:
+        start = index
+        while start and not boundary(tokens[start - 1]):
+            start -= 1
+        end = index
+        while end < len(tokens) and not boundary(tokens[end]):
+            end += 1
+        words = [word for word in tokens[start:end] if word not in marker_names]
+        invocation = invocation_tokens(words)
+        # doas has no shared transparent-launcher contract. Recognize only its
+        # literal, option-free shell form here; other forms remain opaque.
+        if invocation[:1] == ["doas"]:
+            invocation = invocation[1:]
+        return start, end, invocation
+
+    def stdin_shell(invocation: list[str]) -> bool:
+        text = shlex.join(invocation)
+        return _heredoc_body_is_executed_by_shell(text + " <<EOF", len(text) + 1, 0)
+
+    index = tokens.index(marker)
+    start, end, invocation = command_at(index)
+    if not invocation:
+        return False
+    executable = invocation[0] if invocation[0] == "." else PurePosixPath(invocation[0]).name
+    if any(_stdin_redirect_kind(word) == "override" for word in invocation):
+        return False
+    if executable in {"source", "."} and invocation[1:2] in (
+        ["/dev/stdin"], ["/dev/fd/0"],
+    ):
+        return True
+    if executable in SHELL_HEREDOC_EXECUTORS:
+        text = shlex.join(invocation)
+        return _heredoc_body_is_executed_by_shell(text, len(text), 0)
+    if executable not in {"cat", "tee"}:
+        return False  # an interpreter's own language is not shell text
+
+    operands: list[str] = []
+    cursor = 1
+    while cursor < len(invocation):
+        if _REDIRECT_TOKEN_RE.match(invocation[cursor]):
+            cursor = _skip_redirections(invocation, cursor)
+        else:
+            operands.append(invocation[cursor])
+            cursor += 1
+    if executable == "cat" and any(
+        word not in {"-", "/dev/stdin", "/dev/fd/0"} for word in operands
+    ):
+        return False
+
+    targets: set[str] = set()
+    words = tokens[start:end]
+    for position, word in enumerate(words):
+        match = re.fullmatch(r"(?:1)?>(?:>|\|)?(.*)", word)
+        if not match:
+            continue
+        target = match.group(1) or (
+            words[position + 1] if position + 1 < len(words) else ""
+        )
+        if target and not any(char in target for char in "$`*?[~"):
+            targets.add(str(PurePosixPath(target)))
+
+    if not targets and end < len(tokens) and tokens[end] in {"|", "|&"}:
+        if end + 1 < len(tokens) and stdin_shell(command_at(end + 1)[2]):
+            return True
+
+    # A group/subshell can carry this consumer's output into a shell. A <(
+    # group instead becomes a literal script-file argument of the outer shell.
+    stack: list[int] = []
+    pairs: dict[int, int] = {}
+    for position, token in enumerate(tokens):
+        if token in {"(", "{"}:
+            stack.append(position)
+        elif token in {")", "}"} and stack:
+            opening = stack.pop()
+            if (tokens[opening], token) in {("(", ")"), ("{", "}")}:
+                pairs[opening] = position
+    for opening, closing in pairs.items():
+        if not opening < index < closing:
+            continue
+        if (not targets and closing + 2 < len(tokens)
+                and tokens[closing + 1] in {"|", "|&"}):
+            if stdin_shell(command_at(closing + 2)[2]):
+                return True
+        if not targets and opening and tokens[opening - 1] == "<":
+            outer = command_at(opening - 1)[2]
+            if outer[-1:] == ["<"] and stdin_shell(outer[:-1]):
+                return True
+
+    # A literal consumer write followed by execution of that same literal path.
+    # Do not infer future runs, dynamic paths, or a different script's stdin.
+    if not targets:
+        return False
+    cursor = end + 1
+    while cursor < len(tokens):
+        if boundary(tokens[cursor]):
+            cursor += 1
+            continue
+        _, next_end, later = command_at(cursor)
+        cursor = next_end + 1
+        if not later:
+            continue
+        program = later[0] if later[0] == "." else PurePosixPath(later[0]).name
+        if "/" in later[0] and str(PurePosixPath(later[0])) in targets:
+            return True
+        if program in {"source", "."} and later[1:2] and str(PurePosixPath(later[1])) in targets:
+            return True
+        if program in SHELL_HEREDOC_EXECUTORS:
+            options: list[str] = []
+            for operand in later[1:]:
+                if operand.startswith("-"):
+                    options.append(operand)
+                    continue
+                if str(PurePosixPath(operand)) in targets and stdin_shell([later[0], *options]):
+                    return True
+                break
+    return False
+
+
 def strip_heredoc_bodies(
     command: str, *, inert_only: bool = False, reduce_data_bodies: bool = True
 ) -> str:
@@ -2868,6 +3006,13 @@ def strip_heredoc_bodies(
     kept: list[str] = []
     logical_scan_parts: list[str] = []
     logical_raw_lines: list[str] = []
+    skeleton: list[str] = []
+    indirect: list[tuple[str, int, list[str]]] = []
+    pending_markers: list[str | None] = []
+    marker_namespace = _HEREDOC_BODY_MARKER
+    marker_counter = itertools.count()
+    while marker_namespace in command:
+        marker_namespace += "_"
 
     def close_body(
         preserve_body: bool,
@@ -2904,6 +3049,9 @@ def strip_heredoc_bodies(
             if candidate == delimiter:
                 close_body(preserve_body, delimiter_quoted, data_consumer, body)
                 pending.pop(0)  # closing delimiter line: drop it
+                marker = pending_markers.pop(0)
+                if marker is not None:
+                    indirect.append((marker, len(kept), body))
             else:
                 body.append(raw)
             continue
@@ -2915,6 +3063,8 @@ def strip_heredoc_bodies(
 
         logical_scan_parts.append(line)
         logical_line = "".join(logical_scan_parts)
+        marked_line = logical_line
+        markers: list[tuple[int, str]] = []
         for (
             delimiter,
             strip_tabs,
@@ -2922,6 +3072,12 @@ def strip_heredoc_bodies(
             delimiter_quoted,
             op_start,
         ) in _heredoc_delimiters_on_line(logical_line):
+            marker = None
+            if (inert_only and delimiter_quoted and not preserve_body
+                    and not re.match(r"[1-9]\d*<<", logical_line[op_start:])):
+                marker = f"{marker_namespace}{next(marker_counter)}__"
+                markers.append((op_start, marker))
+            pending_markers.append(marker)
             pending.append(
                 (
                     delimiter,
@@ -2932,6 +3088,9 @@ def strip_heredoc_bodies(
                     [],
                 )
             )
+        for op_start, marker in reversed(markers):
+            marked_line = marked_line[:op_start] + " " + marker + " " + marked_line[op_start:]
+        skeleton.append(marked_line)
         kept.extend(logical_raw_lines)
         logical_scan_parts = []
         logical_raw_lines = []
@@ -2945,6 +3104,28 @@ def strip_heredoc_bodies(
         body,
     ) in pending:
         close_body(preserve_body, delimiter_quoted, data_consumer, body)
+    if indirect:
+        while True:
+            tokens = shell_tokens(normalize_command_separators("\n".join(skeleton)))
+            if not any(tokens.count(marker) > 1 for marker, _, _ in indirect):
+                break
+            # Quote concatenation can forge a decoded token without spelling
+            # it literally in the input. Rebind only the synthetic namespace,
+            # which is absent from the original text, until token identities
+            # are unique as well.
+            replacement = marker_namespace + "_"
+            while replacement in command:
+                replacement += "_"
+            skeleton = [line.replace(marker_namespace, replacement) for line in skeleton]
+            indirect = [
+                (marker.replace(marker_namespace, replacement), position, body)
+                for marker, position, body in indirect
+            ]
+            marker_namespace = replacement
+        marker_names = frozenset(marker for marker, _, _ in indirect)
+        for marker, position, body in reversed(indirect):
+            if marker in tokens and _indirect_heredoc_executes(tokens, marker, marker_names):
+                kept[position:position] = [strip_heredoc_bodies("\n".join(body), inert_only=True)]
     result = "\n".join(kept)
     if reduced and (_command_runs_a_shell(result) or _command_writes_a_file(result)):
         return strip_heredoc_bodies(
@@ -4304,7 +4485,15 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
                 replacement = value
             break
         index += 1
-    payload = tokens[index:]
+    payload: list[str] = []
+    while index < len(tokens):
+        # Shell input redirections are not xargs argv. Otherwise `<<EOF` can
+        # occupy the governed operation slot and hide the unknown stdin word.
+        if _INPUT_REDIRECT_TOKEN_RE.match(tokens[index]):
+            index = _skip_input_redirections(tokens, index)
+        else:
+            payload.append(tokens[index])
+            index += 1
     if not payload:
         return []  # xargs defaults to echo, not an input-selected executable.
     if replacement is not None:
