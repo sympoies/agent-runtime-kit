@@ -25141,6 +25141,8 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                 f"timeout 5 {hidden}",
                 f"nohup {hidden}",
                 f"stdbuf -oL {hidden}",
+                f"sudo -n {exact}",
+                f"xargs -n1 {exact}",
                 f"builtin exec {exact}",
                 f"builtin command {exact}",
                 f"set -A path {shlex.quote(str(shadow_dir))}; "
@@ -28053,6 +28055,144 @@ printf '%s\\n' '{{"intents":["project-dev"]}}'
                         self.assertEqual(code, 0, stderr)
                         self.assert_blocked(decision, "git-cli worktree remove")
                         self.assertTrue(linked.exists())
+
+    def test_wrapped_deletions_keep_registered_worktrees_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/wrapped-deletion")
+            target = shlex.quote(str(linked))
+            env = {"AGENT_RUNTIME_STATE_HOME": str(root / "state")}
+            commands = [f"{wrapper} {deletion}" for wrapper in (
+                "sudo", "sudo -n -u fixture --", "nice", "nice -n 5",
+                "nice --adjustment=5", "nohup", "nohup --", "nice nohup",
+            ) for deletion in (f"rm -rf {target}", f"find {target} -delete")]
+            commands += [f"xargs rm -rf {target}", f"xargs -n1 rm -rf {target}",
+                         f"xargs --eof rm -rf {target}", f"xargs --eof=STOP rm -rf {target}",
+                         f"xargs --max-lines rm -rf {target}", f"xargs --max-lines=1 rm -rf {target}",
+                         f"xargs -I% rm -rf {target}", f"xargs --replace=% rm -rf {target}",
+                         f"xargs find {target} -delete", "xargs rm -rf",
+                         "xargs -I% rm -rf %", "xargs -J% rm -rf %",
+                         f"printf '%s\\n' {target} | xargs rm -rf",
+                         f"printf '%s\\n' {target} | xargs --max-lines rm -rf",
+                         f"find {target} -exec nice rm -rf {{}} +"]
+            for mode in ("advisory", "enforce"):
+                for command in commands:
+                    with self.subTest(mode=mode, command=command):
+                        payload = self._checkout_lease_payload(
+                            "owner", linked, tool_name="Bash", command=command
+                        )
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=linked,
+                            env={**env, "AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, "git-cli worktree remove")
+                        self.assertTrue(linked.exists(), "Hooks never execute deletion payloads")
+
+    def test_wrapped_commands_preserve_file_deletions_and_read_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            commands = ("sudo -n rm README.md", "nice -n5 rm README.md",
+                        "nohup rm README.md", "nice find README.md -delete",
+                        "xargs -I% rm README.md", "xargs echo rm -rf .",
+                        "xargs --max-lines echo rm -rf .", "xargs --max-lines=1 echo hi",
+                        "nice echo rm -rf .", "sudo -u rm echo .",
+                        "sudo --help", "nice --version", "nohup --help")
+            for mode in ("advisory", "enforce"):
+                for command in commands:
+                    with self.subTest(mode=mode, command=command):
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py",
+                            self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command),
+                            cwd=primary, env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+
+    def test_wrapped_direct_git_and_provider_commands_keep_boundaries(self) -> None:
+        for wrapper in ("sudo -n", "nice -n5", "nohup --", "xargs -n1"):
+            for hook, payload, fragment in (
+                ("block-direct-git-commit.py", "git commit -m fixture", "semantic-commit"),
+                ("block-direct-pr-create.py", "gh pr create --title fixture", "forge-cli"),
+            ):
+                with self.subTest(wrapper=wrapper, hook=hook):
+                    code, decision, stderr = run_hook(hook, command_payload(f"{wrapper} {payload}"))
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, fragment)
+            for command in (f"{wrapper} git status", f"{wrapper} echo git commit -m fixture"):
+                with self.subTest(control=command):
+                    code, decision, stderr = run_hook("block-direct-git-commit.py", command_payload(command))
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNone(decision)
+
+    def test_wrapped_git_configuration_tracks_environment_boundaries(self) -> None:
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload("xargs git config --global"),
+            unset_env=("GIT_CONFIG_GLOBAL",),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assert_blocked(decision, "GIT_CONFIG_GLOBAL")
+        code, decision, stderr = run_hook(
+            "block-direct-git-commit.py", command_payload("xargs git config --global --get user.name"),
+            unset_env=("GIT_CONFIG_GLOBAL",),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertIsNone(decision)
+        for command in ("sudo git config --global user.name fixture",
+                        "GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig sudo git config --global user.name fixture",
+                        "nice env -u GIT_CONFIG_GLOBAL git config --global user.name fixture",
+                        "nohup env -i git config --global user.name fixture"):
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command),
+                    env={"GIT_CONFIG_GLOBAL": "/tmp/fixture/gitconfig"},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "GIT_CONFIG_GLOBAL")
+        for wrapper in ("nice -n5", "nohup --", "sudo -n"):
+            command = f"{wrapper} env GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig git config --global user.name fixture"
+            with self.subTest(control=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command),
+                    unset_env=("GIT_CONFIG_GLOBAL",),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+
+    def test_sudo_does_not_credit_inherited_git_program_lookup(self) -> None:
+        module = self._load("sudo_git_lookup", "block-direct-git-commit.py")
+        try:
+            with mock.patch.object(module, "git_builtin_commands", return_value=frozenset({"status"})), \
+                 mock.patch.object(module, "git_installed_commands", return_value=frozenset({"fixture-extension"})):
+                self.assertEqual(module.git_commit_block_reason("sudo -n git fixture-extension"), module.ALIAS_REASON)
+                for command in ("sudo -n git status", "nice git fixture-extension", "nohup git fixture-extension"):
+                    with self.subTest(control=command):
+                        self.assertEqual(module.git_commit_block_reason(command), "")
+        finally:
+            sys.modules.pop("sudo_git_lookup", None)
+
+    def test_shared_wrappers_do_not_bypass_default_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            for wrapper in ("sudo -n", "nice -n5", "nohup --", "xargs -n1"):
+                with self.subTest(wrapper=wrapper):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(f"{wrapper} git push origin HEAD:main"), cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "forge-cli repo push-default")
+                for command in (f"{wrapper} git status", f"{wrapper} echo git push origin HEAD:main"):
+                    with self.subTest(control=command):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py", command_payload(command), cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
 
     def test_raw_deletion_verbs_keep_ordinary_file_and_read_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
