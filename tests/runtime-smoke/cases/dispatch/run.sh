@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deterministic provider-local rehearsal for the program/dispatch issue route.
 # Functions are passed by name to the shared results harness.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 set -euo pipefail
 
 : "${REPO_ROOT:?}"
