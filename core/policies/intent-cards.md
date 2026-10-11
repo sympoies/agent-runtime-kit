@@ -15,6 +15,8 @@ active, and open a full runbook only for the phase that needs it.
   declared validation before completion. Keep routine `direct` work internal.
   Delivery uses `semantic-commit` on a non-default managed-worktree branch
   except for an exact current-request authorized `default-branch` completion.
+  Marked collaboration ledgers use only their own `tools/collab.py`; PR/MR
+  delivery does not apply. Marker and scope: `core/policies/git-delivery.md`.
 - **Never**: direct `git commit`, `git worktree`, `gh pr create`, or
   `glab mr create`; force-push `main`; infer direct-main or default-branch from
   "small" or "hotfix".

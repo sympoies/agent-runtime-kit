@@ -32,7 +32,7 @@ combined approval summary.
 - If review blocks delivery, post a blocked outcome comment before stopping when
   provider auth and permissions allow it.
 - Do not use this format for individual quick-finding or specialist reports. Those comments
-  report findings only; the parent/main agent owns the dispositions recorded
+  report findings only; the parent agent owns the dispositions recorded
   here.
 - If outcome posting fails, stop before merge and report the provider command,
   exit status, and retry action. A delivery that requires this contract is not
@@ -47,9 +47,10 @@ flow, portable identity boundary, and optional issue mirroring:
 On GitHub in `governed` mode, the final native
 review body is the canonical `provider-review` table rendered with the combined
 lens. Do not publish this delivery-outcome body as a second personal comment.
-The App review carries the complete report once; the personal identity records
-only verified metadata, while dispositions remain in the review-loop and
-tracking evidence. The outcome-note body below remains the `portable` and
+The configured reviewer identity carries the complete report once. Human
+reviews use an independent reviewer user account; automatic reviews may use an
+App. Any separate provenance step records only verified metadata, while
+dispositions remain in the review-loop and tracking evidence. The outcome-note body below remains the `portable` and
 authorized `personal-escape` fallback.
 
 ```bash

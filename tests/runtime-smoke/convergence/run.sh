@@ -145,6 +145,8 @@ PY
 )"
 }
 
+# Copy only the historical Hermes cohort; later retirements may never have
+# shipped to this product and therefore have no baseline copy to quarantine.
 materialize_hermes_retired_copies() {
   local baseline_root="$1"
   local current_root="$2"
@@ -159,7 +161,7 @@ materialize_hermes_retired_copies() {
     test -d "$source" || return 1
     mkdir -p "$(dirname "$destination")"
     cp -a "$source" "$destination"
-  done < <(python3 - "$current_root/manifests/retired-skill-ids.json" <<'PY'
+  done < <(python3 - "$current_root/manifests/retired-hermes-skill-copies.json" <<'PY'
 import json
 import pathlib
 import sys
@@ -197,7 +199,7 @@ collect_hermes_legacy_ids() {
 write_hermes_retired_ids() {
   local repo_root="$1"
   local output="$2"
-  python3 - "$repo_root/manifests/retired-skill-ids.json" "$output" <<'PY'
+  python3 - "$repo_root/manifests/retired-hermes-skill-copies.json" "$output" <<'PY'
 import json
 import pathlib
 import sys

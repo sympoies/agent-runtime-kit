@@ -112,10 +112,10 @@ Outputs:
 - A merged PR/MR through `forge-cli pr merge`, unless `--no-merge` is supplied.
 - Ordinary issue closeout follows `issue-follow-up`; a program or dispatch
   owner closes its tracker after all children and integration gates complete.
-- When this is the outermost successful workflow, a terminal local cleanup
-  result: the clean primary checkout is restored to base, or the safe merged
-  managed worktree is removed through `git-cli worktree remove`; retained
-  unsafe state includes its reason and recovery command.
+- After delivery, the owner removes its managed worktree through
+  `git-cli worktree remove` and reports the receipt and any `backup_ref`.
+  A clean primary checkout is restored to base. Refusals retain the target
+  with the named holder or failure; never retry with force.
 
 Failure modes:
 
@@ -158,9 +158,8 @@ Failure modes:
   `$HOME/...` and omit remote-useless local artifact paths before retrying.
 - A PR/MR body uses a provider auto-close keyword against a program tracker
   or dispatch issue before its closeout gates complete.
-- Terminal cleanup cannot prove a clean checkout, provider-confirmed merge of
-  the captured delivered head, or safe ownership. Retain the worktree and
-  branch, report the failed proof, and do not force removal.
+- `git-cli worktree remove` returns a `removal-*` refusal. Report the named
+  live holder or other failure, retain the target, and do not retry with force.
 
 ## Lifecycle Mode Selection
 
@@ -598,7 +597,8 @@ and does not mutate native approval state.
 For identity and issue mirroring: resolve the tri-state publication mode in
 `REVIEW_OUTCOME_POSTING_CONTRACT.md` before any write. Only `portable` mode
 posts a compact review after each lens and focused rerun. `governed` mode waits
-for the selected wave and publishes one combined owner-App report;
+for the selected wave and publishes one combined report through the configured
+reviewer identity;
 `personal-escape` requires explicit authorization and publishes one combined
 exact-head report followed by a non-native outcome note. Pass only the portable
 `--provider`, `--decision`, and `--lens` semantics; do not set private
@@ -692,10 +692,11 @@ all child and integration evidence is verified.
    compact review comment through `forge-cli pr review` (a native `COMMENT`
    review event via `--submit-review` on GitHub) with `--decision comments-only`
    and that semantic `--lens` (`quick` for a quick finding). In a governed
-   GitHub environment, do not post per-lens full reports through the personal identity.
+   GitHub environment, publish the combined report through the configured reviewer
+   identity after the selected wave.
    After the selected lens wave completes and before repair, publish
-   one combined pre-repair report through `forge-review-publish`; its personal
-   phase is metadata-only. The parent delivery workflow posts; reviewer
+   one combined pre-repair report through `forge-review-publish` using the
+   configured reviewer identity. The parent delivery workflow posts; reviewer
    subagents never call the provider. In either route, provider-visible finding
    evidence must exist before the repair in step 12 (see
    `REVIEW_OUTCOME_POSTING_CONTRACT.md`, posting order). On GitHub, attach
@@ -760,9 +761,14 @@ all child and integration evidence is verified.
    pre-mutation publisher failure. Direct `forge-cli pr review` is never an
    implicit fallback from `governed`. The
    governed publisher posts the complete
-   canonical body exactly once through the owner App and records only
-   exact-head-verified `--metadata-only` provenance through the personal
-   identity; the personal call never receives the report `--comment-file`.
+   canonical body exactly once through the configured reviewer identity,
+   independent from the PR author. Human review reports, native decisions,
+   comments and reviewer-owned ledger observations use the configured reviewer
+   user account; automatic reviews may use an App. Bind designated handoffs to
+   the actual review author's login. Credential selection remains environment
+   owned; `--review-author` verifies authorship and does not switch credentials.
+   If the adapter records a separate `--metadata-only` breadcrumb, bind and
+   verify its native review before that mutation and omit `--comment-file`.
    A required-but-missing or failed publisher blocks by default. Only after
    explicit maintainer authorization, a non-empty reason, and proof of
    `no-native-mutation` may delivery publish the combined report as an
@@ -792,23 +798,19 @@ all child and integration evidence is verified.
     closes the issue with `forge-cli issue close` when ready.
 19. Record the PR/MR URL, labels, check/pipeline evidence, review outcome, merge
     commit, chained closeout result, and any fallback used in delivery notes.
-20. If this workflow is the outermost terminal owner, finish any requested
-    post-merge deployment, activation, archive, evidence, and local closeout
-    duties, then apply `core/policies/git-delivery.md` terminal cleanup. Recheck
-    status and provider merge/head truth. Restore a clean primary checkout to
-    base, or invoke `git-cli worktree remove <path-or-slug> --format json` from
-    the primary checkout through the supported hooked shell; the target-aware
-    lease guard must confirm no live foreign owner before removal. If that proof
-    or hook is unavailable, retain the worktree. Delete the local
-    branch only when its tip equals the provider-confirmed delivered head;
-    otherwise retain and report it. When the merge left the primary checkout's
-    default branch behind its remote, advance it with
-    `git-cli sync-default --format json`; that surface owns the remote-bound
-    fast-forward, and raw `git merge` / `git pull` on the default branch stay
-    refused even with `--ff-only` because local state cannot prove publication.
-    If an outer `program/dispatch` workflow remains, hand it
-    the captured identity and defer
-    this step.
+20. After delivery, remove the owner's managed worktree with
+    `git-cli worktree remove <path-or-slug> --format json` through the supported
+    hooked shell. The trusted CLI fences live holders and preserves unsaved
+    work, releasing the caller's own lease. Apply `core/policies/git-delivery.md`
+    cleanup scope for other owners: seven days idle, excluding build directories.
+    Record the receipt and any `backup_ref`. Report a `removal-*` refusal and
+    its named holder or other failure; do not retry with force. Dirty, unpushed,
+    unmerged, pending-review and advisory-mode state do not require retention.
+    Complete requested post-merge duties and hand their evidence to any parent
+    independently of removal. Restore a clean primary checkout to base instead
+    of removing it. Delete a disposable local branch separately only when its
+    tip matches the provider-confirmed delivered head; otherwise retain it.
+    Advance a behind default branch with `git-cli sync-default --format json`.
 
 ## Boundary
 
@@ -818,7 +820,7 @@ The issue or dispatch owner owns linked issue closeout. The workflow owner
 owns scope judgment, code changes, local validation, review-profile and
 pre-merge gate decisions,
 repair loops, delivery outcome comments, and any temporary provider fallback
-decision. The outermost workflow also owns terminal local cleanup after all
-downstream duties; child delivery workflows hand off rather than clean early.
+decision. Each owner removes its managed worktree after delivery; child delivery
+workflows hand off delivery evidence independently of their own cleanup.
 Provider auto-close keywords against program trackers and dispatch issues
 remain banned until their parent closeout is complete.

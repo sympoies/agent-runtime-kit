@@ -10,7 +10,7 @@ task rows may share the same lane.
 ## Continuity Rule
 
 Implementation, clarification, CI repair, and review follow-up stay on the same
-assigned lane until the PR is merged or explicitly closed. Main-agent remains
+assigned lane until the PR is merged or explicitly closed. Coordinator remains
 orchestration/review owner; subagent remains implementation owner.
 
 Do not invent replacement branch, worktree, owner, or PR facts because a session
@@ -24,7 +24,7 @@ and return a blocker packet:
 - confirmed owner, branch, worktree, execution mode, and PR
 - exact missing or conflicting input
 - current status: `blocked` or `in-progress`
-- exact unblock action needed from the main agent
+- exact unblock action needed from the parent agent
 
 ## Reassignment
 
