@@ -57,7 +57,7 @@ product = ["codex", "claude", "hermes"]
 required = true
 when = "always"
 phase = "delivery"
-notes = "Detailed Git/commit/delivery mechanics behind the AGENT_HOME.md hard gates: semantic-commit body gate, managed worktree paths, branch naming, label selection, and PR/MR body format. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
+notes = "Compact Git/commit/delivery boundaries and on-demand owner routing behind the AGENT_HOME.md hard gates: semantic-commit body gate, managed worktree paths, branch naming, label selection, and PR/MR body format. Home-scoped so any project-dev work inherits it when this checkout is the docs home."
 
 [[document]]
 context = "project-dev"
@@ -76,8 +76,20 @@ path = "core/policies/evidence-control-plane.md"
 product = ["codex", "claude", "hermes"]
 required = true
 when = "always"
-phase = ["review", "delivery"]
+phase = "review"
 notes = "Conditional durable evidence ownership for review, delivery gates, audits, handoffs, and event-driven closeout; ordinary edits use the compact engineering contract."
+
+# Delivery routes to this owner only when retained proof or a gate needs it.
+# Review keeps its existing required evidence contract.
+[[document]]
+context = "project-dev"
+scope = "home"
+path = "core/policies/evidence-control-plane.md"
+product = ["codex", "claude", "hermes"]
+required = false
+when = "always"
+phase = "delivery"
+notes = "On-demand durable proof for delivery gates, audits and handoffs; git-delivery carries the mandatory trigger. Optional reading never waives a gate."
 
 [[document]]
 context = "project-dev"
