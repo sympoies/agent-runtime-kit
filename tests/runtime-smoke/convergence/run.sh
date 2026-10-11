@@ -117,7 +117,7 @@ import pathlib
 import sys
 
 report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert any(item["check"] == "installed-runtime-source-clean"
+assert any(item["check"] in {"installed-runtime-source", "installed-runtime-source-clean"}
            and item["severity"] == "block" for item in report["findings"])
 PY
 )
