@@ -13,7 +13,8 @@ Dispositions
 - ``primary``         the repo's primary working tree; never a removal target.
 - ``dirty``           uncommitted changes present; git-cli preserves unsaved
                       work before eligible removal.
-- ``locked``          worktree is git-locked; surfaced, never auto-removed.
+- ``locked``          worktree is git-locked; selection still uses the owner-or-
+                      seven-day-idle gate; git-cli decides removal or refusal.
 - ``protected``       branch was explicitly named by ``--protect-branch``;
                       retained even when its history is fully in the base.
 - ``safe-merged``     branch tip is an ancestor of the base (nothing ahead);

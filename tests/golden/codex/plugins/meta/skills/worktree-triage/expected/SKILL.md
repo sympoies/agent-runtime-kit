@@ -22,9 +22,13 @@ description: >
   eligibility is independent: the owner removes after delivery or abandonment;
   another owner may remove only after seven days without file activity,
   excluding build directories. Unknown activity or ownership needs inspection.
-- Always remove through trusted `git-cli worktree remove`. The CLI owns live
-  holder fencing and preservation of unsaved work. Older installed versions may
-  retain stricter checks until their normal release upgrade; never bypass them.
+- Always remove through trusted `git-cli worktree remove`. Automatic preservation,
+  backup inventory and restore require git-cli v1.33.2 or newer. Older versions
+  retain their native checks and may lack recovery commands; upgrade normally,
+  never bypass refusals. The scanner's v1.27.16 floor is unchanged.
+- Follow `core/policies/git-delivery.md` for backup omissions: only the owner
+  or user may explicitly authorize loss of the listed non-ignored paths before
+  `--acknowledge-backup-omissions` is passed. Ignored files are not preserved.
 
 Outputs:
 
@@ -84,12 +88,12 @@ $CODEX_HOME/plugins/meta/skills/worktree-triage/scripts/worktree-triage.sh --rep
    git-cli worktree remove <exact-path> --format json
    ```
 
-   The CLI refuses live holders and preserves unsaved work automatically.
+   The CLI refuses live holders; v1.33.2+ preserves unsaved work automatically.
    Capture the receipt, any `backup_ref` and post-removal read-back, including
    for `rescue-candidate` rows. Report a `removal-*` refusal and its named holder
    or other failure. Never retry with force, raw `git worktree remove` or `rm`.
 4. **Report preserved work:** route the retained branch and any backup ref to
-   the owner for `git-cli worktree restore <backup-ref>` or ordinary delivery.
+   the owner for `git-cli worktree restore <backup-ref>` (v1.33.2+) or ordinary delivery.
    Branch deletion is a separate step under `core/policies/git-delivery.md`;
    triage never commits, rebases or merges inventory work.
 
