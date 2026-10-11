@@ -76,6 +76,7 @@ using this narrow admission path.
   Draft an accurate summary from the actual diff, never `git log -1`.
 - Branch prefix must match delivery kind. `git-cli worktree add --kind` derives
   it; use CLI help for the mapping. Slugs are lowercase, hyphenated, 3-6 words.
+- In every agent session, refuse all `gh issue`/`gh pr` commands (including reads) and raw GitHub writes; use `forge-cli`, with missing equivalents tracked in [nils-cli#2138](https://github.com/sympoies/nils-cli/issues/2138).
 - Use the active workflow / `forge-cli` for issues, PRs and MRs. Bodies use
   `agent-runtime pr-body render`, with at least `## Summary` + `## Test plan`.
   Select labels from the project's catalog through

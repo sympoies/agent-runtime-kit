@@ -17,7 +17,7 @@ active, and open a full runbook only for the phase that needs it.
   except for an exact current-request authorized `default-branch` completion.
   Marked collaboration ledgers use only their own `tools/collab.py`; PR/MR
   delivery does not apply. Marker and scope: `core/policies/git-delivery.md`.
-- **Never**: direct `git commit`, `git worktree`, `gh pr create`, or
+- **Never**: direct `git commit`, `git worktree`, `gh issue` / `gh pr` (reads included), or
   `glab mr create`; force-push `main`; infer direct-main or default-branch from
   "small" or "hotfix".
 - **Next**: activate `project-dev` for the current phase. The edit contract is
