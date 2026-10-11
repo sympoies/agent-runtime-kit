@@ -676,6 +676,8 @@ class SharedHookTests(unittest.TestCase):
             "GIT_CONFIG_GLOBAL=/tmp/fixture/../../home/example/gitconfig git config --global user.name fixture",
             "env -u GIT_CONFIG_GLOBAL git config --global user.name fixture",
             "bash -c 'HOME=/tmp/fixture-home git config --global user.name fixture'",
+            "false && export GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig; git config --global user.name fixture",
+            "(export GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig); git config --global user.name fixture",
         )
         for command in commands:
             with self.subTest(command=command):
@@ -701,6 +703,7 @@ class SharedHookTests(unittest.TestCase):
             "env GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig git config --global --add safe.directory /tmp/fixture",
             "export GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig; git config --global user.name fixture",
             "env GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig bash -c 'git config --global user.name fixture'",
+            "true && GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig git config --global user.name fixture",
         )
         for command in commands:
             with self.subTest(command=command):

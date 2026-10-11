@@ -24,12 +24,15 @@ from hook_common import (
     emit_block,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    is_shell_separator,
     marker_environment_before_invocation,
     nested_shell_payload,
+    normalize_command_separators,
     opaque_invocation_candidates,
     opaque_invocation_is_literal_shell_test,
     read_payload,
     scoped_simple_commands_with_nested_shells,
+    shell_tokens,
     simple_commands_with_nested_shells,
 )
 
@@ -172,6 +175,12 @@ def git_config_block_reason(command: str, inherited: dict[str, str], depth: int 
         return ""
     if depth > 5:
         return OPAQUE_REASON
+    words = shell_tokens(normalize_command_separators(command))
+    conditional_state = any(word in {"&&", "||", "&", "|", "(", ")"} for word in words) or any(
+        word in {"if", "for", "while", "until", "case"}
+        and (index == 0 or is_shell_separator(words[index - 1]))
+        for index, word in enumerate(words)
+    )
     states: dict[tuple[int, ...], dict[str, str]] = {(): dict(inherited)}
     # Let the shared parser extract substitution scopes. Descend into known
     # shell strings ourselves so inline env assignments stay in that shell.
@@ -182,11 +191,17 @@ def git_config_block_reason(command: str, inherited: dict[str, str], depth: int 
         if tokens and all(ASSIGNMENT_RE.match(token) for token in tokens):
             for token in tokens:
                 if token.startswith("GIT_CONFIG_GLOBAL=") and "GIT_CONFIG_GLOBAL" in state:
-                    state["GIT_CONFIG_GLOBAL"] = token.split("=", 1)[1]
+                    if conditional_state:
+                        state.pop("GIT_CONFIG_GLOBAL", None)
+                    else:
+                        state["GIT_CONFIG_GLOBAL"] = token.split("=", 1)[1]
         if tokens[:1] == ["export"]:
             for token in tokens[1:]:
                 if token.startswith("GIT_CONFIG_GLOBAL="):
-                    state["GIT_CONFIG_GLOBAL"] = token.split("=", 1)[1]
+                    if conditional_state:
+                        state.pop("GIT_CONFIG_GLOBAL", None)
+                    else:
+                        state["GIT_CONFIG_GLOBAL"] = token.split("=", 1)[1]
         if tokens[:1] == ["unset"] and "GIT_CONFIG_GLOBAL" in tokens[1:]:
             state.pop("GIT_CONFIG_GLOBAL", None)
         environment = marker_environment_before_invocation(tokens, ("GIT_CONFIG_GLOBAL",), state)

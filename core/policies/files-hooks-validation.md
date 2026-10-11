@@ -43,13 +43,7 @@ runbooks and CLIs.
 
 ## Files And Sensitive Output
 
-- Fixture scripts that write Git configuration must set
-  `GIT_CONFIG_GLOBAL=<temporary-output>/gitconfig` and `GIT_CONFIG_NOSYSTEM=1`
-  before `git config --global`; isolate `XDG_CONFIG_HOME` when other tools use
-  it. Overriding `HOME` alone leaves Git's XDG/global configuration exposed.
-  Never write shared global or system Git configuration. The shell guard
-  admits literal global targets beneath temporary or `AGENT_HOME/out` roots,
-  rejects symlink redirects, and preserves reads and local configuration.
+- Isolate fixture Git: [details](../hooks/README.md).
 - Follow project conventions for durable files and generated output. Do not
   create a discussion, plan, decision record, or broad index entry unless asked
   or clearly reusable.
