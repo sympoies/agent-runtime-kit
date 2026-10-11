@@ -8,10 +8,12 @@ dirty-tree handling stay auditable.
 from __future__ import annotations
 
 import functools
+import os
 import re
 import subprocess
 import sys
-from pathlib import PurePosixPath
+import tempfile
+from pathlib import Path, PurePosixPath
 
 # Codex may execute hooks through a source symlink; keep the checkout clean.
 sys.dont_write_bytecode = True
@@ -22,13 +24,23 @@ from hook_common import (
     emit_block,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    marker_environment_before_invocation,
+    nested_shell_payload,
     opaque_invocation_candidates,
     opaque_invocation_is_literal_shell_test,
     read_payload,
+    scoped_simple_commands_with_nested_shells,
     simple_commands_with_nested_shells,
 )
 
 BLOCK_REASON = "Do not use git commit directly. Use semantic-commit instead."
+CONFIG_REASON = (
+    "Do not write shared Git global or system configuration. HOME alone does "
+    "not isolate Git. Use a literal GIT_CONFIG_GLOBAL=<temporary-output>/gitconfig "
+    "with GIT_CONFIG_NOSYSTEM=1 and `git config --global`; isolate XDG_CONFIG_HOME "
+    "when other tools use it. System writes cannot be redirected by "
+    "GIT_CONFIG_GLOBAL and remain refused."
+)
 OPAQUE_REASON = (
     "Command intent could not be resolved safely. Classification: "
     "rule=opaque-executable; operation=dynamic-executable. A shell-expanded "
@@ -67,16 +79,16 @@ def basename(token: str) -> str:
     return PurePosixPath(token).name
 
 
-def git_subcommand(simple_command: list[str]) -> str | None:
+def git_arguments(simple_command: list[str]) -> list[str]:
     invocation = invocation_tokens(simple_command)
     if not invocation or basename(invocation[0]) != "git":
-        return None
+        return []
 
     index = 1
     while index < len(invocation):
         token = invocation[index]
         if token == "--":
-            return None
+            return []
         if token in GIT_OPTIONS_WITH_VALUE:
             index += 2
             continue
@@ -92,8 +104,102 @@ def git_subcommand(simple_command: list[str]) -> str | None:
         if token.startswith("-") and token != "-":
             index += 1
             continue
-        return token
-    return None
+        return invocation[index:]
+    return []
+
+
+def git_subcommand(simple_command: list[str]) -> str | None:
+    arguments = git_arguments(simple_command)
+    return arguments[0] if arguments else None
+
+
+def shared_config_write(arguments: list[str]) -> bool:
+    """Classify legacy key/value writes and Git's explicit config actions."""
+    if arguments[:1] != ["config"] or not {"--global", "--system"}.intersection(arguments):
+        return False
+    write_actions = {
+        "--add", "--replace-all", "--unset", "--unset-all", "--rename-section",
+        "--remove-section", "--edit", "-e",
+    }
+    if write_actions.intersection(arguments):
+        return True
+    operands: list[str] = []
+    index = 1
+    while index < len(arguments):
+        token = arguments[index]
+        if token in {"--type", "-t", "--default", "--file", "-f", "--comment"}:
+            index += 2
+            continue
+        if not token.startswith("-"):
+            operands.append(token)
+        index += 1
+    if operands[:1] and operands[0] in {"set", "unset", "rename-section", "remove-section", "edit"}:
+        return True
+    if operands[:1] and operands[0] in {"get", "list"}:
+        return False
+    if {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "--help", "-h"}.intersection(arguments):
+        return False
+    return len(operands) >= 2
+
+
+def isolated_global_config(value: str) -> bool:
+    """Require a literal output child, without a symlink redirect inside it."""
+    if not value or token_is_dynamic(value):
+        return False
+    target = Path(value)
+    if not target.is_absolute():
+        return False
+    roots = [Path(tempfile.gettempdir()), Path("/tmp"), Path("/var/tmp")]
+    if os.environ.get("AGENT_HOME"):
+        roots.append(Path(os.environ["AGENT_HOME"]) / "out")
+    try:
+        for root in roots:
+            if not root.is_absolute() or not target.is_relative_to(root) or target == root:
+                continue
+            expected = root.resolve() / target.relative_to(root)
+            # Normalise '..' before checking containment, and refuse any
+            # additional symlink traversal below the selected output root.
+            normalized = Path(os.path.normpath(expected))
+            if normalized.is_relative_to(root.resolve()) and target.resolve() == normalized:
+                return True
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return False
+
+
+def git_config_block_reason(command: str, inherited: dict[str, str], depth: int = 0) -> str:
+    if "config" not in command or not any(scope in command for scope in ("--global", "--system")):
+        return ""
+    if depth > 5:
+        return OPAQUE_REASON
+    states: dict[tuple[int, ...], dict[str, str]] = {(): dict(inherited)}
+    # Let the shared parser extract substitution scopes. Descend into known
+    # shell strings ourselves so inline env assignments stay in that shell.
+    for tokens, scope in scoped_simple_commands_with_nested_shells(command, max_depth=0, strict=True):
+        state = states.setdefault(scope, dict(states.get(scope[:-1], inherited)))
+        if tokens[:1] in (["source"], ["."]):
+            state.pop("GIT_CONFIG_GLOBAL", None)
+        if tokens and all(ASSIGNMENT_RE.match(token) for token in tokens):
+            for token in tokens:
+                if token.startswith("GIT_CONFIG_GLOBAL=") and "GIT_CONFIG_GLOBAL" in state:
+                    state["GIT_CONFIG_GLOBAL"] = token.split("=", 1)[1]
+        if tokens[:1] == ["export"]:
+            for token in tokens[1:]:
+                if token.startswith("GIT_CONFIG_GLOBAL="):
+                    state["GIT_CONFIG_GLOBAL"] = token.split("=", 1)[1]
+        if tokens[:1] == ["unset"] and "GIT_CONFIG_GLOBAL" in tokens[1:]:
+            state.pop("GIT_CONFIG_GLOBAL", None)
+        environment = marker_environment_before_invocation(tokens, ("GIT_CONFIG_GLOBAL",), state)
+        arguments = git_arguments(tokens)
+        if shared_config_write(arguments):
+            if "--system" in arguments or not isolated_global_config(environment.get("GIT_CONFIG_GLOBAL", "")):
+                return CONFIG_REASON
+        payload = nested_shell_payload(invocation_tokens(tokens))
+        if payload:
+            reason = git_config_block_reason(payload, environment, depth + 1)
+            if reason:
+                return reason
+    return ""
 
 
 def token_is_dynamic(token: str) -> bool:
@@ -342,6 +448,9 @@ def subcommand_block_reason(
 
 
 def git_commit_block_reason(command: str) -> str:
+    reason = git_config_block_reason(command, dict(os.environ))
+    if reason:
+        return reason
     # Strict parsing drops comments and fails closed on untokenizable text.
     simple_commands = list(simple_commands_with_nested_shells(command, strict=True))
     lookup_retargeted = command_retargets_lookup(simple_commands)

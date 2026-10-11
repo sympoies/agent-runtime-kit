@@ -658,6 +658,97 @@ class SharedHookTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assert_blocked(decision, "semantic-commit")
 
+    def test_git_config_hook_refuses_shared_configuration_writes(self) -> None:
+        commands = (
+            "HOME=/tmp/fixture-home git config --global user.name fixture",
+            "git config --global --add safe.directory /tmp/fixture",
+            "git config --global --unset user.name",
+            "git config --global --replace-all user.name fixture",
+            "git config --global --rename-section old new",
+            "git config --global --remove-section old",
+            "git config --global --edit",
+            "git config set --global user.name fixture",
+            "git config unset --global user.name",
+            "git config --system user.name fixture",
+            "GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig git config --system user.name fixture",
+            "GIT_CONFIG_GLOBAL=/home/example/gitconfig git config --global user.name fixture",
+            "GIT_CONFIG_GLOBAL=$fixture/gitconfig git config --global user.name fixture",
+            "GIT_CONFIG_GLOBAL=/tmp/fixture/../../home/example/gitconfig git config --global user.name fixture",
+            "env -u GIT_CONFIG_GLOBAL git config --global user.name fixture",
+            "bash -c 'HOME=/tmp/fixture-home git config --global user.name fixture'",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command),
+                    env={"GIT_CONFIG_GLOBAL": ""},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "GIT_CONFIG_GLOBAL")
+
+    def test_git_config_hook_preserves_reads_and_isolated_global_writes(self) -> None:
+        commands = (
+            "git config --global --get user.name",
+            "git config --system --get user.name",
+            "git config --global --get-regexp '^user\\.'",
+            "git config --global --list",
+            "git config --global user.name",
+            "git config get --global user.name",
+            "git config list --system",
+            "git config --local user.name fixture",
+            "git config user.name fixture",
+            "GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig git config --global user.name fixture",
+            "env GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig git config --global --add safe.directory /tmp/fixture",
+            "export GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig; git config --global user.name fixture",
+            "env GIT_CONFIG_GLOBAL=/tmp/fixture/gitconfig bash -c 'git config --global user.name fixture'",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command),
+                    env={"GIT_CONFIG_GLOBAL": ""},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+
+    def test_git_config_hook_checks_resolved_output_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "out"
+            output.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (output / "escape").symlink_to(outside, target_is_directory=True)
+            for target, blocked in ((output / "gitconfig", False),
+                                    (output / "escape" / "gitconfig", True)):
+                with self.subTest(target=target):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py",
+                        command_payload(f"GIT_CONFIG_GLOBAL={shlex.quote(str(target))} git config --global user.name fixture"),
+                        env={"AGENT_HOME": str(root), "TMPDIR": str(output)},
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if blocked:
+                        self.assert_blocked(decision, "GIT_CONFIG_GLOBAL")
+                    else:
+                        self.assertIsNone(decision)
+
+    def test_git_config_hook_invalidates_retargeted_inherited_configuration(self) -> None:
+        commands = (
+            "GIT_CONFIG_GLOBAL=/home/example/gitconfig; git config --global user.name fixture",
+            "source fixture-env.sh; git config --global user.name fixture",
+            "env - git config --global user.name fixture",
+            "GIT_CONFIG_GLOBAL=/tmp/fixture/other env - git config --global user.name fixture",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command),
+                    env={"GIT_CONFIG_GLOBAL": "/tmp/fixture/gitconfig"},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "GIT_CONFIG_GLOBAL")
+
     def test_direct_git_commit_hook_classifies_quoted_command_substitutions(
         self,
     ) -> None:
