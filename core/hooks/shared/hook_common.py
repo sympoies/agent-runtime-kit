@@ -2028,6 +2028,38 @@ def _shield_parameter_expansion_operators(command: str) -> str:
     return "".join(out)
 
 
+class _QuotedOutputWord(str):
+    """A word whose leading output operator was quoted or escaped."""
+
+
+def _shield_quoted_output_operators(command: str) -> tuple[str, str | None]:
+    """Retain output-operator origin through shlex's quote removal."""
+    if ">" not in command:
+        return command, None
+    marker = "__agent_runtime_quoted_output_operator__"
+    while marker in command:
+        marker += "_"
+    out: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and quote != "'" and index + 1 < len(command):
+            following = command[index + 1]
+            out.append("\\" + marker if following == ">" else command[index:index + 2])
+            index += 2
+            continue
+        if char in {"'", '"'}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        out.append(marker if char == ">" and quote is not None else char)
+        index += 1
+    rewritten = "".join(out)
+    return rewritten, marker if rewritten != command else None
+
+
 def shell_tokens(command: str) -> list[str]:
     return _checked_shell_tokens(command) or []
 
@@ -2035,18 +2067,29 @@ def shell_tokens(command: str) -> list[str]:
 def _checked_shell_tokens(command: str) -> list[str] | None:
     """Return shell tokens, or ``None`` when the text cannot be tokenized."""
     try:
-        lexer = shlex.shlex(
+        shielded, quoted_output = _shield_quoted_output_operators(
             _shield_dynamic_word_parentheses(
                 _shield_parameter_expansion_operators(
                     _shield_clobber_redirects(command)
                 )
             ),
+        )
+        lexer = shlex.shlex(
+            shielded,
             posix=True,
             punctuation_chars=";&|()",
         )
         lexer.whitespace_split = True
         lexer.commenters = ""
-        return list(lexer)
+        tokens = list(lexer)
+        if quoted_output is None:
+            return tokens
+        return [
+            _QuotedOutputWord(word.replace(quoted_output, ">"))
+            if re.match(rf"\d*{re.escape(quoted_output)}", word)
+            else word.replace(quoted_output, ">")
+            for word in tokens
+        ]
     except ValueError:
         return None
 
@@ -2870,11 +2913,61 @@ def _indirect_heredoc_executes(
         # literal, option-free shell form here; other forms remain opaque.
         if invocation[:1] == ["doas"]:
             invocation = invocation[1:]
+        # Only these option-free, literal launcher forms are transparent here.
+        # Their option grammars and dynamic command construction remain opaque.
+        if invocation[:1] == ["timeout"] and len(invocation) > 2 and re.fullmatch(
+            r"\d+(?:\.\d+)?[smhd]?", invocation[1]
+        ):
+            invocation = invocation_tokens(invocation[2:])
+        elif invocation[:1] == ["setsid"] and len(invocation) > 1 and not invocation[1].startswith("-"):
+            invocation = invocation_tokens(invocation[1:])
         return start, end, invocation
 
-    def stdin_shell(invocation: list[str]) -> bool:
+    def stdin_shell(invocation: list[str], *, owns_here_doc: bool = False) -> bool:
+        # Bash's lone '-' selects stdin. Keep this blocking-only normalization
+        # out of the stricter validation-credit classifier.
+        argv = invocation_without_redirections(invocation)
+        if len(argv) == 2 and PurePosixPath(argv[0]).name == "bash" and argv[1] == "-":
+            invocation = [word for word in invocation if word != "-"]
         text = shlex.join(invocation)
-        return _heredoc_body_is_executed_by_shell(text + " <<EOF", len(text) + 1, 0)
+        # A downstream consumer's own stdin here-doc competes with the body
+        # being followed. The direct executor already carries that body's op.
+        if not owns_here_doc:
+            text += " <<EOF"
+        return _heredoc_body_is_executed_by_shell(text, len(text), 0)
+
+    def stdin_filter(invocation: list[str]) -> bool:
+        if any(_stdin_redirect_kind(word) == "override" for word in invocation):
+            return False
+        argv = invocation_without_redirections(invocation)
+        if not argv:
+            return False
+        program = PurePosixPath(argv[0]).name
+        return (program == "cat" and all(
+            word in {"-", "/dev/stdin", "/dev/fd/0"} for word in argv[1:]
+        )) or (program == "tee" and all(
+            not word.startswith("-") or word in {"-", "-a", "-i"}
+            for word in argv[1:]
+        ))
+
+    def pipeline_shell(separator: int) -> bool:
+        while separator + 1 < len(tokens) and tokens[separator] in {"|", "|&"}:
+            next_start, next_end, consumer = command_at(separator + 1)
+            if stdin_shell(consumer):
+                return True
+            if not stdin_filter(consumer) or _stdout_redirect_targets(tokens[next_start:next_end]):
+                return False
+            separator = next_end
+        return False
+
+    def pipeline_stdout_open(separator: int) -> bool:
+        """Only literal stdin-preserving filters carry this body's stdout."""
+        while separator + 1 < len(tokens) and tokens[separator] in {"|", "|&"}:
+            next_start, next_end, consumer = command_at(separator + 1)
+            if not stdin_filter(consumer) or _stdout_redirect_targets(tokens[next_start:next_end]):
+                return False
+            separator = next_end
+        return True
 
     index = tokens.index(marker)
     start, end, invocation = command_at(index)
@@ -2888,8 +2981,7 @@ def _indirect_heredoc_executes(
     ):
         return True
     if executable in SHELL_HEREDOC_EXECUTORS:
-        text = shlex.join(invocation)
-        return _heredoc_body_is_executed_by_shell(text, len(text), 0)
+        return stdin_shell(invocation, owns_here_doc=True)
     if executable not in {"cat", "tee"}:
         return False  # an interpreter's own language is not shell text
 
@@ -2906,21 +2998,16 @@ def _indirect_heredoc_executes(
     ):
         return False
 
-    targets: set[str] = set()
     words = tokens[start:end]
-    for position, word in enumerate(words):
-        match = re.fullmatch(r"(?:1)?>(?:>|\|)?(.*)", word)
-        if not match:
-            continue
-        target = match.group(1) or (
-            words[position + 1] if position + 1 < len(words) else ""
-        )
-        if target and not any(char in target for char in "$`*?[~"):
-            targets.add(str(PurePosixPath(target)))
+    stdout_targets = _stdout_redirect_targets(words)
+    targets = {
+        str(PurePosixPath(target)) for target in (
+            stdout_targets + _tee_targets(invocation_without_redirections(invocation))
+        ) if target and not any(char in target for char in "$`*?[~")
+    }
 
-    if not targets and end < len(tokens) and tokens[end] in {"|", "|&"}:
-        if end + 1 < len(tokens) and stdin_shell(command_at(end + 1)[2]):
-            return True
+    if not stdout_targets and end < len(tokens) and pipeline_shell(end):
+        return True
 
     # A group/subshell can carry this consumer's output into a shell. A <(
     # group instead becomes a literal script-file argument of the outer shell.
@@ -2933,17 +3020,69 @@ def _indirect_heredoc_executes(
             opening = stack.pop()
             if (tokens[opening], token) in {("(", ")"), ("{", "}")}:
                 pairs[opening] = position
+    # Pairs are collected on close, so inner stdout owners precede outer ones.
+    body_stdout_open = not stdout_targets
     for opening, closing in pairs.items():
         if not opening < index < closing:
             continue
-        if (not targets and closing + 2 < len(tokens)
-                and tokens[closing + 1] in {"|", "|&"}):
-            if stdin_shell(command_at(closing + 2)[2]):
+        process_substitution = opening > 0 and tokens[opening - 1] in {"<", ">"}
+        forwarded_stdout = False
+        if body_stdout_open and not process_substitution and closing + 1 < len(tokens):
+            _, group_end, _ = command_at(closing + 1)
+            group_targets = _stdout_redirect_targets(tokens[closing + 1:group_end])
+            targets.update(str(PurePosixPath(target)) for target in group_targets
+                           if target and not any(char in target for char in "$`*?[~"))
+            if group_targets:
+                body_stdout_open = False
+            elif pipeline_shell(closing + 1):
                 return True
-        if not targets and opening and tokens[opening - 1] == "<":
-            outer = command_at(opening - 1)[2]
-            if outer[-1:] == ["<"] and stdin_shell(outer[:-1]):
-                return True
+        if body_stdout_open and process_substitution and tokens[opening - 1] == "<":
+            outer_start, _, outer = command_at(opening - 1)
+            if outer[-1:] == ["<"]:
+                if outer[:-1] in (["source"], ["."]):
+                    return True
+                suffix_end = closing + 1
+                if suffix_end < len(tokens):
+                    _, suffix_end, _ = command_at(suffix_end)
+                suffix = tokens[closing + 1:suffix_end]
+                redirected_input = False
+                if len(outer) > 1 and _REDIRECT_TOKEN_RE.match(outer[-2]):
+                    if outer[-2] not in {"<", "0<"}:
+                        body_stdout_open = False
+                        continue  # a non-stdin/output fd consumes the script path
+                    prefix = outer[:-2]
+                    redirected_input = True
+                else:
+                    prefix = outer[:-1]
+                # Redirected input leaves suffix words as shell operands;
+                # a direct substitution is the script, with suffix args.
+                if stdin_shell(prefix + suffix if redirected_input else prefix):
+                    return True
+                # A literal cat reads the substituted file operand, or its
+                # effective stdin, and forwards that body to its own stdout.
+                complete = invocation_without_redirections(prefix) + suffix
+                argv = invocation_without_redirections(complete)
+                if argv and PurePosixPath(argv[0]).name == "cat":
+                    forwarded_stdout = (
+                        not any(_stdin_redirect_kind(word) for word in suffix)
+                        and stdin_filter(complete)
+                    ) if redirected_input else all(
+                        not word.startswith("-") or word == "-" for word in argv[1:]
+                    )
+                if forwarded_stdout:
+                    consumer_words = tokens[outer_start:opening - 1] + suffix
+                    captures = _stdout_redirect_targets(consumer_words)
+                    targets.update(str(PurePosixPath(target)) for target in captures
+                                   if target and not any(char in target for char in "$`*?[~"))
+                    if captures:
+                        body_stdout_open = False
+                    elif pipeline_shell(suffix_end):
+                        return True
+                    else:
+                        body_stdout_open = pipeline_stdout_open(suffix_end)
+        if process_substitution and not forwarded_stdout:
+            # Its stdout belongs to the substituted file, not outer groups.
+            body_stdout_open = False
 
     # A literal consumer write followed by execution of that same literal path.
     # Do not infer future runs, dynamic paths, or a different script's stdin.
@@ -4487,10 +4626,13 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
         index += 1
     payload: list[str] = []
     while index < len(tokens):
-        # Shell input redirections are not xargs argv. Otherwise `<<EOF` can
-        # occupy the governed operation slot and hide the unknown stdin word.
-        if _INPUT_REDIRECT_TOKEN_RE.match(tokens[index]):
-            index = _skip_input_redirections(tokens, index)
+        # Shell redirections are not xargs argv. Either input or output syntax
+        # can otherwise occupy the governed operation slot.
+        if (_REDIRECT_TOKEN_RE.match(tokens[index])
+                and not isinstance(tokens[index], _QuotedOutputWord)):
+            # Skip one outer redirect at a time: the next word may be a
+            # quoted script, even when it also starts with an output operator.
+            index += 2 if _redirect_consumes_next(tokens[index]) else 1
         else:
             payload.append(tokens[index])
             index += 1
@@ -4499,7 +4641,12 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
     if replacement is not None:
         if not replacement:
             return _opaque_wrapper_invocation(payload)
-        return [token.replace(replacement, XARGS_INPUT_TOKEN) for token in payload]
+        return [
+            _QuotedOutputWord(token.replace(replacement, XARGS_INPUT_TOKEN))
+            if isinstance(token, _QuotedOutputWord)
+            else token.replace(replacement, XARGS_INPUT_TOKEN)
+            for token in payload
+        ]
     return [*payload, XARGS_INPUT_TOKEN]
 
 

@@ -289,17 +289,23 @@ keeps its broader process-wrapper context and depth accounting while sharing the
 Blocking classifiers retain terminated quoted here-document bodies when their
 literal consumer feeds a shell: supported transparent shell launchers, the
 option-free `doas` shell form, `source`/`.` reading `/dev/stdin` or `/dev/fd/0`,
-stdin-reading `cat`/`tee` piped directly or through a group/subshell into a shell,
-and `cat` inside a shell's `<(...)` script argument. A literal `cat` output file
-followed by that same path's shell/source or direct execution is also inspected.
+stdin-reading `cat`/`tee` piped directly, through further literal `cat`/`tee`
+stages, or through a group/subshell into a shell, and `cat` inside a shell's
+`<(...)` script argument or stdin redirection. Bash's lone `-` stdin spelling
+and option-free `source`/`.` process-substitution arguments are inspected too.
+A literal `cat`/`tee` output file or group stdout capture followed by that same
+path's shell/source or direct execution is also inspected, including execution
+behind option-free `setsid` or `timeout <literal-duration>` (numeric duration
+with an optional `s`, `m`, `h`, or `d` suffix).
 Explicit non-stdin descriptors, replaced stdin, redirected pipe output, other
 `cat` file operands, document prose, and interpreter-language bodies stay data.
 These indirect bodies do not earn validation credit. Source commands retain
 existing executable-resolution checks; absolute executable paths keep read
-controls verifiable. Shell input redirections are removed from `xargs` argv,
-while its input-derived operation remains unknown and cannot prove a governed
-read. Dynamic routing and scripts constructed by other languages remain outside
-this mechanical classifier.
+controls verifiable. Shell input and output redirections are removed from
+`xargs` argv, while its input-derived operation remains unknown and cannot
+prove a governed read. Other pipeline filters, launcher option forms, dynamic
+routing, and scripts constructed by other languages remain outside this
+mechanical classifier.
 
 Older CLIs may retain stricter removal checks; hook admission does not bypass
 their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
