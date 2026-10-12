@@ -2108,6 +2108,124 @@ class DefaultDeliveryTests(HookTestCase):
             self.assert_blocked(decision, "[default-delivery:")
 
 
+    def test_default_delivery_hook_classifies_indirect_input_residuals(self) -> None:
+        shapes = (
+            ("stdin-dash", "bash - <<'EOF'\n{body}\nEOF"),
+            ("source-process-substitution", ". <(cat <<'EOF'\n{body}\nEOF\n)"),
+            ("redirected-process-substitution", "bash < <(cat <<'EOF'\n{body}\nEOF\n)"),
+            ("pipeline-stages", "cat <<'EOF' | tee | bash\n{body}\nEOF"),
+            ("group-write-execute", "{{ cat <<'EOF'\n{body}\nEOF\n}} > fixture.sh; bash fixture.sh"),
+            ("tee-write-execute", "tee fixture.sh <<'EOF'\n{body}\nEOF\nbash fixture.sh"),
+            ("timeout-write-execute", "cat > fixture.sh <<'EOF'\n{body}\nEOF\ntimeout 5 bash fixture.sh"),
+            ("setsid-write-execute", "cat > fixture.sh <<'EOF'\n{body}\nEOF\nsetsid bash fixture.sh"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            self._init_checkout_lease_repo(repo)
+            for name, shape in shapes:
+                for body, blocked in (("git push origin HEAD:main", True),
+                                      ("/usr/bin/git status --short", False)):
+                    with self.subTest(shape=name, blocked=blocked):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(shape.format(body=body)), cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        if blocked:
+                            self.assert_blocked(decision, "[default-delivery:")
+                        else:
+                            self.assert_allowed(decision)
+
+            for command, blocked in (
+                ("xargs git > fixture-output <<'EOF'\npush origin HEAD:main\nEOF", True),
+                ("xargs git status > fixture-output <<'EOF'\n--short\nEOF", False),
+            ):
+                with self.subTest(shape="xargs-output-redirection", blocked=blocked):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py", command_payload(command),
+                        cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if blocked:
+                        self.assert_blocked(decision, "[default-delivery:")
+                    else:
+                        self.assert_allowed(decision)
+
+            for command in (
+                "bash - reader.sh <<'EOF'\ngit push origin HEAD:main\nEOF",
+                "bash -n - <<'EOF'\ngit push origin HEAD:main\nEOF",
+                "bash 3< <(cat <<'EOF'\ngit push origin HEAD:main\nEOF\n)",
+                ". reader.sh <(cat <<'EOF'\ngit push origin HEAD:main\nEOF\n)",
+                "cat <<'EOF' | tee > notes.md | bash\ngit push origin HEAD:main\nEOF",
+                "cat <<'EOF' | cat reader.sh | bash\ngit push origin HEAD:main\nEOF",
+                "cat <<'EOF' | python3\ngit push origin HEAD:main\nEOF",
+                "cat <<'EOF' | bash <<'READ'\ngit push origin HEAD:main\nEOF\n/usr/bin/git status\nREAD",
+                "{ cat > notes.md <<'EOF'\ngit push origin HEAD:main\nEOF\n} > fixture.sh; bash fixture.sh",
+                "{ cat <<'EOF'\ngit push origin HEAD:main\nEOF\n} 3> fixture.sh; bash fixture.sh",
+                "tee notes.md <<'EOF'\ngit push origin HEAD:main\nEOF\nbash other.sh",
+                "cat > fixture.sh <<'EOF'\ngit push origin HEAD:main\nEOF\ntimeout 5 bash -n fixture.sh",
+                "cat > fixture.sh <<'EOF'\ngit push origin HEAD:main\nEOF\nsetsid bash other.sh",
+            ):
+                with self.subTest(data=command):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py", command_payload(command), cwd=repo,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+
+    def test_indirect_input_residuals_reach_governed_guards(self) -> None:
+        shapes = (
+            "bash - <<'EOF'\n{body}\nEOF",
+            ". <(cat <<'EOF'\n{body}\nEOF\n)",
+            "bash < <(cat <<'EOF'\n{body}\nEOF\n)",
+            "cat <<'EOF' | tee | bash\n{body}\nEOF",
+            "{{ cat <<'EOF'\n{body}\nEOF\n}} > fixture.sh; bash fixture.sh",
+            "tee fixture.sh <<'EOF'\n{body}\nEOF\nbash fixture.sh",
+            "cat > fixture.sh <<'EOF'\n{body}\nEOF\ntimeout 5 bash fixture.sh",
+            "cat > fixture.sh <<'EOF'\n{body}\nEOF\nsetsid bash fixture.sh",
+        )
+        declared = "bash scripts/ci/all.sh"
+        for shape in shapes:
+            with self.subTest(validation_credit=shape):
+                self.assertFalse(hook_common.command_matches_validation(shape.format(body=declared), declared))
+        for hook, mutation, read, reason in (
+            ("block-direct-git-commit.py", "git commit -m fixture", "/usr/bin/git status --short", "semantic-commit"),
+            ("block-direct-pr-create.py", "gh pr create --title fixture", "gh api repos/fixture/repo/pulls/1", "forge-cli"),
+            ("block-direct-git-worktree.py", "git worktree add fixture-checkout fixture-branch", "git worktree list", "git-cli worktree"),
+        ):
+            for shape in shapes:
+                for body, blocked in ((mutation, True), (read, False)):
+                    with self.subTest(hook=hook, shape=shape, blocked=blocked):
+                        code, decision, stderr = run_hook(hook, command_payload(shape.format(body=body)))
+                        self.assertEqual(code, 0, stderr)
+                        if blocked:
+                            self.assert_blocked(decision, reason)
+                        else:
+                            self.assert_allowed(decision)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            primary = Path(temporary) / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/indirect-input")
+            target = shlex.quote(str(linked))
+            for mode in ("advisory", "enforce"):
+                for shape in shapes:
+                    for body, blocked in ((f"rm -rf {target}", True), ("git worktree list", False)):
+                        with self.subTest(mode=mode, shape=shape, blocked=blocked):
+                            code, decision, stderr = run_hook(
+                                "checkout-lease-guard.py",
+                                self._checkout_lease_payload("owner", linked, tool_name="Bash", command=shape.format(body=body)),
+                                cwd=linked, env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            if blocked:
+                                self.assert_blocked(decision, "git-cli worktree remove")
+                            else:
+                                self.assert_allowed(decision)
+                            self.assertTrue(linked.exists(), "Payloads are classified without execution")
+
+
     def test_default_delivery_hook_admits_read_only_inventory_shapes(
         self,
     ) -> None:
