@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Deterministic provider-local rehearsal for the program/dispatch issue route.
+# Functions are passed by name to the shared results harness.
+# shellcheck disable=SC2317,SC2329
 set -euo pipefail
 
 : "${REPO_ROOT:?}"
@@ -8,10 +10,13 @@ set -euo pipefail
 : "${ARTIFACTS_DIR:?}"
 : "${RESULTS_FILE:?}"
 
+# shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/results.sh
 . "$SCRIPT_DIR/lib/results.sh"
+# shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/rendered-contract.sh
 . "$SCRIPT_DIR/lib/rendered-contract.sh"
+# shellcheck disable=SC1091
 # shellcheck source=tests/runtime-smoke/lib/tracker-commands.sh
 . "$SCRIPT_DIR/lib/tracker-commands.sh"
 
@@ -221,7 +226,7 @@ assert 'using a reviewed Markdown body file' not in body, 'tick with tracker tic
 assert body.index('deliver the integration PR through') < body.index('Read back the integration PR merge and all children')
 assert body.index('Read back the integration PR merge and all children') < body.index('close the tracker through `forge-cli issue close`')
 PY
-  ! grep -Eq 'plan-issue|plan-tooling|plan-archive' "$source"
+  ! grep -Eq 'plan-issue|plan-tooling|plan-archive' "$source" || return 1
   rendered_contract_assert_skill dispatch deliver-dispatch-plan
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'forge-cli issue close'
   rendered_contract_assert_all_contain dispatch deliver-dispatch-plan 'forge-cli issue tracker tick'

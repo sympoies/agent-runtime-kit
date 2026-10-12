@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deterministic probes for the direct macos-agent adapter skill contract.
 # Functions are passed by name to the shared results harness.
-# shellcheck disable=SC2317
+# shellcheck disable=SC2016,SC2317,SC2329
 
 set -euo pipefail
 

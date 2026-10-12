@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deterministic regression probes for reporting skills.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2016,SC2317,SC2329
 
 set -euo pipefail
 
