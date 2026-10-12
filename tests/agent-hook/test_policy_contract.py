@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import hashlib
 import os
 import re
 import subprocess
@@ -36,6 +37,8 @@ READ_ONLY_CUTOVER_CASES = (
 LEGACY_REGISTRATIONS = (
     REPO_ROOT / "tests/agent-hook/fixtures/legacy-registrations.tsv"
 )
+# Independent identity of the ordered historical snapshot, not current rules.
+HISTORICAL_LEGACY_SHA256 = "e7564eb158bdc5571684a99e61e362bc9d200b9ac58d6467e39d61bb6c92856a"
 
 EXPECTED_HANDLERS = {
     "agent-scope-lock-guard",
@@ -346,7 +349,51 @@ class AgentHookPolicyContractTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.test_baseline_inventory_is_complete_and_exact()
 
+    def test_historical_legacy_annotation_swap_is_rejected(self) -> None:
+        source = POLICY.read_text(encoding="utf-8")
+        swapped = source
+        replacements = {
+            "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate": "checkout-lease-guard",
+            "runtime.codex.pre-tool-use.bash.checkout-lease-guard": "pre-edit-intent-gate",
+        }
+        for block in source.split("[[rules]]")[1:]:
+            rule_id = tomllib.loads("[[rules]]" + block)["rules"][0]["id"]
+            if rule_id not in replacements:
+                continue
+            annotation = next(
+                line for line in block.splitlines()
+                if line.startswith(hook_inventory.ANNOTATION_PREFIX)
+            )
+            metadata = json.loads(annotation.removeprefix(hook_inventory.ANNOTATION_PREFIX))
+            metadata["legacy_handler"] = replacements.pop(rule_id)
+            changed = block.replace(annotation, hook_inventory.ANNOTATION_PREFIX + json.dumps(metadata), 1)
+            swapped = swapped.replace(block, changed, 1)
+        self.assertFalse(replacements, "both historical bindings must be swapped")
+        self.assertEqual(tomllib.loads(swapped), tomllib.loads(source))
+        with self.inventory_fixture() as directory:
+            root = Path(directory)
+            self.seed_inventory_fixture(root, swapped)
+            outputs = hook_inventory.generated_files(root)
+            legacy = root / "tests/agent-hook/fixtures/legacy-registrations.tsv"
+            self.assertNotEqual(outputs[legacy], LEGACY_REGISTRATIONS.read_text(encoding="utf-8"))
+            for path, content in outputs.items():
+                path.write_text(content, encoding="utf-8")
+            with patch.dict(globals(), {
+                "POLICY": root / hook_inventory.POLICY_PATH,
+                "INVENTORY": root / "manifests/hook-rules.yaml",
+                "LEGACY_REGISTRATIONS": legacy,
+            }):
+                self.assertEqual(len(frozen_legacy_registrations()), 58)
+                self.assertEqual({row[3] for row in frozen_legacy_registrations()}, EXPECTED_HANDLERS)
+                with self.assertRaises(AssertionError):
+                    self.test_baseline_inventory_is_complete_and_exact()
+
     def test_baseline_inventory_is_complete_and_exact(self) -> None:
+        self.assertEqual(
+            hashlib.sha256(LEGACY_REGISTRATIONS.read_bytes()).hexdigest(),
+            HISTORICAL_LEGACY_SHA256,
+            "historical legacy bindings changed",
+        )
         registrations = frozen_legacy_registrations()
         # Snapshot cardinality is historical, not a current-registration total.
         self.assertEqual(len(registrations), 58)
