@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -236,8 +237,12 @@ def load_inventory() -> dict[str, Any]:
 
 class AgentHookPolicyContractTests(unittest.TestCase):
     def inventory_fixture(self) -> tempfile.TemporaryDirectory:
+        # Match the executable test runner's explicit artifact route in CI.
+        state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+        agent_home = os.environ.get("AGENT_HOME") or str(state_home / "agent-runtime-kit")
         allocated = subprocess.check_output(
-            ["agent-out", "project", "--topic", "hook-inventory-contract", "--repo", str(REPO_ROOT), "--mkdir"],
+            ["agent-out", "project", "--agent-home", agent_home,
+             "--topic", "hook-inventory-contract", "--repo", str(REPO_ROOT), "--mkdir"],
             text=True,
         ).strip()
         return tempfile.TemporaryDirectory(prefix="inventory-", dir=allocated)
