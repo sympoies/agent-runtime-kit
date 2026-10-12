@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import re
+import subprocess
+import sys
+import tempfile
 import tomllib
 import unittest
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +22,11 @@ CODEX_CONFIG = REPO_ROOT / "targets/codex/hooks/config.block.toml"
 CLAUDE_CONFIG = REPO_ROOT / "core/hooks/claude/settings.hooks.jsonc"
 INVENTORY = REPO_ROOT / "manifests/hook-rules.yaml"
 POLICY = REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml"
+INVENTORY_GENERATOR = REPO_ROOT / "scripts/dev/hook_policy_inventory.py"
+generator_spec = importlib.util.spec_from_file_location("hook_policy_inventory", INVENTORY_GENERATOR)
+assert generator_spec is not None and generator_spec.loader is not None
+hook_inventory = importlib.util.module_from_spec(generator_spec)
+generator_spec.loader.exec_module(hook_inventory)
 PARITY_CASES = REPO_ROOT / "tests/agent-hook/fixtures/parity-cases.json"
 COORDINATION_CASES = REPO_ROOT / "tests/agent-hook/fixtures/coordination-cases.json"
 READ_ONLY_CUTOVER_CASES = (
@@ -44,15 +54,6 @@ EXPECTED_HANDLERS = {
     "session-start-healthcheck",
     "stop-finish-line-gate",
     "user-prompt-agent-docs",
-}
-
-EXPECTED_EVENT_COUNTS = {
-    "codex": Counter(
-        {"PreToolUse": 20, "UserPromptSubmit": 2, "Stop": 3, "SessionStart": 1}
-    ),
-    "claude": Counter(
-        {"PreToolUse": 26, "UserPromptSubmit": 2, "Stop": 3, "SessionStart": 1}
-    ),
 }
 
 INVENTORY_RULE_FIELDS = {
@@ -234,20 +235,104 @@ def load_inventory() -> dict[str, Any]:
 
 
 class AgentHookPolicyContractTests(unittest.TestCase):
+    def inventory_fixture(self) -> tempfile.TemporaryDirectory:
+        allocated = subprocess.check_output(
+            ["agent-out", "project", "--topic", "hook-inventory-contract", "--repo", str(REPO_ROOT), "--mkdir"],
+            text=True,
+        ).strip()
+        return tempfile.TemporaryDirectory(prefix="inventory-", dir=allocated)
+
+    def seed_inventory_fixture(self, root: Path, policy_text: str) -> None:
+        for relative in ("core/policies/agent-hook", "manifests", "tests/agent-hook/fixtures"):
+            (root / relative).mkdir(parents=True, exist_ok=True)
+        (root / hook_inventory.POLICY_PATH).write_text(policy_text, encoding="utf-8")
+
+    def test_new_registration_regenerates_without_count_edits(self) -> None:
+        source = POLICY.read_text(encoding="utf-8")
+        base = hook_inventory.policy_inventory(POLICY)
+        block = next(
+            block for block in source.split("[[rules]]")[1:]
+            if 'id = "runtime.codex.pre-tool-use.bash.forge-label-reminder"' in block
+        )
+        annotation = next(line for line in block.splitlines() if line.startswith(hook_inventory.ANNOTATION_PREFIX))
+        metadata = json.loads(annotation.removeprefix(hook_inventory.ANNOTATION_PREFIX))
+        metadata["legacy_handler"] = None
+        extra = block.replace(
+            'id = "runtime.codex.pre-tool-use.bash.forge-label-reminder"',
+            'id = "fixture.additional-reminder-registration"',
+            1,
+        ).replace("priority = 220", "priority = 225", 1)
+        extra = extra.replace(annotation, hook_inventory.ANNOTATION_PREFIX + json.dumps(metadata))
+        with self.inventory_fixture() as directory:
+            root = Path(directory)
+            self.seed_inventory_fixture(root, source + "\n[[rules]]" + extra)
+            generated = hook_inventory.policy_inventory(root / hook_inventory.POLICY_PATH)
+            self.assertEqual(len(generated["rules"]), len(base["rules"]) + 1)
+            added = generated["rules"][-1]
+            self.assertEqual(added["id"], "fixture.additional-reminder-registration")
+            self.assertEqual(added["priority"], 225)
+            self.assertIsNone(added["legacy_handler"])
+            self.assertEqual(hook_inventory.legacy_registrations(generated), hook_inventory.legacy_registrations(base))
+            outputs = hook_inventory.generated_files(root)
+            self.assertEqual(
+                outputs[root / "tests/agent-hook/fixtures/legacy-registrations.tsv"],
+                LEGACY_REGISTRATIONS.read_text(encoding="utf-8"),
+            )
+            for path, content in outputs.items():
+                path.write_text(content, encoding="utf-8")
+            with patch.dict(globals(), {
+                "POLICY": root / hook_inventory.POLICY_PATH,
+                "INVENTORY": root / "manifests/hook-rules.yaml",
+                "LEGACY_REGISTRATIONS": root / "tests/agent-hook/fixtures/legacy-registrations.tsv",
+            }):
+                self.test_inventory_dispositions_cover_every_legacy_handler()
+
+    def test_generator_checks_drift_and_writes_only_derived_files(self) -> None:
+        with self.inventory_fixture() as directory:
+            root = Path(directory)
+            source = POLICY.read_text(encoding="utf-8")
+            self.seed_inventory_fixture(root, source)
+            command = [sys.executable, str(INVENTORY_GENERATOR), "--repo", str(root)]
+            before = subprocess.run([*command, "--check"], capture_output=True, text=True)
+            self.assertEqual(before.returncode, 1, before.stderr)
+            self.assertIn("stale generated hook inventory", before.stdout)
+            self.assertFalse((root / "manifests/hook-rules.yaml").exists())
+            written = subprocess.run([*command, "--write"], capture_output=True, text=True)
+            self.assertEqual(written.returncode, 0, written.stderr)
+            clean = subprocess.run([*command, "--check"], capture_output=True, text=True)
+            self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+            inventory = root / "manifests/hook-rules.yaml"
+            inventory.write_text('{"rules": []}\n', encoding="utf-8")
+            stale = subprocess.run([*command, "--check"], capture_output=True, text=True)
+            self.assertEqual(stale.returncode, 1, stale.stderr)
+            self.assertEqual(inventory.read_text(encoding="utf-8"), '{"rules": []}\n')
+            self.assertEqual((root / hook_inventory.POLICY_PATH).read_text(encoding="utf-8"), source)
+
+    def test_missing_inventory_annotation_cannot_erase_provenance(self) -> None:
+        source = POLICY.read_text(encoding="utf-8")
+        annotation = next(line for line in source.splitlines() if line.startswith(hook_inventory.ANNOTATION_PREFIX))
+        with self.inventory_fixture() as directory:
+            root = Path(directory)
+            self.seed_inventory_fixture(root, source.replace(annotation + "\n", "", 1))
+            with self.assertRaisesRegex(ValueError, "expected one inventory annotation"):
+                hook_inventory.generated_files(root)
+            self.assertFalse((root / "manifests/hook-rules.yaml").exists())
+
     def test_baseline_inventory_is_complete_and_exact(self) -> None:
         registrations = frozen_legacy_registrations()
-        self.assertEqual(len(registrations), 58)
+        expected = hook_inventory.legacy_registrations(hook_inventory.policy_inventory(POLICY))
+        self.assertEqual(registrations, expected)
         self.assertEqual({row[3] for row in registrations}, EXPECTED_HANDLERS)
         for product in ("codex", "claude"):
             event_counts = Counter(row[1] for row in registrations if row[0] == product)
-            self.assertEqual(event_counts, EXPECTED_EVENT_COUNTS[product], product)
+            self.assertEqual(event_counts, Counter(row[1] for row in expected if row[0] == product), product)
 
         product_handlers = {
             product: {row[3] for row in registrations if row[0] == product}
             for product in ("codex", "claude")
         }
-        self.assertEqual(len(product_handlers["codex"]), 17)
-        self.assertEqual(len(product_handlers["claude"]), 17)
+        self.assertEqual(product_handlers["codex"], EXPECTED_HANDLERS)
+        self.assertEqual(product_handlers["claude"], EXPECTED_HANDLERS)
         self.assertEqual(product_handlers["codex"], product_handlers["claude"])
 
     def test_inventory_and_policy_sources_exist(self) -> None:
@@ -406,12 +491,13 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         )
         self.assertEqual(inventory["schema_version"], "agent-runtime-kit.hook-rules.v1")
         self.assertEqual(inventory["policy_bundle"], "core/policies/agent-hook/runtime-kit-v1.toml")
-        self.assertEqual(inventory["legacy_handler_count"], 17)
-        self.assertEqual(inventory["legacy_registration_count"], 58)
+        expected = hook_inventory.policy_inventory(POLICY)
+        self.assertEqual(inventory["legacy_handler_count"], expected["legacy_handler_count"])
+        self.assertEqual(inventory["legacy_registration_count"], expected["legacy_registration_count"])
 
         rules = inventory["rules"]
         self.assertIsInstance(rules, list)
-        self.assertEqual(len(rules), 92)
+        self.assertEqual(len(rules), len(expected["rules"]))
         ids = [rule["id"] for rule in rules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate inventory rule id")
         for rule in rules:
@@ -488,9 +574,9 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         coordination_rules = [
             rule
             for rule in added_rules
-            if rule["id"] not in {READ_ONLY_RULE_ID, *MEMORY_RULE_IDS}
+            if rule["capability"]["id"].startswith("agent-session.")
         ]
-        self.assertEqual(len(coordination_rules), 31)
+        self.assertEqual(len(coordination_rules), sum(COORDINATION_CAPABILITY_COUNTS.values()))
         self.assertEqual(
             Counter(rule["capability"]["id"] for rule in coordination_rules),
             COORDINATION_CAPABILITY_COUNTS,
@@ -527,6 +613,9 @@ class AgentHookPolicyContractTests(unittest.TestCase):
 
     def test_strict_toml_policy_matches_inventory(self) -> None:
         inventory = load_inventory()
+        self.assertEqual(inventory, hook_inventory.policy_inventory(POLICY))
+        for path, content in hook_inventory.generated_files(REPO_ROOT).items():
+            self.assertEqual(path.read_text(encoding="utf-8"), content, path.name)
         policy_text = POLICY.read_text(encoding="utf-8")
         policy = tomllib.loads(policy_text)
         self.assertEqual(set(policy), {"schema_version", "bundle_id", "version", "rules"})

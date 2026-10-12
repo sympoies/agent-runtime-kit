@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import shlex
@@ -30,6 +31,12 @@ POLICY = Path(
         REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml",
     )
 )
+generator_spec = importlib.util.spec_from_file_location(
+    "hook_policy_inventory", REPO_ROOT / "scripts/dev/hook_policy_inventory.py"
+)
+assert generator_spec is not None and generator_spec.loader is not None
+hook_inventory = importlib.util.module_from_spec(generator_spec)
+generator_spec.loader.exec_module(hook_inventory)
 DISPATCH_CASES = REPO_ROOT / "tests/agent-hook/fixtures/dispatcher-cases.json"
 LATENCY_BUDGET_MS = 25.0
 LATENCY_ABSOLUTE_CEILING_MS = 1000.0
@@ -359,12 +366,13 @@ class AgentHookExecutableContractTests(unittest.TestCase):
     def test_policy_validates_and_inventory_is_complete(self) -> None:
         validated = self.json_result(self.run_hook("validate", "--format", "json"))
         self.assertEqual(validated["bundle_id"], "runtime-kit")
-        self.assertEqual(validated["rule_count"], 92)
+        expected_ids = {rule["id"] for rule in hook_inventory.load_policy(POLICY)["rules"]}
+        self.assertEqual(validated["rule_count"], len(expected_ids))
 
         inventory = self.json_result(self.run_hook("inventory", "--format", "json"))
         self.assertEqual(inventory["schema_version"], "agent-hook.inventory.v1")
-        self.assertEqual(len(inventory["rules"]), 92)
-        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 92)
+        self.assertEqual(len(inventory["rules"]), len(expected_ids))
+        self.assertEqual({rule["id"] for rule in inventory["rules"]}, expected_ids)
 
     def test_grouped_matchers_select_exact_rules_in_global_shadow(self) -> None:
         fixture = json.loads(DISPATCH_CASES.read_text(encoding="utf-8"))
@@ -395,7 +403,12 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(decision["action"], "allow", decision)
-                self.assertEqual(len(decision["shadow"]), case["shadow_rule_count"])
+                expected_ids = hook_inventory.matching_rule_ids(
+                    hook_inventory.load_policy(POLICY),
+                    case["product"], case["event"], case["matcher"],
+                )
+                self.assertEqual({row["rule_id"] for row in decision["shadow"]}, expected_ids)
+                self.assertEqual(len(decision["shadow"]), len(expected_ids))
 
         unmatched = self.json_result(
             self.run_hook(
@@ -456,7 +469,11 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         )
         full_after = self.snapshot_tree()
         self.assertEqual(decision["action"], "allow")
-        self.assertEqual(len(decision["shadow"]), 18)
+        expected_ids = hook_inventory.matching_rule_ids(
+            hook_inventory.load_policy(POLICY), "codex", "PreToolUse", "Bash"
+        )
+        self.assertEqual({row["rule_id"] for row in decision["shadow"]}, expected_ids)
+        self.assertEqual(len(decision["shadow"]), len(expected_ids))
         if not observation_supported:
             self.assertEqual(full_after, before)
             return
