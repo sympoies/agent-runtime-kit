@@ -25,10 +25,10 @@ alone is not browser execution.
 Routing is reciprocal. The `computer-use.macos-desktop` route
 hands DOM-level, selector, and rendered-page claims back here
 rather than driving a browser through the accessibility tree, which is
-unreliable for Chromium-family content. This route owns signed-in session state and its own artifact
-directory; the desktop route owns native window chrome, cross-application
-behavior, permission dialogs, and AX interaction. A desktop screenshot of a
-browser window is never proof of rendered DOM state.
+unreliable for Chromium-family content. This route owns signed-in session state
+and its own artifact directory; the desktop route owns native window chrome,
+cross-application behavior, permission dialogs, and AX interaction. A desktop
+screenshot of a browser window is never proof of rendered DOM state.
 
 ## Parent Workflow
 
@@ -54,6 +54,48 @@ browser window is never proof of rendered DOM state.
 Public fixtures and provider records use generic runtime roles and redacted
 artifact metadata. Machine names, users, local paths, connection details, and
 credentials remain in private runtime evidence only.
+
+## UI Change Evidence
+
+When a change alters what a user sees or interacts with, put the following
+evidence in the PR or MR's Test plan. Use the project's browser harness for
+repeatable headless checks; screenshots support the measured assertions.
+
+- List every affected view, including each consumer of a shared component.
+  For each view, record viewport width and height and the layout tier it hits.
+  Check both sides of every affected breakpoint and documented user sizes.
+- Capture before/after screenshots at the base and changed commits with the
+  same fixture/data and interaction state, including relevant focus, hover
+  and open-menu states.
+  Use immutable evidence links tied to those commits.
+- Assert the property that was wrong with a repeatable check: for example
+  clipping, overlap, offset, horizontal overflow or page errors. For a defect,
+  show the check fail on the base and pass on the change. State the assertion
+  and result for each applicable view and viewport.
+- Use project fixtures; include production-like volume or long values when
+  they trigger the defect. Keep private data out of public evidence.
+- State the browser or packaged client version checked and which client
+  versions contain the change. A web build does not establish a packaged
+  client's shipped version.
+- List unverified native shells, devices and physical displays with the reason
+  and remaining acceptance. Headless success does not verify those surfaces.
+
+### PR / MR Evidence Template
+
+Copy these tables into the Test plan. Add one row per affected view and
+viewport; identify a shared fixture/state once when it applies to every row.
+
+| View / component consumer | Viewport and layout tier | Fixture / interaction state | Browser / client version |
+| --- | --- | --- | --- |
+| Affected view | Width × height; breakpoint side | Fixture, volume, focus / hover / menu state | Tested version; versions containing the change |
+
+| View and viewport | Before / after images at fixed commits | Measured assertion | Base / changed result |
+| --- | --- | --- | --- |
+| Matching matrix row | Immutable baseline and change links | Repeatable check and relevant measurement | Failure / pass, or the observed results |
+
+| Unverified surface | Reason | Remaining acceptance |
+| --- | --- | --- |
+| Native shell, device or display | Capability unavailable | Claim still to be checked |
 
 ## Product Capability Ceiling
 
