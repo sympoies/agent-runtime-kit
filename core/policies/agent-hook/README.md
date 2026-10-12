@@ -10,11 +10,20 @@ digest-pinned bundle under the user's
 is `manifests/hook-rules.yaml`, stored as JSON-compatible YAML so the repository
 can validate it without an additional parser dependency. The inventory records
 every policy rule's behavior owner, recovery class, documentation, and test
-owner. It freezes all 67 retained legacy Codex and Claude registrations across
-21 shared handlers as the parity baseline, adds 23 typed coordination/liveness
-rules, adds eight locked transaction rules, one shared read-only capability
-shadow rule, and two product-scoped SessionStart memory rules for 101 rules
-total. Each retained migrated handler remains a distinct ordered rule so the
+owner. The bundle's `# inventory:` comments own those non-executable annotations,
+including which registrations belong to the frozen legacy parity baseline.
+The inventory and `tests/agent-hook/fixtures/legacy-registrations.tsv` are derived
+with `python3 scripts/dev/hook_policy_inventory.py --write`; use `--check` for a
+read-only drift check. Add a registration in the bundle with its annotation and
+handler script, then regenerate instead of copying totals into mirrors or tests.
+New registrations use `legacy_handler: null`; existing legacy provenance stays
+unchanged. Dispatcher fixtures select product/event/matcher; expected IDs and
+counts come from the parsed policy. Explicit ingress and capability contracts
+remain independently asserted.
+
+The bundle adds typed coordination/liveness and locked transaction rules,
+verified read-only admission, and product-scoped SessionStart memory rules.
+Each retained migrated handler remains a distinct ordered rule so the
 cutover proves provider parity without changing grouped matchers or handler
 order. The former Codex UserPromptSubmit memory registration is intentionally
 removed from the frozen migration set and, together with Claude, relocated to
