@@ -10,7 +10,7 @@ pre-commit:
 
     - name: shfmt
       glob: "*.sh"
-      run: shfmt -i 2 -ci -d {staged_files}
+      run: bash scripts/ci/check-shfmt.sh {staged_files}
 
     - name: yaml-parse
       glob: "*.{yml,yaml}"
