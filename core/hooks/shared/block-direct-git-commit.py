@@ -231,8 +231,15 @@ def git_config_block_reason(command: str, inherited: dict[str, str], depth: int 
                 for token in tokens:
                     if token.startswith(variable + "="):
                         state[variable] = token.split("=", 1)[1]
-        environment = marker_environment_before_invocation(tokens, ("GIT_CONFIG_GLOBAL",), state)
-        arguments = git_arguments(tokens)
+        # An append changes the effective target; the inherited path alone is
+        # no longer isolation evidence. Invalidate it in the ordered wrapper
+        # walk, allowing a later literal replacement to establish fresh proof.
+        environment_tokens = [
+            variable + "=" if token.startswith(variable + "+=") else token
+            for token in tokens
+        ]
+        environment = marker_environment_before_invocation(environment_tokens, (variable,), state)
+        arguments = git_arguments(environment_tokens)
         scope_of_write = shared_config_write(arguments)
         if scope_of_write:
             if scope_of_write != "--global" or not isolated_global_config(environment.get("GIT_CONFIG_GLOBAL", "")):

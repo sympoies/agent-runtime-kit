@@ -288,6 +288,54 @@ class CommandGuardsTests(HookTestCase):
                     self.assert_blocked(decision, variable)
 
 
+    def test_git_config_hook_invalidates_inline_append_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "out"
+            output.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (output / "configescape").symlink_to(outside, target_is_directory=True)
+            inherited = output / "config"
+            appended = Path(str(inherited) + "escape/gitconfig")
+            self.assertEqual(appended.resolve(), outside / "gitconfig")
+            environment = {
+                "AGENT_HOME": str(root), "TMPDIR": str(output),
+                "GIT_CONFIG_GLOBAL": str(inherited),
+            }
+            commands = (
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig git config --global user.name fixture",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig nice git config --global user.name fixture",
+                "bash -c 'GIT_CONFIG_GLOBAL+=escape/gitconfig git config --global user.name fixture'",
+            )
+            for command in commands:
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py", command_payload(command),
+                        env=environment,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "GIT_CONFIG_GLOBAL")
+
+            direct = shlex.quote(str(output / "direct-config"))
+            controls = (
+                "git config --global user.name fixture",
+                f"GIT_CONFIG_GLOBAL={direct} git config --global user.name fixture",
+                f"GIT_CONFIG_GLOBAL+=escape/gitconfig env GIT_CONFIG_GLOBAL={direct} git config --global user.name fixture",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig git config --global --get user.name",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig git config --local user.name fixture",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig git config user.name fixture",
+            )
+            for command in controls:
+                with self.subTest(control=command):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py", command_payload(command),
+                        env=environment,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNone(decision)
+
+
     def test_direct_git_commit_hook_classifies_quoted_command_substitutions(
         self,
     ) -> None:
