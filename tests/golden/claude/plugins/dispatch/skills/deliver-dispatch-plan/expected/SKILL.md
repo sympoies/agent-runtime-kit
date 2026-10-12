@@ -144,8 +144,9 @@ an integration branch because lane PRs cannot safely land on main separately.
    remove only worktrees idle for seven days, excluding build directories.
    The trusted CLI fences live holders; v1.33.2+ preserves unsaved work and
    supports backup/restore. Respect older CLI refusals and upgrade normally.
-   Follow `core/policies/git-delivery.md` for explicit owner/user authority
-   before `--acknowledge-backup-omissions`. Report
+   Follow `core/policies/git-delivery.md` for explicit user authorization
+   accepting the exact listed paths and their loss before
+   `--acknowledge-backup-omissions`; agents cannot grant this authorization. Report
    the receipt and any `backup_ref`. A `removal-*` refusal names the holder
    or other failure: retain the target, report it, and do not retry with force.
    Removal eligibility does not depend on tracker closeout or provider read-back.

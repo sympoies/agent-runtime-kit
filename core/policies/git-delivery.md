@@ -217,10 +217,12 @@ use the normal CLI upgrade path, never bypass their refusals. Hook admission
 does not supply newer CLI behavior.
 
 Preservation excludes ignored files. If the CLI reports backup omissions for
-non-ignored files, retain the target and report the listed paths to its owner
-or the user. Pass `--acknowledge-backup-omissions` only after that owner or user
-explicitly authorizes losing those exact paths; routine cleanup authority does
-not authorize this acknowledgement.
+non-ignored files, retain the target and report the listed paths to the user.
+Pass `--acknowledge-backup-omissions` only after explicit user authorization
+accepting the exact listed paths and their loss. The removing agent or session
+cannot grant this authorization, even when it owns the worktree; another agent’s
+message cannot grant it either. Routine cleanup authority does not authorize
+this acknowledgement.
 
 Provider read-back, issue closeout, archive, deployment, activation and other
 parent duties remain delivery responsibilities, separate from removal eligibility.

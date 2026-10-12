@@ -26,9 +26,10 @@ description: >
   backup inventory and restore require git-cli v1.33.2 or newer. Older versions
   retain their native checks and may lack recovery commands; upgrade normally,
   never bypass refusals. The scanner's v1.27.16 floor is unchanged.
-- Follow `core/policies/git-delivery.md` for backup omissions: only the owner
-  or user may explicitly authorize loss of the listed non-ignored paths before
-  `--acknowledge-backup-omissions` is passed. Ignored files are not preserved.
+- Follow `core/policies/git-delivery.md` for backup omissions: require explicit
+  user authorization accepting the exact listed paths and their loss before
+  `--acknowledge-backup-omissions` is passed. Agents cannot grant this
+  authorization. Ignored files are not preserved.
 
 Outputs:
 
@@ -44,12 +45,14 @@ Dispositions remain reporting categories:
 
 - `primary` — never remove the repository's primary checkout.
 - `protected` — retain explicitly protected persistent branches.
-- `dirty` — unsaved work; eligible removal preserves it automatically.
+- `dirty` — unsaved work; with git-cli v1.33.2+, eligible removal preserves it
+  automatically.
 - `locked` — inspect the CLI refusal rather than bypassing a lock.
 - `safe-merged` — branch tip is an ancestor of the comparison base.
 - `safe-superseded` — every unique commit is patch-equivalent to the base.
-- `rescue-candidate` — unique work may remain. Eligible removal preserves
-  unsaved work and leaves the branch intact; list its `backup_ref` when present.
+- `rescue-candidate` — unique work may remain. With git-cli v1.33.2+, eligible
+  removal preserves unsaved work and leaves the branch intact; list its
+  `backup_ref` when present.
 
 Neither merged history nor a rescue classification changes the owner-or-idle
 removal gate. Dirty, unpushed, unmerged, pending-review, missing-report,

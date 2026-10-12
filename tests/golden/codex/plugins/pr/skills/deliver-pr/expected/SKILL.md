@@ -802,8 +802,10 @@ all child and integration evidence is verified.
     `git-cli worktree remove <path-or-slug> --format json` through the supported
     hooked shell. The trusted CLI fences live holders; v1.33.2+ preserves unsaved
     work and supports backup/restore. Respect older CLI refusals and upgrade
-    normally. Apply `core/policies/git-delivery.md` for explicit owner/user
-    authority before `--acknowledge-backup-omissions`, and for
+    normally. Apply `core/policies/git-delivery.md` for explicit user
+    authorization accepting the exact listed paths and their loss before
+    `--acknowledge-backup-omissions`; agents cannot grant this authorization.
+    Follow the same policy for
     cleanup scope for other owners: seven days idle, excluding build directories.
     Record the receipt and any `backup_ref`. Report a `removal-*` refusal and
     its named holder or other failure; do not retry with force. Dirty, unpushed,
