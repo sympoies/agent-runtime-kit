@@ -18,8 +18,15 @@ The hook setup is intentionally small:
 Install the local hook runner and the small tools used by `pre-commit`:
 
 ```bash
-brew install lefthook shellcheck shfmt yamllint jq
+brew install lefthook shellcheck yamllint jq
 ```
+
+The formatter is qualified separately: the hook supports **shfmt 3.14.1**.
+Download the matching OS/architecture asset from the
+[official v3.14.1 release](https://github.com/mvdan/sh/releases/tag/v3.14.1),
+verify its published SHA-256 asset digest, and place that binary on `PATH`.
+`shfmt --version` must print `v3.14.1`. The hook rejects missing or different
+versions before formatting and names the required version and acquisition URL.
 
 Install hooks into this clone:
 
@@ -34,7 +41,7 @@ lefthook install
 ```text
 git diff --check --cached
 shellcheck <staged *.sh files>
-shfmt -i 2 -ci -d <staged *.sh files>
+bash scripts/ci/check-shfmt.sh <staged *.sh files>
 yamllint <staged *.yml/*.yaml files>
 jq empty <staged *.json files>
 ```
@@ -42,6 +49,13 @@ jq empty <staged *.json files>
 The YAML hook disables style rules that do not match this repository's existing
 fixtures (`document-start`, `line-length`, and `truthy`). It is used as a syntax
 and low-cost sanity check, not as a formatting policy.
+
+The formatter wrapper records the actual version and keeps the existing
+`shfmt -i 2 -ci -d` options and failure status. Version qualification is exact
+because 3.8.0 and 3.14.1 disagree on the Python heredoc layout in
+`tests/runtime-smoke/cases/pr/run.sh`. Run the same wrapper for manual checks;
+it never rewrites files. The canonical gate runs its version/argument/failure
+regressions through `tests/ci/test_shfmt_qualification.py`.
 
 `pre-push` runs:
 
