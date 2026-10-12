@@ -307,6 +307,9 @@ class CommandGuardsTests(HookTestCase):
                 "GIT_CONFIG_GLOBAL+=escape/gitconfig git config --global user.name fixture",
                 "GIT_CONFIG_GLOBAL+=escape/gitconfig nice git config --global user.name fixture",
                 "bash -c 'GIT_CONFIG_GLOBAL+=escape/gitconfig git config --global user.name fixture'",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig bash -c 'git config --global user.name fixture'",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig nice bash -c 'git config --global user.name fixture'",
+                "GIT_CONFIG_GLOBAL+=escape/gitconfig env bash -c 'git config --global user.name fixture'",
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -326,6 +329,20 @@ class CommandGuardsTests(HookTestCase):
                 "GIT_CONFIG_GLOBAL+=escape/gitconfig git config --local user.name fixture",
                 "GIT_CONFIG_GLOBAL+=escape/gitconfig git config user.name fixture",
             )
+            for launcher in ("bash", "nice bash", "env bash"):
+                for script in (
+                    f"GIT_CONFIG_GLOBAL={direct} git config --global user.name fixture",
+                    "git config --global --get user.name",
+                    "git config --local user.name fixture",
+                    "git config user.name fixture",
+                ):
+                    controls += (
+                        f"GIT_CONFIG_GLOBAL+=escape/gitconfig {launcher} -c {shlex.quote(script)}",
+                    )
+                controls += (
+                    f"GIT_CONFIG_GLOBAL+=escape/gitconfig env GIT_CONFIG_GLOBAL={direct} "
+                    f"{launcher} -c 'git config --global user.name fixture'",
+                )
             for command in controls:
                 with self.subTest(control=command):
                     code, decision, stderr = run_hook(
