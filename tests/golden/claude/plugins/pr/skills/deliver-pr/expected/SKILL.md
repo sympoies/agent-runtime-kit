@@ -800,8 +800,12 @@ all child and integration evidence is verified.
     commit, chained closeout result, and any fallback used in delivery notes.
 20. After delivery, remove the owner's managed worktree with
     `git-cli worktree remove <path-or-slug> --format json` through the supported
-    hooked shell. The trusted CLI fences live holders and preserves unsaved
-    work, releasing the caller's own lease. Apply `core/policies/git-delivery.md`
+    hooked shell. The trusted CLI fences live holders; v1.33.2+ preserves unsaved
+    work and supports backup/restore. Respect older CLI refusals and upgrade
+    normally. Apply `core/policies/git-delivery.md` for explicit user
+    authorization accepting the exact listed paths and their loss before
+    `--acknowledge-backup-omissions`; agents cannot grant this authorization.
+    Follow the same policy for
     cleanup scope for other owners: seven days idle, excluding build directories.
     Record the receipt and any `backup_ref`. Report a `removal-*` refusal and
     its named holder or other failure; do not retry with force. Dirty, unpushed,

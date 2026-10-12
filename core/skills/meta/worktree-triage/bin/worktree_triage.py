@@ -11,9 +11,10 @@ index.
 Dispositions
 ------------
 - ``primary``         the repo's primary working tree; never a removal target.
-- ``dirty``           uncommitted changes present; git-cli preserves unsaved
-                      work before eligible removal.
-- ``locked``          worktree is git-locked; surfaced, never auto-removed.
+- ``dirty``           uncommitted changes present; git-cli v1.33.2+ preserves
+                      unsaved work before eligible removal.
+- ``locked``          worktree is git-locked; selection still uses the owner-or-
+                      seven-day-idle gate; git-cli decides removal or refusal.
 - ``protected``       branch was explicitly named by ``--protect-branch``;
                       retained even when its history is fully in the base.
 - ``safe-merged``     branch tip is an ancestor of the base (nothing ahead);
@@ -25,8 +26,9 @@ Dispositions
                       MAY still be already-on-base content that arrived via a
                       different commit (patch-id is unreliable — see the net
                       two-dot diff in ``evidence``), or it may be genuine
-                      unmerged work. Eligible removal preserves unsaved work and
-                      leaves the branch intact. The skill reports backup refs.
+                      unmerged work. With git-cli v1.33.2+, eligible removal
+                      preserves unsaved work and leaves the branch intact.
+                      The skill reports backup refs.
                       The ``evidence.likely_superseded`` flag is only an
                       advisory patch-id hint; classification is not a removal gate.
 
