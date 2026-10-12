@@ -318,8 +318,33 @@ class AgentHookPolicyContractTests(unittest.TestCase):
                 hook_inventory.generated_files(root)
             self.assertFalse((root / "manifests/hook-rules.yaml").exists())
 
+    def test_retained_legacy_binding_cannot_be_erased_by_annotation(self) -> None:
+        source = POLICY.read_text(encoding="utf-8")
+        annotation = next(
+            line for line in source.splitlines()
+            if line.startswith(hook_inventory.ANNOTATION_PREFIX)
+            and json.loads(line.removeprefix(hook_inventory.ANNOTATION_PREFIX))["legacy_handler"] is not None
+        )
+        metadata = json.loads(annotation.removeprefix(hook_inventory.ANNOTATION_PREFIX))
+        metadata["legacy_handler"] = None
+        erased = source.replace(annotation, hook_inventory.ANNOTATION_PREFIX + json.dumps(metadata), 1)
+        with self.inventory_fixture() as directory:
+            root = Path(directory)
+            self.seed_inventory_fixture(root, erased)
+            for path, content in hook_inventory.generated_files(root).items():
+                path.write_text(content, encoding="utf-8")
+            with patch.dict(globals(), {
+                "POLICY": root / hook_inventory.POLICY_PATH,
+                "INVENTORY": root / "manifests/hook-rules.yaml",
+                "LEGACY_REGISTRATIONS": root / "tests/agent-hook/fixtures/legacy-registrations.tsv",
+            }):
+                with self.assertRaises(AssertionError):
+                    self.test_baseline_inventory_is_complete_and_exact()
+
     def test_baseline_inventory_is_complete_and_exact(self) -> None:
         registrations = frozen_legacy_registrations()
+        # Snapshot cardinality is historical, not a current-registration total.
+        self.assertEqual(len(registrations), 58)
         expected = hook_inventory.legacy_registrations(hook_inventory.policy_inventory(POLICY))
         self.assertEqual(registrations, expected)
         self.assertEqual({row[3] for row in registrations}, EXPECTED_HANDLERS)
