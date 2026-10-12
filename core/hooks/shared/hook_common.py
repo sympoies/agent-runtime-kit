@@ -2960,6 +2960,15 @@ def _indirect_heredoc_executes(
             separator = next_end
         return False
 
+    def pipeline_stdout_open(separator: int) -> bool:
+        """Only literal stdin-preserving filters carry this body's stdout."""
+        while separator + 1 < len(tokens) and tokens[separator] in {"|", "|&"}:
+            next_start, next_end, consumer = command_at(separator + 1)
+            if not stdin_filter(consumer) or _stdout_redirect_targets(tokens[next_start:next_end]):
+                return False
+            separator = next_end
+        return True
+
     index = tokens.index(marker)
     start, end, invocation = command_at(index)
     if not invocation:
@@ -3017,6 +3026,7 @@ def _indirect_heredoc_executes(
         if not opening < index < closing:
             continue
         process_substitution = opening > 0 and tokens[opening - 1] in {"<", ">"}
+        forwarded_stdout = False
         if body_stdout_open and not process_substitution and closing + 1 < len(tokens):
             _, group_end, _ = command_at(closing + 1)
             group_targets = _stdout_redirect_targets(tokens[closing + 1:group_end])
@@ -3027,26 +3037,50 @@ def _indirect_heredoc_executes(
             elif pipeline_shell(closing + 1):
                 return True
         if body_stdout_open and process_substitution and tokens[opening - 1] == "<":
-            outer = command_at(opening - 1)[2]
+            outer_start, _, outer = command_at(opening - 1)
             if outer[-1:] == ["<"]:
                 if outer[:-1] in (["source"], ["."]):
                     return True
+                suffix_end = closing + 1
+                if suffix_end < len(tokens):
+                    _, suffix_end, _ = command_at(suffix_end)
+                suffix = tokens[closing + 1:suffix_end]
+                redirected_input = False
                 if len(outer) > 1 and _REDIRECT_TOKEN_RE.match(outer[-2]):
                     if outer[-2] not in {"<", "0<"}:
                         body_stdout_open = False
                         continue  # a non-stdin/output fd consumes the script path
                     prefix = outer[:-2]
-                    # The substitution supplies stdin, so later words can
-                    # still select a script. A direct substitution argument
-                    # below is itself the script; suffix words are its args.
-                    if closing + 1 < len(tokens):
-                        _, suffix_end, _ = command_at(closing + 1)
-                        prefix += tokens[closing + 1:suffix_end]
+                    redirected_input = True
                 else:
                     prefix = outer[:-1]
-                if stdin_shell(prefix):
+                # Redirected input leaves suffix words as shell operands;
+                # a direct substitution is the script, with suffix args.
+                if stdin_shell(prefix + suffix if redirected_input else prefix):
                     return True
-        if process_substitution:
+                # A literal cat reads the substituted file operand, or its
+                # effective stdin, and forwards that body to its own stdout.
+                complete = invocation_without_redirections(prefix) + suffix
+                argv = invocation_without_redirections(complete)
+                if argv and PurePosixPath(argv[0]).name == "cat":
+                    forwarded_stdout = (
+                        not any(_stdin_redirect_kind(word) for word in suffix)
+                        and stdin_filter(complete)
+                    ) if redirected_input else all(
+                        not word.startswith("-") or word == "-" for word in argv[1:]
+                    )
+                if forwarded_stdout:
+                    consumer_words = tokens[outer_start:opening - 1] + suffix
+                    captures = _stdout_redirect_targets(consumer_words)
+                    targets.update(str(PurePosixPath(target)) for target in captures
+                                   if target and not any(char in target for char in "$`*?[~"))
+                    if captures:
+                        body_stdout_open = False
+                    elif pipeline_shell(suffix_end):
+                        return True
+                    else:
+                        body_stdout_open = pipeline_stdout_open(suffix_end)
+        if process_substitution and not forwarded_stdout:
             # Its stdout belongs to the substituted file, not outer groups.
             body_stdout_open = False
 

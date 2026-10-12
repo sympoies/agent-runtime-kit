@@ -2326,6 +2326,68 @@ class DefaultDeliveryTests(HookTestCase):
             with self.subTest(validation_credit=shape):
                 self.assertFalse(hook_common.command_matches_validation(shape.format(body=declared), declared))
 
+    def test_process_substitution_follows_literal_cat_consumers(self) -> None:
+        shapes = (
+            ("cat <(cat <<'EOF'\n{body}\nEOF\n) > fixture.sh; bash fixture.sh", True),
+            ("cat < <(cat <<'EOF'\n{body}\nEOF\n) | bash", True),
+            ("cat <(cat <<'EOF'\n{body}\nEOF\n) < /dev/null > fixture.sh; bash fixture.sh", True),
+            ("cat <(cat <<'EOF'\n{body}\nEOF\n) reader.sh > fixture.sh; bash fixture.sh", True),
+            ("{{ cat <(cat <<'EOF'\n{body}\nEOF\n) | cat; }} > fixture.sh; bash fixture.sh", True),
+            ("cat reader.sh < <(cat <<'EOF'\n{body}\nEOF\n) | bash", False),
+            ("cat < <(cat <<'EOF'\n{body}\nEOF\n) < /dev/null | bash", False),
+            ("echo <(cat <<'EOF'\n{body}\nEOF\n) > fixture.sh; bash fixture.sh", False),
+            ("{{ cat <(cat <<'EOF'\n{body}\nEOF\n) | python3; }} > fixture.sh; bash fixture.sh", False),
+        )
+        declared = "bash scripts/ci/all.sh"
+        for shape, _executes in shapes:
+            with self.subTest(validation_credit=shape):
+                self.assertFalse(hook_common.command_matches_validation(shape.format(body=declared), declared))
+        for hook, mutation, read, reason in (
+            ("block-direct-git-commit.py", "git commit -m fixture", "/usr/bin/git status --short", "semantic-commit"),
+            ("block-direct-pr-create.py", "gh pr create --title fixture", "gh api repos/fixture/repo/pulls/1", "forge-cli"),
+            ("block-direct-git-worktree.py", "git worktree add fixture-checkout fixture-branch", "git worktree list", "git-cli worktree"),
+        ):
+            for shape, executes in shapes:
+                for body, mutation_body in ((mutation, True), (read, False)):
+                    with self.subTest(hook=hook, shape=shape, mutation=mutation_body):
+                        code, decision, stderr = run_hook(hook, command_payload(shape.format(body=body)))
+                        self.assertEqual(code, 0, stderr)
+                        if executes and mutation_body:
+                            self.assert_blocked(decision, reason)
+                        else:
+                            self.assert_allowed(decision)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            primary = Path(temporary) / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/forwarded-substitution")
+            target = shlex.quote(str(linked))
+            for shape, _ in shapes[:2]:
+                for mode in ("advisory", "enforce"):
+                    for body, blocked in ((f"rm -rf {target}", True), ("git worktree list", False)):
+                        with self.subTest(mode=mode, shape=shape, blocked=blocked):
+                            code, decision, stderr = run_hook(
+                                "checkout-lease-guard.py",
+                                self._checkout_lease_payload("owner", linked, tool_name="Bash", command=shape.format(body=body)),
+                                cwd=linked, env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            if blocked:
+                                self.assert_blocked(decision, "git-cli worktree remove")
+                            else:
+                                self.assert_allowed(decision)
+                            self.assertTrue(linked.exists(), "Payloads must not execute")
+                for body, blocked in (("git push origin HEAD:main", True), ("/usr/bin/git status --short", False)):
+                    with self.subTest(default_delivery=shape, blocked=blocked):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py", command_payload(shape.format(body=body)), cwd=primary,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        if blocked:
+                            self.assert_blocked(decision, "[default-delivery:")
+                        else:
+                            self.assert_allowed(decision)
+
     def test_default_delivery_hook_admits_read_only_inventory_shapes(
         self,
     ) -> None:
