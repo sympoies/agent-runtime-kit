@@ -2226,6 +2226,106 @@ class DefaultDeliveryTests(HookTestCase):
                             self.assertTrue(linked.exists(), "Payloads are classified without execution")
 
 
+    def test_xargs_output_redirects_preserve_quoted_shell_scripts(self) -> None:
+        for hook, mutation, read, reason in (
+            ("block-direct-git-commit.py", "git commit -m fixture", "/usr/bin/git status --short", "semantic-commit"),
+            ("block-direct-pr-create.py", "gh pr create --title fixture", "gh api repos/fixture/repo/pulls/1", "forge-cli"),
+            ("block-direct-git-worktree.py", "git worktree add fixture-checkout fixture-branch", "git worktree list", "git-cli worktree"),
+        ):
+            for quote in ("'", '"'):
+                for redirect in ("", "> wrapper-output "):
+                    for body, blocked in ((mutation, True), (read, False)):
+                        command = f"xargs sh -c {redirect}{quote}>fixture; {body}{quote} <<'EOF'\nignored\nEOF"
+                        with self.subTest(hook=hook, quote=quote, redirect=redirect, blocked=blocked):
+                            code, decision, stderr = run_hook(hook, command_payload(command))
+                            self.assertEqual(code, 0, stderr)
+                            if blocked:
+                                self.assert_blocked(decision, reason)
+                            else:
+                                self.assert_allowed(decision)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            primary = Path(temporary) / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/quoted-xargs")
+            target = shlex.quote(str(linked))
+            for mode in ("advisory", "enforce"):
+                for body, blocked in ((f"rm -rf {target}", True), ("git worktree list", False)):
+                    command = f"xargs sh -c '>fixture; {body}' <<'EOF'\nignored\nEOF"
+                    with self.subTest(mode=mode, blocked=blocked):
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py",
+                            self._checkout_lease_payload("owner", linked, tool_name="Bash", command=command),
+                            cwd=linked, env={"AGENT_SESSION_COORDINATION_MODE": mode},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        if blocked:
+                            self.assert_blocked(decision, "git-cli worktree remove")
+                        else:
+                            self.assert_allowed(decision)
+                        self.assertTrue(linked.exists(), "Command payloads must not execute")
+
+    def test_indirect_group_stdout_stops_at_nearest_capture(self) -> None:
+        shapes = (
+            ("{{ {{ cat <<'EOF'\n{body}\nEOF\n}} > inner.sh; }} > outer.sh; bash outer.sh", False),
+            ("{{ {{ cat <<'EOF'\n{body}\nEOF\n}} > inner.sh; }} > outer.sh; bash inner.sh", True),
+            ("{{ {{ cat <<'EOF'\n{body}\nEOF\n}}; }} > outer.sh; bash outer.sh", True),
+        )
+        for shape, executes in shapes:
+            for body, mutation in (("git commit -m fixture", True), ("/usr/bin/git status --short", False)):
+                with self.subTest(shape=shape, mutation=mutation):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py", command_payload(shape.format(body=body)),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if executes and mutation:
+                        self.assert_blocked(decision, "semantic-commit")
+                    else:
+                        self.assert_allowed(decision)
+
+    def test_process_substitution_has_its_own_stdout_owner(self) -> None:
+        shapes = (
+            ("bash -n <(cat <<'EOF'\n{body}\nEOF\n) > fixture.sh; bash fixture.sh", False),
+            ("{{ bash -n <(cat <<'EOF'\n{body}\nEOF\n); }} > fixture.sh; bash fixture.sh", False),
+            ("(cat <<'EOF'\n{body}\nEOF\n) > fixture.sh; bash fixture.sh", True),
+            ("bash <(cat <<'EOF'\n{body}\nEOF\n)", True),
+        )
+        for shape, executes in shapes:
+            for body, mutation in (("git commit -m fixture", True), ("/usr/bin/git status --short", False)):
+                with self.subTest(shape=shape, mutation=mutation):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py", command_payload(shape.format(body=body)),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if executes and mutation:
+                        self.assert_blocked(decision, "semantic-commit")
+                    else:
+                        self.assert_allowed(decision)
+
+    def test_process_substitution_respects_suffix_script_operands(self) -> None:
+        shapes = (
+            ("bash < <(cat <<'EOF'\n{body}\nEOF\n) reader.sh", False),
+            ("bash < <(cat <<'EOF'\n{body}\nEOF\n)", True),
+            ("bash <(cat <<'EOF'\n{body}\nEOF\n) reader.sh", True),
+            (". <(cat <<'EOF'\n{body}\nEOF\n) reader.sh", True),
+            ("bash reader.sh < <(cat <<'EOF'\n{body}\nEOF\n)", False),
+            ("bash -n < <(cat <<'EOF'\n{body}\nEOF\n)", False),
+        )
+        for shape, executes in shapes:
+            for body, mutation in (("git commit -m fixture", True), ("/usr/bin/git status --short", False)):
+                with self.subTest(shape=shape, mutation=mutation):
+                    code, decision, stderr = run_hook(
+                        "block-direct-git-commit.py", command_payload(shape.format(body=body)),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if executes and mutation:
+                        self.assert_blocked(decision, "semantic-commit")
+                    else:
+                        self.assert_allowed(decision)
+            declared = "bash scripts/ci/all.sh"
+            with self.subTest(validation_credit=shape):
+                self.assertFalse(hook_common.command_matches_validation(shape.format(body=declared), declared))
+
     def test_default_delivery_hook_admits_read_only_inventory_shapes(
         self,
     ) -> None:

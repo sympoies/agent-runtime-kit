@@ -2028,6 +2028,38 @@ def _shield_parameter_expansion_operators(command: str) -> str:
     return "".join(out)
 
 
+class _QuotedOutputWord(str):
+    """A word whose leading output operator was quoted or escaped."""
+
+
+def _shield_quoted_output_operators(command: str) -> tuple[str, str | None]:
+    """Retain output-operator origin through shlex's quote removal."""
+    if ">" not in command:
+        return command, None
+    marker = "__agent_runtime_quoted_output_operator__"
+    while marker in command:
+        marker += "_"
+    out: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and quote != "'" and index + 1 < len(command):
+            following = command[index + 1]
+            out.append("\\" + marker if following == ">" else command[index:index + 2])
+            index += 2
+            continue
+        if char in {"'", '"'}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        out.append(marker if char == ">" and quote is not None else char)
+        index += 1
+    rewritten = "".join(out)
+    return rewritten, marker if rewritten != command else None
+
+
 def shell_tokens(command: str) -> list[str]:
     return _checked_shell_tokens(command) or []
 
@@ -2035,18 +2067,29 @@ def shell_tokens(command: str) -> list[str]:
 def _checked_shell_tokens(command: str) -> list[str] | None:
     """Return shell tokens, or ``None`` when the text cannot be tokenized."""
     try:
-        lexer = shlex.shlex(
+        shielded, quoted_output = _shield_quoted_output_operators(
             _shield_dynamic_word_parentheses(
                 _shield_parameter_expansion_operators(
                     _shield_clobber_redirects(command)
                 )
             ),
+        )
+        lexer = shlex.shlex(
+            shielded,
             posix=True,
             punctuation_chars=";&|()",
         )
         lexer.whitespace_split = True
         lexer.commenters = ""
-        return list(lexer)
+        tokens = list(lexer)
+        if quoted_output is None:
+            return tokens
+        return [
+            _QuotedOutputWord(word.replace(quoted_output, ">"))
+            if re.match(rf"\d*{re.escape(quoted_output)}", word)
+            else word.replace(quoted_output, ">")
+            for word in tokens
+        ]
     except ValueError:
         return None
 
@@ -2968,29 +3011,44 @@ def _indirect_heredoc_executes(
             opening = stack.pop()
             if (tokens[opening], token) in {("(", ")"), ("{", "}")}:
                 pairs[opening] = position
+    # Pairs are collected on close, so inner stdout owners precede outer ones.
+    body_stdout_open = not stdout_targets
     for opening, closing in pairs.items():
         if not opening < index < closing:
             continue
-        if not stdout_targets and closing + 1 < len(tokens):
+        process_substitution = opening > 0 and tokens[opening - 1] in {"<", ">"}
+        if body_stdout_open and not process_substitution and closing + 1 < len(tokens):
             _, group_end, _ = command_at(closing + 1)
             group_targets = _stdout_redirect_targets(tokens[closing + 1:group_end])
             targets.update(str(PurePosixPath(target)) for target in group_targets
                            if target and not any(char in target for char in "$`*?[~"))
-            if not group_targets and pipeline_shell(closing + 1):
+            if group_targets:
+                body_stdout_open = False
+            elif pipeline_shell(closing + 1):
                 return True
-        if not stdout_targets and opening and tokens[opening - 1] == "<":
+        if body_stdout_open and process_substitution and tokens[opening - 1] == "<":
             outer = command_at(opening - 1)[2]
             if outer[-1:] == ["<"]:
                 if outer[:-1] in (["source"], ["."]):
                     return True
                 if len(outer) > 1 and _REDIRECT_TOKEN_RE.match(outer[-2]):
                     if outer[-2] not in {"<", "0<"}:
+                        body_stdout_open = False
                         continue  # a non-stdin/output fd consumes the script path
                     prefix = outer[:-2]
+                    # The substitution supplies stdin, so later words can
+                    # still select a script. A direct substitution argument
+                    # below is itself the script; suffix words are its args.
+                    if closing + 1 < len(tokens):
+                        _, suffix_end, _ = command_at(closing + 1)
+                        prefix += tokens[closing + 1:suffix_end]
                 else:
                     prefix = outer[:-1]
                 if stdin_shell(prefix):
                     return True
+        if process_substitution:
+            # Its stdout belongs to the substituted file, not outer groups.
+            body_stdout_open = False
 
     # A literal consumer write followed by execution of that same literal path.
     # Do not infer future runs, dynamic paths, or a different script's stdin.
@@ -4536,8 +4594,11 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
     while index < len(tokens):
         # Shell redirections are not xargs argv. Either input or output syntax
         # can otherwise occupy the governed operation slot.
-        if _REDIRECT_TOKEN_RE.match(tokens[index]):
-            index = _skip_redirections(tokens, index)
+        if (_REDIRECT_TOKEN_RE.match(tokens[index])
+                and not isinstance(tokens[index], _QuotedOutputWord)):
+            # Skip one outer redirect at a time: the next word may be a
+            # quoted script, even when it also starts with an output operator.
+            index += 2 if _redirect_consumes_next(tokens[index]) else 1
         else:
             payload.append(tokens[index])
             index += 1
@@ -4546,7 +4607,12 @@ def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
     if replacement is not None:
         if not replacement:
             return _opaque_wrapper_invocation(payload)
-        return [token.replace(replacement, XARGS_INPUT_TOKEN) for token in payload]
+        return [
+            _QuotedOutputWord(token.replace(replacement, XARGS_INPUT_TOKEN))
+            if isinstance(token, _QuotedOutputWord)
+            else token.replace(replacement, XARGS_INPUT_TOKEN)
+            for token in payload
+        ]
     return [*payload, XARGS_INPUT_TOKEN]
 
 
