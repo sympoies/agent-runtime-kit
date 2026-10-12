@@ -772,7 +772,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_runtime_smoke_tracks_the_active_exact_ci_lane(self) -> None:
         smoke = read("tests/runtime-smoke/cases/evidence/run.sh")
-        hooks = read("tests/hooks/test_shared_hooks.py")
+        hooks = read("tests/hooks/shared_hook_command_guards.py")
 
         self.assertIn("matches_agent_docs_version", smoke)
         self.assertIn("agent-runtime --version", smoke)
