@@ -222,8 +222,18 @@ def git_config_block_reason(command: str, inherited: dict[str, str], depth: int 
         literal_setup = tokens[:1] == ["export"] and all(
             ASSIGNMENT_RE.match(token) for token in tokens[1:]
         ) or assignments_only and variable in state
-        inline = not assignments_only and command_word(tokens) != "eval" and (
-            bool(git_arguments(tokens)) or bool(nested_shell_payload(invocation_tokens(tokens)))
+        # An append invalidates the inherited target. Use this ordered view
+        # consistently for invocation discovery as well as environment checks;
+        # a later literal replacement can still establish fresh isolation proof.
+        environment_tokens = list(tokens)
+        for index, token in enumerate(tokens):
+            if not ASSIGNMENT_RE.match(token):
+                break  # quoted shell payloads are checked recursively, not bindings
+            if token.startswith(variable + "+="):
+                environment_tokens[index] = variable + "="
+        inline = not assignments_only and command_word(environment_tokens) != "eval" and (
+            bool(git_arguments(environment_tokens))
+            or bool(nested_shell_payload(invocation_tokens(environment_tokens)))
         )
         if not inline and command_retargets_variables(tokens, frozenset({variable})):
             state.pop(variable, None)
@@ -231,13 +241,13 @@ def git_config_block_reason(command: str, inherited: dict[str, str], depth: int 
                 for token in tokens:
                     if token.startswith(variable + "="):
                         state[variable] = token.split("=", 1)[1]
-        environment = marker_environment_before_invocation(tokens, ("GIT_CONFIG_GLOBAL",), state)
-        arguments = git_arguments(tokens)
+        environment = marker_environment_before_invocation(environment_tokens, (variable,), state)
+        arguments = git_arguments(environment_tokens)
         scope_of_write = shared_config_write(arguments)
         if scope_of_write:
             if scope_of_write != "--global" or not isolated_global_config(environment.get("GIT_CONFIG_GLOBAL", "")):
                 return CONFIG_REASON
-        payload = nested_shell_payload(invocation_tokens(tokens))
+        payload = nested_shell_payload(invocation_tokens(environment_tokens))
         if payload:
             reason = git_config_block_reason(payload, environment, depth + 1)
             if reason:
