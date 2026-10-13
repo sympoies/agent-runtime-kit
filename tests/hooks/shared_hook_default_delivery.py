@@ -3417,6 +3417,7 @@ class DefaultDeliveryTests(HookTestCase):
                 source: str,
                 call_id: str = "code-mode-call",
                 command: str = command,
+                workdir: Path | None = None,
             ):
                 transcript.write_text(
                     json.dumps(
@@ -3440,6 +3441,8 @@ class DefaultDeliveryTests(HookTestCase):
                         "cwd": str(primary),
                     }
                 )
+                if workdir is not None:
+                    payload["tool_input"]["workdir"] = str(workdir)
                 return run_hook(
                     "block-unsafe-default-delivery.py",
                     payload,
@@ -3495,6 +3498,69 @@ class DefaultDeliveryTests(HookTestCase):
             self.assert_blocked(decision, "rule=governed-authoring-target")
             reason = str((decision or {}).get("reason", ""))
             self.assertNotIn("[default-delivery: blocked]", reason)
+
+            # Native code-mode dispatch creates a nested exec UUID, while the
+            # transcript contains the outer call id. A ready session record
+            # authenticates only the session root, never this nested target.
+            nested_id = "exec-00000000-0000-4000-8000-000000000000"
+            route = (
+                "git -C <topic-checkout> merge --no-commit --no-ff --no-edit <sha>"
+            )
+            for git_command in (merge, "git pull origin main"):
+                with self.subTest(nested_command=git_command):
+                    source = literal.replace(
+                        json.dumps(command), json.dumps(git_command)
+                    )
+                    code, decision, stderr = run(
+                        source, call_id=nested_id, command=git_command
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: unverified]")
+                    self.assert_blocked(decision, "diagnostic=workdir-attestation-missing")
+                    reason = str((decision or {}).get("reason", ""))
+                    self.assertNotIn("checked-out default branch", reason)
+                    if git_command == merge:
+                        self.assertIn(route, reason)
+
+                    # Inline host workdir wins even when the transcript lacks
+                    # the nested id; a verified default target still blocks.
+                    for target in (worktree, primary):
+                        code, decision, stderr = run(
+                            source, call_id=nested_id, command=git_command,
+                            workdir=target,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        if target == worktree:
+                            self.assert_allowed(decision)
+                        else:
+                            self.assert_blocked(decision, "checked-out default branch")
+
+            # Missing checkout provenance must not turn recovery, help or
+            # path-only reset into authoring of the default branch.
+            for non_authoring in (
+                "git merge --abort", "git merge --quit", "git merge --help",
+                "git cherry-pick --abort", "git reset -- README.md",
+            ):
+                with self.subTest(nested_non_authoring=non_authoring):
+                    code, decision, stderr = run(
+                        literal, call_id=nested_id, command=non_authoring
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+            for target in (worktree, primary):
+                explicit_merge = (
+                    f"git -C {shlex.quote(str(target))} "
+                    "merge --no-commit --no-ff --no-edit origin/main"
+                )
+                code, decision, stderr = run(
+                    literal, call_id=nested_id, command=explicit_merge
+                )
+                self.assertEqual(code, 0, stderr)
+                if target == worktree:
+                    self.assert_allowed(decision)
+                else:
+                    self.assert_blocked(decision, "checked-out default branch")
 
 
     def test_default_delivery_hook_rejects_unattested_raw_git_context(
