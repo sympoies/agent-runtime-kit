@@ -6,7 +6,7 @@ the parent posts the comment with `--decision comments-only` and that semantic
 `--lens`.
 
 This is not a delivery decision. It reports what one specialist lens found or
-verified. The parent/main agent owns repair, tradeoff decisions, and final
+verified. The parent agent owns repair, tradeoff decisions, and final
 delivery disposition in `DELIVERY_REVIEW_OUTCOME_COMMENT.md`.
 Post specialist review comments with `--decision comments-only` — on GitHub add
 `--submit-review` so the report posts as a native `COMMENT` review event
@@ -22,7 +22,8 @@ the provider-guarded command.
 
 - In `portable` mode, post one specialist review comment after its lens returns
   when provider-visible progress is desired. In `governed` mode, retain the
-  selected lens wave and publish one combined owner-App report. The guarded
+  selected lens wave and publish one combined report through the configured
+  reviewer identity. The guarded
   `personal-escape` mode likewise publishes one combined exact-head report.
 - If the lens reports findings, repair and commit in the owning workflow, rerun
   focused validation and that lens, then publish the follow-up through the same
@@ -47,7 +48,7 @@ the provider-guarded command.
 - Evidence reviewed: validation, diff, provider checks, or prior findings
 
 | Finding | Severity | Confidence | Evidence | Recommendation |
-| --- | --- | --- | --- | --- |
+| --- | --- | ---: | --- | --- |
 | Missing edge-case test | medium | 0.86 | file/path + command | Add regression coverage |
 ```
 
@@ -74,6 +75,6 @@ Specialist review comments must not use the delivery disposition vocabulary
 (`fixed-now`, `accepted-residual`, `follow-up-linked`, `deferred-task`,
 `no-action`, or `blocked` as a disposition). They must not include a final
 delivery decision such as `proceed-to-merge`, and they must not use the provider
-review decision as approval or request-changes metadata. The parent/main agent
+review decision as approval or request-changes metadata. The parent agent
 translates specialist findings into final dispositions in the delivery review
 outcome.

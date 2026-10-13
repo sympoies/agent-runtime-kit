@@ -1,0 +1,39 @@
+{
+  "schema_version": "agent-runtime-kit.read-only-cutover-cases.v1",
+  "rule_id": "runtime.shared.pre-tool-use.bash.read-only",
+  "production_authority": "execution.read-only.v1",
+  "unknown_feedback_routes": [
+    "builtin command /absolute/path/agent-run inspect --cwd <exact-target> -- <argv...>",
+    "prepare project-dev for <exact-target> and rerun the exact original command"
+  ],
+  "cases": [
+    {
+      "case": "exact-managed-query",
+      "previous_admission": "project-dev-dependent",
+      "capability_admission": "allow",
+      "comparison": "mismatch",
+      "disposition": "verified exact agent-docs or forge-cli query bypasses only paired preparation"
+    },
+    {
+      "case": "raw-local-read",
+      "previous_admission": "allow",
+      "capability_admission": "project-dev-dependent",
+      "comparison": "mismatch",
+      "disposition": "raw reads require preparation or a verified agent-run inspect request"
+    },
+    {
+      "case": "mutation",
+      "previous_admission": "block",
+      "capability_admission": "block",
+      "comparison": "parity",
+      "disposition": "retain mutation gate"
+    },
+    {
+      "case": "unknown",
+      "previous_admission": "block",
+      "capability_admission": "block",
+      "comparison": "parity",
+      "disposition": "offer exactly the two finite feedback routes"
+    }
+  ]
+}

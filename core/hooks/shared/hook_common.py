@@ -980,63 +980,6 @@ def semantic_commit_invocation_state(arguments: list[str]) -> tuple[bool, str]:
     return not writes_files, repo
 
 
-def main_agent_capability_recovery_argv(words: list[str]) -> bool:
-    """Recognize the finite Main Agent lane retained during capability failure."""
-
-    def revision(value: str) -> bool:
-        return (
-            re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is not None
-            and int(value) <= (2**64 - 1)
-        )
-
-    def idempotency_key(value: str) -> bool:
-        return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
-
-    if words == ["main-agent", "--version"]:
-        return True
-    if words in (
-        [
-            "main-agent",
-            "capabilities",
-            "--provider",
-            "codex",
-            "--format",
-            "json",
-        ],
-        [
-            "main-agent",
-            "capabilities",
-            "--provider",
-            "claude",
-            "--format",
-            "json",
-        ],
-        ["main-agent", "self", "readiness", "--format", "json"],
-        ["main-agent", "self", "show", "--format", "json"],
-        ["main-agent", "rehydrate", "--format", "json"],
-        ["main-agent", "rehydrate", "--format", "markdown"],
-        ["main-agent", "status", "--format", "json"],
-    ):
-        return True
-    if words[:3] == ["main-agent", "self", "recover"]:
-        return (
-            len(words) == 7
-            and words[3] == "--idempotency-key"
-            and idempotency_key(words[4])
-            and words[5:] == ["--format", "json"]
-        )
-    if words[:2] == ["main-agent", "rebind"]:
-        return (
-            len(words) == 8
-            and words[2] == "--if-revision"
-            and revision(words[3])
-            and words[4] == "--idempotency-key"
-            and idempotency_key(words[5])
-            and words[6:] == ["--format", "json"]
-        )
-    return False
-
-
 def normalized_cli_argv(
     words: list[str], executable_name: str
 ) -> list[str] | None:
@@ -1056,87 +999,6 @@ def normalized_cli_argv(
     if executable == executable_name:
         return words
     return [executable_name, *words[1:]]
-
-
-def normalized_main_agent_argv(words: list[str]) -> list[str] | None:
-    """Rewrite a pinned absolute ``main-agent`` argv[0] to its bare name."""
-    return normalized_cli_argv(words, "main-agent")
-
-
-def main_agent_preclaim_argv(words: list[str]) -> bool:
-    """Recognize exact trusted Main Agent pre-claim shapes without private files."""
-
-    def identifier(value: str) -> bool:
-        return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is not None
-
-    def idempotency_key(value: str) -> bool:
-        return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
-
-    def wait_duration(value: str) -> bool:
-        multiplier = 1
-        if value[-1:] in {"s", "m", "h", "d"}:
-            multiplier = {
-                "s": 1,
-                "m": 60,
-                "h": 3600,
-                "d": 86400,
-            }[value[-1]]
-            value = value[:-1]
-        return value.isdigit() and 1 <= int(value) * multiplier <= 60
-
-    # `main-agent worker start` writes the worker prompt with an absolute
-    # `main-agent` path so the worker pins the exact launching build. Compare
-    # shapes against the bare name so that pinned form is recognised; callers
-    # still resolve and trust-check the real executable separately.
-    words = normalized_main_agent_argv(words)
-    if words is None:
-        return False
-
-    if main_agent_capability_recovery_argv(words):
-        return True
-    if words == ["main-agent", "worker", "list", "--format", "json"]:
-        return True
-    if words[:2] == ["main-agent", "bootstrap"]:
-        return (
-            len(words) == 6
-            and words[2] == "--idempotency-key"
-            and idempotency_key(words[3])
-            and words[4:] == ["--format", "json"]
-        )
-    if words[:3] in (
-        ["main-agent", "worker", "diagnose"],
-        ["main-agent", "worker", "supervise"],
-    ):
-        return (
-            len(words) == 6
-            and identifier(words[3])
-            and words[4:] == ["--format", "json"]
-        )
-    if words[:3] == ["main-agent", "worker", "wait"]:
-        if len(words) not in {8, 10}:
-            return False
-        if words[3] != "--any" and not identifier(words[3]):
-            return False
-        if words[4] != "--until" or words[5] not in {
-            "submitted",
-            "blocked",
-            "terminal",
-        }:
-            return False
-        if len(words) == 10:
-            return (
-                words[6] == "--timeout"
-                and wait_duration(words[7])
-                and words[8:] == ["--format", "json"]
-            )
-        return words[6:] == ["--format", "json"]
-    if words[:3] == ["main-agent", "worker", "show"]:
-        return (
-            len(words) == 6
-            and identifier(words[3])
-            and words[4:] == ["--format", "json"]
-        )
-    return False
 
 
 def extract_message(command: str) -> str | None:
@@ -2166,6 +2028,38 @@ def _shield_parameter_expansion_operators(command: str) -> str:
     return "".join(out)
 
 
+class _QuotedOutputWord(str):
+    """A word whose leading output operator was quoted or escaped."""
+
+
+def _shield_quoted_output_operators(command: str) -> tuple[str, str | None]:
+    """Retain output-operator origin through shlex's quote removal."""
+    if ">" not in command:
+        return command, None
+    marker = "__agent_runtime_quoted_output_operator__"
+    while marker in command:
+        marker += "_"
+    out: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and quote != "'" and index + 1 < len(command):
+            following = command[index + 1]
+            out.append("\\" + marker if following == ">" else command[index:index + 2])
+            index += 2
+            continue
+        if char in {"'", '"'}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        out.append(marker if char == ">" and quote is not None else char)
+        index += 1
+    rewritten = "".join(out)
+    return rewritten, marker if rewritten != command else None
+
+
 def shell_tokens(command: str) -> list[str]:
     return _checked_shell_tokens(command) or []
 
@@ -2173,18 +2067,29 @@ def shell_tokens(command: str) -> list[str]:
 def _checked_shell_tokens(command: str) -> list[str] | None:
     """Return shell tokens, or ``None`` when the text cannot be tokenized."""
     try:
-        lexer = shlex.shlex(
+        shielded, quoted_output = _shield_quoted_output_operators(
             _shield_dynamic_word_parentheses(
                 _shield_parameter_expansion_operators(
                     _shield_clobber_redirects(command)
                 )
             ),
+        )
+        lexer = shlex.shlex(
+            shielded,
             posix=True,
             punctuation_chars=";&|()",
         )
         lexer.whitespace_split = True
         lexer.commenters = ""
-        return list(lexer)
+        tokens = list(lexer)
+        if quoted_output is None:
+            return tokens
+        return [
+            _QuotedOutputWord(word.replace(quoted_output, ">"))
+            if re.match(rf"\d*{re.escape(quoted_output)}", word)
+            else word.replace(quoted_output, ">")
+            for word in tokens
+        ]
     except ValueError:
         return None
 
@@ -2975,6 +2880,240 @@ def _expanded_heredoc_body_residue(body: list[str]) -> list[str]:
     return [": " + " ".join(placeholders)] if placeholders else []
 
 
+_HEREDOC_BODY_MARKER = "__agent_runtime_heredoc_body_"
+
+
+def _indirect_heredoc_executes(
+    tokens: list[str], marker: str, marker_names: frozenset[str]
+) -> bool:
+    """Follow a literal body's consumer in body-free command text.
+
+    This only controls blocking classification, never validation credit. The
+    marker identifies one redirection, so unrelated shells and document writes
+    cannot make every quoted body executable.
+    """
+    tokens = [part for token in tokens for part in (
+        list(token) if is_shell_separator(token) and any(char in token for char in "()")
+        else [token]
+    )]
+
+    def boundary(token: str) -> bool:
+        return is_shell_separator(token) or token in {"{", "}"}
+
+    def command_at(index: int) -> tuple[int, int, list[str]]:
+        start = index
+        while start and not boundary(tokens[start - 1]):
+            start -= 1
+        end = index
+        while end < len(tokens) and not boundary(tokens[end]):
+            end += 1
+        words = [word for word in tokens[start:end] if word not in marker_names]
+        invocation = invocation_tokens(words)
+        # doas has no shared transparent-launcher contract. Recognize only its
+        # literal, option-free shell form here; other forms remain opaque.
+        if invocation[:1] == ["doas"]:
+            invocation = invocation[1:]
+        # Only these option-free, literal launcher forms are transparent here.
+        # Their option grammars and dynamic command construction remain opaque.
+        if invocation[:1] == ["timeout"] and len(invocation) > 2 and re.fullmatch(
+            r"\d+(?:\.\d+)?[smhd]?", invocation[1]
+        ):
+            invocation = invocation_tokens(invocation[2:])
+        elif invocation[:1] == ["setsid"] and len(invocation) > 1 and not invocation[1].startswith("-"):
+            invocation = invocation_tokens(invocation[1:])
+        return start, end, invocation
+
+    def stdin_shell(invocation: list[str], *, owns_here_doc: bool = False) -> bool:
+        # Bash's lone '-' selects stdin. Keep this blocking-only normalization
+        # out of the stricter validation-credit classifier.
+        argv = invocation_without_redirections(invocation)
+        if len(argv) == 2 and PurePosixPath(argv[0]).name == "bash" and argv[1] == "-":
+            invocation = [word for word in invocation if word != "-"]
+        text = shlex.join(invocation)
+        # A downstream consumer's own stdin here-doc competes with the body
+        # being followed. The direct executor already carries that body's op.
+        if not owns_here_doc:
+            text += " <<EOF"
+        return _heredoc_body_is_executed_by_shell(text, len(text), 0)
+
+    def stdin_filter(invocation: list[str]) -> bool:
+        if any(_stdin_redirect_kind(word) == "override" for word in invocation):
+            return False
+        argv = invocation_without_redirections(invocation)
+        if not argv:
+            return False
+        program = PurePosixPath(argv[0]).name
+        return (program == "cat" and all(
+            word in {"-", "/dev/stdin", "/dev/fd/0"} for word in argv[1:]
+        )) or (program == "tee" and all(
+            not word.startswith("-") or word in {"-", "-a", "-i"}
+            for word in argv[1:]
+        ))
+
+    def pipeline_shell(separator: int) -> bool:
+        while separator + 1 < len(tokens) and tokens[separator] in {"|", "|&"}:
+            next_start, next_end, consumer = command_at(separator + 1)
+            if stdin_shell(consumer):
+                return True
+            if not stdin_filter(consumer) or _stdout_redirect_targets(tokens[next_start:next_end]):
+                return False
+            separator = next_end
+        return False
+
+    def pipeline_stdout_open(separator: int) -> bool:
+        """Only literal stdin-preserving filters carry this body's stdout."""
+        while separator + 1 < len(tokens) and tokens[separator] in {"|", "|&"}:
+            next_start, next_end, consumer = command_at(separator + 1)
+            if not stdin_filter(consumer) or _stdout_redirect_targets(tokens[next_start:next_end]):
+                return False
+            separator = next_end
+        return True
+
+    index = tokens.index(marker)
+    start, end, invocation = command_at(index)
+    if not invocation:
+        return False
+    executable = invocation[0] if invocation[0] == "." else PurePosixPath(invocation[0]).name
+    if any(_stdin_redirect_kind(word) == "override" for word in invocation):
+        return False
+    if executable in {"source", "."} and invocation[1:2] in (
+        ["/dev/stdin"], ["/dev/fd/0"],
+    ):
+        return True
+    if executable in SHELL_HEREDOC_EXECUTORS:
+        return stdin_shell(invocation, owns_here_doc=True)
+    if executable not in {"cat", "tee"}:
+        return False  # an interpreter's own language is not shell text
+
+    operands: list[str] = []
+    cursor = 1
+    while cursor < len(invocation):
+        if _REDIRECT_TOKEN_RE.match(invocation[cursor]):
+            cursor = _skip_redirections(invocation, cursor)
+        else:
+            operands.append(invocation[cursor])
+            cursor += 1
+    if executable == "cat" and any(
+        word not in {"-", "/dev/stdin", "/dev/fd/0"} for word in operands
+    ):
+        return False
+
+    words = tokens[start:end]
+    stdout_targets = _stdout_redirect_targets(words)
+    targets = {
+        str(PurePosixPath(target)) for target in (
+            stdout_targets + _tee_targets(invocation_without_redirections(invocation))
+        ) if target and not any(char in target for char in "$`*?[~")
+    }
+
+    if not stdout_targets and end < len(tokens) and pipeline_shell(end):
+        return True
+
+    # A group/subshell can carry this consumer's output into a shell. A <(
+    # group instead becomes a literal script-file argument of the outer shell.
+    stack: list[int] = []
+    pairs: dict[int, int] = {}
+    for position, token in enumerate(tokens):
+        if token in {"(", "{"}:
+            stack.append(position)
+        elif token in {")", "}"} and stack:
+            opening = stack.pop()
+            if (tokens[opening], token) in {("(", ")"), ("{", "}")}:
+                pairs[opening] = position
+    # Pairs are collected on close, so inner stdout owners precede outer ones.
+    body_stdout_open = not stdout_targets
+    for opening, closing in pairs.items():
+        if not opening < index < closing:
+            continue
+        process_substitution = opening > 0 and tokens[opening - 1] in {"<", ">"}
+        forwarded_stdout = False
+        if body_stdout_open and not process_substitution and closing + 1 < len(tokens):
+            _, group_end, _ = command_at(closing + 1)
+            group_targets = _stdout_redirect_targets(tokens[closing + 1:group_end])
+            targets.update(str(PurePosixPath(target)) for target in group_targets
+                           if target and not any(char in target for char in "$`*?[~"))
+            if group_targets:
+                body_stdout_open = False
+            elif pipeline_shell(closing + 1):
+                return True
+        if body_stdout_open and process_substitution and tokens[opening - 1] == "<":
+            outer_start, _, outer = command_at(opening - 1)
+            if outer[-1:] == ["<"]:
+                if outer[:-1] in (["source"], ["."]):
+                    return True
+                suffix_end = closing + 1
+                if suffix_end < len(tokens):
+                    _, suffix_end, _ = command_at(suffix_end)
+                suffix = tokens[closing + 1:suffix_end]
+                redirected_input = False
+                if len(outer) > 1 and _REDIRECT_TOKEN_RE.match(outer[-2]):
+                    if outer[-2] not in {"<", "0<"}:
+                        body_stdout_open = False
+                        continue  # a non-stdin/output fd consumes the script path
+                    prefix = outer[:-2]
+                    redirected_input = True
+                else:
+                    prefix = outer[:-1]
+                # Redirected input leaves suffix words as shell operands;
+                # a direct substitution is the script, with suffix args.
+                if stdin_shell(prefix + suffix if redirected_input else prefix):
+                    return True
+                # A literal cat reads the substituted file operand, or its
+                # effective stdin, and forwards that body to its own stdout.
+                complete = invocation_without_redirections(prefix) + suffix
+                argv = invocation_without_redirections(complete)
+                if argv and PurePosixPath(argv[0]).name == "cat":
+                    forwarded_stdout = (
+                        not any(_stdin_redirect_kind(word) for word in suffix)
+                        and stdin_filter(complete)
+                    ) if redirected_input else all(
+                        not word.startswith("-") or word == "-" for word in argv[1:]
+                    )
+                if forwarded_stdout:
+                    consumer_words = tokens[outer_start:opening - 1] + suffix
+                    captures = _stdout_redirect_targets(consumer_words)
+                    targets.update(str(PurePosixPath(target)) for target in captures
+                                   if target and not any(char in target for char in "$`*?[~"))
+                    if captures:
+                        body_stdout_open = False
+                    elif pipeline_shell(suffix_end):
+                        return True
+                    else:
+                        body_stdout_open = pipeline_stdout_open(suffix_end)
+        if process_substitution and not forwarded_stdout:
+            # Its stdout belongs to the substituted file, not outer groups.
+            body_stdout_open = False
+
+    # A literal consumer write followed by execution of that same literal path.
+    # Do not infer future runs, dynamic paths, or a different script's stdin.
+    if not targets:
+        return False
+    cursor = end + 1
+    while cursor < len(tokens):
+        if boundary(tokens[cursor]):
+            cursor += 1
+            continue
+        _, next_end, later = command_at(cursor)
+        cursor = next_end + 1
+        if not later:
+            continue
+        program = later[0] if later[0] == "." else PurePosixPath(later[0]).name
+        if "/" in later[0] and str(PurePosixPath(later[0])) in targets:
+            return True
+        if program in {"source", "."} and later[1:2] and str(PurePosixPath(later[1])) in targets:
+            return True
+        if program in SHELL_HEREDOC_EXECUTORS:
+            options: list[str] = []
+            for operand in later[1:]:
+                if operand.startswith("-"):
+                    options.append(operand)
+                    continue
+                if str(PurePosixPath(operand)) in targets and stdin_shell([later[0], *options]):
+                    return True
+                break
+    return False
+
+
 def strip_heredoc_bodies(
     command: str, *, inert_only: bool = False, reduce_data_bodies: bool = True
 ) -> str:
@@ -3006,6 +3145,13 @@ def strip_heredoc_bodies(
     kept: list[str] = []
     logical_scan_parts: list[str] = []
     logical_raw_lines: list[str] = []
+    skeleton: list[str] = []
+    indirect: list[tuple[str, int, list[str]]] = []
+    pending_markers: list[str | None] = []
+    marker_namespace = _HEREDOC_BODY_MARKER
+    marker_counter = itertools.count()
+    while marker_namespace in command:
+        marker_namespace += "_"
 
     def close_body(
         preserve_body: bool,
@@ -3042,6 +3188,9 @@ def strip_heredoc_bodies(
             if candidate == delimiter:
                 close_body(preserve_body, delimiter_quoted, data_consumer, body)
                 pending.pop(0)  # closing delimiter line: drop it
+                marker = pending_markers.pop(0)
+                if marker is not None:
+                    indirect.append((marker, len(kept), body))
             else:
                 body.append(raw)
             continue
@@ -3053,6 +3202,8 @@ def strip_heredoc_bodies(
 
         logical_scan_parts.append(line)
         logical_line = "".join(logical_scan_parts)
+        marked_line = logical_line
+        markers: list[tuple[int, str]] = []
         for (
             delimiter,
             strip_tabs,
@@ -3060,6 +3211,12 @@ def strip_heredoc_bodies(
             delimiter_quoted,
             op_start,
         ) in _heredoc_delimiters_on_line(logical_line):
+            marker = None
+            if (inert_only and delimiter_quoted and not preserve_body
+                    and not re.match(r"[1-9]\d*<<", logical_line[op_start:])):
+                marker = f"{marker_namespace}{next(marker_counter)}__"
+                markers.append((op_start, marker))
+            pending_markers.append(marker)
             pending.append(
                 (
                     delimiter,
@@ -3070,6 +3227,9 @@ def strip_heredoc_bodies(
                     [],
                 )
             )
+        for op_start, marker in reversed(markers):
+            marked_line = marked_line[:op_start] + " " + marker + " " + marked_line[op_start:]
+        skeleton.append(marked_line)
         kept.extend(logical_raw_lines)
         logical_scan_parts = []
         logical_raw_lines = []
@@ -3083,6 +3243,28 @@ def strip_heredoc_bodies(
         body,
     ) in pending:
         close_body(preserve_body, delimiter_quoted, data_consumer, body)
+    if indirect:
+        while True:
+            tokens = shell_tokens(normalize_command_separators("\n".join(skeleton)))
+            if not any(tokens.count(marker) > 1 for marker, _, _ in indirect):
+                break
+            # Quote concatenation can forge a decoded token without spelling
+            # it literally in the input. Rebind only the synthetic namespace,
+            # which is absent from the original text, until token identities
+            # are unique as well.
+            replacement = marker_namespace + "_"
+            while replacement in command:
+                replacement += "_"
+            skeleton = [line.replace(marker_namespace, replacement) for line in skeleton]
+            indirect = [
+                (marker.replace(marker_namespace, replacement), position, body)
+                for marker, position, body in indirect
+            ]
+            marker_namespace = replacement
+        marker_names = frozenset(marker for marker, _, _ in indirect)
+        for marker, position, body in reversed(indirect):
+            if marker in tokens and _indirect_heredoc_executes(tokens, marker, marker_names):
+                kept[position:position] = [strip_heredoc_bodies("\n".join(body), inert_only=True)]
     result = "\n".join(kept)
     if reduced and (_command_runs_a_shell(result) or _command_writes_a_file(result)):
         return strip_heredoc_bodies(
@@ -4329,8 +4511,148 @@ def invocation_command_position_is_dynamic(
     )
 
 
+def launcher_target_index(tokens: list[str], index: int) -> int | None:
+    """Locate literal sudo/nice/nohup command payloads; queries execute none."""
+    command = PurePosixPath(tokens[index]).name
+    index += 1
+    while index < len(tokens):
+        token = tokens[index]
+        if invocation_command_position_is_dynamic([token], shell_boundary=False):
+            return -1
+        if token == "--":
+            return index + 1
+        if token in {"--help", "--version"}:
+            return None
+        if not token.startswith("-") or token == "-":
+            return index
+        if command == "nice":
+            if token in {"-n", "--adjustment"}:
+                if index + 1 >= len(tokens) or invocation_command_position_is_dynamic(
+                    [tokens[index + 1]], shell_boundary=False
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith("--adjustment=") or token.startswith("-n") or re.fullmatch(r"-\d+", token):
+                index += 1
+                continue
+        elif command == "sudo":
+            if token in {"-l", "-v", "-V", "-K", "--list", "--validate", "--remove-timestamp"}:
+                return None
+            if token in {"--user", "--group", "--prompt"}:
+                if index + 1 >= len(tokens) or invocation_command_position_is_dynamic(
+                    [tokens[index + 1]], shell_boundary=False
+                ):
+                    return -1
+                index += 2
+                continue
+            if token.startswith(("--user=", "--group=", "--prompt=")):
+                index += 1
+                continue
+            if token in {"--non-interactive", "--preserve-env", "--set-home", "--stdin", "--background", "--reset-timestamp"}:
+                index += 1
+                continue
+            if not token.startswith("--"):
+                next_index = _short_option_cluster_next_index(
+                    tokens, index, flag_options=frozenset("nEHASbk"),
+                    value_options=frozenset("ugp"),
+                )
+                if next_index is not None and next_index >= 0:
+                    if next_index > index + 1 and invocation_command_position_is_dynamic(
+                        [tokens[index + 1]], shell_boundary=False
+                    ):
+                        return -1
+                    index = next_index
+                    continue
+        return -1
+    return index
+
+
+XARGS_INPUT_TOKEN = "$__agent_runtime_xargs_input"
+
+
+def _xargs_target_tokens(tokens: list[str], index: int) -> list[str]:
+    """Extract the literal program; model appended/replaced stdin as unknown."""
+    index += 1
+    replacement: str | None = None
+    long_values = {"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars"}
+    long_flags = {"--null", "--no-run-if-empty", "--verbose", "--interactive", "--exit", "--show-limits"}
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            index += 1
+            break
+        if token in {"--help", "--version"}:
+            return []
+        if not token.startswith("-") or token == "-":
+            break
+        option, equals, value = token.partition("=")
+        if option in {"--eof", "--max-lines"}:  # Optional long values must use '='.
+            index += 1
+            continue
+        if option == "--replace":
+            replacement = value if equals else "{}"
+            index += 1
+            continue
+        if option in long_values:
+            if not equals and index + 1 >= len(tokens):
+                return _opaque_wrapper_invocation(tokens[index:])
+            index += 1 if equals else 2
+            continue
+        if token in long_flags:
+            index += 1
+            continue
+        if token.startswith("--"):
+            return _opaque_wrapper_invocation(tokens[index:])
+        cluster = token[1:]
+        for position, option in enumerate(cluster):
+            if option in "0rtpx":
+                continue
+            if option in "eil":  # Optional short values must be attached.
+                if option == "i":
+                    replacement = cluster[position + 1:] or "{}"
+                break
+            if option not in "adEILnPsJRS":
+                return _opaque_wrapper_invocation(tokens[index:])
+            value = cluster[position + 1:]
+            if not value:
+                index += 1
+                if index >= len(tokens):
+                    return _opaque_wrapper_invocation()
+                value = tokens[index]
+            if option in "IJ":
+                replacement = value
+            break
+        index += 1
+    payload: list[str] = []
+    while index < len(tokens):
+        # Shell redirections are not xargs argv. Either input or output syntax
+        # can otherwise occupy the governed operation slot.
+        if (_REDIRECT_TOKEN_RE.match(tokens[index])
+                and not isinstance(tokens[index], _QuotedOutputWord)):
+            # Skip one outer redirect at a time: the next word may be a
+            # quoted script, even when it also starts with an output operator.
+            index += 2 if _redirect_consumes_next(tokens[index]) else 1
+        else:
+            payload.append(tokens[index])
+            index += 1
+    if not payload:
+        return []  # xargs defaults to echo, not an input-selected executable.
+    if replacement is not None:
+        if not replacement:
+            return _opaque_wrapper_invocation(payload)
+        return [
+            _QuotedOutputWord(token.replace(replacement, XARGS_INPUT_TOKEN))
+            if isinstance(token, _QuotedOutputWord)
+            else token.replace(replacement, XARGS_INPUT_TOKEN)
+            for token in payload
+        ]
+    return [*payload, XARGS_INPUT_TOKEN]
+
+
 def invocation_tokens(
-    simple_command: list[str], *, shell_boundary: bool = True
+    simple_command: list[str], *, shell_boundary: bool = True,
+    preserve_launchers: frozenset[str] = frozenset(),
 ) -> list[str]:
     index = _invocation_start_index(simple_command, shell_boundary=shell_boundary)
     if index >= len(simple_command):
@@ -4341,9 +4663,23 @@ def invocation_tokens(
         return _opaque_wrapper_invocation(simple_command[index:])
 
     command = PurePosixPath(simple_command[index]).name
+    if command in {"sudo", "nice", "nohup"} and command not in preserve_launchers:
+        target_index = launcher_target_index(simple_command, index)
+        if target_index is None:
+            return []
+        if target_index < 0:
+            return _opaque_wrapper_invocation(simple_command[index + 1:])
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
+    if command == "xargs" and command not in preserve_launchers:
+        payload = _xargs_target_tokens(simple_command, index)
+        if invocation_is_opaque(payload):
+            return payload
+        return invocation_tokens(payload, shell_boundary=False, preserve_launchers=preserve_launchers)
     if command == "env":
         return invocation_tokens(
-            env_target_tokens(simple_command, index + 1), shell_boundary=False
+            env_target_tokens(simple_command, index + 1), shell_boundary=False,
+            preserve_launchers=preserve_launchers,
         )
     if command == "time":
         target_index = _time_target_index(simple_command, index)
@@ -4351,21 +4687,24 @@ def invocation_tokens(
             return []
         if target_index < 0:
             return _opaque_wrapper_invocation(simple_command[index + 1 :])
-        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
     if command == "command":
         target_index = _command_target_index(simple_command, index)
         if target_index is None:
             return []
         if target_index < 0:
             return _opaque_wrapper_invocation(simple_command[index + 1 :])
-        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
     if command == "exec":
         target_index = _exec_target_index(simple_command, index)
         if target_index is None:
             return []
         if target_index < 0:
             return _opaque_wrapper_invocation(simple_command[index + 1 :])
-        return invocation_tokens(simple_command[target_index:], shell_boundary=False)
+        return invocation_tokens(simple_command[target_index:], shell_boundary=False,
+                                 preserve_launchers=preserve_launchers)
 
     if index >= len(simple_command):
         return []
@@ -4379,7 +4718,8 @@ def invocation_tokens(
             if target_index < 0:
                 return _opaque_wrapper_invocation(simple_command[index + 2 :])
             return invocation_tokens(
-                simple_command[target_index:], shell_boundary=False
+                simple_command[target_index:], shell_boundary=False,
+                preserve_launchers=preserve_launchers,
             )
 
     return simple_command[index:]
@@ -4457,7 +4797,16 @@ def marker_environment_before_invocation(
         return state
 
     target_index: int | None = index
-    if command == "time":
+    if command in {"sudo", "nice", "nohup"}:
+        target_index = launcher_target_index(tokens, index)
+        if command == "sudo":
+            state.clear()  # sudo policy may reset inherited variables.
+    elif command == "xargs":
+        payload = _xargs_target_tokens(tokens, index)
+        if invocation_is_opaque(payload):
+            return {}
+        return marker_environment_before_invocation(payload, names, state)
+    elif command == "time":
         target_index = _time_target_index(tokens, index)
     elif command == "command":
         target_index = _command_target_index(tokens, index)

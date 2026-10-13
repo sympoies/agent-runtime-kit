@@ -118,6 +118,15 @@ run_portable_review_identity_contract_probe() {
     "$REPO_ROOT/core/skills"; then
     return 1
   fi
+  # Every active reference must agree on account-backed human review.
+  for review_contract in "$gate" "$posting" "$specialist" "$outcome" "$delivery" "$dispatch"; do
+    if grep -Eq 'owner-App report|owner App carries|The App review carries|personal identity records metadata-only|publish through the App' "$review_contract"; then
+      echo "retired App-only human publication contract: $review_contract" >&2
+      return 1
+    fi
+  done
+  grep -Fq 'Human reviews use a reviewer user account independent' "$posting"
+  grep -Fq 'flag verifies authorship and does not select credentials' "$posting"
   grep -Fq 'AGENT_RUNTIME_FORGE_IDENTITY_ROUTER_REQUIRED' "$posting"
   grep -Fq 'AGENT_RUNTIME_REVIEW_PUBLISHER_REQUIRED' "$posting"
   grep -Fq 'REVIEW_PUBLICATION_MODE=personal-escape' "$posting"
@@ -142,13 +151,13 @@ run_portable_review_identity_contract_probe() {
   grep -Fq -- '--native-review-url' "$posting"
   grep -Fq -- '--native-review-author' "$posting"
   grep -Fq 'complete report body exactly once' "$posting"
-  grep -Fq 'must not pass `--comment-file`' "$posting"
+  grep -Fq 'must omit `--comment-file`' "$posting"
   grep -Fq 'ISSUE_MIRROR_ARGS=()' "$posting"
   grep -Fq '[[ -n "${ISSUE:-}" ]]' "$posting"
   grep -Fq '"${ISSUE_MIRROR_ARGS[@]}"' "$posting"
   bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; ((${#ISSUE_MIRROR_ARGS[@]} == 0))'
   ISSUE=65 bash -u -c 'ISSUE_MIRROR_ARGS=(); if [[ -n "${ISSUE:-}" ]]; then ISSUE_MIRROR_ARGS=(--issue "$ISSUE" --mirror-issue); fi; [[ "${ISSUE_MIRROR_ARGS[*]}" == "--issue 65 --mirror-issue" ]]'
-  grep -Fq 'does not post a per-lens full report through the personal identity' "$posting"
+  grep -Fq 'governed GitHub workflow publishes one combined report through its configured' "$posting"
   grep -Fq 'Resolve `REVIEW_PUBLICATION_MODE`' "$gate"
   grep -Fq 'A required but missing publisher' "$gate"
   grep -Fq 'Only `portable` mode posts one report per lens' "$gate"
@@ -162,18 +171,18 @@ run_portable_review_identity_contract_probe() {
   grep -Fq 'SELECTED_REVIEW_LENSES=(quick)' "$delivery"
   grep -Fq 'SELECTED_REVIEW_LENSES=(testing maintainability)' "$delivery"
   grep -Fq 'unsupported review profile: $REVIEW_PROFILE' "$delivery"
-  grep -Fq 'do not post per-lens full reports through the personal identity' "$delivery"
+  grep -Fq 'publish the combined report through the configured reviewer' "$delivery"
   for owner in "$delivery" "$dispatch"; do
     grep -Fq -- '--profile provider-review' "$owner"
+    grep -Fq 'configured reviewer' "$owner"
+    grep -Fq "actual review author's login" "$owner"
     grep -Fq -- '--metadata-only' "$owner"
     grep -Fq -- '--comment-file' "$owner"
     ! grep -Fq 'FINAL_SUBMIT_REVIEW' "$owner"
   done
   grep -Fq -- '--decision comments-only' "$gate"
-  for owner in "$delivery"; do
-    grep -Fq 'pull request head changed before personal escape outcome' "$owner"
-    grep -Fq 'pr view "$PR_NUMBER"' "$owner"
-  done
+  grep -Fq 'pull request head changed before personal escape outcome' "$delivery"
+  grep -Fq 'pr view "$PR_NUMBER"' "$delivery"
 
   for contract in "$posting" "$specialist" "$outcome" "$delivery"; do
     ! grep -Fq 'posts each finding the moment its lens returns' "$contract"
@@ -776,6 +785,30 @@ run_provider_review_metadata_contract_probe() {
   # path or `$HOME` prefix is never an acceptable evidence identifier.
   grep -Fq 'never an absolute local path' "$skill" || return 1
   grep -Fq 'never an absolute local path' "$posting" || return 1
+
+  # Consume the actual hand-written example through its released owner. Golden
+  # parity alone can reproduce a template that the publication guard rejects.
+  require_code_review_bin forge-cli || return 1
+  local specialist="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_COMMENT.md"
+  local example="$CODE_REVIEW_ARTIFACTS_DIR/specialist-template-example.md"
+  python3 - "$specialist" "$example" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+example = re.search(r"```markdown\n(.*?)\n```", source, re.S)
+if example is None:
+    raise SystemExit("specialist comment has no Markdown example")
+body = example.group(1).replace(
+    "pass | findings | blocked | follow-up-pass", "findings"
+)
+Path(sys.argv[2]).write_text(body + "\n", encoding="utf-8")
+PY
+  forge-cli --provider local --repo local:specialist-template --format json \
+    pr review validate --specialist-report --comment-file "$example" \
+    >"$CODE_REVIEW_ARTIFACTS_DIR/specialist-template-validation.json"
+  grep -Fq -- '--specialist-report' "$skill" || return 1
 }
 
 failures=0

@@ -140,7 +140,7 @@ run_root_audit_drift() {
     return "$audit_status"
   fi
 
-  if AUDIT_DRIFT_JSON="$audit_json" python3 - <<'PY'; then
+  if AUDIT_DRIFT_JSON="$audit_json" python3 - <<'PY'
 import json
 import os
 import sys
@@ -170,6 +170,7 @@ print(
     "clean-checkout CI remains strict."
 )
 PY
+  then
     return 0
   fi
 
@@ -467,6 +468,8 @@ python3 tests/ci/test_hook_dispatch_budget.py
 # setup.sh and sync-runtime-surfaces.sh must resolve Python 3.11+ themselves:
 # a macOS PATH can put the system 3.9 python3 ahead of Homebrew's (#211).
 python3 tests/ci/test_runtime_python_resolver.py
+# Qualify the local formatter contract without depending on the runner's shfmt.
+python3 tests/ci/test_shfmt_qualification.py
 
 # -----------------------------------------------------------------------------
 # Position 14 — version-baseline mirror consistency (deterministic, no network)

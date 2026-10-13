@@ -61,6 +61,67 @@ validate_snapshot_ref_boundary() {
   test "$(git -C "$snapshot" rev-parse HEAD)" = "$base_revision"
 }
 
+# The overridden functions are called indirectly by the historical producer.
+# shellcheck disable=SC2329
+validate_legacy_generated_state_upgrade() (
+  local historical_revision=b8f96eae031eb87462aabeb964feab5208658ca3
+  local source="$TMP_ROOT/legacy-generated-state-source"
+  local artifacts="$CONVERGENCE_ARTIFACTS_DIR/legacy-generated-state"
+  local revision
+
+  mkdir -p "$artifacts" || return 1
+  runtime_prepare_revision_source "$REPO_ROOT" "$historical_revision" "$source" \
+    >"$artifacts/checkout.log" 2>&1 || return 1
+
+  # Run the historical producer without inspecting an operator's CLI installs.
+  DRIVER_ROOT="$source/scripts/test-plan-tracking"
+  # shellcheck disable=SC2034 # Read by the sourced historical helper.
+  KIT_ROOT="$source"
+  STATE_DIR="$DRIVER_ROOT/.state"
+  mkdir -p "$STATE_DIR/snapshots" || return 1
+  # shellcheck disable=SC1091
+  source "$DRIVER_ROOT/lib/provenance.sh" || return 1
+  cli_version() { printf '0.27.0\n'; }
+  cli_source() { printf 'controlled fixture\n'; }
+  kit_provenance() { printf '%s\n' "$historical_revision"; }
+  skill_declared_floor() { printf '0.27.0\n'; }
+  log() { printf '%s\n' "$*"; }
+  stamp_provenance legacy-upgrade-fixture >"$artifacts/producer.log" 2>&1 || return 1
+  printf '{"fixture":"legacy-upgrade"}\n' >"$STATE_DIR/plan-validate.json" || return 1
+  printf '# Synthetic snapshot\n' >"$STATE_DIR/snapshots/execution-state.md" || return 1
+  cp -a "$STATE_DIR" "$artifacts/original-state" || return 1
+  test -z "$(git -C "$source" status --porcelain --untracked-files=all)" || return 1
+
+  revision="$(git -C "$REPO_ROOT" rev-parse HEAD)" || return 1
+  git -C "$source" -c protocol.file.allow=always fetch -q --no-tags origin "$revision" || return 1
+  git -C "$source" merge --ff-only --quiet "$revision" || return 1
+  # This consumer renders, installs, diagnoses, and verifies the exact receipt
+  # in isolated runtime homes. Retained legacy files must not dirty its source.
+  runtime_install_product "$source" "$TMP_ROOT/legacy-generated-state-runtime" codex \
+    "$artifacts/install" >"$artifacts/install.log" 2>&1 || return 1
+  diff -r "$artifacts/original-state" "$STATE_DIR" >"$artifacts/preserved-state.diff" || return 1
+
+  # An unrelated file next to the retired state still blocks installed-runtime
+  # diagnosis, proving the historical exception does not hide the whole driver.
+  printf 'unrelated fixture content\n' >"$DRIVER_ROOT/operator-note.txt" || return 1
+  if agent-runtime doctor --source-root "$source" --product codex \
+    --live-home "$TMP_ROOT/legacy-generated-state-runtime/live/codex" \
+    --state-home "$TMP_ROOT/legacy-generated-state-runtime/state/codex" \
+    --no-overlay --class installed-runtime --format json \
+    >"$artifacts/unrelated-file-doctor.json" 2>&1; then
+    return 1
+  fi
+  python3 - "$artifacts/unrelated-file-doctor.json" <<'PY'
+import json
+import pathlib
+import sys
+
+report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert any(item["check"] in {"installed-runtime-source", "installed-runtime-source-clean"}
+           and item["severity"] == "block" for item in report["findings"])
+PY
+)
+
 validate_routing_contract() {
   local product="$1"
   local plans="$CONVERGENCE_ARTIFACTS_DIR/$product/routing-contract.json"
@@ -145,6 +206,8 @@ PY
 )"
 }
 
+# Copy only the historical Hermes cohort; later retirements may never have
+# shipped to this product and therefore have no baseline copy to quarantine.
 materialize_hermes_retired_copies() {
   local baseline_root="$1"
   local current_root="$2"
@@ -159,7 +222,7 @@ materialize_hermes_retired_copies() {
     test -d "$source" || return 1
     mkdir -p "$(dirname "$destination")"
     cp -a "$source" "$destination"
-  done < <(python3 - "$current_root/manifests/retired-skill-ids.json" <<'PY'
+  done < <(python3 - "$current_root/manifests/retired-hermes-skill-copies.json" <<'PY'
 import json
 import pathlib
 import sys
@@ -197,7 +260,7 @@ collect_hermes_legacy_ids() {
 write_hermes_retired_ids() {
   local repo_root="$1"
   local output="$2"
-  python3 - "$repo_root/manifests/retired-skill-ids.json" "$output" <<'PY'
+  python3 - "$repo_root/manifests/retired-hermes-skill-copies.json" "$output" <<'PY'
 import json
 import pathlib
 import sys
@@ -484,9 +547,10 @@ BASELINE_SOURCE_ROOT="$(runtime_prepare_revision_source \
   "$PORTABLE_SOURCE_ROOT" "$BASELINE_REVISION" "$TMP_ROOT/baseline-source")"
 products="${PRODUCT:-codex claude hermes}"
 failures=0
-if validate_dirty_source_rejected && validate_snapshot_ref_boundary; then
+if validate_dirty_source_rejected && validate_snapshot_ref_boundary &&
+  validate_legacy_generated_state_upgrade; then
   results_add "convergence.portable-source-boundary" shared-cli pass 1 \
-    "dirty content and unrelated refs or objects were excluded from portable snapshots"
+    "dirty content and unrelated refs or objects were excluded; historical generated state survived upgrade and passed installed-runtime diagnosis"
 else
   results_add "convergence.portable-source-boundary" shared-cli fail 0 \
     "dirty source rejection boundary failed"

@@ -231,13 +231,9 @@ unassigned commands and self-run behavior remain unchanged.
   targets must be a proven subset of the claim. The physical checkout lease is
   enabled only in this mode.
 - A recognized checkout-local shell mutation is projected as one repository
-  target plus the exact checkout binding. Only authenticated Main Agent worker
-  bootstrap can mint the active claim's private checkout-shell grant. That
-  grant plus the matching claim repository and worktree fingerprint may cover
-  the opaque target; generic claims cannot request or observe it. This is a
-  coordination permission for the isolated checkout, not a path sandbox or
-  user authorization. Explicit edits still require path-scope coverage, and
-  the manager must reject out-of-scope final diffs.
+  target plus the exact checkout binding. It requires ordinary authenticated
+  scope coverage; no orchestration bootstrap grants an opaque checkout-shell
+  permission.
 - The shared shell effect classifier does not weaken strict admission:
   redirection, command substitution, unsafe pipeline stages, executable
   shadows, and all other unclassified shell shapes do not receive a read-only

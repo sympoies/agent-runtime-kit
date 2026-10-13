@@ -56,7 +56,6 @@ infer closeout from prose alone.
 
 A plain `program` delivers child PRs independently. This specialization adds
 an integration branch because lane PRs cannot safely land on main separately.
-Main Agent Mode changes execution ownership, not the tracker or provider gate.
 
 - A lane executor owns implementation, local validation, its managed worktree,
   and creation or update of its PR against the integration branch. It posts a
@@ -96,9 +95,14 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
    `code-review-specialists` profile. On GitHub, publish the canonical
    `--profile provider-review` bundle with `--mode delivery`, `--reviewable`,
    `--lens-verdict`, `--scope`, and a portable `--evidence-reviewed` value.
-   In governed mode, publish through the App and keep the personal identity
-   `--metadata-only` without `--comment-file`. Observe the review-loop ledger
-   at that head;
+   In governed mode, publish human native reviews, comments, and reviewer-owned
+   ledger observations through the configured reviewer user account, independent
+   from the PR author. Reserve App identities for automatic review. Bind
+   `--review-author` to the actual review author's login; this flag verifies
+   authorship and does not select credentials. If a separate `--metadata-only`
+   breadcrumb is needed, omit `--comment-file` and bind the published native
+   review URL, expected author, and head. Observe the review-loop ledger at that
+   head;
    repair or disposition all findings before approval. Use `forge-cli pr
    reviews` for current-head native feedback. On GitLab, use the supported
    outcome-note route and pass `--review-convergence=false` at merge.
@@ -121,7 +125,9 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
    merged head; close the child with `forge-cli issue close` only after its
    acceptance holds. Then tick its tracker row with
    `forge-cli issue tracker tick`, recording the lane PR and a one-line
-   checkpoint, as Tracker Commands says.
+   checkpoint, as Tracker Commands says. Each lane owner removes its managed
+   worktree immediately after delivery through `git-cli worktree remove`,
+   independently of tracker closeout.
 8. After all lanes merge, resolve integration conflicts in a managed worktree,
    run the integration validation, and deliver the integration PR through
    `deliver-pr`. The integration PR references the tracker without an
@@ -133,10 +139,17 @@ Main Agent Mode changes execution ownership, not the tracker or provider gate.
    every child is closed or explicitly transferred and the Tracker Commands
    closeout state check reports no finding. Then perform requested
    post-merge duties and `core/policies/git-delivery.md` terminal cleanup.
-   Verify each provider-confirmed delivered head before removing a checkout.
-   Use `git-cli worktree remove <path-or-slug> --format json` only for a clean,
-   unowned managed worktree. Retain dirty, locked, or unverifiable worktrees
-   and report the exact reason.
+   Each owner removes its managed worktree after delivery with
+   `git-cli worktree remove <path-or-slug> --format json`. Other owners may
+   remove only worktrees idle for seven days, excluding build directories.
+   The trusted CLI fences live holders; v1.33.2+ preserves unsaved work and
+   supports backup/restore. Respect older CLI refusals and upgrade normally.
+   Follow `core/policies/git-delivery.md` for explicit user authorization
+   accepting the exact listed paths and their loss before
+   `--acknowledge-backup-omissions`; agents cannot grant this authorization. Report
+   the receipt and any `backup_ref`. A `removal-*` refusal names the holder
+   or other failure: retain the target, report it, and do not retry with force.
+   Removal eligibility does not depend on tracker closeout or provider read-back.
 
 ## Boundary
 

@@ -8,6 +8,40 @@ The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
 requires different behavior.
 
+`block-direct-pr-create.py` refuses every `gh issue` and `gh pr`
+invocation in Codex and Claude agent sessions, including reads and help.
+It also refuses raw GitHub writes: release/workflow writes, non-GET `gh api`
+requests (including implicit POST from fields or input), GraphQL mutations,
+and GitHub API writes through `curl`. Identity binding is irrelevant;
+the guard does not query the session broker or read forge credentials.
+
+REST GET requests remain available. GraphQL GET requires a literal read
+document; opaque input and mutations are refused. GraphQL POST is refused even
+for a query. Explicit REST methods take precedence over fields and curl uploads
+regardless of flag order. Curl `-T`/`--upload-file` implies PUT; `--next`
+resets transfer options. GraphQL strings and comments are masked in one pass;
+incomplete strings are refused because the document cannot be proved read-only.
+
+Refusals name the matching typed `forge-cli` operation when available and link
+[missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
+Unsupported operations must wait for their typed equivalent. The PR-skill
+marker and command-local environment clearing cannot exempt raw GitHub
+operations. The exact marker allow-list remains available for GitLab MR
+creation. `forge-cli` invocations remain available: the hook inspects submitted
+shell source, not the governed executable's internal `gh` or `git`
+subprocesses. Appending a raw GitHub operation to a forge-cli call still
+triggers the guard.
+
+This is a guard, not a Bash sandbox. It recognizes literal command forms,
+ordinary wrappers, command substitutions, and nested shell command strings
+through the shared bounded parser. It does not execute or inspect sourced files,
+arbitrary scripts, aliases/functions, or dynamically constructed commands.
+The curl host check covers the exact public `api.github.com` authority;
+custom enterprise API hosts need an owning configured guard. Provider
+authentication and authorization remain the final boundary. Any downstream
+runtime that copies these shared hooks must mirror the contract and fixtures;
+this repository has no separate downstream deployment owner.
+
 The finish-line hooks credit declared validation only after an observed
 successful exit. `PreToolUse` wraps each matched Bash command with a tokenized
 EXIT recorder that persists bounded outcome metadata and preserves the
@@ -135,9 +169,10 @@ staging, run `git add -- <owned-paths>` there and invoke `semantic-commit`
 separately. They explicitly reject shell `cd`, raw `git -C`, and nested
 `agent-run exec --cwd` as substitutes, and name a target-rooted managed session
 as the fallback when the host cannot attest a target workdir.
-Exact help/version argv for the
-managed `agent-docs` and `forge-cli` release surface remains read-only, while
-extra options, trailing arguments, and executable shadows fail closed. When
+Help/version reads use verified `execution.read-only.v1` evidence when the
+trusted producer supports that request; otherwise they require exact-target
+preparation. Raw argv alone grants no read bypass, and executable shadows
+fail closed. When
 verification blocks a single-repository edit or shell mutation, the reason
 includes a complete, copyable `session prepare` command — the atomic
 activate-plus-strict-preflight primitive — with the trusted executable and
@@ -200,7 +235,11 @@ only the top-level `workdir` is read. The wrapper may bind the result and render
 call exists but its workdir is unreadable, a managed-session-cwd result
 reports `call_workdir_unreadable`: that session record attests the session
 root, not this call, and `block-unsafe-default-delivery.py` then treats the
-call's repository as unresolved.
+call's repository as unresolved. Native Codex nested calls use an independent
+`exec-*` id; when only a session/process cwd fallback is available, the
+default-delivery guard also treats their repository as unresolved. Its merge
+refusal names the literal absolute `git -C <topic-checkout> merge --no-commit
+--no-ff --no-edit <sha>` route, which still verifies the target branch.
 Direct-edit verification stays target-based; shell verification is
 command-context based.
 
@@ -217,7 +256,65 @@ forms do not acquire a writer lease unless the command includes the
 file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
-mutation with exactly one removal target. Nested repositories and submodules
+mutation with exactly one removal target. In every mode a trusted
+`git-cli worktree remove <target> --format json` delegates fencing and
+preservation to the CLI without claiming a writer lease in PreToolUse.
+Optional `--safe`, `--acknowledge-backup-omissions`, and `--format text|json`
+may appear in any order around the target; unrelated flags are refused. Literal
+`cd <primary> && git-cli worktree remove <target>` also works. Enforce mode
+still rejects a live foreign target lease but admits
+the caller's own lease. Raw `git worktree remove` remains blocked even with
+`ALLOW_DIRECT_GIT_WORKTREE=1`. Raw filesystem deletion detection is based on
+command patterns: `rm`, `unlink`, `shred`, and `find` with `-delete` or a direct
+`rm`/`unlink`/`shred` payload in `-exec`, `-execdir`, `-ok`, or `-okdir`. Search
+roots bound substituted find targets; literal payload targets use ordinary
+path resolution. These patterns refuse registered checkout roots and their
+ancestors, unresolved targets, and ambiguous directory contexts; ordinary
+literal file deletion remains admitted. This detector does not inspect
+interpreter code such as `python -c` with `shutil.rmtree` or `perl -e`, and
+`rsync --delete` and `mv` are outside its command-pattern contract. It is not a
+sandbox for arbitrary programs. Agents must still use the preserving lifecycle
+command to remove registered worktrees.
+The shared invocation parser also resolves literal `sudo`, `nice`, `nohup`, and
+`xargs` payloads. It respects launcher option values, `--`, and non-executing
+help/version forms. `nice` supports adjustment options; `sudo` supports ordinary
+non-shell execution with user/group/prompt options. Inherited environment
+markers and installed Git extension lookup are unproven through `sudo`; literal
+environment setup after the launcher can establish the configuration target.
+`xargs` append and GNU/BSD replacement forms mark input-derived operands as
+unknown, so deletion guards refuse unresolved targets while literal read
+programs remain readable. The parser does not evaluate pipeline input or scripts
+constructed from that input. Unsupported options, dynamic program selection,
+and `sudo` shell/login/chdir/chroot modes remain opaque rather than transparent;
+the raw-deletion contract covers recognized literal payloads. Default-delivery
+keeps its broader process-wrapper context and depth accounting while sharing the
+`nice`/`nohup` option grammar.
+
+Blocking classifiers retain terminated quoted here-document bodies when their
+literal consumer feeds a shell: supported transparent shell launchers, the
+option-free `doas` shell form, `source`/`.` reading `/dev/stdin` or `/dev/fd/0`,
+stdin-reading `cat`/`tee` piped directly, through further literal `cat`/`tee`
+stages, or through a group/subshell into a shell, and `cat` inside a shell's
+`<(...)` script argument or stdin redirection. Bash's lone `-` stdin spelling
+and option-free `source`/`.` process-substitution arguments are inspected too.
+A literal `cat`/`tee` output file or group stdout capture followed by that same
+path's shell/source or direct execution is also inspected, including execution
+behind option-free `setsid` or `timeout <literal-duration>` (numeric duration
+with an optional `s`, `m`, `h`, or `d` suffix).
+Explicit non-stdin descriptors, replaced stdin, redirected pipe output, other
+`cat` file operands, document prose, and interpreter-language bodies stay data.
+These indirect bodies do not earn validation credit. Source commands retain
+existing executable-resolution checks; absolute executable paths keep read
+controls verifiable. Shell input and output redirections are removed from
+`xargs` argv, while its input-derived operation remains unknown and cannot
+prove a governed read. Other pipeline filters, launcher option forms, dynamic
+routing, and scripts constructed by other languages remain outside this
+mechanical classifier.
+
+Older CLIs may retain stricter removal checks; hook admission does not bypass
+their refusal. Batch `git-cli branch cleanup --remove-worktrees` remains blocked in
+agent shells because older CLIs bypass fencing; remove each target with the
+sole sanctioned command, then clean up branches separately. Nested repositories and submodules
 retain independent lease boundaries. A clean linked worktree may acquire a
 lease. The primary checkout may acquire one only while clean, on its resolved
 default branch, and outside a pre-existing Git operation. The owning session
@@ -307,15 +404,8 @@ admission reply was lost replays it and completes the lease with the observed
 result, and a background shell call completes when the provider reports its
 launch. Same-call Pre/Post/Stop activity is serialized by a stable local lock.
 `agent-hook` evaluates every ordinary rule first and invokes the locked `agent-session.coordination.v1` capability
-only after an aggregate allow, except for the narrowly typed worker-bootstrap
-transition. When an exact literal trusted same-release `main-agent bootstrap
---idempotency-key <key> --format json` request is blocked solely by
-`owner-active-foreign`, the guard emits a versioned authorization marker only
-after validating enforce-mode metadata, the private capability, and the
-coordination surface. Only that strict marker supersedes the owner-liveness
-block; generic or malformed output, unavailable coordination, shell
-composition, transforms, and any other block fail closed. Thus neither
-provider can admit a tool denied by another prerequisite. The guard applies one
+only after an aggregate allow. A prerequisite denial remains blocked; no
+orchestration bootstrap may supersede owner-liveness admission. The guard applies one
 50-second global subprocess budget inside the setup-owned dispatcher timeout.
 For Stop, the guard emits
 `runtime-kit.session-coordination-result.v1` with a `not-run`, `clean`,
@@ -333,12 +423,9 @@ bodies, or private registry paths. The physical checkout lease above shares the
 same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
 runner.
 
-The same guard accepts `--capabilities --format json` as a side-effect-free
-self-probe and advertises `runtime-kit.checkpoint-write-admission.v1`. Main
-Agent compatibility requires that response from both installed product-home
-copies, converged `agent-hook doctor` records, and policy bundle
-`2026.07.28.1` or newer. This binds readiness to the deployed handlers rather
-than policy metadata alone.
+The guard accepts `--capabilities --format json` as a side-effect-free
+self-probe. Its capability map contains no retired orchestration admission
+contracts; ordinary intent and coordination enforcement still applies.
 
 Executable runtime rules use independent child deadlines and an explicit
 `timeout_posture`. A timeout no longer erases completed outcomes or skips later
@@ -447,6 +534,17 @@ PATH, `cd`, executable resolution) only within that body: a governed
 classification it has without the substitution. The commit guard's
 program-lookup scan stays conservative and still counts PATH changes inside
 substitution bodies.
+The commit guard also refuses literal `git config --global` writes unless
+`GIT_CONFIG_GLOBAL` selects a temporary or `AGENT_HOME/out` child without
+symlink redirects. It recognizes inline environment assignments, literal
+unconditional exports, and their scope in nested shell strings and substitutions. Global
+reads and repository-local configuration remain allowed. System writes are
+always refused because `GIT_CONFIG_GLOBAL` does not redirect `--system`.
+Fixture setup must also use `GIT_CONFIG_NOSYSTEM=1`; `HOME` alone leaves the
+real XDG Git configuration exposed. Dynamic target paths remain unresolved:
+pass a literal output target or establish it in the hook's inherited environment.
+Conditional or subprocess setup cannot prove the inherited target; use an
+inline target assignment on the Git invocation instead.
 After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
 `disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
 flattened shell scan: nested removals never make an outer executable trusted.

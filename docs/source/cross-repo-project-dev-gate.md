@@ -238,7 +238,7 @@ not because of fixture setup or compilation errors.
 - Run the complete `tests/hooks/test_shared_hooks.py` owner suite through
   `bash tests/hooks/run.sh`.
 - Run `bash tests/hooks/run.sh` twice to catch retained-state/order coupling.
-- Run clean-head `bash scripts/ci/all.sh`; the Main Agent owns the later
+- Run clean-head `bash scripts/ci/all.sh`; the coordinator owns the later
   integration acceptance rerun.
 - Record test-first evidence outside the repository and verify it before the
   semantic commit.
@@ -250,7 +250,7 @@ is backward-compatible at the process boundary: installations that do nothing
 receive advisory behavior; operators that require the previous strict workflow
 select `AGENT_RUNTIME_PROJECT_DEV_MODE=enforce`; emergency workflow-only bypass
 uses `off`. Runtime surface synchronization and deployment acceptance are owned
-by the Main Agent after integration. Existing nils-cli storage already isolates
+by the coordinator after integration. Existing nils-cli storage already isolates
 session records by session hash, product, and project hash. The companion
 nils-cli lane changes only failure guidance: additive `hint`,
 `details.retryable`, `next_action`, and `recovery` fields, no schema bump.

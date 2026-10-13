@@ -10,11 +10,20 @@ digest-pinned bundle under the user's
 is `manifests/hook-rules.yaml`, stored as JSON-compatible YAML so the repository
 can validate it without an additional parser dependency. The inventory records
 every policy rule's behavior owner, recovery class, documentation, and test
-owner. It freezes all 67 retained legacy Codex and Claude registrations across
-21 shared handlers as the parity baseline, adds 23 typed coordination/liveness
-rules, adds eight locked transaction rules, one shared read-only capability
-shadow rule, and two product-scoped SessionStart memory rules for 101 rules
-total. Each retained migrated handler remains a distinct ordered rule so the
+owner. The bundle's `# inventory:` comments own those non-executable annotations,
+including which registrations belong to the frozen legacy parity baseline.
+The inventory and `tests/agent-hook/fixtures/legacy-registrations.tsv` are derived
+with `python3 scripts/dev/hook_policy_inventory.py --write`; use `--check` for a
+read-only drift check. Add a registration in the bundle with its annotation and
+handler script, then regenerate instead of copying totals into mirrors or tests.
+New registrations use `legacy_handler: null`; existing legacy provenance stays
+unchanged. Dispatcher fixtures select product/event/matcher; expected IDs and
+counts come from the parsed policy. Explicit ingress and capability contracts
+remain independently asserted.
+
+The bundle adds typed coordination/liveness and locked transaction rules,
+verified read-only admission, and product-scoped SessionStart memory rules.
+Each retained migrated handler remains a distinct ordered rule so the
 cutover proves provider parity without changing grouped matchers or handler
 order. The former Codex UserPromptSubmit memory registration is intentionally
 removed from the frozen migration set and, together with Claude, relocated to
@@ -40,34 +49,31 @@ overrides, and governed recovery. The scripts continue to own their existing
 state and output contracts until a separately tested typed capability replaces
 them.
 
-The shared Bash `execution.read-only.v1` rule is shadow-only. It asks the
+The shared Bash `execution.read-only.v1` rule owns read-only admission. It asks the
 released same-version verifier for evidence from exact `builtin command`
 invocations of an absolute `agent-run`, `agent-docs`, or `forge-cli` producer,
-but its result is trace evidence only. Legacy handlers remain the sole
-production admission authority in this policy version. Raw local exploration
-that mismatches the capability routes to `agent-run inspect`; managed queries
-route through the exact tool-owned operation-effect contracts. No mismatch may
-expand the legacy allowlist.
+and admits only the exact verified request. Its locked enforce rule bypasses
+only the paired `pre-edit-intent-gate`; every independent guard still runs.
+Missing, invalid, mutation or unsupported evidence falls through to that
+handler's normal exact-target preparation. Raw local exploration uses
+`agent-run inspect`; managed queries use their tool-owned operation-effect
+contracts. The fallback has no argv read-admission allowlist. Exact preparation,
+Git recovery and current-session claim mutations retain bounded bootstrap
+routes. Global shadow dispatch remains observation-only.
 
 Priority ranges are local to a product/event/matcher group:
 
 - `10`: authenticated agent-session activity recording.
 - `20`: semantic-conflict admission from trusted coordination state.
 - `30`: writer owner-liveness admission from trusted coordination state.
+- `90`: verified read-only admission paired to preparation at `100`.
 - `100` and above: legacy handlers in their current provider order, in steps
   of ten.
 - `900`: locked `agent-session.coordination.v1` transaction lifecycle,
   after every ordinary rule in the selected group.
 
-On `PreToolUse`, a blocking aggregate decision normally performs no
-coordination admission. The sole exception is an exact, literal, trusted
-same-release `main-agent bootstrap --idempotency-key <key> --format json`
-request whose only block is `owner-active-foreign`: the guard may return the
-versioned typed-bootstrap authorization marker after its capability, mode, and
-executable checks pass. Only that strict marker supersedes the owner-liveness
-block; generic or malformed output, unavailable coordination, shell
-composition, transforms, and every other block fail closed. An allowed
-aggregate performs exactly one `admit`. Terminal `PostToolUse`,
+On `PreToolUse`, a blocking aggregate decision performs no coordination
+admission. An allowed aggregate performs exactly one `admit`. Terminal `PostToolUse`,
 `PostToolUseFailure`, and `Stop` events complete or reconcile through the same
 typed capability after aggregation. The provider never schedules coordination
 as a sibling hook. Coordination mode `off` disables only that

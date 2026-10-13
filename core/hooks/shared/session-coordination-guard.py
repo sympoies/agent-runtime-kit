@@ -45,9 +45,7 @@ from hook_common import (
     invocation_is_opaque,
     invocation_tokens,
     is_managed_cli_home_bin,
-    main_agent_preclaim_argv,
     normalized_cli_argv,
-    normalized_main_agent_argv,
     output_redirect_targets,
     patch_text_candidates,
     read_payload,
@@ -59,15 +57,6 @@ from hook_common import (
 
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
-# Tracking-mode values accepted for `--tier` (core/policies/work-modes.md).
-WORK_MODE_TIERS = frozenset(
-    {
-        "direct",
-        "issue",
-        "program",
-        "program/dispatch",
-    }
-)
 SUPPORTED_PRODUCTS = {"codex", "claude"}
 COORDINATION_FLOOR = (1, 24, 5)
 # First agent-session release whose `work-context admit` accepts the additive
@@ -111,7 +100,6 @@ RECONCILIATION_CURSOR_FAILURE_MESSAGE = (
     "private scheduling cursor could not be safely initialized or repaired."
 )
 STOP_RECONCILIATION_TIMEOUT_SECONDS = 1.0
-MAX_CHECKPOINT_BYTES = 64 * 1024
 NONTERMINAL_OPERATION_STATES = frozenset(
     {"active", "completing", "reconcile_pending"}
 )
@@ -256,12 +244,6 @@ ADVISORY_CLASSIFICATIONS = frozenset(
     {"potential_conflict", "unknown", "no_known_conflict"}
 )
 COORDINATION_MODES = frozenset({"advisory", "enforce", "off"})
-TYPED_BOOTSTRAP_AUTHORIZATION = {
-    "schema_version": (
-        "runtime-kit.session-coordination-bootstrap-authorization.v1"
-    ),
-    "authorization": "typed-main-agent-bootstrap-authorized",
-}
 
 
 def tool_name(payload: Mapping[str, Any]) -> str:
@@ -996,148 +978,12 @@ def claim_bootstrap_invocation(
     return True
 
 
-def main_agent_private_packet(raw: str, repository: str | None) -> bool:
-    if not lifecycle_private_file(raw, repository, json_file=True):
-        return False
-    try:
-        metadata = os.stat(raw, follow_symlinks=False)
-    except OSError:
-        return False
-    return (
-        stat.S_ISREG(metadata.st_mode)
-        and metadata.st_uid == os.geteuid()
-        and stat.S_IMODE(metadata.st_mode) == 0o600
-    )
-
-
-def trusted_main_agent_sibling(agent_session_executable: str) -> str | None:
-    """Resolve a same-release ``main-agent`` sibling of ``agent-session``."""
-    main_candidate = shutil.which("main-agent")
-    session_candidate = shutil.which("agent-session")
-    trusted_main = resolved_trusted_cli("main-agent")
-    if (
-        not main_candidate
-        or not session_candidate
-        or not trusted_main
-        or not os.path.isabs(main_candidate)
-        or not os.path.isabs(session_candidate)
-    ):
-        return None
-    if os.path.dirname(os.path.abspath(main_candidate)) != os.path.dirname(
-        os.path.abspath(session_candidate)
-    ):
-        return None
-    if os.path.dirname(os.path.realpath(trusted_main)) != os.path.dirname(
-        os.path.realpath(agent_session_executable)
-    ):
-        return None
-    if os.path.realpath(session_candidate) != os.path.realpath(
-        agent_session_executable
-    ):
-        return None
-    main_version = run_cli([trusted_main, "--version"])
-    session_version = run_cli([agent_session_executable, "--version"])
-    if (
-        main_version is None
-        or session_version is None
-        or main_version.returncode != 0
-        or session_version.returncode != 0
-    ):
-        return None
-    parsed_main = parse_version(main_version.stdout + "\n" + main_version.stderr)
-    parsed_session = parse_version(
-        session_version.stdout + "\n" + session_version.stderr
-    )
-    if parsed_main is None or parsed_main != parsed_session:
-        return None
-    return trusted_main
-
-
-def main_agent_bypass_invocation(
-    words: list[str], agent_session_executable: str, base: Path | None
-) -> bool:
-    """Validate one finite trusted pre-claim Main Agent command."""
-    normalized = normalized_main_agent_argv(words)
-    if normalized is None:
-        return False
-    candidate = shutil.which(words[0])
-    trusted = trusted_main_agent_sibling(agent_session_executable)
-    if (
-        not candidate
-        or not trusted
-        or os.path.realpath(candidate) != os.path.realpath(trusted)
-    ):
-        return False
-    # Shape checks below compare against the bare name; the pinned absolute
-    # path has already been resolved and matched against the trusted sibling.
-    words = normalized
-    if main_agent_preclaim_argv(words):
-        return True
-    if words[:3] == ["main-agent", "checkpoint", "--file"]:
-        repository = bounded_git_toplevel(str(base)) if base is not None else None
-        return (
-            len(words) == 10
-            and main_agent_private_packet(words[3], repository)
-            and words[4] == "--if-revision"
-            and lifecycle_revision(words[5])
-            and words[6] == "--idempotency-key"
-            and lifecycle_idempotency_key(words[7])
-            and words[8:] == ["--format", "json"]
-        )
-    if words[:2] == ["main-agent", "quick"]:
-        # quick acquires the work-context claim as its first durable act (like
-        # init), so its exact pre-claim shape must be admitted here. --tier is
-        # optional; the CLI applies its default tracking mode.
-        repository = bounded_git_toplevel(str(base)) if base is not None else None
-        if (
-            len(words) < 4
-            or words[2] != "--assignment-file"
-            or not main_agent_private_packet(words[3], repository)
-        ):
-            return False
-        if len(words) == 8:
-            return (
-                words[4] == "--idempotency-key"
-                and lifecycle_idempotency_key(words[5])
-                and words[6:] == ["--format", "json"]
-            )
-        return (
-            len(words) == 10
-            and words[4] == "--tier"
-            and words[5] in WORK_MODE_TIERS
-            and words[6] == "--idempotency-key"
-            and lifecycle_idempotency_key(words[7])
-            and words[8:] == ["--format", "json"]
-        )
-    if len(words) < 4 or words[:3] != ["main-agent", "init", "--packet-file"]:
-        return False
-    repository = bounded_git_toplevel(str(base)) if base is not None else None
-    if not main_agent_private_packet(words[3], repository):
-        return False
-    if len(words) == 9:
-        return (
-            words[4:6] == ["--if-absent", "--idempotency-key"]
-            and lifecycle_idempotency_key(words[6])
-            and words[7:] == ["--format", "json"]
-        )
-    return (
-        len(words) == 10
-        and words[4] == "--if-revision"
-        and lifecycle_revision(words[5])
-        and words[6] == "--idempotency-key"
-        and lifecycle_idempotency_key(words[7])
-        and words[8:] == ["--format", "json"]
-    )
-
-
 def invocation_bypasses_admission(
     words: list[str], agent_session_executable: str, base: Path | None = None
 ) -> bool:
     if "/" in words[0] and not os.path.isabs(words[0]):
         return False
     name = os.path.basename(words[0])
-    if name == "main-agent":
-        return main_agent_bypass_invocation(words, agent_session_executable, base)
     if name == "agent-session" and len(words) >= 2:
         candidate = shutil.which(words[0]) if "/" not in words[0] else words[0]
         trusted = bool(candidate) and os.path.realpath(candidate) == os.path.realpath(
@@ -1483,11 +1329,6 @@ def command_bypasses_admission(
             and os.path.realpath(candidate)
             == os.path.realpath(agent_session_executable)
         )
-    if re.search(r"(?<![A-Za-z0-9_.-])main-agent(?:\s|$)", command):
-        words = simple_words(command)
-        return bool(words) and invocation_bypasses_admission(
-            words, agent_session_executable, base
-        )
     effect = classify_shell_effect(
         command,
         read_only_invocation=lambda words: invocation_bypasses_admission(
@@ -1495,36 +1336,6 @@ def command_bypasses_admission(
         ),
     )
     return effect.kind == SHELL_EFFECT_READ_ONLY
-
-
-def authenticated_main_agent_bootstrap(
-    command: str, agent_session_executable: str, base: Path
-) -> bool:
-    """Recognize the exact trusted bootstrap that may supersede foreign-owner liveness."""
-    words = simple_words(command)
-    if (
-        not words
-        or not main_agent_bypass_invocation(
-            words, agent_session_executable, base
-        )
-    ):
-        return False
-    normalized = normalized_main_agent_argv(words)
-    return bool(
-        normalized
-        and normalized[:2] == ["main-agent", "bootstrap"]
-        and len(normalized) == 6
-        and normalized[2] == "--idempotency-key"
-        and lifecycle_idempotency_key(normalized[3])
-        and normalized[4:] == ["--format", "json"]
-    )
-
-
-def emit_typed_bootstrap_authorization() -> None:
-    sys.stdout.write(
-        json.dumps(TYPED_BOOTSTRAP_AUTHORIZATION, separators=(",", ":"))
-    )
-    sys.stdout.write("\n")
 
 
 def literal_lifecycle_near_miss(command: str) -> bool:
@@ -1647,154 +1458,6 @@ def canonical_target_path(
             "value": relative.as_posix(),
         }
     return target, {"repository": repository, "path": str(root)}
-
-
-def runtime_checkpoint_path() -> Path | None:
-    state_dir = os.environ.get("AGENT_SESSION_STATE_DIR", "").strip()
-    session_id = os.environ.get("AGENT_SESSION_ID", "").strip()
-    runtime_id = os.environ.get("AGENT_SESSION_RUNTIME_ID", "").strip()
-    issued_path = os.environ.get("AGENT_SESSION_CHECKPOINT_FILE", "").strip()
-    if (
-        not state_dir
-        or not os.path.isabs(state_dir)
-        or os.path.normpath(state_dir) != state_dir
-        or not issued_path
-        or not os.path.isabs(issued_path)
-        or os.path.normpath(issued_path) != issued_path
-        or not session_id
-        or session_id in {".", ".."}
-        or "/" in session_id
-        or "\x00" in session_id
-        or len(session_id.encode("utf-8")) > 255
-        or not runtime_id
-        or runtime_id in {".", ".."}
-        or "/" in runtime_id
-        or "\x00" in runtime_id
-        or len(runtime_id.encode("utf-8")) > 255
-    ):
-        return None
-    digest = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
-    expected = (
-        Path(state_dir)
-        / "sessions"
-        / session_id
-        / "coordination"
-        / f"main-agent-checkpoint-{digest}.json"
-    )
-    if issued_path != str(expected):
-        return None
-    try:
-        state_path = Path(state_dir)
-        state_metadata = state_path.lstat()
-        if stat.S_ISLNK(state_metadata.st_mode):
-            if state_metadata.st_uid != os.getuid():
-                return None
-            resolved_state = state_path.resolve(strict=True)
-            state_metadata = resolved_state.lstat()
-        else:
-            resolved_state = state_path
-        if (
-            not stat.S_ISDIR(state_metadata.st_mode)
-            or stat.S_ISLNK(state_metadata.st_mode)
-            or state_metadata.st_uid != os.getuid()
-            or state_metadata.st_mode & 0o022
-        ):
-            return None
-        sessions_metadata = (state_path / "sessions").lstat()
-        if (
-            not stat.S_ISDIR(sessions_metadata.st_mode)
-            or stat.S_ISLNK(sessions_metadata.st_mode)
-            or sessions_metadata.st_uid != os.getuid()
-            or sessions_metadata.st_mode & 0o022
-        ):
-            return None
-        for directory in (expected.parent.parent, expected.parent):
-            metadata = directory.lstat()
-            if (
-                not stat.S_ISDIR(metadata.st_mode)
-                or stat.S_ISLNK(metadata.st_mode)
-                or metadata.st_uid != os.getuid()
-                or stat.S_IMODE(metadata.st_mode) != 0o700
-            ):
-                return None
-        metadata = expected.lstat()
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or stat.S_ISLNK(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or metadata.st_nlink != 1
-            or stat.S_IMODE(metadata.st_mode) != 0o600
-        ):
-            return None
-        canonical_expected = (
-            resolved_state
-            / "sessions"
-            / session_id
-            / "coordination"
-            / expected.name
-        )
-        if expected.resolve(strict=True) != canonical_expected.resolve(strict=True):
-            return None
-    except OSError:
-        return None
-    return expected
-
-
-def checkpoint_json_object(raw: str) -> bool:
-    if len(raw) > MAX_CHECKPOINT_BYTES or len(raw.encode("utf-8")) > MAX_CHECKPOINT_BYTES:
-        return False
-    try:
-        return isinstance(json.loads(raw), dict)
-    except json.JSONDecodeError:
-        return False
-
-
-def runtime_checkpoint_write(
-    payload: Mapping[str, Any], tool: str
-) -> Path | None:
-    if tool not in {"Write", "Bash"}:
-        return None
-    tool_input = tool_input_dict(payload)
-    if tool == "Write":
-        raw_path = tool_input.get("file_path")
-        content = tool_input.get("content")
-        if (
-            raw_path != os.environ.get("AGENT_SESSION_CHECKPOINT_FILE", "").strip()
-            or not isinstance(content, str)
-            or not checkpoint_json_object(content)
-        ):
-            return None
-    else:
-        command = command_from(payload)
-        limit = MAX_CHECKPOINT_BYTES + 4_096
-        if (
-            not command.startswith("printf ")
-            or len(command) > limit
-            or len(command.encode("utf-8")) > limit
-        ):
-            return None
-        try:
-            tokens = shlex.split(command, posix=True)
-        except ValueError:
-            return None
-        if (
-            len(tokens) != 5
-            or tokens[0] != "printf"
-            or tokens[1] != r"%s\n"
-            or tokens[3] != ">"
-            or tokens[4]
-            != os.environ.get("AGENT_SESSION_CHECKPOINT_FILE", "").strip()
-            or not checkpoint_json_object(tokens[2])
-        ):
-            return None
-        canonical = (
-            f"printf {shlex.quote(tokens[1])} {shlex.quote(tokens[2])} "
-            f"> {shlex.quote(tokens[4])}"
-        )
-        if command != canonical:
-            return None
-    checkpoint = runtime_checkpoint_path()
-    return checkpoint
 
 
 def normalized_repository(raw: str) -> str | None:
@@ -1925,7 +1588,7 @@ def pull_request_head_action(words: list[str]) -> bool:
     name their pull request by head branch rather than number. A delivery that
     would merge, every numbered shape, and `gh` stay on their released path, so
     merging and pull requests the parser cannot bind to a head remain with the
-    Main Agent.
+    coordinator.
     """
     if not words or os.path.basename(words[0]) != "forge-cli":
         return False
@@ -2098,9 +1761,8 @@ def operation_targets(
                 return None, "cross-repository-shell-target"
             operation = "shell"
             # `agent-session` binds this opaque repository-form target to the
-            # exact checkout below. A narrow Main Agent worker claim may cover
-            # it only through its private bootstrap grant and authenticated
-            # worktree fingerprint, without becoming a repository-wide claim.
+            # exact checkout below and requires ordinary repository scope
+            # coverage from the authenticated claim.
             targets.append({"kind": "repository", "repository": repository, "value": "."})
             checkouts.append({"repository": repository, "path": str(root)})
     checkout_roots: dict[str, str] = {}
@@ -2923,9 +2585,6 @@ def pre_tool(
     if tool in COMMAND_TOOLS:
         command = command_from(payload)
         base = effective_workdir(payload).resolve()
-        if authenticated_main_agent_bootstrap(command, executable, base):
-            emit_typed_bootstrap_authorization()
-            return ALLOW
         if command_bypasses_admission(command, executable, base):
             return ALLOW
     call_id = tool_use_id(payload)
@@ -4073,11 +3732,7 @@ def main() -> int:
             json.dumps(
                 {
                     "schema_version": "runtime-kit.handler-capabilities.v1",
-                    "capabilities": {
-                        "runtime_checkpoint_write": (
-                            "runtime-kit.checkpoint-write-admission.v1"
-                        )
-                    },
+                    "capabilities": {},
                 },
                 separators=(",", ":"),
             )
@@ -4157,8 +3812,6 @@ def main() -> int:
                 "Session coordination is unavailable because the managed capability file is "
                 "not a private regular file; no enforcement claim is made."
             )
-        return ALLOW
-    if runtime_checkpoint_write(payload, tool) is not None:
         return ALLOW
     executable = resolved_agent_session()
     if executable is None or (

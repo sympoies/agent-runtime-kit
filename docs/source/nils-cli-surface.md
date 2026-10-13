@@ -76,8 +76,8 @@ package until `v1.31.2`. It removes `plan-issue`, `plan-issue-local`, `plan-tool
 numbered/plan work contexts and nonempty plan references
 ([#1952](https://github.com/sympoies/nils-cli/pull/1952)). New contexts use
 `direct`, `issue`, `program`, or `program/dispatch`; historical coordination
-state remains readable. The `agent-session` and `main-agent` per-binary floors
-move to `1.31.1` because those new-write contracts changed.
+state remains readable. The `agent-session` per-binary floor
+moves to `1.31.1` because those new-write contracts changed.
 
 The released `v1.31.0` surface fails the retirement behavioral/package
 assertions. Exact `v1.31.1` passes them. Successful full installation also
@@ -373,9 +373,11 @@ entrypoints. The current binary inventory is in the table below.
   - The release also includes read-only operation descriptors and shadow
     evaluation, resumable review transactions, bounded review delivery,
     Linux `agent-run inspect`, typed fail-closed macOS inspection, and Codex
-    prompt recovery. The versioned runtime-kit policy now consumes the
-    shadow-only evaluator at its existing Bash ingress; production admission
-    remains the legacy decision.
+    prompt recovery. At that adoption, the versioned runtime-kit policy consumed
+    the shadow-only evaluator and production admission remained the legacy
+    decision. The current [cutover](https://github.com/sympoies/agent-runtime-kit/issues/193)
+    uses enforced verified read-only admission with exact-target preparation
+    fallback; the active minimum and validated releases support that pairing.
 - `v1.25.5` introduced the required setup-owned provider ingress, but it is now
   below the supported minimum. It passes the earlier schema and ingress gates
   yet rejects the committed policy because `execution.read-only.v1` is an
@@ -1767,61 +1769,358 @@ shared hooks call `session prepare` (`v1.23.0`) and `session verify --phase`
 
 Notes on derivation:
 
-- The **Crate** column lists every directory currently under
-  `crates/` in the source repo (43 entries).
+- The **Crate** column lists every directory under
+  `crates/` at the source tag in the header (43 entries).
 - The **Binary** column lists every binary the crate produces. Library
   crates show `(library only)`. Crates that ship more than one binary
   enumerate them comma-separated.
-- The **Notes** column captures intent: stub status, multi-binary
-  fanout, library-only role, or other manifest-author-facing context.
+- The **Purpose and references** column gives a short purpose, the
+  same-tag upstream README, and kit-consumption context where applicable.
 
 ## Crate → binary table
 
-| Crate                       | Binary                                                                                                              | Notes                                                                                                                                                                                                                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-docs`                | `agent-docs`                                                                                                        | Data-driven required-doc resolver and auditor; no hardcoded builtins. `audit` checks install wiring, declared-doc presence/validity, and catalog validity; `preflight --intent X` resolves the document set plus the per-repo validation contract. Policy lives in `AGENT_DOCS.toml` (`[[document]]`, `[[validation]]`, predicates, product scope, and optional workflow phases). As of `v0.30.1`, project-scoped documents and validation stay within the declaring repository; `v0.31.6` added `--require-declared-intent`; and `v1.12.1` added Codex/Claude product scoping plus the `agent-docs.preflight.v2` product scope. The current surface also accepts `--product hermes`. As of `v1.23.0`, `session prepare` atomically combines strict preflight and activation in `cli.agent-docs.session.prepare.v1` ([#1273](https://github.com/sympoies/nils-cli/pull/1273)); runtime-kit consumes it for trusted intent preparation. As of `v1.24.0`, `phase` declarations and `--phase` filters scope `preflight` and `session activate|prepare|verify` ([#1282](https://github.com/sympoies/nils-cli/pull/1282)); runtime-kit consumes them in its phase-aware `project-dev` gates. The retired `resolve` / `baseline` / `scaffold-*` / `add` / `contexts` commands and `startup` context remain absent. |
-| `agent-hook` | `agent-hook` | Shared policy/config control plane, provider ingress setup, tool admission/completion, and bounded session coordination. Runtime-kit consumes its setup-owned ingress and shared policy handlers. |
-| `agent-memory`              | `agent-memory`                                                                                                      | Agent memory helper. Runtime-kit consumes bounded `recall startup` in the Codex and Claude `startup|resume|clear` SessionStart policy groups and `check --max-index-bytes --forbid-terms-file` in the retired-memory audit. The shared hook is stateless, fails open, and never falls back to the full global index or candidate roots, so a blocked aggregate cannot consume a later startup-memory delivery. As of `v1.26.4`, runtime-kit also consumes the 768-byte startup default and exact optional `recall on-demand --agent <id>` scope; that release adds trusted agent-root checks and frontmatter-aware candidate previews ([#1460](https://github.com/sympoies/nils-cli/pull/1460)), so the floor is `>=1.26.4`. The CLI also owns producer-isolated untrusted candidates, dry-run-first promotion, and dry-run-first inactive archive retirement. Policy requires live verification and explicit user approval before curated promotion. |
-| `agent-out`                 | `agent-out`                                                                                                         | Agent output / artifact helper. As of `v1.19.2`, runtime-kit consumes `agent-out path-for --domain <domain> [--topic <topic>]` as the compatibility allocator for rendered `state_out(...)` skill instructions; it delegates to the canonical project allocator, supports `path` / `json` / `env`, and emits `cli.agent-out.path-for.v1` JSON ([#984](https://github.com/sympoies/nils-cli/pull/984)). As of `v1.19.3`, runtime-kit consumes `agent-out cleanup plan/apply` for reviewed cleanup of stale cache and noncanonical output entries: plans emit `cli.agent-out.cleanup.plan.v1` with a digest, and apply emits `cli.agent-out.cleanup.apply.v1` after digest, containment, delete-shape, and evidence-marker checks ([#987](https://github.com/sympoies/nils-cli/pull/987)). |
-| `agent-runtime`         | `agent-runtime`                                                                                                     | Runtime kit CLI. As of `v0.20.0`, this repo consumes released `render`, `install`, `uninstall`, `doctor` (including `--class skill-surface --product codex`), `audit-drift`, `gc-backups`, `restore-backups`, `purge-state`, and `pr-body render` bodies through Homebrew. The `pr-body render` surface renders standardized feature / bug PR and MR bodies before `forge-cli pr create` / `forge-cli pr deliver`. As of `v0.22.4`, `sync-runtime-surfaces` consumes `agent-runtime prune-stale` to remove stale managed Codex and Claude skill surfaces after install. As of `v0.28.0`, ships `doctor --class version-alignment --pin <manifest>` (the surface-pin drift gate this repo's Position 1 consumes via `docs/source/nils-cli-pin.yaml`) and adds build metadata to the `agent-runtime --version` output. As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `sync-runtime-surfaces` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)). As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup feature-detects it and keeps a phase-command fallback for older hosts ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)). As of `v1.3.0`, `render` adds an optional agents surface: an absent `manifests/agents.yaml` is a no-op, and when present each `core/agents/<id>/AGENT.md.tera` renders per product into `build/<product>/` at `render_to` (Codex TOML / Claude Markdown selected via the `product` Tera variable), cached in a separate `.render-cache-agents.json` and covered by `--update-golden` / `audit-drift` ([#839](https://github.com/sympoies/nils-cli/pull/839)). As of `v1.3.1`, `audit-drift`'s `rendered-target` class skips the `.render-cache-agents.json` agents render cache scratchpad (matching the existing `.render-cache.json` skip), so a `build/<product>/` tree lacking that cache file no longer produces a spurious `rendered-target` drift warn ([#842](https://github.com/sympoies/nils-cli/pull/842)). As of `v1.12.1`, `render --target home-prompt` renders `AGENT_HOME.md` to `build/<product-or-neutral>/AGENT_HOME.md`, which runtime-kit setup consumes for per-product home prompt symlinks. As of `v1.21.15`, the skills manifest loader supports schema v2 independently of other manifest families, and `list-skills --format json` reports invocation, exposure, and pending-disposition metadata for Codex, Claude, and Hermes ([#1111](https://github.com/sympoies/nils-cli/pull/1111)). As of `v1.22.6`, `prune-stale` accepts repeatable explicit prior source roots, validates each as a non-empty runtime-kit link-map owner, preserves foreign links, and reports the normalized authorities additively in JSON v1. Portable convergence consumes this surface for relocated-checkout stale-helper cleanup, so the floor moves to `>= 1.22.6` ([#1245](https://github.com/sympoies/nils-cli/pull/1245)). |
-| `agent-scope-lock`          | `agent-scope-lock`                                                                                                  | Workspace scope-lock helper.                                                                                                                                                                                                                                           |
-| `agent-session`             | `agent-session`                                                                                                     | Tmux-backed local agent session helper. New binary as of `v1.20.7` ([#1009](https://github.com/sympoies/nils-cli/pull/1009)). As of `v1.20.13`, it has send/glance, serve/WebSocket attach, workdir search, title/attachment, repo-picker, and durable-resume surfaces ([#1013](https://github.com/sympoies/nils-cli/pull/1013), [#1015](https://github.com/sympoies/nils-cli/pull/1015), [#1019](https://github.com/sympoies/nils-cli/pull/1019), [#1021](https://github.com/sympoies/nils-cli/pull/1021), [#1023](https://github.com/sympoies/nils-cli/pull/1023)). Later releases add private resume, title, startup, profile, deletion, and maintenance hardening. As of `v1.24.5`, runtime-kit consumes authenticated `work-context show|check|admit|complete|reconcile` for managed-session mutation admission and retains the private mailbox/fixed-notification policy boundary ([#1308](https://github.com/sympoies/nils-cli/pull/1308)); `required_clis[]` records the current compatibility floor separately from this introduction version. |
-| `agent-workflow-primitives` | `agent-run`, `browser-session`, `canary-check`, `docs-impact`, `heuristic-inbox`, `model-cross-check`, `review-evidence`, `review-specialists`, `repo-retro`, `skill-usage`, `test-first-evidence` | Multi-binary crate. Each binary is its own clap CLI; manifests should pin individual binary names, not the crate. As of `v0.20.0`, `agent-run exec` normalizes project command execution through explicit `.envrc` / `.env` decisions. As of `v0.31.0`, `repo-retro report` emits schema v2 (`cli.repo-retro.report.v2` / `repo-retro.report.v2`): a deterministic pre-digestion layer (`git.churnByClass`, `git.archival`, commit-frequency `fileHotspots` with `class` / `netDeleted`) plus a `--path-class-config` override; the v1 envelope was removed (breaking). As of `v0.31.3`, `repo-retro report` auto-discovers the heuristic-system root (`heuristic-system/` then `core/policies/heuristic-system/`) with a `--heuristic-root` override and summarizes nested `<slug>/ENTRY.md` inbox cases, so the `## HEURISTIC_SYSTEM` section reports `present` with real counts for `core/policies`-nested roots like this repo (additive). As of `v1.0.2`, `heuristic-inbox` gains a `deliver` subcommand: a cwd-independent records-branch PR writeback for uncommitted heuristic-system records (`--root` / `--kind` / `--base` / `--dry-run`, `cli.heuristic-inbox.deliver.v1` envelope with `branch` / `pr_url` / `committed_paths` / `worktree_path`), replacing prose-owned records-branch writeback (#237). As of `v1.0.3`, `deliver` gains a repeatable `--label` flag (forwarded to `forge-cli pr create --label`); the now-retired policy-owned session closeout consumed `deliver --label workflow::heuristic-records` with a fixed title, so the `heuristic-system` surface `min_nils_cli` is `v1.0.3`. As of `v1.1.0`, default `heuristic-inbox deliver` slugs auto-suffix when same-day records branches or managed worktrees already exist ([#829](https://github.com/sympoies/nils-cli/pull/829)); the now-retired policy-owned closeout relied on that records-branch writeback behavior, so the `heuristic-system` surface `min_nils_cli` moves to `>= 1.1.0`. As of `v1.8.0`, `heuristic-inbox archive` accepts operation-record folders and retained-record status transitions stay in the CLI primitive; the now-retired policy-owned closeout and inbox routing consumed operation-record archival, so the `heuristic-system` surface `min_nils_cli` moves to `>= 1.8.0` ([#875](https://github.com/sympoies/nils-cli/pull/875)). Agent-runtime-kit no longer consumes or pins `heuristic-inbox` after retiring the heuristic-system workflow. |
-| `api-gql`                   | `api-gql`                                                                                                           | GraphQL API testing CLI.                                                                                                                                                                                                                                               |
-| `api-grpc`                  | `api-grpc`                                                                                                          | gRPC API testing CLI.                                                                                                                                                                                                                                                  |
-| `api-rest`                  | `api-rest`                                                                                                          | REST API testing CLI.                                                                                                                                                                                                                                                  |
-| `api-test`                  | `api-test`                                                                                                          | API testing orchestrator.                                                                                                                                                                                                                                              |
-| `api-testing-core`          | (library only)                                                                                                      | Shared core for the `api-*` CLIs; never appears in `required_clis`.                                                                                                                                                                                                    |
-| `api-websocket`             | `api-websocket`                                                                                                     | WebSocket API testing CLI.                                                                                                                                                                                                                                             |
-| `claude-cli`                | `claude-cli`                                                                                                        | Claude runtime helper. As of `v1.0.12`, ships native prompt-segment auth/cache/render/status helpers plus generated completions. As of `v1.21.25`, expired quota-cache values are omitted from prompt rendering ([#1177](https://github.com/sympoies/nils-cli/pull/1177)). Runtime-kit does not consume this surface in required skill flows today. |
-| `cli-template`              | `cli-template`                                                                                                      | Internal template/example crate. Marked `excluded` in `docs/specs/completion-coverage-matrix-v1.md`; manifests should not pin against it.                                                                                                                              |
-| `codex-cli`                 | `codex-cli`                                                                                                         | Codex runtime helper. Alias family `cx*` ships in `aliases.zsh` / `aliases.bash`. As of `v1.21.23`, optional rate-limit windows and no-window fallback harden the prompt/usage surface; runtime-kit consumes no new command from this binary ([#1165](https://github.com/sympoies/nils-cli/pull/1165)). As of `v1.21.25`, expired quota-cache values are omitted from prompt rendering ([#1177](https://github.com/sympoies/nils-cli/pull/1177)); the command shape remains unconsumed. |
-| `docker-tools`              | `docker-tools`                                                                                                      | Docker helper CLI. As of `v1.0.12`, ships native container, compose-down, and run-zsh helpers plus generated completions. Runtime-kit does not consume this surface in required skill flows today. |
-| `devlog`                    | `devlog`                                                                                           | Development-log CLI. New binary as of `v1.28.28` ([#1717](https://github.com/sympoies/nils-cli/pull/1717)). It owns entry insertion under a month heading, `README.md` index sync, integrity checking, and literal case-insensitive search, detecting `docs/devlog` then `docs/source/devlog`. Runtime-kit consumes it as the mechanism named by `core/policies/devlog-capability.md`: `devlog check` exits `65` on a structural problem and `0` when clean, and `devlog new` writes the section shape that check enforces. As of `v1.28.28`, an entry must carry `Result`, `Why / context` and `Evidence`; `Links` and `Follow-ups` are optional and an empty one is omitted rather than filled with a placeholder ([#1727](https://github.com/sympoies/nils-cli/pull/1727)). `v1.28.28` also refuses to write into a file holding unresolved merge-conflict markers, fence-aware so an entry quoting them is still writable ([#1719](https://github.com/sympoies/nils-cli/pull/1719)). As of `v1.28.29` the binary also carries `devlog fix`, which repairs the six structural problems that have one correct repair and reports the rest, and leaves alone what it would have to guess at — an entry whose fence is never closed, a file with mixed line endings, and a symlinked month file or index ([#1736](https://github.com/sympoies/nils-cli/pull/1736)). `devlog new` writes a bare URL as an autolink and reports a path outside the repository root with one leading slash ([#1735](https://github.com/sympoies/nils-cli/pull/1735)). |
-| `forge-cli`                 | `forge-cli`                                                                                                         | Forge runtime helper. As of `v0.20.0`, this repo consumes released PR create/deliver/check/merge/comment and general issue create/view/comment/list surfaces. Ordinary issue and program timelines use `forge-cli issue`; plan-specific lifecycle commands are retired. `v0.20.1` adds `forge-cli label list`, `label audit`, and `label ensure` for GitHub/GitLab label catalogs, plus repeatable `--label`, `--label-catalog`, and `--strict-labels` on `pr create` and `pr deliver` so create/deliver macros preserve selected taxonomy labels. As of `v0.31.3`, `--provider` gains a `local` file-backed backend value plus a `--store-root` flag (and the `FORGE_CLI_LOCAL_STORE` env var) for offline rehearsal; the `github` / `gitlab` lifecycle surfaces are unchanged (additive). As of `v0.31.7`, `forge-cli` gains a GitHub-only `activity` discovery surface (`activity commits` / `events` / `summary`) and a `search` surface (`search issues` / `search prs` full-text via `gh search`, plus `search refs-to` cross-reference via `gh api graphql`), both behind the provider seam — GitLab / Local return `provider_unsupported`. As of `v1.0.11`, provider-visible bodies/comments fail closed with `local_path_present` when raw machine-local home paths are present, and diagnostics suggest `$HOME/...` without echoing the raw path. Runtime-kit issue and PR outcomes plus runtime smoke consume that privacy gate. As of `v1.0.14`, GitLab MR checks, wait-checks, and merge use structured GitLab API calls when project context is available, so PR/MR delivery and close surfaces that wait or merge MRs require `forge-cli >=1.0.14`; provider-mutating create-only workflows remain satisfied by their narrower floors. As of `v1.1.0`, `forge-cli pr deliver` adopts an existing open PR for the resolved head branch before falling back to create ([#823](https://github.com/sympoies/nils-cli/pull/823)); `deliver-pr` consumes that split create -> iterate -> deliver path, so its `forge-cli` floor moves to `>= 1.1.0`. As of `v1.9.1`, `pr review-threads` is a subcommand group: the read surface is `pr review-threads list <id>` (the bare `pr review-threads <id>` positional is rejected), plus GitHub-only `pr review-threads resolve <pr> --thread <id>` (optional `--note` replies before resolving, idempotent) and `pr review-threads reply <pr> --thread <id>`; GitLab / Local return `provider_unsupported`. `deliver-pr` and the `review-thread-convergence` policy consume the `list` form, so the `forge-cli` floor moves to `>= 1.9.1` ([#883](https://github.com/sympoies/nils-cli/pull/883), [#885](https://github.com/sympoies/nils-cli/pull/885)). As of `v1.11.2`, provider context derives the repo slug from the configured remote and pushes `--repo <owner/name>` into backend calls by default ([#912](https://github.com/sympoies/nils-cli/pull/912)); runtime-kit skills rely on that fork-safe targeting when they pass `--provider` without an explicit `--repo`, so all `forge-cli`-consuming skill floors move to `>= 1.11.2`. As of `v1.17.0`, GitHub `pr review --submit-review --thread-file <path>` creates native, resolvable review threads for actionable findings while keeping summary-only review bodies for clean or informational reviews. `deliver-pr` and the internal review phase of `deliver-dispatch-plan` consume this provider-writing review surface, so its `forge-cli` floor moves to `>= 1.17.0` ([#951](https://github.com/sympoies/nils-cli/pull/951)). As of `v1.21.24`, GitLab `label list --limit` paginates beyond the provider's 100-item page cap while preserving the existing command and `cli.forge-cli.label.list.v1` envelope; runtime-kit consumes this behavior through plan closeout, but the floor does not move ([#1170](https://github.com/sympoies/nils-cli/pull/1170)). As of `v1.21.34`, GitHub gains `pr reviews` plus config-gated observed review convergence for merge-capable paths, with complete/final snapshot reads, native change-request enforcement, quiet timing after observation, thread/task gates, and provider-head binding. The three merge-owning delivery outcomes consume this surface, so their floor moves to `>= 1.21.34` ([#1201](https://github.com/sympoies/nils-cli/pull/1201)). As of `v1.22.9`, `repo push-default` provides the sole governed direct-main exception: one provider-bound push URL with no second-stage rewrite, one signed fast-forward commit from an exact base, an internal exact-old-object lease, bounded inputs/processes, and verified remote-head receipt. Runtime-kit's always-on delivery policy consumes it, so the global `forge-cli` floor moves to `>= 1.22.9` ([#1251](https://github.com/sympoies/nils-cli/pull/1251)). As of `v1.22.10`, `pr reviews` separates pending drafts into `data.pending_reviews[]`, and GitHub-only `pr pending-review delete` removes one exact provider-verified pending node. The three merge-owning delivery outcomes consume this guarded recovery path, so their floor and the global `forge-cli` floor move to `>= 1.22.10` ([#1259](https://github.com/sympoies/nils-cli/pull/1259)). As of `v1.22.11`, `pr review --submit-review` requires `--expected-head`, rejects head drift before mutation, binds provider writes to that reviewed commit, and reports a viewer-owned draft as `github_pending_review_exists`. Runtime-kit's three merge-owning delivery outcomes consume that trusted-head and typed-recovery contract, so their floor and the global `forge-cli` floor move to `>= 1.22.11` ([#1266](https://github.com/sympoies/nils-cli/pull/1266)). As of `v1.22.12`, direct merge accepts an expected provider head and `pr pending-review delete` requires exact expected-head, expected-commit, expected-body, and abandonment confirmation, with bounded bodies and complete bounded pagination before mutation. The three merge-owning delivery outcomes consume this compare-and-delete contract, so their floor and the global `forge-cli` floor move to `>= 1.22.12` ([#1269](https://github.com/sympoies/nils-cli/pull/1269)). As of `v1.31.2`, `issue tracker lint [--check-state]`, `issue tracker graph [--write]`, and `issue tracker tick --item <ID> [--pr <REF>] [--comment-file <PATH>]` read and maintain a program tracker's phase table by `tracker-row-grammar.md`; findings exit `65` with `tracker_findings`. The program-tracker skills prefer them and keep the manual path for an older `forge-cli`, so no floor moves ([#1970](https://github.com/sympoies/nils-cli/pull/1970)). As of `v1.31.15`, optional `pr review-handoff` (`assign`, `inspect`, `check`, `surrender`, `recover`) binds designated publication and admission to provider scope, retained state and reviewer generation; older admitted releases fail assignment closed before private mail while retaining unassigned delivery ([#2081](https://github.com/sympoies/nils-cli/pull/2081)). |
-| `fzf-cli`                   | `fzf-cli`                                                                                                           | fzf wrapper. Alias family `fx*` ships in `aliases.zsh` / `aliases.bash`. As of `v1.0.8`, `fzf-cli def` closes the generated preview script temp file before fzf executes it, avoiding Linux `text file busy` failures in container TTYs. As of `v1.0.12`, native `open-changed-files`, `kill-process`, and `kill-port` helpers replace local shell-helper behavior. As of `v1.21.32`, definition indexing accepts configurable roots ([#1196](https://github.com/sympoies/nils-cli/pull/1196)); runtime-kit does not consume these helper commands in required skill flows today. |
-| `git-cli`                   | `git-cli`                                                                                                           | git workflow helper. Alias family `gx*` ships in `aliases.zsh` / `aliases.bash`. As of `v0.31.5`, this repo consumes `git-cli worktree add/list/remove/prune` for managed worktrees under `$AGENT_HOME/worktrees/<repo-key>/<branch-slug>` with text and JSON output. As of `v1.0.4`, `worktree add` gains `--kind <feature\|bug\|chore\|docs\|ci\|refactor>` (default `feature`), deriving `<prefix>/<slug>` from the shared `nils_common::git::PrKind` mapping that `forge-cli`'s `branch_kind` rule also consumes, so a non-feature worktree matches the prefix `forge-cli pr deliver --kind` expects without a manual rename. As of `v1.0.6`, `worktree remove` detects when a not-found target exactly matches a linked worktree branch name and returns a hint pointing at the slug and full path; text-mode errors now print hints as well. Both changes are additive; the `v1.0.4` flag remains policy guidance rather than an automated skill invocation, and the `v1.0.6` hint is an ergonomic recovery path, so no `required_clis[]` floor moves. As of `v1.24.1`, `worktree dirty-snapshot`, `worktree adopt-dirty`, and `worktree revoke-dirty` provide the governed dirty-checkout transaction consumed by `checkout-lease-guard.py`: private v1 challenge and receipt envelopes bind exact repository, checkout, session, snapshot, and expiry provenance while revocation invalidates the adopted lease. This integration raises the runtime-kit `git-cli` floor to `>= 1.24.1` ([#1272](https://github.com/sympoies/nils-cli/pull/1272)). |
-| `git-lock`                  | `git-lock`                                                                                                          | git lock helper.                                                                                                                                                                                                                                                       |
-| `git-scope`                 | `git-scope`                                                                                                         | git scope summariser. Alias family `gs*` ships in `aliases.zsh` / `aliases.bash`. As of `v1.0.10`, `git-scope` renders directory trees internally and no longer depends on an external `tree` binary. Additive ergonomic fix; no runtime-kit `required_clis[]` floor moves. |
-| `git-summary`               | `git-summary`                                                                                                       | git diff summariser.                                                                                                                                                                                                                                                   |
-| `github-app-cli`            | `github-app-cli`                                                                                                    | GitHub App installation-token minter (`token`, `installations`, `completion`). Signs the App JWT in-process (`jsonwebtoken`, RS256) and calls the GitHub REST API directly (`reqwest`); text mode prints only the raw `ghs_` token for `GH_TOKEN=$(github-app-cli token …)`, JSON mode emits non-secret metadata only and never the token. New crate as of `v1.9.6` ([#903](https://github.com/sympoies/nils-cli/pull/903)). Not consumed by this repo's runtime surfaces; used out-of-band by a local `forge-cli` bot-identity wrapper, so it never appears in `required_clis`. |
-| `image-processing`          | `image-processing`                                                                                                  | User-facing image-processing CLI.                                                                                                                                                                                                                                      |
-| `macos-agent`               | `macos-agent`                                                                                                       | macOS automation helper. As of `v1.21.13`, runtime-kit consumes app/window discovery, AX selectors/actions, screenshots, waits, scenarios, key/type/hotkey, pointer click/move/bounded drag, horizontal/vertical scroll, modifier-assisted mouse actions, secondary-display absolute coordinates, and held-input cleanup through the `computer-use.macos-desktop` skill ([#1106](https://github.com/sympoies/nils-cli/pull/1106)). As of `v1.21.32`, screenshot preflight recognizes the installed screen-record compatibility probe without changing flags or envelopes ([#1194](https://github.com/sympoies/nils-cli/pull/1194)). As of `v1.22.6`, the native engine is replaced by a guarded adapter around immutable Peekaboo `v3.9.3`; runtime-kit consumes locked backend lifecycle, strict doctor/capabilities, local/SSH exec and scenario transport, stdio MCP tool profiles, and journal/redaction/guarded-replay v2, so the floor moves to `>= 1.22.6` ([#1234](https://github.com/sympoies/nils-cli/pull/1234)). As of `v1.22.7`, strict doctor probes permissions and Bridge readiness through one stable app socket, preventing stale default-runtime selection from reporting a false blocker; the existing command and envelopes are unchanged, so the floor remains `>= 1.22.6` ([#1247](https://github.com/sympoies/nils-cli/pull/1247)). As of `v1.27.3`, runtime-kit adopts adapter v3 and immutable Peekaboo `v4.2.2`: the scenario surface is retired in favor of individually reviewed chained `exec` calls, the remote wire schema advances to v3, active CLI/app artifacts require full notarization posture, and v3.9.3 remains transition-only for authenticated in-place upgrade and interrupted-upgrade recovery. The compatibility floor therefore moves to `>= 1.27.3` ([#1478](https://github.com/sympoies/nils-cli/pull/1478)). |
-| `main-agent` | `main-agent` | Authenticated main-agent controller and worker lifecycle facade. Named work modes own tracking; new contracts do not accept plan references, while historical run state remains readable. |
-| `memo`                  | `memo`                                                                                                          | Memo storage CLI.                                                                                                                                                                                                                                                      |
-| `nils-build-info`           | (library only)                                                                                                      | Build metadata helper for the workspace `--version` output; consumed transitively, never appears in `required_clis`. New crate as of `v0.28.0` (#625).                                                                                                                 |
-| `nils-common`               | (library only)                                                                                                      | Shared workspace utilities; never appears in `required_clis`.                                                                                                                                                                                                          |
-| `nils-evidence`             | `evidence`                                                                                                          | Query/migrate CLI over the durable, secret-scrubbed skill-usage evidence archive (`migrate` / `discover` / `query` / `search` / `catalog` / `validate-*` / `prune-source`). New crate as of `v1.5.0`; consumed by policy-owned evidence migration, which sets the `evidence >= 1.6.0` floor mirrored in `docs/source/nils-cli-pin.yaml`. As of `v1.6.1`, `migrate` hardens scrub/path handling, query/catalog/XDG behavior, and host-vouch precedence so `--host` resolves slug-only records without overriding records that already resolve a cwd identity ([#854](https://github.com/sympoies/nils-cli/pull/854), [#856](https://github.com/sympoies/nils-cli/pull/856)). As of `v1.8.0`, `migrate` hardens cwd/origin and slug identity matching for nested source rescue, repointed or ambiguous cwd guards, refined cwd-vs-slug matching, and one uniform slug rule; `purge --apply` also hardens destructive-operation safety. Policy-owned evidence migration and session closeout consume those guarantees, so the `evidence` floor moves to `>= 1.8.0` ([#873](https://github.com/sympoies/nils-cli/pull/873), [#874](https://github.com/sympoies/nils-cli/pull/874), [#877](https://github.com/sympoies/nils-cli/pull/877), [#878](https://github.com/sympoies/nils-cli/pull/878), [#879](https://github.com/sympoies/nils-cli/pull/879), [#880](https://github.com/sympoies/nils-cli/pull/880)). As of `v1.12.0`, `prune-source --archived-only` is the source-cleanup counterpart to copy-only migration: it reads archive `catalog.json` source digests, dry-runs by default, and `--apply` deletes only already-archived local source run directories. Policy-owned source pruning and session closeout consume that surface, so the `evidence` floor moves to `>= 1.12.0` ([#916](https://github.com/sympoies/nils-cli/pull/916)). |
-| `nils-markdown`             | `md-render`                                                                                                         | Shared Tera-backed Markdown template layer. Ships the `md-render` binary behind the `bin-cli` cargo feature (enumerated by `workspace-bins.sh`); library role otherwise, not consumed by any skill today. Present since before `v0.25.8`; the prior snapshot omitted it. |
-| `nils-provider-resume`      | (library only)                                                                                                      | Shared provider session-resume resolver (bounded Codex/Claude session-history scan, `session_meta` / transcript parsing, scan budgets, and structured resolve outcomes) extracted for `codex-cli` / `claude-cli` / `agent-session`. New crate as of `v1.21.9` ([#1096](https://github.com/sympoies/nils-cli/pull/1096)); never appears in `required_clis`.|
-| `nils-scrub` | (library only) | Independent shared secret-scrub patterns and labelled scrub-log format consumed by `evidence migrate`. Originally extracted from the now-retired plan archive family in `v1.5.0`; retained for the evidence owner, never listed in `required_clis`. |
-| `nils-term`                 | (library only)                                                                                                      | Terminal / TTY helpers; never appears in `required_clis`.                                                                                                                                                                                                              |
-| `nils-test-support`         | (library only)                                                                                                      | Integration-test harness; test-only, never appears in `required_clis`.                                                                                                                                                                                                 |
-| `screen-record`             | `screen-record`                                                                                                     | Screen-recording helper (macOS).                                                                                                                                                                                                                                       |
-| `secrets`                   | `secrets`                                                                                                           | Thin `sops` + `git` wrapper that pulls / pushes a repo's `.env` from the central `graysurf/secrets` SOPS store (`pull`, `add`, `list`, `which`, `edit`, `completion`), mapping the repo's `origin` remote (or a `repos/<o>/<r>` / `stacks/<x>` name) to a store entry. stdout and the JSON envelope (`cli.secrets.<command>.v1`) carry only metadata (store paths, entry names, counts); decrypted secret values are written to `./.env` (mode `600`) and never echoed. Requires `git` + `sops` on PATH; `SECRETS_REPO` overrides the store path. New crate as of `v1.10.0` ([#907](https://github.com/sympoies/nils-cli/pull/907)). Not consumed by this repo's runtime surfaces; driven out-of-band by the private `private-secrets` skill, so it never appears in `required_clis`. |
-| `semantic-commit`           | `semantic-commit`                                                                                                   | Semantic commit message validator and committer.                                                                                                                                                                                                                       |
-| `web-evidence`              | `web-evidence`                                                                                                      | Web evidence capture helper.                                                                                                                                                                                                                                           |
-| `zsh-kit`                   | `zsh-kit`                                                                                                           | Zsh setup helper. As of `v1.0.7`, this repo's Docker surface consumes `zsh-kit setup --repo <URL_OR_PATH> --dry-run|--apply` for operator-supplied runtime shell setup, with `--features`, `--install-tools`, and optional `.zshenv` management. As of `v1.0.9`, this repo depends on `--write-zshenv` preserving `ZSH_FEATURES` and sourcing `$ZDOTDIR/.zshenv` so first-run container shells get repo-owned environment wiring. As of `v1.0.12`, native plugin fetch/update/maybe-update/status helpers are available; runtime-kit does not consume those helper commands in required skill flows today. |
+This inventory is frozen to the source tag in the header. Each upstream
+README link resolves to `v1.31.15`, not to the upstream default branch.
+The consumption links below preserve this kit’s release-specific context.
+
+| Crate | Binary | Purpose and references |
+| --- | --- | --- |
+| `agent-docs` | `agent-docs` | Resolve and audit declared docs and validation contracts. [README][source-agent-docs]; [kit consumption](#agent-docs-consumption) |
+| `agent-hook` | `agent-hook` | Shared hook policy, provider ingress and coordination. [README][source-agent-hook]; [kit consumption](#agent-hook-consumption) |
+| `agent-memory` | `agent-memory` | Manage and query the local memory store. [README][source-agent-memory]; [kit consumption](#agent-memory-consumption) |
+| `agent-out` | `agent-out` | Allocate and audit workflow artifact paths. [README][source-agent-out]; [kit consumption](#agent-out-consumption) |
+| `agent-runtime` | `agent-runtime` | Render, install, diagnose and maintain runtime-kit surfaces. [README][source-agent-runtime]; [kit consumption](#agent-runtime-consumption) |
+| `agent-scope-lock` | `agent-scope-lock` | Workspace scope-lock helper. [README][source-agent-scope-lock] |
+| `agent-session` | `agent-session` | Manage tmux-backed provider sessions and coordination. [README][source-agent-session]; [kit consumption](#agent-session-consumption) |
+| `agent-workflow-primitives` | `agent-run`, `browser-session`, `canary-check`, `docs-impact`, `heuristic-inbox`, `model-cross-check`, `review-evidence`, `review-specialists`, `repo-retro`, `skill-usage`, `test-first-evidence` | Workflow record helpers; pin individual binaries, not the crate. [README][source-agent-workflow-primitives]; [kit consumption](#agent-workflow-primitives-consumption) |
+| `api-gql` | `api-gql` | GraphQL API testing CLI. [README][source-api-gql] |
+| `api-grpc` | `api-grpc` | gRPC API testing CLI. [README][source-api-grpc] |
+| `api-rest` | `api-rest` | REST API testing CLI. [README][source-api-rest] |
+| `api-test` | `api-test` | API testing orchestrator. [README][source-api-test] |
+| `api-testing-core` | (library only) | Shared core for the `api-*` CLIs; never appears in `required_clis`. [README][source-api-testing-core] |
+| `api-websocket` | `api-websocket` | WebSocket API testing CLI. [README][source-api-websocket] |
+| `claude-cli` | `claude-cli` | Claude-oriented execution, auth and prompt helpers. [README][source-claude-cli]; [kit consumption](#claude-cli-consumption) |
+| `cli-template` | `cli-template` | Internal template/example crate. Marked `excluded` in `docs/specs/completion-coverage-matrix-v1.md`; manifests should not pin against it. [README][source-cli-template] |
+| `codex-cli` | `codex-cli` | Codex execution, auth, config and prompt helpers. [README][source-codex-cli]; [kit consumption](#codex-cli-consumption) |
+| `devlog` | `devlog` | Maintain and query repository development logs. [README][source-devlog]; [kit consumption](#devlog-consumption) |
+| `docker-tools` | `docker-tools` | Native Docker container and compose helpers. [README][source-docker-tools]; [kit consumption](#docker-tools-consumption) |
+| `forge-cli` | `forge-cli` | Provider-neutral issue, PR/MR and delivery helpers. [README][source-forge-cli]; [kit consumption](#forge-cli-consumption) |
+| `fzf-cli` | `fzf-cli` | Interactive pickers powered by fzf. [README][source-fzf-cli]; [kit consumption](#fzf-cli-consumption) |
+| `git-cli` | `git-cli` | Git workflow dispatcher, including managed worktrees. [README][source-git-cli]; [kit consumption](#git-cli-consumption) |
+| `git-lock` | `git-lock` | git lock helper. [README][source-git-lock] |
+| `git-scope` | `git-scope` | Inspect Git status, commits and directory trees. [README][source-git-scope]; [kit consumption](#git-scope-consumption) |
+| `git-summary` | `git-summary` | Summarize contributions by author and date range. [README][source-git-summary] |
+| `github-app-cli` | `github-app-cli` | Mint GitHub App installation tokens. [README][source-github-app-cli]; [kit consumption](#github-app-cli-consumption) |
+| `image-processing` | `image-processing` | User-facing image-processing CLI. [README][source-image-processing] |
+| `macos-agent` | `macos-agent` | Guarded adapter around the pinned Peekaboo release. [README][source-macos-agent]; [kit consumption](#macos-agent-consumption) |
+| `main-agent` | `main-agent` | Authenticated orchestration facade; requires same-release agent-session. [README][source-main-agent] |
+| `memo` | `memo` | Memo storage CLI. [README][source-memo] |
+| `nils-build-info` | (library only) | Build metadata helper for the workspace `--version` output; consumed transitively, never appears in `required_clis`. New crate as of `v0.28.0` (#625). [README][source-nils-build-info] |
+| `nils-common` | (library only) | Shared workspace utilities; never appears in `required_clis`. [README][source-nils-common] |
+| `nils-evidence` | `evidence` | Query and migrate the scrubbed evidence archive. [README][source-nils-evidence]; [kit consumption](#nils-evidence-consumption) |
+| `nils-markdown` | `md-render` | MiniJinja Markdown library; md-render requires bin-cli. [README][source-nils-markdown]; [kit consumption](#nils-markdown-consumption) |
+| `nils-provider-resume` | (library only) | Shared provider-resume library; never a required CLI. [README][source-nils-provider-resume]; [kit consumption](#nils-provider-resume-consumption) |
+| `nils-scrub` | (library only) | Shared secret-scrub library; never a required CLI. [README][source-nils-scrub]; [kit consumption](#nils-scrub-consumption) |
+| `nils-term` | (library only) | Terminal / TTY helpers; never appears in `required_clis`. [README][source-nils-term] |
+| `nils-test-support` | (library only) | Integration-test harness; test-only, never appears in `required_clis`. [README][source-nils-test-support] |
+| `screen-record` | `screen-record` | Record a window or display on macOS or Linux. [README][source-screen-record] |
+| `secrets` | `secrets` | Pull and push repository environment files through a SOPS store. [README][source-secrets]; [kit consumption](#secrets-consumption) |
+| `semantic-commit` | `semantic-commit` | Semantic commit message validator and committer. [README][source-semantic-commit] |
+| `web-evidence` | `web-evidence` | Web evidence capture helper. [README][source-web-evidence] |
+| `zsh-kit` | `zsh-kit` | Bootstrap an operator-supplied Zsh repository. [README][source-zsh-kit]; [kit consumption](#zsh-kit-consumption) |
+
+## Kit consumption at this snapshot
+
+These notes describe adoption and compatibility at the pinned snapshot.
+They do not advance the machine-readable pin or assert a newer host’s
+behavior. Library-only and unconsumed rows retain their table cues.
+
+### agent-docs consumption
+
+Data-driven required-doc resolver and auditor; no hardcoded builtins. `audit` checks install wiring, declared-doc presence/validity, and catalog validity; `preflight --intent X` resolves the document set plus the per-repo validation contract. Policy lives in `AGENT_DOCS.toml` (`[[document]]`, `[[validation]]`, predicates, product scope, and optional workflow phases).
+
+As of `v0.30.1`, project-scoped documents and validation stay within the declaring repository; `v0.31.6` added `--require-declared-intent`; and `v1.12.1` added Codex/Claude product scoping plus the `agent-docs.preflight.v2` product scope. The current surface also accepts `--product hermes`.
+
+As of `v1.23.0`, `session prepare` atomically combines strict preflight and activation in `cli.agent-docs.session.prepare.v1` ([#1273](https://github.com/sympoies/nils-cli/pull/1273)); runtime-kit consumes it for trusted intent preparation. As of `v1.24.0`, `phase` declarations and `--phase` filters scope `preflight` and `session activate|prepare|verify` ([#1282](https://github.com/sympoies/nils-cli/pull/1282)); runtime-kit consumes them in its phase-aware `project-dev` gates.
+
+The retired `resolve` / `baseline` / `scaffold-*` / `add` / `contexts` commands and `startup` context remain absent.
+
+### agent-hook consumption
+
+Shared policy/config control plane, provider ingress setup, tool admission/completion, and bounded session coordination. Runtime-kit consumes its setup-owned ingress and shared policy handlers.
+
+### agent-memory consumption
+
+Agent memory helper. Runtime-kit consumes bounded `recall startup` in the Codex and Claude `startup|resume|clear` SessionStart policy groups and `check --max-index-bytes --forbid-terms-file` in the retired-memory audit. The shared hook is stateless, fails open, and never falls back to the full global index or candidate roots, so a blocked aggregate cannot consume a later startup-memory delivery.
+
+As of `v1.26.4`, runtime-kit also consumes the 768-byte startup default and exact optional `recall on-demand --agent <id>` scope; that release adds trusted agent-root checks and frontmatter-aware candidate previews ([#1460](https://github.com/sympoies/nils-cli/pull/1460)), so the floor is `>=1.26.4`. The CLI also owns producer-isolated untrusted candidates, dry-run-first promotion, and dry-run-first inactive archive retirement. Policy requires live verification and explicit user approval before curated promotion.
+
+### agent-out consumption
+
+Agent output / artifact helper. As of `v1.19.2`, runtime-kit consumes `agent-out path-for --domain <domain> [--topic <topic>]` as the compatibility allocator for rendered `state_out(...)` skill instructions; it delegates to the canonical project allocator, supports `path` / `json` / `env`, and emits `cli.agent-out.path-for.v1` JSON ([#984](https://github.com/sympoies/nils-cli/pull/984)).
+
+As of `v1.19.3`, runtime-kit consumes `agent-out cleanup plan/apply` for reviewed cleanup of stale cache and noncanonical output entries: plans emit `cli.agent-out.cleanup.plan.v1` with a digest, and apply emits `cli.agent-out.cleanup.apply.v1` after digest, containment, delete-shape, and evidence-marker checks ([#987](https://github.com/sympoies/nils-cli/pull/987)).
+
+### agent-runtime consumption
+
+Runtime kit CLI. As of `v0.20.0`, this repo consumes released `render`, `install`, `uninstall`, `doctor` (including `--class skill-surface --product codex`), `audit-drift`, `gc-backups`, `restore-backups`, `purge-state`, and `pr-body render` bodies through Homebrew. The `pr-body render` surface renders standardized feature / bug PR and MR bodies before `forge-cli pr create` / `forge-cli pr deliver`.
+
+As of `v0.22.4`, `sync-runtime-surfaces` consumes `agent-runtime prune-stale` to remove stale managed Codex and Claude skill surfaces after install. As of `v0.28.0`, ships `doctor --class version-alignment --pin <manifest>` (the surface-pin drift gate this repo's Position 1 consumes via `docs/source/nils-cli-pin.yaml`) and adds build metadata to the `agent-runtime --version` output.
+
+As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `sync-runtime-surfaces` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)).
+
+As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup feature-detects it and keeps a phase-command fallback for older hosts ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)).
+
+As of `v1.3.0`, `render` adds an optional agents surface: an absent `manifests/agents.yaml` is a no-op, and when present each `core/agents/<id>/AGENT.md.tera` renders per product into `build/<product>/` at `render_to` (Codex TOML / Claude Markdown selected via the `product` Tera variable), cached in a separate `.render-cache-agents.json` and covered by `--update-golden` / `audit-drift` ([#839](https://github.com/sympoies/nils-cli/pull/839)).
+
+As of `v1.3.1`, `audit-drift`'s `rendered-target` class skips the `.render-cache-agents.json` agents render cache scratchpad (matching the existing `.render-cache.json` skip), so a `build/<product>/` tree lacking that cache file no longer produces a spurious `rendered-target` drift warn ([#842](https://github.com/sympoies/nils-cli/pull/842)).
+
+As of `v1.12.1`, `render --target home-prompt` renders `AGENT_HOME.md` to `build/<product-or-neutral>/AGENT_HOME.md`, which runtime-kit setup consumes for per-product home prompt symlinks. As of `v1.21.15`, the skills manifest loader supports schema v2 independently of other manifest families, and `list-skills --format json` reports invocation, exposure, and pending-disposition metadata for Codex, Claude, and Hermes ([#1111](https://github.com/sympoies/nils-cli/pull/1111)).
+
+As of `v1.22.6`, `prune-stale` accepts repeatable explicit prior source roots, validates each as a non-empty runtime-kit link-map owner, preserves foreign links, and reports the normalized authorities additively in JSON v1. Portable convergence consumes this surface for relocated-checkout stale-helper cleanup, so the floor moves to `>= 1.22.6` ([#1245](https://github.com/sympoies/nils-cli/pull/1245)).
+
+### agent-session consumption
+
+Tmux-backed local agent session helper. New binary as of `v1.20.7` ([#1009](https://github.com/sympoies/nils-cli/pull/1009)).
+
+As of `v1.20.13`, it has send/glance, serve/WebSocket attach, workdir search, title/attachment, repo-picker, and durable-resume surfaces ([#1013](https://github.com/sympoies/nils-cli/pull/1013), [#1015](https://github.com/sympoies/nils-cli/pull/1015), [#1019](https://github.com/sympoies/nils-cli/pull/1019), [#1021](https://github.com/sympoies/nils-cli/pull/1021), [#1023](https://github.com/sympoies/nils-cli/pull/1023)). Later releases add private resume, title, startup, profile, deletion, and maintenance hardening.
+
+As of `v1.24.5`, runtime-kit consumes authenticated `work-context show|check|admit|complete|reconcile` for managed-session mutation admission and retains the private mailbox/fixed-notification policy boundary ([#1308](https://github.com/sympoies/nils-cli/pull/1308)); `required_clis[]` records the current compatibility floor separately from this introduction version.
+
+### agent-workflow-primitives consumption
+
+Multi-binary crate. Each binary is its own clap CLI; manifests should pin individual binary names, not the crate. As of `v0.20.0`, `agent-run exec` normalizes project command execution through explicit `.envrc` / `.env` decisions.
+
+As of `v0.31.0`, `repo-retro report` emits schema v2 (`cli.repo-retro.report.v2` / `repo-retro.report.v2`): a deterministic pre-digestion layer (`git.churnByClass`, `git.archival`, commit-frequency `fileHotspots` with `class` / `netDeleted`) plus a `--path-class-config` override; the v1 envelope was removed (breaking).
+
+As of `v0.31.3`, `repo-retro report` auto-discovers the heuristic-system root (`heuristic-system/` then `core/policies/heuristic-system/`) with a `--heuristic-root` override and summarizes nested `<slug>/ENTRY.md` inbox cases, so the `## HEURISTIC_SYSTEM` section reports `present` with real counts for `core/policies`-nested roots like this repo (additive).
+
+As of `v1.0.2`, `heuristic-inbox` gains a `deliver` subcommand: a cwd-independent records-branch PR writeback for uncommitted heuristic-system records (`--root` / `--kind` / `--base` / `--dry-run`, `cli.heuristic-inbox.deliver.v1` envelope with `branch` / `pr_url` / `committed_paths` / `worktree_path`), replacing prose-owned records-branch writeback (#237).
+
+As of `v1.0.3`, `deliver` gains a repeatable `--label` flag (forwarded to `forge-cli pr create --label`); the now-retired policy-owned session closeout consumed `deliver --label workflow::heuristic-records` with a fixed title, so the `heuristic-system` surface `min_nils_cli` is `v1.0.3`.
+
+As of `v1.1.0`, default `heuristic-inbox deliver` slugs auto-suffix when same-day records branches or managed worktrees already exist ([#829](https://github.com/sympoies/nils-cli/pull/829)); the now-retired policy-owned closeout relied on that records-branch writeback behavior, so the `heuristic-system` surface `min_nils_cli` moves to `>= 1.1.0`.
+
+As of `v1.8.0`, `heuristic-inbox archive` accepts operation-record folders and retained-record status transitions stay in the CLI primitive; the now-retired policy-owned closeout and inbox routing consumed operation-record archival, so the `heuristic-system` surface `min_nils_cli` moves to `>= 1.8.0` ([#875](https://github.com/sympoies/nils-cli/pull/875)). Agent-runtime-kit no longer consumes or pins `heuristic-inbox` after retiring the heuristic-system workflow.
+
+### claude-cli consumption
+
+Claude runtime helper. As of `v1.0.12`, ships native prompt-segment auth/cache/render/status helpers plus generated completions. As of `v1.21.25`, expired quota-cache values are omitted from prompt rendering ([#1177](https://github.com/sympoies/nils-cli/pull/1177)). Runtime-kit does not consume this surface in required skill flows today.
+
+### codex-cli consumption
+
+Codex runtime helper. Alias family `cx*` ships in `aliases.zsh` / `aliases.bash`. As of `v1.21.23`, optional rate-limit windows and no-window fallback harden the prompt/usage surface; runtime-kit consumes no new command from this binary ([#1165](https://github.com/sympoies/nils-cli/pull/1165)). As of `v1.21.25`, expired quota-cache values are omitted from prompt rendering ([#1177](https://github.com/sympoies/nils-cli/pull/1177)); the command shape remains unconsumed.
+
+### docker-tools consumption
+
+Docker helper CLI. As of `v1.0.12`, ships native container, compose-down, and run-zsh helpers plus generated completions. Runtime-kit does not consume this surface in required skill flows today.
+
+### devlog consumption
+
+Development-log CLI. New binary as of `v1.28.28` ([#1717](https://github.com/sympoies/nils-cli/pull/1717)). It owns entry insertion under a month heading, `README.md` index sync, integrity checking, and literal case-insensitive search, detecting `docs/devlog` then `docs/source/devlog`. Runtime-kit consumes it as the mechanism named by `core/policies/devlog-capability.md`: `devlog check` exits `65` on a structural problem and `0` when clean, and `devlog new` writes the section shape that check enforces.
+
+As of `v1.28.28`, an entry must carry `Result`, `Why / context` and `Evidence`; `Links` and `Follow-ups` are optional and an empty one is omitted rather than filled with a placeholder ([#1727](https://github.com/sympoies/nils-cli/pull/1727)). `v1.28.28` also refuses to write into a file holding unresolved merge-conflict markers, fence-aware so an entry quoting them is still writable ([#1719](https://github.com/sympoies/nils-cli/pull/1719)).
+
+As of `v1.28.29` the binary also carries `devlog fix`, which repairs the six structural problems that have one correct repair and reports the rest, and leaves alone what it would have to guess at — an entry whose fence is never closed, a file with mixed line endings, and a symlinked month file or index ([#1736](https://github.com/sympoies/nils-cli/pull/1736)).
+
+`devlog new` writes a bare URL as an autolink and reports a path outside the repository root with one leading slash ([#1735](https://github.com/sympoies/nils-cli/pull/1735)).
+
+### forge-cli consumption
+
+Forge runtime helper. As of `v0.20.0`, this repo consumes released PR create/deliver/check/merge/comment and general issue create/view/comment/list surfaces. Ordinary issue and program timelines use `forge-cli issue`; plan-specific lifecycle commands are retired.
+
+`v0.20.1` adds `forge-cli label list`, `label audit`, and `label ensure` for GitHub/GitLab label catalogs, plus repeatable `--label`, `--label-catalog`, and `--strict-labels` on `pr create` and `pr deliver` so create/deliver macros preserve selected taxonomy labels. As of `v0.31.3`, `--provider` gains a `local` file-backed backend value plus a `--store-root` flag (and the `FORGE_CLI_LOCAL_STORE` env var) for offline rehearsal; the `github` / `gitlab` lifecycle surfaces are unchanged (additive).
+
+As of `v0.31.7`, `forge-cli` gains a GitHub-only `activity` discovery surface (`activity commits` / `events` / `summary`) and a `search` surface (`search issues` / `search prs` full-text via `gh search`, plus `search refs-to` cross-reference via `gh api graphql`), both behind the provider seam — GitLab / Local return `provider_unsupported`.
+
+As of `v1.0.11`, provider-visible bodies/comments fail closed with `local_path_present` when raw machine-local home paths are present, and diagnostics suggest `$HOME/...` without echoing the raw path. Runtime-kit issue and PR outcomes plus runtime smoke consume that privacy gate.
+
+As of `v1.0.14`, GitLab MR checks, wait-checks, and merge use structured GitLab API calls when project context is available, so PR/MR delivery and close surfaces that wait or merge MRs require `forge-cli >=1.0.14`; provider-mutating create-only workflows remain satisfied by their narrower floors.
+
+As of `v1.1.0`, `forge-cli pr deliver` adopts an existing open PR for the resolved head branch before falling back to create ([#823](https://github.com/sympoies/nils-cli/pull/823)); `deliver-pr` consumes that split create -> iterate -> deliver path, so its `forge-cli` floor moves to `>= 1.1.0`.
+
+As of `v1.9.1`, `pr review-threads` is a subcommand group: the read surface is `pr review-threads list <id>` (the bare `pr review-threads <id>` positional is rejected), plus GitHub-only `pr review-threads resolve <pr> --thread <id>` (optional `--note` replies before resolving, idempotent) and `pr review-threads reply <pr> --thread <id>`; GitLab / Local return `provider_unsupported`.
+
+`deliver-pr` and the `review-thread-convergence` policy consume the `list` form, so the `forge-cli` floor moves to `>= 1.9.1` ([#883](https://github.com/sympoies/nils-cli/pull/883), [#885](https://github.com/sympoies/nils-cli/pull/885)).
+
+As of `v1.11.2`, provider context derives the repo slug from the configured remote and pushes `--repo <owner/name>` into backend calls by default ([#912](https://github.com/sympoies/nils-cli/pull/912)); runtime-kit skills rely on that fork-safe targeting when they pass `--provider` without an explicit `--repo`, so all `forge-cli`-consuming skill floors move to `>= 1.11.2`.
+
+As of `v1.17.0`, GitHub `pr review --submit-review --thread-file <path>` creates native, resolvable review threads for actionable findings while keeping summary-only review bodies for clean or informational reviews. `deliver-pr` and the internal review phase of `deliver-dispatch-plan` consume this provider-writing review surface, so its `forge-cli` floor moves to `>= 1.17.0` ([#951](https://github.com/sympoies/nils-cli/pull/951)).
+
+As of `v1.21.24`, GitLab `label list --limit` paginates beyond the provider's 100-item page cap while preserving the existing command and `cli.forge-cli.label.list.v1` envelope; runtime-kit consumes this behavior through plan closeout, but the floor does not move ([#1170](https://github.com/sympoies/nils-cli/pull/1170)).
+
+As of `v1.21.34`, GitHub gains `pr reviews` plus config-gated observed review convergence for merge-capable paths, with complete/final snapshot reads, native change-request enforcement, quiet timing after observation, thread/task gates, and provider-head binding. The three merge-owning delivery outcomes consume this surface, so their floor moves to `>= 1.21.34` ([#1201](https://github.com/sympoies/nils-cli/pull/1201)).
+
+As of `v1.22.9`, `repo push-default` provides the sole governed direct-main exception: one provider-bound push URL with no second-stage rewrite, one signed fast-forward commit from an exact base, an internal exact-old-object lease, bounded inputs/processes, and verified remote-head receipt. Runtime-kit's always-on delivery policy consumes it, so the global `forge-cli` floor moves to `>= 1.22.9` ([#1251](https://github.com/sympoies/nils-cli/pull/1251)).
+
+As of `v1.22.10`, `pr reviews` separates pending drafts into `data.pending_reviews[]`, and GitHub-only `pr pending-review delete` removes one exact provider-verified pending node. The three merge-owning delivery outcomes consume this guarded recovery path, so their floor and the global `forge-cli` floor move to `>= 1.22.10` ([#1259](https://github.com/sympoies/nils-cli/pull/1259)).
+
+As of `v1.22.11`, `pr review --submit-review` requires `--expected-head`, rejects head drift before mutation, binds provider writes to that reviewed commit, and reports a viewer-owned draft as `github_pending_review_exists`. Runtime-kit's three merge-owning delivery outcomes consume that trusted-head and typed-recovery contract, so their floor and the global `forge-cli` floor move to `>= 1.22.11` ([#1266](https://github.com/sympoies/nils-cli/pull/1266)).
+
+As of `v1.22.12`, direct merge accepts an expected provider head and `pr pending-review delete` requires exact expected-head, expected-commit, expected-body, and abandonment confirmation, with bounded bodies and complete bounded pagination before mutation. The three merge-owning delivery outcomes consume this compare-and-delete contract, so their floor and the global `forge-cli` floor move to `>= 1.22.12` ([#1269](https://github.com/sympoies/nils-cli/pull/1269)).
+
+As of `v1.31.2`, `issue tracker lint [--check-state]`, `issue tracker graph [--write]`, and `issue tracker tick --item <ID> [--pr <REF>] [--comment-file <PATH>]` read and maintain a program tracker's phase table by `tracker-row-grammar.md`; findings exit `65` with `tracker_findings`. The program-tracker skills prefer them and keep the manual path for an older `forge-cli`, so no floor moves ([#1970](https://github.com/sympoies/nils-cli/pull/1970)).
+
+As of `v1.31.15`, optional `pr review-handoff` (`assign`, `inspect`, `check`, `surrender`, `recover`) binds designated publication and admission to provider scope, retained state and reviewer generation; older admitted releases fail assignment closed before private mail while retaining unassigned delivery ([#2081](https://github.com/sympoies/nils-cli/pull/2081)).
+
+### fzf-cli consumption
+
+fzf wrapper. Alias family `fx*` ships in `aliases.zsh` / `aliases.bash`. As of `v1.0.8`, `fzf-cli def` closes the generated preview script temp file before fzf executes it, avoiding Linux `text file busy` failures in container TTYs. As of `v1.0.12`, native `open-changed-files`, `kill-process`, and `kill-port` helpers replace local shell-helper behavior.
+
+As of `v1.21.32`, definition indexing accepts configurable roots ([#1196](https://github.com/sympoies/nils-cli/pull/1196)); runtime-kit does not consume these helper commands in required skill flows today.
+
+### git-cli consumption
+
+git workflow helper. Alias family `gx*` ships in `aliases.zsh` / `aliases.bash`. As of `v0.31.5`, this repo consumes `git-cli worktree add/list/remove/prune` for managed worktrees under `$AGENT_HOME/worktrees/<repo-key>/<branch-slug>` with text and JSON output.
+
+As of `v1.0.4`, `worktree add` gains `--kind <feature\|bug\|chore\|docs\|ci\|refactor>` (default `feature`), deriving `<prefix>/<slug>` from the shared `nils_common::git::PrKind` mapping that `forge-cli`'s `branch_kind` rule also consumes, so a non-feature worktree matches the prefix `forge-cli pr deliver --kind` expects without a manual rename.
+
+As of `v1.0.6`, `worktree remove` detects when a not-found target exactly matches a linked worktree branch name and returns a hint pointing at the slug and full path; text-mode errors now print hints as well. Both changes are additive; the `v1.0.4` flag remains policy guidance rather than an automated skill invocation, and the `v1.0.6` hint is an ergonomic recovery path, so no `required_clis[]` floor moves.
+
+As of `v1.24.1`, `worktree dirty-snapshot`, `worktree adopt-dirty`, and `worktree revoke-dirty` provide the governed dirty-checkout transaction consumed by `checkout-lease-guard.py`: private v1 challenge and receipt envelopes bind exact repository, checkout, session, snapshot, and expiry provenance while revocation invalidates the adopted lease. This integration raises the runtime-kit `git-cli` floor to `>= 1.24.1` ([#1272](https://github.com/sympoies/nils-cli/pull/1272)).
+
+### git-scope consumption
+
+git scope summariser. Alias family `gs*` ships in `aliases.zsh` / `aliases.bash`. As of `v1.0.10`, `git-scope` renders directory trees internally and no longer depends on an external `tree` binary. Additive ergonomic fix; no runtime-kit `required_clis[]` floor moves.
+
+### github-app-cli consumption
+
+GitHub App installation-token minter (`token`, `installations`, `completion`). Signs the App JWT in-process (`jsonwebtoken`, RS256) and calls the GitHub REST API directly (`reqwest`); text mode prints only the raw `ghs_` token for `GH_TOKEN=$(github-app-cli token …)`, JSON mode emits non-secret metadata only and never the token. New crate as of `v1.9.6` ([#903](https://github.com/sympoies/nils-cli/pull/903)). Not consumed by this repo's runtime surfaces or listed in `required_clis`.
+
+### macos-agent consumption
+
+macOS automation helper. As of `v1.21.13`, runtime-kit consumes app/window discovery, AX selectors/actions, screenshots, waits, scenarios, key/type/hotkey, pointer click/move/bounded drag, horizontal/vertical scroll, modifier-assisted mouse actions, secondary-display absolute coordinates, and held-input cleanup through the `computer-use.macos-desktop` skill ([#1106](https://github.com/sympoies/nils-cli/pull/1106)).
+
+As of `v1.21.32`, screenshot preflight recognizes the installed screen-record compatibility probe without changing flags or envelopes ([#1194](https://github.com/sympoies/nils-cli/pull/1194)).
+
+As of `v1.22.6`, the native engine is replaced by a guarded adapter around immutable Peekaboo `v3.9.3`; runtime-kit consumes locked backend lifecycle, strict doctor/capabilities, local/SSH exec and scenario transport, stdio MCP tool profiles, and journal/redaction/guarded-replay v2, so the floor moves to `>= 1.22.6` ([#1234](https://github.com/sympoies/nils-cli/pull/1234)).
+
+As of `v1.22.7`, strict doctor probes permissions and Bridge readiness through one stable app socket, preventing stale default-runtime selection from reporting a false blocker; the existing command and envelopes are unchanged, so the floor remains `>= 1.22.6` ([#1247](https://github.com/sympoies/nils-cli/pull/1247)).
+
+As of `v1.27.3`, runtime-kit adopts adapter v3 and immutable Peekaboo `v4.2.2`: the scenario surface is retired in favor of individually reviewed chained `exec` calls, the remote wire schema advances to v3, active CLI/app artifacts require full notarization posture, and v3.9.3 remains transition-only for authenticated in-place upgrade and interrupted-upgrade recovery. The compatibility floor therefore moves to `>= 1.27.3` ([#1478](https://github.com/sympoies/nils-cli/pull/1478)).
+
+### nils-evidence consumption
+
+Query/migrate CLI over the durable, secret-scrubbed skill-usage evidence archive (`migrate` / `discover` / `query` / `search` / `catalog` / `validate-*` / `prune-source`). New crate as of `v1.5.0`; consumed by policy-owned evidence migration, which sets the `evidence >= 1.6.0` floor mirrored in `docs/source/nils-cli-pin.yaml`.
+
+As of `v1.6.1`, `migrate` hardens scrub/path handling, query/catalog/XDG behavior, and host-vouch precedence so `--host` resolves slug-only records without overriding records that already resolve a cwd identity ([#854](https://github.com/sympoies/nils-cli/pull/854), [#856](https://github.com/sympoies/nils-cli/pull/856)).
+
+As of `v1.8.0`, `migrate` hardens cwd/origin and slug identity matching for nested source rescue, repointed or ambiguous cwd guards, refined cwd-vs-slug matching, and one uniform slug rule; `purge --apply` also hardens destructive-operation safety.
+
+Policy-owned evidence migration and session closeout consume those guarantees, so the `evidence` floor moves to `>= 1.8.0` ([#873](https://github.com/sympoies/nils-cli/pull/873), [#874](https://github.com/sympoies/nils-cli/pull/874), [#877](https://github.com/sympoies/nils-cli/pull/877), [#878](https://github.com/sympoies/nils-cli/pull/878), [#879](https://github.com/sympoies/nils-cli/pull/879), [#880](https://github.com/sympoies/nils-cli/pull/880)).
+
+As of `v1.12.0`, `prune-source --archived-only` is the source-cleanup counterpart to copy-only migration: it reads archive `catalog.json` source digests, dry-runs by default, and `--apply` deletes only already-archived local source run directories. Policy-owned source pruning and session closeout consume that surface, so the `evidence` floor moves to `>= 1.12.0` ([#916](https://github.com/sympoies/nils-cli/pull/916)).
+
+### nils-markdown consumption
+
+Shared MiniJinja-backed Markdown template layer. Ships the `md-render` binary behind the `bin-cli` cargo feature (enumerated by `workspace-bins.sh`); library role otherwise, not consumed by any skill today. Present since before `v0.25.8`; the prior snapshot omitted it.
+
+### nils-provider-resume consumption
+
+Shared provider session-resume resolver (bounded Codex/Claude session-history scan, `session_meta` / transcript parsing, scan budgets, and structured resolve outcomes) extracted for `codex-cli` / `claude-cli` / `agent-session`. New crate as of `v1.21.9` ([#1096](https://github.com/sympoies/nils-cli/pull/1096)); never appears in `required_clis`.
+
+### nils-scrub consumption
+
+Independent shared secret-scrub patterns and labelled scrub-log format consumed by `evidence migrate`. Originally extracted from the now-retired plan archive family in `v1.5.0`; retained for the evidence owner, never listed in `required_clis`.
+
+### secrets consumption
+
+Thin `sops` + `git` wrapper that pulls / pushes a repo's `.env` from a central SOPS store (`pull`, `add`, `list`, `which`, `edit`, `completion`), mapping the repo's `origin` remote (or a `repos/<o>/<r>` / `stacks/<x>` name) to a store entry. stdout and the JSON envelope (`cli.secrets.<command>.v1`) carry only metadata (store paths, entry names, counts); decrypted secret values are written to `./.env` (mode `600`) and never echoed. Requires `git` + `sops` on PATH; `SECRETS_REPO` overrides the store path.
+
+New crate as of `v1.10.0` ([#907](https://github.com/sympoies/nils-cli/pull/907)). Not consumed by this repo's runtime surfaces; driven out-of-band by the private `private-secrets` skill, so it never appears in `required_clis`.
+
+### zsh-kit consumption
+
+Zsh setup helper. As of `v1.0.7`, this repo's Docker surface consumes `zsh-kit setup --repo <URL_OR_PATH> --dry-run|--apply` for operator-supplied runtime shell setup, with `--features`, `--install-tools`, and optional `.zshenv` management. As of `v1.0.9`, this repo depends on `--write-zshenv` preserving `ZSH_FEATURES` and sourcing `$ZDOTDIR/.zshenv` so first-run container shells get repo-owned environment wiring.
+
+As of `v1.0.12`, native plugin fetch/update/maybe-update/status helpers are available; runtime-kit does not consume those helper commands in required skill flows today.
+
+
+[source-agent-docs]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-docs/README.md
+
+[source-agent-hook]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-hook/README.md
+
+[source-agent-memory]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-memory/README.md
+
+[source-agent-out]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-out/README.md
+
+[source-agent-runtime]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-runtime/README.md
+
+[source-agent-scope-lock]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-scope-lock/README.md
+
+[source-agent-session]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-session/README.md
+
+[source-agent-workflow-primitives]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-workflow-primitives/README.md
+
+[source-api-gql]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/api-gql/README.md
+
+[source-api-grpc]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/api-grpc/README.md
+
+[source-api-rest]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/api-rest/README.md
+
+[source-api-test]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/api-test/README.md
+
+[source-api-testing-core]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/api-testing-core/README.md
+
+[source-api-websocket]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/api-websocket/README.md
+
+[source-claude-cli]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/claude-cli/README.md
+
+[source-cli-template]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/cli-template/README.md
+
+[source-codex-cli]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/codex-cli/README.md
+
+[source-devlog]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/devlog/README.md
+
+[source-docker-tools]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/docker-tools/README.md
+
+[source-forge-cli]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/forge-cli/README.md
+
+[source-fzf-cli]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/fzf-cli/README.md
+
+[source-git-cli]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/git-cli/README.md
+
+[source-git-lock]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/git-lock/README.md
+
+[source-git-scope]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/git-scope/README.md
+
+[source-git-summary]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/git-summary/README.md
+
+[source-github-app-cli]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/github-app-cli/README.md
+
+[source-image-processing]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/image-processing/README.md
+
+[source-macos-agent]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/macos-agent/README.md
+
+[source-main-agent]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/main-agent/README.md
+
+[source-memo]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/memo/README.md
+
+[source-nils-build-info]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-build-info/README.md
+
+[source-nils-common]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-common/README.md
+
+[source-nils-evidence]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-evidence/README.md
+
+[source-nils-markdown]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-markdown/README.md
+
+[source-nils-provider-resume]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-provider-resume/README.md
+
+[source-nils-scrub]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-scrub/README.md
+
+[source-nils-term]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-term/README.md
+
+[source-nils-test-support]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/nils-test-support/README.md
+
+[source-screen-record]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/screen-record/README.md
+
+[source-secrets]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/secrets/README.md
+
+[source-semantic-commit]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/semantic-commit/README.md
+
+[source-web-evidence]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/web-evidence/README.md
+
+[source-zsh-kit]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/zsh-kit/README.md
 
 ## Refresh procedure
 

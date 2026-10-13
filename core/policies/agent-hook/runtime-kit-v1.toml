@@ -1,20 +1,22 @@
 schema_version = "agent-hook.policy.v1"
 bundle_id = "runtime-kit"
-version = "2026.07.28.1"
+version = "2026.10.12.1"
 [[rules]]
-id = "runtime.shared.pre-tool-use.bash.read-only-shadow"
+id = "runtime.shared.pre-tool-use.bash.read-only"
+# inventory: {"state_owner":"none","transformation":"paired-preparation-bypass","recovery":"exact-target-project-dev-fallback","docs":"core/policies/agent-hook/README.md","test_owner":"tests/agent-hook/test_executable_contract.py::AgentHookExecutableContractTests.test_read_only_capability_bypasses_only_paired_preparation","disposition":"typed-read-only-admission","legacy_handler":null}
 products = ["codex", "claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
 priority = 90
-mode = "shadow"
+mode = "enforce"
 failure_posture = "closed"
 timeout_posture = "closed"
 override_class = "locked"
-capability = { id = "execution.read-only.v1", reason_code = "read-only-capability" }
+capability = { id = "execution.read-only.v1", reason_code = "read-only-capability", fallback_handler_id = "pre-edit-intent-gate" }
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate"
+# inventory: {"state_owner":"agent-docs.session","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"pre-edit-intent-gate"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -27,6 +29,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -39,6 +42,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.block-direct-git-commit"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-git-commit"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -51,6 +55,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-com
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.block-unsafe-default-delivery"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-unsafe-default-delivery"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -63,6 +68,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-unsafe-default
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.block-direct-git-worktree"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-git-worktree"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -75,6 +81,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-wor
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.semantic-commit-body-gate"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"semantic-commit-body-gate"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -87,6 +94,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "semantic-commit-body
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.block-direct-python"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-python"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -99,6 +107,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-python"
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.mcp-secret-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"mcp-secret-scan"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -111,6 +120,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.block-project-memory-write"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-project-memory-write"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -123,6 +133,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.portable-paths-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"portable-paths-scan"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -135,6 +146,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan"
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.block-direct-pr-create"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-pr-create"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -147,6 +159,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-pr-crea
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.forge-label-reminder"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"forge-label-reminder"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -159,6 +172,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "forge-label-reminder
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.finish-line-record"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"provider-input-replacement","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"finish-line-record"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -171,6 +185,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" 
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.block-project-memory-write"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-project-memory-write"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -183,6 +198,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.mcp-secret-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"mcp-secret-scan"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -195,6 +211,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.portable-paths-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"portable-paths-scan"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -207,6 +224,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan"
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.agent-scope-lock-guard"
+# inventory: {"state_owner":"git.agent-scope-lock","transformation":"block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"agent-scope-lock-guard"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -219,6 +237,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-gua
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.pre-edit-intent-gate"
+# inventory: {"state_owner":"agent-docs.session","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"pre-edit-intent-gate"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -231,6 +250,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -243,6 +263,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.finish-line-record"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"provider-input-replacement","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"finish-line-record"}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -255,6 +276,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" 
 
 [[rules]]
 id = "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs"
+# inventory: {"state_owner":"agent-docs.session","transformation":"additional-context","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"user-prompt-agent-docs"}
 products = ["codex"]
 events = ["UserPromptSubmit"]
 priority = 100
@@ -266,6 +288,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-do
 
 [[rules]]
 id = "runtime.codex.user-prompt-submit.all.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["codex"]
 events = ["UserPromptSubmit"]
 priority = 110
@@ -277,6 +300,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory"
+# inventory: {"state_owner":"none","transformation":"additional-context","recovery":"config-or-exact-capability","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"relocated-startup-capability","legacy_handler":null}
 products = ["codex"]
 events = ["SessionStart"]
 matcher = "startup|resume|clear"
@@ -289,6 +313,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-me
 
 [[rules]]
 id = "runtime.codex.session-start.startup-resume-clear.session-start-healthcheck"
+# inventory: {"state_owner":"agent-runtime-kit.health-cache","transformation":"additional-context","recovery":"config-downgrade-or-exact-capability","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"session-start-healthcheck"}
 products = ["codex"]
 events = ["SessionStart"]
 matcher = "startup|resume|clear"
@@ -301,6 +326,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "session-start-health
 
 [[rules]]
 id = "runtime.codex.stop.all.agent-scope-lock-guard"
+# inventory: {"state_owner":"git.agent-scope-lock","transformation":"block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"agent-scope-lock-guard"}
 products = ["codex"]
 events = ["Stop"]
 priority = 110
@@ -312,6 +338,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-gua
 
 [[rules]]
 id = "runtime.codex.stop.all.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["codex"]
 events = ["Stop"]
 priority = 120
@@ -323,6 +350,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.codex.stop.all.stop-finish-line-gate"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"stop-finish-line-gate"}
 products = ["codex"]
 events = ["Stop"]
 priority = 130
@@ -334,6 +362,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "stop-finish-line-gat
 
 [[rules]]
 id = "runtime.claude.user-prompt-submit.all.user-prompt-agent-docs"
+# inventory: {"state_owner":"agent-docs.session","transformation":"additional-context","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"user-prompt-agent-docs"}
 products = ["claude"]
 events = ["UserPromptSubmit"]
 priority = 100
@@ -345,6 +374,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-do
 
 [[rules]]
 id = "runtime.claude.user-prompt-submit.all.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["claude"]
 events = ["UserPromptSubmit"]
 priority = 110
@@ -356,6 +386,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.claude.session-start.startup-resume-clear.user-prompt-agent-memory"
+# inventory: {"state_owner":"none","transformation":"additional-context","recovery":"config-or-exact-capability","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"relocated-startup-capability","legacy_handler":null}
 products = ["claude"]
 events = ["SessionStart"]
 matcher = "startup|resume|clear"
@@ -368,6 +399,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-me
 
 [[rules]]
 id = "runtime.claude.stop.all.agent-scope-lock-guard"
+# inventory: {"state_owner":"git.agent-scope-lock","transformation":"block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"agent-scope-lock-guard"}
 products = ["claude"]
 events = ["Stop"]
 priority = 110
@@ -379,6 +411,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-gua
 
 [[rules]]
 id = "runtime.claude.stop.all.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["claude"]
 events = ["Stop"]
 priority = 120
@@ -390,6 +423,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.claude.stop.all.stop-finish-line-gate"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"stop-finish-line-gate"}
 products = ["claude"]
 events = ["Stop"]
 priority = 130
@@ -401,6 +435,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "stop-finish-line-gat
 
 [[rules]]
 id = "runtime.claude.session-start.startup-resume-clear.session-start-healthcheck"
+# inventory: {"state_owner":"agent-runtime-kit.health-cache","transformation":"additional-context","recovery":"config-downgrade-or-exact-capability","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"session-start-healthcheck"}
 products = ["claude"]
 events = ["SessionStart"]
 matcher = "startup|resume|clear"
@@ -413,6 +448,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "session-start-health
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.pre-edit-intent-gate"
+# inventory: {"state_owner":"agent-docs.session","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"pre-edit-intent-gate"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -425,6 +461,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -437,6 +474,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.block-direct-git-commit"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-git-commit"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -449,6 +487,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-com
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.block-unsafe-default-delivery"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-unsafe-default-delivery"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -461,6 +500,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-unsafe-default
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.block-direct-git-worktree"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-git-worktree"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -473,6 +513,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-git-wor
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.semantic-commit-body-gate"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"semantic-commit-body-gate"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -485,6 +526,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "semantic-commit-body
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.block-direct-pr-create"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-pr-create"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -497,6 +539,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-pr-crea
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.forge-label-reminder"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/policies/git-delivery.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"forge-label-reminder"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -509,6 +552,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "forge-label-reminder
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.block-direct-python"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"config-downgrade-or-exact-capability","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-direct-python"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -521,6 +565,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-direct-python"
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.mcp-secret-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"mcp-secret-scan"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -533,6 +578,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.block-project-memory-write"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-project-memory-write"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -545,6 +591,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.portable-paths-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"portable-paths-scan"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -557,6 +604,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan"
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.bash.finish-line-record"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"provider-input-replacement","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"finish-line-record"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -569,6 +617,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" 
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.mcp-secret-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"mcp-secret-scan"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -581,6 +630,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "mcp-secret-scan" }
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.block-project-memory-write"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-project-memory-write"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -593,6 +643,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.agent-scope-lock-guard"
+# inventory: {"state_owner":"git.agent-scope-lock","transformation":"block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"agent-scope-lock-guard"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -605,6 +656,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-gua
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.portable-paths-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"portable-paths-scan"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -617,6 +669,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan"
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.pre-edit-intent-gate"
+# inventory: {"state_owner":"agent-docs.session","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"pre-edit-intent-gate"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -629,6 +682,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -641,6 +695,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.write-edit-notebook-edit.finish-line-record"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"provider-input-replacement","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"finish-line-record"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -653,6 +708,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" 
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.block-project-memory-write"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/memory.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"block-project-memory-write"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -665,6 +721,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "block-project-memory
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.agent-scope-lock-guard"
+# inventory: {"state_owner":"git.agent-scope-lock","transformation":"block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"agent-scope-lock-guard"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -677,6 +734,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "agent-scope-lock-gua
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.pre-edit-intent-gate"
+# inventory: {"state_owner":"agent-docs.session","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/intent-cards.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"pre-edit-intent-gate"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -689,6 +747,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "pre-edit-intent-gate
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.checkout-lease-guard"
+# inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -701,6 +760,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard
 
 [[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.finish-line-record"
+# inventory: {"state_owner":"agent-runtime-validation","transformation":"provider-input-replacement","recovery":"exact-capability-only","docs":"core/policies/evidence-control-plane.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"finish-line-record"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -717,6 +777,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "finish-line-record" 
 # into this one.
 [[rules]]
 id = "runtime.claude.pre-tool-use.multi-edit.portable-paths-scan"
+# inventory: {"state_owner":"none","transformation":"block","recovery":"exact-capability-only","docs":"core/policies/files-hooks-validation.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"portable-paths-scan"}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -729,6 +790,7 @@ capability = { id = "runtime-kit.handler.v1", handler_id = "portable-paths-scan"
 
 [[rules]]
 id = "coord.activity.prompt-stop"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex", "claude"]
 events = ["UserPromptSubmit", "Stop"]
 priority = 10
@@ -740,6 +802,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.stop-failure.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_claude_stop_failure_activity_ingress_is_required","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["StopFailure"]
 priority = 10
@@ -751,6 +814,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.notification.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_claude_notification_activity_ingress_is_required","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["Notification"]
 matcher = "agent_needs_input|idle_prompt"
@@ -763,6 +827,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.permission-request.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_claude_permission_request_activity_ingress_is_required","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PermissionRequest"]
 priority = 10
@@ -774,6 +839,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.pre-tool-use.ask-user-question.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_claude_ask_user_question_activity_ingress_is_required","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "AskUserQuestion"
@@ -786,6 +852,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.post-tool.ask-user-question.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_claude_ask_user_question_activity_ingress_is_required","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PostToolUse", "PostToolUseFailure"]
 matcher = "AskUserQuestion"
@@ -798,6 +865,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.activity.session-start"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex", "claude"]
 events = ["SessionStart"]
 matcher = "startup|resume|clear"
@@ -810,6 +878,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.codex.pre-tool-use.bash.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -822,6 +891,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.codex.pre-tool-use.bash.semantic-conflict"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -833,6 +903,7 @@ override_class = "locked"
 capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semantic-conflict" }
 [[rules]]
 id = "coord.codex.pre-tool-use.bash.owner-liveness"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -845,6 +916,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
 
 [[rules]]
 id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -857,6 +929,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.semantic-conflict"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -869,6 +942,7 @@ capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semanti
 
 [[rules]]
 id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.owner-liveness"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -881,6 +955,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
 
 [[rules]]
 id = "coord.claude.pre-tool-use.bash.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -893,6 +968,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.pre-tool-use.bash.semantic-conflict"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -905,6 +981,7 @@ capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semanti
 
 [[rules]]
 id = "coord.claude.pre-tool-use.bash.owner-liveness"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -917,6 +994,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
 
 [[rules]]
 id = "coord.claude.pre-tool-use.write-edit-notebook-edit.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -929,6 +1007,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.pre-tool-use.write-edit-notebook-edit.semantic-conflict"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -941,6 +1020,7 @@ capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semanti
 
 [[rules]]
 id = "coord.claude.pre-tool-use.write-edit-notebook-edit.owner-liveness"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -953,6 +1033,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
 
 [[rules]]
 id = "coord.claude.pre-tool-use.multi-edit.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -965,6 +1046,7 @@ capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" 
 
 [[rules]]
 id = "coord.claude.pre-tool-use.multi-edit.semantic-conflict"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -977,6 +1059,7 @@ capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semanti
 
 [[rules]]
 id = "coord.claude.pre-tool-use.multi-edit.owner-liveness"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -989,6 +1072,7 @@ capability = { id = "agent-session.owner-liveness.v1", reason_code = "foreign-wr
 
 [[rules]]
 id = "coord.semantic-conflict.user-prompt-submit"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"admission","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/coordination-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex", "claude"]
 events = ["UserPromptSubmit"]
 priority = 20
@@ -1000,6 +1084,7 @@ capability = { id = "agent-session.semantic-conflict.v1", reason_code = "semanti
 
 [[rules]]
 id = "coord.codex.pre-tool-use.bash.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"admit-after-allow","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -1012,6 +1097,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"admit-after-allow","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit|apply_patch"
@@ -1024,6 +1110,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.codex.post-tool.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"complete-or-reconcile","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex"]
 events = ["PostToolUse", "PostToolUseFailure"]
 matcher = "Bash|Write|Edit|NotebookEdit|apply_patch"
@@ -1036,6 +1123,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.claude.pre-tool-use.bash.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"admit-after-allow","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Bash"
@@ -1048,6 +1136,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.claude.pre-tool-use.write-edit-notebook-edit.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"admit-after-allow","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "Write|Edit|NotebookEdit"
@@ -1060,6 +1149,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.claude.pre-tool-use.multi-edit.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"admit-after-allow","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PreToolUse"]
 matcher = "MultiEdit"
@@ -1072,6 +1162,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.claude.post-tool.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"complete-or-reconcile","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
 events = ["PostToolUse", "PostToolUseFailure"]
 matcher = "Bash|Write|Edit|NotebookEdit|MultiEdit"
@@ -1084,6 +1175,7 @@ capability = { id = "agent-session.coordination.v1", reason_code = "operation-li
 
 [[rules]]
 id = "coord.stop.transaction"
+# inventory: {"state_owner":"agent-session.work-context.v1","transformation":"reconcile","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/fixtures/cutover-sequencing-cases.json","disposition":"added-coordination","legacy_handler":null}
 products = ["codex", "claude"]
 events = ["Stop"]
 priority = 900

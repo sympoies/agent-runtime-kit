@@ -211,7 +211,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(len(required_clis), len(required_entries))
         self.assertEqual(required_clis["agent-session"], "1.31.1")
         self.assertEqual(required_clis["semantic-commit"], "1.25.11")
-        self.assertEqual(required_clis["main-agent"], "1.31.1")
+        self.assertNotIn("main-agent", required_clis)
         self.assertEqual(required_clis["forge-cli"], "1.28.30")
         self.assertEqual(required_clis["review-specialists"], "1.27.27")
         self.assertEqual(required_clis["git-cli"], "1.27.16")
@@ -772,7 +772,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_runtime_smoke_tracks_the_active_exact_ci_lane(self) -> None:
         smoke = read("tests/runtime-smoke/cases/evidence/run.sh")
-        hooks = read("tests/hooks/test_shared_hooks.py")
+        hooks = read("tests/hooks/shared_hook_command_guards.py")
 
         self.assertIn("matches_agent_docs_version", smoke)
         self.assertIn("agent-runtime --version", smoke)

@@ -8,9 +8,6 @@ export PYTHONDONTWRITEBYTECODE=1
 python3 tests/agent-hook/test_policy_contract.py
 python3 tests/agent-hook/test_cutover_contract.py
 python3 tests/agent-hook/test_codex_plugin_refresh.py
-# F6: main-agent hook<->binary argv contract. Self-skips when the binary is not
-# resolvable (MAIN_AGENT_BIN / PATH), so it is safe to run unconditionally.
-python3 tests/agent-hook/test_main_agent_argv_contract.py
 
 run_executable_contract_tests() {
   local hook_bin="$1"

@@ -291,7 +291,10 @@ parent owns base selection, synthesis, and any authorized provider action.
    profile, apply
    `references/DELIVERY_SPECIALIST_REVIEW_GATE.md` and
    `references/REVIEW_OUTCOME_POSTING_CONTRACT.md`; the delivery owner, not a
-   reviewer, posts provider comments and makes the merge decision. For every
+   reviewer, posts provider comments and makes the merge decision. Before
+   publication, that owner validates the immutable report body with
+   `forge-cli pr review validate --specialist-report --comment-file <body-file>`
+   using the provider-guarded command in the posting contract. For every
    mode, the recommended next step may route to the dispatch parent's
    independent-review phase, a normal implementation workflow, or a retained
    `review-evidence` CLI record, but this workflow does not execute that decision.

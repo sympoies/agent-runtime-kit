@@ -8,27 +8,43 @@ dirty-tree handling stay auditable.
 from __future__ import annotations
 
 import functools
+import os
 import re
 import subprocess
 import sys
-from pathlib import PurePosixPath
+import tempfile
+from pathlib import Path, PurePosixPath
 
 # Codex may execute hooks through a source symlink; keep the checkout clean.
 sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
+    XARGS_INPUT_TOKEN,
     command_from,
     emit_block,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    is_shell_separator,
+    marker_environment_before_invocation,
+    nested_shell_payload,
+    normalize_command_separators,
     opaque_invocation_candidates,
     opaque_invocation_is_literal_shell_test,
     read_payload,
+    scoped_simple_commands_with_nested_shells,
+    shell_tokens,
     simple_commands_with_nested_shells,
 )
 
 BLOCK_REASON = "Do not use git commit directly. Use semantic-commit instead."
+CONFIG_REASON = (
+    "Do not write shared Git global or system configuration. HOME alone does "
+    "not isolate Git. Use a literal GIT_CONFIG_GLOBAL=<temporary-output>/gitconfig "
+    "with GIT_CONFIG_NOSYSTEM=1 and `git config --global`; isolate XDG_CONFIG_HOME "
+    "when other tools use it. System writes cannot be redirected by "
+    "GIT_CONFIG_GLOBAL and remain refused."
+)
 OPAQUE_REASON = (
     "Command intent could not be resolved safely. Classification: "
     "rule=opaque-executable; operation=dynamic-executable. A shell-expanded "
@@ -67,16 +83,16 @@ def basename(token: str) -> str:
     return PurePosixPath(token).name
 
 
-def git_subcommand(simple_command: list[str]) -> str | None:
+def git_arguments(simple_command: list[str]) -> list[str]:
     invocation = invocation_tokens(simple_command)
     if not invocation or basename(invocation[0]) != "git":
-        return None
+        return []
 
     index = 1
     while index < len(invocation):
         token = invocation[index]
         if token == "--":
-            return None
+            return []
         if token in GIT_OPTIONS_WITH_VALUE:
             index += 2
             continue
@@ -92,8 +108,151 @@ def git_subcommand(simple_command: list[str]) -> str | None:
         if token.startswith("-") and token != "-":
             index += 1
             continue
-        return token
-    return None
+        return invocation[index:]
+    return []
+
+
+def git_subcommand(simple_command: list[str]) -> str | None:
+    arguments = git_arguments(simple_command)
+    return arguments[0] if arguments else None
+
+
+def shared_config_write(arguments: list[str]) -> str:
+    """Return the shared scope of a write, respecting Git's option boundary."""
+    if arguments[:1] != ["config"]:
+        return ""
+    write_actions = {
+        "--add", "--replace-all", "--unset", "--unset-all", "--rename-section",
+        "--remove-section", "--edit", "-e",
+    }
+    read_actions = {"--get", "--get-all", "--get-regexp", "--get-urlmatch",
+                    "--get-color", "--get-colorbool", "--list", "-l", "--help", "-h"}
+    value_options = {"--type", "-t", "--default", "--file", "-f", "--comment",
+                     "--value", "--url"}
+    long_options = {option for option in write_actions | read_actions | value_options
+                    if option.startswith("--")} | {
+        "--global", "--system", "--local", "--worktree", "--blob", "--null",
+        "--name-only", "--show-origin", "--show-scope", "--includes", "--bool",
+        "--int", "--bool-or-int", "--path", "--expiry-date", "--fixed-value",
+        "--all", "--regexp",
+    }
+    scope = ""
+    action = ""
+    ambiguous = False
+    operands: list[str] = []
+    index = 1
+    if arguments[1:2] and arguments[1] in {
+        "set", "unset", "rename-section", "remove-section", "edit", "get", "list",
+    }:
+        action = arguments[1]
+        index += 1
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--" or not token.startswith("-"):
+            operands = arguments[index + (token == "--"):]
+            break
+        option, equals, _ = token.partition("=")
+        if option.startswith("--") and option not in long_options:
+            matches = [candidate for candidate in long_options if candidate.startswith(option)]
+            if len(matches) == 1:
+                option = matches[0]
+            elif matches:
+                ambiguous = True
+                if any(candidate in {"--global", "--system"} for candidate in matches):
+                    scope = "ambiguous"
+        if option in {"--global", "--system"}:
+            scope = option
+        if option in write_actions:
+            action = "write"
+        elif option in read_actions and action != "write":
+            action = "read"
+        if option in value_options | {"--blob"} and not equals:
+            index += 1
+        index += 1
+    if not scope:
+        return ""
+    if ambiguous:
+        return "ambiguous"
+    if action in {"read", "get", "list"}:
+        return ""
+    return scope if action or len(operands) >= 2 or XARGS_INPUT_TOKEN in operands else ""
+
+
+def isolated_global_config(value: str) -> bool:
+    """Require a literal output child, without a symlink redirect inside it."""
+    if not value or token_is_dynamic(value):
+        return False
+    target = Path(value)
+    if not target.is_absolute():
+        return False
+    roots = [Path(tempfile.gettempdir()), Path("/tmp"), Path("/var/tmp")]
+    if os.environ.get("AGENT_HOME"):
+        roots.append(Path(os.environ["AGENT_HOME"]) / "out")
+    try:
+        for root in roots:
+            if not root.is_absolute() or not target.is_relative_to(root) or target == root:
+                continue
+            expected = root.resolve() / target.relative_to(root)
+            # Normalise '..' before checking containment, and refuse any
+            # additional symlink traversal below the selected output root.
+            normalized = Path(os.path.normpath(expected))
+            if normalized.is_relative_to(root.resolve()) and target.resolve() == normalized:
+                return True
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return False
+
+
+def git_config_block_reason(command: str, inherited: dict[str, str], depth: int = 0) -> str:
+    if depth > 5:
+        return OPAQUE_REASON
+    words = shell_tokens(normalize_command_separators(command))
+    conditional_state = any(word in {"&&", "||", "&", "|", "(", ")"} for word in words) or any(
+        word in {"if", "for", "while", "until", "case"}
+        and (index == 0 or is_shell_separator(words[index - 1]))
+        for index, word in enumerate(words)
+    )
+    states: dict[tuple[int, ...], dict[str, str]] = {(): dict(inherited)}
+    # Let the shared parser extract substitution scopes. Descend into known
+    # shell strings ourselves so inline env assignments stay in that shell.
+    for tokens, scope in scoped_simple_commands_with_nested_shells(command, max_depth=0, strict=True):
+        state = states.setdefault(scope, dict(states.get(scope[:-1], inherited)))
+        variable = "GIT_CONFIG_GLOBAL"
+        assignments_only = bool(tokens) and all(ASSIGNMENT_RE.match(token) for token in tokens)
+        literal_setup = tokens[:1] == ["export"] and all(
+            ASSIGNMENT_RE.match(token) for token in tokens[1:]
+        ) or assignments_only and variable in state
+        # An append invalidates the inherited target. Use this ordered view
+        # consistently for invocation discovery as well as environment checks;
+        # a later literal replacement can still establish fresh isolation proof.
+        environment_tokens = list(tokens)
+        for index, token in enumerate(tokens):
+            if not ASSIGNMENT_RE.match(token):
+                break  # quoted shell payloads are checked recursively, not bindings
+            if token.startswith(variable + "+="):
+                environment_tokens[index] = variable + "="
+        inline = not assignments_only and command_word(environment_tokens) != "eval" and (
+            bool(git_arguments(environment_tokens))
+            or bool(nested_shell_payload(invocation_tokens(environment_tokens)))
+        )
+        if not inline and command_retargets_variables(tokens, frozenset({variable})):
+            state.pop(variable, None)
+            if literal_setup and not conditional_state:
+                for token in tokens:
+                    if token.startswith(variable + "="):
+                        state[variable] = token.split("=", 1)[1]
+        environment = marker_environment_before_invocation(environment_tokens, (variable,), state)
+        arguments = git_arguments(environment_tokens)
+        scope_of_write = shared_config_write(arguments)
+        if scope_of_write:
+            if scope_of_write != "--global" or not isolated_global_config(environment.get("GIT_CONFIG_GLOBAL", "")):
+                return CONFIG_REASON
+        payload = nested_shell_payload(invocation_tokens(environment_tokens))
+        if payload:
+            reason = git_config_block_reason(payload, environment, depth + 1)
+            if reason:
+                return reason
+    return ""
 
 
 def token_is_dynamic(token: str) -> bool:
@@ -252,6 +411,8 @@ def retargets_program_lookup(simple_command: list[str], invocation: list[str]) -
     falls back to a same-named configured alias.
     """
     prefix = tokens_before_git(simple_command, invocation)
+    if any(basename(token) == "sudo" for token in prefix):
+        return True
     if any(LOOKUP_ENV_NAME_RE.search(token) for token in prefix):
         return True
     if any(basename(token) == "env" for token in prefix) and any(
@@ -285,6 +446,27 @@ def command_word(tokens: list[str]) -> str | None:
     return tokens[index] if index < len(tokens) else None
 
 
+def command_retargets_variables(tokens: list[str], names: frozenset[str]) -> bool:
+    """Recognize shell bindings, including prefixed builtins and opaque setup."""
+    prefix = 0
+    while prefix < len(tokens) and tokens[prefix] in {"{", "then", "do", "else", "!", "time"}:
+        prefix += 1
+    word = command_word(tokens[prefix:])
+    if word in SOURCING_WORDS or word == "eval":
+        return True
+    if word in NAMEREF_WORDS and any(
+        token.startswith("-") and not token.startswith("--") and "n" in token[1:]
+        for token in tokens[prefix + 1:]
+    ):
+        return True
+    if any(re.match(r"^(?:" + "|".join(re.escape(name) for name in names) + r")\+?=", token)
+           for token in tokens):
+        return True
+    return any(PurePosixPath(token).name in VARIABLE_BINDING_WORDS for token in tokens) and any(
+        token in names or token.lstrip("-").lstrip("v") in names for token in tokens
+    )
+
+
 def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
     """Whether any statement of the whole command may change PATH or GIT_EXEC_PATH.
 
@@ -297,24 +479,7 @@ def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
     narrows admission of installed non-builtin Git commands, never of
     `commit` itself.
     """
-    for tokens in simple_commands:
-        word = command_word(tokens)
-        if word in SOURCING_WORDS:
-            return True
-        if word in NAMEREF_WORDS and any(
-            token.startswith("-") and not token.startswith("--") and "n" in token[1:]
-            for token in tokens[1:]
-        ):
-            return True
-        if any(LOOKUP_ASSIGNMENT_RE.match(token) for token in tokens):
-            return True
-        if any(PurePosixPath(token).name in VARIABLE_BINDING_WORDS for token in tokens) and any(
-            token in LOOKUP_ENV_NAMES
-            or token.lstrip("-").lstrip("v") in LOOKUP_ENV_NAMES
-            for token in tokens
-        ):
-            return True
-    return False
+    return any(command_retargets_variables(tokens, LOOKUP_ENV_NAMES) for tokens in simple_commands)
 
 
 def subcommand_block_reason(
@@ -342,6 +507,9 @@ def subcommand_block_reason(
 
 
 def git_commit_block_reason(command: str) -> str:
+    reason = git_config_block_reason(command, dict(os.environ))
+    if reason:
+        return reason
     # Strict parsing drops comments and fails closed on untokenizable text.
     simple_commands = list(simple_commands_with_nested_shells(command, strict=True))
     lookup_retargeted = command_retargets_lookup(simple_commands)

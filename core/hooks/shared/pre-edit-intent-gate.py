@@ -13,14 +13,11 @@ compatibility bypass.
 Enforcement is scoped to the boundary that owns the risk. In enforce mode,
 repository mutation (direct edits and mutation-capable shell) requires prepared
 ``project-dev``; advisory mode attempts preparation and preserves work.
-Two narrow lanes are admitted without that activation because they cannot mutate
-tracked content: an audited read-only inspection allowlist, and trusted
-``agent-docs`` preparation/read commands for any declared intent (so a session
-that only needs ``memory``/``task-tools``/``browser-test`` is not forced through
-unrelated ``project-dev`` policy first). Both lanes fail closed: anything that is
-not an exact recognized shape falls through to the mutation gate. The read-only
-allowlist is a workflow convenience, not a security sandbox; its residual limits
-are documented at ``read_only_general_invocation``.
+The dispatcher owns read-only admission through verified
+``execution.read-only.v1`` evidence. This fallback verifies preparation whenever
+that capability does not bypass it. Exact preparation, Git recovery and
+current-session claim mutations retain their bounded bootstrap routes; literal
+argv parsing never authorizes reads here.
 """
 
 from __future__ import annotations
@@ -30,7 +27,6 @@ import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
@@ -41,11 +37,7 @@ sys.dont_write_bytecode = True
 
 from hook_common import (
     ALLOW,
-    SHELL_EFFECT_READ_ONLY,
-    SHELL_EFFECT_UNKNOWN,
     apply_patch_paths,
-    audited_text_read_invocation,
-    classify_shell_effect,
     command_from,
     command_context,
     effective_workdir,
@@ -56,8 +48,6 @@ from hook_common import (
     invocation_tokens,
     is_managed_cli_home_bin,
     is_git_recovery_argv,
-    main_agent_preclaim_argv,
-    normalized_main_agent_argv,
     patch_text_candidates,
     read_payload,
     session_id_from_payload,
@@ -67,15 +57,6 @@ from hook_common import (
 
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"}
 COMMAND_TOOLS = {"Bash"}
-# Tracking-mode values accepted for `--tier` (core/policies/work-modes.md).
-WORK_MODE_TIERS = frozenset(
-    {
-        "direct",
-        "issue",
-        "program",
-        "program/dispatch",
-    }
-)
 # Workflow-phase scoping (issue #601 P1 slice 3d). A mutation is verified against
 # the phase-scoped project-dev doc subset instead of the whole intent, so an edit
 # no longer forces the delivery/review runbooks. Direct edits and generic
@@ -97,117 +78,9 @@ DELIVERY_TOOLS = frozenset({"semantic-commit", "forge-cli", "git-cli"})
 # cannot execute a different argv than the literal tokens validated below.
 UNQUOTED_SHELL_CONTROL = frozenset(";&|<>`$(){}#*?[]^~")
 DOUBLE_QUOTED_SHELL_CONTROL = frozenset("`$")
-
-# --- Read-only inspection allowlist -------------------------------------------
-#
-# Commands here are admitted without project-dev because they cannot mutate
-# tracked repository content. Every candidate is first reduced to a single simple
-# command by ``simple_shell_words`` (which returns None on ANY shell control:
-# pipes, redirections, command/arithmetic substitution, globbing, chaining, or
-# quoting it cannot model). That removes the shell-driven write vectors, so the
-# remaining audit only has to reject argument-driven writes/exec for each tool.
-# The lists stay deliberately tight; an unlisted read-only command is a safe
-# false negative (it just falls through to the mutation gate), while an
-# over-broad entry would be an unsafe bypass.
-
-# git subcommands with no write mode at all. Excluded on purpose: branch/tag/
-# config/remote/stash/notes/worktree/reflog/symbolic-ref (each has a write form),
-# and anything under MUTATING_GIT_SUBCOMMANDS elsewhere.
-READ_ONLY_GIT_SUBCOMMANDS = frozenset(
-    {
-        "status",
-        "log",
-        "show",
-        "diff",
-        "diff-tree",
-        "diff-index",
-        "diff-files",
-        "rev-parse",
-        "rev-list",
-        "ls-files",
-        "ls-tree",
-        "cat-file",
-        "blame",
-        "describe",
-        "show-ref",
-        "for-each-ref",
-        "shortlog",
-        "merge-base",
-        "name-rev",
-        "whatchanged",
-        "count-objects",
-        "var",
-    }
-)
-GIT_DIFF_DRIVER_SUBCOMMANDS = frozenset(
-    {
-        "log",
-        "show",
-        "diff",
-        "diff-tree",
-        "diff-index",
-        "diff-files",
-        "whatchanged",
-    }
-)
-# git global options consumed before the subcommand. Value options take the next
-# token; ``-c``/``--config-env``/``--exec-path`` are excluded (config/pager exec
-# vectors) so an unknown global option fails closed.
-GIT_GLOBAL_VALUE_OPTIONS = frozenset({"-C", "--git-dir", "--work-tree", "--namespace"})
-GIT_GLOBAL_FLAG_OPTIONS = frozenset(
-    {
-        "-P",
-        "--no-pager",
-        "--paginate",
-        "--bare",
-        "--no-replace-objects",
-        "--literal-pathspecs",
-        "--no-literal-pathspecs",
-        "--no-optional-locks",
-    }
-)
-# Subcommand flags that write a file (`--output`) or run a pager on matches
-# (`-O`/`--open-files-in-pager`, an exec vector for ``git grep``).
-GIT_WRITE_OR_EXEC_FLAGS = frozenset(
-    {
-        "-o",
-        "--output",
-        "-O",
-        "--open-files-in-pager",
-        "--ext-diff",
-        "--textconv",
-    }
-)
-
-# gh read-only command groups. `gh api` is excluded: it mutates with
-# `-X`/`--method`/`-f`/`--input`. Only view/list-shaped reads are admitted.
-GH_READ_ONLY_SUBCOMMANDS: dict[str, frozenset[str]] = {
-    "issue": frozenset({"view", "list", "status"}),
-    "pr": frozenset({"view", "list", "diff", "checks", "status"}),
-    "repo": frozenset({"view", "list"}),
-    "run": frozenset({"view", "list"}),
-    "workflow": frozenset({"view", "list"}),
-    "release": frozenset({"view", "list"}),
-    "label": frozenset({"list"}),
-    "gist": frozenset({"view", "list"}),
-    "cache": frozenset({"list"}),
-    "search": frozenset({"issues", "prs", "repos", "code", "commits"}),
-}
-GH_READ_ONLY_TOPLEVEL = frozenset({"status"})
-
-# Trusted agent-docs preparation/read surface. `session activate` is NOT here: it
-# writes activation state and travels the trusted bootstrap path instead.
-AGENT_DOCS_GLOBAL_VALUE_OPTIONS = frozenset(
-    {"--docs-home", "--project-path", "--worktree-fallback"}
-)
-AGENT_DOCS_READ_ONLY_SUBCOMMANDS = frozenset(
-    {"preflight", "status", "explain", "list", "catalog"}
-)
-AGENT_DOCS_READ_ONLY_SESSION_SUBCOMMANDS = frozenset({"status", "verify"})
-AGENT_DOCS_WRITE_FLAGS = frozenset({"-o", "--output"})
-TRUSTED_HELP_EXECUTABLES = frozenset({"agent-docs", "forge-cli"})
 HELP_FLAGS = frozenset({"-h", "--help"})
-VERSION_FLAGS = frozenset({"-V", "--version"})
+
+AGENT_DOCS_WRITE_FLAGS = frozenset({"-o", "--output"})
 DYNAMIC_WORKDIR_CHARACTERS = frozenset("$`*?[{(")
 PROJECT_DEV_MODE_ENV = "AGENT_RUNTIME_PROJECT_DEV_MODE"
 PROJECT_DEV_MODES = frozenset({"advisory", "enforce", "off"})
@@ -308,14 +181,6 @@ def run_probe(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None,
         return None, "crash"
 
 
-def parsed_version(text: str) -> tuple[int, int, int] | None:
-    match = re.search(r"(?:^|\s)(\d+)\.(\d+)\.(\d+)(?:\s|$|\()", text)
-    if not match:
-        return None
-    major, minor, patch = (int(part) for part in match.groups())
-    return major, minor, patch
-
-
 def phase_for(tool: str, command_words: list[str] | None) -> str | None:
     """Map an observed mutation to its workflow phase (issue #601 P1 slice 3d).
 
@@ -411,7 +276,8 @@ def contains_active_shell_control(command: str) -> bool:
     return False
 
 
-def simple_shell_words(command: str) -> list[str] | None:
+def literal_bootstrap_words(command: str) -> list[str] | None:
+    """Parse literal preparation/recovery argv; never authorize read admission."""
     if not command.strip() or contains_active_shell_control(command):
         return None
     try:
@@ -440,113 +306,11 @@ def literal_claim_bootstrap_words(
         if sanitized.count(literal) != 1 or sentinel in sanitized:
             return None
         sanitized = sanitized.replace(literal, sentinel)
-    words = simple_shell_words(sanitized)
+    words = literal_bootstrap_words(sanitized)
     if not words or words[:3] != ["agent-session", "work-context", "claim"]:
         return None
     values = {sentinel: value for _literal, sentinel, value in replacements}
     return [values.get(word, word) for word in words]
-
-
-def _skip_value_options(
-    tokens: list[str], value_options: frozenset[str]
-) -> int:
-    """Index of the first token that is not a leading option.
-
-    Consumes value-taking options (``opt value`` and ``opt=value``) and bare
-    flag options. Returns ``len(tokens)`` when everything is optional. An
-    unrecognized value option is treated as a single token, which is safe here:
-    callers reject a non-allowlisted subcommand, so a mis-split only fails
-    closed.
-    """
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token in value_options:
-            index += 2
-            continue
-        if any(token.startswith(f"{option}=") for option in value_options):
-            index += 1
-            continue
-        if token.startswith("-") and token != "--":
-            index += 1
-            continue
-        break
-    return index
-
-
-def git_read_only_invocation(args: list[str]) -> bool:
-    """Whether ``git <args>`` is an audited read-only inspection command."""
-    index = 0
-    while index < len(args):
-        token = args[index]
-        if token in GIT_GLOBAL_VALUE_OPTIONS:
-            index += 2
-            continue
-        if any(
-            token.startswith(f"{option}=") for option in GIT_GLOBAL_VALUE_OPTIONS
-        ):
-            index += 1
-            continue
-        if token in GIT_GLOBAL_FLAG_OPTIONS:
-            index += 1
-            continue
-        if token.startswith("-"):
-            # Unknown global option (e.g. -c/--config-env/--exec-path): fail closed.
-            return False
-        break
-    if index >= len(args) or args[index] not in READ_ONLY_GIT_SUBCOMMANDS:
-        return False
-    subcommand = args[index]
-    subcommand_args = args[index + 1 :]
-    if subcommand in GIT_DIFF_DRIVER_SUBCOMMANDS and not {
-        "--no-ext-diff",
-        "--no-textconv",
-    }.issubset(subcommand_args):
-        return False
-    for token in subcommand_args:
-        if token == "--":
-            break  # remaining tokens are pathspecs, not options
-        if token in GIT_WRITE_OR_EXEC_FLAGS:
-            return False
-        # Reject the `--flag=value` spelling of every write/exec flag. This is
-        # not just `--output=<file>`: `--open-files-in-pager=<cmd>` runs an
-        # attacker-controlled command through a shell against matched files, so
-        # the `=value` form must fail closed exactly like the bare flag.
-        if any(token.startswith(f"{flag}=") for flag in GIT_WRITE_OR_EXEC_FLAGS):
-            return False
-        if token.startswith("-O"):  # -O / -O<pager> short forms
-            return False
-    return True
-
-
-def gh_read_only_invocation(args: list[str]) -> bool:
-    """Whether ``gh <args>`` is an audited read-only view/list command."""
-    if not args or args[0].startswith("-"):
-        return False
-    group = args[0]
-    if group in GH_READ_ONLY_TOPLEVEL:
-        return True
-    subcommands = GH_READ_ONLY_SUBCOMMANDS.get(group)
-    if subcommands is None:
-        return False
-    return len(args) >= 2 and args[1] in subcommands
-
-
-def cli_help_or_version_arguments(arguments: list[str]) -> bool:
-    """Whether argv can only select a CLI help/version early exit.
-
-    Version is top-level only. Help may follow a positional subcommand path,
-    but it must be the final argument; any option before it or argument after it
-    stays outside the read-only lane. This admits shapes such as
-    ``forge-cli issue create --help`` without treating a merely-present help
-    flag as proof that an otherwise operational invocation cannot run.
-    """
-    if len(arguments) == 1 and arguments[0] in HELP_FLAGS | VERSION_FLAGS:
-        return True
-    return bool(arguments) and arguments[-1] in HELP_FLAGS and all(
-        argument and not argument.startswith("-") and "/" not in argument
-        for argument in arguments[:-1]
-    )
 
 
 def _agent_run_exec_workdir(words: list[str]) -> tuple[bool, str | None]:
@@ -710,68 +474,6 @@ def agent_run_exec_workdirs(command: str) -> list[str | None]:
     return targets
 
 
-def read_only_general_invocation(words: list[str]) -> bool:
-    """Whether ``words`` is an audited read-only inspection command.
-
-    ``words`` must already be a single simple command (``simple_shell_words``).
-    Residual limits, documented deliberately: this function classifies one argv
-    stage; the shared effect classifier admits pipe-only composites only when
-    every stage passes. Redirections, ``&&``, globbing, unaudited ``rg``/general
-    ``sed``/``find``/``sort``/``env`` and other write-or-exec-capable shapes are
-    NOT admitted and still require project-dev. The executable must be a bare
-    command name resolved via PATH: any path separator (``./grep``, ``bin/ls``)
-    is rejected. The caller also resolves a bare name and rejects candidates
-    located inside any target repository, so repository-local executable
-    shadows cannot enter this lane.
-    """
-    if not words:
-        return False
-    # Bare command name only — a path separator means a repo-local executable
-    # could run as arbitrary code, so refuse and fall through to the gate.
-    if "/" in words[0]:
-        return False
-    name = words[0]
-    args = words[1:]
-    if audited_text_read_invocation(words):
-        return True
-    if name in TRUSTED_HELP_EXECUTABLES:
-        return cli_help_or_version_arguments(args)
-    if name == "git":
-        return git_read_only_invocation(args)
-    if name == "gh":
-        return gh_read_only_invocation(args)
-    return False
-
-
-def repository_safe_read_only_invocation(
-    words: list[str], repositories: list[str]
-) -> bool:
-    """Apply the read-only argv audit and reject repository-local shadows."""
-    if not read_only_general_invocation(words):
-        return False
-    candidate = shutil.which(words[0])
-    if not candidate or not os.path.isabs(candidate):
-        return False
-    lexical = os.path.abspath(candidate)
-    resolved = os.path.realpath(candidate)
-    if any(
-        path_within(lexical, repository) or path_within(resolved, repository)
-        for repository in repositories
-    ):
-        return False
-    if words[0] in TRUSTED_HELP_EXECUTABLES:
-        agent_docs = resolved_executable("agent-docs")
-        if not agent_docs or not trusted_agent_docs_executable(
-            agent_docs, repositories
-        ):
-            return False
-        # nils-cli ships these governed CLIs as one release surface. Requiring
-        # the same resolved bin directory prevents an earlier unrelated PATH
-        # entry from inheriting the trusted help-only bypass.
-        return os.path.dirname(resolved) == os.path.dirname(agent_docs)
-    return True
-
-
 def trusted_release_companion(
     name: str, *, agent_docs_executable: str, repositories: list[str]
 ) -> str | None:
@@ -822,134 +524,22 @@ def trusted_private_input_file(raw: str, repositories: list[str]) -> bool:
     return not any(path_within(raw, repository) for repository in repositories)
 
 
-def trusted_private_packet(raw: str, repositories: list[str]) -> bool:
-    if not raw.endswith(".json") or not trusted_private_input_file(raw, repositories):
-        return False
-    try:
-        metadata = os.stat(raw, follow_symlinks=False)
-    except OSError:
-        return False
-    return (
-        stat.S_ISREG(metadata.st_mode)
-        and metadata.st_uid == os.geteuid()
-        and stat.S_IMODE(metadata.st_mode) == 0o600
-    )
-
-
-def companion_versions_match(first: str, second: str) -> bool:
-    first_probe, _ = run_probe([first, "--version"])
-    second_probe, _ = run_probe([second, "--version"])
-    if (
-        first_probe is None
-        or second_probe is None
-        or first_probe.returncode != 0
-        or second_probe.returncode != 0
-    ):
-        return False
-    first_version = parsed_version(first_probe.stdout + "\n" + first_probe.stderr)
-    second_version = parsed_version(second_probe.stdout + "\n" + second_probe.stderr)
-    return first_version is not None and first_version == second_version
-
-
 def lifecycle_revision(value: str) -> bool:
     if re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None:
         return False
     return int(value) <= (2**64 - 1)
 
 
-def lifecycle_idempotency_key(value: str) -> bool:
-    return re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", value) is not None
-
-
-def main_agent_readiness_invocation(
+def session_claim_bootstrap_invocation(
     words: list[str],
     *,
     repositories: list[str],
     agent_docs_executable: str,
     current_session: str,
 ) -> bool:
-    """Admit only the exact non-repository Main Agent Mode bootstrap shapes."""
+    """Admit only the exact trusted current-session claim mutation bootstrap."""
     if not words:
         return False
-
-    # `main-agent worker start` writes the worker prompt with an absolute
-    # `main-agent` path so the worker pins the exact launching build. Recognise
-    # that spelling here too, then require it to resolve to the same trusted
-    # companion before comparing shapes against the bare name.
-    normalized = normalized_main_agent_argv(words)
-    if normalized is not None:
-        main_agent = trusted_release_companion(
-            "main-agent",
-            agent_docs_executable=agent_docs_executable,
-            repositories=repositories,
-        )
-        agent_session = trusted_release_companion(
-            "agent-session",
-            agent_docs_executable=agent_docs_executable,
-            repositories=repositories,
-        )
-        capability_file = os.environ.get(
-            "AGENT_SESSION_CAPABILITY_FILE", ""
-        ).strip()
-        if (
-            not main_agent
-            or not agent_session
-            or not companion_versions_match(main_agent, agent_session)
-            or not current_session
-            or not trusted_private_input_file(capability_file, repositories)
-        ):
-            return False
-        if words[0] != "main-agent" and os.path.realpath(
-            words[0]
-        ) != os.path.realpath(main_agent):
-            return False
-        words = normalized
-        if main_agent_preclaim_argv(words):
-            return True
-        if words[:2] == ["main-agent", "quick"]:
-            # quick acquires the work-context claim as its first durable act
-            # (like init), so its exact pre-claim shape is admitted here. --tier
-            # is optional; the CLI applies its default tracking mode.
-            if (
-                len(words) < 4
-                or words[2] != "--assignment-file"
-                or not trusted_private_packet(words[3], repositories)
-            ):
-                return False
-            if len(words) == 8:
-                return (
-                    words[4] == "--idempotency-key"
-                    and lifecycle_idempotency_key(words[5])
-                    and words[6:] == ["--format", "json"]
-                )
-            return (
-                len(words) == 10
-                and words[4] == "--tier"
-                and words[5] in WORK_MODE_TIERS
-                and words[6] == "--idempotency-key"
-                and lifecycle_idempotency_key(words[7])
-                and words[8:] == ["--format", "json"]
-            )
-        if (
-            len(words) < 4
-            or words[:3] != ["main-agent", "init", "--packet-file"]
-            or not trusted_private_packet(words[3], repositories)
-        ):
-            return False
-        if len(words) == 9:
-            return (
-                words[4:6] == ["--if-absent", "--idempotency-key"]
-                and lifecycle_idempotency_key(words[6])
-                and words[7:] == ["--format", "json"]
-            )
-        return (
-            len(words) == 10
-            and words[4] == "--if-revision"
-            and lifecycle_revision(words[5])
-            and words[6] == "--idempotency-key"
-            and lifecycle_idempotency_key(words[7])
-            and words[8:] == ["--format", "json"]
-        )
 
     if words[0] == "agent-session":
         if trusted_release_companion(
@@ -958,51 +548,6 @@ def main_agent_readiness_invocation(
             repositories=repositories,
         ) is None:
             return False
-        if words == ["agent-session", "--version"]:
-            return True
-        if words in (
-            [
-                "agent-session",
-                "activity",
-                "doctor",
-                "--agent",
-                "codex",
-                "--format",
-                "json",
-            ],
-            [
-                "agent-session",
-                "activity",
-                "doctor",
-                "--agent",
-                "claude",
-                "--format",
-                "json",
-            ],
-            [
-                "agent-session",
-                "activity",
-                "setup",
-                "--agent",
-                "codex",
-                "--repair",
-                "--dry-run",
-                "--format",
-                "json",
-            ],
-            [
-                "agent-session",
-                "activity",
-                "setup",
-                "--agent",
-                "claude",
-                "--repair",
-                "--dry-run",
-                "--format",
-                "json",
-            ],
-        ):
-            return True
         if words[:3] != [
             "agent-session",
             "work-context",
@@ -1043,33 +588,16 @@ def main_agent_readiness_invocation(
             )
             is not None
         )
-
-    if words[:2] != ["builtin", "command"] or len(repositories) != 1:
-        return False
-    agent_run_executable = trusted_release_companion(
-        "agent-run",
-        agent_docs_executable=agent_docs_executable,
-        repositories=repositories,
-    )
-    if not agent_run_executable:
-        return False
-    prefix = [
-        "builtin",
-        "command",
-        agent_run_executable,
-        "inspect",
-        "--cwd",
-        os.path.realpath(repositories[0]),
-        "--",
-    ]
-    # ``agent-run inspect`` owns child safety.  This readiness lane validates
-    # only the exact trusted outer command and requires a nonempty child argv.
-    return len(words) > len(prefix) and words[: len(prefix)] == prefix
+    return False
 
 
-def agent_docs_near_miss_invocation(words: list[str]) -> bool:
+def agent_docs_near_miss_invocation(
+    words: list[str], *, preparation_only: bool = False
+) -> bool:
     """Whether argv resembles a non-writing agent-docs read/preparation call."""
     if not words or os.path.basename(words[0]) != "agent-docs":
+        return False
+    if preparation_only and any(token in HELP_FLAGS for token in words):
         return False
     if any(
         token in AGENT_DOCS_WRITE_FLAGS or token.startswith("--output=")
@@ -1077,47 +605,11 @@ def agent_docs_near_miss_invocation(words: list[str]) -> bool:
     ):
         return False
     if "preflight" in words:
-        return True
-    return "session" in words and any(
-        token in {"prepare", "activate", "verify"} for token in words
-    )
-
-
-def agent_docs_read_only_invocation(words: list[str], executable: str) -> bool:
-    """Whether ``words`` is a trusted read-only ``agent-docs`` command.
-
-    Only the resolved trusted executable is admitted (a bare ``agent-docs`` or a
-    repo-local shadow is rejected), and only preparation/read subcommands that
-    print to stdout. ``session activate`` writes state and is handled by the
-    trusted bootstrap path instead.
-    """
-    if not words or not os.path.isabs(words[0]):
-        return False
-    if os.path.realpath(words[0]) != os.path.realpath(executable):
-        return False
-    rest = words[1:]
-    if cli_help_or_version_arguments(rest):
-        return True
-    index = _skip_value_options(rest, AGENT_DOCS_GLOBAL_VALUE_OPTIONS)
-    if cli_help_or_version_arguments(rest[index:]):
-        return True
-    if index < len(rest) and rest[index].startswith("-"):
-        # Unknown global option before the subcommand: fail closed.
-        return False
-    if index >= len(rest):
-        return False
-    subcommand = rest[index]
-    tail = rest[index + 1 :]
-    if subcommand == "session":
-        if not tail or tail[0] not in AGENT_DOCS_READ_ONLY_SESSION_SUBCOMMANDS:
-            return False
-        tail = tail[1:]
-    elif subcommand not in AGENT_DOCS_READ_ONLY_SUBCOMMANDS:
-        return False
-    for token in tail:
-        if token in AGENT_DOCS_WRITE_FLAGS or token.startswith("--output="):
-            return False
-    return True
+        return not preparation_only
+    subcommands = {"prepare", "activate"}
+    if not preparation_only:
+        subcommands.add("verify")
+    return "session" in words and any(token in subcommands for token in words)
 
 
 def resolved_executable(name: str) -> str | None:
@@ -1249,13 +741,14 @@ def contract_preflight_command(
     phase: str | None = None,
 ) -> str:
     """Exact read-only command for the contract a preparation just activated."""
-    args = agent_docs_args(repo_root, executable) + [
+    args = ["builtin", "command"] + agent_docs_args(repo_root, executable) + [
         "preflight",
         "--intent",
         intent,
     ]
     if phase:
         args += ["--phase", phase]
+    args += ["--format", "json"]
     return shlex.join(args)
 
 
@@ -1389,7 +882,7 @@ def bootstrap_activation_intents(
 
     Returns ``(words, intents, subcommand)`` on a match, else ``None``.
     """
-    words = simple_shell_words(command)
+    words = literal_bootstrap_words(command)
     if not words:
         return None
     for subcommand in ("prepare", "activate"):
@@ -1613,7 +1106,7 @@ def main() -> int:
 
     command = command_from(payload) if tool in COMMAND_TOOLS else ""
     current_session = session_id_from_payload(payload)
-    command_words = simple_shell_words(command) if tool in COMMAND_TOOLS else None
+    command_words = literal_bootstrap_words(command) if tool in COMMAND_TOOLS else None
     if tool in COMMAND_TOOLS and command_words is None:
         command_words = literal_claim_bootstrap_words(
             command,
@@ -1689,33 +1182,13 @@ def main() -> int:
     # pre-operation state and authors no content, so it must run even when
     # project-dev activation is stale or missing — otherwise a stuck
     # mid-operation checkout cannot be aborted to recover in place.
-    # `simple_shell_words` returns None on any shell control, so this stays as
+    # `literal_bootstrap_words` returns None on any shell control, so this stays as
     # exact-match narrow as the activation bootstrap: no operators, pipes,
     # redirections, or nested shells slip through.
     if command_words and is_git_recovery_argv(command_words):
         if mode_warning:
             emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
-    # Read-only exploration is not a repository mutation. An audited single
-    # simple command from the inspection allowlist is admitted without
-    # project-dev so pure discussion, diagnosis, and reading do not force
-    # implementation policy. This fails closed: anything unrecognized falls
-    # through to the mutation gate below.
-    read_effect = (
-        classify_shell_effect(
-            command,
-            read_only_invocation=lambda words: repository_safe_read_only_invocation(
-                words, repos
-            ),
-        )
-        if tool in COMMAND_TOOLS
-        else None
-    )
-    if read_effect is not None and read_effect.kind == SHELL_EFFECT_READ_ONLY:
-        if mode_warning:
-            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
-        return ALLOW
-
     if tool in EDIT_TOOLS and not edit_paths(payload):
         message = (
             "Repository edit target extraction did not produce a canonical target. "
@@ -1813,7 +1286,7 @@ def main() -> int:
             )
         return ALLOW
 
-    if command_words and main_agent_readiness_invocation(
+    if command_words and session_claim_bootstrap_invocation(
         command_words,
         repositories=repos,
         agent_docs_executable=agent_docs_executable,
@@ -1847,19 +1320,6 @@ def main() -> int:
                 message + " Work remains allowed because project-dev is advisory.",
                 mode_warning=mode_warning,
             )
-        return ALLOW
-
-    # Trusted agent-docs preparation and read commands are admitted for ANY
-    # declared intent, without first activating project-dev. This removes the
-    # false coupling where a memory/task-tools/browser-test session had to
-    # activate and read unrelated project-dev policy before it could prepare its
-    # own intent. `session activate` writes state and is handled by the trusted
-    # bootstrap below; the read subcommands here only print to stdout.
-    if command_words and agent_docs_read_only_invocation(
-        command_words, agent_docs_executable
-    ):
-        if mode_warning:
-            emit_advisory("Work remains allowed.", mode_warning=mode_warning)
         return ALLOW
 
     if not current_session:
@@ -1903,16 +1363,17 @@ def main() -> int:
             if subcommand == "prepare":
                 # Atomic primitive: the prepare envelope already reports
                 # activation + strict-preflight verification, so trust it without
-                # firing a second `session verify` probe. A failing envelope
-                # surfaces the CLI's own error code for structured recovery.
-                ok, code = consume_prepare_result(
+                # firing a second `session verify` probe. Failure details stay
+                # generic because the CLI-provided error code is untrusted text.
+                ok, _code = consume_prepare_result(
                     completed, product=product, required_intents=tuple(intents)
                 )
                 if not ok:
                     emit_block(
                         f"Trusted {prepared} preparation did not verify inside the "
                         f"hook (exit={completed.returncode}); the shell command was "
-                        f"consumed and not executed. [reason: {code}]"
+                        "consumed and not executed. "
+                        "[reason: preparation-verification-failed]"
                     )
                     return ALLOW
                 emit_block(
@@ -1932,7 +1393,7 @@ def main() -> int:
             if completed.returncode != 0 or not verified:
                 emit_block(
                     f"Trusted {prepared} activation did not verify inside the hook "
-                    f"(exit={completed.returncode}, verification={code}); the shell "
+                    f"(exit={completed.returncode}); the shell "
                     "command was consumed and not executed. "
                     "[reason: activation-verify-failed]"
                 )
@@ -1949,7 +1410,9 @@ def main() -> int:
                 "[reason: prepared]"
             )
             return ALLOW
-        if command_words and agent_docs_near_miss_invocation(command_words):
+        if command_words and agent_docs_near_miss_invocation(
+            command_words, preparation_only=True
+        ):
             recovered = recoverable_prepare_parameters(
                 command_words,
                 current_session=current_session,
@@ -2016,9 +1479,9 @@ def main() -> int:
         return ALLOW
 
     if mode == "advisory":
-        remaining: list[tuple[str, str]] = []
+        remaining: list[str] = []
         prepared_targets: list[str] = []
-        for repo_root, verification_code in failures:
+        for repo_root, _verification_code in failures:
             prepare_args = shlex.split(
                 recovery_command(
                     repo_root=repo_root,
@@ -2028,17 +1491,17 @@ def main() -> int:
                     phase=phase,
                 )
             )
-            completed, outcome = run_probe(prepare_args)
+            completed, _outcome = run_probe(prepare_args)
             if completed is None:
-                remaining.append((repo_root, f"prepare-{outcome}"))
+                remaining.append(repo_root)
                 continue
-            ok, code = consume_prepare_result(
+            ok, _code = consume_prepare_result(
                 completed, product=product, required_intents=("project-dev",)
             )
             if ok:
                 prepared_targets.append(repo_root)
             else:
-                remaining.append((repo_root, code or verification_code))
+                remaining.append(repo_root)
         if not remaining:
             targets = ", ".join(f"`{target}`" for target in sorted(prepared_targets))
             next_actions = " ".join(
@@ -2057,9 +1520,7 @@ def main() -> int:
                 mode_warning=mode_warning,
             )
             return ALLOW
-        details = "; ".join(
-            f"`{repo_root}` ({code})" for repo_root, code in sorted(remaining)
-        )
+        details = ", ".join(f"`{repo_root}`" for repo_root in sorted(remaining))
         recoveries = " ".join(
             f"For `{repo_root}`, run `"
             + recovery_command(
@@ -2070,7 +1531,7 @@ def main() -> int:
                 phase=phase,
             )
             + "`."
-            for repo_root, _code in sorted(remaining)
+            for repo_root in sorted(remaining)
         )
         emit_advisory(
             "Project-dev advisory preparation was unavailable for "
@@ -2080,11 +1541,8 @@ def main() -> int:
         )
         return ALLOW
 
-    if (
-        read_effect is not None
-        and read_effect.kind == SHELL_EFFECT_UNKNOWN
-        and len(repos) == 1
-    ):
+    # Offer finite recovery routes without classifying or admitting reads here.
+    if tool in COMMAND_TOOLS and len(repos) == 1:
         agent_run_executable = trusted_release_companion(
             "agent-run",
             agent_docs_executable=agent_docs_executable,
@@ -2106,27 +1564,28 @@ def main() -> int:
                 phase=phase,
             )
             emit_block(
-                "This shell effect is unknown, so choose exactly one finite route. "
+                "This command lacks verified read-only capability evidence, so choose exactly one finite route. "
                 f"Route 1 (local exploration): `{inspect_route}`. "
                 f"Route 2 (exact-target project-dev): run `{prepare_route}`, then "
-                "rerun the exact original command. No legacy read-only allowlist "
+                "rerun the exact original command. No argv inspection allowlist "
                 "entry was added. [reason: project-dev-required] "
-                f"Verification code: {failures[0][1]}."
+                "Project-dev verification did not succeed."
             )
             return ALLOW
     reason = (
-        "This command was not admitted by the audited read-only classifier; no "
+        "This command has no verified read-only capability bypass; no "
         "repository mutation was observed, but this shell shape could not be proven "
-        "read-only. Prepare project-dev before retrying. Read-only inspection "
-        "and trusted agent-docs preparation for any declared intent are admitted "
-        "without project-dev. "
+        "read-only. Prepare project-dev before retrying. Verified read-only "
+        "`builtin command` requests to an absolute trusted producer use the "
+        "dispatcher capability. Exact `session prepare` commands for declared "
+        "intents use the preparation bootstrap. "
         "Bare agent-docs invocations are intentionally rejected; use the resolved trusted "
         "executable and complete session context. If a Git operation is stuck mid-run, a "
         "sole `git <op> --abort` recovers in place without preparation. "
     )
-    for repo_root, code in sorted(failures):
+    for repo_root, _code in sorted(failures):
         reason += (
-            f"Target `{repo_root}` failed with `{code}`. Run `"
+            f"Project-dev verification failed for target `{repo_root}`. Run `"
             + recovery_command(
                 repo_root=repo_root,
                 executable=agent_docs_executable,

@@ -64,6 +64,7 @@ from hook_common import (
     env_split_expanded_tokens,
     invocation_is_unresolved_nested,
     invocation_tokens,
+    launcher_target_index,
     invocation_without_redirections,
     is_managed_cli_home_bin,
     is_assignment,
@@ -120,6 +121,12 @@ REMEDY_SHELL_CONTEXT = (
     "command line moves the Git context, so nothing after it can be classified. "
     "Run the Git command on its own with an explicit repository. Example: "
     "`git -C /absolute/path push origin feat/topic`."
+)
+MERGE_WORKTREE_HINT = (
+    "For topic integration, use a single literal absolute target: "
+    "`git -C <topic-checkout> merge --no-commit --no-ff --no-edit <sha>`. "
+    "Replace <topic-checkout> with the absolute checkout path and <sha> with "
+    "the verified integration commit; the target branch is still checked."
 )
 HEREDOC_TEXT_HINT = (
     " If that word is here-document text, quote the delimiter (`<<'EOF'`) so "
@@ -923,7 +930,16 @@ def process_wrapper_hides_governed_invocation(
     simple_command: list[str], invocation: list[str]
 ) -> bool:
     """Fail closed when a wrapper hides semantic-commit authoring argv."""
-    if not invocation or PurePosixPath(invocation[0]).name == "semantic-commit":
+    if not invocation:
+        return False
+    if PurePosixPath(invocation[0]).name == "semantic-commit":
+        structural = invocation_tokens(
+            simple_command,
+            preserve_launchers=PROCESS_LAUNCH_WRAPPERS | frozenset({"sudo", "xargs"}),
+        )
+        if structural and PurePosixPath(structural[0]).name in {"sudo", "xargs"}:
+            authors_commit, _writes_files, _repo = semantic_commit_invocation_effects(invocation[1:])
+            return authors_commit
         return False
     candidate = process_wrapper_governed_invocation(simple_command)
     dynamic_must_block_here = False
@@ -950,7 +966,9 @@ def process_wrapper_hides_governed_invocation(
 
 def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
     """Resolve bounded shell precommand modifiers to the governed argv."""
-    invocation = invocation_tokens(simple_command)
+    # This guard owns a broader process-wrapper grammar and its depth/context
+    # evidence. Keep launchers visible until that classifier accounts for them.
+    invocation = invocation_tokens(simple_command, preserve_launchers=PROCESS_LAUNCH_WRAPPERS)
     for _depth in range(SHELL_BUILTIN_UNWRAP_LIMIT):
         if (
             not invocation
@@ -961,7 +979,7 @@ def delivery_invocation_tokens(simple_command: list[str]) -> list[str]:
         if len(invocation) == 1:
             return invocation
         invocation = invocation_tokens(
-            invocation[1:], shell_boundary=False
+            invocation[1:], shell_boundary=False, preserve_launchers=PROCESS_LAUNCH_WRAPPERS
         )
     return [OPAQUE_WRAPPER_COMMAND, *invocation]
 
@@ -1121,37 +1139,9 @@ def process_wrapper_target_index(
             return resolved(index)
         return None
 
-    if executable == "nohup":
-        if arguments[:1] == ["--"]:
-            index = 1
-        elif arguments and arguments[0].startswith("-"):
-            return None
-        return resolved(index)
-
-    if executable == "nice":
-        while index < len(arguments):
-            token = arguments[index]
-            if shell_word_is_dynamic(token):
-                return -1
-            if token == "--":
-                index += 1
-                break
-            if token in {"-n", "--adjustment"}:
-                if index + 1 < len(arguments) and shell_word_is_dynamic(
-                    arguments[index + 1]
-                ):
-                    return -1
-                index += 2
-                continue
-            if token.startswith("--adjustment=") or re.fullmatch(
-                r"-[0-9]+", token
-            ):
-                index += 1
-                continue
-            if token.startswith("-"):
-                return None
-            break
-        return resolved(index)
+    if executable in {"nice", "nohup"}:
+        target_index = launcher_target_index([executable, *arguments], 0)
+        return target_index - 1 if target_index is not None and target_index >= 0 else target_index
 
     if executable == "timeout":
         while index < len(arguments):
@@ -1506,7 +1496,7 @@ def executable_resolution_rejection(
 
 def shell_command_changes_git_context(simple_command: list[str]) -> bool:
     """Whether this command can alter later Git cwd/config interpretation."""
-    invocation = invocation_tokens(simple_command)
+    invocation = invocation_tokens(simple_command, preserve_launchers=PROCESS_LAUNCH_WRAPPERS)
     executable = ""
     arguments: list[str] = []
     if invocation:
@@ -1566,7 +1556,9 @@ def shell_command_changes_executable_resolution(
     Redirections are dropped first: ``alias bat 2>/dev/null`` is still a query,
     and a redirection cannot define an alias, hash, function, or builtin.
     """
-    invocation = invocation_without_redirections(invocation_tokens(simple_command))
+    invocation = invocation_without_redirections(
+        invocation_tokens(simple_command, preserve_launchers=PROCESS_LAUNCH_WRAPPERS)
+    )
     executable = ""
     arguments: list[str] = []
     if invocation:
@@ -1661,7 +1653,7 @@ def literal_directory_target(simple_command: list[str]) -> str | None:
     the sequence started, and expansion, globbing, or `~` hides the target, so
     those keep the fail-closed verdict instead of resolving to a guess.
     """
-    invocation = invocation_tokens(simple_command)
+    invocation = invocation_tokens(simple_command, preserve_launchers=PROCESS_LAUNCH_WRAPPERS)
     if len(invocation) != 2 or PurePosixPath(invocation[0]).name != "cd":
         return None
     if simple_command[: len(invocation)] != invocation:
@@ -2069,6 +2061,20 @@ def update_ref_target(arguments: list[str]) -> str | None:
     return None
 
 
+def git_rewrite_is_non_authoring(subcommand: str, arguments: list[str]) -> bool:
+    """Recognize the existing no-authoring forms without checkout probes."""
+    if subcommand in {"merge", "cherry-pick"} and arguments in (
+        ["--abort"], ["--quit"],
+    ):
+        return True
+    if arguments in (["-h"], ["--help"]):
+        return True
+    return subcommand == "reset" and (
+        not arguments
+        or ("--" in arguments and arguments.index("--") < len(arguments) - 1)
+    )
+
+
 def git_default_branch_rewrite_targets_default(
     probe: GitProbe,
     subcommand: str,
@@ -2079,18 +2085,8 @@ def git_default_branch_rewrite_targets_default(
     """Classify raw ref/commit-producing Git paths that could bypass delivery."""
     if subcommand not in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
         return False
-    if subcommand in {"merge", "cherry-pick"} and arguments in (
-        ["--abort"],
-        ["--quit"],
-    ):
+    if git_rewrite_is_non_authoring(subcommand, arguments):
         return False
-    if arguments in (["-h"], ["--help"]):
-        return False
-    if subcommand == "reset":
-        if not arguments:
-            return False
-        if "--" in arguments and arguments.index("--") < len(arguments) - 1:
-            return False
 
     expected = default_branch(probe, cwd, config_arguments=config_arguments)
     if not expected:
@@ -2841,7 +2837,10 @@ def invocation_block_reason(
                 f"applies. {POLICY}"
             )
         needs_repository_attestation = (
-            subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS
+            (
+                subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS
+                and not git_rewrite_is_non_authoring(subcommand, action)
+            )
             or subcommand == "push"
             or not known_builtin
         )
@@ -2861,6 +2860,7 @@ def invocation_block_reason(
                 "where this Git operation applies. Pass an absolute `git -C "
                 "/path/to/repository ...` target or run the Git command in a "
                 "separate tool call with that worktree as its workdir."
+                + (f" {MERGE_WORKTREE_HINT}" if subcommand == "merge" else "")
             )
         def rewrite_reason(subcommand: str, action: list[str]) -> str:
             target = git_default_branch_rewrite_targets_default(
@@ -2980,7 +2980,7 @@ def command_block_reason(
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
     resolves_directories = not any(
-        nested_shell_payload(invocation_tokens(tokens))
+        nested_shell_payload(invocation_tokens(tokens, preserve_launchers=PROCESS_LAUNCH_WRAPPERS))
         for tokens, _scope in scoped_commands
     )
     directory_resolved = initial_directory_resolved
@@ -3266,7 +3266,19 @@ def main() -> int:
         # A Codex code-mode session record authenticates the session root, not
         # a recorded call whose own workdir could not be decoded; that call may
         # run in any checkout, so its repository stays unresolved.
-        if context.call_workdir_unreadable:
+        # Native Codex code-mode hooks use an independent exec-* id. If it
+        # cannot be matched to a call workdir, a session/process fallback is
+        # not evidence of the checkout this nested command actually targets.
+        tool_use_id = payload.get("tool_use_id")
+        unbound_codex_nested_call = (
+            os.environ.get("AGENT_RUNTIME_PRODUCT") == "codex"
+            and isinstance(tool_use_id, str)
+            and tool_use_id.startswith("exec-")
+            and context.source in {
+                "managed-session-cwd", "session-cwd", "process-cwd"
+            }
+        )
+        if context.call_workdir_unreadable or unbound_codex_nested_call:
             base_resolved = False
             base_diagnostic = "workdir-attestation-missing"
         reason = command_block_reason(

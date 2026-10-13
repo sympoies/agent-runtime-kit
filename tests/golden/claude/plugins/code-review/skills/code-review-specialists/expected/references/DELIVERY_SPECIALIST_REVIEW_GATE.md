@@ -35,9 +35,9 @@ Every end-to-end delivery PR or MR receives a pre-merge review. Pre-merge is the
 delivery context; quick or full is the review profile inside that context.
 
 1. Resolve reviewable metadata and diff base:
-   - GitHub PR: use `forge-cli --provider github pr view <pr>` or the
-     equivalent `gh pr view` JSON fields to resolve the PR number, URL, base
-     branch, head branch, draft state, check state, and closing issue links.
+   - GitHub PR: use `forge-cli --provider github pr view <pr>` to resolve
+     the PR number, URL, base branch, head branch, draft state, check state,
+     and closing issue links.
    - GitLab MR: use `forge-cli --provider gitlab pr view <mr>` or the
      equivalent `glab mr view` output to resolve the MR number, URL, target
      branch, source branch, draft state, and pipeline state.
@@ -119,11 +119,12 @@ whenever quick eligibility fails.
    before any provider write using `REVIEW_OUTCOME_POSTING_CONTRACT.md`. In
    `governed` mode, wait for the selected lens wave, merge the findings, and
    publish one combined pre-repair report through `forge-review-publish`.
-   The owner App carries the complete native review exactly once and the
-   personal identity records metadata-only provenance. Do not send a per-lens
+   The configured reviewer identity carries the complete native review exactly
+   once. Human review uses an independent reviewer user account; automatic
+   review may use an App. Any separate provenance step remains metadata-only. Do not send a per-lens
    full report through `forge-cli pr review` on this path. Select this governed
    branch before publication. A required but missing publisher and a configured
-   publisher or bot failure both fail closed. Only the guarded
+   publisher or identity failure both fail closed. Only the guarded
    `personal-escape` state may use the ambient maintainer identity: it requires
    explicit authorization, the same expected head, a non-empty reason, and
    proof that no native mutation occurred. A pending/resumable receipt or

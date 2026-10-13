@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import shlex
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
@@ -29,6 +31,12 @@ POLICY = Path(
         REPO_ROOT / "core/policies/agent-hook/runtime-kit-v1.toml",
     )
 )
+generator_spec = importlib.util.spec_from_file_location(
+    "hook_policy_inventory", REPO_ROOT / "scripts/dev/hook_policy_inventory.py"
+)
+assert generator_spec is not None and generator_spec.loader is not None
+hook_inventory = importlib.util.module_from_spec(generator_spec)
+generator_spec.loader.exec_module(hook_inventory)
 DISPATCH_CASES = REPO_ROOT / "tests/agent-hook/fixtures/dispatcher-cases.json"
 LATENCY_BUDGET_MS = 25.0
 LATENCY_ABSOLUTE_CEILING_MS = 1000.0
@@ -358,12 +366,13 @@ class AgentHookExecutableContractTests(unittest.TestCase):
     def test_policy_validates_and_inventory_is_complete(self) -> None:
         validated = self.json_result(self.run_hook("validate", "--format", "json"))
         self.assertEqual(validated["bundle_id"], "runtime-kit")
-        self.assertEqual(validated["rule_count"], 92)
+        expected_ids = {rule["id"] for rule in hook_inventory.load_policy(POLICY)["rules"]}
+        self.assertEqual(validated["rule_count"], len(expected_ids))
 
         inventory = self.json_result(self.run_hook("inventory", "--format", "json"))
         self.assertEqual(inventory["schema_version"], "agent-hook.inventory.v1")
-        self.assertEqual(len(inventory["rules"]), 92)
-        self.assertEqual(len({rule["id"] for rule in inventory["rules"]}), 92)
+        self.assertEqual(len(inventory["rules"]), len(expected_ids))
+        self.assertEqual({rule["id"] for rule in inventory["rules"]}, expected_ids)
 
     def test_grouped_matchers_select_exact_rules_in_global_shadow(self) -> None:
         fixture = json.loads(DISPATCH_CASES.read_text(encoding="utf-8"))
@@ -394,7 +403,12 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(decision["action"], "allow", decision)
-                self.assertEqual(len(decision["shadow"]), case["shadow_rule_count"])
+                expected_ids = hook_inventory.matching_rule_ids(
+                    hook_inventory.load_policy(POLICY),
+                    case["product"], case["event"], case["matcher"],
+                )
+                self.assertEqual({row["rule_id"] for row in decision["shadow"]}, expected_ids)
+                self.assertEqual(len(decision["shadow"]), len(expected_ids))
 
         unmatched = self.json_result(
             self.run_hook(
@@ -455,7 +469,11 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         )
         full_after = self.snapshot_tree()
         self.assertEqual(decision["action"], "allow")
-        self.assertEqual(len(decision["shadow"]), 18)
+        expected_ids = hook_inventory.matching_rule_ids(
+            hook_inventory.load_policy(POLICY), "codex", "PreToolUse", "Bash"
+        )
+        self.assertEqual({row["rule_id"] for row in decision["shadow"]}, expected_ids)
+        self.assertEqual(len(decision["shadow"]), len(expected_ids))
         if not observation_supported:
             self.assertEqual(full_after, before)
             return
@@ -525,6 +543,37 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         self.assertEqual(recent[0]["code"], "dispatch-completed")
         self.assertEqual(recent[0]["disposition"], "allow")
 
+    def test_read_only_shadow_missing_sibling_names_fixture_prerequisite(self) -> None:
+        prefix = self.root / "standalone-binary"
+        prefix.mkdir()
+        standalone = prefix / "agent-hook"
+        shutil.copy2(self.binary, standalone)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "AgentHookExecutableContractTests."
+                "test_read_only_capability_shadow_is_product_parity_evidence_only",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **self.env,
+                "AGENT_HOOK_BIN": str(standalone),
+                "AGENT_HOOK_TEST_OUTPUT_ROOT": str(self.root / "child-output"),
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "managed-query fixture requires an executable agent-docs sibling",
+            result.stderr,
+        )
+        self.assertIn("(case='managed-query')", result.stderr)
+        self.assertIn("FAILED (failures=1)", result.stderr)
+
     def test_read_only_capability_shadow_is_product_parity_evidence_only(self) -> None:
         agent_docs = self.binary.with_name("agent-docs")
         cases = (
@@ -558,35 +607,159 @@ class AgentHookExecutableContractTests(unittest.TestCase):
             ),
         )
         for case_name, command, expected_action, expected_code in cases:
-            decisions = []
-            for product in ("codex", "claude"):
-                decision = self.json_result(
-                    self.run_hook(
-                        "dispatch",
-                        "--product",
-                        product,
-                        "--shadow",
-                        "--format",
-                        "json",
-                        payload={
-                            "hook_event_name": "PreToolUse",
-                            "tool_name": "Bash",
-                            "cwd": str(REPO_ROOT),
-                            "tool_input": {"command": command},
-                        },
+            with self.subTest(case=case_name):
+                if case_name == "managed-query":
+                    self.assertTrue(
+                        agent_docs.is_file() and os.access(agent_docs, os.X_OK),
+                        "managed-query fixture requires an executable agent-docs sibling "
+                        "beside AGENT_HOOK_BIN; build or install the matching agent-docs binary",
                     )
+                decisions = []
+                for product in ("codex", "claude"):
+                    decision = self.json_result(
+                        self.run_hook(
+                            "dispatch",
+                            "--product",
+                            product,
+                            "--shadow",
+                            "--format",
+                            "json",
+                            payload={
+                                "hook_event_name": "PreToolUse",
+                                "tool_name": "Bash",
+                                "cwd": str(REPO_ROOT),
+                                "tool_input": {"command": command},
+                            },
+                        )
+                    )
+                    evidence = [
+                        row
+                        for row in decision["shadow"]
+                        if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only"
+                    ]
+                    self.assertEqual(len(evidence), 1, (case_name, product, decision))
+                    self.assertEqual(evidence[0]["action"], expected_action)
+                    self.assertEqual(evidence[0]["code"], expected_code)
+                    self.assertEqual(decision["action"], "allow")
+                    decisions.append(evidence[0])
+                self.assertEqual(decisions[0], decisions[1], case_name)
+
+    def test_read_only_capability_bypasses_only_paired_preparation(self) -> None:
+        agent_docs = self.binary.with_name("agent-docs")
+        self.assertTrue(agent_docs.is_file() and os.access(agent_docs, os.X_OK))
+        generated = subprocess.run(
+            [sys.executable, "-c",
+             "import json, runpy, sys; sys.path.insert(0, sys.argv[1]); "
+             "gate = runpy.run_path(sys.argv[1] + '/pre-edit-intent-gate.py'); "
+             "print(json.dumps([gate['contract_preflight_command']("
+             "repo_root=sys.argv[2], executable=sys.argv[3], intent=intent, "
+             "phase=phase) for intent, phase in [('project-dev', None), "
+             "('task-tools', None), ('browser-test', None), ('project-dev', 'edit')]]))",
+             str(REPO_ROOT / "core/hooks/shared"), str(REPO_ROOT), str(agent_docs)],
+            env=self.env, cwd=REPO_ROOT, capture_output=True, text=True,
+            check=True, timeout=15,
+        )
+        managed_queries = json.loads(generated.stdout)
+        managed_query = managed_queries[0]
+        agent_run = self.binary.with_name("agent-run")
+        self.assertTrue(agent_run.is_file() and os.access(agent_run, os.X_OK))
+        inspection_argv = [str(agent_run), "inspect", "--cwd", str(REPO_ROOT),
+                           "--", "/bin/sh", "-c", "git status --short | wc -l"]
+        inspection_probe = subprocess.run(
+            inspection_argv, env=self.env, cwd=REPO_ROOT,
+            capture_output=True, text=True, check=False, timeout=15,
+        )
+        if inspection_probe.returncode != 0:
+            self.assertIn("error[", inspection_probe.stderr)
+            if sys.platform == "darwin":
+                self.assertEqual(inspection_probe.returncode, 69)
+                self.assertIn("error[sandbox-backend-unavailable]", inspection_probe.stderr)
+        inspection_query = shlex.join(["builtin", "command", *inspection_argv])
+        cross_target_query = managed_query.replace(
+            "--project-path " + shlex.quote(str(REPO_ROOT)),
+            "--project-path " + shlex.quote(str(self.root)),
+        )
+        source_blocks = POLICY.read_text(encoding="utf-8").split("[[rules]]")[1:]
+        for product in ("codex", "claude"):
+            with self.subTest(product=product):
+                selected = []
+                for block in source_blocks:
+                    rule = tomllib.loads("[[rules]]" + block)["rules"][0]
+                    if rule["events"] != ["PreToolUse"]:
+                        continue
+                    capability = rule["capability"]
+                    if capability["id"] == "execution.read-only.v1" or (
+                        capability["id"] == "runtime-kit.handler.v1"
+                        and capability["handler_id"] in {
+                            "pre-edit-intent-gate", "checkout-lease-guard"
+                        }
+                        and rule["matcher"] == "Bash"
+                    ):
+                        selected.append("[[rules]]" + block)
+                self.assertEqual(len(selected), 5)
+                self.write_policy("\n".join(selected))
+                self.install_fixture_handler(
+                    product, "pre-edit-intent-gate",
+                    '{"decision":"block","reason":"fixture-preparation-required"}',
                 )
-                evidence = [
-                    row
-                    for row in decision["shadow"]
-                    if row["rule_id"] == "runtime.shared.pre-tool-use.bash.read-only-shadow"
-                ]
-                self.assertEqual(len(evidence), 1, (case_name, product, decision))
-                self.assertEqual(evidence[0]["action"], expected_action)
-                self.assertEqual(evidence[0]["code"], expected_code)
-                self.assertEqual(decision["action"], "allow")
-                decisions.append(evidence[0])
-            self.assertEqual(decisions[0], decisions[1], case_name)
+                self.install_fixture_handler(product, "checkout-lease-guard", "{}")
+                for command, expected in tuple(
+                    (query, "allow") for query in managed_queries
+                ) + (
+                    (cross_target_query, "allow"),
+                    ("printf changed > tracked.txt", "block"),
+                    ("echo unsupported", "block"),
+                ):
+                    with self.subTest(command=command):
+                        decision = self.json_result(self.run_hook(
+                            "dispatch", "--product", product, "--format", "json",
+                            payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                     "cwd": str(REPO_ROOT), "tool_input": {"command": command}},
+                            check=False,
+                        ))
+                        self.assertEqual(decision["action"], expected, decision)
+
+                with self.subTest(os_inspection=product):
+                    if inspection_probe.returncode != 0:
+                        self.skipTest("OS-enforced inspection is unavailable; fallback is checked separately")
+                    decision = self.json_result(self.run_hook(
+                        "dispatch", "--product", product, "--format", "json",
+                        payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                 "cwd": str(REPO_ROOT), "tool_input": {"command": inspection_query}},
+                        check=False,
+                    ))
+                    self.assertEqual(decision["action"], "allow", decision)
+
+                fallback_commands = ["printf changed > tracked.txt", "echo unsupported"]
+                if inspection_probe.returncode != 0:
+                    fallback_commands.append(inspection_query)
+                for response, expected in (
+                    ('{"decision":"block","reason":"fixture-preparation-required"}', "block"),
+                    ("{}", "allow"),
+                ):
+                    self.install_fixture_handler(product, "pre-edit-intent-gate", response)
+                    for command in fallback_commands:
+                        with self.subTest(fallback=command, preparation=expected):
+                            decision = self.json_result(self.run_hook(
+                                "dispatch", "--product", product, "--format", "json",
+                                payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                         "cwd": str(REPO_ROOT), "tool_input": {"command": command}},
+                                check=False,
+                            ))
+                            self.assertEqual(decision["action"], expected, decision)
+
+                # Verified reads bypass one paired rule, never another guard.
+                self.install_fixture_handler(
+                    product, "checkout-lease-guard",
+                    '{"decision":"block","reason":"fixture-independent-guard"}',
+                )
+                decision = self.json_result(self.run_hook(
+                    "dispatch", "--product", product, "--format", "json",
+                    payload={"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                             "cwd": str(REPO_ROOT), "tool_input": {"command": managed_query}},
+                    check=False,
+                ))
+                self.assertEqual(decision["action"], "block", decision)
 
     def test_trace_and_output_do_not_retain_private_provider_fields(self) -> None:
         sentinels = [
@@ -1018,123 +1191,6 @@ capability = {{ id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-m
                 self.assertEqual(failed.returncode, 0)
                 self.assertEqual(json.loads(failed.stdout), {})
 
-    def test_runtime_checkpoint_write_reaches_real_product_dispatchers(self) -> None:
-        self.env["AGENT_SESSION_COORDINATION_MODE"] = "enforce"
-        self.env["AGENT_SESSION_ID"] = "fixture-current"
-        self.env["AGENT_SESSION_RUNTIME_ID"] = "incarnation-current"
-        session_dir = self.session_state / "sessions" / "fixture-current"
-        coordination_dir = session_dir / "coordination"
-        coordination_dir.mkdir(mode=0o700)
-        session_dir.chmod(0o700)
-        capability = coordination_dir / "capability"
-        capability.write_text("private-capability\n", encoding="utf-8")
-        capability.chmod(0o600)
-        checkpoint = coordination_dir / (
-            "main-agent-checkpoint-"
-            f"{hashlib.sha256(b'incarnation-current').hexdigest()}.json"
-        )
-        checkpoint.write_text("", encoding="utf-8")
-        checkpoint.chmod(0o600)
-        self.env["AGENT_SESSION_CAPABILITY_FILE"] = str(capability)
-        self.env["AGENT_SESSION_CHECKPOINT_FILE"] = str(checkpoint)
-        activity_bin = self.root / "agent-session-activity-fixture"
-        activity_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        activity_bin.chmod(0o700)
-        self.env["AGENT_SESSION_BIN"] = str(activity_bin)
-        self.write_coordination_registry(peer_fresh=False, same_reference=False)
-        registry_path = self.session_state / "coordination/registry.json"
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        registry["brokers"].pop("fixture-peer")
-        registry["claims"] = [
-            claim
-            for claim in registry["claims"]
-            if claim["session_id"] == "fixture-current"
-        ]
-        registry_path.write_text(
-            json.dumps(registry, indent=2) + "\n", encoding="utf-8"
-        )
-        body = json.dumps(
-            {
-                "schema_version": "main-agent.checkpoint-input.v1",
-                "summary": "aggregate dispatch passed",
-                "next_action": "submit",
-                "state": "submitted",
-            }
-        )
-
-        for product, matcher, tool_input in (
-            (
-                "codex",
-                "Bash",
-                {
-                    "command": (
-                        "printf '%s\\n' "
-                        f"{shlex.quote(body)} > {shlex.quote(str(checkpoint))}"
-                    )
-                },
-            ),
-            (
-                "claude",
-                "Write",
-                {"file_path": str(checkpoint), "content": body + "\n"},
-            ),
-        ):
-            with self.subTest(product=product):
-                hook_root = (
-                    Path(self.env["CODEX_HOME"]) / "hooks"
-                    if product == "codex"
-                    else self.home / ".claude/hooks"
-                )
-                shutil.copytree(
-                    REPO_ROOT / "core/hooks/shared",
-                    hook_root,
-                    dirs_exist_ok=True,
-                )
-                self.write_config(POLICY)
-                payload = {
-                    "hook_event_name": "PreToolUse",
-                    "tool_name": matcher,
-                    "tool_use_id": f"checkpoint-{product}",
-                    "cwd": str(REPO_ROOT),
-                    "tool_input": tool_input,
-                }
-                decision = self.json_result(
-                    self.run_hook(
-                        "dispatch",
-                        "--product",
-                        product,
-                        "--format",
-                        "json",
-                        payload=payload,
-                    )
-                )
-                self.assertEqual(decision["action"], "allow", decision)
-                if matcher == "Bash":
-                    subprocess.run(
-                        ["bash", "-c", tool_input["command"]],
-                        cwd=REPO_ROOT,
-                        env=self.env,
-                        check=True,
-                    )
-                else:
-                    checkpoint.write_text(tool_input["content"], encoding="utf-8")
-                self.assertEqual(json.loads(checkpoint.read_text()), json.loads(body))
-                self.assertEqual(stat.S_IMODE(checkpoint.stat().st_mode), 0o600)
-                post = self.json_result(
-                    self.run_hook(
-                        "dispatch",
-                        "--product",
-                        product,
-                        "--format",
-                        "json",
-                        payload={
-                            **payload,
-                            "hook_event_name": "PostToolUse",
-                            "tool_response": {"ok": True},
-                        },
-                    )
-                )
-                self.assertEqual(post["action"], "allow")
 
     def test_owner_liveness_is_conservative_and_uses_five_minute_legacy_ttl(self) -> None:
         self.env["AGENT_SESSION_COORDINATION_MODE"] = "enforce"
