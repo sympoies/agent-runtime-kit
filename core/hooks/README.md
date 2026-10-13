@@ -235,7 +235,11 @@ only the top-level `workdir` is read. The wrapper may bind the result and render
 call exists but its workdir is unreadable, a managed-session-cwd result
 reports `call_workdir_unreadable`: that session record attests the session
 root, not this call, and `block-unsafe-default-delivery.py` then treats the
-call's repository as unresolved.
+call's repository as unresolved. Native Codex nested calls use an independent
+`exec-*` id; when only a session/process cwd fallback is available, the
+default-delivery guard also treats their repository as unresolved. Its merge
+refusal names the literal absolute `git -C <topic-checkout> merge --no-commit
+--no-ff --no-edit <sha>` route, which still verifies the target branch.
 Direct-edit verification stays target-based; shell verification is
 command-context based.
 
