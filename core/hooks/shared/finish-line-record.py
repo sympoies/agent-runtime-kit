@@ -66,7 +66,10 @@ from hook_common import (
     session_marker_key,
     strip_heredoc_bodies,
     tool_input_dict,
-    validation_contracts,
+    invalid_declaration_reason,
+    load_validation_contracts,
+    TRANSITIONAL_VALIDATION_FILE,
+    VALIDATION_FILE,
     validation_command_target_key,
     validation_marker_set,
     validation_pending_marker,
@@ -1483,7 +1486,20 @@ def main() -> int:
     repo_root = git_toplevel()
     if not repo_root:
         return ALLOW
-    contracts = validation_contracts(repo_root)
+    contracts, invalid_declarations = load_validation_contracts(repo_root)
+    if invalid_declarations:
+        declarations = {
+            os.path.realpath(os.path.join(repo_root, name))
+            for name in (VALIDATION_FILE, TRANSITIONAL_VALIDATION_FILE)
+        }
+        if tool in EDIT_TOOLS and any(
+            not path.endswith(".md")
+            and under_repo(path, repo_root)
+            and os.path.realpath(os.path.join(repo_root, path)) not in declarations
+            for path in file_paths_from_payload(payload)
+        ):
+            emit_block(invalid_declaration_reason(repo_root, invalid_declarations))
+        return ALLOW
     if not contracts:
         return ALLOW
 

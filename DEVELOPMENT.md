@@ -16,7 +16,8 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 - Identify the source owner and every rendered, manifest, fixture, golden, and
   product-adapter surface affected by the change.
 - Read the edit contract (`core/policies/files-hooks-validation.md`) and the
-  declared finish-line in `VALIDATION.toml`.
+  declared finish-line (this repository still declares it transitionally in
+  `AGENT_DOCS.toml` `[[validation]]`; other repositories use `VALIDATION.toml`).
 
 - Read the optional documentation placement policy before adding, moving,
   promoting, indexing, or deleting durable docs.

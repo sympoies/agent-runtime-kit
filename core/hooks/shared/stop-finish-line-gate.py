@@ -45,7 +45,8 @@ from hook_common import (
     session_marker_key,
     touch_marker,
     validation_command_target_key,
-    validation_contracts,
+    invalid_declaration_reason,
+    load_validation_contracts,
     validation_marker_set,
     validation_tombstone_dir,
 )
@@ -755,7 +756,10 @@ def main() -> int:
     repo_root = git_toplevel()
     if not repo_root:
         return ALLOW
-    contracts = validation_contracts(repo_root)
+    contracts, invalid_declarations = load_validation_contracts(repo_root)
+    if invalid_declarations:
+        emit_block(invalid_declaration_reason(repo_root, invalid_declarations))
+        return ALLOW
     try:
         state_lock = acquire_validation_state_lock(repo_root)
     except OSError:

@@ -1230,20 +1230,26 @@ def _toml_value(raw: str) -> Any:
     raw = raw.strip()
     if raw.startswith("["):
         items: list[Any] = []
-        body = raw[1:]
-        while True:
-            body = re.sub(r"^(?:\s|,|#[^\n]*)+", "", body)
-            if body.startswith("]"):
-                if re.sub(r"#[^\n]*", "", body[1:]).strip():
-                    raise ValueError("unsupported validation value")
-                return items
+        body = _skip_blank(raw[1:])
+        while not body.startswith("]"):
             value, consumed = _toml_string(body)
             items.append(value)
-            body = body[consumed:]
+            body = _skip_blank(body[consumed:])
+            if body.startswith(","):
+                body = _skip_blank(body[1:])
+            elif not body.startswith("]"):
+                raise ValueError("array items must be comma-separated")
+        if re.sub(r"#[^\n]*", "", body[1:]).strip():
+            raise ValueError("unsupported validation value")
+        return items
     value, consumed = _toml_string(raw)
     if raw[consumed:].strip():
         raise ValueError("unsupported validation value")
     return value
+
+
+def _skip_blank(text: str) -> str:
+    return re.sub(r"^(?:\s|#[^\n]*)+", "", text)
 
 
 def _toml_string(text: str) -> tuple[str, int]:
@@ -1278,15 +1284,22 @@ def _validation_entries_subset(text: str) -> list[dict[str, Any]]:
             continue
         if line.startswith("["):
             header = line.split("#", 1)[0].strip()
-            current = {} if header == "[[validation]]" else None
-            if current is not None:
+            if re.fullmatch(r"\[\[\s*validation\s*\]\]", header):
+                current = {}
                 entries.append(current)
+            elif re.match(r"\[+\s*[\"']?validation\b", header):
+                raise ValueError("validation must be an array of tables")
+            else:
+                current = None
             continue
         if current is None:
             continue
         key, sep, raw = line.partition("=")
-        if not sep:
+        key = key.strip()
+        if not sep or re.fullmatch(r"[A-Za-z0-9_-]+", key) is None:
             raise ValueError("unsupported validation line")
+        if key in current:
+            raise ValueError("duplicate validation key")
         raw = raw.strip()
         if raw.startswith("["):
             while not _array_closed(raw) and index < len(lines):
@@ -1296,7 +1309,7 @@ def _validation_entries_subset(text: str) -> list[dict[str, Any]]:
             raise ValueError("unsupported validation value")
         else:
             raw = _strip_trailing_comment(raw)
-        current[key.strip()] = _toml_value(raw)
+        current[key] = _toml_value(raw)
     return entries
 
 
@@ -1351,84 +1364,123 @@ def _validation_entries(path: str) -> list[dict[str, Any]]:
     return [entry for entry in validation if isinstance(entry, dict)]
 
 
+VALIDATION_KEYS = frozenset(
+    {"context", "commands", "marker", "description", "product", "products"}
+)
+
+
+def _string_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _checked_entry(entry: Any) -> dict[str, Any]:
+    """Validate one `[[validation]]` table against the agent-hook schema."""
+    if not isinstance(entry, dict) or not set(entry) <= VALIDATION_KEYS:
+        raise ValueError("validation entry has an unsupported shape")
+    context = entry.get("context")
+    commands = entry.get("commands")
+    if (
+        not isinstance(context, str)
+        or re.fullmatch(r"[A-Za-z0-9_./-]+", context.strip()) is None
+        or not _string_list(commands)
+        or not commands
+        or any(not command.strip() for command in commands)
+        or not isinstance(entry.get("marker", ""), str)
+        or not isinstance(entry.get("description", ""), str)
+        or not (
+            isinstance(entry.get("product", ""), str)
+            or _string_list(entry.get("product"))
+        )
+        or not _string_list(entry.get("products", []))
+    ):
+        raise ValueError("validation entry has an unsupported shape")
+    return entry
+
+
 def _entry_products(entry: Mapping[str, Any]) -> set[str] | None:
+    if "product" not in entry and "products" not in entry:
+        return None
     products: set[str] = set()
-    declared = False
     for key in ("product", "products"):
-        value = entry.get(key)
-        if value is None:
-            continue
-        declared = True
-        values = [value] if isinstance(value, str) else value
-        if isinstance(values, list):
-            products.update(item.strip() for item in values if isinstance(item, str))
-    return products if declared else None
+        value = entry.get(key, [])
+        products.update(item.strip() for item in ([value] if isinstance(value, str) else value))
+    return products
 
 
 def _read_contracts(path: str, product: str | None) -> list[dict[str, Any]]:
     contracts: list[dict[str, Any]] = []
-    for entry in _validation_entries(path):
+    for entry in [_checked_entry(entry) for entry in _validation_entries(path)]:
         products = _entry_products(entry)
         if product and products is not None and product not in products:
             continue
-        context = entry.get("context")
-        commands = entry.get("commands")
-        if not isinstance(context, str) or not context.strip():
-            continue
-        if not isinstance(commands, list):
-            continue
-        commands = [
-            command.strip()
-            for command in commands
-            if isinstance(command, str) and command.strip()
-        ]
-        if not commands:
-            continue
-        marker = entry.get("marker")
-        context = context.strip()
+        context = entry["context"].strip()
         existing = next(
             (item for item in contracts if item["context"] == context), None
         )
         if existing is None:
             existing = {"context": context, "commands": [], "marker": ""}
             contracts.append(existing)
-        for command in commands:
-            if command not in existing["commands"]:
-                existing["commands"].append(command)
-        if isinstance(marker, str) and marker.strip():
-            existing["marker"] = marker.strip()
+        for command in entry["commands"]:
+            if command.strip() not in existing["commands"]:
+                existing["commands"].append(command.strip())
+        if entry.get("marker", "").strip():
+            existing["marker"] = entry["marker"].strip()
     for contract in contracts:
         if not contract["marker"]:
             contract["marker"] = _validation_marker_default(contract["context"])
     return contracts
 
 
-def validation_contracts(repo_root: str) -> list[dict[str, Any]]:
-    """The repo's declared validation contracts, or an empty list.
+def load_validation_contracts(
+    repo_root: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The repo's declared validation contracts plus invalid declaration files.
 
     Returns one ``{"context": "...", "commands": [...], "marker": "..."}``
-    record per declared context with at least one command, read from the
-    repository-root ``VALIDATION.toml`` (the agent-hook validation contract).
-    Entries scoped with ``product``/``products`` apply only to that runtime
-    product. During the migration, contexts not declared there are still read
-    from ``[[validation]]`` tables in ``AGENT_DOCS.toml``. An unreadable or
-    malformed file contributes no contracts.
+    record per declared context, read from the repository-root
+    ``VALIDATION.toml`` (the agent-hook validation contract). Entries scoped
+    with ``product``/``products`` apply only to that runtime product. During the
+    migration, contexts not declared there are still read from
+    ``[[validation]]`` tables in ``AGENT_DOCS.toml``.
+
+    A declaration file that exists but cannot be read, parsed, or matched to
+    the schema is reported in the second element, and no contract is taken
+    from any file then: callers must fail closed rather than read an invalid
+    declaration as "no contract".
     """
     product = _runtime_product()
     contracts: list[dict[str, Any]] = []
+    invalid: list[str] = []
     for name in (VALIDATION_FILE, TRANSITIONAL_VALIDATION_FILE):
         path = os.path.join(repo_root, name)
-        if not os.path.isfile(path):
+        if not os.path.lexists(path):
             continue
         try:
             found = _read_contracts(path, product)
         except (OSError, ValueError, UnicodeDecodeError):
+            invalid.append(name)
             continue
         declared = {contract["context"] for contract in contracts}
         contracts.extend(
             contract for contract in found if contract["context"] not in declared
         )
-    return contracts
+    return ([] if invalid else contracts), invalid
+
+
+def validation_contracts(repo_root: str) -> list[dict[str, Any]]:
+    """Valid declared contracts only; see `load_validation_contracts`."""
+    return load_validation_contracts(repo_root)[0]
+
+
+def invalid_declaration_reason(repo_root: str, invalid: list[str]) -> str:
+    name = os.path.basename(os.path.abspath(repo_root))
+    return (
+        f"Validation declaration in {name} is invalid: {', '.join(invalid)}. "
+        "An existing finish-line contract that cannot be read, parsed, or matched "
+        "to the `[[validation]]` schema (context, non-empty commands, optional "
+        "marker, description, product/products) blocks edits and finishing "
+        "until it is fixed; the declaration file itself stays editable."
+    )
 
 
 def validation_marker_set(

@@ -50,7 +50,7 @@ from hook_common import (  # noqa: E402
     git_toplevel,
     read_validation_waiver,
     touch_marker,
-    validation_contracts,
+    load_validation_contracts,
     validation_edit_generation,
     validation_marker_set,
     validation_waiver_marker,
@@ -142,7 +142,14 @@ def _fail(code: str, message: str) -> int:
 
 
 def selected_contracts(repo_root: str, context: str | None) -> list[dict[str, Any]]:
-    contracts = validation_contracts(repo_root)
+    contracts, invalid = load_validation_contracts(repo_root)
+    if invalid:
+        raise SystemExit(
+            _fail(
+                "contract-invalid",
+                "validation declaration is invalid: " + ", ".join(invalid),
+            )
+        )
     if context:
         contracts = [
             contract for contract in contracts if contract.get("context") == context

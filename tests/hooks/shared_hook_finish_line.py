@@ -4535,6 +4535,85 @@ exit 99
                 '[[validation]]\ncontext = "x"\ncommands = """a"""\n'
             )
 
+    def test_finish_line_invalid_declaration_fails_closed(self) -> None:
+        # An existing but unreadable, malformed, or wrong-shaped contract must
+        # not read as "no contract": that would let an unvalidated edit finish.
+        invalid = (
+            ("syntax", 'VALIDATION.toml', '[[validation]]\ncontext = "project-dev\n'),
+            ("scalar-commands", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = "bash ci.sh"\n'),
+            ("unknown-key", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nphase = "edit"\n'),
+            ("table-not-array", 'VALIDATION.toml',
+             '[validation]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\n'),
+            ("legacy-wrong-shape", 'AGENT_DOCS.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = []\n'),
+        )
+        fallback_root = tempfile.TemporaryDirectory()
+        self.addCleanup(fallback_root.cleanup)
+        fallback = Path(fallback_root.name)
+        (fallback / "tomllib.py").write_text(
+            'raise ImportError("forced fallback")\n', encoding="utf-8"
+        )
+        for reader, extra in (("tomllib", {}), ("subset", {"PYTHONPATH": f"{fallback}{os.pathsep}{HOOK_DIR}"})):
+            for name, filename, text in invalid:
+                with self.subTest(reader=reader, case=name), tempfile.TemporaryDirectory() as tmp:
+                    repo = self._init_contract_repo(tmp)
+                    (repo / "VALIDATION.toml").unlink()
+                    (repo / filename).write_text(text, encoding="utf-8")
+                    code, decision, stderr = run_hook(
+                        "finish-line-record.py",
+                        write_payload("src/lib.rs", "fn main() {}\n"),
+                        cwd=repo,
+                        env=extra,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, filename)
+                    # The declaration itself stays editable so it can be fixed.
+                    code, decision, stderr = run_hook(
+                        "finish-line-record.py",
+                        write_payload(filename, "# fixed\n"),
+                        cwd=repo,
+                        env=extra,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNone(decision)
+                    code, decision, stderr = run_hook(
+                        "stop-finish-line-gate.py", {}, cwd=repo, env=extra
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "invalid")
+
+    def test_finish_line_invalid_primary_is_not_masked_by_legacy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            (repo / "VALIDATION.toml").write_text("[[validation]\n", encoding="utf-8")
+            (repo / "AGENT_DOCS.toml").write_text(
+                '[[validation]]\ncontext = "project-dev"\ncommands = ["bash legacy.sh"]\n',
+                encoding="utf-8",
+            )
+            _, decision, _ = run_hook("stop-finish-line-gate.py", {}, cwd=repo)
+            self.assert_blocked(decision, "VALIDATION.toml")
+
+    def test_finish_line_subset_reader_rejects_what_tomllib_rejects(self) -> None:
+        import tomllib
+
+        import hook_common
+
+        rejected = (
+            '[[validation]]\ncontext = "a"\ncontext = "b"\ncommands = ["x"]\n',
+            '[[validation]]\ncontext = "a"\ncommands = ["x" "y"]\n',
+            '[[validation]]\ncontext = "a"\ncommands = ["x",, "y"]\n',
+            '[[validation]]\ncontext = "a" "b"\ncommands = ["x"]\n',
+            '[[validation]] junk\ncontext = "a"\ncommands = ["x"]\n',
+        )
+        for text in rejected:
+            with self.subTest(text=text):
+                with self.assertRaises(tomllib.TOMLDecodeError):
+                    tomllib.loads(text)
+                with self.assertRaises(ValueError):
+                    hook_common._validation_entries_subset(text)
+
     def test_finish_line_reads_transitional_agent_docs_validation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)

@@ -269,6 +269,38 @@ def inventory_tools(rules: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def prepare_trusted_test_cli_root(
+    full_env: dict[str, str],
+    cwd: Path | None,
+) -> tempfile.TemporaryDirectory[str] | None:
+    if "AGENT_RUNTIME_TRUSTED_CLI_ROOT" in full_env:
+        return None
+    # Trust the directory of the runner's nils-cli release, as a host launch
+    # does, so hooks accept its managed executables in any install layout (CI
+    # unpacks the release outside the known managed prefixes). Resolve it from
+    # the runner PATH so a fixture's shadow executables are never trusted.
+    managed_cli = shutil.which("agent-hook", path=os.environ.get("PATH"))
+    if not managed_cli:
+        return None
+    if cwd is not None:
+        try:
+            Path(managed_cli).resolve().relative_to(cwd.resolve())
+        except ValueError:
+            # The hook validates the lexical command path against configured
+            # trusted roots before resolving a Homebrew Cellar symlink.
+            full_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(
+                Path(managed_cli).absolute().parent
+            )
+            return None
+    trusted = tempfile.TemporaryDirectory()
+    trusted_binary = Path(trusted.name) / "agent-hook"
+    shutil.copy2(managed_cli, trusted_binary)
+    trusted_binary.chmod(0o755)
+    full_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = trusted.name
+    full_env["PATH"] = trusted.name + os.pathsep + full_env.get("PATH", "")
+    return trusted
+
+
 # Finish-line waiver/suppress envs (mirror WAIVER_ENVS + SUPPRESS_ENVS in
 # stop-finish-line-gate.py). The live agent runtime commonly exports these in
 # the session, so scrub them from the inherited environment before launching a
@@ -287,7 +319,8 @@ AMBIENT_GATE_ENVS = (
 # Operator-facing trust overrides. Kept apart from AMBIENT_GATE_ENVS because
 # that tuple mirrors a specific hook's env list; this one does not. A developer
 # on a split nils-cli install legitimately exports the trusted CLI root, which
-# would otherwise redirect every fixture's trusted-CLI resolution.
+# prepare_trusted_test_cli_root cannot tell that inherited value apart from a
+# fixture-supplied one and would skip installing the per-fixture trusted root.
 AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT",)
 
 
@@ -370,15 +403,20 @@ def run_hook(
         full_env.update(env)
     for name in unset_env:
         full_env.pop(name, None)
-    completed = subprocess.run(
-        [sys.executable, str(HOOK_DIR / script_name)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-        env=full_env,
-        check=False,
-    )
+    trusted = prepare_trusted_test_cli_root(full_env, cwd)
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(HOOK_DIR / script_name)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=full_env,
+            check=False,
+        )
+    finally:
+        if trusted is not None:
+            trusted.cleanup()
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
@@ -415,15 +453,20 @@ def run_shell_hook(
     scrub_ambient_envs(full_env)
     if env:
         full_env.update(env)
-    completed = subprocess.run(
-        ["bash", str(HOOK_DIR / script_name)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-        env=full_env,
-        check=False,
-    )
+    trusted = prepare_trusted_test_cli_root(full_env, cwd)
+    try:
+        completed = subprocess.run(
+            ["bash", str(HOOK_DIR / script_name)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=full_env,
+            check=False,
+        )
+    finally:
+        if trusted is not None:
+            trusted.cleanup()
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
