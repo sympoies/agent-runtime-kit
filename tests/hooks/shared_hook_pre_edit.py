@@ -206,8 +206,11 @@ exit 64
                 "pre-edit-intent-gate.py", payload, cwd=repo_a, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "[reason: prepared]")
-            self.assertIn("[action: retry-original]", str(decision))
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("[reason: prepared]", str(decision.get("systemMessage", "")))
+            self.assertNotIn("retry-original", str(decision.get("systemMessage", "")))
             self.assertTrue(
                 (state / "fixture-prepared" / "repo-b.prepared").exists()
             )
@@ -1131,7 +1134,10 @@ exit 64
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "consumed")
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("[reason: prepared]", str(decision.get("systemMessage", "")))
             self.assertTrue(active_marker.is_file())
 
             payload = command_payload(preflight)
@@ -1380,7 +1386,10 @@ exit 64
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "consumed")
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("[reason: prepared]", str(decision.get("systemMessage", "")))
             self.assertTrue(active_marker.is_file())
 
             payload = command_payload(preflight)
@@ -2959,7 +2968,10 @@ exit 64
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "consumed")
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("[reason: prepared]", str(decision.get("systemMessage", "")))
             self.assertTrue(active_marker.is_file())
 
 
@@ -3042,7 +3054,10 @@ exit 64
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "consumed")
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("[reason: prepared]", str(decision.get("systemMessage", "")))
             self.assertTrue(active_marker.is_file())
 
             shell_probes = (
