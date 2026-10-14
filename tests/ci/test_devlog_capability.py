@@ -25,7 +25,7 @@ class DevlogCapabilityRoutingTests(unittest.TestCase):
     def test_every_home_prompt_routes_to_the_policy_for_both_conventions(self) -> None:
         for product in HOME_PRODUCTS:
             with self.subTest(product=product):
-                home = words(f"build/{product}/AGENT_HOME.md")
+                home = words(f"tests/golden/{product}/AGENT_HOME.md")
                 self.assertIn(f"`{POLICY}`", home)
                 self.assertIn("`docs/devlog/`", home)
                 self.assertIn("`docs/source/devlog/`", home)
