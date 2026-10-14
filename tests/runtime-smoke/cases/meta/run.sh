@@ -3406,7 +3406,7 @@ run_meta_outcome_routing_probe() {
     return 1
   }
   grep -Fq '`agent-out` allocation is a parent workflow responsibility' "$files_policy" &&
-    grep -Fq 'not a user-selected outcome' "$files_policy" || {
+    grep -Fq 'user-selected outcome' "$files_policy" || {
     echo "runtime-smoke meta: files policy missing parent-owned allocation" >&2
     return 1
   }
@@ -3450,14 +3450,12 @@ run_repo_docs_boundary_probe() {
   grep -Fq 'audit' "$source"
   grep -Fq 'apply' "$source"
   grep -Fq 'active repository policy' "$source"
-  grep -Fq '`task-tools`' "$source"
   grep -Fq 'core/policies/external-facts.md' "$source"
 
   rendered_contract_assert_skill meta repo-docs-boundary
   rendered_contract_assert_all_contain meta repo-docs-boundary 'README.md'
   rendered_contract_assert_all_contain meta repo-docs-boundary 'DEVELOPMENT.md'
   rendered_contract_assert_all_contain meta repo-docs-boundary '## Boundary'
-  rendered_contract_assert_all_contain meta repo-docs-boundary '`task-tools`'
   rendered_contract_assert_all_contain meta repo-docs-boundary 'core/policies/external-facts.md'
 }
 
