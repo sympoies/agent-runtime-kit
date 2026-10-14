@@ -2273,9 +2273,11 @@ exit 64
                         "pre-edit-intent-gate.py", payload, cwd=repo, env=env
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "consumed")
+                    self.assertIsNotNone(decision)
                     assert decision is not None
-                    reason = str(decision.get("reason", ""))
+                    self.assertNotEqual(decision.get("decision"), "block")
+                    assert decision is not None
+                    reason = str(decision.get("systemMessage", ""))
                     self.assertIn("Prepared", reason)
                     for intent in intents:
                         self.assertIn(intent, reason)
@@ -2302,7 +2304,7 @@ exit 64
             state_home = repo / "state"
             agent_docs = str((bin_dir / "agent-docs").resolve())
 
-            def prepare_command(*intents: str) -> str:
+            def prepare_command(product: str, *intents: str) -> str:
                 argv = [
                     agent_docs,
                     "--docs-home",
@@ -2314,7 +2316,7 @@ exit 64
                     "--session-id",
                     "prep-session",
                     "--product",
-                    "codex",
+                    product,
                     "--state-home",
                     str(state_home.resolve()),
                 ]
@@ -2323,18 +2325,20 @@ exit 64
                 argv += ["--format", "json"]
                 return shlex.join(argv)
 
-            env = {
-                "AGENT_RUNTIME_DOCS_HOME": str(repo),
-                "AGENT_RUNTIME_PRODUCT": "codex",
-                "CODEX_AGENT_STATE_HOME": str(state_home),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
+            for product in ("codex", "claude"):
+                env = {
+                    "AGENT_RUNTIME_DOCS_HOME": str(repo),
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "CODEX_AGENT_STATE_HOME": str(state_home),
+                    "CLAUDE_KIT_STATE_HOME": str(state_home),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
 
-            # A fake that succeeds for `session prepare` and would emit a distinct
-            # marker if the hook ever fell back to `session verify`.
-            self._write_fake_agent_docs(
-                bin_dir,
-                f"""#!/usr/bin/env bash
+                # A fake that succeeds for `session prepare` and would emit a distinct
+                # marker if the hook ever fell back to `session verify`.
+                self._write_fake_agent_docs(
+                    bin_dir,
+                    f"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> {shlex.quote(str(call_log))}
 if [[ "$*" == *"session --help"* ]]; then echo 'status verify prepare'; exit 0; fi
@@ -2345,7 +2349,7 @@ if [[ "$*" == *"session prepare"* ]]; then
   elif [[ "$*" == *"--intent task-tools"* ]]; then
     intents='["task-tools"]'
   fi
-  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"codex","active_intents":'"$intents"',"record_file":"r.json","verified":true,"prepared_intents":'"$intents"',"reason":"prepared"}}}}'
+  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":'"$intents"',"record_file":"r.json","verified":true,"prepared_intents":'"$intents"',"reason":"prepared"}}}}'
   exit 0
 fi
 if [[ "$*" == *"session verify"* ]]; then
@@ -2354,39 +2358,40 @@ if [[ "$*" == *"session verify"* ]]; then
 fi
 exit 64
 """,
-            )
+                )
 
-            for intents in (
-                ("project-dev",),
-                ("task-tools",),
-                ("project-dev", "task-tools"),
-            ):
-                with self.subTest(intents=intents):
-                    call_log.write_text("", encoding="utf-8")
-                    payload = command_payload(prepare_command(*intents))
-                    payload["session_id"] = "prep-session"
-                    code, decision, stderr = run_hook(
-                        "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-                    )
-                    self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "consumed")
-                    assert decision is not None
-                    reason = str(decision.get("reason", ""))
-                    self.assertIn("Prepared", reason)
-                    self.assertIn("[reason: prepared]", reason)
-                    self.assertIn("[action: retry-original]", reason)
-                    self.assertIn("Retry the original command", reason)
-                    self.assertIn(
-                        "Do not run this preparation command again", reason
-                    )
-                    for intent in intents:
-                        self.assertIn(intent, reason)
-                    log_text = call_log.read_text(encoding="utf-8")
-                    self.assertIn("session prepare", log_text)
-                    # Atomic: the hook trusts the prepare envelope and never
-                    # fires a second verify probe.
-                    self.assertNotIn("session verify", log_text)
-                    self.assertNotIn("FALLBACK-VERIFY-SHOULD-NOT-RUN", reason)
+                for intents in (
+                    ("project-dev",),
+                    ("task-tools",),
+                    ("project-dev", "task-tools"),
+                ):
+                    with self.subTest(product=product, intents=intents):
+                        call_log.write_text("", encoding="utf-8")
+                        payload = command_payload(prepare_command(product, *intents))
+                        payload["session_id"] = "prep-session"
+                        code, decision, stderr = run_hook(
+                            "pre-edit-intent-gate.py", payload, cwd=repo, env=env
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assertIsNotNone(decision)
+                        assert decision is not None
+                        self.assertNotEqual(decision.get("decision"), "block")
+                        assert decision is not None
+                        reason = str(decision.get("systemMessage", ""))
+                        self.assertIn("Prepared", reason)
+                        self.assertIn("[reason: prepared]", reason)
+                        self.assertIn("Work remains allowed", reason)
+                        self.assertNotIn("retry-original", reason)
+                        for intent in intents:
+                            self.assertIn(intent, reason)
+                        log_text = call_log.read_text(encoding="utf-8")
+                        self.assertIn("session prepare", log_text)
+                        # Atomic: the hook trusts the prepare envelope and never
+                        # fires a second verify probe.
+                        self.assertNotIn("session verify", log_text)
+                        self.assertNotIn("FALLBACK-VERIFY-SHOULD-NOT-RUN", reason)
+
+            env = {**env, "AGENT_RUNTIME_PRODUCT": "codex"}
 
             # Untrusted structured error codes are not copied into hook output.
             fail_log = root / "fail.log"
@@ -2404,7 +2409,7 @@ fi
 exit 64
 """,
             )
-            payload = command_payload(prepare_command("project-dev"))
+            payload = command_payload(prepare_command("codex", "project-dev"))
             payload["session_id"] = "prep-session"
             code, decision, stderr = run_hook(
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
@@ -2432,7 +2437,7 @@ fi
 exit 64
 """,
             )
-            payload = command_payload(prepare_command("project-dev"))
+            payload = command_payload(prepare_command("codex", "project-dev"))
             payload["session_id"] = "prep-session"
             code, decision, stderr = run_hook(
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
@@ -2657,8 +2662,10 @@ exit 64
                 "pre-edit-intent-gate.py", payload, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "consumed")
-            self.assertIn("Prepared", str(decision))
+            self.assertIsNotNone(decision)
+            assert decision is not None
+            self.assertNotEqual(decision.get("decision"), "block")
+            self.assertIn("Prepared", str(decision.get("systemMessage", "")))
             prepare_calls = [
                 line
                 for line in call_log.read_text(encoding="utf-8").splitlines()
@@ -2781,7 +2788,12 @@ exit 64
                     "pre-edit-intent-gate.py", recovery_payload, cwd=repo, env=env
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "[reason: prepared]")
+                self.assertIsNotNone(decision)
+                assert decision is not None
+                self.assertNotEqual(decision.get("decision"), "block")
+                self.assertIn(
+                    "[reason: prepared]", str(decision.get("systemMessage", ""))
+                )
                 self.assertTrue(marker.exists())
 
                 if original_payload is not None:

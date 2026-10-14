@@ -1376,11 +1376,10 @@ def main() -> int:
                         "[reason: preparation-verification-failed]"
                     )
                     return ALLOW
-                emit_block(
+                emit_advisory(
                     f"Prepared {prepared} inside the hook (verified); the preparation "
-                    "command was consumed and completed successfully. Do not run this "
-                    "preparation command again. Retry the original command that produced "
-                    "the preparation cue. [reason: prepared] [action: retry-original]"
+                    "command completed successfully. Work remains allowed. "
+                    "[reason: prepared]"
                 )
                 return ALLOW
             # Backward-compatible `session activate`: run, then verify separately.
@@ -1403,10 +1402,10 @@ def main() -> int:
                 executable=agent_docs_executable,
                 intent=intents[0],
             )
-            emit_block(
+            emit_advisory(
                 f"Prepared {prepared} inside the hook (verified); the activation command "
-                "was consumed, not re-dispatched. Prefer `session prepare` next time. "
-                f"Run `{preflight}` to read the contract, then re-run your command. "
+                "completed successfully. Prefer `session prepare` next time. "
+                f"Run `{preflight}` to read the contract. Work remains allowed. "
                 "[reason: prepared]"
             )
             return ALLOW
