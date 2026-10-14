@@ -52,7 +52,7 @@
         },
         "docs_home": {
           "type": "string",
-          "description": "Home-scope `agent-docs` policy root used by the product.",
+          "description": "Home-scope policy root used by the product.",
           "minLength": 1
         },
         "state_home": {

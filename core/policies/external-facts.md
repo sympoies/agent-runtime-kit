@@ -2,25 +2,18 @@
 
 ## Purpose
 
-This policy is the detail behind the `task-tools` intent: how to handle
-external, unstable, or time-sensitive claims, how to cite evidence, and which
-purpose-built tools to reach for. It pairs with `core/policies/cli-tools.md`
-(the cross-project CLI catalog), which is optional `task-tools` context
-available on demand.
+This policy covers external, unstable, or time-sensitive claims: how to
+handle them, how to cite evidence, and which purpose-built tools to reach for.
+It pairs with `core/policies/cli-tools.md` (the cross-project CLI catalog),
+which is optional context available on demand. Read it before relying on an
+external fact; `AGENT_HOME.md` routes here. There is no finish-line validation
+gate for it.
 
-It is declared as a `task-tools` document in `AGENT_DOCS.toml` (home scope).
-The UserPromptSubmit cue names it once per session in repos that declare an
-`AGENT_DOCS.toml`; read it before relying on an external fact. `AGENT_HOME.md`
-carries the always-on directives in its "Evidence, Memory, And External Facts"
-section; this file is the workflow detail. `task-tools` is a docs-only intent —
-there is no finish-line validation gate for it.
-
-## When To Run External-Fact Preflight
+## When To Verify External Facts
 
 - Before asserting any external, unstable, or time-sensitive claim — versions,
-  prices, news, API shapes, third-party behavior — run the `task-tools`
-  preflight, prefer authoritative sources over memory or assumption, and cite
-  the evidence used.
+  prices, news, API shapes, third-party behavior — prefer authoritative sources
+  over memory or assumption, and cite the evidence used.
 - Local, stable, repo-internal facts do not need this; cite the file, command,
   or definition instead.
 

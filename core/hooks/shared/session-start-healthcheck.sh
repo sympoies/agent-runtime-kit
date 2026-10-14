@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 #
-# SessionStart hook: surface health problems once per day.
-#
-# Two independent, opt-in-aware checks, each with its own daily stamp:
-#   1. agent-docs repo preflight health (when `agent-docs` is installed and the
-#      current repo declares `AGENT_DOCS.toml`): strict preflight for every
-#      declared intent. Runtime-kit source checkouts self-anchor docs-home;
-#      other project catalogs inherit the active managed docs-home. Stamped
-#      per repository, so a session in a repo without a catalog does not
-#      consume the check for other repos.
-#   2. evidence-archive wiring (only when the user has opted in via
-#      $AGENT_EVIDENCE_ARCHIVE_HOME, a machine-local config, or a default clone):
-#      clone presence, local config validity, and hosts.yaml validity.
-#      Machine-wide, so stamped once per day per product.
+# SessionStart hook: surface evidence-archive wiring problems once per day,
+# only when the user has opted in via $AGENT_EVIDENCE_ARCHIVE_HOME, a
+# machine-local config, or a default clone: clone presence, local config
+# validity, and hosts.yaml validity. Stamped once per day per product.
 #
 # The hook is product-neutral. Product activation sets AGENT_RUNTIME_PRODUCT so
 # cache keys and labels stay readable. A user who has not opted into the
@@ -32,75 +23,10 @@ python_bin="$(command -v python3 || true)"
 product="${AGENT_RUNTIME_PRODUCT:-agent-runtime}"
 stamp_dir="$HOME/.cache/agent-runtime-kit"
 stamp_day="$(date +%Y%m%d)"
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-repo_hash=""
-if [[ -n "$repo_root" ]]; then
-  repo_hash="$(printf '%s' "$repo_root" | cksum 2>/dev/null | awk '{print $1}' || true)"
-fi
-docs_stamp="$stamp_dir/health-${product}-docs-${repo_hash:-norepo}-${stamp_day}.stamp"
 evidence_stamp="$stamp_dir/health-${product}-evidence-${stamp_day}.stamp"
-docs_due=0
-[[ -n "$repo_root" && -f "$repo_root/AGENT_DOCS.toml" && ! -f "$docs_stamp" ]] && docs_due=1
 evidence_due=0
 [[ ! -f "$evidence_stamp" ]] && evidence_due=1
-[[ "$docs_due" -eq 0 && "$evidence_due" -eq 0 ]] && exit 0
-
-trusted_cli_path() {
-  local candidate
-  candidate="$(command -v "$1" 2>/dev/null || true)"
-  [[ "$candidate" == /* && -x "$candidate" ]] || return 1
-  "$python_bin" - "$candidate" "$repo_root" <<'PY' 2>/dev/null
-import os
-import pathlib
-import sys
-
-candidate_path = pathlib.Path(sys.argv[1]).absolute()
-candidate = candidate_path.resolve()
-repo_raw = sys.argv[2]
-configured = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "")
-if repo_raw:
-    try:
-        candidate_path.relative_to(pathlib.Path(repo_raw).resolve())
-    except ValueError:
-        pass
-    else:
-        raise SystemExit(1)
-trusted = False
-if configured:
-    roots = [
-        pathlib.Path(item).resolve()
-        for item in configured.split(os.pathsep)
-        if item
-    ]
-    trusted = candidate_path.parent.resolve() in roots
-else:
-    for prefix_raw in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
-        prefix = pathlib.Path(prefix_raw)
-        if candidate_path.parent != prefix / "bin":
-            continue
-        if candidate.parent == candidate_path.parent:
-            trusted = True
-            break
-        try:
-            relative = candidate.relative_to(prefix / "Cellar" / "nils-cli")
-        except ValueError:
-            continue
-        trusted = len(relative.parts) >= 3 and candidate.parent.name == "bin"
-        if trusted:
-            break
-if candidate_path.parent == pathlib.Path("/usr/bin") and candidate.parent == candidate_path.parent:
-    trusted = True
-# Per-user managed install (NILS_WRAPPER_INSTALL_PREFIX). Regular files live
-# here, so it is paired with the same lexical == resolved check as /usr/bin.
-if candidate_path.parent == pathlib.Path("~/.local/nils-cli/bin").expanduser() and (
-    candidate.parent == candidate_path.parent
-):
-    trusted = True
-if not trusted or not candidate.is_file() or not os.access(candidate, os.X_OK):
-    raise SystemExit(1)
-print(candidate)
-PY
-}
+[[ "$evidence_due" -eq 0 ]] && exit 0
 
 # --- opt-in detection for the evidence-archive lane -------------------------
 
@@ -156,15 +82,6 @@ archive_is_git_repo() {
     return 1
   fi
   return 1
-}
-
-runtime_kit_source_checkout() {
-  local root="$1"
-  [[ -f "$root/AGENT_DOCS.toml" &&
-    -f "$root/AGENT_HOME.md" &&
-    -f "$root/manifests/skills.yaml" &&
-    -f "$root/scripts/sync-runtime-surfaces.sh" &&
-    -d "$root/core/policies" ]]
 }
 
 unquote_yaml_scalar() {
@@ -237,114 +154,18 @@ evidence_problems() {
   printf '%s' "$out"
 }
 
-# --- decide whether either lane can run today -------------------------------
+# --- decide whether the lane can run today -----------------------------------
 
-have_agent_docs=0
-if [[ "$docs_due" -eq 1 ]]; then
-  agent_docs_bin="$(trusted_cli_path agent-docs || true)"
-  [[ -n "$agent_docs_bin" ]] && have_agent_docs=1
-fi
 opted_in=0
 [[ "$evidence_due" -eq 1 ]] && evidence_opted_in && opted_in=1
 
-# Stamp a lane only when it actually runs, so a session where a lane has
-# nothing to check leaves that lane due for a later session.
+# Stamp the lane only when it actually runs, so a session with nothing to
+# check leaves it due for a later session.
 stamp_lane() {
   mkdir -p "$stamp_dir" && : >"$1"
 }
 
-# --- lane 1: agent-docs repo health -----------------------------------------
-
-docs_block=""
-if [[ "$have_agent_docs" -eq 1 ]]; then
-  stamp_lane "$docs_stamp"
-  # Prefer an explicit docs-home override. The runtime-kit source checkout
-  # self-anchors so rendered home-prompt symlinks cannot resolve home-scoped
-  # docs under build/<product>/. Other project catalogs inherit docs-home.
-  docs_home="${AGENT_RUNTIME_DOCS_HOME:-${AGENT_DOCS_HOME:-}}"
-  if [[ -z "$docs_home" ]] && runtime_kit_source_checkout "$repo_root"; then
-    docs_home="$repo_root"
-  fi
-  # Canonical, so every hook that builds `--docs-home` names one directory even
-  # when the configured path reaches it through a symlink (#66). A path that
-  # cannot be entered keeps its configured spelling; agent-docs owns that error.
-  if [[ -n "$docs_home" ]]; then
-    docs_home_physical="$(cd "$docs_home" 2>/dev/null && pwd -P)"
-    [[ -n "$docs_home_physical" ]] && docs_home="$docs_home_physical"
-  fi
-  dh_args=()
-  [[ -n "$docs_home" ]] && dh_args=(--docs-home "$docs_home")
-  project_args=()
-  project_args=(--project-path "$repo_root")
-  product_args=()
-  if [[ "$product" == "codex" || "$product" == "claude" ]]; then
-    if "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]+"${dh_args[@]}"}"} ${project_args[@]+"${project_args[@]+"${project_args[@]}"}"} \
-      preflight --help 2>/dev/null | grep -q -- "--product"; then
-      product_args=(--product "$product")
-    fi
-  fi
-
-  list_output="$(
-    "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]+"${dh_args[@]}"}"} ${project_args[@]+"${project_args[@]+"${project_args[@]}"}"} list --format json 2>&1
-  )"
-  list_status=$?
-  intents=""
-  parse_status=0
-  if [[ "$list_status" -eq 0 ]]; then
-    intents="$(printf '%s\n' "$list_output" | "$python_bin" -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(2)
-for intent in data.get("intents", []):
-    if isinstance(intent, str) and intent:
-        print(intent)
-' 2>/dev/null)"
-    parse_status=$?
-  fi
-  preflight_output=""
-  preflight_failed=0
-  if [[ "$list_status" -ne 0 ]]; then
-    preflight_failed=1
-    preflight_output="agent-docs list failed:
-${list_output}
-"
-  elif [[ "$parse_status" -ne 0 ]]; then
-    preflight_failed=1
-    preflight_output="agent-docs list returned invalid JSON:
-${list_output}
-"
-  elif [[ -z "$intents" ]]; then
-    preflight_failed=1
-    preflight_output="agent-docs list returned no declared intents for ${repo_root}.
-"
-  else
-    while IFS= read -r intent; do
-      [[ -z "$intent" ]] && continue
-      out="$(
-        "$agent_docs_bin" ${dh_args[@]+"${dh_args[@]+"${dh_args[@]}"}"} ${project_args[@]+"${project_args[@]+"${project_args[@]}"}"} \
-          preflight --intent "$intent" ${product_args[@]+"${product_args[@]+"${product_args[@]}"}"} --strict --format text 2>&1
-      )"
-      status=$?
-      preflight_output="${preflight_output}intent ${intent}:
-${out}
-
-"
-      if [[ "$status" -ne 0 ]]; then
-        preflight_failed=1
-      fi
-    done <<<"$intents"
-  fi
-
-  if [[ "$preflight_failed" -ne 0 ]]; then
-    docs_block="agent-docs preflight found repo-health problems in the current workspace:
-
-${preflight_output}"
-  fi
-fi
-
-# --- lane 2: evidence-archive wiring (opt-in) -------------------------------
+# --- evidence-archive wiring (opt-in) ---------------------------------------
 
 evid_block=""
 if [[ "$opted_in" -eq 1 ]]; then
@@ -357,17 +178,13 @@ ${evid_problems}"
   fi
 fi
 
-# --- combine + emit ---------------------------------------------------------
+# --- emit ---------------------------------------------------------------
 
-if [[ -z "$docs_block" && -z "$evid_block" ]]; then
+if [[ -z "$evid_block" ]]; then
   exit 0
 fi
 
-context="[agent-runtime-kit:${product} health]"
-[[ -n "$docs_block" ]] && context="${context}
-
-${docs_block}"
-[[ -n "$evid_block" ]] && context="${context}
+context="[agent-runtime-kit:${product} health]
 
 ${evid_block}"
 

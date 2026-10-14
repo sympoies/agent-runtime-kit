@@ -18,7 +18,7 @@ deliberately exposes exactly four verbs and no general shell escape:
 * ``revoke``  withdraw a waiver
 
 ``run`` cannot be pointed at an arbitrary command: ``--command`` selects among
-the strings the repository itself declared in ``AGENT_DOCS.toml`` and anything
+the strings the repository itself declared in ``VALIDATION.toml`` and anything
 else is refused. The waiver requires a reason and binds to the repository,
 contract, product, session, and current edit generation, so it expires the moment
 another edit lands instead of leaking across turns the way the ambient

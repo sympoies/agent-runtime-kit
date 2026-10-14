@@ -58,10 +58,6 @@ required_clis:
     min: "1.27.27"
   - bin: test-first-evidence # durable v2 contract delta, grouped test impacts/dispositions, meaningful-red fields, waiver debt, scoped validation history, residual gaps, pre-edit/delivery checks, and readable-but-delivery-ineligible v1 diagnostics
     min: "1.21.19"
-  - bin: agent-docs       # data-driven catalog + declared-intent preflight guard + product-scoped document/validation filtering (`--product`) with `agent-docs.preflight.v2` + durable product/session-scoped intent activation and path classification + atomic `session prepare` (v1.23.0) + phase-scoped `--phase` preflight/verify (v1.24.0)
-    # The shared hooks call `session prepare` and `session verify --phase`
-    # without a capability probe, so the per-binary floor is the phase surface.
-    min: "1.24.0"
   - bin: agent-session    # authenticated managed-session work-context claims/checks, atomic mutation admission/completion/reconcile leases, private mailbox, body-free fixed notifications, direct-terminal-safe session coordination, and named-only new work contexts without plan references
     min: "1.31.1"
   - bin: agent-memory     # 768-byte startup recall + exact optional agent scope + trusted agent roots + frontmatter-aware producer candidates + dry-run-first promotion/archive and strict audits

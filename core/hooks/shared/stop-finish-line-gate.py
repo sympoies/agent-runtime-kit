@@ -2,8 +2,8 @@
 """Stop hook: block finishing when code was edited but declared validation has
 not run since.
 
-Reads the repo's declared validation contracts (commands + marker) via
-agent-docs. Identified hook sessions use directly addressable, opaque
+Reads the repo's declared validation contracts (commands + marker) from its
+VALIDATION.toml. Identified hook sessions use directly addressable, opaque
 session-scoped dirty, command, and recovery state, so an unrelated read-only
 session is not charged for an edit or failure it did not create. Payloads
 without a session identifier retain
@@ -687,7 +687,7 @@ def unsafe_marker_reason(
     details = ", ".join(f"[{context}] {marker}" for context, marker in invalid)
     return (
         f"Code validation in {name} has an unsafe validation marker: {details}. "
-        "Each AGENT_DOCS.toml validation marker must be repository-relative and "
+        "Each declared validation marker must be repository-relative and "
         "remain beneath the real repository root through symlink resolution. "
         "No validation evidence was written; fix the contract before finishing."
     )

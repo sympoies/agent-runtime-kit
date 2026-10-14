@@ -10,8 +10,8 @@ runbooks and CLIs.
 
 ## Before Editing
 
-- Read the closest repository instructions and only the intent documents
-  relevant to the work. Inspect the target plus material callers, loading paths,
+- Read the closest repository instructions and only the runbooks relevant to
+  the work. Inspect the target plus material callers, loading paths,
   tests, generated surfaces, and local conventions.
 - Preserve unrelated and pre-existing work. If a checkout is dirty, ownership
   is unclear, or another session overlaps the same files, remain read-only until
@@ -56,7 +56,7 @@ runbooks and CLIs.
   repo-root artifact directories, symlink aliases, or cache routes.
 - A checkout's `.cache/` is not scratch space. Only `.cache/agent-validation/`
   is repo-local by design, holding the validation marker each repository
-  declares in `AGENT_DOCS.toml`; route everything else to the allocated
+  declares in `VALIDATION.toml`; route everything else to the allocated
   artifact directory.
 - Write provider-visible Markdown to an artifact file and pass it through the
   provider command's file-backed option, such as `forge-cli ... --body-file`.
@@ -86,7 +86,7 @@ runbooks and CLIs.
   mutations, and unknown-effect failures remain fail-closed according to their
   owner.
 - When an authorized local operation cannot run in the current environment,
-  load `core/policies/execution-capsules.md` from the selected docs home and use
+  load `core/policies/execution-capsules.md` from the runtime kit and use
   its private, supervised handoff. Host access is operator-authorized access
   expansion only; it never waives repository rules, hooks, signing, or
   concurrency guards.
@@ -96,17 +96,17 @@ runbooks and CLIs.
 
 ## Parent Workflow Routing
 
-`agent-docs` preflight and `agent-out` allocation are parent workflow
-responsibilities, not user-selected outcomes. Keep both CLIs callable for
-diagnostics, explicit cleanup, and workflows that require retained artifacts.
+`agent-out` allocation is a parent workflow responsibility, not a
+user-selected outcome. Keep the CLI callable for diagnostics, explicit cleanup,
+and workflows that require retained artifacts.
 
 ## Validation And Completion
 
 - During iteration, run the smallest focused checks that answer the current
   question. Expand by risk to affected suites, contract consumers, render/
   generated checks, integration, or manual acceptance.
-- Before declaring completion, run every command in the active intent's
-  declared validation exactly once against the final change. A canonical gate
+- Before declaring completion, run every command in the repository's declared
+  validation (`VALIDATION.toml`) exactly once against the final change. A canonical gate
   may already include focused suites; do not redeclare or rerun them unless the
   final change invalidated their result.
 - Report the commands run, outcomes, and material residual gaps. An explicit
@@ -128,7 +128,7 @@ provider hook, and exposes no general shell escape:
 - `status --repo <path>` — the declared contract, what is outstanding for the
   current edit generation, and any recorded waiver.
 - `run --repo <path> [--command <declared>]` — executes only a command shape the
-  repository declared in `AGENT_DOCS.toml`; anything else is refused. A pass
+  repository declared in `VALIDATION.toml`; anything else is refused. A pass
   records the command outcome, so the gate is satisfied for real.
 - `--session <id>` on any verb targets the marker namespace that session's
   hooks actually read. The gate namespaces validation state by the session

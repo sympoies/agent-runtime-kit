@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Outcome recorder for the agent-docs finish-line validation gate.
+"""Outcome recorder for the finish-line validation gate.
 
 Writes evidence markers under each declared validation marker directory so the
 Stop gate (stop-finish-line-gate.py) can tell whether every declared validation
@@ -23,10 +23,11 @@ before the shell exits and preserves the original status, including for
 long-running commands completed through a later tool poll. If outcome metadata
 cannot persist, the pending attempt remains and the Stop gate fails closed.
 
-The recorder never persists command output. It no-ops outside a git repo, in a
-repo that declares no AGENT_DOCS.toml, or when no intent declares a validation
-contract. A matching validation is blocked before execution only when its
-repo-local pending record or shared runtime tombstone cannot register safely.
+The recorder never persists command output. It no-ops outside a git repo or
+in a repo that declares no validation contract in VALIDATION.toml (or, during
+migration, in an AGENT_DOCS.toml `[[validation]]` table). A matching
+validation is blocked before execution only when its repo-local pending record
+or shared runtime tombstone cannot register safely.
 """
 
 from __future__ import annotations

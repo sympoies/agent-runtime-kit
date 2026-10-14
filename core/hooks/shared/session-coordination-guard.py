@@ -1004,16 +1004,6 @@ def invocation_bypasses_admission(
                 "help",
             }
         return trusted and words[1] == "activity"
-    if name == "agent-docs":
-        candidate = words[0] if os.path.isabs(words[0]) else shutil.which(words[0])
-        trusted = resolved_trusted_cli("agent-docs")
-        return bool(candidate) and bool(trusted) and os.path.realpath(candidate) == trusted and (
-            "preflight" in words
-            or (
-                "session" in words
-                and any(item in words for item in ("prepare", "activate", "verify"))
-            )
-        )
     if audited_text_read_invocation(words):
         return trusted_command(words[0], name)
     if name == "git":

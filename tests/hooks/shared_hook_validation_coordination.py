@@ -72,7 +72,6 @@ class ValidationCoordinationTests(HookTestCase):
         requires the shell execution that is blocked. See
         `sympoies/nils-cli#1409`: that made the deadlock unrecoverable from within.
         """
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -121,7 +120,6 @@ class ValidationCoordinationTests(HookTestCase):
         silently in exactly the deadlock this lane exists for. The other waiver
         tests pass an empty payload, so they only cover the unidentified case.
         """
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             managed = {
@@ -182,7 +180,6 @@ class ValidationCoordinationTests(HookTestCase):
 
     def test_structured_waiver_inherits_an_ambient_managed_session(self) -> None:
         """A controller invoked inside the managed context needs no argument."""
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             managed = {
@@ -217,7 +214,6 @@ class ValidationCoordinationTests(HookTestCase):
         true for every later Stop in the process and has already leaked across
         turns in production.
         """
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -257,7 +253,6 @@ class ValidationCoordinationTests(HookTestCase):
 
 
     def test_structured_validation_waiver_requires_a_recorded_reason(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -272,7 +267,6 @@ class ValidationCoordinationTests(HookTestCase):
 
 
     def test_structured_validation_waiver_is_revocable(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -305,7 +299,6 @@ class ValidationCoordinationTests(HookTestCase):
         blocked session could not re-run its own declared validation because the
         same `PreToolUse` hook kept rejecting Bash.
         """
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, commands=("bash scripts/declared.sh",)
@@ -350,7 +343,6 @@ class ValidationCoordinationTests(HookTestCase):
 
 
     def test_typed_validation_run_reports_a_failing_declared_command(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, commands=("bash scripts/declared.sh",)
@@ -385,7 +377,6 @@ class ValidationCoordinationTests(HookTestCase):
 
 
     def test_typed_validation_status_reports_outstanding_state(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -417,7 +408,6 @@ class ValidationCoordinationTests(HookTestCase):
 
     def test_typed_validation_run_refuses_an_undeclared_command(self) -> None:
         """The lane exposes no general shell escape."""
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2640,80 +2630,6 @@ exit 64
         )
 
 
-    def test_run_hook_ignores_ambient_trusted_cli_root(self) -> None:
-        """A host-exported trust root must not reach a hook subprocess.
-
-        `AGENT_RUNTIME_TRUSTED_CLI_ROOT` is an operator-facing override, so a
-        developer on a split nils-cli install legitimately exports it.
-        `prepare_trusted_test_agent_docs` cannot tell that inherited value apart
-        from a fixture-supplied one, so it used to skip installing the
-        per-fixture trusted root and 41 pre-edit-intent-gate / preflight-cue /
-        session-start-healthcheck tests failed closed on
-        `agent-docs-command-untrusted`. The scrub must drop the ambient value
-        while an explicit per-fixture root still wins.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            (repo / "AGENT_DOCS.toml").write_text("# fixture\n", encoding="utf-8")
-            bin_dir = root / "runtime-bin"
-            bin_dir.mkdir()
-            unrelated_bin = root / "unrelated-bin"
-            unrelated_bin.mkdir()
-            self._write_fake_agent_docs(
-                bin_dir,
-                """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == *"session --help"* ]]; then echo 'status verify'; exit 0; fi
-if [[ "$*" == *"session verify"* ]]; then
-  echo '{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{"code":"required-intent-not-active"}}'
-  exit 1
-fi
-exit 64
-""",
-            )
-            agent_docs = str((bin_dir / "agent-docs").resolve())
-            command = (
-                f"{shlex.quote(agent_docs)} "
-                f"--docs-home {shlex.quote(str(repo.resolve()))} "
-                f"--project-path {shlex.quote(str(repo.resolve()))} "
-                "preflight --intent memory"
-            )
-            env = {
-                "AGENT_RUNTIME_DOCS_HOME": str(repo),
-                "AGENT_RUNTIME_PRODUCT": "codex",
-                "CODEX_AGENT_STATE_HOME": str(repo / "state"),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-            ambient = {"AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(unrelated_bin)}
-
-            with mock.patch.dict(os.environ, ambient, clear=False):
-                payload = command_payload(command)
-                payload["session_id"] = "ambient-trust-root"
-                code, decision, stderr = run_hook(
-                    "pre-edit-intent-gate.py", payload, cwd=repo, env=env
-                )
-                self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "project-dev")
-                self.assertNotIn("agent-docs-command-untrusted", str(decision))
-
-                # The scrub must not swallow a root the fixture asked for: the
-                # same read-only command stays blocked when the test itself
-                # points the trust root somewhere the fake does not live.
-                payload = command_payload(command)
-                payload["session_id"] = "ambient-trust-root"
-                code, decision, stderr = run_hook(
-                    "pre-edit-intent-gate.py",
-                    payload,
-                    cwd=repo,
-                    env={**env, "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(unrelated_bin)},
-                )
-                self.assertEqual(code, 0, stderr)
-                self.assert_blocked(decision, "agent-docs-command-untrusted")
-
-
     def test_target_hook_fragments_reference_installed_shared_scripts(self) -> None:
         shared_registered_scripts = {
             "agent-scope-lock-guard.py",
@@ -2728,12 +2644,10 @@ exit 64
             "forge-label-reminder.py",
             "mcp-secret-scan.py",
             "portable-paths-scan.py",
-            "pre-edit-intent-gate.py",
             "semantic-commit-body-gate.py",
             "session-coordination-guard.py",
             "session-start-healthcheck.sh",
             "stop-finish-line-gate.py",
-            "user-prompt-agent-docs.sh",
         }
         codex_claude_scripts = {
             "user-prompt-agent-memory.sh",
@@ -2782,7 +2696,7 @@ exit 64
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, commands=(declared,))
             catalog = tomllib.loads(
-                (repo / "AGENT_DOCS.toml").read_text(encoding="utf-8")
+                (repo / "VALIDATION.toml").read_text(encoding="utf-8")
             )
             command = catalog["validation"][0]["commands"][0]
 

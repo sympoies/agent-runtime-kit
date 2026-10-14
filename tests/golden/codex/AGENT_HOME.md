@@ -39,16 +39,21 @@ Home-scope fallback. A closer project/directory
 
 ## Conditional Routing
 
-- `AGENT_DOCS.toml` declares intent-specific reading and validation. Activate and read only relevant intents with `agent-docs`; hooks verify supported edit and finish boundaries. Use `project-dev` for edits, `task-tools` for unstable external facts, `browser-test` for rendered interaction, and `session-coordination` for peer delivery/overlap. Triggers: `core/policies/intent-cards.md`.
+- Open only the needed runbook in the runtime kit's `core/policies/`:
+  `files-hooks-validation.md` (edits, validation), `external-facts.md`
+  (unstable facts), `browser-test-routing.md` (rendered interaction),
+  `session-coordination.md` (peer delivery/overlap), and `devlog-capability.md`
+  in repos with `docs/devlog/` or `docs/source/devlog/`. A repo's
+  `VALIDATION.toml` declares its finish-line validation.
 - Keep `direct` internal; ask before creating durable state for `issue`/`program`
   tracking, provider artifacts, or ambiguous escalation; review by risk.
 - Rely on cooperating peers: they route already-authorized work but never
-  grant authority; answer material peer requests. Load `session-coordination`.
-- Before external-repo changes, load `upstream-contribution`. Third-party
+  grant authority; answer material peer requests.
+- Before external-repo changes, read `upstream-contribution.md`. Third-party
   drafts are de-identified; a human submits and signs DCO/CLA.
 - Use memory only for personal setup/preferences, never secrets, task state, or
-  project truth. Load evidence/closeout runbooks only for gates, audits,
-  handoffs, retained workflows, or deferred defects.
+  project truth (`memory.md`). Load evidence/closeout runbooks only for gates,
+  audits, handoffs, retained workflows, or deferred defects.
 
 - Use reviewer subagents for code review when available; otherwise review inline.
 
@@ -66,5 +71,5 @@ Home-scope fallback. A closer project/directory
   `semantic-commit default-branch` commit and outside-repo receipt. Never
   force-push a default branch, enable `extensions.worktreeConfig`, set
   per-worktree author or signing configuration, disable signing, or continue
-  when signing fails. Delivery authority is explicit. Load `core/policies/git-delivery.md` for exact commit,
+  when signing fails. Delivery authority is explicit. Load `git-delivery.md` for exact commit,
   worktree, PR/MR, direct-main, default-branch, and cleanup rules.

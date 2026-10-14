@@ -15,12 +15,8 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
   for the repository-specific validation and self-improvement loop.
 - Identify the source owner and every rendered, manifest, fixture, golden, and
   product-adapter surface affected by the change.
-- Inspect the active edit contract and declared finish-line:
-
-  ```bash
-  agent-docs preflight --docs-home "$PWD" --intent project-dev \
-    --phase edit --strict
-  ```
+- Read the edit contract (`core/policies/files-hooks-validation.md`) and the
+  declared finish-line in `VALIDATION.toml`.
 
 - Read the optional documentation placement policy before adding, moving,
   promoting, indexing, or deleting durable docs.

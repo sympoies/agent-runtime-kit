@@ -2,9 +2,8 @@
 
 ## Purpose
 
-This policy is the detail behind the devlog half of the `project-dev` intent:
-when to read a repository's development log, when to append to it, and what
-must never go into it.
+This policy defines when to read a repository's development log, when to
+append to it, and what must never go into it.
 
 The development log is the only surface that holds the reasoning a diff cannot
 carry. Commit messages say what changed; the log says why the change was shaped
@@ -13,15 +12,26 @@ only exists if the log is written without being asked and read without being
 told — which is why this is a default capability rather than a skill somebody
 has to remember to invoke.
 
-It is declared as a `project-dev` document in `AGENT_DOCS.toml` (home scope),
-conditional on the repository actually having a log. A repository without one is
-unaffected: detection failing closed means "no log here", not an error.
+It applies only when the repository actually has a log. A repository without
+one is unaffected: detection failing closed means "no log here", not an error.
+`AGENT_HOME.md` routes here; open this policy when the trigger below fires
+rather than waiting for the finish line.
 
-It is required reading in the `delivery` phase, where the write half lives. The
-read half fires earlier than that, so the `project-dev` intent card carries its
-trigger and points here; open this policy when the trigger fires rather than
-waiting for a phase boundary. The `edit` phase deliberately carries one required
-document, and that budget belongs to the edit contract.
+## Trigger
+
+The **Must** half applies in a repository that has `docs/devlog/` or
+`docs/source/devlog/`. In a repository with neither, only the first **Never**
+applies: that repository is not missing anything.
+
+- **Must**: search the log before changing a contract, schema, guardrail, or
+  default that an entry may explain, and before acting on a behavior that looks
+  arbitrary; append one entry at the finish line for a durable outcome.
+- **Never**: create a log in a repository that has none, or report its absence
+  as a gap — enabling one is the user's call; write an entry for trivial,
+  transient, or same-turn work; hand-edit a log into shape when `devlog fix`
+  would repair it; treat the log as authority over current source, schemas,
+  policy, or a runbook; record a credential or any other value the privacy
+  boundary below excludes.
 
 ## Detection
 

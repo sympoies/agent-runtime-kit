@@ -52,8 +52,9 @@
 - Required env to operate the runtime:
   - `AGENT_HOME` — `agent-out` artifact root, e.g.
     `${XDG_STATE_HOME:-$HOME/.local/state}/agent-runtime-kit`.
-  - `AGENT_DOCS_HOME` — `agent-docs` catalog root, e.g. this checkout
-    (`$HOME/Project/<org>/agent-runtime-kit`).
+  - `AGENT_DOCS_HOME` — this checkout's root (historical name), e.g.
+    `$HOME/Project/<org>/agent-runtime-kit`; hooks use it to name the
+    validation recovery lane by absolute path.
   - `AGENT_EVIDENCE_ARCHIVE_HOME` — optional `agent-evidence-archive` clone
     root (resolution order: `evidence --archive` flag > this env var > XDG
     config `agent-evidence-archive/config.yaml` > XDG data-home default). See

@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import tempfile
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -25,48 +23,6 @@ PROJECT_SKILL_CONTEXT_DELTA_BYTES = 2 * 1024
 
 def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
-
-
-def preflight(
-    intent: str,
-    phase: str | None = None,
-    product: str = "codex",
-) -> dict:
-    command = [
-        "agent-docs",
-        "preflight",
-        "--intent",
-        intent,
-        "--docs-home",
-        str(ROOT),
-        "--project-path",
-        str(ROOT),
-        "--worktree-fallback",
-        "local-only",
-        "--product",
-        product,
-        "--format",
-        "json",
-    ]
-    if phase is not None:
-        command.extend(["--phase", phase])
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
-
-
-def required_relative_paths(payload: dict) -> list[str]:
-    paths: list[str] = []
-    for document in payload["documents"]:
-        if not document["required"]:
-            continue
-        paths.append(str(Path(document["path"]).resolve().relative_to(ROOT)))
-    return sorted(paths)
 
 
 class PolicySimplificationContractTests(unittest.TestCase):
@@ -111,110 +67,6 @@ class PolicySimplificationContractTests(unittest.TestCase):
         self.assertEqual(labels["workflow::tracking"]["applies_to"], ["issue"])
         self.assertEqual(labels["workflow::dispatch"]["applies_to"], ["pr", "mr"])
 
-    def test_dsh_uses_its_selected_home_policy_without_project_home_leakage(self) -> None:
-        cases = (
-            ("project-dev", "edit"),
-            ("project-dev", "delivery"),
-            ("project-dev", "review"),
-            ("task-tools", None),
-            ("browser-test", None),
-            ("memory", None),
-            ("session-coordination", None),
-        )
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            docs_home = root / "dsh-home"
-            state_home = root / "state"
-            docs_home.mkdir()
-            state_home.mkdir()
-            catalog_entries: list[str] = []
-            expected_content: dict[tuple[str, str | None], str] = {}
-            for index, (intent, phase) in enumerate(cases):
-                document_name = f"DSH_POLICY_{index}.md"
-                content = f"# DSH {intent} {phase or 'all'}\n"
-                expected_content[(intent, phase)] = content
-                phase_entry = f'phase = "{phase}"\n' if phase is not None else ""
-                catalog_entries.append(
-                    f"""
-[[document]]
-context = "{intent}"
-scope = "home"
-path = "{document_name}"
-product = "dsh"
-{phase_entry}required = true
-when = "always"
-""".lstrip()
-                )
-                (docs_home / document_name).write_text(content, encoding="utf-8")
-            (docs_home / "AGENT_DOCS.toml").write_text(
-                "\n".join(catalog_entries),
-                encoding="utf-8",
-            )
-
-            for index, (intent, phase) in enumerate(cases):
-                command = [
-                    "agent-docs",
-                    "session",
-                    "context",
-                    "--docs-home",
-                    str(docs_home),
-                    "--session-id",
-                    "policy-simplification-dsh",
-                    "--product",
-                    "dsh",
-                    "--state-home",
-                    str(state_home),
-                    "--intent",
-                    intent,
-                    "--request-id",
-                    f"policy-simplification-dsh-{index}",
-                    "--project-path",
-                    str(ROOT),
-                    "--worktree-fallback",
-                    "local-only",
-                    "--format",
-                    "json",
-                ]
-                if phase is not None:
-                    command.extend(["--phase", phase])
-                result = subprocess.run(
-                    command,
-                    cwd=ROOT,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-
-                payload = json.loads(result.stdout)
-                with self.subTest(intent=intent, phase=phase):
-                    self.assertEqual(result.returncode, 0, payload)
-                    self.assertTrue(payload["ok"], payload)
-                    decision = payload["data"]["decision"]
-                    self.assertEqual(decision["document_count"], 1)
-                    self.assertEqual(
-                        decision["documents"],
-                        [
-                            {
-                                "source": "home",
-                                "scope": "home",
-                                "content": expected_content[(intent, phase)],
-                            }
-                        ],
-                    )
-
-    def test_home_catalog_entries_declare_their_product_boundary(self) -> None:
-        catalog = tomllib.loads(read("AGENT_DOCS.toml"))
-
-        for document in catalog["document"]:
-            if document["scope"] != "home":
-                continue
-            path = document["path"]
-            with self.subTest(path=path):
-                self.assertEqual(
-                    document.get("product"),
-                    HOME_PRODUCT_EXCEPTIONS.get(path, SHARED_HOME_PRODUCTS),
-                )
-
     def test_rendered_home_prompts_fit_the_unwaived_budget(self) -> None:
         for product in HOME_PRODUCTS:
             path = ROOT / "build" / product / "AGENT_HOME.md"
@@ -224,15 +76,18 @@ when = "always"
                 f"{product} home prompt exceeds {HOME_BUDGET_BYTES} bytes",
             )
 
-    def test_project_dev_edit_preflight_is_small_and_purpose_built(self) -> None:
-        payload = preflight("project-dev", phase="edit")
-        required = required_relative_paths(payload)
-
-        self.assertEqual(required, ["core/policies/files-hooks-validation.md"])
+    def test_edit_contract_is_small_and_routed_from_home(self) -> None:
         self.assertLessEqual(
-            sum((ROOT / path).stat().st_size for path in required),
+            (ROOT / "core/policies/files-hooks-validation.md").stat().st_size,
             EDIT_DOC_BUDGET_BYTES,
         )
+        for product in HOME_PRODUCTS:
+            rendered = " ".join(read(f"build/{product}/AGENT_HOME.md").split())
+            with self.subTest(product=product):
+                self.assertIn("`files-hooks-validation.md` (edits, validation)", rendered)
+                self.assertIn("`VALIDATION.toml` declares its finish-line validation", rendered)
+                self.assertNotIn("agent-docs", rendered)
+                self.assertNotIn("AGENT_DOCS", rendered)
 
     def test_edit_contract_maintains_affected_test_owners(self) -> None:
         edit_contract = " ".join(
@@ -253,22 +108,7 @@ when = "always"
             edit_contract,
         )
 
-    def test_delivery_phase_requires_boundaries_and_routes_conditional_evidence(self) -> None:
-        for product in SHARED_HOME_PRODUCTS:
-            payload = preflight("project-dev", phase="delivery", product=product)
-            required = required_relative_paths(payload)
-            self.assertEqual(required, sorted([
-                "core/policies/devlog-capability.md",
-                "core/policies/files-hooks-validation.md",
-                "core/policies/git-delivery.md",
-                "core/policies/work-modes.md",
-            ]))
-            evidence = next(d for d in payload["documents"]
-                            if d["path"].endswith("evidence-control-plane.md"))
-            self.assertFalse(evidence["required"])
-            self.assertEqual(evidence["status"], "present")
-            self.assertLessEqual(sum((ROOT / p).stat().st_size for p in required),
-                                 48 * 1024)
+    def test_delivery_routes_conditional_evidence(self) -> None:
         delivery = read("core/policies/git-delivery.md")
         self.assertIn("evidence-control-plane.md", delivery)
         self.assertIn("test-first", delivery)
@@ -285,69 +125,17 @@ when = "always"
     def test_upstream_contribution_route_and_hard_boundaries_are_semantically_owned(
         self,
     ) -> None:
-        catalog = tomllib.loads(read("AGENT_DOCS.toml"))
-        entries = [
-            document
-            for document in catalog["document"]
-            if document["path"] == "core/policies/upstream-contribution.md"
-        ]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(
-            {
-                key: entries[0][key]
-                for key in (
-                    "context",
-                    "scope",
-                    "product",
-                    "required",
-                    "when",
-                    "phase",
-                )
-            },
-            {
-                "context": "project-dev",
-                "scope": "home",
-                "product": SHARED_HOME_PRODUCTS,
-                "required": False,
-                "when": "always",
-                "phase": "delivery",
-            },
-        )
-
-        documents = [
-            document
-            for document in preflight("project-dev", phase="delivery")["documents"]
-            if document["path"].endswith("core/policies/upstream-contribution.md")
-        ]
-        self.assertEqual(len(documents), 1)
-        self.assertEqual(documents[0]["scope"], "home")
-        self.assertEqual(documents[0]["phases"], ["delivery"])
-        self.assertFalse(documents[0]["declared_required"])
-        self.assertFalse(documents[0]["required"])
-        self.assertEqual(documents[0]["status"], "present")
-        self.assertTrue(documents[0]["validation"]["valid"])
-
         for product in HOME_PRODUCTS:
             rendered = " ".join(
                 read(f"build/{product}/AGENT_HOME.md").split()
             )
-            self.assertIn("load `upstream-contribution`", rendered)
+            self.assertIn("read `upstream-contribution.md`", rendered)
             self.assertIn("a human submits and signs DCO/CLA", rendered)
             self.assertIn("before creating durable state", rendered)
 
-        intent_card = " ".join(read("core/policies/intent-cards.md").split())
         policy = " ".join(
             read("core/policies/upstream-contribution.md").split()
         )
-        for required in (
-            "read `core/policies/upstream-contribution.md` before proposing",
-            "submit a third-party issue or pull request",
-            "sign a DCO or CLA",
-            "publish a security defect",
-            "expose credentials, private content, local paths, internal hosts, "
-            "topology, or identifiers",
-        ):
-            self.assertIn(required.casefold(), intent_card.casefold())
         for required in (
             "It must not create the upstream issue, open the upstream pull request, "
             "or sign a DCO or CLA",
@@ -358,43 +146,7 @@ when = "always"
         ):
             self.assertIn(required.casefold(), policy.casefold())
 
-    def test_review_phase_keeps_evidence_and_codex_only_delegation(self) -> None:
-        self.assertEqual(
-            required_relative_paths(preflight("project-dev", phase="review")),
-            [
-                "core/policies/code-review-delegation-codex.md",
-                "core/policies/evidence-control-plane.md",
-            ],
-        )
-        self.assertEqual(
-            required_relative_paths(
-                preflight("project-dev", phase="review", product="claude")
-            ),
-            ["core/policies/evidence-control-plane.md"],
-        )
-
-    def test_catalog_declares_each_completion_gate_once(self) -> None:
-        catalog = tomllib.loads(read("AGENT_DOCS.toml"))
-        self.assertEqual(len(catalog["validation"]), 1)
-        self.assertEqual(
-            catalog["validation"][0]["context"],
-            "project-dev",
-        )
-        self.assertEqual(
-            catalog["validation"][0]["commands"],
-            ["bash scripts/ci/all.sh"],
-        )
-
-    def test_specialized_intents_do_not_force_the_evidence_manual(self) -> None:
-        expected = {
-            "task-tools": ["core/policies/external-facts.md"],
-            "browser-test": ["core/policies/browser-test-routing.md"],
-            "session-coordination": ["core/policies/session-coordination.md"],
-        }
-        for intent, paths in expected.items():
-            with self.subTest(intent=intent):
-                self.assertEqual(required_relative_paths(preflight(intent)), paths)
-
+    def test_browser_policy_does_not_force_the_evidence_manual(self) -> None:
         browser = read("core/policies/browser-test-routing.md")
         browser_words = " ".join(browser.split())
         self.assertNotIn("evidence-control-plane", browser)
@@ -483,10 +235,6 @@ when = "always"
         self.assertIn("Explicit current-task provider-delivery request", delivery)
         self.assertIn("only when provider delivery is explicitly requested", tier)
         self.assertNotIn("proactive triage", tier.casefold())
-        self.assertNotIn(
-            "proactive triage",
-            read("AGENT_DOCS.toml").casefold(),
-        )
         self.assertIn(
             "repo-scoped `semantic-commit --repo`",
             edit_contract_words,
@@ -626,93 +374,27 @@ when = "always"
         )
 
         # Render chain: every rendered home prompt routes coordination to the
-        # session-coordination intent and to the trigger cards that name the
-        # task-start board check.
+        # runbook that names the task-start board check.
         for product in HOME_PRODUCTS:
             rendered = " ".join(read(f"build/{product}/AGENT_HOME.md").split())
-            self.assertIn("`session-coordination`", rendered)
-            if product == "hermes":
-                self.assertIn("Resolve trigger cards", rendered)
-            else:
-                self.assertIn("Triggers: `core/policies/intent-cards.md`", rendered)
+            self.assertIn("`session-coordination.md` (peer delivery/overlap)", rendered)
 
-        cards = read("core/policies/intent-cards.md")
-        card = " ".join(
-            cards.split("## session-coordination", 1)[1].split("\n## ", 1)[0].split()
-        ).casefold()
-        for required in (
-            "long or repository-mutating managed work starts",
-            "`agent-session board`",
-            "treat a board row as authority or a claim",
-            "fail a task because the board is unavailable",
-            "progress summary",
-        ):
-            self.assertIn(required, card)
+        resolved = " ".join(read("core/policies/session-coordination.md").split()).casefold()
+        for required in board_guidance:
+            self.assertIn(required.casefold(), resolved)
+        self.assertNotIn(
+            "no manual claim, activation ritual, or mechanical pre-task check",
+            resolved,
+        )
 
-        # Runtime surface: the intent each product resolves carries the
-        # guidance, not only the source file.
-        for product in SHARED_HOME_PRODUCTS:
-            with self.subTest(product=product):
-                payload = preflight("session-coordination", product=product)
-                paths = required_relative_paths(payload)
-                self.assertEqual(paths, ["core/policies/session-coordination.md"])
-                resolved = " ".join(read(paths[0]).split()).casefold()
-                for required in board_guidance:
-                    self.assertIn(required.casefold(), resolved)
-                self.assertNotIn(
-                    "no manual claim, activation ritual, or mechanical pre-task check",
-                    resolved,
-                )
-
-    def test_hermes_has_a_resolvable_conditional_policy_route(self) -> None:
+    def test_hermes_reads_the_same_runbooks_without_agent_docs(self) -> None:
         hermes_home = read("build/hermes/AGENT_HOME.md")
-        documented = (
-            'agent-docs preflight --intent <intent> --phase <phase> '
-            '--docs-home "$AGENT_DOCS_HOME" --product hermes --strict'
-        )
-
-        self.assertIn("$AGENT_DOCS_HOME", hermes_home)
-        self.assertIn(documented, hermes_home)
-        self.assertIn("selected docs home", read("docs/source/harness-shape-hermes.md"))
-        with tempfile.TemporaryDirectory() as unrelated_project:
-            command = [
-                "agent-docs",
-                "preflight",
-                "--intent",
-                "project-dev",
-                "--phase",
-                "edit",
-                "--docs-home",
-                str(ROOT),
-                "--product",
-                "hermes",
-                "--strict",
-                "--format",
-                "json",
-            ]
-            result = subprocess.run(
-                command,
-                cwd=unrelated_project,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        payload = json.loads(result.stdout)
-        self.assertEqual(
-            required_relative_paths(payload),
-            ["core/policies/files-hooks-validation.md"],
-        )
-        required_document = next(
-            document for document in payload["documents"] if document["required"]
-        )
-        edit_contract = Path(required_document["path"]).read_text(
-            encoding="utf-8"
-        )
+        self.assertIn("runtime kit's `core/policies/`", hermes_home)
+        self.assertNotIn("agent-docs", hermes_home)
+        self.assertNotIn("$AGENT_DOCS_HOME", hermes_home)
+        edit_contract = " ".join(read("core/policies/files-hooks-validation.md").split())
         capsule_path = "core/policies/execution-capsules.md"
-        self.assertIn(
-            f"load `{capsule_path}` from the selected docs home",
-            " ".join(edit_contract.split()),
-        )
+        self.assertIn(f"load `{capsule_path}` from the runtime kit", edit_contract)
         self.assertTrue((ROOT / capsule_path).read_text(encoding="utf-8"))
 
     def test_issue_backed_project_improvement_is_event_driven(self) -> None:
@@ -729,8 +411,7 @@ when = "always"
         self.assertIn("earliest owning", project_skill)
         self.assertIn("issue and public-safe devlog", project_skill)
         self.assertIn("does not grant automatic issue creation", project_skill)
-        edit_required = required_relative_paths(preflight("project-dev", phase="edit"))
-        required_bytes = sum((ROOT / path).stat().st_size for path in edit_required)
+        required_bytes = (ROOT / "core/policies/files-hooks-validation.md").stat().st_size
         project_skill_bytes = len(project_skill.encode("utf-8"))
         self.assertLessEqual(project_skill_bytes, PROJECT_SKILL_CONTEXT_DELTA_BYTES)
         self.assertLessEqual(
@@ -770,18 +451,6 @@ when = "always"
             nils_surface,
         )
 
-    def test_context_audit_reports_agent_docs_resolution(self) -> None:
-        result = subprocess.run(
-            ["python3", "scripts/ci/context-budget-audit.py", "check"],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-
-        self.assertIn("agent-docs project-dev/edit", result.stdout)
-        self.assertIn("resolved required docs", result.stdout)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

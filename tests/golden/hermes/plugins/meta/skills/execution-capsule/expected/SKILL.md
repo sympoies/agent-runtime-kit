@@ -15,8 +15,8 @@ Prereqs:
 - The underlying local operation is already authorized. Capsule preparation
   must not infer authorization for destructive scope, provider mutation,
   credential access, host access, or a materially different task.
-- Resolve and read `core/policies/execution-capsules.md` from the selected
-  agent-docs home before constructing any files. That policy remains the
+- Resolve and read `core/policies/execution-capsules.md` from the runtime kit
+  before constructing any files. That policy remains the
   canonical safety and lifecycle contract.
 - `agent-out` is available. The target working directory and every allowed
   path are exact absolute paths.
@@ -92,7 +92,7 @@ precondition rules, and validation arrays in
 
 1. Resolve the exact operation, `cwd`, allowed paths, authorization, and access
    class. Default to `workspace`.
-2. Load `core/policies/execution-capsules.md` from the selected docs home and
+2. Load `core/policies/execution-capsules.md` from the runtime kit and
    keep its direct/supervised parity, governance, and receipt boundaries.
 3. Allocate the capsule through `agent-out project --topic <topic> --mkdir`.
    Never place it in the repository or repo-local `./agent-out`. Before

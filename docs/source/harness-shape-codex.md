@@ -374,15 +374,15 @@ a uniform shape:
 
 ### 16. Work-mode delegation policy (`core/policies/work-modes.md`)
 
-- Codex reads from: delivery-phase `project-dev` resolution names the work-mode
-  policy only when durable tracking or delivery is in play. Routine `direct`
+- Codex reads from: the git-delivery policy names the work-mode policy only
+  when durable tracking or delivery is in play. Routine `direct`
   classification stays internal; the policy may select parallel or
   orchestrator execution without exposing those execution modes as skills.
-- Source: `core/policies/work-modes.md`, routed by
-  `AGENT_DOCS.toml` and summarized by the rendered home policy.
-- Install mechanism: shared policy tree plus `agent-docs` intent resolution;
-  there is no separate skill or Codex file loader for an execution mode.
-- Acceptance lane: agent-docs preflight and policy-render validation.
+- Source: `core/policies/work-modes.md`, routed by policy references and
+  summarized by the rendered home policy.
+- Install mechanism: shared policy tree read on demand; there is no separate
+  skill or Codex file loader for an execution mode.
+- Acceptance lane: policy-render validation.
 - Support today: **shipped (policy-routed)**.
 
 ## Coverage Summary
@@ -404,7 +404,7 @@ a uniform shape:
 | 13 | `state_home` | yes | env var + `agent-out` CLI allocation | 0.130.0 | v1.19.2 (`path-for`; reviewed cleanup is policy-owned) |
 | 14 | `$CODEX_HOME/skills/<d>/<s>/` | not-applicable | retired; plugin-scoped discovery is row 5 | n/a | n/a |
 | 15 | `config.toml` hook ingress | yes | digest-bound `agent-hook setup` | 0.130.0 | v1.26.4 |
-| 16 | work-mode delegation policy | yes | agent-docs policy routing | 0.130.0 | v1.12.1 |
+| 16 | work-mode delegation policy | yes | policy routing | 0.130.0 | v1.12.1 |
 
 Status legend:
 

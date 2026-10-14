@@ -72,9 +72,7 @@ python), matching scripts/ci/version-baseline-audit.py.
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -92,7 +90,6 @@ HOME_PROMPT_TARGET = 4 * KIB + 256
 #   measure     how the actual size is obtained:
 #                 ("file", "<repo-relative path>")     -> size of one file
 #                 ("doc-set", ["<path>", ...])         -> sum of file sizes
-#                 ("agent-docs", intent, phase, product) -> resolved required set
 #                 ("pending", "<owner>")               -> not yet measured here
 #                 ("behavioral", "<covered_by>")       -> enforced elsewhere
 #   target      byte target (the budget)
@@ -134,11 +131,8 @@ BUDGETS = [
     },
     {
         "id": "edit-phase-required-reading.project-dev",
-        "description": (
-            "Actual required documents resolved by agent-docs for this kit's "
-            "project-dev edit phase, including applicable project and home scope."
-        ),
-        "measure": ("agent-docs", "project-dev", "edit", "codex"),
+        "description": "Edit contract the home policy routes edits to.",
+        "measure": ("doc-set", ["core/policies/files-hooks-validation.md"]),
         "target": 20 * KIB,
         "override": None,
     },
@@ -154,31 +148,21 @@ BUDGETS = [
         "target": 1280,  # 1.25 KiB
         "override": None,
     },
-    {
-        "id": "route-cue.unchanged-prompt",
-        "description": (
-            "New agent-docs context emitted on an unchanged repeat prompt; "
-            "startup memory runs only at SessionStart boundaries."
-        ),
-        "measure": ("behavioral",
-                    "tests/hooks/test_shared_hooks.py "
-                    "(delta cue unchanged-prompt suppression)"),
-        "target": 0,
-        "override": None,
-    },
 ]
 
 
-# Delivery is measured through the catalog, not a manually mirrored path list.
-# Preserve a separate surface per adapter so a product-specific expansion fails.
-for product in ("codex", "claude", "hermes"):
-    BUDGETS.append({
-        "id": "delivery-phase-required-reading.project-dev.%s" % product,
-        "description": "Resolved project-dev delivery required reading for %s." % product,
-        "measure": ("agent-docs", "project-dev", "delivery", product),
-        "target": 48 * KIB,
-        "override": None,
-    })
+BUDGETS.append({
+    "id": "delivery-phase-required-reading.project-dev",
+    "description": "Runbooks the home and edit policies route delivery to.",
+    "measure": ("doc-set", [
+        "core/policies/devlog-capability.md",
+        "core/policies/files-hooks-validation.md",
+        "core/policies/git-delivery.md",
+        "core/policies/work-modes.md",
+    ]),
+    "target": 48 * KIB,
+    "override": None,
+})
 
 
 # Surfaces that must stay actively measured (file / doc-set). Downgrading one to
@@ -191,12 +175,10 @@ REQUIRED_MEASURED_IDS = frozenset({
     "rendered-agent-home.hermes",
     "rendered-agent-home.neutral",
     "edit-phase-required-reading.project-dev",
-    "delivery-phase-required-reading.project-dev.codex",
-    "delivery-phase-required-reading.project-dev.claude",
-    "delivery-phase-required-reading.project-dev.hermes",
+    "delivery-phase-required-reading.project-dev",
 })
 
-_MEASURED_KINDS = ("file", "doc-set", "agent-docs", "skill-body")
+_MEASURED_KINDS = ("file", "doc-set", "skill-body")
 
 
 # --- skill-body surfaces (#140) ----------------------------------------------
@@ -337,47 +319,6 @@ def measure_bytes(measure):
         rels = measure[1]
         total = sum(os.path.getsize(os.path.join(REPO_ROOT, rel)) for rel in rels)
         return total, "%d docs" % len(rels)
-    if kind == "agent-docs":
-        _, intent, phase, product = measure
-        command = [
-            "agent-docs",
-            "preflight",
-            "--intent",
-            intent,
-            "--phase",
-            phase,
-            "--product",
-            product,
-            "--docs-home",
-            REPO_ROOT,
-            "--project-path",
-            REPO_ROOT,
-            "--worktree-fallback",
-            "local-only",
-            "--format",
-            "json",
-        ]
-        result = subprocess.run(
-            command,
-            cwd=REPO_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        payload = json.loads(result.stdout)
-        required = [item for item in payload["documents"] if item["required"]]
-        paths = [os.path.realpath(item["path"]) for item in required]
-        for path in paths:
-            if os.path.commonpath((REPO_ROOT, path)) != REPO_ROOT:
-                raise ValueError(
-                    "agent-docs resolved required path outside source root: %s"
-                    % path
-                )
-        total = sum(os.path.getsize(path) for path in paths)
-        return total, (
-            "agent-docs %s/%s: %d resolved required docs"
-            % (intent, phase, len(paths))
-        )
     if kind == "skill-body":
         _, root, rels = measure
         sizes = [(os.path.getsize(os.path.join(root, rel)), rel)

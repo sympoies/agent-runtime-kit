@@ -21,8 +21,8 @@ from hook_common import (
 
 BLOCK_REASON = (
     "Blocked project-state memory write. Do not store project state in "
-    "personal memory; use repository docs, git history, or agent-docs "
-    "runbooks instead."
+    "personal memory; use repository docs, git history, or runbooks "
+    "instead."
 )
 
 PROJECT_MEMORY_PATTERNS: tuple[re.Pattern[str], ...] = (

@@ -217,7 +217,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertEqual(required_clis["git-cli"], "1.27.16")
         self.assertEqual(required_clis["agent-hook"], "1.27.35")
         self.assertEqual(required_clis["agent-memory"], "1.26.4")
-        self.assertEqual(required_clis["agent-docs"], "1.24.0")
+        self.assertNotIn("agent-docs", required_clis)
         minimum = tuple(
             int(part)
             for part in yaml_scalar(manifest, "minimum_supported_tag")[1:].split(".")
@@ -774,8 +774,6 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         smoke = read("tests/runtime-smoke/cases/evidence/run.sh")
         hooks = read("tests/hooks/shared_hook_command_guards.py")
 
-        self.assertIn("matches_agent_docs_version", smoke)
-        self.assertIn("agent-runtime --version", smoke)
         self.assertNotIn("matches_pinned_agent_docs_version", smoke)
         self.assertNotIn("agent-docs 1.24.3", smoke)
         self.assertIn('[agent_runtime, "--version"]', hooks)

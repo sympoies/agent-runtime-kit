@@ -269,34 +269,6 @@ def inventory_tools(rules: list[dict[str, Any]]) -> set[str]:
     }
 
 
-def prepare_trusted_test_agent_docs(
-    full_env: dict[str, str],
-    cwd: Path | None,
-) -> tempfile.TemporaryDirectory[str] | None:
-    if "AGENT_RUNTIME_TRUSTED_CLI_ROOT" in full_env:
-        return None
-    agent_docs = shutil.which("agent-docs", path=full_env.get("PATH"))
-    if not agent_docs:
-        return None
-    if cwd is not None:
-        try:
-            Path(agent_docs).resolve().relative_to(cwd.resolve())
-        except ValueError:
-            # The hook validates the lexical command path against configured
-            # trusted roots before resolving a Homebrew Cellar symlink.
-            full_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(
-                Path(agent_docs).absolute().parent
-            )
-            return None
-    trusted = tempfile.TemporaryDirectory()
-    trusted_binary = Path(trusted.name) / "agent-docs"
-    shutil.copy2(agent_docs, trusted_binary)
-    trusted_binary.chmod(0o755)
-    full_env["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = trusted.name
-    full_env["PATH"] = trusted.name + os.pathsep + full_env.get("PATH", "")
-    return trusted
-
-
 # Finish-line waiver/suppress envs (mirror WAIVER_ENVS + SUPPRESS_ENVS in
 # stop-finish-line-gate.py). The live agent runtime commonly exports these in
 # the session, so scrub them from the inherited environment before launching a
@@ -314,10 +286,8 @@ AMBIENT_GATE_ENVS = (
 
 # Operator-facing trust overrides. Kept apart from AMBIENT_GATE_ENVS because
 # that tuple mirrors a specific hook's env list; this one does not. A developer
-# on a split nils-cli install legitimately exports the trusted CLI root, but
-# prepare_trusted_test_agent_docs cannot tell that inherited value apart from a
-# fixture-supplied one and skips installing the per-fixture trusted root, so
-# every fixture's temporary agent-docs fails closed as untrusted.
+# on a split nils-cli install legitimately exports the trusted CLI root, which
+# would otherwise redirect every fixture's trusted-CLI resolution.
 AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT",)
 
 
@@ -396,54 +366,19 @@ def run_hook(
     }
     if not env or state_overrides.isdisjoint(env):
         full_env["AGENT_RUNTIME_STATE_HOME"] = TEST_RUNTIME_STATE.name
-    # Existing strict project-dev fixtures test the enforce contract. Keep that
-    # partition explicit now that production defaults to advisory; default-mode
-    # tests pass an empty value, which deterministically selects advisory.
-    if script_name == "pre-edit-intent-gate.py":
-        full_env["AGENT_RUNTIME_PROJECT_DEV_MODE"] = "enforce"
     if env:
         full_env.update(env)
     for name in unset_env:
         full_env.pop(name, None)
-    payload_for_hook = payload
-    if (
-        script_name == "pre-edit-intent-gate.py"
-        and cwd is not None
-        and payload.get("tool_name") == "Bash"
-        and "transcript_path" not in payload
-        and "cwd" not in payload
-    ):
-        tool_input = payload.get("tool_input")
-        if isinstance(tool_input, dict) and not any(
-            key in tool_input
-            for key in (
-                "workdir",
-                "cwd",
-                "current_working_directory",
-                "working_directory",
-            )
-        ):
-            # Model the host-attested per-call workdir that real hooked Bash
-            # envelopes carry, without mutating the caller's fixture object.
-            payload_for_hook = dict(payload)
-            payload_for_hook["tool_input"] = {
-                **tool_input,
-                "workdir": str(cwd.resolve()),
-            }
-    trusted = prepare_trusted_test_agent_docs(full_env, cwd)
-    try:
-        completed = subprocess.run(
-            [sys.executable, str(HOOK_DIR / script_name)],
-            input=json.dumps(payload_for_hook),
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            env=full_env,
-            check=False,
-        )
-    finally:
-        if trusted is not None:
-            trusted.cleanup()
+    completed = subprocess.run(
+        [sys.executable, str(HOOK_DIR / script_name)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        env=full_env,
+        check=False,
+    )
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
@@ -480,20 +415,15 @@ def run_shell_hook(
     scrub_ambient_envs(full_env)
     if env:
         full_env.update(env)
-    trusted = prepare_trusted_test_agent_docs(full_env, cwd)
-    try:
-        completed = subprocess.run(
-            ["bash", str(HOOK_DIR / script_name)],
-            input=json.dumps(payload),
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            env=full_env,
-            check=False,
-        )
-    finally:
-        if trusted is not None:
-            trusted.cleanup()
+    completed = subprocess.run(
+        ["bash", str(HOOK_DIR / script_name)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        env=full_env,
+        check=False,
+    )
     return completed.returncode, parse_stdout(completed.stdout), completed.stderr
 
 
@@ -570,11 +500,6 @@ class HookTestCase(unittest.TestCase):
         return message
 
 
-    def _require_agent_docs(self) -> None:
-        if shutil.which("agent-docs") is None:
-            self.skipTest("agent-docs not on PATH")
-
-
     @staticmethod
     def _init_contract_repo(
         tmp: str,
@@ -584,7 +509,7 @@ class HookTestCase(unittest.TestCase):
         repo = Path(tmp)
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         rendered = ", ".join(f'"{command}"' for command in commands)
-        (repo / "AGENT_DOCS.toml").write_text(
+        (repo / "VALIDATION.toml").write_text(
             '[[validation]]\ncontext = "project-dev"\n'
             f"commands = [{rendered}]\n"
             f'marker = "{marker}"\n',
@@ -629,44 +554,6 @@ class HookTestCase(unittest.TestCase):
         script = bin_dir / "agent-docs"
         script.write_text(body, encoding="utf-8")
         script.chmod(0o755)
-
-
-    @staticmethod
-    def _phase_aware_fake_agent_docs(
-        *,
-        log_path: Path,
-        marker: Path,
-        product: str = "codex",
-        prepared_intent: str = "project-dev",
-    ) -> str:
-        """Fake agent-docs that records argv and models the #601 3d phase surface.
-
-        ``session verify`` reports the intent active once ``marker`` exists
-        (modeling the primitive rule that a full, no-phase preparation satisfies
-        any phase-scoped verify), and ``session prepare`` succeeds and creates the marker. Every
-        invocation appends ``$*`` to ``log_path`` so a test can assert which
-        ``--phase`` the hook threaded into each call.
-        """
-        log_q = shlex.quote(str(log_path))
-        marker_q = shlex.quote(str(marker))
-        return f"""#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$*" >> {log_q}
-if [[ "$*" == *"session prepare"* ]]; then
-  printf 'prepared\\n' > {marker_q}
-  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.prepare.v1","ok":true,"data":{{"product":"{product}","active_intents":["{prepared_intent}"],"record_file":"r.json","verified":true,"prepared_intents":["{prepared_intent}"],"reason":"prepared"}}}}'
-  exit 0
-fi
-if [[ "$*" == *"session verify"* ]]; then
-  if [[ -f {marker_q} ]]; then
-    printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":true,"data":{{"product":"{product}","active_intents":["project-dev"],"verified":true}}}}'
-    exit 0
-  fi
-  printf '%s\\n' '{{"schema_version":"cli.agent-docs.session.verify.v1","ok":false,"error":{{"code":"required-intent-not-active"}}}}'
-  exit 1
-fi
-exit 64
-"""
 
 
     def _run_declared_validation(
@@ -716,27 +603,6 @@ exit 64
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-
-
-    @staticmethod
-    def _mark_runtime_kit_source_checkout(repo: Path) -> None:
-        (repo / "AGENT_HOME.md").write_text("# Home\n", encoding="utf-8")
-        (repo / "manifests").mkdir(exist_ok=True)
-        (repo / "manifests" / "skills.yaml").write_text("skills: []\n", encoding="utf-8")
-        (repo / "core" / "policies").mkdir(parents=True, exist_ok=True)
-        (repo / "scripts").mkdir(exist_ok=True)
-        (repo / "scripts" / "sync-runtime-surfaces.sh").write_text(
-            "#!/usr/bin/env bash\n", encoding="utf-8"
-        )
-
-
-    def _phase_gate_env(self, repo: Path, bin_dir: Path) -> dict[str, str]:
-        return {
-            "AGENT_RUNTIME_DOCS_HOME": str(repo),
-            "AGENT_RUNTIME_PRODUCT": "codex",
-            "CODEX_AGENT_STATE_HOME": str(repo / "state"),
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-        }
 
 
     @staticmethod
@@ -1254,7 +1120,7 @@ exit 64
             other_bin = root / "elsewhere" / "bin"
             for directory in (home_bin, other_bin):
                 directory.mkdir(parents=True)
-                for tool in ("semantic-commit", "agent-docs", "agent-session"):
+                for tool in ("semantic-commit", "agent-session"):
                     binary = directory / tool
                     binary.write_text("#!/bin/sh\nexit 0\n")
                     binary.chmod(0o755)

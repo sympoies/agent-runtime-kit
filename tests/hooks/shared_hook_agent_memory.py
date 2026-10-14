@@ -61,7 +61,7 @@ class AgentMemoryTests(HookTestCase):
             assert isinstance(output, dict)
             ctx = str(output.get("additionalContext", ""))
             self.assertIn("Bounded startup memory", ctx)
-            self.assertIn("agent-docs preflight --intent memory", ctx)
+            self.assertIn("agent-memory recall on-demand <term>", ctx)
             # The candidate/promotion procedure lives in memory.md now, not the
             # startup header (#601 P1 slice 3b).
             self.assertNotIn("candidate promote --apply", ctx)
@@ -478,6 +478,6 @@ class AgentMemoryTests(HookTestCase):
             self.assertLessEqual(len(ctx.encode("utf-8")), 1300)
             # The boundary and the memory-preflight pointer are present; the
             # candidate/promotion procedure is not (it lives in memory.md).
-            self.assertIn("agent-docs preflight --intent memory", ctx)
+            self.assertIn("agent-memory recall on-demand <term>", ctx)
             self.assertNotIn("candidate promote --apply", ctx)
 

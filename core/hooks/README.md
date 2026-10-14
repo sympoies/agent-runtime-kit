@@ -42,6 +42,13 @@ authentication and authorization remain the final boundary. Any downstream
 runtime that copies these shared hooks must mirror the contract and fixtures;
 this repository has no separate downstream deployment owner.
 
+The finish-line hooks read each repository's declared validation contract
+from its root `VALIDATION.toml`: `[[validation]]` tables with `context`,
+`commands`, an optional `marker`, and optional `product`/`products` scoping to
+`codex` or `claude`. This is the same file `agent-hook` reads for DSH sessions.
+While repositories migrate, contexts absent there are still read from
+`[[validation]]` tables in `AGENT_DOCS.toml`; no hook invokes `agent-docs`.
+
 The finish-line hooks credit declared validation only after an observed
 successful exit. `PreToolUse` wraps each matched Bash command with a tokenized
 EXIT recorder that persists bounded outcome metadata and preserves the
@@ -120,87 +127,21 @@ A failed outcome stays outstanding and the Stop gate proposes owner-based
 routing before honoring a validation waiver. The hooks retain neither raw
 command output nor provider artifacts and never open an issue automatically.
 
-Selective intent activation uses the durable `session prepare/status/verify`
-surface that every supported `agent-docs` release ships; the hooks do not probe
-for it. `user-prompt-agent-docs.sh` expands required docs for active intents and
-lists inactive routes without injecting their runbooks; it always passes
-`--require-declared-intent --product <product>` to `preflight` and stays silent
-when no `codex`/`claude` runtime product is set. `pre-edit-intent-gate.py` then checks `project-dev`
-for every canonical target repository before direct edits and against the
-shared shell command context.
-
-`AGENT_RUNTIME_PROJECT_DEV_MODE` selects `advisory` (the default), `enforce`, or
-`off`. Advisory mode attempts one bounded exact preparation for each unprepared
-attested target and allows the original work whether preparation succeeds or
-not. Successful auto-preparation includes the exact, phase-qualified
-`agent-docs preflight --intent project-dev` command to read the prepared
-contract; failures use `project-dev-advisory-unavailable` plus exact recovery
-when available. A preparation near miss in advisory mode is not consumed as a
-trusted bootstrap and executes normally with corrected bootstrap guidance;
-enforce mode blocks the same near miss before execution. Invalid mode values
-deterministically degrade to advisory. Enforce retains fail-closed verification
-and target-specific recovery. Off disables only this project-dev workflow
-check; checkout ownership, work-context coordination, validation,
-delivery/signing, credential-protection, provider, OS, and user-authority hooks
-still run.
-
-Direct edits discover and verify each explicit target independently. Bash uses
-a host-attested command workdir: Codex inline metadata, a matching bounded
-transcript call, provider session cwd, or the exact cwd in a ready private
-`agent-session` record whose session id and runtime incarnation match the hook
-process. This last route keeps a target-rooted Claude worker usable when its
-Bash envelope omits cwd or its current call has not yet been flushed to the
-transcript. The managed record may only attest the same physical process cwd;
-it cannot redirect the target. A plain process-cwd or unauthenticated
-mismatched-call fallback is recorded as un-attested and receives
-`workdir-attestation-missing` instead of silently becoming a cross-repository
-target. Its message tells the agent not to repeat unchanged Bash and names the
-supported Codex workdir, managed
-target-rooted session, and exact-path edit routes. Shell-expanded
-destinations remain unobservable. A shell-embedded `agent-run exec --cwd`
-cross-repository hop stays fail-closed in enforce mode with
-`cross-repository-target-unsupported`; V1 requires a target-rooted session or
-host-attested workdir. Admitting that wrapper later requires a typed nils-cli
-command-context primitive that binds release provenance, canonical cwd, wrapper
-grammar, and child argv once for every mutation-sensitive guard.
-Recovery diagnostics make that route operational: resubmit the mutation as a
-standalone tool call whose top-level `workdir` is the target checkout; for
-staging, run `git add -- <owned-paths>` there and invoke `semantic-commit`
-separately. They explicitly reject shell `cd`, raw `git -C`, and nested
-`agent-run exec --cwd` as substitutes, and name a target-rooted managed session
-as the fallback when the host cannot attest a target workdir.
-Help/version reads use verified `execution.read-only.v1` evidence when the
-trusted producer supports that request; otherwise they require exact-target
-preparation. Raw argv alone grants no read bypass, and executable shadows
-fail closed. When
-verification blocks a single-repository edit or shell mutation, the reason
-includes a complete, copyable `session prepare` command — the atomic
-activate-plus-strict-preflight primitive — with the trusted executable and
-session context. A successful in-hook prepare keeps `[reason: prepared]` and
-adds `[action: retry-original]`: do not run the prepare command again; retry the
-original blocked command. The older `session activate` bootstrap remains accepted for
-backward compatibility. The gate does not probe `agent-docs` for the session or
-`--phase` surface, which every supported release ships; a missing, timed-out,
-crashed, malformed, or pre-session binary fails at `session verify` like any
-unverified session, so enforce blocks and advisory preserves the work. Before any probe, the hooks require the
-resolved `agent-docs` executable to live in a known managed CLI directory
-(`/opt/homebrew/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/usr/local/bin`,
-`/usr/bin`, or the per-user `~/.local/nils-cli/bin` produced by
-`NILS_WRAPPER_INSTALL_PREFIX`); Homebrew links must resolve under that prefix's
-`Cellar/nils-cli` package, while `/usr/bin` and the per-user root hold regular
-files and so must resolve to themselves. The per-user root is owner-writable,
-but so is the Homebrew prefix on Linux hosts, so trusting it adds no weakness
-the packaged list did not already carry. Any other installation requires an
-explicit launch-time `AGENT_RUNTIME_TRUSTED_CLI_ROOT`, which narrows trust to
-exactly the roots it names in the gates that pair it with a repository-local
-executable check; repository-local candidates are always rejected. These hooks are mechanical guardrails, not a security sandbox: the
+Hooks that resolve a managed nils-cli executable require it to live in a
+known managed CLI directory (`/opt/homebrew/bin`,
+`/home/linuxbrew/.linuxbrew/bin`, `/usr/local/bin`, `/usr/bin`, or the
+per-user `~/.local/nils-cli/bin` produced by `NILS_WRAPPER_INSTALL_PREFIX`);
+Homebrew links must resolve under that prefix's `Cellar/nils-cli` package,
+while `/usr/bin` and the per-user root hold regular files and so must resolve to
+themselves. Any other installation requires an explicit launch-time
+`AGENT_RUNTIME_TRUSTED_CLI_ROOT`, which narrows trust to exactly the roots it
+names; repository-local candidates are always rejected. These hooks are mechanical guardrails, not a security sandbox: the
 product launch environment, managed runtime home, and an explicit trusted-root
 override remain host trust boundaries. Hermes has no runtime-kit hook runner.
 
 The shared `command_context` helper in `hook_common.py` resolves the canonical
 working directory, source, attestation, and optional stable diagnostic for a
 tool call. Its `effective_workdir` compatibility wrapper means
-`pre-edit-intent-gate.py`,
 `checkout-lease-guard.py`, `block-unsafe-default-delivery.py`,
 `agent-scope-lock-guard.py`, and `block-direct-python.py` all agree on the
 target repository instead of each reading the hook process cwd (issue #601

@@ -7,16 +7,8 @@ it should be retained, and what contributors should read before adding or
 changing Markdown files.
 
 Read this policy when adding, promoting, moving, indexing, or cleaning durable
-documentation, or when placement/retention is unclear. It is optional canonical
-`project-dev` context in `AGENT_DOCS.toml`; ordinary edits to an existing
-document do not force-load it. Inspect or audit it directly with:
-
-```bash
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  preflight --intent project-dev --strict --format json
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  audit --target project --strict
-```
+documentation, or when placement/retention is unclear. Ordinary edits to an
+existing document do not need it.
 
 ## Placement Rules
 
@@ -76,10 +68,9 @@ work unless the user explicitly asks for a cleanup pass.
 - Generated or fixture files may follow the naming required by the renderer,
   product, or test scenario.
 
-## Agent-Docs Reminder
+## Reminder
 
-`agent-docs` declares this policy as optional `project-dev` context. Load it
-before choosing a new docs path, promotion, index entry, or retention action;
+Load this policy before choosing a new docs path, promotion, index entry, or retention action;
 do not add it to every edit's required context.
 
 If the correct placement is unclear, document the assumption in the change

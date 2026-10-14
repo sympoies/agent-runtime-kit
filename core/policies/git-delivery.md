@@ -118,9 +118,6 @@ using this narrow admission path.
   `cd`, raw `git -C`, or nested `agent-run exec --cwd`; if the host cannot
   attest a target workdir, continue from a managed session rooted at the target
   checkout.
-  A nested `agent-run exec --cwd <other-repo>` is not another target-aware
-  exception: the pre-edit gate rejects that cross-repository wrapper and directs
-  the agent to a session rooted at the target checkout.
 - A clean linked worktree can acquire a lease. The primary checkout has a
   narrow direct-edit exception: it must be clean, on the resolved default
   branch, outside an existing Git operation, and free of a live foreign lease.
@@ -133,9 +130,8 @@ using this narrow admission path.
   matching lease, or pre-existing merge/rebase/cherry-pick/revert/bisect state
   blocks mutation and routes the agent to a managed worktree.
 - A sole git recovery command (`git rebase|merge|cherry-pick|revert|am
-  --abort`, or `--quit`) is always admitted by both the checkout writer lease
-  and the pre-edit intent gate — even without owning the lease or an active
-  project-dev activation — because aborting restores the clean pre-operation
+  --abort`, or `--quit`) is always admitted by the checkout writer lease — even
+  without owning the lease — because aborting restores the clean pre-operation
   state and authors no content. This lets a checkout that is stuck mid-operation
   recover in place instead of being discarded; `--continue`/`--skip` advance the
   operation and stay gated. The carve-out is as narrow as `git-cli worktree add`:

@@ -31,14 +31,11 @@ hook_inventory = importlib.util.module_from_spec(generator_spec)
 generator_spec.loader.exec_module(hook_inventory)
 PARITY_CASES = REPO_ROOT / "tests/agent-hook/fixtures/parity-cases.json"
 COORDINATION_CASES = REPO_ROOT / "tests/agent-hook/fixtures/coordination-cases.json"
-READ_ONLY_CUTOVER_CASES = (
-    REPO_ROOT / "tests/agent-hook/fixtures/read-only-cutover-cases.json"
-)
 LEGACY_REGISTRATIONS = (
     REPO_ROOT / "tests/agent-hook/fixtures/legacy-registrations.tsv"
 )
 # Independent identity of the ordered historical snapshot, not current rules.
-HISTORICAL_LEGACY_SHA256 = "e7564eb158bdc5571684a99e61e362bc9d200b9ac58d6467e39d61bb6c92856a"
+HISTORICAL_LEGACY_SHA256 = "aa88f436a812b6fd9a2ad2957e06ee25f2d8ed0a7e10da6601374404c7304649"
 
 EXPECTED_HANDLERS = {
     "agent-scope-lock-guard",
@@ -53,11 +50,9 @@ EXPECTED_HANDLERS = {
     "forge-label-reminder",
     "mcp-secret-scan",
     "portable-paths-scan",
-    "pre-edit-intent-gate",
     "semantic-commit-body-gate",
     "session-start-healthcheck",
     "stop-finish-line-gate",
-    "user-prompt-agent-docs",
 }
 
 INVENTORY_RULE_FIELDS = {
@@ -107,7 +102,6 @@ COORDINATION_CAPABILITY_COUNTS = Counter(
     }
 )
 
-READ_ONLY_RULE_ID = "runtime.shared.pre-tool-use.bash.read-only"
 MEMORY_RULE_IDS = {
     "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory",
     "runtime.claude.session-start.startup-resume-clear.user-prompt-agent-memory",
@@ -353,8 +347,8 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         source = POLICY.read_text(encoding="utf-8")
         swapped = source
         replacements = {
-            "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate": "checkout-lease-guard",
-            "runtime.codex.pre-tool-use.bash.checkout-lease-guard": "pre-edit-intent-gate",
+            "runtime.codex.pre-tool-use.bash.block-direct-git-commit": "checkout-lease-guard",
+            "runtime.codex.pre-tool-use.bash.checkout-lease-guard": "block-direct-git-commit",
         }
         for block in source.split("[[rules]]")[1:]:
             rule_id = tomllib.loads("[[rules]]" + block)["rules"][0]["id"]
@@ -383,7 +377,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
                 "INVENTORY": root / "manifests/hook-rules.yaml",
                 "LEGACY_REGISTRATIONS": legacy,
             }):
-                self.assertEqual(len(frozen_legacy_registrations()), 58)
+                self.assertEqual(len(frozen_legacy_registrations()), 51)
                 self.assertEqual({row[3] for row in frozen_legacy_registrations()}, EXPECTED_HANDLERS)
                 with self.assertRaises(AssertionError):
                     self.test_baseline_inventory_is_complete_and_exact()
@@ -396,7 +390,7 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         )
         registrations = frozen_legacy_registrations()
         # Snapshot cardinality is historical, not a current-registration total.
-        self.assertEqual(len(registrations), 58)
+        self.assertEqual(len(registrations), 51)
         expected = hook_inventory.legacy_registrations(hook_inventory.policy_inventory(POLICY))
         self.assertEqual(registrations, expected)
         self.assertEqual({row[3] for row in registrations}, EXPECTED_HANDLERS)
@@ -612,20 +606,6 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             self.assertEqual(len(values), len(set(values)), key)
 
         added_rules = [rule for rule in rules if rule["legacy_handler"] is None]
-        read_only_rules = [
-            rule for rule in added_rules if rule["id"] == READ_ONLY_RULE_ID
-        ]
-        self.assertEqual(len(read_only_rules), 1)
-        self.assertEqual(
-            read_only_rules[0]["capability"]["id"], "execution.read-only.v1"
-        )
-        self.assertEqual(read_only_rules[0]["products"], ["codex", "claude"])
-        self.assertEqual(read_only_rules[0]["events"], ["PreToolUse"])
-        self.assertEqual(read_only_rules[0]["matcher"], "Bash")
-        self.assertEqual(read_only_rules[0]["mode"], "enforce")
-        self.assertEqual(read_only_rules[0]["capability"]["fallback_handler_id"], "pre-edit-intent-gate")
-        self.assertEqual(read_only_rules[0]["disposition"], "typed-read-only-admission")
-
         memory_rules = [rule for rule in added_rules if rule["id"] in MEMORY_RULE_IDS]
         self.assertEqual(len(memory_rules), 2)
         self.assertEqual(
@@ -747,23 +727,6 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             if case["rule_id"] is not None:
                 self.assertIn(case["rule_id"], inventory_ids)
             self.assertRegex(case["owner_test"], r"^tests/")
-
-    def test_read_only_cutover_mismatches_have_finite_dispositions(self) -> None:
-        fixture = json.loads(READ_ONLY_CUTOVER_CASES.read_text(encoding="utf-8"))
-        self.assertEqual(
-            fixture["schema_version"],
-            "agent-runtime-kit.read-only-cutover-cases.v1",
-        )
-        self.assertEqual(fixture["rule_id"], READ_ONLY_RULE_ID)
-        self.assertEqual(fixture["production_authority"], "execution.read-only.v1")
-        self.assertEqual(len(fixture["unknown_feedback_routes"]), 2)
-        self.assertIn("agent-run inspect", fixture["unknown_feedback_routes"][0])
-        self.assertIn("prepare project-dev", fixture["unknown_feedback_routes"][1])
-        comparisons = Counter(case["comparison"] for case in fixture["cases"])
-        self.assertEqual(comparisons, Counter({"mismatch": 2, "parity": 2}))
-        for case in fixture["cases"]:
-            self.assertTrue(case["disposition"].strip(), case["case"])
-            self.assertNotIn("allowlist", case["disposition"].lower())
 
     def test_coordination_admission_baseline_is_conservative(self) -> None:
         cases = json.loads(COORDINATION_CASES.read_text(encoding="utf-8"))

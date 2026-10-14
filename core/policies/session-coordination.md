@@ -159,7 +159,7 @@ unassigned commands and self-run behavior remain unchanged.
   privacy-safe advice for recognized mutations. Default `advisory` mode needs
   no manual claim or activation ritual; its only task-start step is the
   read-only check in [Session board](#session-board).
-- Open or activate this policy when long or repository-mutating managed work
+- Open this policy when long or repository-mutating managed work
   starts, for a material mailbox request or warning, when declaring task scope
   will improve another session's advice, or before using explicit
   enforcement/recovery.
