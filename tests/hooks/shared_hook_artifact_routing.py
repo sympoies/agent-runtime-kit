@@ -366,7 +366,7 @@ class ArtifactRoutingTests(HookTestCase):
     def test_artifact_routing_allows_the_agent_validation_marker_subtree(self) -> None:
         """`.cache/agent-validation/` is the declared validation marker root.
 
-        `AGENT_DOCS.toml` owns it (`marker = ".cache/agent-validation/*.ok"`),
+        `VALIDATION.toml` owns it (`marker = ".cache/agent-validation/*.ok"`),
         the finish-line gate reads it, and it is legitimately repo-local.
         Blocking it would break the validation contract it exists to record.
         """

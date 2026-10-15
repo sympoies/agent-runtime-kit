@@ -4518,7 +4518,7 @@ exit 99
         import hook_common
 
         documents = [
-            (REPO_ROOT / "AGENT_DOCS.toml").read_text(encoding="utf-8"),
+            (REPO_ROOT / "VALIDATION.toml").read_text(encoding="utf-8"),
             '[path_classes]\ntest = ["tests/**"]\n\n'
             '[[validation]] # trailing comment\n'
             "context = 'project-dev' # literal\n"

@@ -146,10 +146,10 @@ render, drift-audit, smoke-test, and coupled `nils-cli` detail.
 .
 ├── AGENT_HOME.md        # shared home-scope policy for Codex, Claude, and Hermes
 ├── AGENTS.md            # repo-local policy for this checkout
-├── AGENT_DOCS.toml      # transitional validation + path classes (moving to VALIDATION.toml)
 ├── DEVELOPMENT.md       # concise contributor principles and finish-line routing
 ├── RELEASING.md         # how the GHCR container image is versioned and cut
 ├── SUPPORT_MATRIX.md    # per-surface ship state
+├── VALIDATION.toml      # finish-line validation contract + project path classes
 ├── core/
 │   ├── docs/            # schemas and shared source docs
 │   ├── hooks/           # shared and product-specific hook sources
