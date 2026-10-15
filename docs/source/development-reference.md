@@ -45,7 +45,7 @@ agent-runtime --version
 The compact home policy is auto-loaded and routes to `core/policies/` runbooks
 by name. General orientation and specialized references remain optional until
 the task needs them. The repository's finish-line validation is declared in
-`VALIDATION.toml` (transitionally `[[validation]]` in `AGENT_DOCS.toml`).
+`VALIDATION.toml`, which also declares its `[path_classes]`.
 
 ### Managed-session coordination documentation
 

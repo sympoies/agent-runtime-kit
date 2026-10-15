@@ -1,0 +1,24 @@
+# Finish-line validation contract. agent-hook and the agent-runtime-kit
+# finish-line hooks block a turn that edited files until these commands pass.
+# [path_classes] is the project-owned path classification read by nils-cli
+# phase-aware test-first and docs-impact checks.
+
+# Per-intent validation contract: what must run before declaring a project-dev
+# task done. Consumed by the finish-line gate via `preflight --intent
+# project-dev --format json`; the gate blocks a stop when code was edited but
+# `marker` is missing/stale, and a waiver releases it.
+[[validation]]
+context = "project-dev"
+commands = ["bash scripts/ci/all.sh"]
+marker = ".cache/agent-validation/project-dev.ok"
+description = "Run the canonical kit gate stack once; it already includes hook, render, smoke, and context-budget coverage."
+
+# Project-owned classification consumed by nils-cli's phase-aware test-first
+# checks. Consuming repositories declare their own paths; unmatched files stay
+# fail-closed instead of inheriting language-specific guesses from this kit.
+[path_classes]
+production = ["VALIDATION.toml", "core/hooks/**", "core/skills/**/*.tera", "scripts/**", "targets/**", "manifests/**", "docker/Dockerfile"]
+test = ["tests/**"]
+docs = ["AGENT_HOME.md", "README.md", "DEVELOPMENT.md", "SUPPORT_MATRIX.md", "core/policies/**", "core/skills/**/README.md", "core/skills/**/references/**", "docs/**"]
+generated = ["build/**"]
+unmatched = "unknown"
