@@ -1275,6 +1275,7 @@ def _validation_entries_subset(text: str) -> list[dict[str, Any]]:
     """
     entries: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
+    at_root = True
     lines = text.splitlines()
     index = 0
     while index < len(lines):
@@ -1284,6 +1285,7 @@ def _validation_entries_subset(text: str) -> list[dict[str, Any]]:
             continue
         if line.startswith("["):
             header = line.split("#", 1)[0].strip()
+            at_root = False
             if re.fullmatch(r"\[\[\s*validation\s*\]\]", header):
                 current = {}
                 entries.append(current)
@@ -1293,6 +1295,8 @@ def _validation_entries_subset(text: str) -> list[dict[str, Any]]:
                 current = None
             continue
         if current is None:
+            if at_root and re.match(r"[\"']?validation[\"']?\s*[.=]", line):
+                raise ValueError("validation must be an array of tables")
             continue
         key, sep, raw = line.partition("=")
         key = key.strip()
@@ -1361,12 +1365,25 @@ def _validation_entries(path: str) -> list[dict[str, Any]]:
     validation = tomllib.loads(text).get("validation", [])
     if not isinstance(validation, list):
         raise ValueError("validation must be an array of tables")
-    return [entry for entry in validation if isinstance(entry, dict)]
+    if not all(isinstance(entry, dict) for entry in validation):
+        raise ValueError("validation must be an array of tables")
+    return validation
 
 
 VALIDATION_KEYS = frozenset(
     {"context", "commands", "marker", "description", "product", "products"}
 )
+# Product selectors a declaration may scope a contract to.
+VALIDATION_PRODUCTS = frozenset({"codex", "claude", "hermes", "dsh"})
+
+
+def _products_valid(value: Any, *, allow_scalar: bool) -> bool:
+    items = [value] if allow_scalar and isinstance(value, str) else value
+    return (
+        _string_list(items)
+        and bool(items)
+        and all(item.strip() in VALIDATION_PRODUCTS for item in items)
+    )
 
 
 def _string_list(value: Any) -> bool:
@@ -1387,11 +1404,8 @@ def _checked_entry(entry: Any) -> dict[str, Any]:
         or any(not command.strip() for command in commands)
         or not isinstance(entry.get("marker", ""), str)
         or not isinstance(entry.get("description", ""), str)
-        or not (
-            isinstance(entry.get("product", ""), str)
-            or _string_list(entry.get("product"))
-        )
-        or not _string_list(entry.get("products", []))
+        or ("product" in entry and not _products_valid(entry["product"], allow_scalar=True))
+        or ("products" in entry and not _products_valid(entry["products"], allow_scalar=False))
     ):
         raise ValueError("validation entry has an unsupported shape")
     return entry

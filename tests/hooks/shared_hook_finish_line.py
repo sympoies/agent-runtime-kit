@@ -4548,6 +4548,13 @@ exit 99
              '[validation]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\n'),
             ("legacy-wrong-shape", 'AGENT_DOCS.toml',
              '[[validation]]\ncontext = "project-dev"\ncommands = []\n'),
+            ("non-table-member", 'VALIDATION.toml', 'validation = ["oops"]\n'),
+            ("empty-product", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproduct = []\n'),
+            ("unknown-product", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproduct = "codxe"\n'),
+            ("blank-products", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproducts = [" "]\n'),
         )
         fallback_root = tempfile.TemporaryDirectory()
         self.addCleanup(fallback_root.cleanup)
