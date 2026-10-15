@@ -375,13 +375,16 @@ entrypoints. The current binary inventory is in the table below.
     Linux `agent-run inspect`, typed fail-closed macOS inspection, and Codex
     prompt recovery. At that adoption, the versioned runtime-kit policy consumed
     the shadow-only evaluator and production admission remained the legacy
-    decision. The current [cutover](https://github.com/sympoies/agent-runtime-kit/issues/193)
-    uses enforced verified read-only admission with exact-target preparation
-    fallback; the active minimum and validated releases support that pairing.
+    decision. The later [cutover](https://github.com/sympoies/agent-runtime-kit/issues/193)
+    enforced verified read-only admission with exact-target preparation
+    fallback. [b79c183](https://github.com/sympoies/agent-runtime-kit/commit/b79c183b802e5291e19faa7c6f120e2b2130a0da)
+    retired that paired read-only admission rule with the pre-edit intent
+    gate, so `core/policies/agent-hook/runtime-kit-v1.toml` no longer
+    declares `execution.read-only.v1`.
 - `v1.25.5` introduced the required setup-owned provider ingress, but it is now
-  below the supported minimum. It passes the earlier schema and ingress gates
-  yet rejects the committed policy because `execution.read-only.v1` is an
-  unknown capability:
+  below the supported minimum. It passed the earlier schema and ingress gates
+  yet rejected the policy committed at that time because
+  `execution.read-only.v1` was an unknown capability:
   - `agent-hook setup` owns one exact provider ingress for Codex and Claude,
     migrates compatible legacy registrations through an operation-bound
     preview/apply digest, and preserves unrelated provider hooks
