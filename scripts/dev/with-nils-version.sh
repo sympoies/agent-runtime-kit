@@ -21,7 +21,7 @@ STATE_OUT="${CLAUDE_KIT_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-
 CACHE_ROOT="$STATE_OUT/nils-versions"
 
 # Surface binaries the kit consumes; missing ones are warned about, not fatal.
-SURFACE_BINS="agent-runtime forge-cli agent-docs"
+SURFACE_BINS="agent-runtime forge-cli agent-hook"
 
 die() {
   echo "$PROG: $*" >&2

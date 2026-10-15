@@ -209,7 +209,7 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
         add = self.setup_preview("codex")
         read_json(self.setup_apply("codex", add["plan_digest"], "--apply"))
         self.assert_doctor("codex")
-        damaged = live_hooks / "pre-edit-intent-gate.py"
+        damaged = live_hooks / "checkout-lease-guard.py"
         damaged.chmod(0o770)
         rejected = self.agent_hook(
             "doctor", "--product", "codex", check=False

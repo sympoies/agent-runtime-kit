@@ -201,7 +201,6 @@ for skill_file in fixture_root.glob("*/*/SKILL.md"):
 
 policy_paths = [
     root / "AGENT_HOME.md",
-    root / "AGENT_DOCS.toml",
     root / "core/policies/work-modes.md",
     root / "core/policies/git-delivery.md",
     root / "core/policies/review-thread-convergence.md",

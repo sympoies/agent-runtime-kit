@@ -20,7 +20,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -1096,7 +1095,7 @@ def read_message_file(command: str, *, max_bytes: int = 65536) -> str | None:
     return None
 
 
-# --- agent-docs finish-line validation gate helpers ---------------------------
+# --- finish-line validation gate helpers ---------------------------------------
 #
 # Shared by the PreToolUse recorder (finish-line-record.py) and the Stop gate
 # (stop-finish-line-gate.py). The recorder writes evidence markers under each
@@ -1159,43 +1158,6 @@ def is_git_recovery_argv(argv: list[str]) -> bool:
     return any(argument in GIT_RECOVERY_FLAGS for argument in argv[index + 1 :])
 
 
-def _runtime_cache_dir() -> str:
-    return os.path.join(os.path.expanduser("~"), ".cache", "agent-runtime-kit")
-
-
-def _is_runtime_kit_source_checkout(repo_root: str | None) -> bool:
-    if not repo_root:
-        return False
-    required_files = (
-        "AGENT_DOCS.toml",
-        "AGENT_HOME.md",
-        os.path.join("manifests", "skills.yaml"),
-        os.path.join("scripts", "sync-runtime-surfaces.sh"),
-    )
-    required_dirs = (os.path.join("core", "policies"),)
-    return all(
-        os.path.isfile(os.path.join(repo_root, path)) for path in required_files
-    ) and all(os.path.isdir(os.path.join(repo_root, path)) for path in required_dirs)
-
-
-def _docs_home(repo_root: str | None = None) -> str | None:
-    """Resolve the docs-home every hook should name for one repository.
-
-    Canonicalized, matching `pre-edit-intent-gate`, so the four hooks that build
-    a `--docs-home` argument all name the same directory even when the
-    configured path reaches it through a symlink (macOS resolves `/var` to
-    `/private/var`). The preflight cache below is keyed on this string, so two
-    spellings of one directory would split the cache as well as reach agent-docs
-    under two names.
-    """
-    docs_home = os.environ.get("AGENT_RUNTIME_DOCS_HOME") or os.environ.get(
-        "AGENT_DOCS_HOME"
-    )
-    if not docs_home and _is_runtime_kit_source_checkout(repo_root):
-        docs_home = repo_root
-    return os.path.realpath(docs_home) if docs_home else None
-
-
 def _runtime_product() -> str | None:
     product = os.environ.get("AGENT_RUNTIME_PRODUCT", "").strip()
     return product if product in {"codex", "claude"} else None
@@ -1250,51 +1212,10 @@ def acquire_validation_state_lock(repo_root: str):
         raise
 
 
-def _agent_docs_base_args(repo_root: str) -> list[str]:
-    docs_home = _docs_home(repo_root)
-    args = ["agent-docs"]
-    if docs_home:
-        args += ["--docs-home", docs_home]
-    args += ["--project-path", repo_root]
-    return args
-
-
-def _agent_docs_fingerprint() -> str:
-    """A cheap identity of the installed ``agent-docs`` binary for cache keying.
-
-    Resolved validation contracts depend on the binary's probed capabilities
-    (``--product`` / ``--require-declared-intent`` support), which change across
-    CLI upgrades without touching ``AGENT_DOCS.toml``. Folding the resolved
-    executable path, size, and mtime into the contract cache key invalidates the
-    cache after such an upgrade, so a stale unfiltered fallback contract is not
-    served once the host learns to filter by product. Uses only ``which`` plus a
-    ``stat`` (no subprocess) so the recorder stays cheap on every tool call;
-    returns ``""`` when the binary cannot be resolved.
-    """
-    executable = shutil.which("agent-docs")
-    if not executable:
-        return ""
-    try:
-        stat = os.stat(executable)
-    except OSError:
-        return executable
-    return f"{executable}:{stat.st_size}:{stat.st_mtime_ns}"
-
-
-def _agent_docs_json(args: list[str]) -> dict[str, Any] | None:
-    try:
-        completed = subprocess.run(
-            args, capture_output=True, text=True, check=False, timeout=15
-        )
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0 or not completed.stdout.strip():
-        return None
-    try:
-        data = json.loads(completed.stdout)
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
+VALIDATION_FILE = "VALIDATION.toml"
+# Transitional source: `[[validation]]` tables in a repository that has not yet
+# moved them out of `AGENT_DOCS.toml`. Contexts declared in VALIDATION.toml win.
+TRANSITIONAL_VALIDATION_FILE = "AGENT_DOCS.toml"
 
 
 def _validation_marker_default(context: str) -> str:
@@ -1304,136 +1225,276 @@ def _validation_marker_default(context: str) -> str:
     return f".cache/agent-validation/{safe}.ok"
 
 
-def _contract_from_explain(
-    data: dict[str, Any] | None, intent: str
-) -> dict[str, Any] | None:
-    if not isinstance(data, dict):
-        return None
-    validation = data.get("validation") if isinstance(data, dict) else None
-    if not isinstance(validation, dict) or not validation.get("declared"):
-        return None
-    commands = [
-        command
-        for command in (validation.get("commands") or [])
-        if isinstance(command, str) and command.strip()
-    ]
-    if not commands:
-        return None
-    context = validation.get("context") or data.get("intent") or intent
-    if not isinstance(context, str) or not context.strip():
-        context = intent
-    marker = validation.get("marker")
-    if not isinstance(marker, str) or not marker.strip():
-        marker = _validation_marker_default(context)
-    return {"context": context.strip(), "commands": commands, "marker": marker.strip()}
+def _toml_value(raw: str) -> Any:
+    """Decode one TOML string or array-of-strings value (subset reader)."""
+    raw = raw.strip()
+    if raw.startswith("["):
+        items: list[Any] = []
+        body = _skip_blank(raw[1:])
+        while not body.startswith("]"):
+            value, consumed = _toml_string(body)
+            items.append(value)
+            body = _skip_blank(body[consumed:])
+            if body.startswith(","):
+                body = _skip_blank(body[1:])
+            elif not body.startswith("]"):
+                raise ValueError("array items must be comma-separated")
+        if re.sub(r"#[^\n]*", "", body[1:]).strip():
+            raise ValueError("unsupported validation value")
+        return items
+    value, consumed = _toml_string(raw)
+    if raw[consumed:].strip():
+        raise ValueError("unsupported validation value")
+    return value
 
 
-def _declared_intents(repo_root: str) -> list[str]:
-    data = _agent_docs_json(
-        _agent_docs_base_args(repo_root) + ["list", "--format", "json"]
+def _skip_blank(text: str) -> str:
+    return re.sub(r"^(?:\s|#[^\n]*)+", "", text)
+
+
+def _toml_string(text: str) -> tuple[str, int]:
+    if text.startswith('"'):
+        match = re.match(r'"((?:[^"\\\n]|\\.)*)"', text)
+        if match is None:
+            raise ValueError("unterminated string")
+        return json.loads(match.group(0)), match.end()
+    if text.startswith("'"):
+        match = re.match(r"'([^'\n]*)'", text)
+        if match is None:
+            raise ValueError("unterminated string")
+        return match.group(1), match.end()
+    raise ValueError("unsupported validation value")
+
+
+def _validation_entries_subset(text: str) -> list[dict[str, Any]]:
+    """Read `[[validation]]` tables without tomllib (Python < 3.11 hosts).
+
+    Covers the string and string-array keys the validation contract uses and
+    rejects anything else inside a validation table, so a contract this reader
+    cannot represent is never used in a partially parsed form.
+    """
+    entries: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    at_root = True
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        index += 1
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            header = line.split("#", 1)[0].strip()
+            at_root = False
+            if re.fullmatch(r"\[\[\s*validation\s*\]\]", header):
+                current = {}
+                entries.append(current)
+            elif re.match(r"\[+\s*[\"']?validation\b", header):
+                raise ValueError("validation must be an array of tables")
+            else:
+                current = None
+            continue
+        if current is None:
+            if at_root and re.match(r"[\"']?validation[\"']?\s*[.=]", line):
+                raise ValueError("validation must be an array of tables")
+            continue
+        key, sep, raw = line.partition("=")
+        key = key.strip()
+        if not sep or re.fullmatch(r"[A-Za-z0-9_-]+", key) is None:
+            raise ValueError("unsupported validation line")
+        if key in current:
+            raise ValueError("duplicate validation key")
+        raw = raw.strip()
+        if raw.startswith("["):
+            while not _array_closed(raw) and index < len(lines):
+                raw += "\n" + lines[index]
+                index += 1
+        elif raw.startswith(('"""', "'''")):
+            raise ValueError("unsupported validation value")
+        else:
+            raw = _strip_trailing_comment(raw)
+        current[key] = _toml_value(raw)
+    return entries
+
+
+def _array_closed(raw: str) -> bool:
+    depth = 0
+    quote = ""
+    escaped = False
+    comment = False
+    for char in raw:
+        if comment and char != "\n":
+            continue
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\" and quote == '"':
+                escaped = True
+            elif char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char == "#":
+            comment = True
+        elif char == "\n":
+            comment = False
+        elif char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return True
+    return False
+
+
+def _strip_trailing_comment(raw: str) -> str:
+    _, consumed = _toml_string(raw)
+    rest = raw[consumed:].strip()
+    if rest and not rest.startswith("#"):
+        raise ValueError("unsupported validation value")
+    return raw[:consumed]
+
+
+def _validation_entries(path: str) -> list[dict[str, Any]]:
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    try:
+        import tomllib  # type: ignore[import-not-found]
+    except ImportError:
+        return _validation_entries_subset(text)
+    validation = tomllib.loads(text).get("validation", [])
+    if not isinstance(validation, list):
+        raise ValueError("validation must be an array of tables")
+    if not all(isinstance(entry, dict) for entry in validation):
+        raise ValueError("validation must be an array of tables")
+    return validation
+
+
+VALIDATION_KEYS = frozenset(
+    {"context", "commands", "marker", "description", "product", "products"}
+)
+# Product selectors a declaration may scope a contract to.
+VALIDATION_PRODUCTS = frozenset({"codex", "claude", "hermes", "dsh"})
+
+
+def _products_valid(value: Any, *, allow_scalar: bool) -> bool:
+    items = [value] if allow_scalar and isinstance(value, str) else value
+    return (
+        _string_list(items)
+        and bool(items)
+        and all(item.strip() in VALIDATION_PRODUCTS for item in items)
     )
-    raw_intents = data.get("intents") if isinstance(data, dict) else None
-    intents: list[str] = []
-    if isinstance(raw_intents, list):
-        for intent in raw_intents:
-            if isinstance(intent, str) and intent.strip() and intent not in intents:
-                intents.append(intent.strip())
-    return intents or ["project-dev"]
 
 
-def _resolve_validation_contracts(repo_root: str) -> list[dict[str, Any]]:
-    """Resolve every declared validation contract via `agent-docs`."""
+def _string_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _checked_entry(entry: Any) -> dict[str, Any]:
+    """Validate one `[[validation]]` table against the agent-hook schema."""
+    if not isinstance(entry, dict) or not set(entry) <= VALIDATION_KEYS:
+        raise ValueError("validation entry has an unsupported shape")
+    context = entry.get("context")
+    commands = entry.get("commands")
+    if (
+        not isinstance(context, str)
+        or re.fullmatch(r"[A-Za-z0-9_./-]+", context.strip()) is None
+        or not _string_list(commands)
+        or not commands
+        or any(not command.strip() for command in commands)
+        or not isinstance(entry.get("marker", ""), str)
+        or not isinstance(entry.get("description", ""), str)
+        or ("product" in entry and not _products_valid(entry["product"], allow_scalar=True))
+        or ("products" in entry and not _products_valid(entry["products"], allow_scalar=False))
+    ):
+        raise ValueError("validation entry has an unsupported shape")
+    return entry
+
+
+def _entry_products(entry: Mapping[str, Any]) -> set[str] | None:
+    if "product" not in entry and "products" not in entry:
+        return None
+    products: set[str] = set()
+    for key in ("product", "products"):
+        value = entry.get(key, [])
+        products.update(item.strip() for item in ([value] if isinstance(value, str) else value))
+    return products
+
+
+def _read_contracts(path: str, product: str | None) -> list[dict[str, Any]]:
     contracts: list[dict[str, Any]] = []
-    product = _runtime_product()
-    product_args = ["--product", product] if product else []
-    for intent in _declared_intents(repo_root):
-        data = _agent_docs_json(
-            _agent_docs_base_args(repo_root)
-            + [
-                "preflight",
-                "--intent",
-                intent,
-                "--require-declared-intent",
-                *product_args,
-                "--format",
-                "json",
-            ]
+    for entry in [_checked_entry(entry) for entry in _validation_entries(path)]:
+        products = _entry_products(entry)
+        if product and products is not None and product not in products:
+            continue
+        context = entry["context"].strip()
+        existing = next(
+            (item for item in contracts if item["context"] == context), None
         )
-        contract = _contract_from_explain(data, intent)
-        if not contract:
-            continue
-        if any(existing.get("context") == contract["context"] for existing in contracts):
-            continue
-        contracts.append(contract)
+        if existing is None:
+            existing = {"context": context, "commands": [], "marker": ""}
+            contracts.append(existing)
+        for command in entry["commands"]:
+            if command.strip() not in existing["commands"]:
+                existing["commands"].append(command.strip())
+        if entry.get("marker", "").strip():
+            existing["marker"] = entry["marker"].strip()
+    for contract in contracts:
+        if not contract["marker"]:
+            contract["marker"] = _validation_marker_default(contract["context"])
     return contracts
+
+
+def load_validation_contracts(
+    repo_root: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The repo's declared validation contracts plus invalid declaration files.
+
+    Returns one ``{"context": "...", "commands": [...], "marker": "..."}``
+    record per declared context, read from the repository-root
+    ``VALIDATION.toml`` (the agent-hook validation contract). Entries scoped
+    with ``product``/``products`` apply only to that runtime product. During the
+    migration, contexts not declared there are still read from
+    ``[[validation]]`` tables in ``AGENT_DOCS.toml``.
+
+    A declaration file that exists but cannot be read, parsed, or matched to
+    the schema is reported in the second element, and no contract is taken
+    from any file then: callers must fail closed rather than read an invalid
+    declaration as "no contract".
+    """
+    product = _runtime_product()
+    contracts: list[dict[str, Any]] = []
+    invalid: list[str] = []
+    for name in (VALIDATION_FILE, TRANSITIONAL_VALIDATION_FILE):
+        path = os.path.join(repo_root, name)
+        if not os.path.lexists(path):
+            continue
+        try:
+            found = _read_contracts(path, product)
+        except (OSError, ValueError, UnicodeDecodeError):
+            invalid.append(name)
+            continue
+        declared = {contract["context"] for contract in contracts}
+        contracts.extend(
+            contract for contract in found if contract["context"] not in declared
+        )
+    return ([] if invalid else contracts), invalid
 
 
 def validation_contracts(repo_root: str) -> list[dict[str, Any]]:
-    """The repo's declared validation contracts, or an empty list.
+    """Valid declared contracts only; see `load_validation_contracts`."""
+    return load_validation_contracts(repo_root)[0]
 
-    Returns one ``{"context": "...", "commands": [...], "marker": "..."}``
-    record per declared intent whose validation contract contains at least one
-    command. The agent-docs result is cached per repo and docs-home, keyed on
-    the catalog's mtime, the runtime product, and a fingerprint of the
-    ``agent-docs`` binary (so a CLI upgrade that changes product filtering
-    invalidates the cache), letting the recorder run on every tool call cheaply.
-    """
-    catalog = os.path.join(repo_root, "AGENT_DOCS.toml")
-    if not os.path.isfile(catalog):
-        return []
-    try:
-        catalog_mtime = os.path.getmtime(catalog)
-    except OSError:
-        catalog_mtime = 0.0
 
-    docs_home = _docs_home(repo_root)
-    product = _runtime_product()
-    agent_docs_fingerprint = _agent_docs_fingerprint()
-    cache_key = "\0".join(
-        [repo_root, docs_home or "", product or "", agent_docs_fingerprint]
+def invalid_declaration_reason(repo_root: str, invalid: list[str]) -> str:
+    name = os.path.basename(os.path.abspath(repo_root))
+    return (
+        f"Validation declaration in {name} is invalid: {', '.join(invalid)}. "
+        "An existing finish-line contract that cannot be read, parsed, or matched "
+        "to the `[[validation]]` schema (context, non-empty commands, optional "
+        "marker, description, product/products) blocks edits and finishing "
+        "until it is fixed; the declaration file itself stays editable."
     )
-    digest = hashlib.sha1(cache_key.encode("utf-8")).hexdigest()[:16]
-    cache_path = os.path.join(_runtime_cache_dir(), f"contract-{digest}.json")
-    try:
-        with open(cache_path, encoding="utf-8") as handle:
-            cached = json.load(handle)
-        if (
-            isinstance(cached, dict)
-            and cached.get("catalog_mtime") == catalog_mtime
-            and cached.get("docs_home") == docs_home
-            and cached.get("product") == product
-            and cached.get("agent_docs_fingerprint") == agent_docs_fingerprint
-        ):
-            contracts = cached.get("contracts")
-            if isinstance(contracts, list):
-                return [
-                    contract
-                    for contract in contracts
-                    if isinstance(contract, dict)
-                    and isinstance(contract.get("context"), str)
-                    and isinstance(contract.get("commands"), list)
-                    and isinstance(contract.get("marker"), str)
-                ]
-    except (OSError, ValueError):
-        pass
-
-    contracts = _resolve_validation_contracts(repo_root)
-    try:
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as handle:
-            json.dump(
-                {
-                    "catalog_mtime": catalog_mtime,
-                    "docs_home": docs_home,
-                    "product": product,
-                    "agent_docs_fingerprint": agent_docs_fingerprint,
-                    "contracts": contracts,
-                },
-                handle,
-            )
-    except OSError:
-        pass
-    return contracts
 
 
 def validation_marker_set(
@@ -5591,7 +5652,7 @@ def touch_marker(path: str) -> bool:
 # splits the artifact tree across roots (sympoies/agent-runtime-kit#90).
 #
 # Repo-local `.cache/` picks up the same spillover. `.cache/agent-validation/`
-# is the declared `agent-docs` validation marker root and stays allowed;
+# is the declared validation marker root and stays allowed;
 # everything else under a checkout's `.cache/` is scratch that belongs on the
 # allocated route.
 #
@@ -5619,7 +5680,7 @@ Agent artifacts must live outside the checkout, in an allocated run directory.
 
 ARTIFACT_CACHE_REASON = f"""[agent-artifact-routing] Blocked scratch write to repo-local `.cache/`: {{path}}
 Only `.cache/agent-validation/` is repo-local by design; it holds the
-agent-docs validation marker declared in AGENT_DOCS.toml. Other scratch
+validation marker declared in VALIDATION.toml. Other scratch
 belongs on the allocated artifact route.
 
 {_ARTIFACT_ALLOCATION_ROUTE}"""

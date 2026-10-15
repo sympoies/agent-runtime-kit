@@ -18,7 +18,7 @@ deliberately exposes exactly four verbs and no general shell escape:
 * ``revoke``  withdraw a waiver
 
 ``run`` cannot be pointed at an arbitrary command: ``--command`` selects among
-the strings the repository itself declared in ``AGENT_DOCS.toml`` and anything
+the strings the repository itself declared in ``VALIDATION.toml`` and anything
 else is refused. The waiver requires a reason and binds to the repository,
 contract, product, session, and current edit generation, so it expires the moment
 another edit lands instead of leaking across turns the way the ambient
@@ -50,7 +50,7 @@ from hook_common import (  # noqa: E402
     git_toplevel,
     read_validation_waiver,
     touch_marker,
-    validation_contracts,
+    load_validation_contracts,
     validation_edit_generation,
     validation_marker_set,
     validation_waiver_marker,
@@ -142,7 +142,14 @@ def _fail(code: str, message: str) -> int:
 
 
 def selected_contracts(repo_root: str, context: str | None) -> list[dict[str, Any]]:
-    contracts = validation_contracts(repo_root)
+    contracts, invalid = load_validation_contracts(repo_root)
+    if invalid:
+        raise SystemExit(
+            _fail(
+                "contract-invalid",
+                "validation declaration is invalid: " + ", ".join(invalid),
+            )
+        )
     if context:
         contracts = [
             contract for contract in contracts if contract.get("context") == context

@@ -500,9 +500,9 @@ bash tests/memory-runtime/run.sh
 # -----------------------------------------------------------------------------
 # Position 17 — context budget audit (#601 P1 visible context budgets)
 #
-# Measures the always-on and per-intent context surfaces (rendered AGENT_HOME,
-# agent-docs-resolved project-dev edit requirements, startup memory, and the
-# unchanged-prompt route cue) against the issue's byte budgets. Fails closed when
+# Measures the always-on and routed context surfaces (rendered AGENT_HOME, the
+# edit and delivery runbooks, and startup memory) against the issue's byte
+# budgets. Fails closed when
 # a surface exceeds its target without an explicit, tracked override, so context
 # growth is a reviewable decision rather than invisible drift. The rendered
 # build/<product>/AGENT_HOME.md artifacts measured here are produced by

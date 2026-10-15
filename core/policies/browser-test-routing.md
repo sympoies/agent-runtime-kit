@@ -32,7 +32,7 @@ screenshot of a browser window is never proof of rendered DOM state.
 
 ## Parent Workflow
 
-1. Activate the `browser-test` intent and read this document.
+1. Read this document.
 2. State the target, acceptance claim, available execution environment, and
    chosen route.
 3. Use ordinary test output for a routine claim. Before launching a browser
@@ -99,12 +99,9 @@ viewport; identify a shared fixture/state once when it applies to every row.
 
 ## Product Capability Ceiling
 
-Codex and Claude can receive selective intent cues and enforce active
-`project-dev` state through shared hooks once the installed nils-cli exposes
-durable session verification. Browser operation still depends on the tools
-available to the active host.
+Codex and Claude run the shared runtime-kit hooks; browser operation still
+depends on the tools available to the active host.
 
-Hermes resolves this policy from the selected docs home and runs the same
-browser/evidence CLIs manually, but it has no runtime-kit hook or automatic
-agent-docs injection path. Report the available browser/desktop transport; do
-not claim hook parity.
+Hermes reads this policy from the runtime kit and runs the same
+browser/evidence CLIs manually, but it has no runtime-kit hook path. Report the
+available browser/desktop transport; do not claim hook parity.

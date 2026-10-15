@@ -20,10 +20,10 @@
       "owner_test": "tests/hooks/test_shared_hooks.py::test_direct_git_commit_hook"
     },
     {
-      "case": "active-intent-preflight-cue",
+      "case": "session-start-memory-cue",
       "expected_action": "context",
-      "rule_id": "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs",
-      "owner_test": "tests/hooks/test_shared_hooks.py::test_preflight_cue_expands_only_active_intents_when_sessions_supported"
+      "rule_id": "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_agent_memory_cue_injects_at_codex_session_start"
     },
     {
       "case": "validation-outcome-wrapper",
@@ -32,10 +32,10 @@
       "owner_test": "tests/hooks/test_shared_hooks.py::test_finish_line_rewrite_preserves_input_and_directly_consumes_pending"
     },
     {
-      "case": "unavailable-required-intent-verifier",
+      "case": "unavailable-checkout-lease-state",
       "expected_action": "failure",
-      "rule_id": "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate",
-      "owner_test": "tests/hooks/test_shared_hooks.py::test_pre_edit_intent_gate_capability_detection_fails_closed"
+      "rule_id": "runtime.codex.pre-tool-use.bash.checkout-lease-guard",
+      "owner_test": "tests/hooks/test_shared_hooks.py::test_checkout_lease_unavailable_state_fails_closed"
     }
   ]
 }

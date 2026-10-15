@@ -27,13 +27,6 @@ require_evidence_bin() {
   fi
 }
 
-matches_agent_docs_version() {
-  local expected="$1"
-  local name version
-  read -r name version _ <<<"$2"
-  [[ "$name" == "agent-docs" && "$version" == "$expected" ]]
-}
-
 record_case() {
   results_record_case "$@"
 }
@@ -367,17 +360,8 @@ run_docs_impact_probe() {
 
 run_selective_intent_control_plane_probe() {
   local workspace="$TMP_ROOT/workspaces/selective-intent-repo"
-  local state_home="$EVIDENCE_ARTIFACTS_DIR/agent-docs-state"
   local test_first_dir="$EVIDENCE_ARTIFACTS_DIR/phase-aware-test-first"
-  local runtime_version
-  require_evidence_bin agent-docs || return 1
-  require_evidence_bin agent-runtime || return 1
-  runtime_version="$(agent-runtime --version | awk 'NR == 1 {print $2}')"
-  matches_agent_docs_version "$runtime_version" "agent-docs $runtime_version"
-  ! matches_agent_docs_version "$runtime_version" "agent-docs ${runtime_version}0" || return 1
-  ! matches_agent_docs_version "$runtime_version" "agent-docs 1${runtime_version}" || return 1
-  matches_agent_docs_version "$runtime_version" "$(agent-docs --version)"
-  agent-docs session --help | grep -q 'status'
+  require_evidence_bin test-first-evidence || return 1
   mkdir -p "$workspace/src" "$workspace/tests"
   printf '# Dev\n' >"$workspace/DEV.md"
   printf '# Fixture\n' >"$workspace/README.md"
@@ -385,13 +369,6 @@ run_selective_intent_control_plane_probe() {
   mkdir -p "$workspace/build"
   printf 'generated\n' >"$workspace/build/output.rs"
   cat >"$workspace/AGENT_DOCS.toml" <<'TOML'
-[[document]]
-context = "project-dev"
-scope = "project"
-path = "DEV.md"
-required = true
-when = "always"
-
 [path_classes]
 production = ["src/**", "mixed/**"]
 test = ["tests/**"]
@@ -399,66 +376,6 @@ docs = ["**/*.md", "mixed/**"]
 generated = ["build/**"]
 unmatched = "unknown"
 TOML
-  agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session activate --session-id runtime-smoke --product codex \
-    --state-home "$state_home" --intent project-dev --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.activate.json"
-  agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session status --session-id runtime-smoke --product codex \
-    --state-home "$state_home" --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.status.json"
-  grep -q '"product": "codex"' "$EVIDENCE_ARTIFACTS_DIR/agent-docs.status.json"
-  grep -q '"project-dev"' "$EVIDENCE_ARTIFACTS_DIR/agent-docs.status.json"
-  agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session verify --session-id runtime-smoke --product codex \
-    --state-home "$state_home" --require-intent project-dev --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.verify.json"
-  python3 - "$state_home" "$workspace" \
-    "$EVIDENCE_ARTIFACTS_DIR/agent-docs.activate.json" \
-    "$EVIDENCE_ARTIFACTS_DIR/agent-docs.status.json" \
-    "$EVIDENCE_ARTIFACTS_DIR/agent-docs.verify.json" <<'PY'
-import hashlib
-import json
-from pathlib import Path
-import sys
-
-state_home = Path(sys.argv[1])
-workspace = Path(sys.argv[2]).resolve()
-activate, status, verify = [json.loads(Path(path).read_text()) for path in sys.argv[3:]]
-for body, schema, verified in (
-    (activate, "cli.agent-docs.session.activate.v1", True),
-    (status, "cli.agent-docs.session.status.v1", False),
-    (verify, "cli.agent-docs.session.verify.v1", True),
-):
-    assert body["schema_version"] == schema, body
-    assert body["ok"] is True, body
-    assert body["data"]["product"] == "codex", body
-    assert body["data"]["active_intents"] == ["project-dev"], body
-    assert body["data"]["verified"] is verified, body
-
-session_hash = "sha256:" + hashlib.sha256(b"runtime-smoke").hexdigest()
-project_hash = "sha256:" + hashlib.sha256(str(workspace).encode()).hexdigest()
-record_file = activate["data"]["record_file"]
-assert record_file == status["data"]["record_file"] == verify["data"]["record_file"]
-record_path = (state_home / record_file).resolve()
-assert record_path.is_relative_to(state_home.resolve()), record_path
-record = json.loads(record_path.read_text())
-assert record["schema"] == "agent-docs.session.v2", record
-assert record["session_hash"] == session_hash, record
-assert record["project_hash"] == project_hash, record
-assert record["product"] == "codex", record
-assert list(record["active_intents"]) == ["project-dev"], record
-expected_record_path = (
-    state_home.resolve()
-    / "agent-docs"
-    / "sessions"
-    / session_hash
-    / "codex"
-    / f"{project_hash}.json"
-)
-assert record_path == expected_record_path, (record_path, expected_record_path)
-PY
-
   test-first-evidence init --out "$test_first_dir" \
     --classification behavior-change --production-path src/lib.rs \
     --changed-behavior "phase-aware fixture behavior changes" --format json \
@@ -600,68 +517,6 @@ for relative, allowed, path_class, reason in cases:
         assert "result" not in body, (relative, body)
 PY
 
-  printf '# Added requirement\n' >"$workspace/ADDED.md"
-  printf '\n[[document]]\ncontext = "project-dev"\nscope = "project"\npath = "ADDED.md"\nrequired = true\nwhen = "always"\n' >>"$workspace/AGENT_DOCS.toml"
-  if agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session verify --session-id runtime-smoke --product codex \
-    --state-home "$state_home" --require-intent project-dev --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.stale.json" 2>&1; then
-    echo "runtime-smoke evidence: catalog drift unexpectedly verified" >&2
-    return 1
-  fi
-  if agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session status --session-id missing --product codex --state-home "$state_home" \
-    --format json >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.missing-session.json" 2>&1; then
-    echo "runtime-smoke evidence: missing session unexpectedly found" >&2
-    return 1
-  fi
-  set +e
-  agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session status --product codex --state-home "$state_home" --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.omitted-session-id.txt" 2>&1
-  omitted_session_status=$?
-  set -e
-  if [[ "$omitted_session_status" -ne 64 ]]; then
-    echo "runtime-smoke evidence: omitted session id returned $omitted_session_status, expected 64" >&2
-    return 1
-  fi
-  grep -q '"schema_version":"cli.agent-docs.error.v1"' \
-    "$EVIDENCE_ARTIFACTS_DIR/agent-docs.omitted-session-id.txt"
-  grep -q '"code":"parse-error"' \
-    "$EVIDENCE_ARTIFACTS_DIR/agent-docs.omitted-session-id.txt"
-  grep -q 'required arguments were not provided' \
-    "$EVIDENCE_ARTIFACTS_DIR/agent-docs.omitted-session-id.txt"
-  if agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session status --session-id "" --product codex --state-home "$state_home" --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.empty-session-id.json" 2>&1; then
-    echo "runtime-smoke evidence: empty session id unexpectedly accepted" >&2
-    return 1
-  fi
-  if agent-docs --docs-home "$workspace" --project-path "$workspace" \
-    session status --session-id runtime-smoke --product codex \
-    --state-home "$EVIDENCE_ARTIFACTS_DIR/missing-state" --format json \
-    >"$EVIDENCE_ARTIFACTS_DIR/agent-docs.missing-state.json" 2>&1; then
-    echo "runtime-smoke evidence: missing state unexpectedly found" >&2
-    return 1
-  fi
-  python3 - "$EVIDENCE_ARTIFACTS_DIR" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-root = Path(sys.argv[1])
-cases = (
-    ("agent-docs.stale.json", "cli.agent-docs.session.verify.v1", "stale-activation"),
-    ("agent-docs.missing-session.json", "cli.agent-docs.session.status.v1", "missing-activation"),
-    ("agent-docs.empty-session-id.json", "cli.agent-docs.session.status.v1", "invalid-session-id"),
-    ("agent-docs.missing-state.json", "cli.agent-docs.session.status.v1", "missing-activation"),
-)
-for relative, schema, code in cases:
-    body = json.loads((root / relative).read_text())
-    assert body["schema_version"] == schema, (relative, body)
-    assert body["ok"] is False, (relative, body)
-    assert body["error"]["code"] == code, (relative, body)
-PY
 }
 
 run_parent_workflow_outcome_probe() {
@@ -699,9 +554,6 @@ run_parent_workflow_outcome_probe() {
     --intent "complete a governed engineering delivery" \
     --user-request-summary "$request" --trigger project-policy \
     --cwd "$EVIDENCE_WORKSPACE" --format json >"$out_dir/init.json"
-  skill-usage link-record --out "$out_dir" --type intent-activation \
-    --path "$EVIDENCE_ARTIFACTS_DIR/agent-docs.verify.json" \
-    --format json >"$out_dir/link-1.json"
   skill-usage link-record --out "$out_dir" --type test-first \
     --path "$EVIDENCE_ARTIFACTS_DIR/test-first-evidence/test-first-evidence.json" \
     --format json >"$out_dir/link-2.json"
@@ -735,7 +587,7 @@ owner = record.get("owner") or {}
 assert owner.get("kind") == "workflow", owner
 linked = record.get("linked_records") or []
 assert [item.get("type") for item in linked] == [
-    "intent-activation", "test-first", "rendered-browser", "command-canary",
+    "test-first", "rendered-browser", "command-canary",
     "static-http", "review", "docs-disposition", "model-check",
 ], linked
 text = " ".join((record.get("intent", ""), record.get("user_request_summary", ""))).lower()
@@ -789,7 +641,7 @@ record_case "evidence.selective-control-plane.test-first" "durable test-first v2
 record_case "evidence.selective-control-plane.review" "review evidence finding and validation verified" run_review_evidence_probe
 record_case "evidence.selective-control-plane.docs-impact" "docs-impact classified controlled untracked docs fixture" run_docs_impact_probe
 record_case "evidence.selective-control-plane.model-cross-check" "model cross-check recorded primary and checker observations without provider calls" run_model_cross_check_probe
-record_case "evidence.selective-control-plane.intent-session" "pinned durable sessions and phase-aware pre-edit transitions passed" run_selective_intent_control_plane_probe
+record_case "evidence.selective-control-plane.intent-session" "phase-aware test-first pre-edit transitions passed" run_selective_intent_control_plane_probe
 record_case "evidence.selective-control-plane.parent" "one natural-language parent workflow owned ordered verified child evidence" run_parent_workflow_outcome_probe
 
 exit "$failures"

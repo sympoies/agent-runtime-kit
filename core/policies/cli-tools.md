@@ -43,8 +43,8 @@ inventory. Track repo-scoped third-party license obligations in
 - Browser tooling: rendered-page interaction and browser-visible evidence
   (native Browser/Chrome tools, `playwright`, optional `agent-browser`
   fallback)
-- Agent workflow: policy docs, semantic commits, and artifact paths
-  (`agent-docs`, `semantic-commit`, `agent-out` — installed via the nils-cli
+- Agent workflow: semantic commits and artifact paths
+  (`semantic-commit`, `agent-out` — installed via the nils-cli
   Homebrew formula, not as standalone formulas)
 - Test: test iteration + feedback loops (`watchexec`, `ruff`)
 - Toolchain: runtimes + CLI installation (`node`, `python3`, `pnpm`, `pipx`, `direnv`)
@@ -168,7 +168,6 @@ install. See `docs/source/nils-cli-surface.md` for the pinned binary list.
 | Tool              | Purpose                                               | Use when                                                                 | Avoid because this exists                                         |
 | ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `agent-out`       | Canonical product `state_home/out/` path generation + audit | Creating ad hoc project-scoped logs, screenshots, bundles, or run output | Hand-building flat top-level `out/<topic>` artifact directories   |
-| `agent-docs`      | Deterministic agent policy document resolution        | Checking required startup/project/skill/tool docs before implementation  | Guessing which `AGENTS.md` / runbook applies                      |
 | `semantic-commit` | Semantic commit validation and staged-context commits | Committing agent-owned changes with auditable message and diff context   | Calling `git commit` directly from agent workflows                |
 | `evidence`        | Durable skill-usage evidence archive: migrate / discover / query / search / catalog | Moving skill-usage records out of the ephemeral agent-out tree into the queryable archive, or reading past archived rollups | Treating raw skill-usage records in the agent-out tree as the final, queryable resting place |
 

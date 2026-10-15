@@ -1,63 +1,9 @@
 {
   "schema_version": "agent-runtime-kit.hook-rules.v1",
   "policy_bundle": "core/policies/agent-hook/runtime-kit-v1.toml",
-  "legacy_handler_count": 17,
-  "legacy_registration_count": 58,
+  "legacy_handler_count": 15,
+  "legacy_registration_count": 51,
   "rules": [
-    {
-      "id": "runtime.shared.pre-tool-use.bash.read-only",
-      "products": [
-        "codex",
-        "claude"
-      ],
-      "events": [
-        "PreToolUse"
-      ],
-      "matcher": "Bash",
-      "capability": {
-        "id": "execution.read-only.v1",
-        "reason_code": "read-only-capability",
-        "fallback_handler_id": "pre-edit-intent-gate"
-      },
-      "mode": "enforce",
-      "priority": 90,
-      "failure_posture": "closed",
-      "timeout_posture": "closed",
-      "override_class": "locked",
-      "state_owner": "none",
-      "transformation": "paired-preparation-bypass",
-      "recovery": "exact-target-project-dev-fallback",
-      "docs": "core/policies/agent-hook/README.md",
-      "test_owner": "tests/agent-hook/test_executable_contract.py::AgentHookExecutableContractTests.test_read_only_capability_bypasses_only_paired_preparation",
-      "disposition": "typed-read-only-admission",
-      "legacy_handler": null
-    },
-    {
-      "id": "runtime.codex.pre-tool-use.bash.pre-edit-intent-gate",
-      "products": [
-        "codex"
-      ],
-      "events": [
-        "PreToolUse"
-      ],
-      "matcher": "Bash",
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "pre-edit-intent-gate"
-      },
-      "mode": "enforce",
-      "priority": 100,
-      "failure_posture": "closed",
-      "timeout_posture": "effect_gated",
-      "override_class": "locked",
-      "state_owner": "agent-docs.session",
-      "transformation": "block",
-      "recovery": "exact-capability-only",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "pre-edit-intent-gate"
-    },
     {
       "id": "runtime.codex.pre-tool-use.bash.checkout-lease-guard",
       "products": [
@@ -475,32 +421,6 @@
       "legacy_handler": "agent-scope-lock-guard"
     },
     {
-      "id": "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.pre-edit-intent-gate",
-      "products": [
-        "codex"
-      ],
-      "events": [
-        "PreToolUse"
-      ],
-      "matcher": "Write|Edit|NotebookEdit|apply_patch",
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "pre-edit-intent-gate"
-      },
-      "mode": "enforce",
-      "priority": 150,
-      "failure_posture": "closed",
-      "timeout_posture": "effect_gated",
-      "override_class": "locked",
-      "state_owner": "agent-docs.session",
-      "transformation": "block",
-      "recovery": "exact-capability-only",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "pre-edit-intent-gate"
-    },
-    {
       "id": "runtime.codex.pre-tool-use.write-edit-notebook-edit-apply-patch.checkout-lease-guard",
       "products": [
         "codex"
@@ -551,32 +471,6 @@
       "test_owner": "tests/hooks/test_shared_hooks.py",
       "disposition": "typed-capability",
       "legacy_handler": "finish-line-record"
-    },
-    {
-      "id": "runtime.codex.user-prompt-submit.all.user-prompt-agent-docs",
-      "products": [
-        "codex"
-      ],
-      "events": [
-        "UserPromptSubmit"
-      ],
-      "matcher": null,
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "user-prompt-agent-docs"
-      },
-      "mode": "enforce",
-      "priority": 100,
-      "failure_posture": "warn",
-      "timeout_posture": "warn",
-      "override_class": "downgrade-only",
-      "state_owner": "agent-docs.session",
-      "transformation": "additional-context",
-      "recovery": "config-downgrade-or-exact-capability",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "user-prompt-agent-docs"
     },
     {
       "id": "runtime.codex.user-prompt-submit.all.checkout-lease-guard",
@@ -735,32 +629,6 @@
       "legacy_handler": "stop-finish-line-gate"
     },
     {
-      "id": "runtime.claude.user-prompt-submit.all.user-prompt-agent-docs",
-      "products": [
-        "claude"
-      ],
-      "events": [
-        "UserPromptSubmit"
-      ],
-      "matcher": null,
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "user-prompt-agent-docs"
-      },
-      "mode": "enforce",
-      "priority": 100,
-      "failure_posture": "warn",
-      "timeout_posture": "warn",
-      "override_class": "downgrade-only",
-      "state_owner": "agent-docs.session",
-      "transformation": "additional-context",
-      "recovery": "config-downgrade-or-exact-capability",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "user-prompt-agent-docs"
-    },
-    {
       "id": "runtime.claude.user-prompt-submit.all.checkout-lease-guard",
       "products": [
         "claude"
@@ -915,32 +783,6 @@
       "test_owner": "tests/hooks/test_shared_hooks.py",
       "disposition": "typed-capability",
       "legacy_handler": "session-start-healthcheck"
-    },
-    {
-      "id": "runtime.claude.pre-tool-use.bash.pre-edit-intent-gate",
-      "products": [
-        "claude"
-      ],
-      "events": [
-        "PreToolUse"
-      ],
-      "matcher": "Bash",
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "pre-edit-intent-gate"
-      },
-      "mode": "enforce",
-      "priority": 100,
-      "failure_posture": "closed",
-      "timeout_posture": "effect_gated",
-      "override_class": "locked",
-      "state_owner": "agent-docs.session",
-      "transformation": "block",
-      "recovery": "exact-capability-only",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "pre-edit-intent-gate"
     },
     {
       "id": "runtime.claude.pre-tool-use.bash.checkout-lease-guard",
@@ -1359,32 +1201,6 @@
       "legacy_handler": "portable-paths-scan"
     },
     {
-      "id": "runtime.claude.pre-tool-use.write-edit-notebook-edit.pre-edit-intent-gate",
-      "products": [
-        "claude"
-      ],
-      "events": [
-        "PreToolUse"
-      ],
-      "matcher": "Write|Edit|NotebookEdit",
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "pre-edit-intent-gate"
-      },
-      "mode": "enforce",
-      "priority": 150,
-      "failure_posture": "closed",
-      "timeout_posture": "effect_gated",
-      "override_class": "locked",
-      "state_owner": "agent-docs.session",
-      "transformation": "block",
-      "recovery": "exact-capability-only",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "pre-edit-intent-gate"
-    },
-    {
       "id": "runtime.claude.pre-tool-use.write-edit-notebook-edit.checkout-lease-guard",
       "products": [
         "claude"
@@ -1487,32 +1303,6 @@
       "test_owner": "tests/hooks/test_shared_hooks.py",
       "disposition": "typed-capability",
       "legacy_handler": "agent-scope-lock-guard"
-    },
-    {
-      "id": "runtime.claude.pre-tool-use.multi-edit.pre-edit-intent-gate",
-      "products": [
-        "claude"
-      ],
-      "events": [
-        "PreToolUse"
-      ],
-      "matcher": "MultiEdit",
-      "capability": {
-        "id": "runtime-kit.handler.v1",
-        "handler_id": "pre-edit-intent-gate"
-      },
-      "mode": "enforce",
-      "priority": 130,
-      "failure_posture": "closed",
-      "timeout_posture": "effect_gated",
-      "override_class": "locked",
-      "state_owner": "agent-docs.session",
-      "transformation": "block",
-      "recovery": "exact-capability-only",
-      "docs": "core/policies/intent-cards.md",
-      "test_owner": "tests/hooks/test_shared_hooks.py",
-      "disposition": "typed-capability",
-      "legacy_handler": "pre-edit-intent-gate"
     },
     {
       "id": "runtime.claude.pre-tool-use.multi-edit.checkout-lease-guard",

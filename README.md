@@ -67,8 +67,8 @@ Product output is manifest-selected rather than a recursive copy of `core/`.
 The default `product` render target emits declared skills and agents; run
 `agent-runtime render --target home-prompt --product <product>` for the separate
 home-prompt target. Canonical policy documents stay under `core/policies/` and
-`agent-docs` resolves them from the selected docs home; they are not duplicated
-under `build/<product>/core/policies/`.
+the home prompt routes to them by name; they are not duplicated under
+`build/<product>/core/policies/`.
 
 Live Codex skill discovery reads installed `codex-kit` plugin bundles as
 `<plugin>:<skill>` entries; live Claude discovery reads
@@ -80,7 +80,7 @@ the same rendered skills through its configured
 ## CLI boundary
 
 The `agent-runtime` command and the rest of the runtime surface
-(`agent-docs`, `agent-out`, `forge-cli`, and related tools) live in
+(`agent-hook`, `agent-out`, `forge-cli`, and related tools) live in
 [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) and install via
 Homebrew.
 
@@ -101,22 +101,9 @@ behavior, and shared capabilities belong upstream in nils-cli.
 
 ## Local setup
 
-Clone or enter your local checkout. docs-home is normally derived from the
-installed prompt symlink. Bind manual source-checkout commands explicitly with
-`--docs-home` and `--project-path`: `AGENT_DOCS_HOME` is a lower-precedence CLI
-fallback, so exporting it alone does not override an installed prompt symlink.
-Repository-owned hooks promote the environment value to the explicit flag;
-setup selects its checkout root directly.
-
-```bash
-cd /path/to/agent-runtime-kit
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  audit --target project --strict
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  preflight --intent project-dev --strict --format json
-```
-
-For persistent hook integration, add a host-local path to `~/.zshenv`:
+Clone or enter your local checkout. For persistent hook integration, add a
+host-local path to `~/.zshenv` so hooks can name this checkout's validation
+recovery lane by absolute path:
 
 ```zsh
 # Replace this with your local checkout path.
@@ -125,8 +112,7 @@ export AGENT_DOCS_HOME="/path/to/agent-runtime-kit"
 
 Do not commit a personal absolute path to this repo. Do not point
 `AGENT_DOCS_HOME` at `$AGENT_HOME`, `$HOME/.agents`, `$HOME/.codex`, or
-`$HOME/.claude`; it should point at the checked-out `agent-runtime-kit` docs
-catalog. `$AGENT_HOME` is reserved for writable `agent-out` state.
+`$HOME/.claude`; it should point at the checked-out `agent-runtime-kit`. `$AGENT_HOME` is reserved for writable `agent-out` state.
 
 For an agent-driven clean install or reinstall on another Mac, use the
 copyable prompt in
@@ -134,17 +120,9 @@ copyable prompt in
 
 ## Development workflow
 
-Required reading and validation are declared in `AGENT_DOCS.toml`. The compact
-home policy is auto-loaded; phase-relevant intent docs are cued by hooks and
-validation is enforced at the finish line. Agents load only the active
-contract; humans can inspect or audit it from the repository root:
-
-```bash
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  preflight --intent project-dev --strict --format json
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  audit --target project --strict
-```
+The compact home policy is auto-loaded and routes to the runbooks under
+`core/policies/` by name. Each repository declares its finish-line validation in
+a root `VALIDATION.toml`; the finish-line hooks enforce it.
 
 Documentation placement changes can load
 [`docs/source/docs-placement-retention-policy-v1.md`](docs/source/docs-placement-retention-policy-v1.md),
@@ -168,7 +146,7 @@ render, drift-audit, smoke-test, and coupled `nils-cli` detail.
 .
 ├── AGENT_HOME.md        # shared home-scope policy for Codex, Claude, and Hermes
 ├── AGENTS.md            # repo-local policy for this checkout
-├── AGENT_DOCS.toml      # project-local agent-docs dispatch entries
+├── AGENT_DOCS.toml      # transitional validation + path classes (moving to VALIDATION.toml)
 ├── DEVELOPMENT.md       # concise contributor principles and finish-line routing
 ├── RELEASING.md         # how the GHCR container image is versioned and cut
 ├── SUPPORT_MATRIX.md    # per-surface ship state

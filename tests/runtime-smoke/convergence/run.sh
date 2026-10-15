@@ -151,7 +151,6 @@ active_ids = set(re.findall(r"^  - id: ([a-z0-9.-]+)$", active_text, re.M))
 retired = json.loads(
     (root / "manifests/retired-skill-ids.json").read_text(encoding="utf-8")
 )["skills"]
-intent_text = (root / "AGENT_DOCS.toml").read_text(encoding="utf-8")
 plans = []
 
 for case in cases["cases"]:
@@ -162,8 +161,8 @@ for case in cases["cases"]:
         assert skill_id not in prompt, (case["id"], skill_id)
         assert leaf not in lowered, (case["id"], leaf)
     route = case["expected_route"]
-    if route.startswith("intent:"):
-        assert f'context = "{route.split(":", 1)[1]}"' in intent_text, route
+    if route.startswith("policy:"):
+        assert (root / "core/policies" / f'{route.split(":", 1)[1]}.md').is_file(), route
     else:
         assert route in active_ids, route
     plans.append(

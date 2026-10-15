@@ -8,7 +8,7 @@ install or reinstall:
 - `sympoies/zsh-kit`
 - `sympoies/agent-runtime-kit`
 - the released `sympoies/tap/nils-cli` Homebrew surface that provides
-  `agent-runtime`, `zsh-kit`, `agent-docs`, and related tools
+  `agent-runtime`, `zsh-kit`, `agent-hook`, and related tools
 
 The intended operator is non-technical. The prompt therefore defaults to a clean
 reinstall path, but requires explicit consent before moving any existing files.
@@ -32,7 +32,7 @@ Goal:
 2. Install or cleanly reinstall sympoies/agent-runtime-kit at
    $HOME/.config/agent-runtime-kit.
 3. Install the current Homebrew release of sympoies/tap/nils-cli, which provides
-   agent-runtime, zsh-kit, agent-docs, and related tools.
+   agent-runtime, zsh-kit, agent-hook, and related tools.
 4. Activate Codex and Claude runtime surfaces through agent-runtime.
 5. Verify the installation with real commands and report the results.
 
@@ -130,7 +130,7 @@ brew install sympoies/tap/nils-cli
 
 agent-runtime --version
 zsh-kit --version
-agent-docs --version
+agent-hook --version
 ```
 
 5. Clone and install agent-runtime-kit.
@@ -185,9 +185,6 @@ zsh -ic 'print -r -- "ZDOTDIR=$ZDOTDIR"; command -v zsh-kit; command -v agent-ru
 
 ```bash
 cd "$HOME/.config/agent-runtime-kit"
-
-agent-docs --docs-home "$PWD" --project-path "$PWD" \
-  audit --target project --strict
 
 codex_state_home="$CODEX_AGENT_STATE_HOME"
 claude_state_home="${CLAUDE_KIT_STATE_HOME:-$HOME/.local/state/agent-runtime-kit/claude}"
@@ -265,7 +262,6 @@ Final report format:
 - Backup folder: <path>
 - agent-runtime version: <output>
 - zsh-kit version: <output>
-- agent-docs audit: pass/fail
 - zsh-kit smoke: pass/fail
 - Codex doctor: pass/fail
 - Claude doctor: pass/fail

@@ -24,8 +24,6 @@ from shared_hook_command_guards import CommandGuardsTests
 from shared_hook_default_delivery import DefaultDeliveryTests
 from shared_hook_dirty_checkout import DirtyCheckoutTests
 from shared_hook_finish_line import FinishLineTests
-from shared_hook_pre_edit import PreEditTests
-from shared_hook_preflight_cue import PreflightCueTests
 from shared_hook_session_coordination import SessionCoordinationTests
 from shared_hook_session_start import SessionStartTests
 from shared_hook_validation_coordination import ValidationCoordinationTests
@@ -40,8 +38,6 @@ class SharedHookTests(
     DefaultDeliveryTests,
     DirtyCheckoutTests,
     FinishLineTests,
-    PreEditTests,
-    PreflightCueTests,
     SessionCoordinationTests,
     SessionStartTests,
     ValidationCoordinationTests,

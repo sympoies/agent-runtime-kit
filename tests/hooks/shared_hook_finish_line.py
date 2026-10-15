@@ -29,7 +29,6 @@ from shared_hook_helpers import (
 class FinishLineTests(HookTestCase):
 
     def test_finish_line_gate_blocks_unvalidated_edit_then_releases(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -85,7 +84,6 @@ class FinishLineTests(HookTestCase):
         status, so it must never credit the declared validation. Real provider
         payloads always name their event.
         """
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -118,7 +116,6 @@ class FinishLineTests(HookTestCase):
         # normally not this one. A bare `scripts/validation-recovery.py` reads as
         # a path in that repository, where it does not exist, so a blocked agent
         # looks in the wrong tree and concludes the lane is unavailable.
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             # Pin the kit anchor: the validated repo carries no lane of its own,
@@ -161,7 +158,6 @@ class FinishLineTests(HookTestCase):
         # resolution silently degrades to the relative spelling in exactly the
         # layout every real session uses. Resolve through the documented
         # docs-home env instead, and prove it from a copy.
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             installed = Path(tmp) / "provider-home" / "hooks"
@@ -200,7 +196,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_dirty_state_is_scoped_per_session(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {
@@ -248,7 +243,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_completed_session_state_is_cleaned(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {
@@ -288,7 +282,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_completed_cross_product_session_state_is_cleaned(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             session_id = "cross-product-session"
@@ -349,7 +342,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_edit_invalidates_cross_product_terminal_state(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             session_id = "cross-product-edit-after-terminal"
@@ -438,7 +430,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_attempt_invalidates_product_terminal_state(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -541,7 +532,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_contract_stem_product_tokens_do_not_confuse_ownership(
         self,
     ) -> None:
-        self._require_agent_docs()
         cases = (
             ("codex", "codex", "claude"),
             ("claude", "claude", "codex"),
@@ -642,7 +632,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_reserved_terminal_prefix_contract_state_is_preserved(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             marker = ".cache/agent-validation/.terminal-codex.ok"
             repo = self._init_contract_repo(tmp, marker=marker)
@@ -732,7 +721,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_unknown_terminal_prefix_entry_is_retained(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             session_id = "unknown-terminal-prefix-entry"
@@ -775,10 +763,9 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_overlapping_contract_stems_preserve_foreign_owner(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 "[[validation]]\n"
                 'context = "project-dev"\n'
                 'commands = ["bash scripts/ci/primary.sh"]\n'
@@ -864,7 +851,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_cleanup_preserves_a_newer_dirty_generation(self) -> None:
         import importlib.util
 
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {
@@ -969,10 +955,9 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_completed_shared_directory_contracts_are_cleaned(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 "[[validation]]\n"
                 'context = "project-dev"\n'
                 'commands = ["bash scripts/ci/all.sh"]\n'
@@ -1021,7 +1006,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_identified_session_retires_satisfied_legacy_only_state(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {
@@ -1065,7 +1049,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_legacy_dirty_requires_transition_validation(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {
@@ -1120,7 +1103,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_failure_tombstone_is_scoped_per_session(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
@@ -1387,7 +1369,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_gate_uses_completed_status_and_routes_failed_validation(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -1499,7 +1480,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_validation_cleanup_preserves_failed_outcome(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             command = "rm -rf .cache/agent-validation; exit 17"
             repo = self._init_contract_repo(tmp, (command,))
@@ -1539,7 +1519,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_bad_recreated_lock_preserves_recovery_signal(self) -> None:
-        self._require_agent_docs()
         lock_setup = {
             "symlink": (
                 "ln -s /dev/null "
@@ -1593,7 +1572,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_external_tombstone_survives_read_only_state(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             command = (
@@ -1651,7 +1629,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_tombstone_survives_marker_directory_relocation(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             command = (
@@ -1701,7 +1678,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_success_clears_relocated_failure_tombstone(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/stateful.sh",))
             script = repo / "scripts" / "stateful.sh"
@@ -1757,7 +1733,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_unmatched_authoritative_tombstone_blocks(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -1778,7 +1753,7 @@ class FinishLineTests(HookTestCase):
                 env=base_env,
             )
             self.assertIsNotNone(rewrite)
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 '[[validation]]\ncontext = "project-dev"\n'
                 'commands = ["bash scripts/ci/all.sh"]\n'
                 'marker = ".cache/other/project-dev.ok"\n',
@@ -1793,7 +1768,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_removed_command_target_blocks_as_contract_change(
         self,
     ) -> None:
-        self._require_agent_docs()
         commands = ("bash scripts/a.sh", "bash scripts/b.sh")
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, commands)
@@ -1845,7 +1819,7 @@ class FinishLineTests(HookTestCase):
                 17,
             )
             (repo / ".cache" / "agent-validation").chmod(0o755)
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 '[[validation]]\ncontext = "project-dev"\n'
                 f'commands = ["{commands[0]}"]\n'
                 'marker = ".cache/agent-validation/project-dev.ok"\n',
@@ -1864,7 +1838,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_replaced_command_target_cannot_clear_old_failure(
         self,
     ) -> None:
-        self._require_agent_docs()
         old_command = "bash scripts/a.sh"
         new_command = "bash scripts/b.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -1914,7 +1887,7 @@ class FinishLineTests(HookTestCase):
 
             self.assertEqual(execute(old_command, "old-command-failure"), 17)
             (repo / ".cache" / "agent-validation").chmod(0o755)
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 '[[validation]]\ncontext = "project-dev"\n'
                 f'commands = ["{new_command}"]\n'
                 'marker = ".cache/agent-validation/project-dev.ok"\n',
@@ -1931,7 +1904,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_blocks_when_external_tombstone_cannot_register(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
@@ -1963,7 +1935,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_tampered_pending_state_fails_closed(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -2014,7 +1985,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_rejects_shell_outcomes_that_can_mask_validation(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, ("bash scripts/ci/all.sh", "bash tests/hooks/run.sh")
@@ -2059,7 +2029,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_unprovable_validation_emits_one_private_advisory(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2127,7 +2096,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_generated_wrapper_is_not_warned_or_nested(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2161,7 +2129,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_preserves_quoted_operator_provenance(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, ("bash scripts/ci/all.sh '||' true",)
@@ -2193,7 +2160,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_preserves_expansion_quote_provenance(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("printf %s '$(exit 17)'",))
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2212,7 +2178,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_allows_safe_quoted_validation_words(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -2256,7 +2221,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_preserves_shell_syntax_word_provenance(self) -> None:
-        self._require_agent_docs()
         cases = {
             "conditional": (
                 "'if' bash scripts/ci/all.sh; 'then' true; 'fi'",
@@ -2296,7 +2260,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_quoted_append_assignment_cannot_credit_validation(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, ("FOO+=bar bash scripts/ci/all.sh",)
@@ -2343,7 +2306,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_does_not_authorize_non_validation_preamble(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2366,7 +2328,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_risky_declared_control_flow_must_match_positionally(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("true; bash scripts/ci/all.sh",))
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2391,7 +2352,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_credits_success_preserving_validation_chain(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, ("bash scripts/ci/all.sh", "bash tests/hooks/run.sh")
@@ -2441,7 +2401,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_separate_validation_commands_preserve_edit_time(
         self,
     ) -> None:
-        self._require_agent_docs()
         commands = ("bash scripts/ci/all.sh", "bash tests/hooks/run.sh")
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, commands)
@@ -2490,7 +2449,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_disjoint_success_keeps_external_failure(self) -> None:
-        self._require_agent_docs()
         commands = ("bash scripts/a.sh", "bash scripts/b.sh")
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, commands)
@@ -2551,7 +2509,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_separate_successes_clear_combined_tombstone(self) -> None:
-        self._require_agent_docs()
         commands = ("bash scripts/a.sh", "bash scripts/b.sh")
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, commands)
@@ -2610,7 +2567,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_prunes_stale_pending_before_new_attempt(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2643,7 +2599,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_pending_record_cap_includes_the_new_attempt(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -2676,7 +2631,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_compacts_superseded_external_tombstones(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
@@ -2750,13 +2704,12 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_failed_multi_contract_registration_keeps_prior_signal(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
             repo_path.mkdir()
             repo = self._init_contract_repo(str(repo_path))
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 "[[validation]]\n"
                 'context = "project-dev"\n'
                 'commands = ["bash scripts/ci/all.sh"]\n'
@@ -2859,11 +2812,10 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_multi_contract_edit_registration_is_transactional(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             command = "bash scripts/ci/all.sh"
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 "[[validation]]\n"
                 'context = "project-dev-a"\n'
                 f'commands = ["{command}"]\n'
@@ -3013,7 +2965,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_compacts_repeated_persistence_failure_blockers(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -3074,7 +3025,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_rewrite_preserves_input_and_directly_consumes_pending(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3136,7 +3086,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_stale_direct_completion_cannot_overwrite_newer_outcome(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3206,7 +3155,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_stale_success_cannot_overwrite_newer_failure(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3267,7 +3215,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_missing_tool_id_keeps_attempts_distinct(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3328,7 +3275,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_outcome_persistence_failure_keeps_pending_blocker(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3416,7 +3362,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_ran_marker_directory_cannot_supersede_failure(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3465,7 +3410,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_failure_marker_symlink_cannot_mask_nonzero_exit(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             script = repo / "scripts" / "ci" / "all.sh"
@@ -3538,7 +3482,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_rejects_validation_markers_outside_repository(self) -> None:
-        self._require_agent_docs()
         for escape in (
             "traversal",
             "symlink",
@@ -3613,7 +3556,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_derived_marker_symlinks_fail_closed(self) -> None:
-        self._require_agent_docs()
 
         with self.subTest(marker="session-directory"), tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -3758,7 +3700,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_waiver_fails_closed_when_review_marker_cannot_persist(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -3787,7 +3728,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_record_requires_real_validation_command_invocation(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, ("bash scripts/ci/all.sh", "bash tests/hooks/run.sh")
@@ -3829,7 +3769,6 @@ class FinishLineTests(HookTestCase):
         # never recognized. Recognition alone earns no credit: this aggregate
         # shape cannot prove its outcome, so the recorder explains that instead
         # of silently ignoring the run.
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(
                 tmp, ("bash scripts/ci/all.sh", "bash tests/hooks/run.sh")
@@ -3869,7 +3808,6 @@ class FinishLineTests(HookTestCase):
         # Guard against a false positive: a multi-line command whose only
         # mention of the validation command is inside a quoted string (here a
         # newline-bearing double-quoted argument) must NOT satisfy the gate.
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -3904,7 +3842,6 @@ class FinishLineTests(HookTestCase):
         # validation command is inside a HERE-DOC body (data fed to another
         # command such as `cat`, never executed by the shell) must NOT satisfy
         # the gate (agent-runtime-kit#351).
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -3937,7 +3874,6 @@ class FinishLineTests(HookTestCase):
     def test_finish_line_record_recognizes_validation_after_heredoc(self) -> None:
         # The here-doc stripping must remove only the body: a real validation
         # run AFTER the here-doc closes is still recognized (agent-runtime-kit#351).
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -3968,7 +3904,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_record_recognizes_continued_heredoc_opener(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -3999,7 +3934,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_record_recognizes_validation_inside_shell_heredoc(self) -> None:
-        self._require_agent_docs()
         commands = (
             "bash <<'EOF'\nbash scripts/ci/all.sh\nEOF",
             "bash -s positional <<'EOF'\nbash scripts/ci/all.sh\nEOF",
@@ -4035,7 +3969,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_record_ignores_shell_heredoc_stdin_not_used_as_script(self) -> None:
-        self._require_agent_docs()
         commands = (
             "bash -lc 'true' <<'EOF'\nbash scripts/ci/all.sh\nEOF",
             "bash ./script.sh <<'EOF'\nbash scripts/ci/all.sh\nEOF",
@@ -4071,7 +4004,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_record_recognizes_validation_after_commented_heredoc_operator(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -4102,7 +4034,6 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_record_recognizes_validation_after_ansi_c_quoted_heredoc(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp, ("bash scripts/ci/all.sh",))
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -4133,10 +4064,9 @@ class FinishLineTests(HookTestCase):
 
 
     def test_finish_line_gate_enforces_every_declared_validation_intent(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
-            with (repo / "AGENT_DOCS.toml").open("a", encoding="utf-8") as handle:
+            with (repo / "VALIDATION.toml").open("a", encoding="utf-8") as handle:
                 handle.write(
                     '\n[[validation]]\ncontext = "task-tools"\n'
                     'commands = ["bash scripts/task-tools.sh"]\n'
@@ -4169,97 +4099,21 @@ class FinishLineTests(HookTestCase):
             self.assert_allowed(decision)
 
 
-    def test_finish_line_uses_guarded_preflight_when_supported(self) -> None:
+    def test_finish_line_reads_validation_toml_without_agent_docs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
-            bin_dir = repo / "bin"
-            bin_dir.mkdir()
-            self._write_fake_agent_docs(
-                bin_dir,
-                """#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
-  exit 0
-fi
-if [[ "$args" == *"explain"* ]]; then
-  echo "explain should not be used" >&2
-  exit 66
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  if [[ "$args" != *"--require-declared-intent"* ]]; then
-    echo "missing declared-intent guard" >&2
-    exit 64
-  fi
-  printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash scripts/ci/all.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-  exit 0
-fi
-exit 65
-""",
-            )
-            env = {
-                "AGENT_RUNTIME_DOCS_HOME": str(repo),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                write_payload("src/lib.rs", "fn main() {}\n"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
-
-            code, decision, stderr = run_hook(
-                "stop-finish-line-gate.py", {}, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "scripts/ci/all.sh")
-
-
-    def test_finish_line_defaults_docs_home_to_runtime_kit_source_root(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = self._init_contract_repo(tmp)
-            self._mark_runtime_kit_source_checkout(repo)
-            expected_repo = repo.resolve()
+            self.assertFalse((repo / "AGENT_DOCS.toml").exists())
             bin_dir = repo / "bin"
             bin_dir.mkdir()
             log_path = repo / "agent-docs.args"
             self._write_fake_agent_docs(
                 bin_dir,
                 f"""#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
-if [[ "$args" != *"--docs-home {expected_repo}"* ]]; then
-  echo "missing repo-root docs-home" >&2
-  exit 64
-fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\\n' '{{"intents":["project-dev"]}}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  printf '%s\\n' '{{"intent":"project-dev","documents":[],"validation":{{"context":"project-dev","declared":true,"commands":["bash scripts/ci/all.sh"],"marker":".cache/agent-validation/project-dev.ok"}}}}'
-  exit 0
-fi
-exit 65
+printf '%s\\n' "$*" >> {shlex.quote(str(log_path))}
+exit 99
 """,
             )
-            env = {
-                "AGENT_DOCS_HOME": "",
-                "AGENT_RUNTIME_DOCS_HOME": "",
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
+            env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
 
             code, _, stderr = run_hook(
                 "finish-line-record.py",
@@ -4274,177 +4128,32 @@ exit 65
             )
             self.assertEqual(code, 0, stderr)
             self.assert_blocked(decision, "scripts/ci/all.sh")
-            self.assertIn(
-                f"--docs-home {expected_repo}", log_path.read_text(encoding="utf-8")
-            )
+            self.assertFalse(log_path.exists(), "hooks must not invoke agent-docs")
 
-
-    def test_finish_line_uses_agent_docs_home_fallback(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = self._init_contract_repo(tmp)
-            docs_home = repo / "docs-home"
-            docs_home.mkdir()
-            expected_docs_home = docs_home.resolve()
-            # Reach docs-home through a symlink so the assertion below actually
-            # discriminates. Without it the configured spelling and its resolved
-            # form coincide wherever $TMPDIR has no symlinked ancestor, which is
-            # every Linux CI run, and a hook that forwards the raw value passes
-            # for free (#66).
-            docs_home_link = repo / "docs-home-link"
-            docs_home_link.symlink_to(docs_home)
-            bin_dir = repo / "bin"
-            bin_dir.mkdir()
-            log_path = repo / "agent-docs.args"
-            self._write_fake_agent_docs(
-                bin_dir,
-                f"""#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
-if [[ "$args" != *"--docs-home {expected_docs_home}"* ]]; then
-  echo "missing AGENT_DOCS_HOME fallback" >&2
-  exit 64
-fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\\n' '{{"intents":["project-dev"]}}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  printf '%s\\n' '{{"intent":"project-dev","documents":[],"validation":{{"context":"project-dev","declared":true,"commands":["bash scripts/ci/all.sh"],"marker":".cache/agent-validation/project-dev.ok"}}}}'
-  exit 0
-fi
-exit 65
-""",
-            )
-            env = {
-                "AGENT_DOCS_HOME": str(docs_home_link),
-                "AGENT_RUNTIME_DOCS_HOME": "",
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                write_payload("src/lib.rs", "fn main() {}\n"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
-
+            self._run_declared_validation(repo, "bash scripts/ci/all.sh", env=env)
             code, decision, stderr = run_hook(
                 "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
             self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "scripts/ci/all.sh")
-            self.assertIn(
-                f"--docs-home {expected_docs_home}",
-                log_path.read_text(encoding="utf-8"),
-            )
+            self.assert_allowed(decision)
 
-
-    def test_finish_line_does_not_default_project_catalog_to_docs_home(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = self._init_contract_repo(tmp)
-            expected_repo = repo.resolve()
-            bin_dir = repo / "bin"
-            bin_dir.mkdir()
-            log_path = repo / "agent-docs.args"
-            self._write_fake_agent_docs(
-                bin_dir,
-                f"""#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-printf '%s\\n' "$args" >> {shlex.quote(str(log_path))}
-if [[ "$args" == *"--docs-home {expected_repo}"* ]]; then
-  echo "repo-local catalog must not replace inherited docs-home" >&2
-  exit 64
-fi
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\\n' '      --require-declared-intent'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\\n' '{{"intents":["project-dev"]}}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  printf '%s\\n' '{{"intent":"project-dev","documents":[],"validation":{{"context":"project-dev","declared":true,"commands":["bash scripts/ci/all.sh"],"marker":".cache/agent-validation/project-dev.ok"}}}}'
-  exit 0
-fi
-exit 65
-""",
-            )
-            env = {
-                "AGENT_DOCS_HOME": "",
-                "AGENT_RUNTIME_DOCS_HOME": "",
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
-
-            code, _, stderr = run_hook(
-                "finish-line-record.py",
-                write_payload("src/lib.rs", "fn main() {}\n"),
-                cwd=repo,
-                env=env,
-            )
-            self.assertEqual(code, 0, stderr)
-
-            code, decision, stderr = run_hook(
-                "stop-finish-line-gate.py", {}, cwd=repo, env=env
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "scripts/ci/all.sh")
-            self.assertNotIn(
-                f"--docs-home {expected_repo}", log_path.read_text(encoding="utf-8")
-            )
-
-
-    def test_finish_line_forwards_product_and_scopes_contract_cache(self) -> None:
+    def test_finish_line_scopes_contracts_by_product(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             home = repo / "home"
             home.mkdir()
-            bin_dir = repo / "bin"
-            bin_dir.mkdir()
-            self._write_fake_agent_docs(
-                bin_dir,
-                """#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  printf '%s\n' '      --product <PRODUCT>'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  if [[ "$args" != *"--require-declared-intent"* ]]; then
-    echo "missing declared-intent guard" >&2
-    exit 64
-  fi
-  if [[ "$args" == *"--product codex"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash codex.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-    exit 0
-  fi
-  if [[ "$args" == *"--product claude"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash claude.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-    exit 0
-  fi
-  printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash unfiltered.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-  exit 0
-fi
-exit 65
-""",
+            (repo / "VALIDATION.toml").write_text(
+                '[[validation]]\ncontext = "project-dev"\nproduct = "codex"\n'
+                'commands = ["bash codex.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n'
+                '\n[[validation]]\ncontext = "project-dev"\nproducts = ["claude"]\n'
+                'commands = ["bash claude.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n',
+                encoding="utf-8",
             )
             base_env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "HOME": str(home),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
 
             code, _, stderr = run_hook(
@@ -4479,44 +4188,18 @@ exit 65
             repo = self._init_contract_repo(tmp)
             home = repo / "home"
             home.mkdir()
-            bin_dir = repo / "bin"
-            bin_dir.mkdir()
-            self._write_fake_agent_docs(
-                bin_dir,
-                """#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  printf '%s\n' '      --product <PRODUCT>'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  if [[ "$args" != *"--require-declared-intent"* ]]; then
-    echo "missing declared-intent guard" >&2
-    exit 64
-  fi
-  if [[ "$args" == *"--product codex"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash codex.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-    exit 0
-  fi
-  if [[ "$args" == *"--product claude"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash claude.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-    exit 0
-  fi
-  exit 64
-fi
-exit 65
-""",
+            (repo / "VALIDATION.toml").write_text(
+                '[[validation]]\ncontext = "project-dev"\nproduct = "codex"\n'
+                'commands = ["bash codex.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n'
+                '\n[[validation]]\ncontext = "project-dev"\nproducts = ["claude"]\n'
+                'commands = ["bash claude.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n',
+                encoding="utf-8",
             )
             base_env = {
                 "AGENT_RUNTIME_DOCS_HOME": str(repo),
                 "HOME": str(home),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
 
             code, _, stderr = run_hook(
@@ -4542,7 +4225,6 @@ exit 65
 
 
     def test_finish_line_external_tombstones_are_product_scoped(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
@@ -4663,7 +4345,6 @@ exit 65
 
 
     def test_finish_line_no_edit_tombstone_does_not_cross_product(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
@@ -4744,7 +4425,6 @@ exit 65
     def test_finish_line_foreign_marker_change_does_not_block_product(
         self,
     ) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo_path = root / "repo"
@@ -4805,7 +4485,7 @@ exit 65
             )
             self.assertEqual(execute("claude", "claude-old-marker-failure"), 17)
             (repo / ".cache" / "a").chmod(0o755)
-            (repo / "AGENT_DOCS.toml").write_text(
+            (repo / "VALIDATION.toml").write_text(
                 '[[validation]]\ncontext = "project-dev"\n'
                 f'commands = ["{command}"]\n'
                 f'marker = "{new_marker}"\n',
@@ -4830,114 +4510,160 @@ exit 65
             self.assert_blocked(claude_decision, "unmatched authoritative")
 
 
-    def test_finish_line_invalidates_contract_cache_after_agent_docs_upgrade(
-        self,
-    ) -> None:
-        legacy_agent_docs = """#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  if [[ "$args" != *"--require-declared-intent"* ]]; then
-    echo "missing declared-intent guard" >&2
-    exit 64
-  fi
-  printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash unfiltered.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-  exit 0
-fi
-exit 65
-"""
-        upgraded_agent_docs = """#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-if [[ "$args" == *"preflight --help"* ]]; then
-  printf '%s\n' '      --require-declared-intent'
-  printf '%s\n' '      --product <PRODUCT>'
-  exit 0
-fi
-if [[ "$args" == *"list --format json"* ]]; then
-  printf '%s\n' '{"intents":["project-dev"]}'
-  exit 0
-fi
-if [[ "$args" == *"preflight"* && "$args" == *"--intent project-dev"* ]]; then
-  if [[ "$args" != *"--require-declared-intent"* ]]; then
-    echo "missing declared-intent guard" >&2
-    exit 64
-  fi
-  if [[ "$args" == *"--product codex"* ]]; then
-    printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash codex.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-    exit 0
-  fi
-  printf '%s\n' '{"intent":"project-dev","documents":[],"validation":{"context":"project-dev","declared":true,"commands":["bash unfiltered.sh"],"marker":".cache/agent-validation/project-dev.ok"}}'
-  exit 0
-fi
-exit 65
-"""
+    def test_finish_line_subset_reader_matches_tomllib(self) -> None:
+        # Hooks may run under a Python without tomllib; the fallback reader must
+        # agree with tomllib on every validation shape it accepts.
+        import tomllib
+
+        import hook_common
+
+        documents = [
+            (REPO_ROOT / "AGENT_DOCS.toml").read_text(encoding="utf-8"),
+            '[path_classes]\ntest = ["tests/**"]\n\n'
+            '[[validation]] # trailing comment\n'
+            "context = 'project-dev' # literal\n"
+            'commands = [\n  "bash a.sh", # first\n  \'bash \\"b\\".sh\',\n'
+            '  "echo \\"[x]\\" # not a comment",\n]\n'
+            'product = ["codex", "claude"]\n'
+            '\n[[document]]\ncontext = "x"\nnotes = """\nfree text\n"""\n',
+        ]
+        for text in documents:
+            expected = tomllib.loads(text).get("validation", [])
+            self.assertEqual(hook_common._validation_entries_subset(text), expected)
+        with self.assertRaises(ValueError):
+            hook_common._validation_entries_subset(
+                '[[validation]]\ncontext = "x"\ncommands = """a"""\n'
+            )
+
+    def test_finish_line_invalid_declaration_fails_closed(self) -> None:
+        # An existing but unreadable, malformed, or wrong-shaped contract must
+        # not read as "no contract": that would let an unvalidated edit finish.
+        invalid = (
+            ("syntax", 'VALIDATION.toml', '[[validation]]\ncontext = "project-dev\n'),
+            ("scalar-commands", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = "bash ci.sh"\n'),
+            ("unknown-key", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nphase = "edit"\n'),
+            ("table-not-array", 'VALIDATION.toml',
+             '[validation]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\n'),
+            ("legacy-wrong-shape", 'AGENT_DOCS.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = []\n'),
+            ("non-table-member", 'VALIDATION.toml', 'validation = ["oops"]\n'),
+            ("empty-product", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproduct = []\n'),
+            ("unknown-product", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproduct = "codxe"\n'),
+            ("blank-products", 'VALIDATION.toml',
+             '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproducts = [" "]\n'),
+        )
+        fallback_root = tempfile.TemporaryDirectory()
+        self.addCleanup(fallback_root.cleanup)
+        fallback = Path(fallback_root.name)
+        (fallback / "tomllib.py").write_text(
+            'raise ImportError("forced fallback")\n', encoding="utf-8"
+        )
+        for reader, extra in (("tomllib", {}), ("subset", {"PYTHONPATH": f"{fallback}{os.pathsep}{HOOK_DIR}"})):
+            for name, filename, text in invalid:
+                with self.subTest(reader=reader, case=name), tempfile.TemporaryDirectory() as tmp:
+                    repo = self._init_contract_repo(tmp)
+                    (repo / "VALIDATION.toml").unlink()
+                    (repo / filename).write_text(text, encoding="utf-8")
+                    code, decision, stderr = run_hook(
+                        "finish-line-record.py",
+                        write_payload("src/lib.rs", "fn main() {}\n"),
+                        cwd=repo,
+                        env=extra,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, filename)
+                    # The declaration itself stays editable so it can be fixed.
+                    code, decision, stderr = run_hook(
+                        "finish-line-record.py",
+                        write_payload(filename, "# fixed\n"),
+                        cwd=repo,
+                        env=extra,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIsNone(decision)
+                    code, decision, stderr = run_hook(
+                        "stop-finish-line-gate.py", {}, cwd=repo, env=extra
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "invalid")
+
+    def test_finish_line_invalid_primary_is_not_masked_by_legacy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
-            home = repo / "home"
-            home.mkdir()
-            bin_dir = repo / "bin"
-            bin_dir.mkdir()
-            base_env = {
-                "AGENT_RUNTIME_DOCS_HOME": str(repo),
-                "HOME": str(home),
-                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            }
+            (repo / "VALIDATION.toml").write_text("[[validation]\n", encoding="utf-8")
+            (repo / "AGENT_DOCS.toml").write_text(
+                '[[validation]]\ncontext = "project-dev"\ncommands = ["bash legacy.sh"]\n',
+                encoding="utf-8",
+            )
+            _, decision, _ = run_hook("stop-finish-line-gate.py", {}, cwd=repo)
+            self.assert_blocked(decision, "VALIDATION.toml")
 
-            # 1. Legacy agent-docs has no `--product` support. With a product
-            #    set, contract resolution falls back to the unfiltered contract
-            #    and caches it.
-            self._write_fake_agent_docs(bin_dir, legacy_agent_docs)
-            code, _, stderr = run_hook(
+    def test_finish_line_subset_reader_rejects_what_tomllib_rejects(self) -> None:
+        import tomllib
+
+        import hook_common
+
+        rejected = (
+            '[[validation]]\ncontext = "a"\ncontext = "b"\ncommands = ["x"]\n',
+            '[[validation]]\ncontext = "a"\ncommands = ["x" "y"]\n',
+            '[[validation]]\ncontext = "a"\ncommands = ["x",, "y"]\n',
+            '[[validation]]\ncontext = "a" "b"\ncommands = ["x"]\n',
+            '[[validation]] junk\ncontext = "a"\ncommands = ["x"]\n',
+        )
+        for text in rejected:
+            with self.subTest(text=text):
+                with self.assertRaises(tomllib.TOMLDecodeError):
+                    tomllib.loads(text)
+                with self.assertRaises(ValueError):
+                    hook_common._validation_entries_subset(text)
+
+    def test_finish_line_reads_transitional_agent_docs_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._init_contract_repo(tmp)
+            (repo / "VALIDATION.toml").unlink()
+            (repo / "AGENT_DOCS.toml").write_text(
+                '[[document]]\ncontext = "project-dev"\npath = "README.md"\n'
+                '\n[[validation]]\ncontext = "project-dev"\nproduct = ["codex"]\n'
+                'commands = ["bash legacy-codex.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n'
+                '\n[[validation]]\ncontext = "task-tools"\nproduct = "hermes"\n'
+                'commands = ["bash hermes-only.sh"]\n',
+                encoding="utf-8",
+            )
+            env = {"AGENT_RUNTIME_PRODUCT": "codex"}
+
+            run_hook(
                 "finish-line-record.py",
                 write_payload("src/lib.rs", "fn main() {}\n"),
                 cwd=repo,
-                env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"},
+                env=env,
             )
-            self.assertEqual(code, 0, stderr)
-
-            code, decision, stderr = run_hook(
-                "stop-finish-line-gate.py",
-                {},
-                cwd=repo,
-                env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"},
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
             )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "unfiltered.sh")
-
-            # 2. Upgrade agent-docs in place to a build that supports
-            #    `--product`, without touching AGENT_DOCS.toml. Bump the binary
-            #    mtime forward so the upgrade is detected regardless of
-            #    filesystem timestamp resolution.
-            self._write_fake_agent_docs(bin_dir, upgraded_agent_docs)
-            script = bin_dir / "agent-docs"
-            future = script.stat().st_mtime + 10
-            os.utime(script, (future, future))
-
-            # 3. The gate must now require the product-filtered command, not the
-            #    stale cached unfiltered contract.
-            code, decision, stderr = run_hook(
-                "stop-finish-line-gate.py",
-                {},
-                cwd=repo,
-                env={**base_env, "AGENT_RUNTIME_PRODUCT": "codex"},
-            )
-            self.assertEqual(code, 0, stderr)
-            self.assert_blocked(decision, "codex.sh")
+            self.assert_blocked(decision, "legacy-codex.sh")
             assert decision is not None
-            self.assertNotIn("unfiltered.sh", str(decision.get("reason", "")))
+            self.assertNotIn("hermes-only.sh", str(decision.get("reason", "")))
 
+            # VALIDATION.toml owns a context once it declares it.
+            (repo / "VALIDATION.toml").write_text(
+                '[[validation]]\ncontext = "project-dev"\n'
+                'commands = ["bash primary.sh"]\n'
+                'marker = ".cache/agent-validation/project-dev.ok"\n',
+                encoding="utf-8",
+            )
+            _, decision, _ = run_hook(
+                "stop-finish-line-gate.py", {}, cwd=repo, env=env
+            )
+            self.assert_blocked(decision, "primary.sh")
+            assert decision is not None
+            self.assertNotIn("legacy-codex.sh", str(decision.get("reason", "")))
 
     def test_finish_line_gate_waiver_and_suppress_release(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             base_env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}
@@ -4977,7 +4703,6 @@ exit 65
 
 
     def test_finish_line_record_ignores_markdown_only_edits(self) -> None:
-        self._require_agent_docs()
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._init_contract_repo(tmp)
             env = {"AGENT_RUNTIME_DOCS_HOME": str(repo)}

@@ -56,19 +56,6 @@ assert_symlink_target() {
     "$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$target")"
 }
 
-run_agent_docs_probe() {
-  local out="$META_ARTIFACTS_DIR/agent-docs.preflight.txt"
-  require_meta_bin agent-docs || return 1
-  (
-    cd "$META_WORKSPACE"
-    agent-docs \
-      --docs-home "$REPO_ROOT" \
-      --project-path "$REPO_ROOT" \
-      preflight --intent project-dev --strict
-  ) >"$out" 2>&1
-  grep -q 'missing_required=0' "$out"
-}
-
 run_home_prompt_render_probe() {
   local out="$META_ARTIFACTS_DIR/home-prompt-render.txt"
   local codex_home="$REPO_ROOT/build/codex/AGENT_HOME.md"
@@ -902,25 +889,9 @@ link_lines = [
     for idx, line in enumerate(lines, 1)
     if line.startswith("+ ln -s ")
 ]
-preflight_lines = [
-    (idx, line)
-    for idx, line in enumerate(lines, 1)
-    if line.startswith("+ agent-docs preflight --docs-home ")
-]
 
 assert len(link_lines) == 2, link_lines
-assert len(preflight_lines) == 5, preflight_lines
-preflight_intents = {
-    line.rsplit("--intent ", 1)[1].split()[0]
-    for _, line in preflight_lines
-}
-assert preflight_intents == {
-    "browser-test",
-    "memory",
-    "project-dev",
-    "session-coordination",
-    "task-tools",
-}, preflight_lines
+assert not any("agent-docs" in line for line in lines), lines
 assert len(sync_lines) == 2, sync_lines
 sync_products = []
 for _, sync_line in sync_lines:
@@ -938,7 +909,6 @@ for _, sync_line in sync_lines:
     assert "--no-verify" in sync_line, sync_line
     assert "--dry-run" in sync_line, sync_line
 assert sync_products == ["claude", "codex"], sync_products
-assert max(idx for idx, _ in link_lines) < min(idx for idx, _ in preflight_lines), lines
 if bootstrap_lines:
     assert len(bootstrap_lines) == 1, bootstrap_lines
     bootstrap_line = bootstrap_lines[0][1]
@@ -946,7 +916,7 @@ if bootstrap_lines:
     assert "--dry-run" in bootstrap_line, bootstrap_line
     assert "--skip-homebrew-install" in bootstrap_line, bootstrap_line
     assert "--skip-cli-tools" in bootstrap_line, bootstrap_line
-    assert max(idx for idx, _ in preflight_lines) < bootstrap_lines[0][0], lines
+    assert max(idx for idx, _ in link_lines) < bootstrap_lines[0][0], lines
     assert bootstrap_lines[0][0] < min(idx for idx, _ in sync_lines), lines
 else:
     home_render_lines = [
@@ -963,7 +933,7 @@ else:
     assert any("--product codex" in line for _, line in product_render_lines), product_render_lines
     assert any("--product claude" in line for _, line in product_render_lines), product_render_lines
     assert max(idx for idx, _ in home_render_lines) < min(idx for idx, _ in link_lines), lines
-    assert max(idx for idx, _ in preflight_lines) < min(idx for idx, _ in product_render_lines), lines
+    assert max(idx for idx, _ in link_lines) < min(idx for idx, _ in product_render_lines), lines
     assert max(idx for idx, _ in product_render_lines) < min(idx for idx, _ in install_lines), lines
     assert max(idx for idx, _ in install_lines) < min(idx for idx, _ in sync_lines), lines
 PY
@@ -1068,27 +1038,7 @@ case "$command_name" in
     ;;
 esac
 SH
-  cat >"$stub_bin/agent-docs" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-
-command_name="${1:-}"
-shift || true
-
-case "$command_name" in
-  list)
-    printf '%s\n' '{"intents":["project-dev","task-tools","setup-extra"]}'
-    ;;
-  preflight)
-    printf 'agent-docs preflight %s\n' "$*"
-    ;;
-  *)
-    printf 'unexpected agent-docs command: %s\n' "$command_name" >&2
-    exit 64
-    ;;
-esac
-SH
-  chmod +x "$stub_bin/brew" "$stub_bin/agent-runtime" "$stub_bin/agent-docs"
+  chmod +x "$stub_bin/brew" "$stub_bin/agent-runtime"
 
   (
     cd "$REPO_ROOT"
@@ -1101,11 +1051,7 @@ SH
 
   assert_symlink_target "$apply_home/.codex/AGENTS.md" "$source_root/build/codex/AGENT_HOME.md"
   assert_symlink_target "$apply_home/.claude/CLAUDE.md" "$source_root/build/claude/AGENT_HOME.md"
-  grep -q "+ agent-docs preflight --docs-home $source_root --project-path $source_root --intent project-dev --strict" "$apply_out"
-  grep -q "+ agent-docs preflight --docs-home $source_root --project-path $source_root --intent task-tools --strict" "$apply_out"
-  grep -q "+ agent-docs preflight --docs-home $source_root --project-path $source_root --intent setup-extra --strict" "$apply_out"
-  grep -q "docs_audit: not-run (legacy key retained; rendered home prompts use source-root docs_preflight)" "$apply_out"
-  grep -q "docs_preflight: .*--intent setup-extra --strict" "$apply_out"
+  ! grep -q "agent-docs" "$apply_out"
   grep -q "+ bash $source_root/scripts/sync-runtime-surfaces.sh --source-root $source_root --product claude --no-pull --no-prune --no-verify --apply" "$apply_out"
   grep -q "+ bash $source_root/scripts/sync-runtime-surfaces.sh --source-root $source_root --product codex --no-pull --no-verify --apply" "$apply_out"
   grep -q "sync-runtime-surfaces --source-root $source_root --product claude --no-pull --no-prune --no-verify --apply" "$apply_out"
@@ -3459,9 +3405,9 @@ run_meta_outcome_routing_probe() {
     echo "runtime-smoke meta: files policy missing parent routing" >&2
     return 1
   }
-  grep -Fq '`agent-docs` preflight and `agent-out` allocation are parent workflow' "$files_policy" &&
-    grep -Fq 'responsibilities, not user-selected outcomes' "$files_policy" || {
-    echo "runtime-smoke meta: files policy missing parent-owned preflight/allocation" >&2
+  grep -Fq '`agent-out` allocation is a parent workflow responsibility' "$files_policy" &&
+    grep -Fq 'user-selected outcome' "$files_policy" || {
+    echo "runtime-smoke meta: files policy missing parent-owned allocation" >&2
     return 1
   }
   grep -Fq '## Parent Workflow Routing' "$git_policy" || {
@@ -3504,16 +3450,12 @@ run_repo_docs_boundary_probe() {
   grep -Fq 'audit' "$source"
   grep -Fq 'apply' "$source"
   grep -Fq 'active repository policy' "$source"
-  grep -Fq '`task-tools`' "$source"
-  grep -Fq 'agent-docs preflight --intent task-tools' "$source"
   grep -Fq 'core/policies/external-facts.md' "$source"
 
   rendered_contract_assert_skill meta repo-docs-boundary
   rendered_contract_assert_all_contain meta repo-docs-boundary 'README.md'
   rendered_contract_assert_all_contain meta repo-docs-boundary 'DEVELOPMENT.md'
   rendered_contract_assert_all_contain meta repo-docs-boundary '## Boundary'
-  rendered_contract_assert_all_contain meta repo-docs-boundary '`task-tools`'
-  rendered_contract_assert_all_contain meta repo-docs-boundary 'agent-docs preflight --intent task-tools'
   rendered_contract_assert_all_contain meta repo-docs-boundary 'core/policies/external-facts.md'
 }
 
@@ -3610,7 +3552,6 @@ run_sync_runtime_surfaces_codex_hook_order_probe() {
 }
 
 failures=0
-record_case "meta.outcome-routing.agent-docs" "project-dev docs preflight passed from fixture workspace" run_agent_docs_probe
 record_case "meta.home-prompt-render" "home prompt render isolates Codex-only delegation and product sentinel text" run_home_prompt_render_probe
 record_case "meta.outcome-routing.agent-out" "agent-out allocated a temp project path and applied a reviewed cleanup plan" run_agent_out_probe
 record_case "meta.outcome-routing.scope-lock" "scope lock create and validate passed in temp git workspace" run_agent_scope_lock_probe

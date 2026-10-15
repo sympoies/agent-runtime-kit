@@ -37,7 +37,7 @@ ARG YQ_SHA256_ARM64=9477ac3cc447b6c083986129e35af8122eb2b938fe55c9c3e40436fb966e
 # -----------------------------------------------------------------------------
 # Stage 1 — fetch nils-cli prebuilt Linux binaries.
 #
-# nils-cli ships the agent-runtime, agent-docs, semantic-commit, forge-cli,
+# nils-cli ships the agent-runtime, agent-hook, semantic-commit, forge-cli,
 # zsh-kit (and other) binaries as a
 # single release tarball. We download the arch-matched tarball and verify it
 # against the in-repo SHA256 pin and published .sha256 sidecar — no Linuxbrew

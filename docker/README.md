@@ -168,7 +168,7 @@ baked `$HOME/.config/zsh` or `/opt/private-skills` tree.
   `.github/PULL_REQUEST_TEMPLATE/min-version-bump.md`; Dependabot ignores both
   packages, because it cannot reach the Dockerfile ARG or `recommended_version`
   and so can never satisfy `scripts/ci/security-hardening-audit.py`.
-- **nils-cli**: prebuilt Linux release tarball (`agent-runtime`, `agent-docs`,
+- **nils-cli**: prebuilt Linux release tarball (`agent-runtime`, `agent-hook`,
   `semantic-commit`, `forge-cli`, `zsh-kit`, …
   ~40 binaries),
   pinned to the version and Linux release digests in

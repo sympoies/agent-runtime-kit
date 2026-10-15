@@ -109,8 +109,8 @@ Closeout is event-driven:
 
 ## Enforcement Boundary
 
-- Codex and Claude hooks verify supported intent activation, checkout safety,
-  and declared finish-line validation. They cannot safely discover an arbitrary
+- Codex and Claude hooks verify checkout safety and declared finish-line
+  validation. They cannot safely discover an arbitrary
   evidence directory or judge semantic proof, so the parent invokes evidence
   checks only when required.
 - `forge-cli` can require a complete v2 test-first record for feature/bug
@@ -120,5 +120,5 @@ Closeout is event-driven:
   converts an external, destructive, sensitive, transaction, or unknown effect
   into an allowed one.
 - Hermes can run the same released record CLIs but has no runtime-kit
-  `agent-docs` hook runner. Its record proves explicit CLI verification, not a
+  hook runner. Its record proves explicit CLI verification, not a
   product-native hook event.

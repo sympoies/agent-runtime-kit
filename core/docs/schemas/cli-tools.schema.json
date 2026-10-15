@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-runtime-kit.local/schemas/cli-tools.schema.json",
   "title": "cli-tools.yaml",
-  "description": "Profile-keyed third-party CLI install catalog. Mirrors the narrative companion at `core/policies/cli-tools.md`. Consumed by `scripts/setup.sh` (install) and `agent-runtime doctor` (probe). Nils-cli binaries (`agent-out`, `agent-docs`, `semantic-commit`, etc.) are NOT listed here — they install via the `nils-cli` Homebrew formula and live in `docs/source/nils-cli-surface.md`.",
+  "description": "Profile-keyed third-party CLI install catalog. Mirrors the narrative companion at `core/policies/cli-tools.md`. Consumed by `scripts/setup.sh` (install) and `agent-runtime doctor` (probe). Nils-cli binaries (`agent-out`, `agent-hook`, `semantic-commit`, etc.) are NOT listed here — they install via the `nils-cli` Homebrew formula and live in `docs/source/nils-cli-surface.md`.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "profiles", "formulas"],

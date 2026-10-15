@@ -129,10 +129,6 @@ task. If the change grows beyond one commit, its expected base moves, signing
 cannot be verified, the checkout is dirty, or the delivery mode is uncertain,
 retain the managed branch and request the needed delivery decision.
 
-`AGENT_RUNTIME_PROJECT_DEV_MODE` changes only workflow preparation guidance.
-Advisory or off project-dev mode does not relax this delivery matrix, commit
-signing, checkout ownership, branch, provider, or user-authorization controls;
-their independent hooks and governed CLIs continue to decide admission.
 Never enable `extensions.worktreeConfig` or set per-worktree author or signing
 configuration for tracked agent work. If signing fails, stop and report the
 failure; do not change identity or signing configuration to continue.

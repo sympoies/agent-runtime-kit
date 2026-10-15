@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Outcome recorder for the agent-docs finish-line validation gate.
+"""Outcome recorder for the finish-line validation gate.
 
 Writes evidence markers under each declared validation marker directory so the
 Stop gate (stop-finish-line-gate.py) can tell whether every declared validation
@@ -23,10 +23,11 @@ before the shell exits and preserves the original status, including for
 long-running commands completed through a later tool poll. If outcome metadata
 cannot persist, the pending attempt remains and the Stop gate fails closed.
 
-The recorder never persists command output. It no-ops outside a git repo, in a
-repo that declares no AGENT_DOCS.toml, or when no intent declares a validation
-contract. A matching validation is blocked before execution only when its
-repo-local pending record or shared runtime tombstone cannot register safely.
+The recorder never persists command output. It no-ops outside a git repo or
+in a repo that declares no validation contract in VALIDATION.toml (or, during
+migration, in an AGENT_DOCS.toml `[[validation]]` table). A matching
+validation is blocked before execution only when its repo-local pending record
+or shared runtime tombstone cannot register safely.
 """
 
 from __future__ import annotations
@@ -65,7 +66,10 @@ from hook_common import (
     session_marker_key,
     strip_heredoc_bodies,
     tool_input_dict,
-    validation_contracts,
+    invalid_declaration_reason,
+    load_validation_contracts,
+    TRANSITIONAL_VALIDATION_FILE,
+    VALIDATION_FILE,
     validation_command_target_key,
     validation_marker_set,
     validation_pending_marker,
@@ -1482,7 +1486,20 @@ def main() -> int:
     repo_root = git_toplevel()
     if not repo_root:
         return ALLOW
-    contracts = validation_contracts(repo_root)
+    contracts, invalid_declarations = load_validation_contracts(repo_root)
+    if invalid_declarations:
+        declarations = {
+            os.path.realpath(os.path.join(repo_root, name))
+            for name in (VALIDATION_FILE, TRANSITIONAL_VALIDATION_FILE)
+        }
+        if tool in EDIT_TOOLS and any(
+            not path.endswith(".md")
+            and under_repo(path, repo_root)
+            and os.path.realpath(os.path.join(repo_root, path)) not in declarations
+            for path in file_paths_from_payload(payload)
+        ):
+            emit_block(invalid_declaration_reason(repo_root, invalid_declarations))
+        return ALLOW
     if not contracts:
         return ALLOW
 

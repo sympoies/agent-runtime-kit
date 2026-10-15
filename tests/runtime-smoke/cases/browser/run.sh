@@ -116,9 +116,8 @@ run_browser_routing_contract_probe() {
   grep -q 'owning gate requires a durable record' "$policy"
   grep -q 'Project Playwright/browser test harness' "$policy"
   grep -q 'macOS desktop Computer Use outcome' "$policy"
-  grep -q 'Hermes resolves this policy from the selected docs home' "$policy"
-  grep -q 'no runtime-kit hook or automatic' "$policy"
-  grep -q 'agent-docs injection path' "$policy"
+  grep -q 'Hermes reads this policy from the runtime kit' "$policy"
+  grep -q 'it has no runtime-kit hook path' "$policy"
 }
 
 failures=0

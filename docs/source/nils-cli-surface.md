@@ -1763,9 +1763,9 @@ phase-aware `test-first-evidence`, and v2 `skill-usage` ownership; and
 owners during archive and closeout promotion. No Browser/Evidence command was
 retired or renamed in this release.
 
-The `agent-docs` per-binary floor in `nils-cli-pin.yaml` is `1.24.0`: the
-shared hooks call `session prepare` (`v1.23.0`) and `session verify --phase`
-(`v1.24.0`) without a capability probe. It stays below the release tag floor.
+Agent-runtime-kit no longer consumes or pins `agent-docs`: the shared hooks
+read each repository's `VALIDATION.toml` directly, and the home policy routes to
+runbooks by name.
 
 Notes on derivation:
 
@@ -1785,7 +1785,7 @@ The consumption links below preserve this kit’s release-specific context.
 
 | Crate | Binary | Purpose and references |
 | --- | --- | --- |
-| `agent-docs` | `agent-docs` | Resolve and audit declared docs and validation contracts. [README][source-agent-docs]; [kit consumption](#agent-docs-consumption) |
+| `agent-docs` | `agent-docs` | Retired; not consumed. See [agent-docs consumption](#agent-docs-consumption). |
 | `agent-hook` | `agent-hook` | Shared hook policy, provider ingress and coordination. [README][source-agent-hook]; [kit consumption](#agent-hook-consumption) |
 | `agent-memory` | `agent-memory` | Manage and query the local memory store. [README][source-agent-memory]; [kit consumption](#agent-memory-consumption) |
 | `agent-out` | `agent-out` | Allocate and audit workflow artifact paths. [README][source-agent-out]; [kit consumption](#agent-out-consumption) |
@@ -1837,13 +1837,10 @@ behavior. Library-only and unconsumed rows retain their table cues.
 
 ### agent-docs consumption
 
-Data-driven required-doc resolver and auditor; no hardcoded builtins. `audit` checks install wiring, declared-doc presence/validity, and catalog validity; `preflight --intent X` resolves the document set plus the per-repo validation contract. Policy lives in `AGENT_DOCS.toml` (`[[document]]`, `[[validation]]`, predicates, product scope, and optional workflow phases).
-
-As of `v0.30.1`, project-scoped documents and validation stay within the declaring repository; `v0.31.6` added `--require-declared-intent`; and `v1.12.1` added Codex/Claude product scoping plus the `agent-docs.preflight.v2` product scope. The current surface also accepts `--product hermes`.
-
-As of `v1.23.0`, `session prepare` atomically combines strict preflight and activation in `cli.agent-docs.session.prepare.v1` ([#1273](https://github.com/sympoies/nils-cli/pull/1273)); runtime-kit consumes it for trusted intent preparation. As of `v1.24.0`, `phase` declarations and `--phase` filters scope `preflight` and `session activate|prepare|verify` ([#1282](https://github.com/sympoies/nils-cli/pull/1282)); runtime-kit consumes them in its phase-aware `project-dev` gates.
-
-The retired `resolve` / `baseline` / `scaffold-*` / `add` / `contexts` commands and `startup` context remain absent.
+Retired. The validation contract moved to a repository-root `VALIDATION.toml`,
+read by `agent-hook` and by the shared finish-line hooks (transitionally also
+from `[[validation]]` in `AGENT_DOCS.toml`). Intent activation, preflight, and
+catalog audits are no longer part of the runtime (sympoies/nils-cli#2471).
 
 ### agent-hook consumption
 
@@ -2036,7 +2033,6 @@ Zsh setup helper. As of `v1.0.7`, this repo's Docker surface consumes `zsh-kit s
 As of `v1.0.12`, native plugin fetch/update/maybe-update/status helpers are available; runtime-kit does not consume those helper commands in required skill flows today.
 
 
-[source-agent-docs]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-docs/README.md
 
 [source-agent-hook]: https://github.com/sympoies/nils-cli/blob/v1.31.15/crates/agent-hook/README.md
 

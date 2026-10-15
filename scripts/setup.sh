@@ -28,7 +28,6 @@ BREW_PREFIX=""
 BOOTSTRAP_SURFACE="phase commands"
 CLAUDE_PLUGIN_REGISTRY_SURFACE="not-run"
 CODEX_PLUGIN_REGISTRY_SURFACE="not-run"
-DOCS_PREFLIGHT_SUMMARY="not-run"
 SCRIPT_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_TOOLS_MANIFEST="$SCRIPT_REPO_ROOT/manifests/cli-tools.yaml"
 # shellcheck source=scripts/lib/runtime-python.sh
@@ -47,7 +46,7 @@ when missing, taps sympoies/tap, installs nils-cli (which ships the
 agent-runtime binary), installs the profile-selected third-party CLI tools
 from manifests/cli-tools.yaml, clones agent-runtime-kit into
 \$HOME/.config/agent-runtime-kit when missing, wires the home prompt docs
-symlinks, verifies declared agent docs, and then uses
+symlinks, and then uses
 \`agent-runtime bootstrap-host\` for the runtime surface bootstrap when the
 installed nils-cli surface provides it. Older nils-cli pins fall back to the
 manual render / install / prune-stale phase commands. It then delegates to
@@ -219,7 +218,7 @@ tap_and_install_nils_cli() {
     run_cmd brew install "$TAP_FORMULA"
   fi
   if [ "$DRY_RUN" = "0" ]; then
-    require_commands agent-runtime agent-docs
+    require_commands agent-runtime
   fi
 }
 
@@ -548,94 +547,6 @@ ensure_home_prompts() {
   done
 }
 
-run_agent_docs_preflight() {
-  local list_output
-  local list_status
-  local intents
-  local parse_status
-  local intent
-  local summary=""
-  local list_docs_home="$REPO_HOME_DEFAULT"
-
-  log "verifying agent docs preflight"
-
-  print_cmd agent-docs list \
-    --docs-home "$REPO_HOME_DEFAULT" \
-    --project-path "$REPO_HOME_DEFAULT" \
-    --format json
-  if ! command -v agent-docs >/dev/null 2>&1; then
-    if [ "$DRY_RUN" = "1" ]; then
-      warn "agent-docs is not on PATH during dry-run; apply will enumerate declared intents after nils-cli install"
-      DOCS_PREFLIGHT_SUMMARY="planned via agent-docs list --docs-home $REPO_HOME_DEFAULT --project-path $REPO_HOME_DEFAULT --format json"
-      return 0
-    fi
-    require_commands agent-docs
-  fi
-  if [ "$DRY_RUN" = "1" ] && [ -z "$RUNTIME_PYTHON" ]; then
-    warn "Python 3.11+ is not installed yet during dry-run; apply will enumerate declared intents after the CLI tools install"
-    DOCS_PREFLIGHT_SUMMARY="planned via agent-docs list --docs-home $REPO_HOME_DEFAULT --project-path $REPO_HOME_DEFAULT --format json"
-    return 0
-  fi
-  if [ "$DRY_RUN" = "1" ] && [ ! -f "$list_docs_home/AGENT_DOCS.toml" ] && [ -f "$SCRIPT_REPO_ROOT/AGENT_DOCS.toml" ]; then
-    list_docs_home="$SCRIPT_REPO_ROOT"
-    warn "using $list_docs_home to enumerate agent-docs intents during dry-run because $REPO_HOME_DEFAULT is not cloned yet"
-  fi
-  set +e
-  list_output="$(
-    agent-docs list \
-      --docs-home "$list_docs_home" \
-      --project-path "$list_docs_home" \
-      --format json 2>&1
-  )"
-  list_status=$?
-  set -e
-  if [ "$list_status" -ne 0 ]; then
-    err "agent-docs list failed"
-    printf '%s\n' "$list_output" >&2
-    exit "$list_status"
-  fi
-
-  set +e
-  intents="$(printf '%s\n' "$list_output" | runtime_python -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(2)
-for intent in data.get("intents", []):
-    if isinstance(intent, str) and intent:
-        print(intent)
-')"
-  parse_status=$?
-  set -e
-  if [ "$parse_status" -ne 0 ]; then
-    err "agent-docs list returned invalid JSON"
-    printf '%s\n' "$list_output" >&2
-    exit "$parse_status"
-  fi
-  if [ -z "$intents" ]; then
-    err "agent-docs list returned no declared intents"
-    exit 1
-  fi
-
-  while IFS= read -r intent; do
-    [ -n "$intent" ] || continue
-    run_cmd agent-docs preflight \
-      --docs-home "$REPO_HOME_DEFAULT" \
-      --project-path "$REPO_HOME_DEFAULT" \
-      --intent "$intent" \
-      --strict
-    if [ -n "$summary" ]; then
-      summary="${summary}; "
-    fi
-    summary="${summary}agent-docs preflight --docs-home $REPO_HOME_DEFAULT --project-path $REPO_HOME_DEFAULT --intent $intent --strict"
-  done <<EOF_INTENTS
-$intents
-EOF_INTENTS
-
-  DOCS_PREFLIGHT_SUMMARY="$summary"
-}
-
 bootstrap_host_available() {
   if ! command -v agent-runtime >/dev/null 2>&1; then
     return 1
@@ -818,8 +729,6 @@ Summary
 - codex_home_prompt: $(product_home_prompt_path codex) -> $(agent_home_source codex)
 - claude_plugin_registry_activation: $CLAUDE_PLUGIN_REGISTRY_SURFACE
 - codex_plugin_registry_activation: $CODEX_PLUGIN_REGISTRY_SURFACE
-- docs_audit: not-run (legacy key retained; rendered home prompts use source-root docs_preflight)
-- docs_preflight: $DOCS_PREFLIGHT_SUMMARY
 EOF
 }
 
@@ -843,7 +752,6 @@ main() {
   ensure_repo_clone
   render_home_prompts
   ensure_home_prompts
-  run_agent_docs_preflight
   run_surface_bootstrap
   sync_claude_plugin_registry_activation
   sync_codex_plugin_registry_activation

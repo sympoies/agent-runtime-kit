@@ -7,7 +7,7 @@ export PYTHONDONTWRITEBYTECODE=1
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-agent-docs preflight --docs-home "$REPO_ROOT" --project-path "$REPO_ROOT" --intent memory --strict >/dev/null
+test -s core/policies/memory.md
 
 bash scripts/ci/retired-memory-audit.sh --self-test
 

@@ -14,7 +14,7 @@
     {
       "id": "browser-evidence",
       "prompt": "browser-evidence.txt",
-      "expected_route": "intent:browser-test"
+      "expected_route": "policy:browser-test-routing"
     },
     {
       "id": "desktop-operation",
@@ -24,7 +24,7 @@
     {
       "id": "session-coordination",
       "prompt": "session-coordination.txt",
-      "expected_route": "intent:session-coordination"
+      "expected_route": "policy:session-coordination"
     }
   ]
 }

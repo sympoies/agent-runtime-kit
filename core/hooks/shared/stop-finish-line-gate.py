@@ -2,8 +2,8 @@
 """Stop hook: block finishing when code was edited but declared validation has
 not run since.
 
-Reads the repo's declared validation contracts (commands + marker) via
-agent-docs. Identified hook sessions use directly addressable, opaque
+Reads the repo's declared validation contracts (commands + marker) from its
+VALIDATION.toml. Identified hook sessions use directly addressable, opaque
 session-scoped dirty, command, and recovery state, so an unrelated read-only
 session is not charged for an edit or failure it did not create. Payloads
 without a session identifier retain
@@ -45,7 +45,8 @@ from hook_common import (
     session_marker_key,
     touch_marker,
     validation_command_target_key,
-    validation_contracts,
+    invalid_declaration_reason,
+    load_validation_contracts,
     validation_marker_set,
     validation_tombstone_dir,
 )
@@ -687,7 +688,7 @@ def unsafe_marker_reason(
     details = ", ".join(f"[{context}] {marker}" for context, marker in invalid)
     return (
         f"Code validation in {name} has an unsafe validation marker: {details}. "
-        "Each AGENT_DOCS.toml validation marker must be repository-relative and "
+        "Each declared validation marker must be repository-relative and "
         "remain beneath the real repository root through symlink resolution. "
         "No validation evidence was written; fix the contract before finishing."
     )
@@ -755,7 +756,10 @@ def main() -> int:
     repo_root = git_toplevel()
     if not repo_root:
         return ALLOW
-    contracts = validation_contracts(repo_root)
+    contracts, invalid_declarations = load_validation_contracts(repo_root)
+    if invalid_declarations:
+        emit_block(invalid_declaration_reason(repo_root, invalid_declarations))
+        return ALLOW
     try:
         state_lock = acquire_validation_state_lock(repo_root)
     except OSError:
