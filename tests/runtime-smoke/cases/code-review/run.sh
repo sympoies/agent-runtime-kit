@@ -825,13 +825,128 @@ PY
 }
 
 failures=0
-record_case "code-review.unassigned-delivery.commands" "unassigned delivery Bash invocations remain byte-identical across products" run_unassigned_delivery_command_regression
+run_personal_escape_policy_grant_probe() {
+  local posting="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+  local delivery="$REPO_ROOT/core/skills/pr/deliver-pr/SKILL.md.tera"
+  local gate="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/DELIVERY_SPECIALIST_REVIEW_GATE.md"
+  local probe_dir="$TMP_ROOT/personal-escape-policy-grant"
+  local helper="$probe_dir/request-policy-escape-grant.sh"
+  local fake_bin="$probe_dir/bin"
+
+  grep -Fq '### Policy grant authorization' "$posting"
+  grep -Fq 'forge-review-escape-grant.v1' "$posting"
+  grep -Fq 'escape authorization: policy grant' "$posting"
+  grep -Fq 'escape authorization: policy grant' "$delivery"
+  grep -Fq 'Policy grant authorization' "$delivery"
+  grep -Fq 'Policy grant authorization' "$gate"
+
+  # Execute the contract's own helper, not a copy, against a fake issuer.
+  mkdir -p "$fake_bin"
+  awk '/^request_policy_escape_grant\(\) \{$/ { on=1 } on { print } on && /^\}$/ { exit }' \
+    "$posting" >"$helper"
+  grep -Fq 'forge-review-escape-grant issue' "$helper"
+  cat >"$fake_bin/forge-review-escape-grant" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$FAKE_GRANT_CALLS"
+attempt='' head='' repo='' pr=''
+while (($#)); do
+  case "$1" in
+    --attempt) attempt="$2"; shift 2 ;;
+    --expected-head) head="$2"; shift 2 ;;
+    --repo) repo="$2"; shift 2 ;;
+    --pr) pr="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+expires=2999-01-01T00:00:00Z decision=granted schema=forge-review-escape-grant.v1
+case "$FAKE_GRANT_MODE" in
+  granted) ;;
+  exit-refused) exit 77 ;;
+  refused) decision=refused ;;
+  expired) expires=2000-01-01T00:00:00Z ;;
+  wrong-head) head=0000000000000000000000000000000000000000 ;;
+  wrong-repo) repo=other/repo ;;
+  wrong-pr) pr=999 ;;
+  replayed-attempt) attempt=replayed-attempt-id ;;
+  wrong-schema) schema=forge-review-escape-grant.v0 ;;
+esac
+jq -cn --arg schema "$schema" --arg decision "$decision" --arg repo "$repo" \
+  --argjson pr "$pr" --arg head "$head" --arg attempt "$attempt" \
+  --arg expires "$expires" '{
+    schema_version: $schema, ok: true,
+    data: {decision: $decision, grant_id: "grant-0123456789",
+      policy_id: "principal-a", policy_revision: "3", provider: "github",
+      repo: $repo, pr: $pr, head: $head, attempt: $attempt,
+      issued_at: "2026-01-01T00:00:00Z", expires_at: $expires}}'
+FAKE
+  chmod +x "$fake_bin/forge-review-escape-grant"
+
+  PATH="$fake_bin:$PATH" FAKE_GRANT_CALLS="$probe_dir/calls" \
+    bash -u -c '
+    set -o pipefail
+    . "$1"
+    run_case() {
+      local mode="$1" failure_state="$2"
+      FAKE_GRANT_MODE="$mode"
+      export FAKE_GRANT_MODE
+      PROVIDER=github OWNER_REPO=acme/widget PR_NUMBER=107
+      EXPECTED_REVIEW_HEAD=215dc45f08007e4ba1a3c0498e87fa66738760b2
+      REVIEW_PUBLISHER_FAILURE_STATE="$failure_state"
+      REVIEW_PERSONAL_ESCAPE_REASON="publisher refused the author session"
+      REVIEW_LENS_ARGS=(--lens testing --lens maintainability)
+      REVIEW_PERSONAL_ESCAPE_AUTHORIZED=0
+      REVIEW_ESCAPE_AUTHORIZATION_SOURCE="" REVIEW_ESCAPE_GRANT_ID=""
+      request_policy_escape_grant
+    }
+    : >"$FAKE_GRANT_CALLS"
+    run_case granted no-native-mutation
+    [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 1 ]]
+    [[ "$REVIEW_ESCAPE_AUTHORIZATION_SOURCE" == policy-grant ]]
+    [[ "$REVIEW_ESCAPE_GRANT_ID" == grant-0123456789 ]]
+    [[ "$REVIEW_ESCAPE_GRANT_POLICY" == "principal-a revision 3" ]]
+    run_case granted no-native-mutation
+    # Every request carries a fresh attempt id bound to this PR and head.
+    [[ "$(grep -c -- "--expected-head 215dc45f08007e4ba1a3c0498e87fa66738760b2" "$FAKE_GRANT_CALLS")" == 2 ]]
+    attempts="$(grep -o -- "--attempt [0-9a-f]*" "$FAKE_GRANT_CALLS" | sort -u | wc -l)"
+    [[ "$attempts" -eq 2 ]]
+    grep -Fq -- "--lens testing --lens maintainability" "$FAKE_GRANT_CALLS"
+
+    for mode in exit-refused refused expired wrong-head wrong-repo wrong-pr \
+      replayed-attempt wrong-schema; do
+      status=0
+      run_case "$mode" no-native-mutation || status=$?
+      [[ "$status" == 1 ]] || { echo "policy grant accepted: $mode" >&2; exit 1; }
+      [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 0 ]]
+      [[ -z "$REVIEW_ESCAPE_GRANT_ID" ]]
+    done
+
+    # Pending and indeterminate failures never reach the issuer.
+    : >"$FAKE_GRANT_CALLS"
+    for failure_state in pending-receipt indeterminate-native-mutation; do
+      status=0
+      run_case granted "$failure_state" || status=$?
+      [[ "$status" == 69 ]]
+      [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 0 ]]
+    done
+    [[ ! -s "$FAKE_GRANT_CALLS" ]]
+
+    # A missing issuer falls back to the single confirmation.
+    PATH=/usr/bin:/bin
+    status=0
+    run_case granted no-native-mutation || status=$?
+    [[ "$status" == 1 ]]
+  ' bash "$helper"
+}
+
+record_case "code-review.unassigned-delivery.commands""unassigned delivery Bash invocations remain byte-identical across products" run_unassigned_delivery_command_regression
 record_case "code-review.designated-review.route" "designated route stops on missing capability or publication and retries the private mailbox" run_designated_review_route_probe
 record_case "code-review.designated-review.contract" "designated reviewer ownership and handoff are mandatory across source and products" run_designated_review_contract_probe
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.actionability-contract" "every reviewer finding explicitly classifies actionability for native thread publication" run_reviewer_actionability_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
+record_case "code-review.outcome-routing.personal-escape-policy-grant" "personal escape accepts only a fresh issuer grant bound to this PR, head, and attempt" run_personal_escape_policy_grant_probe
 record_case "code-review.outcome-routing.provider-review-metadata" "provider-review bundle call sites carry the report metadata the body renders" run_provider_review_metadata_contract_probe
 record_case "code-review.outcome-routing.focused" "focused lens scope with forced specialists passed" run_focused_lens_probe
 record_case "code-review.outcome-routing.follow-up" "follow-up validation and affected lens scope passed" run_follow_up_probe

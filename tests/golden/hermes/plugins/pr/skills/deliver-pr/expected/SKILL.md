@@ -521,6 +521,13 @@ if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
         echo "personal escape outcome lacks required provenance" >&2
         exit 65
       }
+  if [ "${REVIEW_ESCAPE_AUTHORIZATION_SOURCE:-}" = policy-grant ]; then
+    printf '%s\n' "$EXPECTED_REVIEW_BODY" |
+      grep -Fq -- "escape authorization: policy grant $REVIEW_ESCAPE_GRANT_ID ($REVIEW_ESCAPE_GRANT_POLICY)" || {
+        echo "personal escape outcome lacks its policy grant provenance" >&2
+        exit 65
+      }
+  fi
 fi
 NATIVE_REVIEW_IDENTITY=()
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
@@ -774,7 +781,11 @@ all child and integration evidence is verified.
    `no-native-mutation` may delivery publish the combined report as an
    exact-head personal `comments-only` review. Obtain the authorization and
    reason from the posting contract's Single escape confirmation: one prompt
-   per attempt, never separate questions. Record the reason and
+   per attempt, never separate questions. An environment-owned issuer may
+   instead mint a fresh grant for this PR, head, and attempt through the
+   contract's Policy grant authorization; then the report also carries
+   `escape authorization: policy grant <grant id> (<policy id> revision <revision>)`.
+   Record the reason and
    `independent review identity: unavailable` in provider-visible evidence,
    then keep the final combined decision as a non-native outcome note. Never
    take this escape after an indeterminate mutation or a pending/resumable
