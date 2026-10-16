@@ -127,7 +127,9 @@ whenever quick eligibility fails.
    publisher or identity failure both fail closed. Only the guarded
    `personal-escape` state may use the ambient maintainer identity: it requires
    explicit authorization, the same expected head, a non-empty reason, and
-   proof that no native mutation occurred. A pending/resumable receipt or
+   proof that no native mutation occurred. Ask for the authorization and
+   reason once, through the posting contract's Single escape confirmation.
+   A pending/resumable receipt or
    indeterminate mutation must be recovered instead. Record the reason and the
    lack of independent review identity in provider-visible delivery evidence.
    Only `portable` mode posts one report per lens: after each selected lens returns, use

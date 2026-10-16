@@ -183,6 +183,19 @@ run_portable_review_identity_contract_probe() {
   grep -Fq -- '--decision comments-only' "$gate"
   grep -Fq 'pull request head changed before personal escape outcome' "$delivery"
   grep -Fq 'pr view "$PR_NUMBER"' "$delivery"
+  # Escape authorization is one consolidated confirmation per attempt.
+  grep -Fq '### Single escape confirmation' "$posting"
+  for field in 'Repository and PR/MR number' 'Exact head SHA' \
+    'no-native-mutation evidence' 'Required CI result at that head' \
+    'Selected lenses and each lens result' 'The reason that the report will carry' \
+    'Exact scope: this PR/MR, this head, and this attempt only'; do
+    grep -Fq -- "$field" "$posting"
+  done
+  grep -Fq 'never split authorization, reason, and' "$posting"
+  grep -Fq 'A single affirmative answer sets' "$posting"
+  for owner in "$delivery" "$gate"; do
+    grep -Fq 'Single escape confirmation' "$owner"
+  done
 
   for contract in "$posting" "$specialist" "$outcome" "$delivery"; do
     ! grep -Fq 'posts each finding the moment its lens returns' "$contract"

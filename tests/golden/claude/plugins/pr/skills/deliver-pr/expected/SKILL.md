@@ -772,7 +772,9 @@ all child and integration evidence is verified.
    A required-but-missing or failed publisher blocks by default. Only after
    explicit maintainer authorization, a non-empty reason, and proof of
    `no-native-mutation` may delivery publish the combined report as an
-   exact-head personal `comments-only` review. Record the reason and
+   exact-head personal `comments-only` review. Obtain the authorization and
+   reason from the posting contract's Single escape confirmation: one prompt
+   per attempt, never separate questions. Record the reason and
    `independent review identity: unavailable` in provider-visible evidence,
    then keep the final combined decision as a non-native outcome note. Never
    take this escape after an indeterminate mutation or a pending/resumable
