@@ -1213,9 +1213,6 @@ def acquire_validation_state_lock(repo_root: str):
 
 
 VALIDATION_FILE = "VALIDATION.toml"
-# Transitional source: `[[validation]]` tables in a repository that has not yet
-# moved them out of `AGENT_DOCS.toml`. Contexts declared in VALIDATION.toml win.
-TRANSITIONAL_VALIDATION_FILE = "AGENT_DOCS.toml"
 
 
 def _validation_marker_default(context: str) -> str:
@@ -1453,32 +1450,20 @@ def load_validation_contracts(
     Returns one ``{"context": "...", "commands": [...], "marker": "..."}``
     record per declared context, read from the repository-root
     ``VALIDATION.toml`` (the agent-hook validation contract). Entries scoped
-    with ``product``/``products`` apply only to that runtime product. During the
-    migration, contexts not declared there are still read from
-    ``[[validation]]`` tables in ``AGENT_DOCS.toml``.
+    with ``product``/``products`` apply only to that runtime product.
 
     A declaration file that exists but cannot be read, parsed, or matched to
     the schema is reported in the second element, and no contract is taken
-    from any file then: callers must fail closed rather than read an invalid
+    from it then: callers must fail closed rather than read an invalid
     declaration as "no contract".
     """
-    product = _runtime_product()
-    contracts: list[dict[str, Any]] = []
-    invalid: list[str] = []
-    for name in (VALIDATION_FILE, TRANSITIONAL_VALIDATION_FILE):
-        path = os.path.join(repo_root, name)
-        if not os.path.lexists(path):
-            continue
-        try:
-            found = _read_contracts(path, product)
-        except (OSError, ValueError, UnicodeDecodeError):
-            invalid.append(name)
-            continue
-        declared = {contract["context"] for contract in contracts}
-        contracts.extend(
-            contract for contract in found if contract["context"] not in declared
-        )
-    return ([] if invalid else contracts), invalid
+    path = os.path.join(repo_root, VALIDATION_FILE)
+    if not os.path.lexists(path):
+        return [], []
+    try:
+        return _read_contracts(path, _runtime_product()), []
+    except (OSError, ValueError, UnicodeDecodeError):
+        return [], [VALIDATION_FILE]
 
 
 def validation_contracts(repo_root: str) -> list[dict[str, Any]]:
