@@ -371,8 +371,8 @@ scope into separate questions:
   environment-owned personal route; no native approval; the report records
   `independent review identity: unavailable`.
 
-A single affirmative answer sets `REVIEW_PERSONAL_ESCAPE_AUTHORIZED=1` and the
-shown `REVIEW_PERSONAL_ESCAPE_REASON` for that attempt only. Any other answer
+A single affirmative answer sets `REVIEW_PERSONAL_ESCAPE_AUTHORIZED` to `1` and
+the shown `REVIEW_PERSONAL_ESCAPE_REASON` for that attempt only. Any other answer
 leaves the branch fail-closed. A new head, a new attempt, or any change to a
 shown item needs a new confirmation; do not carry an earlier answer forward.
 
