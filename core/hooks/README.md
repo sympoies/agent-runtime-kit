@@ -46,8 +46,7 @@ The finish-line hooks read each repository's declared validation contract
 from its root `VALIDATION.toml`: `[[validation]]` tables with `context`,
 `commands`, an optional `marker`, and optional `product`/`products` scoping to
 `codex` or `claude`. This is the same file `agent-hook` reads for DSH sessions.
-While repositories migrate, contexts absent there are still read from
-`[[validation]]` tables in `AGENT_DOCS.toml`; no hook invokes `agent-docs`.
+`AGENT_DOCS.toml` is no longer read.
 
 The finish-line hooks credit declared validation only after an observed
 successful exit. `PreToolUse` wraps each matched Bash command with a tokenized
