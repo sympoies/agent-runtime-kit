@@ -368,7 +368,7 @@ run_selective_intent_control_plane_probe() {
   printf 'fn main() {}\n' >"$workspace/src/lib.rs"
   mkdir -p "$workspace/build"
   printf 'generated\n' >"$workspace/build/output.rs"
-  cat >"$workspace/AGENT_DOCS.toml" <<'TOML'
+  cat >"$workspace/VALIDATION.toml" <<'TOML'
 [path_classes]
 production = ["src/**", "mixed/**"]
 test = ["tests/**"]
@@ -475,7 +475,7 @@ TOML
   local no_classes="$TMP_ROOT/workspaces/no-path-classes"
   mkdir -p "$no_classes/src"
   printf '# Dev\n' >"$no_classes/DEV.md"
-  printf '[[document]]\ncontext = "project-dev"\nscope = "project"\npath = "DEV.md"\nrequired = true\nwhen = "always"\n' >"$no_classes/AGENT_DOCS.toml"
+  printf '[[validation]]\ncontext = "project-dev"\ncommands = ["true"]\n' >"$no_classes/VALIDATION.toml"
   dir="$EVIDENCE_ARTIFACTS_DIR/phase-not-configured"
   test-first-evidence init --out "$dir" --classification behavior-change \
     --production-path src/lib.rs \

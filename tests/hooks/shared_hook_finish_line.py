@@ -4546,8 +4546,6 @@ exit 99
              '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nphase = "edit"\n'),
             ("table-not-array", 'VALIDATION.toml',
              '[validation]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\n'),
-            ("legacy-wrong-shape", 'AGENT_DOCS.toml',
-             '[[validation]]\ncontext = "project-dev"\ncommands = []\n'),
             ("non-table-member", 'VALIDATION.toml', 'validation = ["oops"]\n'),
             ("empty-product", 'VALIDATION.toml',
              '[[validation]]\ncontext = "project-dev"\ncommands = ["bash ci.sh"]\nproduct = []\n'),
@@ -4591,17 +4589,6 @@ exit 99
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "invalid")
 
-    def test_finish_line_invalid_primary_is_not_masked_by_legacy(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = self._init_contract_repo(tmp)
-            (repo / "VALIDATION.toml").write_text("[[validation]\n", encoding="utf-8")
-            (repo / "AGENT_DOCS.toml").write_text(
-                '[[validation]]\ncontext = "project-dev"\ncommands = ["bash legacy.sh"]\n',
-                encoding="utf-8",
-            )
-            _, decision, _ = run_hook("stop-finish-line-gate.py", {}, cwd=repo)
-            self.assert_blocked(decision, "VALIDATION.toml")
-
     def test_finish_line_subset_reader_rejects_what_tomllib_rejects(self) -> None:
         import tomllib
 
@@ -4621,47 +4608,42 @@ exit 99
                 with self.assertRaises(ValueError):
                     hook_common._validation_entries_subset(text)
 
-    def test_finish_line_reads_transitional_agent_docs_validation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = self._init_contract_repo(tmp)
-            (repo / "VALIDATION.toml").unlink()
-            (repo / "AGENT_DOCS.toml").write_text(
-                '[[document]]\ncontext = "project-dev"\npath = "README.md"\n'
-                '\n[[validation]]\ncontext = "project-dev"\nproduct = ["codex"]\n'
-                'commands = ["bash legacy-codex.sh"]\n'
-                'marker = ".cache/agent-validation/project-dev.ok"\n'
-                '\n[[validation]]\ncontext = "task-tools"\nproduct = "hermes"\n'
-                'commands = ["bash hermes-only.sh"]\n',
-                encoding="utf-8",
-            )
-            env = {"AGENT_RUNTIME_PRODUCT": "codex"}
+    def test_finish_line_ignores_retired_agent_docs_validation(self) -> None:
+        # The AGENT_DOCS.toml fallback is retired: neither a valid nor a
+        # malformed `[[validation]]` table there declares or blocks anything.
+        for name, text in (
+            ("valid", '[[validation]]\ncontext = "project-dev"\ncommands = ["bash legacy.sh"]\n'),
+            ("malformed", '[[validation]]\ncontext = "project-dev"\ncommands = []\n'),
+        ):
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                repo = self._init_contract_repo(tmp)
+                (repo / "VALIDATION.toml").unlink()
+                (repo / "AGENT_DOCS.toml").write_text(text, encoding="utf-8")
+                code, decision, stderr = run_hook(
+                    "finish-line-record.py",
+                    write_payload("src/lib.rs", "fn main() {}\n"),
+                    cwd=repo,
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+                _, decision, _ = run_hook("stop-finish-line-gate.py", {}, cwd=repo)
+                self.assert_allowed(decision)
 
-            run_hook(
-                "finish-line-record.py",
-                write_payload("src/lib.rs", "fn main() {}\n"),
-                cwd=repo,
-                env=env,
-            )
-            _, decision, _ = run_hook(
-                "stop-finish-line-gate.py", {}, cwd=repo, env=env
-            )
-            self.assert_blocked(decision, "legacy-codex.sh")
-            assert decision is not None
-            self.assertNotIn("hermes-only.sh", str(decision.get("reason", "")))
-
-            # VALIDATION.toml owns a context once it declares it.
-            (repo / "VALIDATION.toml").write_text(
-                '[[validation]]\ncontext = "project-dev"\n'
-                'commands = ["bash primary.sh"]\n'
-                'marker = ".cache/agent-validation/project-dev.ok"\n',
-                encoding="utf-8",
-            )
-            _, decision, _ = run_hook(
-                "stop-finish-line-gate.py", {}, cwd=repo, env=env
-            )
-            self.assert_blocked(decision, "primary.sh")
-            assert decision is not None
-            self.assertNotIn("legacy-codex.sh", str(decision.get("reason", "")))
+                # VALIDATION.toml stays the only source once it exists.
+                (repo / "VALIDATION.toml").write_text(
+                    '[[validation]]\ncontext = "project-dev"\n'
+                    'commands = ["bash primary.sh"]\n',
+                    encoding="utf-8",
+                )
+                run_hook(
+                    "finish-line-record.py",
+                    write_payload("src/lib.rs", "fn main() { }\n"),
+                    cwd=repo,
+                )
+                _, decision, _ = run_hook("stop-finish-line-gate.py", {}, cwd=repo)
+                self.assert_blocked(decision, "primary.sh")
+                assert decision is not None
+                self.assertNotIn("legacy.sh", str(decision.get("reason", "")))
 
     def test_finish_line_gate_waiver_and_suppress_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
