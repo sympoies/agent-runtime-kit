@@ -331,10 +331,11 @@ external-diff, or filter programs do not bypass admission.
 
 A definite peer conflict and uncovered or uncertain own scope block, while
 potential/unknown/no-known- conflict classifications remain bounded advisories.
-PostTool success/failure is durably recorded before runtime probes and completes
-the exact token-bound lease. Admission intent, replay key, token, targets, and
-completion proof remain in a mode-0600 hashed session namespace across timeouts
-for exact duplicate/Stop replay rather than being guessed or released.
+PostTool success/failure is durably recorded before runtime probes and
+completes the exact token-bound
+lease. Admission intent, replay key, token, targets, and completion proof remain
+in a mode-0600 hashed session namespace across timeouts for exact duplicate/Stop
+replay rather than being guessed or released.
 `work-context admit` commits a lease only in its final save, so a well-formed
 refusal (for example a parallel sibling refused while another call holds the
 session's single operation slot) retires its intent; a lost process, timeout, or
