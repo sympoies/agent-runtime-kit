@@ -113,12 +113,15 @@ a uniform shape:
 - Install mechanism: `plugin-manifest-copy` per plugin (e.g.
   `targets/claude/link-map.yaml` for reporting; same pattern for meta,
   media, conversation, issue, code-review, pr, and dispatch).
-- Schema: local `core/docs/schemas/claude-plugin.schema.json`
-  (`manifests/product-capabilities.yaml`).
-- Acceptance lane: drift audit + plugin schema validation (CI gate
-  position 5, `DEVELOPMENT.md`); sandbox install rehearsal verifies the
-  loader still accepts the manifest (CI gate position 7,
-  `DEVELOPMENT.md`).
+- Schema: `manifests/product-capabilities.yaml` names
+  `core/docs/schemas/claude-plugin.schema.json` as `schema_ref`, but that file
+  is not in the repository and no gate validates `plugin.json` against it
+  ([#279](https://github.com/sympoies/agent-runtime-kit/issues/279)).
+- Acceptance lane: drift audit reports documented Codex/Claude plugin-manifest
+  field differences (`intentional-difference` class, CI position 7); the
+  sandbox install rehearsal (position 10) diffs the installed skill and
+  reviewer-agent lists and does not load the manifest through Claude.
+  Positions follow [Validation](development-reference.md#validation).
 - Support today: **shipped (rendered + copy-installed)**.
 
 ### 4. Plugin marketplace (`.claude-plugin/marketplace.json`)
@@ -162,11 +165,11 @@ a uniform shape:
   (`targets/claude/link-map.yaml` for reporting; same for the other
   nine plugins). One symlink per rendered skill file in the install plan
   output.
-- Acceptance lane: render output (CI position 3); render-golden
-  (position 4); drift audit (position 5); sandbox install rehearsal
-  diffs `~/.claude` skill-list output (position 7); runtime-smoke
-  deterministic mode exercises representative skills (position 8,
-  `DEVELOPMENT.md`).
+- Acceptance lane: Claude render output (CI position 4); render-golden
+  consistency (position 6); drift audit (position 7); sandbox install
+  rehearsal diffs `~/.claude` skill-list output (position 10); runtime-smoke
+  deterministic mode exercises representative skills (position 11,
+  [Validation](development-reference.md#validation)).
 - Support today: **shipped (rendered + recursive symlink)**.
 
 ### 6. Slash command files (`commands/<name>.md` outside skills)
@@ -180,7 +183,9 @@ a uniform shape:
   command `.md` files are a small, explicit set.
 - Install mechanism: `symlinked-file` of `targets/claude/commands` into
   `~/.claude/commands` (`targets/claude/link-map.yaml`).
-- Acceptance lane: sandbox install rehearsal (CI position 7).
+- Acceptance lane: the product leakage audit scans `targets/claude/commands`
+  (CI position 15); the sandbox install rehearsal (position 10) diffs skill
+  and reviewer-agent lists, not command files.
 - Support today: **shipped (linked directory)**.
 
 ### 7. Subagent definitions (`agents/<name>.md`)
@@ -236,7 +241,7 @@ a uniform shape:
   live hook root untrusted. Per-product adapters are expected under
   `targets/claude/hooks/`; no files shipped under that path yet.
 - Acceptance lane: hooks adapter contract tests
-  (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
+  (`bash tests/hooks/run.sh`, CI position 13, [Validation](development-reference.md#validation)).
 - `agent-hook` aggregates all mutation-blocking `PreToolUse` prerequisites
   before invoking the locked coordination capability. Claude therefore has no
   sibling admission hook or provider-owned sequencing wrapper.
@@ -367,29 +372,35 @@ Status legend:
 
 ## Acceptance Lanes (Claude-Relevant CI Gates)
 
-From `DEVELOPMENT.md`:
+Positions are the `scripts/ci/all.sh` positions listed in
+[Validation](development-reference.md#validation):
 
-1. `scripts/ci/skill-governance-audit.sh` — covers skill manifests.
-2. `agent-runtime render --product codex` — not Claude-side.
-3. **`agent-runtime render --product claude`** — render gate.
-4. **render-golden refresh + `git diff --exit-code`** — render
-   determinism gate.
-5. **`agent-runtime audit-drift` + fixtures** — drift audit gate
-   (includes Claude plugin manifest schema diff).
-6. `agent-runtime doctor --class skill-surface --product codex` —
-   Codex-only today; **no Claude-side skill-surface diagnostic** in the
-   default gate.
-7. **sandbox install rehearsal** — installs into a temp `live_home`,
-   diffs `tests/sandbox/claude/expected-skills.txt` and
-   `tests/sandbox/claude/expected-agents.txt`.
-8. **runtime-smoke deterministic mode** — exercises representative
-   Claude-installed skills.
-9. **runtime-smoke convergence mode** — proves a portable historical
-   66-to-current-skill upgrade, rollback, prune, exact registry refs, receipt/ID
-   transition, operator-state preservation, idempotency, and redacted route
-   contract fixtures without real product credentials.
-10. project-local overlay smoke — Codex-side; not Claude.
-11. **`bash tests/hooks/run.sh`** — hook adapter contract tests.
+- Position 2 — `scripts/ci/skill-governance-audit.sh` covers skill manifests.
+- Position 3 — `agent-runtime render --product codex` — not Claude-side.
+- Position 4 — **`agent-runtime render --product claude`** (with `--product
+  hermes`) — render gate.
+- Position 6 — **render-golden refresh + `git diff --exit-code`** — render
+  consistency gate.
+- Position 7 — **`agent-runtime audit-drift` + fixtures** — drift audit gate
+  (reports documented Codex/Claude plugin-manifest field differences; no gate
+  validates against a Claude plugin JSON schema,
+  [#279](https://github.com/sympoies/agent-runtime-kit/issues/279)).
+- Position 8 — surface manifest acceptance executes **runtime-smoke
+  convergence mode** from `manifests/surfaces.yaml`; it proves a portable
+  historical 66-to-current-skill upgrade, rollback, prune, exact registry
+  refs, receipt/ID transition, operator-state preservation, idempotency, and
+  redacted route contract fixtures without real product credentials.
+- Position 9 — `agent-runtime doctor --class skill-surface --product codex` —
+  Codex-only today; **no Claude-side skill-surface diagnostic** in the
+  default gate.
+- Position 10 — **sandbox install rehearsal** — installs into a temp
+  `live_home`, diffs `tests/sandbox/claude/expected-skills.txt` and
+  `tests/sandbox/claude/expected-agents.txt`.
+- Position 11 — **runtime-smoke deterministic mode** — exercises
+  representative Claude-installed skills.
+- Position 12 — project-local overlay smoke — Codex-side; not Claude.
+- Position 13 — **`bash tests/hooks/run.sh`** — hook adapter contract tests,
+  after `bash tests/agent-hook/run.sh`.
 
 Quarantined (not in default CI):
 

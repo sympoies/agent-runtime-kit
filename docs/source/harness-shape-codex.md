@@ -274,7 +274,7 @@ a uniform shape:
   data files use `0600`) so source-checkout permission drift cannot make the
   live hook root untrusted.
 - Acceptance lane: shared hook contract tests
-  (`bash tests/hooks/run.sh`, CI position 10, `DEVELOPMENT.md`).
+  (`bash tests/hooks/run.sh`, CI position 13, [Validation](development-reference.md#validation)).
 - `checkout-lease-guard.py` is registered for `UserPromptSubmit`, `PreToolUse`,
   and `Stop`, but performs lease work only for explicit coordination mode
   `enforce`. Default/advisory/off and unmanaged launches never acquire or block
@@ -369,7 +369,7 @@ a uniform shape:
   event/matcher group and composes Codex `notify` without losing a foreign or
   Computer Use notifier.
 - Acceptance lane: agent-hook policy, executable, migration, runtime-smoke,
-  and shared hook contract tests (`DEVELOPMENT.md`).
+  and shared hook contract tests ([Validation](development-reference.md#validation)).
 - Support today: **shipped (setup-owned dispatcher)**.
 
 ### 16. Work-mode delegation policy (`core/policies/work-modes.md`)
@@ -421,35 +421,44 @@ Status legend:
 
 ## Acceptance Lanes (Codex-Relevant CI Gates)
 
-From `DEVELOPMENT.md`:
+Positions are the `scripts/ci/all.sh` positions listed in
+[Validation](development-reference.md#validation):
 
-1. `scripts/ci/skill-governance-audit.sh` — covers skill manifests.
-2. **`agent-runtime render --product codex`** — render gate.
-3. `agent-runtime render --product claude` — not Codex-side, but run in
-   the shared gate stack.
-4. **render-golden refresh + `git diff --exit-code`** — render
-   determinism gate.
-5. **`agent-runtime audit-drift` + fixtures** — drift audit gate
-   (includes local-only Codex `plugin.json` schema validation and
-   managed-block checks).
-6. **`agent-runtime doctor --class skill-surface --product codex`** —
-   Codex-only skill-surface shape preflight. It validates the
-   source/link-map shape that feeds plugin-scoped Codex discovery; it is
-   not live Codex Desktop acceptance.
-7. **sandbox install rehearsal** — installs into temp `live_home`,
-   compares installed skill surfaces with
-   `tests/sandbox/codex/expected-skills.txt`, and accepts doctor only
-   when `block=0` (`DEVELOPMENT.md`).
-8. **runtime-smoke deterministic mode** — exercises representative
-   installed skills across current domains (`DEVELOPMENT.md`).
-9. **runtime-smoke convergence mode** — proves a portable historical
-   66-to-current-skill upgrade, rollback, prune, exact registry refs, receipt/ID
-   transition, operator-state preservation, idempotency, and redacted route
-   contract fixtures without real product credentials.
-10. **project-local overlay smoke** — Codex-side project-local shims for
-   `bootstrap`, `deploy`, `pre-pr`, and `release`, plus `setup-project`
-   adoption diagnostics (`DEVELOPMENT.md`).
-11. **`bash tests/hooks/run.sh`** — shared hook contract tests.
+- Position 2 — `scripts/ci/skill-governance-audit.sh` covers skill manifests
+  and checks each Codex `plugin.json` `skills` array against
+  `manifests/plugins.yaml` and `manifests/skills.yaml`.
+- Position 3 — **`agent-runtime render --product codex`** — render gate
+  (after the home-prompt render).
+- Position 4 — `agent-runtime render --product claude` and `--product
+  hermes` — not Codex-side, but run in the shared gate stack.
+- Position 6 — **render-golden refresh + `git diff --exit-code`** — render
+  consistency gate.
+- Position 7 — **`agent-runtime audit-drift` + fixtures** — drift audit gate
+  (includes the block-tier `plugin-manifest-skills` class for Codex
+  `plugin.json` skills and managed-block checks). No gate validates
+  `plugin.json` against a JSON schema; the `schema_ref` file is absent
+  ([#279](https://github.com/sympoies/agent-runtime-kit/issues/279)).
+- Position 8 — surface manifest acceptance executes
+  **runtime-smoke convergence mode** from `manifests/surfaces.yaml`; it proves
+  a portable historical 66-to-current-skill upgrade, rollback, prune, exact
+  registry refs, receipt/ID transition, operator-state preservation,
+  idempotency, and redacted route contract fixtures without real product
+  credentials.
+- Position 9 — **`agent-runtime doctor --class skill-surface --product
+  codex`** — Codex-only skill-surface shape preflight. It validates the
+  source/link-map shape that feeds plugin-scoped Codex discovery and accepts
+  the doctor result only with `warn=0`, `block=0`, and no findings; it is not
+  live Codex Desktop acceptance.
+- Position 10 — **sandbox install rehearsal** — installs into temp
+  `live_home` and compares installed skill and reviewer-agent surfaces with
+  `tests/sandbox/codex/expected-skills.txt` and `expected-agents.txt`.
+- Position 11 — **runtime-smoke deterministic mode** — exercises
+  representative installed skills across current domains.
+- Position 12 — **project-local overlay smoke** — Codex-side project-local
+  shims for `bootstrap`, `deploy`, `pre-pr`, and `release`, plus
+  `setup-project` adoption diagnostics.
+- Position 13 — **`bash tests/hooks/run.sh`** — shared hook contract tests,
+  after `bash tests/agent-hook/run.sh`.
 
 Quarantined (not in default CI):
 
