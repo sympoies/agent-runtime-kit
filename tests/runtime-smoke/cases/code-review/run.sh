@@ -664,12 +664,27 @@ root = Path(sys.argv[1])
 paths = [root / "core/skills/pr/deliver-pr/SKILL.md.tera"]
 paths += [root / "build" / product / "plugins/pr/skills/deliver-pr/SKILL.md"
           for product in ("codex", "claude", "hermes")]
-expected = "5861ef5323822144091aa188f3059621d3421dfcf08e28d3a11ec0734736bd4b"
+# #283 accepted exactly one command-block change: the policy-grant provenance
+# check below. Everything else must still hash to the #219 value without it.
+expected = "76532a8bec585a0d27f984d72f2a6291a03cadfe738dd9450f102ca387618047"
+expected_without_accepted = "5861ef5323822144091aa188f3059621d3421dfcf08e28d3a11ec0734736bd4b"
+accepted = """  if [ "${REVIEW_ESCAPE_AUTHORIZATION_SOURCE:-}" = policy-grant ]; then
+    printf '%s\\n' "$EXPECTED_REVIEW_BODY" |
+      grep -Fq -- "escape authorization: policy grant $REVIEW_ESCAPE_GRANT_ID ($REVIEW_ESCAPE_GRANT_POLICY)" || {
+        echo "personal escape outcome lacks its policy grant provenance" >&2
+        exit 65
+      }
+  fi
+"""
 for path in paths:
     blocks = [block for block in re.findall(r"```bash\n(.*?)\n```", path.read_text(), re.S)
               if not block.startswith("# Designated-review route only.")]
-    actual = hashlib.sha256("\n".join(blocks).encode()).hexdigest()
-    if actual != expected:
+    joined = "\n".join(blocks)
+    if joined.count(accepted) != 1:
+        raise SystemExit("accepted policy-grant command block missing or repeated: " + str(path.relative_to(root)))
+    actual = hashlib.sha256(joined.encode()).hexdigest()
+    without = hashlib.sha256(joined.replace(accepted, "", 1).encode()).hexdigest()
+    if actual != expected or without != expected_without_accepted:
         raise SystemExit("unassigned delivery command contract changed: " + str(path.relative_to(root)))
 PYCODE
 }
@@ -899,10 +914,14 @@ jq -cn --arg schema "$schema" --arg decision "$decision" --arg repo "$repo" \
 FAKE
   chmod +x "$fake_bin/forge-review-escape-grant"
 
+  # Assertions are fatal: errexit stays on, and expected failures are captured
+  # with `|| status=$?`.
   PATH="$fake_bin:$PATH" FAKE_GRANT_CALLS="$probe_dir/calls" \
     bash -u -c '
-    set -o pipefail
+    set -eo pipefail
     . "$1"
+    # Only inputs are set here; outputs carry over between calls exactly as in
+    # one workflow shell, so a stale grant must be cleared by the helper.
     run_case() {
       local mode="$1" failure_state="$2"
       FAKE_GRANT_MODE="$mode"
@@ -912,9 +931,12 @@ FAKE
       REVIEW_PUBLISHER_FAILURE_STATE="$failure_state"
       REVIEW_PERSONAL_ESCAPE_REASON="publisher refused the author session"
       REVIEW_LENS_ARGS=(--lens testing --lens maintainability)
-      REVIEW_PERSONAL_ESCAPE_AUTHORIZED=0
-      REVIEW_ESCAPE_AUTHORIZATION_SOURCE="" REVIEW_ESCAPE_GRANT_ID=""
       request_policy_escape_grant
+    }
+    expect_cleared() {
+      [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 0 ]]
+      [[ "$REVIEW_ESCAPE_AUTHORIZATION_SOURCE" == maintainer-confirmation ]]
+      [[ -z "$REVIEW_ESCAPE_GRANT_ID" && -z "$REVIEW_ESCAPE_GRANT_POLICY" ]]
     }
     : >"$FAKE_GRANT_CALLS"
     run_case granted no-native-mutation
@@ -929,34 +951,98 @@ FAKE
     [[ "$attempts" -eq 2 ]]
     grep -Fq -- "--lens testing --lens maintainability" "$FAKE_GRANT_CALLS"
 
+    # A grant never survives a later request: each refusal follows a fresh
+    # grant in the same shell and must leave no authorization behind.
     for mode in exit-refused refused expired wrong-head wrong-repo wrong-pr \
       replayed-attempt wrong-schema; do
+      run_case granted no-native-mutation
+      [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 1 ]]
       status=0
       run_case "$mode" no-native-mutation || status=$?
       [[ "$status" == 1 ]] || { echo "policy grant accepted: $mode" >&2; exit 1; }
-      [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 0 ]]
-      [[ -z "$REVIEW_ESCAPE_GRANT_ID" ]]
+      expect_cleared
     done
 
-    # Pending and indeterminate failures never reach the issuer.
-    : >"$FAKE_GRANT_CALLS"
+    # Pending and indeterminate failures never reach the issuer and also clear
+    # an earlier grant.
     for failure_state in pending-receipt indeterminate-native-mutation; do
+      run_case granted no-native-mutation
+      : >"$FAKE_GRANT_CALLS"
       status=0
       run_case granted "$failure_state" || status=$?
       [[ "$status" == 69 ]]
-      [[ "$REVIEW_PERSONAL_ESCAPE_AUTHORIZED" == 0 ]]
+      expect_cleared
+      [[ ! -s "$FAKE_GRANT_CALLS" ]]
     done
-    [[ ! -s "$FAKE_GRANT_CALLS" ]]
 
-    # A missing issuer falls back to the single confirmation.
+    # A missing issuer falls back to the single confirmation, again clearing
+    # an earlier grant.
+    run_case granted no-native-mutation
     PATH=/usr/bin:/bin
     status=0
     run_case granted no-native-mutation || status=$?
     [[ "$status" == 1 ]]
+    expect_cleared
   ' bash "$helper"
+
+  # The native comments-only report is the first provider write: provenance is
+  # checked before it. Run the contract's own block against a fake provider.
+  local native_block="$probe_dir/native-escape-block.sh"
+  python3 - "$posting" "$native_block" <<'PYCODE'
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+anchor = text.index("In `personal-escape` mode, publish the merged report")
+block = re.search(r"```bash\n(.*?)\n```", text[anchor:], re.S).group(1)
+assert "--submit-review" in block and "forge-cli" in block
+Path(sys.argv[2]).write_text(block + "\n")
+PYCODE
+  cat >"$fake_bin/forge-cli" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FAKE_PROVIDER_CALLS"
+FAKE
+  chmod +x "$fake_bin/forge-cli"
+  PATH="$fake_bin:$PATH" FAKE_PROVIDER_CALLS="$probe_dir/provider-calls" \
+    bash -u -c '
+    set -eo pipefail
+    block="$1" dir="$2"
+    publish() {
+      local body="$1" source="$2"
+      : >"$FAKE_PROVIDER_CALLS"
+      printf "%s\n" "$body" >"$dir/report.md"
+      (
+        REVIEW_PUBLICATION_MODE=personal-escape PR_NUMBER=107 OWNER_REPO=acme/widget
+        EXPECTED_REVIEW_HEAD=215dc45f08007e4ba1a3c0498e87fa66738760b2
+        THREAD_FILE_ARGS=() REVIEW_LENS_ARGS=(--lens testing)
+        REVIEW_COMMENT_FILE="$dir/report.md"
+        REVIEW_PERSONAL_ESCAPE_REASON="publisher refused the author session"
+        REVIEW_ESCAPE_AUTHORIZATION_SOURCE="$source"
+        REVIEW_ESCAPE_GRANT_ID=grant-0123456789
+        REVIEW_ESCAPE_GRANT_POLICY="principal-a revision 3"
+        . "$block"
+      )
+    }
+    base="publisher refused the author session; independent review identity: unavailable"
+    grant_line="escape authorization: policy grant grant-0123456789 (principal-a revision 3)"
+    for case in "missing-grant|$base|policy-grant" "missing-reason|independent review identity: unavailable|maintainer-confirmation" \
+      "missing-identity|publisher refused the author session|maintainer-confirmation"; do
+      IFS="|" read -r label body source <<<"$case"
+      status=0
+      publish "$body" "$source" 2>/dev/null || status=$?
+      [[ "$status" == 65 ]] || { echo "native escape write without provenance: $label" >&2; exit 1; }
+      [[ ! -s "$FAKE_PROVIDER_CALLS" ]] || { echo "provider written before provenance: $label" >&2; exit 1; }
+    done
+    publish "$base
+$grant_line" policy-grant
+    grep -Fq -- "--submit-review" "$FAKE_PROVIDER_CALLS"
+    publish "$base" maintainer-confirmation
+    grep -Fq -- "--decision comments-only" "$FAKE_PROVIDER_CALLS"
+  ' bash "$native_block" "$probe_dir"
 }
 
-record_case "code-review.unassigned-delivery.commands""unassigned delivery Bash invocations remain byte-identical across products" run_unassigned_delivery_command_regression
+record_case "code-review.unassigned-delivery.commands" "unassigned delivery Bash invocations remain byte-identical across products" run_unassigned_delivery_command_regression
 record_case "code-review.designated-review.route" "designated route stops on missing capability or publication and retries the private mailbox" run_designated_review_route_probe
 record_case "code-review.designated-review.contract" "designated reviewer ownership and handoff are mandatory across source and products" run_designated_review_contract_probe
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe

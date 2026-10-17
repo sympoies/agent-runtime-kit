@@ -437,6 +437,12 @@ REVIEW_ESCAPE_GRANT_ID=
 REVIEW_ESCAPE_GRANT_POLICY=
 request_policy_escape_grant() {
   local attempt grant
+  # Every request starts unauthorized: an earlier grant never survives a
+  # refused, mismatched, or skipped request for another head or attempt.
+  REVIEW_PERSONAL_ESCAPE_AUTHORIZED="0"
+  REVIEW_ESCAPE_AUTHORIZATION_SOURCE=maintainer-confirmation
+  REVIEW_ESCAPE_GRANT_ID=
+  REVIEW_ESCAPE_GRANT_POLICY=
   [ "${REVIEW_PUBLISHER_FAILURE_STATE:-}" = no-native-mutation ] || return 69
   [ -n "${REVIEW_PERSONAL_ESCAPE_REASON:-}" ] || return 64
   command -v forge-review-escape-grant >/dev/null 2>&1 || return 1
@@ -550,11 +556,24 @@ done
 ```
 
 In `personal-escape` mode, publish the merged report as an exact-head native
-`comments-only` review. Select the environment-owned personal route explicitly;
-the public workflow does not name or configure the maintainer account:
+`comments-only` review. Check the report's provenance before this first native
+write. Select the environment-owned personal route explicitly; the public
+workflow does not name or configure the maintainer account:
 
 ```bash
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  grep -Fq -- "$REVIEW_PERSONAL_ESCAPE_REASON" "$REVIEW_COMMENT_FILE" &&
+    grep -Fq -- 'independent review identity: unavailable' "$REVIEW_COMMENT_FILE" || {
+      echo "personal escape outcome lacks required provenance" >&2
+      exit 65
+    }
+  if [ "${REVIEW_ESCAPE_AUTHORIZATION_SOURCE:-}" = policy-grant ]; then
+    grep -Fq -- "escape authorization: policy grant $REVIEW_ESCAPE_GRANT_ID ($REVIEW_ESCAPE_GRANT_POLICY)" \
+      "$REVIEW_COMMENT_FILE" || {
+        echo "personal escape outcome lacks its policy grant provenance" >&2
+        exit 65
+      }
+  fi
   env FORGE_AS=user forge-cli --provider github pr review "$PR_NUMBER" \
     --repo "$OWNER_REPO" \
     --decision comments-only \
@@ -568,8 +587,8 @@ fi
 ```
 
 For the final direct outcome note, first re-read the head when using the escape
-route, require the body to carry the authorized reason and identity limitation,
-and never pass `--submit-review` or `--expected-head`:
+route (the same body's provenance was checked before the native report), and
+never pass `--submit-review` or `--expected-head`:
 
 ```bash
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
@@ -585,18 +604,6 @@ if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
     echo "pull request head changed before personal escape outcome" >&2
     exit 65
   }
-  grep -Fq -- "$REVIEW_PERSONAL_ESCAPE_REASON" "$REVIEW_COMMENT_FILE" &&
-    grep -Fq -- 'independent review identity: unavailable' "$REVIEW_COMMENT_FILE" || {
-      echo "personal escape outcome lacks required provenance" >&2
-      exit 65
-    }
-  if [ "${REVIEW_ESCAPE_AUTHORIZATION_SOURCE:-}" = policy-grant ]; then
-    grep -Fq -- "escape authorization: policy grant $REVIEW_ESCAPE_GRANT_ID ($REVIEW_ESCAPE_GRANT_POLICY)" \
-      "$REVIEW_COMMENT_FILE" || {
-        echo "personal escape outcome lacks its policy grant provenance" >&2
-        exit 65
-      }
-  fi
 fi
 
 FINAL_REVIEW_IDENTITY=()
