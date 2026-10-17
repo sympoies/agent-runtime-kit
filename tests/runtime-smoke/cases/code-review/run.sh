@@ -183,6 +183,36 @@ run_portable_review_identity_contract_probe() {
   grep -Fq -- '--decision comments-only' "$gate"
   grep -Fq 'pull request head changed before personal escape outcome' "$delivery"
   grep -Fq 'pr view "$PR_NUMBER"' "$delivery"
+  # Escape authorization is one consolidated confirmation per attempt.
+  grep -Fq '### Single escape confirmation' "$posting"
+  for field in 'Repository and PR/MR number' 'Exact head SHA' \
+    'no-native-mutation evidence' 'Required CI result at that head' \
+    'Selected lenses and each lens result' 'The reason that the report will carry' \
+    'Exact scope: this PR/MR, this head, and this attempt only'; do
+    grep -Fq -- "$field" "$posting"
+  done
+  grep -Fq 'never split authorization, reason, and' "$posting"
+  grep -Fq 'A single affirmative answer sets' "$posting"
+  # The negative half of the consent contract: when it may be asked, that any
+  # other answer fails closed, and when an earlier answer stops counting.
+  local escape_confirmation clause
+  escape_confirmation="$(
+    sed -n '/^### Single escape confirmation$/,/^## Command$/p' "$posting" |
+      tr -s '\n ' '  '
+  )"
+  for clause in \
+    'only after the failure is classified `no-native-mutation`, the required CI result at the reviewed head is known, and the selected lens wave has returned' \
+    'Any other answer leaves the branch fail-closed' \
+    'A new head, a new attempt, or any change to a shown item needs a new confirmation' \
+    'do not carry an earlier answer forward'; do
+    [[ "$escape_confirmation" == *"$clause"* ]] || {
+      echo "single escape confirmation lacks: $clause" >&2
+      return 1
+    }
+  done
+  for owner in "$delivery" "$gate"; do
+    grep -Fq 'Single escape confirmation' "$owner"
+  done
 
   for contract in "$posting" "$specialist" "$outcome" "$delivery"; do
     ! grep -Fq 'posts each finding the moment its lens returns' "$contract"

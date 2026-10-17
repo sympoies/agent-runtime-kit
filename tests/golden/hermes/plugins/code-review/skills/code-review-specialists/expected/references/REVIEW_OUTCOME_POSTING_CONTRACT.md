@@ -385,6 +385,32 @@ review, then posts the final semantic decision as a non-native outcome note.
 Identity selection for that authorized escape remains environment-owned and
 outside this public skill.
 
+### Single escape confirmation
+
+Ask the maintainer for escape authorization once per attempt, and only after
+the failure is classified `no-native-mutation`, the required CI result at the
+reviewed head is known, and the selected lens wave has returned. Present one
+confirmation, through the host's structured question tool when one is
+available, that shows every item below; never split authorization, reason, and
+scope into separate questions:
+
+- Repository and PR/MR number.
+- Exact head SHA (`EXPECTED_REVIEW_HEAD`).
+- Publisher failure classification and its no-native-mutation evidence: the
+  failed command result and the receipt state it was classified from.
+- Required CI result at that head.
+- Selected lenses and each lens result, plus the final semantic decision.
+- The reason that the report will carry.
+- Exact scope: this PR/MR, this head, and this attempt only; a native
+  `comments-only` report followed by a non-native outcome note through the
+  environment-owned personal route; no native approval; the report records
+  `independent review identity: unavailable`.
+
+A single affirmative answer sets `REVIEW_PERSONAL_ESCAPE_AUTHORIZED` to `1` and
+the shown `REVIEW_PERSONAL_ESCAPE_REASON` for that attempt only. Any other answer
+leaves the branch fail-closed. A new head, a new attempt, or any change to a
+shown item needs a new confirmation; do not carry an earlier answer forward.
+
 ## Command
 
 Native finding/specialist review events and `--thread-file` are GitHub-only. A
