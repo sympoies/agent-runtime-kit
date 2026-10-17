@@ -1838,8 +1838,8 @@ behavior. Library-only and unconsumed rows retain their table cues.
 ### agent-docs consumption
 
 Retired. The validation contract moved to a repository-root `VALIDATION.toml`,
-read by `agent-hook` and by the shared finish-line hooks (transitionally also
-from `[[validation]]` in `AGENT_DOCS.toml`). Intent activation, preflight, and
+read by `agent-hook` and by the shared finish-line hooks; `AGENT_DOCS.toml` is
+no longer read. Intent activation, preflight, and
 catalog audits are no longer part of the runtime (sympoies/nils-cli#2471).
 
 ### agent-hook consumption

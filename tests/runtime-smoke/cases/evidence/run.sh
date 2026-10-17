@@ -368,7 +368,7 @@ run_selective_intent_control_plane_probe() {
   printf 'fn main() {}\n' >"$workspace/src/lib.rs"
   mkdir -p "$workspace/build"
   printf 'generated\n' >"$workspace/build/output.rs"
-  cat >"$workspace/AGENT_DOCS.toml" <<'TOML'
+  cat >"$workspace/VALIDATION.toml" <<'TOML'
 [path_classes]
 production = ["src/**", "mixed/**"]
 test = ["tests/**"]
@@ -376,6 +376,9 @@ docs = ["**/*.md", "mixed/**"]
 generated = ["build/**"]
 unmatched = "unknown"
 TOML
+  # nils-cli releases before sympoies/nils-cli#2518 read [path_classes] only
+  # from AGENT_DOCS.toml. Keep this copy until the minimum lane includes #2518.
+  cp "$workspace/VALIDATION.toml" "$workspace/AGENT_DOCS.toml"
   test-first-evidence init --out "$test_first_dir" \
     --classification behavior-change --production-path src/lib.rs \
     --changed-behavior "phase-aware fixture behavior changes" --format json \
@@ -475,6 +478,8 @@ TOML
   local no_classes="$TMP_ROOT/workspaces/no-path-classes"
   mkdir -p "$no_classes/src"
   printf '# Dev\n' >"$no_classes/DEV.md"
+  printf '[[validation]]\ncontext = "project-dev"\ncommands = ["true"]\n' >"$no_classes/VALIDATION.toml"
+  # Pre-#2518 releases read AGENT_DOCS.toml; neither file declares path classes.
   printf '[[document]]\ncontext = "project-dev"\nscope = "project"\npath = "DEV.md"\nrequired = true\nwhen = "always"\n' >"$no_classes/AGENT_DOCS.toml"
   dir="$EVIDENCE_ARTIFACTS_DIR/phase-not-configured"
   test-first-evidence init --out "$dir" --classification behavior-change \
