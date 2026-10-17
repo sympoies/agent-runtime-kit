@@ -410,6 +410,96 @@ A single affirmative answer sets `REVIEW_PERSONAL_ESCAPE_AUTHORIZED` to `1` and
 the shown `REVIEW_PERSONAL_ESCAPE_REASON` for that attempt only. Any other answer
 leaves the branch fail-closed. A new head, a new attempt, or any change to a
 shown item needs a new confirmation; do not carry an earlier answer forward.
+A grant obtained through the Policy grant authorization below replaces this
+confirmation for that attempt only.
+
+### Policy grant authorization
+
+An environment may install an optional `forge-review-escape-grant` issuer. It
+is the only other source of the one-attempt authorization: it evaluates an
+environment-owned standing policy that a maintainer approved and can revoke,
+and mints a fresh grant for one provider, repository, PR/MR, exact head, and
+attempt. Eligibility rules, human principals, approval, revocation, and the
+audit trail stay environment-owned and outside this public skill. Never accept
+an ambient variable, file, earlier grant, or another workflow's output as a
+grant.
+
+Consult the issuer only where the Single escape confirmation would be asked:
+after the failure is classified `no-native-mutation`, the CI result and lens
+wave are known, and the reason is written. Each call uses a fresh attempt id,
+and the helper accepts only a `granted` decision whose binding echoes exactly
+that provider, repository, PR/MR, head, and attempt and whose `expires_at`
+(UTC, `YYYY-MM-DDTHH:MM:SSZ`) is still in the future:
+
+```bash
+REVIEW_ESCAPE_AUTHORIZATION_SOURCE=maintainer-confirmation
+REVIEW_ESCAPE_GRANT_ID=
+REVIEW_ESCAPE_GRANT_POLICY=
+request_policy_escape_grant() {
+  local attempt grant
+  # Every request starts unauthorized: an earlier grant never survives a
+  # refused, mismatched, or skipped request for another head or attempt.
+  REVIEW_PERSONAL_ESCAPE_AUTHORIZED="0"
+  REVIEW_ESCAPE_AUTHORIZATION_SOURCE=maintainer-confirmation
+  REVIEW_ESCAPE_GRANT_ID=
+  REVIEW_ESCAPE_GRANT_POLICY=
+  [ "${REVIEW_PUBLISHER_FAILURE_STATE:-}" = no-native-mutation ] || return 69
+  [ -n "${REVIEW_PERSONAL_ESCAPE_REASON:-}" ] || return 64
+  command -v forge-review-escape-grant >/dev/null 2>&1 || return 1
+  attempt="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  [ "${#attempt}" = 32 ] || return 1
+  grant="$(
+    forge-review-escape-grant issue --provider "$PROVIDER" \
+      --repo "$OWNER_REPO" --pr "$PR_NUMBER" \
+      --expected-head "$EXPECTED_REVIEW_HEAD" --attempt "$attempt" \
+      --failure-state "$REVIEW_PUBLISHER_FAILURE_STATE" \
+      --reason "$REVIEW_PERSONAL_ESCAPE_REASON" \
+      "${REVIEW_LENS_ARGS[@]}" --format json
+  )" || return 1
+  printf '%s\n' "$grant" | jq -e --arg provider "$PROVIDER" \
+    --arg repo "$OWNER_REPO" --arg pr "$PR_NUMBER" \
+    --arg head "$EXPECTED_REVIEW_HEAD" --arg attempt "$attempt" '
+      .ok == true and .schema_version == "forge-review-escape-grant.v1"
+      and .data.decision == "granted"
+      and .data.provider == $provider and .data.repo == $repo
+      and (.data.pr | tostring) == $pr and .data.head == $head
+      and .data.attempt == $attempt
+      and (.data.grant_id | type == "string" and test("^[A-Za-z0-9._-]{8,128}$"))
+      and (.data.policy_id | type == "string" and test("^[A-Za-z0-9._-]{1,128}$"))
+      and (.data.policy_revision | type == "string" and test("^[A-Za-z0-9._-]{1,128}$"))
+      and (.data.expires_at | fromdateiso8601) > now
+    ' >/dev/null 2>&1 || return 1
+  REVIEW_ESCAPE_GRANT_ID="$(printf '%s\n' "$grant" | jq -r '.data.grant_id')"
+  REVIEW_ESCAPE_GRANT_POLICY="$(
+    printf '%s\n' "$grant" |
+      jq -r '"\(.data.policy_id) revision \(.data.policy_revision)"'
+  )"
+  REVIEW_ESCAPE_AUTHORIZATION_SOURCE=policy-grant
+  REVIEW_PERSONAL_ESCAPE_AUTHORIZED="1"
+}
+grant_status=0
+request_policy_escape_grant || grant_status=$?
+case "$grant_status" in
+  0) ;;
+  1) ;; # No issuer or no grant: ask the Single escape confirmation once.
+  *) exit "$grant_status" ;;
+esac
+```
+
+Status `1` means no issuer or no grant and falls back to the Single escape
+confirmation; any other non-zero status is terminal. The issuer is never
+consulted for `pending-receipt` or `indeterminate-native-mutation`. Then call
+`select_personal_escape_after_failure`, which consumes the authorization as
+before. The issuer must mint at most one grant per attempt id and must refuse
+a reused attempt id; a retry, a new head, or a new attempt requests a new grant.
+
+In `policy-grant` mode the report's `Evidence reviewed` keeps the reason and
+`independent review identity: unavailable`, and adds the line
+`escape authorization: policy grant <grant id> (<policy id> revision <revision>)`
+from `REVIEW_ESCAPE_GRANT_ID` and `REVIEW_ESCAPE_GRANT_POLICY`. A grant changes
+only where the authorization comes from: the native `comments-only` report,
+the non-native outcome note, and the head checks are unchanged, and a grant
+never permits native approval.
 
 ## Command
 
@@ -466,11 +556,24 @@ done
 ```
 
 In `personal-escape` mode, publish the merged report as an exact-head native
-`comments-only` review. Select the environment-owned personal route explicitly;
-the public workflow does not name or configure the maintainer account:
+`comments-only` review. Check the report's provenance before this first native
+write. Select the environment-owned personal route explicitly; the public
+workflow does not name or configure the maintainer account:
 
 ```bash
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
+  grep -Fq -- "$REVIEW_PERSONAL_ESCAPE_REASON" "$REVIEW_COMMENT_FILE" &&
+    grep -Fq -- 'independent review identity: unavailable' "$REVIEW_COMMENT_FILE" || {
+      echo "personal escape outcome lacks required provenance" >&2
+      exit 65
+    }
+  if [ "${REVIEW_ESCAPE_AUTHORIZATION_SOURCE:-}" = policy-grant ]; then
+    grep -Fq -- "escape authorization: policy grant $REVIEW_ESCAPE_GRANT_ID ($REVIEW_ESCAPE_GRANT_POLICY)" \
+      "$REVIEW_COMMENT_FILE" || {
+        echo "personal escape outcome lacks its policy grant provenance" >&2
+        exit 65
+      }
+  fi
   env FORGE_AS=user forge-cli --provider github pr review "$PR_NUMBER" \
     --repo "$OWNER_REPO" \
     --decision comments-only \
@@ -484,8 +587,8 @@ fi
 ```
 
 For the final direct outcome note, first re-read the head when using the escape
-route, require the body to carry the authorized reason and identity limitation,
-and never pass `--submit-review` or `--expected-head`:
+route (the same body's provenance was checked before the native report), and
+never pass `--submit-review` or `--expected-head`:
 
 ```bash
 if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
@@ -501,11 +604,6 @@ if [ "$REVIEW_PUBLICATION_MODE" = personal-escape ]; then
     echo "pull request head changed before personal escape outcome" >&2
     exit 65
   }
-  grep -Fq -- "$REVIEW_PERSONAL_ESCAPE_REASON" "$REVIEW_COMMENT_FILE" &&
-    grep -Fq -- 'independent review identity: unavailable' "$REVIEW_COMMENT_FILE" || {
-      echo "personal escape outcome lacks required provenance" >&2
-      exit 65
-    }
 fi
 
 FINAL_REVIEW_IDENTITY=()

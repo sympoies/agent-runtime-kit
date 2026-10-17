@@ -128,7 +128,8 @@ whenever quick eligibility fails.
    `personal-escape` state may use the ambient maintainer identity: it requires
    explicit authorization, the same expected head, a non-empty reason, and
    proof that no native mutation occurred. Ask for the authorization and
-   reason once, through the posting contract's Single escape confirmation.
+   reason once, through the posting contract's Single escape confirmation,
+   unless its Policy grant authorization mints a fresh grant for the attempt.
    A pending/resumable receipt or
    indeterminate mutation must be recovered instead. Record the reason and the
    lack of independent review identity in provider-visible delivery evidence.
