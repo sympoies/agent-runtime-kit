@@ -52,7 +52,7 @@ run_codex_probe() {
   # The product layer requires the exact validated_tag from the repository pin.
   python3 "$SCRIPT_DIR/codex-agent/run.py" --layer product \
     --matrix-out "$root/codex-agent.matrix.json" \
-    >"$root/codex-agent.summary.json"
+    >"$root/codex-agent.summary.json" || return 1
 }
 
 run_claude_probe() {

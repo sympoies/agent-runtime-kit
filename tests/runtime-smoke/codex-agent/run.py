@@ -356,6 +356,50 @@ class BoundaryAcceptance(unittest.TestCase):
         self.assertIn('RUNTIME_SMOKE_CODEX_AUTHENTICATED=1', result.stderr)
         self.assertEqual(self.f.events(), [])
 
+    def mismatch_environment(self):
+        wrapper = self.f.bin / 'codex-cli'
+        wrapper.write_text(f'#!{sys.executable}\nprint("codex-cli 99.0.0")\n')
+        wrapper.chmod(0o700)
+        return dict(self.f.env, PATH=os.pathsep.join([str(self.f.bin),
+                    str(Path(sys.executable).parent), os.defpath]),
+                    RUNTIME_SMOKE_CODEX_CLI=str(wrapper))
+
+    def test_A14_product_pin_mismatch_is_failure_not_skip(self):
+        env = dict(self.mismatch_environment(), REPO_ROOT=str(ROOT),
+                   SCRIPT_DIR=str(ROOT / 'tests/runtime-smoke'),
+                   TMP_ROOT=str(self.f.root / 'tmp'), ARTIFACTS_DIR=str(self.f.root / 'artifacts'),
+                   RESULTS_FILE=str(self.f.root / 'results.tsv'), PROBE_ONLY='1', PRODUCT='codex')
+        result = run([shutil.which('bash'), ROOT / 'tests/runtime-smoke/product/run.sh'],
+                     env, self.f.workspace, check=False)
+        self.assertNotEqual(result.returncode, 0, 'pin mismatch must not pass as a host skip')
+        self.assertIn('blocked-design', (self.f.root / 'results.tsv').read_text())
+
+    def test_A14_live_output_is_private_and_outside_repository(self):
+        output = self.f.root / 'live-output'
+        output.mkdir(mode=0o755)
+        env = dict(self.mismatch_environment(), RUNTIME_SMOKE_CODEX_AUTHENTICATED='1',
+                   RUNTIME_SMOKE_ARTIFACTS_DIR=str(output))
+        result = run([shutil.which('bash'), HERE / 'authenticated.sh'],
+                     env, self.f.workspace, check=False)
+        # The deliberately non-pinned wrapper stops before any model call.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(output.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((output / 'product.json').stat().st_mode & 0o777, 0o600)
+        inside = ROOT / ('.forbidden-live-output-' + self.f.root.name)
+        result = run([shutil.which('bash'), HERE / 'authenticated.sh'],
+                     dict(env, RUNTIME_SMOKE_ARTIFACTS_DIR=str(inside)),
+                     self.f.workspace, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('outside the repository', result.stderr)
+        self.assertFalse(inside.exists())
+        alias = self.f.root / 'output-alias'
+        alias.symlink_to(output, target_is_directory=True)
+        result = run([shutil.which('bash'), HERE / 'authenticated.sh'],
+                     dict(env, RUNTIME_SMOKE_ARTIFACTS_DIR=str(alias)),
+                     self.f.workspace, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('non-symlink directory', result.stderr)
+
     def test_A13_no_codex_agent_exemption_in_hook_control_surfaces(self):
         paths = [path for path in (ROOT / 'core/hooks').rglob('*')
                  if path.suffix in ['.py', '.sh', '.toml', '.json', '.jsonc']] + [

@@ -43,7 +43,7 @@ All rows below are defined even when their live observations remain pending.
 | A11 | Push occurs only after explicit `--push` and a successful semantic owner; failed owner prevents push, failed push reports local commit preservation, and prompt text cannot request push. | Git publication is captured, never performed; no remote is configured. |
 | A12 | Doctor JSON schema/readiness/method are checked, instruction and hook-surface leak injections fail, and no model child runs. Product mode uses real no-API doctor too. | `child-home-hook-surface` is explicitly not an observed lifecycle result. |
 | A13 | Hook source, policy, manifest and Codex registration are scanned for command-specific exemptions. The implementation diff must keep those controls unchanged. | Outer managed-session hooks remain authoritative during all tester commands. |
-| A14 | Product mode refuses a CLI other than the validated pin and runs all boundary checks plus real no-API controls. Linux pinned launcher verifies the release archive against the committed digest. | Scheduled authenticated doctor/knowledge receipt, then issue-owner disposition of all partial rows. No automatic issue retirement. |
+| A14 | Product mode refuses a CLI other than the validated pin and runs all boundary checks plus real no-API controls. Linux pinned launcher verifies the release archive against the committed digest; a wrong pin fails product smoke instead of becoming a capability skip. Authenticated output guards reject repository-local/symlink destinations and enforce private modes. | Scheduled authenticated doctor/knowledge receipt, then issue-owner disposition of all partial rows. No automatic issue retirement. |
 
 The matrix JSON is deliberately conservative on failures: failed rows are named;
 other rows become unverified rather than being reported as successful acceptance.
@@ -99,7 +99,7 @@ then runs `codex-cli agent doctor --format json` and
 `codex-cli agent knowledge 'Reply with the active runtime mode only: isolated.'`
 in a temporary workspace. It requires ready doctor JSON, an exact `isolated`
 response, and no instruction sentinel or `agent-hook` text in product output.
-It removes the borrowed home afterward. A model saying `isolated` or absent
+It enforces a 0700 external artifact directory and umask 077 before writing raw output, refuses a symlink destination, and removes the borrowed home afterward. A model saying `isolated` or absent
 text is a smoke signal, not proof of hook suppression or sandbox enforcement.
 The script leaves A3/A4/A6/A7 acceptance pending explicitly.
 

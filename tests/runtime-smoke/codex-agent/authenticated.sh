@@ -5,10 +5,27 @@ if [ "${RUNTIME_SMOKE_CODEX_AUTHENTICATED:-0}" != 1 ]; then
   echo "codex-agent acceptance: scheduled tester must set RUNTIME_SMOKE_CODEX_AUTHENTICATED=1" >&2
   exit 2
 fi
+umask 077
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source_home="${RUNTIME_SMOKE_SOURCE_CODEX_HOME:-${CODEX_HOME:-$HOME/.codex}}"
 source_home="$(cd "$source_home" && pwd -P)"
 : "${RUNTIME_SMOKE_ARTIFACTS_DIR:?allocate a private directory with agent-out project}"
+RUNTIME_SMOKE_ARTIFACTS_DIR="$(
+  python3 - "$REPO_ROOT" "$RUNTIME_SMOKE_ARTIFACTS_DIR" <<'PY'
+import sys
+from pathlib import Path
+repo = Path(sys.argv[1]).resolve()
+directory = Path(sys.argv[2]).absolute()
+if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+    raise SystemExit('codex-agent acceptance: artifacts require a non-symlink directory')
+resolved = directory.resolve()
+if resolved == repo or repo in resolved.parents:
+    raise SystemExit('codex-agent acceptance: artifacts must remain outside the repository')
+directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+directory.chmod(0o700)
+print(resolved)
+PY
+)"
 command -v codex >/dev/null
 command -v codex-cli >/dev/null
 python3 "$REPO_ROOT/tests/runtime-smoke/codex-agent/run.py" --layer product \
