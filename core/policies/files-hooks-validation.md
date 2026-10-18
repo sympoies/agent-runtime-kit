@@ -26,18 +26,20 @@ runbooks and CLIs.
   lowest stable behavioral owner, and merge, refactor, or remove affected cases
   that no longer protect a distinct still-valid risk. Prefer observable
   assertions over implementation shape.
-- For testable behavior, normally capture a meaningful regression failure
-  before production edits. The failure must come from the intended missing or
-  changed behavior, not setup, compilation, environment, fixture, retry, or an
-  unrelated failure.
-- When meaningful red is impractical, record a concise reason and substitute
-  validation. This is expected for docs-only, generated-only, mechanical
-  refactors, or behavior with no stable local harness; it is not permission to
-  skip an available behavioral test.
-- A durable `test-first-evidence` record is conditional. Create and verify one
-  only when the repository, delivery gate, high-risk workflow, or user requires
-  retained proof. The engineering judgment above applies even when no record is
-  warranted; record mechanics live in `evidence-control-plane.md` and CLI help.
+- Test-first is tiered (reversible; #289):
+  - **A, red first:** bug/regression fixes and cross-component or cross-repo
+    contracts. Capture a meaningful regression failure before production
+    edits, caused by the intended behavior gap, not setup, compilation,
+    environment, fixture, retry, or unrelated failure. Keep a verified
+    `test-first-evidence` record, or a waiver stating why red is impractical
+    plus substitute validation.
+  - **B, acceptance criteria first:** new features. Write observable criteria
+    first; stable-interface tests must exist before merge. Red and a record are
+    optional.
+  - **C, no record:** docs, config, generated output, small UI tweaks, spikes.
+    Repository checks only.
+- Independent checks (review, CI, deleted-test or weakened-assertion
+  detection) outweigh test ordering. Records: `evidence-control-plane.md`.
 - Flaky tests are defects. Quarantine needs an owner, expiry/removal condition,
   and substitute validation.
 

@@ -7,9 +7,10 @@ claim durable and machine-verifiable, not to turn routine collaboration into a
 recording exercise. The parent outcome decides whether a record is warranted;
 the typed CLI owns schema, storage, and deterministic verification.
 
-Create retained evidence when an explicit request, repository/delivery gate,
-high-risk workflow, audit, cross-session handoff, deferred defect, or reusable
-operational lesson needs it. Do not create evidence merely because a command
+Create retained evidence for tier A test-first work (see Test-First Paths) or
+when an explicit request, repository/delivery gate, high-risk workflow, audit,
+cross-session handoff, deferred defect, or reusable operational lesson needs
+it. Do not create evidence merely because a command
 exists, a named skill ran, a session ended, or ordinary `direct` work completed.
 
 Records live in one workflow-owned `agent-out` directory unless the active
@@ -35,28 +36,38 @@ material, or retention is useful.
 
 ## Test-First Paths
 
-The engineering discipline applies whether or not a durable record is required:
+The engineering discipline applies whether or not a durable record is required.
+Its depth follows the tiers in `files-hooks-validation.md` (reversible; #289):
+red first for bug/regression fixes and cross-component or cross-repository
+contracts (tier A), acceptance criteria first for new features (tier B), and
+repository checks only for docs, config, generated output, small UI tweaks, and
+spikes (tier C).
 
 1. **Declare the contract delta**: retained behavior, changed or removed
    behavior, added behavior, and invariants.
 2. Identify materially affected tests, fixtures, snapshots, mocks, contract
    consumers, and journeys. Keep, update, remove, add, or refactor each owner
    according to the intended contract.
-3. Choose the lowest stable behavioral boundary. **Capture meaningful red**
-   before production edits when practical: the command or scenario, identity,
-   expected failure, and observed failure must agree with the missing behavior.
-   Setup, compilation, environment, unrelated, or retry-only failures do not
-   qualify.
+3. Choose the lowest stable behavioral boundary. Tier A:
+   **Capture meaningful red** before production edits when practical: the
+   command or scenario, identity, expected failure, and observed failure must
+   agree with the missing behavior. Setup, compilation, environment, unrelated,
+   or retry-only failures do not qualify. Tier B: write observable acceptance
+   criteria before implementing; tests on stable interfaces must exist before
+   merge, and pre-edit red is optional.
 4. Implement narrowly and validate by risk across focused owners, affected
    suites, contract consumers, and integration/manual boundaries as needed.
    Coverage percentage is diagnostic, not an objective, and does not justify
    duplicate cases.
-5. If meaningful red is not practical, state why and name substitute
-   validation. Deferred test debt also needs a durable owner and expiry/removal
-   condition.
+5. If tier A red is not practical, state why and name substitute validation.
+   Deferred test debt also needs a durable owner and expiry/removal condition.
 
-A durable `test-first-evidence.record.v2` is required only when an active gate
-or workflow says so. Initialize it before production edits, record affected
+Independent checks — review, CI, and detection of deleted tests or weakened
+assertions — matter more than the ordering ritual.
+
+A durable `test-first-evidence.record.v2` is required for tier A work, and for
+other tiers only when an active gate or workflow says so; tier B and C need no
+record by default. Initialize it before production edits, record affected
 test decisions plus meaningful red or a complete waiver, append scoped final
 validation, declare residual gaps, and run `verify`. Use
 `test-first-evidence --help` for exact syntax; do not copy a second command
@@ -115,7 +126,9 @@ Closeout is event-driven:
   checks only when required.
 - `forge-cli` can require a complete v2 test-first record for feature/bug
   delivery when repository or user configuration explicitly enables that gate.
-  The gate is otherwise off; see `git-delivery.md`.
+  The gate is otherwise off; see `git-delivery.md`. It does not yet distinguish
+  tiers: an enabled gate still requires a record for `--kind feature` until a
+  per-kind setting lands (sympoies/nils-cli#2632).
 - Hook timeout/effect posture remains owned by the hook rule. Evidence never
   converts an external, destructive, sensitive, transaction, or unknown effect
   into an allowed one.

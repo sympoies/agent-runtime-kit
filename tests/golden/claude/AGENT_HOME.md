@@ -22,10 +22,9 @@ Home-scope fallback. A closer project/directory
   accepted observable outcome. Exclude hypothetical hardening,
   unsupported edge cases, architecture preference, and future flexibility;
   possible improvement is not incompleteness.
-- For testable changes, define the delta and normally capture a
-  meaningful regression failure before editing. If impractical, name substitute
-  validation. Iterate narrowly, then run each declared validation once or report
-  a waiver.
+- Tier test-first: bug fixes and boundary contracts need a meaningful regression
+  failure first; features, acceptance criteria first; docs/config, repo checks
+  only. Iterate narrowly; run each declared validation once or report a waiver.
 - Keep answers concise and verifiable; cite material requirements and unstable
   claims. Use fixed taxonomy only when required.
 - Treat a prompt marked as voice input as a speech transcript that may contain

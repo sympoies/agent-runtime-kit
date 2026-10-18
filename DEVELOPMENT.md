@@ -44,9 +44,11 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 
 1. Define the observable contract delta and list the canonical and derived
    surfaces that must remain aligned.
-2. For testable behavior, capture a meaningful regression failure at the
-   lowest stable owner before editing when practical. Record a concise waiver
-   for documentation-only or mechanical work.
+2. Test first by tier (`core/policies/files-hooks-validation.md`): capture a
+   meaningful regression failure at the lowest stable owner before editing for
+   bug/regression fixes and cross-boundary contracts; write acceptance criteria
+   first for new features; run the repository checks only for docs, config, and
+   generated output.
 3. Make the smallest source change, then refresh only the affected generated
    output, manifests, fixtures, and current documentation.
 4. Run focused checks while iterating. Review generated diffs rather than
