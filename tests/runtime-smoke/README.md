@@ -89,6 +89,15 @@ rendered-browser evidence, and bounded macOS desktop operation), their declared
 active route contracts, and absence of retired bookkeeping surfaces. Task 4.1
 owns authenticated behavioral routing against the merged runtime.
 
+## Codex One-shot Acceptance
+
+[The A1–A14 matrix](codex-agent/README.md) separates released-wrapper boundary
+checks, real no-API Codex probes, and the scheduled authenticated tester lane.
+The boundary suite runs in the canonical gate. Codex product mode requires the
+exact validated release and adds real instruction controls and doctor; it never
+launches a local model server or calls a provider. Use the pinned launcher in
+that matrix to reproduce product acceptance and prepare the tester handoff.
+
 ## Reviewer Subagent Discovery
 
 The cross-product reviewer subagents render to `build/<product>/agents/` and

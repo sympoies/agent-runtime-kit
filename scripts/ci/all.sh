@@ -339,6 +339,7 @@ done
 # -----------------------------------------------------------------------------
 banner 8 "security hardening audit + validate surfaces manifest + executable acceptance"
 python3 scripts/ci/security-hardening-audit.py
+python3 tests/runtime-smoke/codex-agent/run.py --layer boundary
 bash tests/ci/expect-command-failure.sh
 bash scripts/ci/expect-command-failure.sh \
   "ci/all.sh: invalid surface acceptance fixture rejected as expected" \
