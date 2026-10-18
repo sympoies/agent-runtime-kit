@@ -83,7 +83,7 @@ run_home_prompt_render_probe() {
     "$claude_home" \
     "$hermes_home"; do
     grep -Fq 'Do not infer authorization' "$home_policy"
-    grep -Fq 'meaningful regression failure' "$home_policy"
+    grep -Fq 'Tier test-first' "$home_policy"
     grep -Fq '`semantic-commit`' "$home_policy"
     grep -Fq 'Preserve user work' "$home_policy"
   done

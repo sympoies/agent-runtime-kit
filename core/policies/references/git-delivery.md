@@ -272,6 +272,13 @@ The [fold recipe](../devlog/ci-fold.md) owns workflow wiring and provider accept
   through their internal create/deliver phases for `--kind feature` / `bug` and
   omit it for exempt kinds. Point it at the `verify`-clean directory produced
   by the policy-owned `test-first-evidence` CLI flow.
+- Tiers (`core/policies/files-hooks-validation.md`, reversible; #289) decide
+  when a record is warranted: tier A (bug/regression fixes and cross-boundary
+  contracts) keeps one; tier B (new features) and tier C (docs, config,
+  generated output, small UI tweaks, spikes) need none. The gate does not yet
+  read tiers: when enabled it still requires a record for `--kind feature`
+  until a per-kind setting lands (sympoies/nils-cli#2632). Until then, satisfy
+  an enabled feature gate with a record; do not mislabel the PR kind.
 - The gate is **off by default**. It is opt-in via `[test_first] require =
   true` in either a repo `.forge-cli.toml` or the user-global
   `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit

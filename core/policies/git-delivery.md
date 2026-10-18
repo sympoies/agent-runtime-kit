@@ -242,7 +242,7 @@ Load [evidence-control-plane](evidence-control-plane.md) when retained test-firs
 proof, a delivery gate, audit, handoff, or other durable evidence is required.
 Its conditional status never waives a gate. `forge-cli` owns opt-in feature/bug
 `test-first-evidence.record.v2` admission on create/adopt/dry-run; other kinds are
-exempt. Meaningful red or an honest waiver, affected-test judgment, scoped final
-validation and residual-gap disclosure remain required by the engineering
-contract. Storage/schema/typed failures belong to CLI help and the
-[on-demand reference](references/git-delivery.md#test-first-evidence-gate).
+exempt. The engineering contract's tiers still apply: tier A meaningful red or
+an honest waiver, tier B acceptance criteria, affected-test judgment, scoped
+final validation, and residual-gap disclosure. Storage/schema/typed failures
+belong to CLI help and the [on-demand reference](references/git-delivery.md#test-first-evidence-gate).
