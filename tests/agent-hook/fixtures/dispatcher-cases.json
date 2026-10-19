@@ -32,6 +32,18 @@
       "matcher": null
     },
     {
+      "product": "codex",
+      "event": "Interrupt",
+      "matcher_field": null,
+      "matcher": null
+    },
+    {
+      "product": "claude",
+      "event": "Interrupt",
+      "matcher_field": null,
+      "matcher": null
+    },
+    {
       "product": "claude",
       "event": "PreToolUse",
       "matcher_field": "tool_name",

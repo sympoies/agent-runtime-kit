@@ -699,6 +699,18 @@ override_class = "locked"
 capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
 
 [[rules]]
+id = "coord.codex.interrupt.activity"
+# inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_codex_interrupt_activity_ingress_is_required_and_product_scoped","disposition":"added-coordination","legacy_handler":null}
+products = ["codex"]
+events = ["Interrupt"]
+priority = 10
+mode = "enforce"
+failure_posture = "closed"
+timeout_posture = "closed"
+override_class = "locked"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
 id = "coord.claude.stop-failure.activity"
 # inventory: {"state_owner":"agent-session.coordination","transformation":"activity","recovery":"exact-capability-only","docs":"core/policies/session-coordination.md","test_owner":"tests/agent-hook/test_policy_contract.py::test_claude_stop_failure_activity_ingress_is_required","disposition":"added-coordination","legacy_handler":null}
 products = ["claude"]
