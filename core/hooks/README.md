@@ -50,23 +50,25 @@ from its root `VALIDATION.toml`: `[[validation]]` tables with `context`,
 
 The finish-line hooks credit declared validation only after an observed
 successful exit. `PreToolUse` wraps each matched Bash command with a tokenized
-EXIT recorder that persists bounded outcome metadata and preserves the
-command's status. Composite commands are credited only when their shell
-control flow consists entirely of declared validation commands, because an
-input rewrite also grants permission to the complete rewritten command. The
-authorization matcher retains operator and evaluation-sensitive quote syntax
-while normalizing harmless quoted words, so a quoted literal cannot be
-reinterpreted as live shell control flow.
+EXIT recorder that persists bounded outcome metadata and preserves the command's
+status. Composite commands are credited only when their shell control flow
+consists entirely of declared validation commands, because an input rewrite also
+grants permission to the complete rewritten command. The authorization matcher
+retains operator and evaluation-sensitive quote syntax while normalizing
+harmless quoted words, so a quoted literal cannot be reinterpreted as live shell
+control flow.
+
 When a submitted command contains declared validation but unrelated setup or
-control flow makes the aggregate status unprovable, `PreToolUse` emits one
-fixed `validation_outcome_unprovable` advisory and runs the command unchanged.
-It does not register an outcome or echo the submitted command. Repositories
-whose validation requires a particular runtime, environment, or other setup
-should declare one repository-owned wrapper that performs and verifies that
-setup, runs the complete validation contract with failure-preserving
-semantics, and returns its aggregate status. Put toolchain selection inside
-that declared wrapper, never in an uncredited caller-side `eval`, `source`,
-environment preamble, directory change, or shell suffix.
+control flow makes the aggregate status unprovable, `PreToolUse` emits one fixed
+`validation_outcome_unprovable` advisory and runs the command unchanged. It does
+not register an outcome or echo the submitted command. Repositories whose
+validation requires a particular runtime, environment, or other setup should
+declare one repository-owned wrapper that performs and verifies that setup, runs
+the complete validation contract with failure-preserving semantics, and returns
+its aggregate status. Put toolchain selection inside that declared wrapper,
+never in an uncredited caller-side `eval`, `source`, environment preamble,
+directory change, or shell suffix.
+
 Attempts are ordered at PreToolUse creation, so a stale completion cannot
 overwrite a newer attempt; an outcome that cannot persist leaves its pending
 attempt blocking the gate. A bounded recovery descriptor travels with the
@@ -76,49 +78,54 @@ shared runtime state (`AGENT_RUNTIME_VALIDATION_STATE_HOME`, then
 `AGENT_RUNTIME_STATE_HOME`, then the XDG state root). It remains blocking when
 repo-local state cannot persist; if either side cannot register before launch,
 the matching validation command is blocked and can be retried after repair.
+
 Code-edit hooks are also fail-closed before the edit starts when shared dirty
 state cannot be registered, preventing an unwritable marker directory from
 hiding a later real edit. Multi-contract edits acquire every marker-directory
 lock in stable order and roll back provisional markers if any write fails;
-generation checks preserve a newer marker from a concurrent edit. A
-repo-scoped runtime-state lock serializes edit, validation-outcome, Stop, and
+generation checks preserve a newer marker from a concurrent edit. A repo-scoped
+runtime-state lock serializes edit, validation-outcome, Stop, and
 terminal-cleanup transitions; cleanup also compares the exact satisfied state
 snapshot after taking the local namespace lock and fails closed on change.
+
 Tombstones use a stable lexical contract identity plus target keys that include
 the product and declared command. When the hook payload identifies a runtime
 session, dirty markers, command outcomes, and tombstones live in directly
 addressable namespaces keyed by an opaque hash of that session identifier, so
 unrelated retained state is not scanned on the current session's hot path. An
-editing session still
-shares its dirty generation across products, but unrelated and newly started
-sessions do not inherit its outstanding session-scoped work. Unresolved
-pre-upgrade legacy state remains transitional authority until an identified
-session completes a newer successful validation. Pending or failed transition
-attempts retain the legacy authority; success clears it or suppresses it with
-the shared success marker. Payloads without a session
-identifier retain the legacy shared marker contract. A newer attempt reduces
-only its exact session and command targets, plus matching legacy targets during
-that transition; it cannot clear another identified session's state.
+editing session still shares its dirty generation across products, but unrelated
+and newly started sessions do not inherit its outstanding session-scoped work.
+Unresolved pre-upgrade legacy state remains transitional authority until an
+identified session completes a newer successful validation. Pending or failed
+transition attempts retain the legacy authority; success clears it or suppresses
+it with the shared success marker. Payloads without a session identifier retain
+the legacy shared marker contract. A newer attempt reduces only its exact
+session and command targets, plus matching legacy targets during that
+transition; it cannot clear another identified session's state.
+
 Successful Stop retires the completed session's repo-local marker namespace.
 When products share a session, terminal product markers let the last successful
 product retire the whole namespace. Any later shared edit invalidates every
 product's terminal marker, and a new validation attempt invalidates its active
 product's terminal marker until the attempt completes. Cleanup also rejects a
-foreign terminal generation older than the current dirty generation; any
-foreign evidence owner is parsed from its complete contract stem and structured
-product suffix, with unknown or ambiguous names retained fail-closed. Any
-unresolved product therefore keeps the namespace fail-closed. Removed,
-replaced, or reordered commands become an explicit contract-change blocker.
-Only the exact internal names `.terminal-codex`, `.terminal-claude`, and
-`.terminal-shared` are terminal metadata; validation contract stems may safely
-begin with `.terminal-` or overlap another contract stem.
-Each tombstone also retains the original edit generation (or an explicit
-no-edit value), so another product in the same session sees a real edit without
+foreign terminal generation older than the current dirty generation; any foreign
+evidence owner is parsed from its complete contract stem and structured product
+suffix, with unknown or ambiguous names retained fail-closed. Any unresolved
+product therefore keeps the namespace fail-closed. Removed, replaced, or
+reordered commands become an explicit contract-change blocker. Only the exact
+internal names `.terminal-codex`, `.terminal-claude`, and `.terminal-shared` are
+terminal metadata; validation contract stems may safely begin with `.terminal-`
+or overlap another contract stem.
+
+Each tombstone also retains the original edit generation (or an explicit no-edit
+value), so another product in the same session sees a real edit without
 inheriting its failure or being invalidated by retries for the same edit.
 Unmatched contract state remains scoped to its owning product.
+
 Marker paths and their derived state directory must remain beneath the real
 repository root; atomic marker writes do not follow final symlinks, and marker
 ordering accepts only non-symlink regular files.
+
 The wrapped shell's `EXIT` trap is the only outcome recorder; there is no broad
 PostToolUse hook on ordinary Bash completions. Equivalent persistence-failure
 blockers are compacted under a shared lock so fail-closed state remains bounded.
@@ -295,73 +302,78 @@ When a managed launch explicitly selects `enforce` and provides
 `AGENT_SESSION_ID`, `AGENT_SESSION_CAPABILITY_FILE`, and
 `AGENT_SESSION_STATE_DIR` on the released v1.24.5 surface, recognized direct
 edits, repository shell mutations, and exact provider mutations require an
-authenticated active work context and atomic operation lease. Direct edits
-carry every repository-relative target; simple shell effects require repository
-scope; compound or otherwise opaque shell effects, explicit cross-repository
-destinations, commands outside a
-governed repository, wrapped provider clients, and unresolved provider targets
-fail closed. Provider `--repo`/`-R` overrides bind the effective provider
-reference rather than the hook checkout. `forge-cli pr create` and
-`forge-cli pr deliver --no-merge` name their pull request by head branch, so
-they resolve to one `pull-request-head` target (repository from `--repo` or the
-checkout origin, head from `--head` or the current branch) that only a Main
-Agent worker's private head grant covers; another branch or repository is
-denied as uncovered. A repeated option, a `--host` or `--provider` override
-or non-origin `--remote` (the target carries no forge host), a detached
-checkout, or an invalid branch name stays unresolved. The
-guard emits this additive `pull_requests` field only when the admitting
+authenticated active work context and atomic operation lease. Direct edits carry
+every repository-relative target; simple shell effects require repository scope;
+compound or otherwise opaque shell effects, explicit cross-repository
+destinations, commands outside a governed repository, wrapped provider clients,
+and unresolved provider targets fail closed. Provider `--repo`/`-R` overrides
+bind the effective provider reference rather than the hook checkout.
+
+`forge-cli pr create` and `forge-cli pr deliver --no-merge` name their pull
+request by head branch, so they resolve to one `pull-request-head` target
+(repository from `--repo` or the checkout origin, head from `--head` or the
+current branch) that only a Main Agent worker's private head grant covers;
+another branch or repository is denied as uncovered. A repeated option, a
+`--host` or `--provider` override or non-origin `--remote` (the target carries
+no forge host), a detached checkout, or an invalid branch name stays unresolved.
+The guard emits this additive `pull_requests` field only when the admitting
 `agent-session` is at or above the first release that accepts it; the released
-v1.29.0 surface rejects the unknown field, so it keeps the unresolved result.
-A delivery that would merge, every numbered `pr <action> <N>` (which cannot be
-bound to a head without a provider lookup and keeps its `pr` provider
-reference, never held by a worker claim), `gh pr create`, and `issue create`
-keep their released behavior, leaving merges and new issues with the Main
-Agent. Nested `sh`/`bash`/`zsh` command
-strings are unwrapped before destination checks, and Git forms that may invoke
-configured fsmonitor, pager, external-diff, or filter programs do not bypass
-admission. A definite peer conflict and
-uncovered or uncertain own scope block, while potential/unknown/no-known-
-conflict classifications remain bounded advisories. PostTool success/failure
-is durably recorded before runtime probes and completes the exact token-bound
+v1.29.0 surface rejects the unknown field, so it keeps the unresolved result. A
+delivery that would merge, every numbered `pr <action> <N>` (which cannot be
+bound to a head without a provider lookup and keeps its `pr` provider reference,
+never held by a worker claim), `gh pr create`, and `issue create` keep their
+released behavior, leaving merges and new issues with the Main Agent.
+
+Nested `sh`/`bash`/`zsh` command strings are unwrapped before destination
+checks, and Git forms that may invoke configured fsmonitor, pager,
+external-diff, or filter programs do not bypass admission.
+
+A definite peer conflict and uncovered or uncertain own scope block, while
+potential/unknown/no-known- conflict classifications remain bounded advisories.
+PostTool success/failure is durably recorded before runtime probes and
+completes the exact token-bound
 lease. Admission intent, replay key, token, targets, and completion proof remain
 in a mode-0600 hashed session namespace across timeouts for exact duplicate/Stop
-replay rather than being guessed or released. `work-context admit` commits a
-lease only in its final save, so a well-formed refusal (for example a parallel
-sibling refused while another call holds the session's single operation slot)
-retires its intent; a lost process, timeout, or unparseable reply stays
-pending. Before admitting a new mutation, the guard recovers up to four other
-calls' records of the current incarnation within a 1.5-second slice and
-without waiting on their locks: with
-no nonterminal broker operation it retires them; otherwise it replays a lost
-admission by its exact idempotency key when the CLI lacks the broker proof
-surface (a replay retires only on refusals raised after admit's idempotency
-lookup), completes a recorded outcome, or asks
-`work-context reconcile` to finalize a lease whose PostToolUse never arrived.
-That command proves the call inactive from controller-owned turn and
-descendant evidence, so a sibling still running in the same turn is kept; an
-outcome that was never observed is reported as `fail`. A PostToolUse whose
-admission reply was lost replays it and completes the lease with the observed
-result, and a background shell call completes when the provider reports its
-launch. Same-call Pre/Post/Stop activity is serialized by a stable local lock.
-`agent-hook` evaluates every ordinary rule first and invokes the locked `agent-session.coordination.v1` capability
-only after an aggregate allow. A prerequisite denial remains blocked; no
-orchestration bootstrap may supersede owner-liveness admission. The guard applies one
-50-second global subprocess budget inside the setup-owned dispatcher timeout.
-For Stop, the guard emits
-`runtime-kit.session-coordination-result.v1` with a `not-run`, `clean`,
-`pending`, or `unavailable` status. This typed transaction result is separate
-from provider presentation: `agent-hook` may prescribe reconciliation only for
-`pending`, while legacy `systemMessage` or generic decision output proves no
-broker state. A typed `pending` result also carries the legacy provider block
-fields during the nils-cli rollout so the released consumer remains fail-closed.
-In advisory mode,
-older/missing coordination surfaces remain usable with bounded degraded
-guidance; in enforce mode they retain accurate no-enforcement guidance. Hook
-output never includes
-raw session/capability/incarnation/checkout values, peer summaries, mailbox
-bodies, or private registry paths. The physical checkout lease above shares the
-same explicit enforce-mode boundary, and Hermes still has no runtime-kit hook
-runner.
+replay rather than being guessed or released.
+`work-context admit` commits a lease only in its final save, so a well-formed
+refusal (for example a parallel sibling refused while another call holds the
+session's single operation slot) retires its intent; a lost process, timeout, or
+unparseable reply stays pending.
+
+Before admitting a new mutation, the guard recovers up to four other calls'
+records of the current incarnation within a 1.5-second slice and without waiting
+on their locks: with no nonterminal broker operation it retires them; otherwise
+it replays a lost admission by its exact idempotency key when the CLI lacks the
+broker proof surface (a replay retires only on refusals raised after admit's
+idempotency lookup), completes a recorded outcome, or asks `work-context
+reconcile` to finalize a lease whose PostToolUse never arrived. That command
+proves the call inactive from controller-owned turn and descendant evidence, so
+a sibling still running in the same turn is kept; an outcome that was never
+observed is reported as `fail`. A PostToolUse whose admission reply was lost
+replays it and completes the lease with the observed result, and a background
+shell call completes when the provider reports its launch. Same-call
+Pre/Post/Stop activity is serialized by a stable local lock.
+
+`agent-hook` evaluates every ordinary rule first and invokes the locked
+`agent-session.coordination.v1` capability only after an aggregate allow. A
+prerequisite denial remains blocked; no orchestration bootstrap may supersede
+owner-liveness admission. The guard applies one 50-second global subprocess
+budget inside the setup-owned dispatcher timeout.
+
+For Stop, the guard emits `runtime-kit.session-coordination-result.v1` with a
+`not-run`, `clean`, `pending`, or `unavailable` status. This typed transaction
+result is separate from provider presentation: `agent-hook` may prescribe
+reconciliation only for `pending`, while legacy `systemMessage` or generic
+decision output proves no broker state. A typed `pending` result also carries
+the legacy provider block fields during the nils-cli rollout so the released
+consumer remains fail-closed.
+
+In advisory mode, older/missing coordination surfaces remain usable with bounded
+degraded guidance; in enforce mode they retain accurate no-enforcement guidance.
+Hook output never includes raw session/capability/incarnation/checkout values,
+peer summaries, mailbox bodies, or private registry paths. The physical checkout
+lease above shares the same explicit enforce-mode boundary, and Hermes still has
+no runtime-kit hook runner.
 
 The guard accepts `--capabilities --format json` as a side-effect-free
 self-probe. Its capability map contains no retired orchestration admission
@@ -432,121 +444,130 @@ matched rule, extracted operation, command-context provenance, and, when one
 word could not be classified, that word (`word=`), so an unverified target is
 distinguishable from a proven default-branch write and the word to spell
 literally is named.
+
 The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
-even without a variable prefix. The zsh extended-glob repetition, exclusion,
-and negation operators (`#`, `~`, and `^`) are opaque there as well. A lone `[`,
-the `[[` reserved word, and a zsh `$+name[key]` presence test with a literal key
-are literal test syntax that cannot name `git` or `semantic-commit`, so they stay
+even without a variable prefix. The zsh extended-glob repetition, exclusion, and
+negation operators (`#`, `~`, and `^`) are opaque there as well. A lone `[`, the
+`[[` reserved word, and a zsh `$+name[key]` presence test with a literal key are
+literal test syntax that cannot name `git` or `semantic-commit`, so they stay
 classifiable. A `[`/`[[` test never executes its operands, so they are not
 scanned for hidden commands; a substitution among them is still classified.
 `block-direct-git-commit.py` shares that literal-test helper and does not scan
 test operands for a Git subcommand, because the test never executes them.
+
 Both Git guards classify every command substitution the shell would run:
 `$(...)` unquoted or inside double quotes, and backticks quoted or not,
 including in test operands and assignments. The shared tokenizer parses each
 body as its own simple command ahead of the command it expands and leaves a
 dynamic placeholder word in its place, so several substitutions in one command
-stay arguments instead of leaving a stray `$` in command position.
-A `)` inside `${...}` stays part of the expansion, as does a `|`, `;`, or `&`
-(`${m%|*}` is one word), and `$((cmd) )` is read as a substitution as bash
-reads it; an arithmetic `$(( ... ))` is one word whose substitutions are still
-classified. Single-quoted text, shell comments, escaped markers, and
-quoted-delimiter here-doc bodies stay literal; an unquoted-delimiter here-doc
-body expands every substitution (it has no quotes or comments, so an
-apostrophe there stays literal), and inside a substitution its lines are
-classified like any other script text. When that body feeds `cat`,
-`python`/`python3`, or `jq` by bare name or from `/bin` or `/usr/bin`, no pipe or process substitution reads its output
-on, the body has no line continuation, and nothing else in the command runs a
-shell (a shell name anywhere, or `.`/`source`/`eval`/`exec` in command
+stay arguments instead of leaving a stray `$` in command position. A `)` inside
+`${...}` stays part of the expansion, as does a `|`, `;`, or `&` (`${m%|*}` is
+one word), and `$((cmd) )` is read as a substitution as bash reads it; an
+arithmetic `$(( ... ))` is one word whose substitutions are still classified.
+
+Single-quoted text, shell comments, escaped markers, and quoted-delimiter
+here-doc bodies stay literal; an unquoted-delimiter here-doc body expands every
+substitution (it has no quotes or comments, so an apostrophe there stays
+literal), and inside a substitution its lines are classified like any other
+script text. When that body feeds `cat`, `python`/`python3`, or `jq` by bare
+name or from `/bin` or `/usr/bin`, no pipe or process substitution reads its
+output on, the body has no line continuation, and nothing else in the command
+runs a shell (a shell name anywhere, or `.`/`source`/`eval`/`exec` in command
 position), redefines command resolution (an alias, function, hash, or `PATH`
-change), or redirects into a file (anything but `/dev/null` or a numeric
-`>&N` dup), only its substitutions are classified; the rest is data. A refusal caused by here-doc
-text suggests quoting the delimiter (`<<'EOF'`). Both Git
-guards parse strictly: shell comments are dropped before tokenizing (only a
-`#` after an unescaped blank, newline, `;`, or `&`, outside `[[ ]]` and any
-open parenthesized group, counts as a comment), and a
-command the tokenizer still cannot parse (for example an unterminated quote)
-is refused as unresolved instead of yielding no commands. A substitution body runs in a
-subshell, so default-delivery applies the shell state it changes (aliases,
-PATH, `cd`, executable resolution) only within that body: a governed
-`semantic-commit commit --message "$(cat <<'EOF' ... EOF)"` keeps the
-classification it has without the substitution. The commit guard's
+change), or redirects into a file (anything but `/dev/null` or a numeric `>&N`
+dup), only its substitutions are classified; the rest is data. A refusal caused
+by here-doc text suggests quoting the delimiter (`<<'EOF'`). Both Git guards
+parse strictly: shell comments are dropped before tokenizing (only a `#` after
+an unescaped blank, newline, `;`, or `&`, outside `[[ ]]` and any open
+parenthesized group, counts as a comment), and a command the tokenizer still
+cannot parse (for example an unterminated quote) is refused as unresolved
+instead of yielding no commands.
+
+A substitution body runs in a subshell, so default-delivery applies the shell
+state it changes (aliases, PATH, `cd`, executable resolution) only within that
+body: a governed `semantic-commit commit --message "$(cat <<'EOF' ... EOF)"`
+keeps the classification it has without the substitution. The commit guard's
 program-lookup scan stays conservative and still counts PATH changes inside
 substitution bodies.
+
 The commit guard also refuses literal `git config --global` writes unless
 `GIT_CONFIG_GLOBAL` selects a temporary or `AGENT_HOME/out` child without
 symlink redirects. It recognizes inline environment assignments, literal
-unconditional exports, and their scope in nested shell strings and substitutions. Global
-reads and repository-local configuration remain allowed. System writes are
-always refused because `GIT_CONFIG_GLOBAL` does not redirect `--system`.
-Fixture setup must also use `GIT_CONFIG_NOSYSTEM=1`; `HOME` alone leaves the
-real XDG Git configuration exposed. Dynamic target paths remain unresolved:
-pass a literal output target or establish it in the hook's inherited environment.
-Conditional or subprocess setup cannot prove the inherited target; use an
-inline target assignment on the Git invocation instead.
+unconditional exports, and their scope in nested shell strings and
+substitutions. Global reads and repository-local configuration remain allowed.
+System writes are always refused because `GIT_CONFIG_GLOBAL` does not redirect
+`--system`. Fixture setup must also use `GIT_CONFIG_NOSYSTEM=1`; `HOME` alone
+leaves the real XDG Git configuration exposed. Dynamic target paths remain
+unresolved: pass a literal output target or establish it in the hook's inherited
+environment. Conditional or subprocess setup cannot prove the inherited target;
+use an inline target assignment on the Git invocation instead.
+
 After alias, hash, command-table, PATH, sourced-function, `enable`, or zsh
-`disable` state changes, later bare command words are opaque. This taint is monotonic across the conservative
-flattened shell scan: nested removals never make an outer executable trusted.
-Redirections are ignored when judging such a command, so a query such as
-`alias name 2>/dev/null` stays query-only. Only a word in assignment position
-assigns `PATH` or `path`: a leading assignment (also after `!`, `{`, `then`,
-`do`, `time`, or zsh `nocorrect`) or a declaration builtin's operand, never an
-argument such as a `grep -o 'path=[^ ]*'` pattern. `$${` is the `$$` PID
-expansion followed by a literal `{`, so it is not read as `${`.
-It resolves the selected remote's cached local default branch and blocks raw `git push`
-forms that target it, including force, force-with-lease, deletion, wildcard,
-matching-branch (`:` / `+:`), and implicit current-default pushes. It also
-blocks mutating
-`semantic-commit commit`, `fixup`, and `squash` on the default branch of the
-repository that invocation actually commits in. Ambiguous
-pushes without an explicit refspec fail closed because Git configuration can
-retarget them. PreToolUse performs no live `ls-remote` or provider probe;
-implicit, all/mirror, delete, matching, wildcard, and missing-cache cases fail
-closed, while live remote truth remains owned by the delivery CLI. It leaves explicit feature-branch pushes,
-`git push --dry-run`, semantic-commit help/dry-run, and the governed `forge-cli
-repo push-default` invocation available. A semantic-commit `--help`,
-`--dry-run`, or `--validate-only` counts only when every word before it is a
-literal, known option or value: a dynamic word, an unknown option, or a
-redirection-like word in a value slot could swallow it in semantic-commit's
-own parser, so the invocation is classified as authoring. A zsh glob
-qualifier or alternation group (`word(N)`, `(a|b)`) counts as dynamic. Raw
-`git send-pack` and `git http-push` publish refs outside the push classifier
-and fail closed toward `git-cli push`. Exact authorized `semantic-commit
-default-branch` preview and mutation forms are admitted only through the active
-trusted managed CLI with a full expected HEAD, explicit absolute repository,
-primary checkout, authoritative
-remote-free or aligned cached-default identity, and correct receipt behavior:
-preview uses `--dry-run` without a receipt, while mutation requires a new
-outside-repository receipt. The removed `local-default` spelling and ordinary
-default-branch commit forms remain blocked. A `semantic-commit` target resolves
-from explicit `--repo`, so a cross-repository invocation is classified against
-the repository it mutates rather than the tool workdir. A bare authoring
-invocation after any earlier shell command fails closed as
-`[default-delivery: unverified]` (`rule=executable-resolution`) because PATH,
-hashes, aliases, functions, or shell command tables may have changed; that
-refusal says the executable identity is unproven, not that the target is the
-default branch, and the one-shot waiver never admits it. Compound routes,
-including `git add ... && semantic-commit commit`, must be split into a
-separate tool call with the target checkout as its top-level workdir. Help,
-`--dry-run`, and `--validate-only` forms author nothing and stay available
-after earlier commands. Relative or expanded destinations,
+`disable` state changes, later bare command words are opaque. This taint is
+monotonic across the conservative flattened shell scan: nested removals never
+make an outer executable trusted. Redirections are ignored when judging such a
+command, so a query such as `alias name 2>/dev/null` stays query-only. Only a
+word in assignment position assigns `PATH` or `path`: a leading assignment (also
+after `!`, `{`, `then`, `do`, `time`, or zsh `nocorrect`) or a declaration
+builtin's operand, never an argument such as a `grep -o 'path=[^ ]*'` pattern.
+`$${` is the `$$` PID expansion followed by a literal `{`, so it is not read as
+`${`.
+
+`block-unsafe-default-delivery.py` resolves the selected remote's cached local
+default branch and blocks raw `git push` forms that target it, including force,
+force-with-lease, deletion, wildcard, matching-branch (`:` / `+:`), and implicit
+current-default pushes. It also blocks mutating `semantic-commit commit`,
+`fixup`, and `squash` on the default branch of the repository that invocation
+actually commits in. Ambiguous pushes without an explicit refspec fail closed
+because Git configuration can retarget them. PreToolUse performs no live
+`ls-remote` or provider probe; implicit, all/mirror, delete, matching, wildcard,
+and missing-cache cases fail closed, while live remote truth remains owned by
+the delivery CLI. It leaves explicit feature-branch pushes, `git push
+--dry-run`, semantic-commit help/dry-run, and the governed `forge-cli repo
+push-default` invocation available. A semantic-commit `--help`, `--dry-run`, or
+`--validate-only` counts only when every word before it is a literal, known
+option or value: a dynamic word, an unknown option, or a redirection-like word
+in a value slot could swallow it in semantic-commit's own parser, so the
+invocation is classified as authoring. A zsh glob qualifier or alternation group
+(`word(N)`, `(a|b)`) counts as dynamic. Raw `git send-pack` and `git http-push`
+publish refs outside the push classifier and fail closed toward `git-cli push`.
+
+Exact authorized `semantic-commit default-branch` preview and mutation forms are
+admitted only through the active trusted managed CLI with a full expected HEAD,
+explicit absolute repository, primary checkout, authoritative remote-free or
+aligned cached-default identity, and correct receipt behavior: preview uses
+`--dry-run` without a receipt, while mutation requires a new outside-repository
+receipt. The removed `local-default` spelling and ordinary default-branch commit
+forms remain blocked.
+
+A `semantic-commit` target resolves from explicit `--repo`, so a
+cross-repository invocation is classified against the repository it mutates
+rather than the tool workdir. A bare authoring invocation after any earlier
+shell command fails closed as `[default-delivery: unverified]`
+(`rule=executable-resolution`) because PATH, hashes, aliases, functions, or
+shell command tables may have changed; that refusal says the executable identity
+is unproven, not that the target is the default branch, and the one-shot waiver
+never admits it. Compound routes, including `git add ... && semantic-commit
+commit`, must be split into a separate tool call with the target checkout as its
+top-level workdir. Help, `--dry-run`, and `--validate-only` forms author nothing
+and stay available after earlier commands. Relative or expanded destinations,
 nested shells, and command-local `GIT_*`/`HOME` overrides also fail closed, and
-raw Git still fails closed after every shell-context change or missing
-per-call workdir attestation. An absolute `git -C /path/to/repository ...`
-target remains independently classifiable. A
-blocked verdict names the resolved repository, how it resolved, and the first
-failing precondition. When a `semantic-commit` target stays unresolvable, one
-command may state a reason inline as
-`AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason>`; that is handler admission, not
-a rule override, and it never reaches a proven default-branch target or a raw
-Git path. Hook admission is intentionally independent of cached
-upstream ancestry: `semantic-commit default-branch` owns the full transaction
-proof and rejects already-ahead, behind, diverged, or unknown relations. The hook is a
-guardrail rather than a shell sandbox; provider rules and the forge-cli
-expected-base, one-signed-commit, verified-fast-forward, exact-old-object
-compare-and-swap, and post-push read-back contract are authoritative. The
-internal exact lease does not make raw or caller-controlled
+raw Git still fails closed after every shell-context change or missing per-call
+workdir attestation. An absolute `git -C /path/to/repository ...` target remains
+independently classifiable. A blocked verdict names the resolved repository, how
+it resolved, and the first failing precondition.
+
+When a `semantic-commit` target stays unresolvable, one command may state a
+reason inline as `AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason>`; that is
+handler admission, not a rule override, and it never reaches a proven
+default-branch target or a raw Git path. Hook admission is intentionally
+independent of cached upstream ancestry: `semantic-commit default-branch` owns
+the full transaction proof and rejects already-ahead, behind, diverged, or
+unknown relations. The hook is a guardrail rather than a shell sandbox; provider
+rules and the forge-cli expected-base, one-signed-commit, verified-fast-forward,
+exact-old-object compare-and-swap, and post-push read-back contract are
+authoritative. The internal exact lease does not make raw or caller-controlled
 `--force-with-lease` an allowed route. Hermes has no runtime-kit hook runner.
 
 Install surfaces:
