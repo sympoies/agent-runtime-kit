@@ -62,8 +62,8 @@ spikes (tier C).
 5. If tier A red is not practical, state why and name substitute validation.
    Deferred test debt also needs a durable owner and expiry/removal condition.
 
-Independent checks — review, CI, and detection of deleted tests or weakened
-assertions — matter more than the ordering ritual.
+Independent review and CI matter more than test ordering. Review checks for
+deleted tests or weakened assertions; no separate automated detector is claimed.
 
 A durable `test-first-evidence.record.v2` is required for tier A work, and for
 other tiers only when an active gate or workflow says so; tier B and C need no
@@ -126,9 +126,12 @@ Closeout is event-driven:
   checks only when required.
 - `forge-cli` can require a complete v2 test-first record for feature/bug
   delivery when repository or user configuration explicitly enables that gate.
-  The gate is otherwise off; see `git-delivery.md`. It does not yet distinguish
-  tiers: an enabled gate still requires a record for `--kind feature` until a
-  per-kind setting lands (sympoies/nils-cli#2632).
+  The gate is otherwise off; see `git-delivery.md`. Since nils-cli 1.36.11,
+  `test_first.require_kinds` selects the gated kinds (default: feature and bug).
+  With `require = true`, set `require_kinds = ["bug"]` to exempt features;
+  cross-boundary feature contracts still require a tier A record by policy.
+  Older versions retain the feature/bug gate; satisfy active gates without
+  mislabeling the delivery kind.
 - Hook timeout/effect posture remains owned by the hook rule. Evidence never
   converts an external, destructive, sensitive, transaction, or unknown effect
   into an allowed one.

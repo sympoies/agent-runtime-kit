@@ -46,9 +46,10 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
    surfaces that must remain aligned.
 2. Test first by tier (`core/policies/files-hooks-validation.md`): capture a
    meaningful regression failure at the lowest stable owner before editing for
-   bug/regression fixes and cross-boundary contracts; write acceptance criteria
-   first for new features; run the repository checks only for docs, config, and
-   generated output.
+   bug/regression fixes and cross-boundary contracts, with a verified record or
+   waiver; write acceptance criteria first and stable-interface tests before merge
+   for new features (red/record optional); run repository checks only, with no
+   record, for docs, config, generated output, small UI tweaks, and spikes.
 3. Make the smallest source change, then refresh only the affected generated
    output, manifests, fixtures, and current documentation.
 4. Run focused checks while iterating. Review generated diffs rather than

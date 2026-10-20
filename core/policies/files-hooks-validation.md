@@ -38,8 +38,8 @@ runbooks and CLIs.
     optional.
   - **C, no record:** docs, config, generated output, small UI tweaks, spikes.
     Repository checks only.
-- Independent checks (review, CI, deleted-test or weakened-assertion
-  detection) outweigh test ordering. Records: `evidence-control-plane.md`.
+- Review/CI outweigh ordering. Review checks for deleted tests or weakened assertions
+  (no detector). Records: `evidence-control-plane.md`.
 - Flaky tests are defects. Quarantine needs an owner, expiry/removal condition,
   and substitute validation.
 

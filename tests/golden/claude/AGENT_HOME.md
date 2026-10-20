@@ -1,7 +1,7 @@
 # AGENT_HOME.md
 
-Home-scope fallback. A closer project/directory
-`AGENTS.md` may extend or override it. Keep only invariants and routing; load detail on demand.
+Home-scope fallback. A closer
+`AGENTS.md` may extend or override it. Keep invariants and routing; load detail on demand.
 
 ## Authority And Safety
 
@@ -17,20 +17,20 @@ Home-scope fallback. A closer project/directory
 
 ## Autonomous Work
 
-- Inspect affected targets, callers, tests, and rules; distinguish
-  facts, assumptions, and inference. Deliver the smallest correct solution for the
-  accepted observable outcome. Exclude hypothetical hardening,
-  unsupported edge cases, architecture preference, and future flexibility;
-  possible improvement is not incompleteness.
-- Tier test-first: bug fixes and boundary contracts need a meaningful regression
-  failure first; features, acceptance criteria first; docs/config, repo checks
-  only. Iterate narrowly; run each declared validation once or report a waiver.
-- Keep answers concise and verifiable; cite material requirements and unstable
-  claims. Use fixed taxonomy only when required.
-- Treat a prompt marked as voice input as a speech transcript that may contain
-  misrecognized words. Interpret it from context; before acting on an uncertain
-  name, term, path, command, number, or data-changing request, confirm it with
-  the user.
+- Inspect targets, callers, tests, and rules; distinguish facts, assumptions, and inference.
+  Deliver the smallest correct solution for the accepted observable outcome;
+  exclude hypothetical hardening, unsupported edge cases, architecture preference,
+  and future flexibility; possible improvement is not incompleteness.
+- Test-first: A, bug/regression fixes and boundary contracts: meaningful red first,
+  verified record or waiver; B, features: acceptance criteria first, stable-interface
+  tests before merge (red/record optional); C, docs, config, generated output,
+  small UI tweaks, spikes: repo checks only, no record.
+  Run each declared validation once or report a waiver.
+- Be concise and verifiable; cite requirements and unstable claims. Use fixed
+  taxonomy only when required.
+- Treat voice input as a possibly misrecognized speech transcript. Use context;
+  before acting on an uncertain name, term, path, command, number, or
+  data-changing request, confirm it with the user.
 - For a material active-goal decision, use `AskUserQuestion` when available, not a plain-text question; otherwise follow the blocked-audit contract and do not stop prematurely. Only an explicit later user choice authorizes it.
 - In long managed work, check coordination at safe boundaries every five minutes.
   Never interrupt an in-flight operation solely for a mailbox checkpoint; check
@@ -57,12 +57,12 @@ Home-scope fallback. A closer project/directory
 
 ## Files, Git, And Delivery
 
-- Follow project conventions. Allocate temporary/debug/runtime evidence with
+- Follow repo conventions. Allocate temporary/debug/runtime evidence with
   `agent-out project`; pass provider Markdown by file, never shell
   interpolation.
 - Use `semantic-commit` for commits, `git-cli worktree` for managed worktrees,
-  and `forge-cli` or the active workflow for provider records. Do not use raw
-  commit/worktree/PR creation paths that bypass these owners.
+  and `forge-cli` or the active workflow for provider records. Never bypass these
+  owners with raw commit/worktree/PR creation.
 - Author tracked commits in a non-default managed worktree. The only local
   default-branch exception is exact current-request approval for one
   `semantic-commit default-branch` commit and outside-repo receipt. Never

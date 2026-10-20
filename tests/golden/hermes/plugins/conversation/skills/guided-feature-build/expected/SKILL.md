@@ -122,12 +122,14 @@ Do not start without explicit user approval.
    `references/DELEGATION_PROTOCOL.md`. Honor an explicit user preference when
    safe, but keep scope, write isolation, integration, and validation under the
    parent workflow.
-3. For a testable production behavior change, follow the policy-owned
-   durable test-first lifecycle: contract delta, affected-test scan, meaningful
-   red or complete waiver before production edits, scoped validation, suite
-   convergence, and explicit residual gaps. Record v2 evidence through the
-   `test-first-evidence` CLI; it is required when the repo or user opts into the
-   `forge-cli` `[test_first].require` gate.
+3. Follow the tiers in `core/policies/files-hooks-validation.md`: declare the
+   contract delta and scan affected tests. A, bug/regression fixes and boundary
+   contracts: meaningful red before production edits plus a verified
+   `test-first-evidence` record or complete waiver. B, new features: observable
+   acceptance criteria first and stable-interface tests before merge; red and a
+   record are optional. C, docs, config, generated output, small UI tweaks, and
+   spikes: repository checks only, no record. Honor any active evidence gate;
+   finish with scoped validation, suite convergence, and explicit residual gaps.
 4. Read the relevant files again, implement the chosen approach, follow codebase
    conventions strictly, and keep `TodoWrite` current.
 5. Run the project's required preflight and validation as edits land.

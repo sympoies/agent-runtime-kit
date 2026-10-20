@@ -295,8 +295,12 @@ unassigned commands and self-run behavior remain unchanged.
 
 ## Validation
 
-For runtime-kit behavior changes, bind `RUNTIME_COORD_EVIDENCE_DIR`, capture a
-meaningful red before production edits, run focused hook/routing tests and the
+For runtime-kit behavior changes, bind `RUNTIME_COORD_EVIDENCE_DIR` and follow
+`files-hooks-validation.md`: A, bug/regression fixes and boundary contracts,
+meaningful red before production edits plus a verified record or waiver; B,
+features, acceptance criteria first and stable-interface tests before merge
+(red/record optional); C, docs, config, generated output, small UI tweaks, and
+spikes, repository checks only, no record. Run affected hook/routing tests and
 declared project validation, and retain privacy-canary coverage. Installed-home
 sync and live disposable-session acceptance remain separate explicit consent
 gates.

@@ -26,6 +26,44 @@ def read(relative: str) -> str:
 
 
 class PolicySimplificationContractTests(unittest.TestCase):
+    def test_test_first_tiers_agree_across_policy_surfaces(self) -> None:
+        paths = [
+            "AGENT_HOME.md", "DEVELOPMENT.md",
+            "core/skills/conversation/guided-feature-build/SKILL.md.tera",
+            "core/policies/session-coordination.md",
+        ]
+        paths.extend(f"build/{product}/AGENT_HOME.md" for product in HOME_PRODUCTS)
+        paths.extend(
+            f"build/{product}/plugins/conversation/skills/guided-feature-build/SKILL.md"
+            for product in SHARED_HOME_PRODUCTS
+        )
+        for path in paths:
+            text = " ".join(read(path).split())
+            with self.subTest(path=path):
+                for criterion in ("record", "before merge", "small UI tweaks", "spikes"):
+                    self.assertTrue(criterion in text, f"{path}: missing {criterion!r}")
+        guided = read("core/skills/conversation/guided-feature-build/SKILL.md.tera")
+        self.assertNotIn("red or complete waiver before production edits", guided)
+        coordination = read("core/policies/session-coordination.md")
+        self.assertNotIn("capture a\nmeaningful red before production edits", coordination)
+
+    def test_test_first_review_and_released_gate_ownership(self) -> None:
+        for path in ("core/policies/files-hooks-validation.md",
+                     "core/policies/evidence-control-plane.md"):
+            text = " ".join(read(path).split())
+            with self.subTest(path=path):
+                self.assertIn("Review checks for deleted tests or weakened assertions", text)
+        for path in ("core/policies/evidence-control-plane.md",
+                     "core/policies/references/git-delivery.md"):
+            text = read(path)
+            with self.subTest(path=path):
+                self.assertIn("1.36.11", text)
+                self.assertIn("test_first.require_kinds", text)
+                self.assertNotIn("per-kind setting lands", text)
+                self.assertNotIn("gate does not yet", text.casefold())
+                self.assertIn('require_kinds = ["bug"]', text)
+                self.assertIn("cross-boundary feature contracts", text)
+
     def test_program_workflow_labels_distinguish_delivery_artifacts(self) -> None:
         def load_manifest(path: str) -> dict:
             result = subprocess.run(
