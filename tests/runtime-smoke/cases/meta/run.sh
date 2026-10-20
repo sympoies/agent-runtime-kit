@@ -83,7 +83,10 @@ run_home_prompt_render_probe() {
     "$claude_home" \
     "$hermes_home"; do
     grep -Fq 'Do not infer authorization' "$home_policy"
-    grep -Fq 'Tier test-first' "$home_policy"
+    grep -Fq 'Test-first: A, bug/regression fixes and boundary contracts: meaningful red first,' "$home_policy"
+    grep -Fq 'verified record or waiver; B, features: acceptance criteria first, stable-interface' "$home_policy"
+    grep -Fq 'tests before merge (red/record optional); C, docs, config, generated output,' "$home_policy"
+    grep -Fq 'small UI tweaks, spikes: repo checks only, no record.' "$home_policy"
     grep -Fq '`semantic-commit`' "$home_policy"
     grep -Fq 'Preserve user work' "$home_policy"
   done

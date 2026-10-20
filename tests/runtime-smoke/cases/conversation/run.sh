@@ -57,7 +57,13 @@ run_conversation_skill_probe() {
 
   if [ "$skill" = "guided-feature-build" ]; then
     for path in "$source" "$codex" "$claude"; do
-      grep -Fq 'durable test-first lifecycle: contract delta, affected-test scan' "$path"
+      grep -Fq 'Follow the tiers in `core/policies/files-hooks-validation.md`' "$path"
+      grep -Fq 'contract delta and scan affected tests. A, bug/regression fixes and boundary' "$path"
+      grep -Fq 'contracts: meaningful red before production edits plus a verified' "$path"
+      grep -Fq '`test-first-evidence` record or complete waiver. B, new features: observable' "$path"
+      grep -Fq 'acceptance criteria first and stable-interface tests before merge; red and a' "$path"
+      grep -Fq 'record are optional. C, docs, config, generated output, small UI tweaks, and' "$path"
+      grep -Fq 'spikes: repository checks only, no record. Honor any active evidence gate;' "$path"
       grep -Fq 'convergence, and explicit residual gaps' "$path"
     done
   fi
@@ -69,7 +75,7 @@ run_conversation_outcome_routing_probe() {
   local protocol="$REPO_ROOT/core/skills/conversation/guided-feature-build/references/DELEGATION_PROTOCOL.md"
 
   grep -Fq 'Deliver the smallest correct solution for the' "$home_policy"
-  grep -Fq 'accepted observable outcome.' "$home_policy"
+  grep -Fq 'accepted observable outcome;' "$home_policy"
   grep -Fq '## Outcome Routing' "$guided"
   grep -Fq 'Advice and explanation stay normal conversation behavior' "$guided"
   grep -Fq 'selects inline, orchestrated, or' "$guided"

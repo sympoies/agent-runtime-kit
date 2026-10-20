@@ -264,21 +264,25 @@ The [fold recipe](../devlog/ci-fold.md) owns workflow wiring and provider accept
 
 - The test-first gate is enforced in the released `forge-cli` surface, not a
   client-side hook: when `[test_first].require` resolves true, `forge-cli pr
-  create` / `pr deliver` require `--test-first-evidence <dir>` for `--kind
-  feature` / `bug` records (both the create and adopt paths, and the
-  `--dry-run` preflight). `docs` / `chore` / `ci` / `refactor` are exempt.
+  create` / `pr deliver` require `--test-first-evidence <dir>` for selected
+  kinds (both the create and adopt paths, and the `--dry-run` preflight).
+  The compatibility default selects feature/bug; other kinds are exempt unless
+  explicitly selected through the per-kind setting below.
 - The retained PR and dispatch parent outcomes (`deliver-pr` and
   `deliver-dispatch-plan`) thread that flag
-  through their internal create/deliver phases for `--kind feature` / `bug` and
-  omit it for exempt kinds. Point it at the `verify`-clean directory produced
+  through their internal create/deliver phases for gated kinds and omit it for
+  exempt kinds. Point it at the `verify`-clean directory produced
   by the policy-owned `test-first-evidence` CLI flow.
 - Tiers (`core/policies/files-hooks-validation.md`, reversible; #289) decide
   when a record is warranted: tier A (bug/regression fixes and cross-boundary
   contracts) keeps one; tier B (new features) and tier C (docs, config,
-  generated output, small UI tweaks, spikes) need none. The gate does not yet
-  read tiers: when enabled it still requires a record for `--kind feature`
-  until a per-kind setting lands (sympoies/nils-cli#2632). Until then, satisfy
-  an enabled feature gate with a record; do not mislabel the PR kind.
+  generated output, small UI tweaks, spikes) need none by default. Since
+  nils-cli 1.36.11, `test_first.require_kinds` selects gated kinds, defaulting
+  to `["feature", "bug"]` for compatibility. With `require = true`, set
+  `require_kinds = ["bug"]` to exempt feature deliveries. The setting selects
+  kinds, not semantic tiers: cross-boundary feature contracts still keep a
+  tier A record. Older versions retain the feature/bug gate. Satisfy active
+  gates with a record; do not mislabel the PR kind.
 - The gate is **off by default**. It is opt-in via `[test_first] require =
   true` in either a repo `.forge-cli.toml` or the user-global
   `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit
