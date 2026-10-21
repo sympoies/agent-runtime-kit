@@ -118,6 +118,12 @@ observations are non-blocking and should appear only when decision-relevant.
 Recommendations name the smallest sufficient local repair. A material
 architecture or scope change is a user decision, not the default fix.
 
+Start from the diff. Open another file only to confirm or refute a specific
+concern raised by a changed hunk (a caller, callee, contract, or test it depends
+on); do not survey the codebase or audit unchanged code. Report only problems
+verified in the diff or through that targeted inspection; leave out
+speculative, defensive-hardening, and cosmetic issues.
+
 ## Forced Specialists
 
 The workflow supports these force flags in prose and helper scope detection:
