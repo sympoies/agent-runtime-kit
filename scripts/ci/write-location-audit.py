@@ -60,6 +60,10 @@ KIT_ROOT = "agent-runtime-kit"
 AGENT_HOME_CLASSES = {"out", "build", "tmp", "worktrees"}
 OUT_CLASSES = {"projects", "scratch"}
 
+SCRATCH_INTERIM = (
+    "; until the scratch kind ships, allocate temporary artifacts with "
+    "`agent-out project --topic <topic> --mkdir`"
+)
 TOOL_STATE_FIX = (
     "tool state: use a tool env override with an ${XDG_STATE_HOME}/<tool> "
     "fallback, or a class under $AGENT_HOME"
@@ -67,8 +71,12 @@ TOOL_STATE_FIX = (
 AGENT_HOME_FIX = (
     "use a declared class: out/projects (evidence), out/scratch, build, tmp, "
     "or worktrees"
+    + SCRATCH_INTERIM
 )
-OUT_FIX = "out/ holds only evidence (out/projects) and scratch (out/scratch); build output uses build/"
+OUT_FIX = (
+    "out/ holds only evidence (out/projects) and scratch (out/scratch); "
+    "build output uses build/" + SCRATCH_INTERIM
+)
 TMP_FIX = "tmp: derive from $TMPDIR (mktemp) instead of a fixed /tmp name"
 
 

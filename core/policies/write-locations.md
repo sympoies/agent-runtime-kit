@@ -20,7 +20,7 @@ no class may hard-code the default.
 | Class | Path | Selected by | Owner (writes / reclaims) | Content | Retention |
 | --- | --- | --- | --- | --- | --- |
 | evidence | `${AGENT_HOME}/out/projects/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project` | `agent-out` allocates; `agent-out cleanup` reclaims | Small kept artifacts: logs, screenshots, reports, receipts | Long (default 30 days; class-configurable); may be promoted to an evidence archive. No build trees. |
-| scratch | `${AGENT_HOME}/out/scratch/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project --kind scratch` | `agent-out` | Rebuildable run intermediates: fixtures, unpacked archives, one-off clones | Short (default 3 days) |
+| scratch | `${AGENT_HOME}/out/scratch/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project --kind scratch` (planned) | `agent-out` | Rebuildable run intermediates: fixtures, unpacked archives, one-off clones | Short (default 3 days) |
 | build | `${AGENT_HOME}/build/<worktree-slug>/` or `${AGENT_HOME}/build/run/<run-id>/` | `CARGO_TARGET_DIR` and equivalents, exported by the worktree or run owner | `git-cli` for worktree builds; `agent-out` for run builds | Compiler and bundler output | Deleted with its worktree or run; never inside `out/` |
 | tmp | `${AGENT_HOME}/tmp/<session-id>/` | `TMPDIR`, injected by the session launcher | `agent-session` creates at start, reclaims at stop | Harness scratchpads, `mktemp` output | Removed at session stop plus a grace period (default 24 h); orphans swept when the session record is gone |
 | worktrees | `${AGENT_HOME}/worktrees/<repo>-<hash>/<slug>` | `AGENT_HOME` | `git-cli worktree`; `worktree-triage` | Managed checkouts | Delivered or idle policy (unchanged) |
@@ -29,7 +29,10 @@ no class may hard-code the default.
 Evidence and worktrees are shipped today. The `scratch` selector, the `build`
 exports, and the per-session `TMPDIR` are owner implementations that follow
 this contract; until an owner ships its selector, keep build output out of
-evidence runs (rule 2) and prefer a worktree-local build directory.
+evidence runs (rule 2) and prefer a worktree-local build directory. Until the
+scratch kind ships, allocate temporary and debug artifacts with
+`agent-out project --topic <topic> --mkdir`; never hand-build an `out/scratch`
+directory.
 
 ## Rules
 

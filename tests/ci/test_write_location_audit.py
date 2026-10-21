@@ -76,6 +76,8 @@ class WriteLocationAuditTests(unittest.TestCase):
         self.assertIn("$AGENT_HOME/rehearsal", result.stdout)
         self.assertIn("$AGENT_HOME/out/cargo-target", result.stdout)
         self.assertIn("core/policies/write-locations.md", result.stdout)
+        # Until the scratch kind ships, the fix names the interim allocator.
+        self.assertIn("agent-out project --topic <topic> --mkdir", result.stdout)
 
     def test_declared_classes_and_dynamic_paths_pass(self) -> None:
         result = self.run_audit(
