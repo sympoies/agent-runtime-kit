@@ -49,7 +49,7 @@ runbooks and CLIs.
 - Follow project conventions for durable files and generated output. Do not
   create a discussion, plan, decision record, or broad index entry unless asked
   or clearly reusable.
-- Put temporary/debug artifacts in a project-owned output path or an
+- Put evidence (`write-locations.md`) in a project-owned path or an
   `agent-out project --topic <topic> --mkdir` directory outside the repository.
   Never commit runtime evidence, receipts, credentials, logs, or caches. Never
   create an `agent-out` directory for scratch: the command owns the path.

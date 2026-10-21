@@ -222,9 +222,11 @@ class PolicySimplificationContractTests(unittest.TestCase):
         # must not leave that ambiguous: an agent that reads it as a directory
         # hand-builds `./agent-out/<topic>` inside the checkout (#90).
         self.assertIn(
-            "Allocate temporary/debug/runtime evidence with `agent-out project`",
+            "allocate evidence with `agent-out project`",
             home_words,
         )
+        self.assertIn("Follow repo conventions and `write-locations.md`", home_words)
+        self.assertIn("`write-locations.md`", engineering_words)
         self.assertIn("provider Markdown by file", home_words)
 
     def test_home_policy_keeps_hard_boundaries_without_routine_ceremony(self) -> None:

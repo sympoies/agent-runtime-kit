@@ -481,7 +481,7 @@ python3 scripts/ci/version-baseline-audit.py check
 # -----------------------------------------------------------------------------
 # Position 15 — rendered product leakage audit
 # -----------------------------------------------------------------------------
-banner 15 "product leakage audit + macOS portability audit + portable-paths audit"
+banner 15 "product leakage + macOS portability + portable-paths + write-location audits"
 bash scripts/ci/product-leak-audit.sh --self-test
 bash scripts/ci/product-leak-audit.sh
 # Linux CI cannot reproduce the bash 3.2 and BSD-tooling faults this guards, so
@@ -491,6 +491,10 @@ bash scripts/ci/macos-portability-audit.sh
 # Tracked active docs and their canonical sources (`*.md.tera`, policies) must
 # not commit machine-local home paths; the edit hook only sees new writes.
 python3 core/hooks/shared/portable-paths-scan.py --tracked
+# New hard-coded agent state directories must use a declared write-location
+# class (core/policies/write-locations.md, #302).
+python3 tests/ci/test_write_location_audit.py
+python3 scripts/ci/write-location-audit.py
 
 # -----------------------------------------------------------------------------
 # Position 16 — memory policy, retired-reference audit, and product routing
