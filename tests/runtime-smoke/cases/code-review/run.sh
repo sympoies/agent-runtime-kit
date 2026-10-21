@@ -89,6 +89,26 @@ run_reviewer_actionability_contract_probe() {
   rendered_contract_assert_reference code-review code-review-specialists references/SPECIALIST_REVIEW_CONTRACT.md
 }
 
+run_reviewer_inspection_scope_contract_probe() {
+  local contract="$REPO_ROOT/core/skills/code-review/code-review-specialists/references/SPECIALIST_REVIEW_CONTRACT.md"
+  local quick="$REPO_ROOT/core/agents/code-review/reviewer-quick/AGENT.md.tera"
+  local reviewer
+  local rendered
+
+  grep -Fq 'Start from the diff.' "$contract"
+  grep -Fq 'do not survey the codebase' "$contract"
+  for reviewer in "$REPO_ROOT"/core/agents/code-review/reviewer-*/AGENT.md.tera; do
+    [[ "$(grep -Fc 'Start from the diff.' "$reviewer")" == 2 ]]
+    [[ "$(grep -Fc 'do not survey the codebase' "$reviewer")" == 2 ]]
+  done
+  for rendered in "$REPO_ROOT"/build/codex/agents/reviewer-*.toml "$REPO_ROOT"/build/claude/agents/reviewer-*.md; do
+    grep -Fq 'Start from the diff.' "$rendered"
+  done
+  if grep -Fq 'nearby call sites and tests it touches' "$quick"; then
+    return 1
+  fi
+}
+
 run_codex_reviewer_profile_contract_probe() {
   local repo_out="$CODE_REVIEW_ARTIFACTS_DIR/reviewer-profile-repo.txt"
   local fixture_out="$CODE_REVIEW_ARTIFACTS_DIR/reviewer-profile-fixture.txt"
@@ -1047,6 +1067,7 @@ record_case "code-review.designated-review.route" "designated route stops on mis
 record_case "code-review.designated-review.contract" "designated reviewer ownership and handoff are mandatory across source and products" run_designated_review_contract_probe
 record_case "code-review.outcome-routing.testing-contract" "testing reviewer and specialist share the durable test-maintenance contract" run_testing_specialist_contract_probe
 record_case "code-review.outcome-routing.actionability-contract" "every reviewer finding explicitly classifies actionability for native thread publication" run_reviewer_actionability_contract_probe
+record_case "code-review.outcome-routing.inspection-scope" "every reviewer starts from the diff and opens other files only to validate a specific concern" run_reviewer_inspection_scope_contract_probe
 record_case "code-review.outcome-routing.reviewer-profiles" "manifest-driven Codex reviewer profiles and custom-agent dispatch contract passed" run_codex_reviewer_profile_contract_probe
 record_case "code-review.outcome-routing.portable-identity" "public review workflows preserve ambient identity, independent native approval, and selected lenses" run_portable_review_identity_contract_probe
 record_case "code-review.outcome-routing.personal-escape-policy-grant" "personal escape accepts only a fresh issuer grant bound to this PR, head, and attempt" run_personal_escape_policy_grant_probe
