@@ -1,0 +1,103 @@
+# Write-location audit allowlist (core/policies/write-locations.md).
+#
+# Each entry needs a reason. `path` is an fnmatch glob relative to the repository
+# root; `literal` is the normalized literal the audit prints (omit it only when a
+# whole file is out of scope). An entry that no longer matches fails the gate.
+
+# Declared tool state with an env override and an XDG fallback.
+[[allow]]
+path = "*"
+literal = "$AGENT_HOME/codex"
+reason = "Runtime state home declared in manifests/runtime-roots.yaml; overridable via CODEX_AGENT_STATE_HOME."
+
+[[allow]]
+path = "*"
+literal = "$AGENT_HOME/claude"
+reason = "Runtime state home declared in manifests/runtime-roots.yaml; overridable via CLAUDE_KIT_STATE_HOME."
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+literal = "~/.local/state/agent-hook"
+reason = "agent-hook tool state: XDG_STATE_HOME fallback for the AGENT_HOOK_STATE_DIR override."
+
+[[allow]]
+path = "core/policies/devlog/ci-fold.md"
+literal = "$AGENT_HOME/runtime.env"
+reason = "Rendered runtime env file at the kit root, not a state directory."
+
+# Out of scope for this contract version (harness homes, rule 4).
+[[allow]]
+path = "docs/source/harness-shape-claude.md"
+literal = "~/.local/state/claude-accounts"
+reason = "Harness config home (CLAUDE_CONFIG_DIR) is out of scope for contract v1."
+
+# Pre-contract out/ domains; move to a declared class as their owners adopt it.
+[[allow]]
+path = "*"
+literal = "$AGENT_HOME/out/nils-versions"
+reason = "Pre-contract release download cache owned by scripts/dev/with-nils-version.sh; reclassify as tool state."
+
+[[allow]]
+path = "scripts/ci/all.sh"
+literal = "$AGENT_HOME/out/ci-all"
+reason = "Pre-contract CI gate artifact domain; move to evidence or scratch once agent-out ships the scratch kind."
+
+[[allow]]
+path = "scripts/ci/product-leak-audit.sh"
+literal = "$AGENT_HOME/out/product-leak-audit"
+reason = "Pre-contract CI gate artifact domain; move to evidence or scratch once agent-out ships the scratch kind."
+
+[[allow]]
+path = "scripts/ci/retired-memory-audit.sh"
+literal = "$AGENT_HOME/out/retired-memory-audit"
+reason = "Pre-contract CI gate artifact domain; move to evidence or scratch once agent-out ships the scratch kind."
+
+[[allow]]
+path = "docs/source/macos-agent-bootstrap-prompt.md"
+literal = "$AGENT_HOME/bootstrap-backups"
+reason = "Pre-contract bootstrap backup of replaced runtime-home files, kept for manual restore."
+
+# Fixed /tmp names inside container builds or pre-contract CI diagnostics.
+[[allow]]
+path = "docker/Dockerfile"
+reason = "Image build-stage downloads inside the container build, not an agent host."
+
+[[allow]]
+path = "docker/smoke-zsh-kit-apply.sh"
+literal = "$AGENT_HOME/docker-zsh-kit-apply-smoke"
+reason = "Container smoke workdir; overridable via ZSH_KIT_SMOKE_WORKDIR."
+
+[[allow]]
+path = "docker/README.md"
+literal = "/tmp/zsh-kit-dry-run"
+reason = "Dry-run destination inside the container smoke; nothing is written."
+
+[[allow]]
+path = ".github/workflows/publish-image.yml"
+literal = "/tmp/zsh-kit-dry-run"
+reason = "Dry-run destination inside the container smoke; nothing is written."
+
+[[allow]]
+path = "scripts/ci/all.sh"
+literal = "/tmp/ci-all-drift.diff"
+reason = "Pre-contract CI diagnostic diff; migrate to mktemp."
+
+[[allow]]
+path = "scripts/ci/sandbox-install-rehearsal.sh"
+literal = "/tmp/sandbox-install-empty-lines.txt"
+reason = "Pre-contract CI diagnostic file; migrate to mktemp."
+
+[[allow]]
+path = "scripts/ci/sandbox-install-rehearsal.sh"
+literal = "/tmp/sandbox-install-expected-sort.diff"
+reason = "Pre-contract CI diagnostic diff; migrate to mktemp."
+
+[[allow]]
+path = "scripts/ci/sandbox-install-rehearsal.sh"
+literal = "/tmp/sandbox-install-"
+reason = "Pre-contract per-product CI diagnostic diffs; migrate to mktemp."
+
+[[allow]]
+path = "docs/source/development-reference.md"
+literal = "/tmp/runtime-smoke-product-summary.json"
+reason = "Pre-contract example summary path in the validation reference; migrate to an agent-out run."

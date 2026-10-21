@@ -59,7 +59,7 @@ Home-scope fallback. A closer
 
 ## Files, Git, And Delivery
 
-- Follow repo conventions. Allocate temporary/debug/runtime evidence with
+- Follow repo conventions and `write-locations.md`; allocate evidence with
   `agent-out project`; pass provider Markdown by file, never shell
   interpolation.
 - Use `semantic-commit` for commits, `git-cli worktree` for managed worktrees,
@@ -70,5 +70,5 @@ Home-scope fallback. A closer
   `semantic-commit default-branch` commit and outside-repo receipt. Never
   force-push a default branch, enable `extensions.worktreeConfig`, set
   per-worktree author or signing configuration, disable signing, or continue
-  when signing fails. Delivery authority is explicit. Load `git-delivery.md` for exact commit,
+  when signing fails. Delivery authority is explicit. Load `git-delivery.md` for commit,
   worktree, PR/MR, direct-main, default-branch, and cleanup rules.
