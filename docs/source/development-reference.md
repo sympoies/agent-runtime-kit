@@ -463,7 +463,16 @@ That currently performs:
 15. `bash scripts/ci/product-leak-audit.sh --self-test` plus
     `bash scripts/ci/product-leak-audit.sh` — broad-sentinel leakage audit over
     rendered/loaded product artifacts, with documented allowlist reasons in
-    `scripts/ci/product-leak-allow.yaml`.
+    `scripts/ci/product-leak-allow.yaml`. The same position runs three more
+    static audits: `bash scripts/ci/macos-portability-audit.sh` (after its
+    `--self-test`), which fails on the bash 3.2 and BSD-tooling spellings that
+    Linux CI cannot execute; `python3 core/hooks/shared/portable-paths-scan.py
+    --tracked`, which rejects machine-local home paths in tracked active docs
+    and canonical sources; and `python3 tests/ci/test_write_location_audit.py`
+    plus `python3 scripts/ci/write-location-audit.py`, which flag new
+    hard-coded agent state directories unless they name a class declared in
+    `core/policies/write-locations.md` or carry a reasoned entry in
+    `scripts/ci/write-location-allow.toml`.
 16. `bash tests/memory-runtime/run.sh` — memory policy, retired-reference, and
     product-routing acceptance.
 17. `python3 tests/ci/test_ci_gate_coverage.py`,
