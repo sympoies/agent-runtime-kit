@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate current installs and explicit historical plan-retirement diagnostics."""
+"""Validate current installs and explicit historical command-retirement diagnostics."""
 
 import json
 import pathlib
@@ -28,10 +28,14 @@ def verify(report, product, policy, exit_code):
     else:
         # This frozen fixture's old workflows are intentionally not executable.
         # Verify only their known retirement diagnostics; every other block fails.
-        require(block == 3 and exit_code == 2, "historical retirement count mismatch")
-        require({(item["check"], item["entry_id"]) for item in findings} == {
-            ("required-cli", binary) for binary in RETIRED
-        }, "unexpected historical blocking finding")
+        # Older supported releases still ship agent-docs; newer releases have
+        # retired it too. The frozen baseline declares it in either case.
+        require(block in (3, 4) and exit_code == 2, "historical retirement count mismatch")
+        expected = {("required-cli", binary) for binary in RETIRED}
+        if block == 4:
+            expected.add(("required-cli", "agent-docs"))
+        require({(item["check"], item["entry_id"]) for item in findings} == expected,
+                "unexpected historical blocking finding")
         require(all(item["product"] == product for item in findings), "historical finding product mismatch")
         require(all(item["message"].startswith(
             f"status=missing command=`{item['entry_id']}` "

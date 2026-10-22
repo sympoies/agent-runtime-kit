@@ -18,7 +18,7 @@ spec.loader.exec_module(module)
 def report(retired=False, warn=0):
     findings = [{"product": "codex", "severity": "block", "check": "required-cli",
                  "entry_id": binary, "message": f"status=missing command=`{binary}` required=>=1.0.0"}
-                for binary in sorted(module.RETIRED)] if retired else []
+                for binary in ("plan-archive", "plan-issue", "plan-tooling")] if retired else []
     return {"schema_version": "agent-runtime-cli.doctor.v1", "product": "codex",
             "block": len(findings), "warn": warn,
             "exit_code": 2 if findings else 1 if warn else 0, "findings": findings}
@@ -36,6 +36,45 @@ class DoctorPolicyTest(unittest.TestCase):
 
     def test_historical_accepts_exact_missing_retired_set(self):
         module.verify(report(retired=True, warn=2), "codex", "historical", 2)
+
+    def test_historical_accepts_agent_docs_retirement_on_newer_releases(self):
+        # Independent command list: do not derive the incident fixture from
+        # the verifier's allowlist, or a missed retirement also disappears here.
+        for product in ("codex", "claude", "hermes"):
+            data = report()
+            data.update(product=product, block=4, exit_code=2)
+            data["findings"] = [
+                {"product": product, "severity": "block", "check": "required-cli",
+                 "entry_id": binary,
+                 "message": f"status=missing command=`{binary}` required=>=0.30.1"}
+                for binary in ("agent-docs", "plan-archive", "plan-issue", "plan-tooling")
+            ]
+            with self.subTest(product=product):
+                module.verify(data, product, "historical", 2)
+                with self.assertRaises(ValueError):
+                    module.verify(data, product, "strict", 2)
+
+    def test_historical_rejects_invalid_agent_docs_retirement(self):
+        original = report(retired=True)
+        original["findings"].append(
+            {"product": "codex", "severity": "block", "check": "required-cli",
+             "entry_id": "agent-docs",
+             "message": "status=missing command=`agent-docs` required=>=0.30.1"})
+        original["block"] += 1
+        for field, value in (("check", "installed-runtime-source"),
+                             ("entry_id", "agent-out"),
+                             ("product", "claude"),
+                             ("message", "status=outdated command=`agent-docs` "),
+                             ("message", "status=missing command=`agent-out` ")):
+            data = copy.deepcopy(original)
+            data["findings"][-1][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                module.verify(data, "codex", "historical", 2)
+        duplicate = copy.deepcopy(original)
+        duplicate["findings"].append(copy.deepcopy(duplicate["findings"][-1]))
+        duplicate["block"] += 1
+        with self.assertRaises(ValueError):
+            module.verify(duplicate, "codex", "historical", 2)
 
     def test_historical_rejects_extra_changed_or_wrongly_typed_blocks(self):
         original = report(retired=True)
