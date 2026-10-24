@@ -95,7 +95,7 @@ LOCKED_CAPABILITIES = {
 
 COORDINATION_CAPABILITY_COUNTS = Counter(
     {
-        "agent-session.activity.v1": 12,
+        "agent-session.activity.v1": 13,
         "agent-session.semantic-conflict.v1": 6,
         "agent-session.owner-liveness.v1": 5,
         "agent-session.coordination.v1": 8,
@@ -143,6 +143,10 @@ TERMINAL_COORDINATION_GROUPS = {
         "PermissionRequest",
         "",
     ),
+}
+
+ACTIVITY_INGRESS_GROUPS = {
+    ("codex", "Interrupt", ""),
 }
 
 # Exact Claude clarification correlation. The AskUserQuestion request and its
@@ -433,6 +437,37 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         self.assertEqual(rule["timeout_posture"], "closed")
         self.assertEqual(rule["override_class"], "locked")
 
+    def test_codex_interrupt_activity_ingress_is_required_and_product_scoped(self) -> None:
+        inventory = load_inventory()
+        rules = [rule for rule in inventory["rules"] if rule["events"] == ["Interrupt"]]
+        self.assertEqual(len(rules), 1)
+        rule = rules[0]
+        self.assertEqual(rule["id"], "coord.codex.interrupt.activity")
+        self.assertEqual(rule["products"], ["codex"])
+        self.assertEqual(rule["matcher"], None)
+        self.assertEqual(
+            rule["capability"],
+            {"id": "agent-session.activity.v1", "reason_code": "agent-activity"},
+        )
+        self.assertEqual(rule["mode"], "enforce")
+        self.assertEqual(rule["priority"], 10)
+        self.assertEqual(rule["failure_posture"], "closed")
+        self.assertEqual(rule["timeout_posture"], "closed")
+        self.assertEqual(rule["override_class"], "locked")
+        self.assertEqual(rule["state_owner"], "agent-session.coordination")
+        self.assertEqual(rule["transformation"], "activity")
+        self.assertEqual(rule["recovery"], "exact-capability-only")
+        self.assertEqual(
+            rule["test_owner"],
+            "tests/agent-hook/test_policy_contract.py::"
+            "test_codex_interrupt_activity_ingress_is_required_and_product_scoped",
+        )
+        prompt_stop = next(
+            rule for rule in inventory["rules"] if rule["id"] == "coord.activity.prompt-stop"
+        )
+        self.assertEqual(prompt_stop["products"], ["codex", "claude"])
+        self.assertEqual(prompt_stop["events"], ["UserPromptSubmit", "Stop"])
+
     def test_claude_notification_activity_ingress_is_required(self) -> None:
         matching = [
             rule
@@ -654,7 +689,10 @@ class AgentHookPolicyContractTests(unittest.TestCase):
         }
         self.assertEqual(
             selected_groups,
-            legacy_groups | TERMINAL_COORDINATION_GROUPS | EXACT_ATTENTION_GROUPS,
+            legacy_groups
+            | TERMINAL_COORDINATION_GROUPS
+            | EXACT_ATTENTION_GROUPS
+            | ACTIVITY_INGRESS_GROUPS,
         )
 
         for rule in rules:

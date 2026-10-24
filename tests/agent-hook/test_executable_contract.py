@@ -427,6 +427,17 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         )
         self.assertEqual(unmatched.get("shadow", []), [])
 
+    def test_claude_interrupt_is_not_an_admitted_provider_event(self) -> None:
+        result = self.run_hook(
+            "dispatch", "--product", "claude", "--shadow", "--format", "json",
+            payload={"hook_event_name": "Interrupt", "cwd": str(self.root)},
+            check=False,
+        )
+        self.assertEqual(result.returncode, 65)
+        envelope = json.loads(result.stdout)
+        self.assertFalse(envelope["ok"])
+        self.assertEqual(envelope["error"]["code"], "provider-event-unsupported")
+
     def test_shadow_only_writes_dispatch_observation_for_stateful_capabilities(
         self,
     ) -> None:

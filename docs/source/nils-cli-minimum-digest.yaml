@@ -6,7 +6,7 @@
 # Ordinary validated uptake must not rewrite this file; move it only with an
 # explicit compatibility-floor retirement.
 schema_version: 1
-minimum_supported_tag: "v1.31.1"
+minimum_supported_tag: "v1.36.21"
 release_sha256:
-  linux_amd64: "02fd8807261a1ea35a3836873ee368d372de033168bf4075980977f753b5fa18"
-  linux_arm64: "537d3f063bd6e72813edeb0c23b6905af70de12893f0c0304dedef5676a66398"
+  linux_amd64: "30bcb579ac44b97c507733b1e48c21c7a540f467f6de755b513949aa308bd200"
+  linux_arm64: "6dd02f1945617c66c922a14cd35a3b5ceecb738ed6fb9fcc049438b9fec7d06d"

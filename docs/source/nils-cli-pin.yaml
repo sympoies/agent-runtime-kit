@@ -19,27 +19,21 @@ schema_version: 2
 nils_cli:
   # Oldest released surface allowed to run this repository's behavior gates.
   #
-  # Explicit retirement of plan issue/tooling/archive commands and numbered
-  # or plan work modes. Released v1.31.0 still ships the four plan binaries
-  # and accepts new L0-L3/program/plan work contexts and plan_refs; v1.31.1
-  # removes those entrypoints and rejects those new inputs while retaining
-  # readable historical state (sympoies/nils-cli#1948, #1952).
-  # Below-minimum proof: the released v1.31.0 behavioral/package probes fail
-  # retirement assertions; the same probes pass under exact v1.31.1.
-  # Ordinary validated uptake does not move this compatibility floor.
-  minimum_supported_tag: "v1.31.1"
+  # Codex Interrupt is validated while loading the entire hook bundle.
+  # Pre-Interrupt consumers reject the policy, including ordinary hooks.
+  # Released v1.36.21 supplies normalization and metadata-only activity support
+  # (sympoies/nils-cli#2695, #2732). Retire older compatibility explicitly;
+  # the old minimum v1.31.1 fails with policy-event-unsupported.
+  minimum_supported_tag: "v1.36.21"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  # v1.31.15 supplies the optional designated-review handoff/admission surface.
-  # Older admitted releases retain the unassigned route; assignment probes the
-  # capability and fails closed before sending a handoff when it is absent.
-  validated_tag: "v1.31.15"
+  validated_tag: "v1.36.21"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "773343a25d72fba9fbe975dfad3b53a07426544268ddd851cdffd99e88f6cb89"
-    linux_arm64: "d53959fae1c484f57b5c79993a344f6559945a4a7c8bad009873ef6798d20dbb"
+    linux_amd64: "30bcb579ac44b97c507733b1e48c21c7a540f467f6de755b513949aa308bd200"
+    linux_arm64: "6dd02f1945617c66c922a14cd35a3b5ceecb738ed6fb9fcc049438b9fec7d06d"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
@@ -48,8 +42,8 @@ nils_cli:
 # consumed surface each binary must satisfy. Values track the
 # surface-introduction versions recorded in docs/source/nils-cli-surface.md.
 required_clis:
-  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation
-    min: "1.27.35"
+  - bin: agent-hook       # strict shared policy/config control plane + setup-owned exact provider ingress + native aggregate-context preservation + typed post-allow agent-session coordination transaction + execution.read-only.v1 shadow evaluation + Codex Interrupt normalization and metadata-only activity
+    min: "1.36.21"
   - bin: agent-out        # canonical agent artifact allocator, including path-for compatibility for rendered state_out(...) skill instructions and reviewed cleanup plan/apply
     min: "1.19.3"
   - bin: forge-cli        # pr/issue lifecycle + label list/audit/ensure surfaces + provider payload privacy gate + GitLab MR check/merge API path + review-thread/task merge gates + exact requested-base binding across lookup/adopt/create readback/ready/merge + strict config-gated test-first evidence v2 consumption across create/adopt/dry-run/deliver + pr review-threads list/resolve/reply + fork-safe remote-derived --repo targeting + review outcome/issue mirror + native actionable review threads + native review summaries and config-gated observed review convergence + trusted-head native review binding + immutable-body guarded exact-node pending-review recovery + reviewed-head final-merge compare-and-swap + governed repo push-default direct-main delivery + durable review-loop ledger with faithful observe dry-run preflight + CLI-owned review-loop compare-and-swap (`observe --auto-state` / `--preflight`) and guarded pending-review recovery (`pr review --recover-pending`)
