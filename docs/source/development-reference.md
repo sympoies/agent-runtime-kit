@@ -373,6 +373,26 @@ owned by `meta:nils-cli-bump`; `cargo install --path` is never the default loop.
 downgrade / coupled-dev / bump procedures and the exact content-gate command
 list.
 
+For installed broker-proof recovery acceptance, run:
+
+```bash
+python3 scripts/ci/session-coordination-installed-acceptance.py
+```
+
+This opt-in entrypoint requires matching released `agent-session` and
+`agent-hook` binaries on `PATH`, plus installed Codex hook bytes matching this
+checkout. Use `--agent-session-bin`, `--agent-hook-bin`, and `--installed-hooks`
+to select an installation explicitly. It copies only the coordination guard
+and its shared helper into a temporary runtime home, constructs fixture-owned
+authority/state, and discards a real successful admission reply. Recovery must
+use prepare-admission-proof/proof without replay; terminal retirement preserves
+active and unrelated data, and unknown proof blocks execution. Stdout is a JSON
+receipt containing versions, SHA-256 digests, command counts, and outcome
+metadata; prompts and authority values are omitted. No live sessions are
+started or inspected. Existing source-linked coupled acceptance remains
+separate. Position 13 runs the receipt oracle's negative controls without
+requiring an installed matching pair.
+
 ## Build And Render
 
 Regenerate product outputs from repository root:

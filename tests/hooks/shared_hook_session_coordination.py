@@ -1216,7 +1216,7 @@ exit 64
                 if operation["session_id"] == "alpha"
             ]
             self.assertEqual(len(alpha_operations), 1)
-            self.assertEqual(alpha_operations[0]["operation"], "write")
+            self.assertEqual(alpha_operations[0]["operation"], "edit")
             self.assertEqual(alpha_operations[0]["state"], "completed")
 
             # Pull-request head targets: a surface below the capability floor
@@ -1224,7 +1224,11 @@ exit 64
             # unresolved result and never send it.
             source_version = tuple(int(part) for part in parsed_version.groups())
             supports_heads = source_version >= (1, 29, 1)
-            if supports_heads:
+            # The proof-producing release also retired private head grants.
+            # It still parses these targets, but ordinary claims cannot grant
+            # them. Preserve the older coupled surface's coverage separately.
+            supports_head_grants = supports_heads and source_version < (1, 36, 33)
+            if supports_head_grants:
                 registry = json.loads(registry_path.read_text(encoding="utf-8"))
                 alpha_claim = next(
                     claim
@@ -1310,7 +1314,10 @@ exit 64
             operations_before = len(alpha_operations)
             for index, (command, blocked_reason) in enumerate(
                 (
-                    ("forge-cli pr deliver --kind feature --title x --no-merge", None),
+                    (
+                        "forge-cli pr deliver --kind feature --title x --no-merge",
+                        None if supports_head_grants else "uncovered-mutation-scope",
+                    ),
                     (
                         "forge-cli pr create --kind feature --title x --head feat/other",
                         "uncovered-mutation-scope",
@@ -1345,7 +1352,7 @@ exit 64
                     self.assert_blocked(pull_request_pre, blocked_reason)
                     continue
                 self.assertNotEqual(
-                    (pull_request_pre or {}).get("decision"), "block"
+                    (pull_request_pre or {}).get("decision"), "block", pull_request_pre
                 )
                 pull_request_post = dict(pull_request)
                 pull_request_post["hook_event_name"] = "PostToolUse"
@@ -1365,7 +1372,7 @@ exit 64
                 )["operations"]
                 if operation["session_id"] == "alpha"
             ]
-            if supports_heads:
+            if supports_head_grants:
                 self.assertEqual(len(operations), operations_before + 1)
                 self.assertEqual(
                     operations[-1]["pull_request_targets"],
