@@ -776,6 +776,7 @@ SH
   (
     cd "$REPO_ROOT"
     PATH="$stub_bin:$PATH" HOME="$home" CODEX_HOME="$codex_home" \
+      AGENT_HOME="$state_home" \
       CODEX_AGENT_STATE_HOME="$state_home" CODEX_STUB_LOG="$stub_log" \
       bash scripts/sync-runtime-surfaces.sh \
       --source-root "$source_root" \
@@ -797,6 +798,7 @@ SH
   (
     cd "$REPO_ROOT"
     PATH="$stub_bin:$PATH" HOME="$lookalike_home" CODEX_HOME="$lookalike_codex_home" \
+      AGENT_HOME="$state_home-lookalike" \
       CODEX_AGENT_STATE_HOME="$state_home-lookalike" CODEX_STUB_LOG="$stub_log" \
       bash scripts/sync-runtime-surfaces.sh \
       --source-root "$source_root" \
@@ -821,6 +823,7 @@ SH
   (
     cd "$REPO_ROOT"
     PATH="$stub_bin:$PATH" HOME="$collision_home" CODEX_HOME="$collision_codex_home" \
+      AGENT_HOME="$state_home-collision" \
       CODEX_AGENT_STATE_HOME="$state_home-collision" CODEX_STUB_LOG="$stub_log" \
       bash scripts/sync-runtime-surfaces.sh \
       --source-root "$source_root" \
