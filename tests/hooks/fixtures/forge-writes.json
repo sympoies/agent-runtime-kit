@@ -1108,5 +1108,15 @@
     "id": "glab-curl-other-api-v4",
     "command": "curl -X POST https://chat.example.org/api/v4/posts -d fixture",
     "hint": null
+  },
+  {
+    "id": "glab-api-issue-header-method-override",
+    "command": "glab api projects/1/issues -X POST -H '-XGET: value' -f title=example",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-issue-header-method-implicit",
+    "command": "glab api projects/1/issues -H '-XGET: value' -f title=example",
+    "hint": "forge-cli"
   }
 ]
