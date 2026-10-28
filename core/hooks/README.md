@@ -32,10 +32,25 @@ Write refusals name the matching typed `forge-cli` operation when available and
 link [missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
 Unsupported operations must wait for their typed equivalent. The PR-skill
 marker and command-local environment clearing cannot exempt raw GitHub
-operations. The exact marker allow-list remains available for GitLab MR
-creation, and `glab mr create --help` is not a creation. A `glab api` request is
-a creation only for a POST to the `merge_requests` endpoint, where an explicit
-method decides regardless of flag order and fields imply POST only without one.
+operations. `glab` follows the same policy as `gh`: `glab issue` / `glab mr`
+reads (`view`, `list`, `diff`, `approvers`, `issues`), a bare group, and help as
+the whole argv stay available, while every other verb (`create`, `new`, `note`,
+`update`, `close`, `reopen`, `merge`, `approve`, `rebase`, `delete`, ...) is
+refused with the matching `forge-cli` operation. So are `glab release`
+`create|upload|delete|update` and `glab ci run|run-trig|trigger` (the verb is
+found after persistent options such as `--repo`), `glab api` requests that
+are not `GET`/`HEAD`/`OPTIONS` (one parse reads the method, the endpoint, and
+the fields, so option values are data, and the value-less `-i` is peeled off a
+clustered option such as `-iXPOST`: an explicit method decides regardless of
+flag order, and fields, multipart `--form`, or `--input` imply POST only without
+one), GraphQL other than one
+literal read document, and `curl` writes to GitLab REST or GraphQL paths
+(`/api/v4/{projects,groups,issues,merge_requests,snippets}/...`,
+`/api/graphql`) on any host. Other products' `/api/v4` paths are not matched.
+The exact marker allow-list remains available for GitLab MR creation
+(`glab mr create|new`, and a `glab api` POST whose endpoint, the first
+positional, is the `merge_requests` create endpoint; field and header values
+that merely contain that text do not count) and admits nothing else; `glab mr create --help` is not a creation.
 `forge-cli` invocations remain available: the hook inspects submitted
 shell source, not the governed executable's internal `gh` or `git`
 subprocesses. Appending a raw GitHub operation to a forge-cli call still

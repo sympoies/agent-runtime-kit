@@ -22,7 +22,7 @@ inventory. Track repo-scoped third-party license obligations in
 - Find files: `fd` (use `tree`/`eza` for human-readable structure listings)
 - Read files: `bat`; preview Markdown: `glow`
 - Review diffs: `delta` (with `git`)
-- In every agent session, refuse raw `gh issue`/`gh pr` writes and other raw GitHub writes; use `forge-cli`, with missing equivalents tracked in [nils-cli#2138](https://github.com/sympoies/nils-cli/issues/2138). Reads, help, and dry-run forms stay available.
+- In every agent session, refuse raw `gh issue`/`gh pr` and `glab issue`/`glab mr` writes and other raw forge writes; use `forge-cli`, with missing equivalents tracked in [nils-cli#2138](https://github.com/sympoies/nils-cli/issues/2138). Reads, help, and dry-run forms stay available.
 - API exploration: `xh`/`httpie` + `jq`; use `curl` for minimal-dependency calls
 - Browser tooling: native Browser/Chrome tools first; `playwright` for
   deterministic verification; `agent-browser` only as an optional legacy CLI

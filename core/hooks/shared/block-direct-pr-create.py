@@ -81,9 +81,9 @@ BLOCK_REASON_MR = (
 CLI_OPTIONS_WITH_VALUE = {"-R", "--repo"}
 CLI_OPTIONS_WITH_VALUE_PREFIXES = ("--repo=",)
 GLAB_API_METHOD_FLAGS = {"-X", "--method"}
-GLAB_API_POST_PARAMETER_FLAGS = {"-F", "--field", "-f", "--raw-field", "--form"}
+GLAB_API_FIELD_FLAGS = {"-F", "--field", "-f", "--raw-field", "--form"}
 # Options whose next token is data, never a method or endpoint.
-GLAB_API_VALUE_FLAGS = {"-H", "--header", "--hostname", "--input", "-q", "--jq", "-t", "--template"}
+GLAB_API_VALUE_FLAGS = {"-H", "--header", "--hostname", "-q", "--jq", "-t", "--template"}
 # Match only the create endpoint itself: the bare path, optionally with a
 # single trailing slash, at end-of-path or before a query/fragment. A "/"
 # followed by a sub-resource segment must NOT match, or sub-resource POSTs
@@ -138,52 +138,68 @@ def invokes_gh_pr_create(simple_command: list[str]) -> bool:
 
 def invokes_glab_mr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "glab")
-    return args[:2] == ["mr", "create"] and args[2:] not in HELP_ONLY
+    return args[:1] == ["mr"] and args[1:2] in (["create"], ["new"]) and args[2:] not in HELP_ONLY
 
 
-def api_method_is_post(args: list[str]) -> bool:
-    """An explicit method decides; fields imply POST only without one.
+def glab_api_parts(args: list[str]) -> tuple[str, str, list[str], bool]:
+    """Return method, endpoint, fields, and whether `--input` supplies a body.
 
-    Option values are data and are consumed before method recognition, so a
-    header or field that merely looks like `-XGET` cannot override the method.
-    A candidate counts only as a bare verb word, and any POST candidate wins.
+    One parse serves the method and the endpoint, so option values are data for
+    both: a header or field spelled like `-XGET` or `/merge_requests` can be
+    neither. The endpoint is the first positional (glab takes exactly one), a
+    method candidate counts only as a bare verb word, any POST candidate wins,
+    and fields, multipart `--form`, or `--input` imply POST only without one.
     """
     methods: list[str] = []
-    implicit_post = False
+    fields: list[str] = []
+    positionals: list[str] = []
+    input_body = False
     index = 0
     while index < len(args):
         token = args[index]
+        if token.startswith("-") and not token.startswith("--") and len(token) > 2:
+            # `-i` takes no value, so peel it off the front of a cluster and
+            # parse the option it was clustered with (`-iXPOST`, `-if k=v`).
+            rest = token[1:].lstrip("i")
+            if rest != token[1:]:
+                if not rest:
+                    index += 1
+                    continue
+                token = "-" + rest
         flag, has_value, value = token.partition("=")
-        takes_value = flag in GLAB_API_VALUE_FLAGS or flag in GLAB_API_POST_PARAMETER_FLAGS
-        if flag in GLAB_API_METHOD_FLAGS:
+        if flag in GLAB_API_METHOD_FLAGS | GLAB_API_FIELD_FLAGS | GLAB_API_VALUE_FLAGS | {"--input"}:
             if not has_value:
                 index += 1
                 value = args[index] if index < len(args) else ""
-            methods.append(value)
+            if flag in GLAB_API_METHOD_FLAGS:
+                methods.append(value)
+            elif flag in GLAB_API_FIELD_FLAGS:
+                fields.append(value)
+            elif flag == "--input":
+                input_body = True
         elif token.startswith("-X") and token != "-X":
             methods.append(token[2:].lstrip("="))
-        elif takes_value:
-            implicit_post = implicit_post or flag in GLAB_API_POST_PARAMETER_FLAGS
-            index += 0 if has_value else 1
-        elif token.startswith(("-f", "-F")):
-            implicit_post = True
+        elif token.startswith(("-f", "-F")) and len(token) > 2:
+            fields.append(token[2:])
+        elif not token.startswith("-"):
+            positionals.append(token)
         index += 1
     verbs = [method.upper() for method in methods if re.fullmatch(r"[A-Za-z]+", method)]
     if "POST" in verbs:
-        return True
-    return implicit_post and not verbs
-
-
-def api_has_merge_requests_endpoint(args: list[str]) -> bool:
-    return any(MR_ENDPOINT_RE.search(token) for token in args)
+        method = "POST"
+    elif verbs:
+        method = verbs[-1]
+    else:
+        method = "POST" if fields or input_body else "GET"
+    return method, positionals[0] if positionals else "", fields, input_body
 
 
 def invokes_glab_api_mr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "glab")
     if args[:1] != ["api"]:
         return False
-    api_args = args[1:]
-    return api_method_is_post(api_args) and api_has_merge_requests_endpoint(api_args)
+    method, endpoint, _, _ = glab_api_parts(args[1:])
+    return method == "POST" and bool(MR_ENDPOINT_RE.search(endpoint))
 
 
 def marker_value_before_command(
@@ -263,6 +279,18 @@ GITHUB_WRITES = {
 # Provider reads with no write mode. `ls` is gh's alias for `list`.
 GH_READ_VERBS = {"view", "list", "ls", "status", "checks", "diff"}
 READ_API_METHODS = {"GET", "HEAD", "OPTIONS"}
+GLAB_READ_VERBS = GH_READ_VERBS | {"approvers", "issues"}
+GLAB_GROUP_WRITES = {
+    "release": {"create", "upload", "delete", "update"},
+    "ci": {"run", "run-trig", "trigger"},
+}
+# glab verb spellings and the forge-cli operation that replaces them.
+GLAB_VERB_ALIASES = {"new": "create", "note": "comment", "update": "edit", "approve": "review"}
+# GitLab REST and GraphQL paths on any host. Other products also use /api/v4,
+# so only the GitLab resource roots count.
+GITLAB_API_PATH_RE = re.compile(
+    r"^/api/(?:v4/(?:projects|groups|issues|merge_requests|snippets)(?:/|$)|graphql/?$)"
+)
 SUPPORTED_OPERATIONS = {
     "issue": {"create", "comment", "close", "edit", "reopen", "view", "list"},
     "pr": {"create", "comment", "close", "edit", "merge", "ready", "review",
@@ -319,6 +347,26 @@ def api_hint(endpoint: str, method: str) -> str:
         group = "pr" if "/pulls" in path else "issue"
         verb = "create" if method == "POST" else "delete" if method == "DELETE" else "edit"
         return write_hint(group, verb)
+    return write_hint("api")
+
+
+def gitlab_api_hint(endpoint: str, method: str) -> str:
+    path = urlsplit(endpoint).path.strip("/")
+    if re.search(r"merge_requests/[^/]+/merge$", path):
+        return write_hint("pr", "merge")
+    if re.search(r"merge_requests/[^/]+/notes", path):
+        return write_hint("pr", "comment")
+    if re.search(r"issues/[^/]+/notes", path):
+        return write_hint("issue", "comment")
+    if re.search(r"(?:^|/)(issues|merge_requests)/?$", path) and method == "POST":
+        return write_hint("pr" if "merge_requests" in path else "issue", "create")
+    if re.search(r"(?:^|/)(issues|merge_requests)/[^/]+$", path):
+        group = "pr" if "merge_requests" in path else "issue"
+        return write_hint(group, "delete" if method == "DELETE" else "edit")
+    if "releases" in path:
+        return write_hint("release")
+    if "pipeline" in path:
+        return write_hint("workflow")
     return write_hint("api")
 
 
@@ -446,19 +494,26 @@ def gh_switches(args: list[str]) -> set[str]:
     return switches
 
 
-def gh_issue_pr_is_read_only(args: list[str], verb: str) -> bool:
+def issue_develop_lists_only(args: list[str], verb: str) -> bool:
+    rest = args[2:]
+    return (
+        args[0] == "issue"
+        and verb == "develop"
+        and "--list" in rest
+        and all(item == "--list" or item.isdigit() for item in rest)
+    )
+
+
+def is_read_only_form(args: list[str], verb: str, read_verbs: set[str]) -> bool:
     """Reads and help-only forms; any other flag shape stays a write.
 
     Help is exempt only as the whole argv (`gh pr --help`, `gh pr merge -h`):
     in a longer argv, an unlisted value option can swallow `--help` as data.
     """
-    if args[0] == "issue" and verb == "develop":
-        rest = args[2:]
-        return "--list" in rest and all(item == "--list" or item.isdigit() for item in rest)
     help_only = args[-1] in ("--help", "-h") and (
         len(args) == 2 or (len(args) == 3 and not args[1].startswith("-"))
     )
-    return len(args) == 1 or help_only or verb in GH_READ_VERBS
+    return len(args) == 1 or help_only or verb in read_verbs
 
 
 def graphql_is_literal_read(fields: list[str], input_body: bool) -> bool:
@@ -475,6 +530,36 @@ def graphql_is_literal_read(fields: list[str], input_body: bool) -> bool:
     )
 
 
+def glab_write_hint(tokens: list[str]) -> str | None:
+    """glab mirrors the gh policy; MR creation stays with the marker check."""
+    args = cli_subcommands(tokens, "glab")
+    if args[:1] in (["issue"], ["mr"]):
+        verb_index = skip_cli_global_options(args, 1)
+        verb = args[verb_index] if verb_index < len(args) else ""
+        if is_read_only_form(args, verb, GLAB_READ_VERBS) or invokes_glab_mr_create(tokens):
+            return None
+        group = "pr" if args[0] == "mr" else "issue"
+        return write_hint(group, GLAB_VERB_ALIASES.get(verb, verb))
+    if args[:1] in (["release"], ["ci"]):
+        verb_index = skip_cli_global_options(args, 1)
+        verb = args[verb_index] if verb_index < len(args) else ""
+        if verb in GLAB_GROUP_WRITES[args[0]] and not is_read_only_form(args, "", set()):
+            return write_hint("release" if args[0] == "release" else "workflow")
+        return None
+    if args[:1] != ["api"]:
+        return None
+    if is_read_only_form(args, "", set()) or invokes_glab_api_mr_create(tokens):
+        return None
+    method, endpoint, fields, input_body = glab_api_parts(args[1:])
+    if urlsplit(endpoint).path.strip("/") == "graphql":
+        if method in {"GET", "POST"} and graphql_is_literal_read(fields, input_body):
+            return None
+        return write_hint("api")
+    if method in READ_API_METHODS:
+        return None
+    return gitlab_api_hint(endpoint, method)
+
+
 def raw_write_hint(tokens: list[str]) -> str | None:
     # These tokens already name a process argv, not a new shell boundary.
     invocation = invocation_tokens(tokens, shell_boundary=False)
@@ -489,7 +574,9 @@ def raw_write_hint(tokens: list[str]) -> str | None:
             verb = args[verb_index] if verb_index < len(args) else ""
             if verb == "comment" and switches & {"--edit-last", "--delete-last"}:
                 return write_hint("comment-mutation")
-            if gh_issue_pr_is_read_only(args, verb):
+            if issue_develop_lists_only(args, verb) or is_read_only_form(
+                args, verb, GH_READ_VERBS
+            ):
                 return None
             return write_hint(args[0], "create" if verb == "new" else verb)
         # Only an unambiguous help-only form is exempt. In a larger argv,
@@ -510,6 +597,8 @@ def raw_write_hint(tokens: list[str]) -> str | None:
             return write_hint("api")
         if method not in READ_API_METHODS:
             return api_hint(endpoint, method)
+    elif executable == "glab":
+        return glab_write_hint(tokens)
     elif executable == "curl":
         # --next resets curl's local request options; one transfer's GET must
         # never hide an earlier POST, nor inherit its method into a later read.
@@ -528,6 +617,8 @@ def raw_write_hint(tokens: list[str]) -> str | None:
                     parsed = urlsplit(target if "://" in target else "//" + target)
                     if parsed.hostname == "api.github.com":
                         return api_hint(target, method)
+                    if GITLAB_API_PATH_RE.match(parsed.path):
+                        return gitlab_api_hint(parsed.path, method)
                 except ValueError:
                     continue
     return None
@@ -567,7 +658,7 @@ def command_raw_write(command: str, depth: int = 0) -> str | None:
             hint = command_raw_write(nested, depth + 1)
             if hint:
                 return hint
-        for candidate in opaque_invocation_candidates(invocation, {"gh", "curl"}):
+        for candidate in opaque_invocation_candidates(invocation, {"gh", "glab", "curl"}):
             hint = raw_write_hint(candidate)
             if hint:
                 return hint
@@ -582,8 +673,8 @@ def main() -> int:
     hint = command_raw_write(command)
     if hint:
         emit_block(
-            "[forge-write: blocked] Raw gh issue/pr writes and other GitHub "
-            f"writes are refused in every agent session. {hint}"
+            "[forge-write: blocked] Raw gh/glab issue, pr and mr writes and other "
+            f"forge writes are refused in every agent session. {hint}"
         )
         return ALLOW
     reason = command_creates_pr_or_mr(command)

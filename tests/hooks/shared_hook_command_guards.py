@@ -1228,13 +1228,14 @@ class CommandGuardsTests(HookTestCase):
                     self.assert_blocked(decision, "forge-cli")
 
 
-    def test_github_subresource_writes_refused_and_gitlab_subresources_allowed(self) -> None:
+    def test_forge_subresource_writes_refused_and_only_the_create_endpoint_is_marker_gated(self) -> None:
         # Regression for agent-runtime-kit#474: the pulls / merge_requests
         # endpoint regexes used a trailing [/?#] class, so they over-matched the
         # whole /pulls/... and /merge_requests/... subtree. A POST to any
         # sub-resource (review comments, replies, reviews, reactions, notes) was
-        # wrongly blocked as a PR/MR create. GitLab retains that contract;
-        # all GitHub API writes are now refused, including subresources.
+        # wrongly blocked as a PR/MR create. The marker allow-list still gates
+        # only the create endpoint; every GitHub and GitLab API write,
+        # subresources included, is refused with a typed forge-cli route.
         still_blocked = (
             # GitHub PR create endpoint at end of path.
             "gh api --method POST repos/example/project/pulls "
@@ -1293,16 +1294,13 @@ class CommandGuardsTests(HookTestCase):
             "-f name=thumbsup",
         )
         for command in subresource_commands:
-            with self.subTest(allowed=command):
+            with self.subTest(blocked=command):
                 code, decision, stderr = run_hook(
                     "block-direct-pr-create.py",
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                if command.startswith("gh "):
-                    self.assert_blocked(decision, "forge-cli")
-                else:
-                    self.assert_allowed(decision)
+                self.assert_blocked(decision, "forge-cli")
 
 
     def test_glab_help_and_explicit_get_are_reads_not_creates(self) -> None:
@@ -1335,6 +1333,43 @@ class CommandGuardsTests(HookTestCase):
             "glab api /projects/1/merge_requests -H '-XGET: value' -f title=x",
             "glab api /projects/1/merge_requests -X POST -f '-XGET=value' -f title=x",
             "glab api /projects/1/merge_requests -X POST --header=--method=GET -f title=x",
+        ):
+            with self.subTest(blocked=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "forge-cli")
+
+
+    def test_glab_skill_marker_admits_mr_creation_only(self) -> None:
+        marker = "AGENT_RUNTIME_PR_SKILL=pr:deliver-pr"
+        for command in (
+            f"{marker} glab mr create --draft",
+            f"{marker} glab mr new --draft",
+            f"{marker} glab api -X POST /projects/1/merge_requests -f title=x",
+            f"{marker} glab api /projects/1/merge_requests --form title=x",
+            f"{marker} glab api -iXPOST /projects/1/merge_requests -f title=x",
+        ):
+            with self.subTest(allowed=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        for command in (
+            f"{marker} glab mr merge 7",
+            f"{marker} glab issue create --title x",
+            f"{marker} glab api -X POST /projects/1/issues -f title=x",
+            # Text in a field or header value is not the endpoint.
+            f"{marker} glab api projects/1/issues -X POST -f title=/merge_requests",
+            f"{marker} glab api projects/1/issues -X POST -H 'X-Note: /merge_requests' -f title=x",
+            f"{marker} glab api projects/1/issues --form title=/merge_requests",
+            f"{marker} glab api -iXPOST projects/1/issues",
+            f"{marker} glab api -if title=x projects/1/issues",
+            f"{marker} glab api -X PUT /projects/1/merge_requests/7/merge",
+            f"{marker} bash -c 'glab mr merge 7'",
         ):
             with self.subTest(blocked=command):
                 code, decision, stderr = run_hook(
