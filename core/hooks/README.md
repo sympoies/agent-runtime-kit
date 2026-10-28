@@ -8,29 +8,45 @@ The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
 requires different behavior.
 
-`block-direct-pr-create.py` refuses every `gh issue` and `gh pr`
-invocation in Codex and Claude agent sessions, including reads and help.
-It also refuses raw GitHub writes: release/workflow writes, non-GET `gh api`
-requests (including implicit POST from fields or input), GraphQL mutations,
-and GitHub API writes through `curl`. Identity binding is irrelevant;
-the guard does not query the session broker or read forge credentials.
+`block-direct-pr-create.py` refuses raw GitHub writes in Codex and Claude agent
+sessions: `gh issue` / `gh pr` write verbs (create, comment, close, edit,
+reopen, merge, ready, review, and any unrecognized verb), `gh pr checkout`,
+release/workflow writes, non-read `gh api` requests (including implicit POST
+from fields or input), GraphQL mutations, and GitHub API writes through `curl`.
+Reads and help stay available: `gh issue|pr` `view`, `list`, `status`, `checks`,
+`diff`, `issue develop --list`, a bare `gh issue` / `gh pr`, and help as the
+whole argv (`gh pr --help`, `gh pr merge -h`; in a longer argv an unlisted value
+option can take `--help` as data, so it stays a write). Identity binding is
+irrelevant; the guard does not query the session broker or read forge
+credentials.
 
-REST GET requests remain available. GraphQL GET requires a literal read
-document; opaque input and mutations are refused. GraphQL POST is refused even
-for a query. Explicit REST methods take precedence over fields and curl uploads
-regardless of flag order. Curl `-T`/`--upload-file` implies PUT; `--next`
-resets transfer options. GraphQL strings and comments are masked in one pass;
-incomplete strings are refused because the document cannot be proved read-only.
+REST `GET`, `HEAD`, and `OPTIONS` requests remain available. A GraphQL request
+is admitted, as `GET` or its normal `POST`, only with one literal read document:
+mutations, `@file` documents, `--input`, and variable documents are refused.
+Explicit REST methods take precedence over fields and curl uploads regardless of
+flag order. Curl `-T`/`--upload-file` implies PUT; `--next` resets transfer
+options. GraphQL strings and comments are masked in one pass; incomplete strings
+are refused because the document cannot be proved read-only.
 
-Refusals name the matching typed `forge-cli` operation when available and link
-[missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
+Write refusals name the matching typed `forge-cli` operation when available and
+link [missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
 Unsupported operations must wait for their typed equivalent. The PR-skill
 marker and command-local environment clearing cannot exempt raw GitHub
 operations. The exact marker allow-list remains available for GitLab MR
-creation. `forge-cli` invocations remain available: the hook inspects submitted
+creation, and `glab mr create --help` is not a creation. A `glab api` request is
+a creation only for a POST to the `merge_requests` endpoint, where an explicit
+method decides regardless of flag order and fields imply POST only without one.
+`forge-cli` invocations remain available: the hook inspects submitted
 shell source, not the governed executable's internal `gh` or `git`
 subprocesses. Appending a raw GitHub operation to a forge-cli call still
 triggers the guard.
+
+`block-direct-git-commit.py` refuses `git commit`; `git commit --help`/`-h`, and
+`--dry-run` combined only with value-less status flags (`--short`, `-a`, ...),
+author nothing and stay available. A value option such as `-m` or `-F` can take
+`--help` or `--dry-run` as its value, so those forms stay refused.
+`block-direct-git-worktree.py` refuses mutating `git worktree` verbs; help as the
+whole remaining argv and `prune --dry-run`/`-n` stay available.
 
 This is a guard, not a Bash sandbox. It recognizes literal command forms,
 ordinary wrappers, command substitutions, and nested shell command strings
@@ -524,8 +540,15 @@ because Git configuration can retarget them. PreToolUse performs no live
 `ls-remote` or provider probe; implicit, all/mirror, delete, matching, wildcard,
 and missing-cache cases fail closed, while live remote truth remains owned by
 the delivery CLI. It leaves explicit feature-branch pushes, `git push
---dry-run`, semantic-commit help/dry-run, and the governed `forge-cli repo
-push-default` invocation available. A semantic-commit `--help`, `--dry-run`, or
+--dry-run`, `git push --help`, semantic-commit help/dry-run, and the governed
+`forge-cli repo push-default` invocation available. On the checked-out default
+branch it also leaves `git pull --dry-run` (with only value-less flags, since a
+value option could take `--dry-run` as its value and still fast-forward) and a
+`git reset` whose commit is absent or `HEAD`/`@` available, because neither can
+move the branch; a reset to any other commit, a dynamic word, or a merge, pull,
+cherry-pick, or `update-ref` that moves the default branch stays refused.
+
+A semantic-commit `--help`, `--dry-run`, or
 `--validate-only` counts only when every word before it is a literal, known
 option or value: a dynamic word, an unknown option, or a redirection-like word
 in a value slot could swallow it in semantic-commit's own parser, so the

@@ -482,17 +482,37 @@ def command_retargets_lookup(simple_commands: list[list[str]]) -> bool:
     return any(command_retargets_variables(tokens, LOOKUP_ENV_NAMES) for tokens in simple_commands)
 
 
+# `commit` flags that take no value. Help and dry-run are admitted only
+# alongside these: a value option (`-m`, `-F`, `--author`) can swallow
+# `--help` or `--dry-run` as its value and then author the commit.
+COMMIT_NO_VALUE_FLAGS = frozenset(
+    {"--short", "--long", "--porcelain", "--branch", "-v", "--verbose",
+     "-a", "--all", "--amend", "--no-edit", "--allow-empty"}
+)
+
+
+def commit_is_non_authoring(arguments: list[str]) -> bool:
+    """Help, or a dry-run that cannot carry a message or file operand."""
+    rest = arguments[1:]
+    if rest in (["--help"], ["-h"]):
+        return True
+    return "--dry-run" in rest and all(
+        token == "--dry-run" or token in COMMIT_NO_VALUE_FLAGS for token in rest
+    )
+
+
 def subcommand_block_reason(
     subcommand: str | None,
     simple_command: list[str],
     invocation: list[str],
     *,
     lookup_retargeted: bool = False,
+    arguments: list[str] | None = None,
 ) -> str:
     if subcommand is None:
         return ""
     if subcommand == "commit":
-        return BLOCK_REASON
+        return "" if commit_is_non_authoring(arguments or []) else BLOCK_REASON
     if token_is_dynamic(subcommand):
         return OPAQUE_REASON
     if not GIT_SUBCOMMAND_RE.fullmatch(subcommand):
@@ -522,6 +542,7 @@ def git_commit_block_reason(command: str) -> str:
             simple_command,
             invocation,
             lookup_retargeted=lookup_retargeted,
+            arguments=git_arguments(simple_command),
         )
         if reason:
             return reason
@@ -539,6 +560,7 @@ def git_commit_block_reason(command: str) -> str:
                 simple_command,
                 candidate,
                 lookup_retargeted=lookup_retargeted,
+                arguments=git_arguments(candidate),
             )
             if reason:
                 return reason

@@ -63,7 +63,7 @@ ALLOWED_MR_SKILLS: frozenset[str] = _BUILTIN_MR_SKILLS | _OVERLAY_SKILLS
 MARKER_ENV_NAMES = ("AGENT_RUNTIME_PR_SKILL",)
 
 BLOCK_REASON_PR = (
-    "Raw gh issue/pr operations and GitHub writes are refused in every agent "
+    "Raw gh issue/pr writes and other GitHub writes are refused in every agent "
     "session. Use the matching `forge-cli issue` or `forge-cli pr` command "
     "through the owning workflow; create PRs with `forge-cli pr deliver` "
     "or `forge-cli pr create`. Missing equivalents are tracked in "
@@ -126,32 +126,37 @@ def cli_subcommands(simple_command: list[str], command_name: str) -> list[str]:
     return invocation[index:]
 
 
+HELP_ONLY = (["--help"], ["-h"])
+
+
 def invokes_gh_pr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "gh")
-    return args[:2] == ["pr", "create"]
+    return args[:2] == ["pr", "create"] and args[2:] not in HELP_ONLY
 
 
 def invokes_glab_mr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "glab")
-    return args[:2] == ["mr", "create"]
+    return args[:2] == ["mr", "create"] and args[2:] not in HELP_ONLY
 
 
 def api_method_is_post(args: list[str]) -> bool:
+    """An explicit method decides; fields imply POST only without one."""
+    explicit: str | None = None
+    implicit_post = False
     for index, token in enumerate(args):
-        upper = token.upper()
         if token in GLAB_API_METHOD_FLAGS and index + 1 < len(args):
-            return args[index + 1].upper() == "POST"
-        if upper in {"-XPOST", "-X=POST", "--METHOD=POST"}:
-            return True
-        if upper.startswith("--METHOD="):
-            return upper.split("=", 1)[1] == "POST"
-        if token in GLAB_API_POST_PARAMETER_FLAGS:
-            return True
-        if any(token.startswith(f"{flag}=") for flag in GLAB_API_POST_PARAMETER_FLAGS):
-            return True
-        if token.startswith(("-f", "-F")) and token not in {"-f", "-F"}:
-            return True
-    return False
+            explicit = args[index + 1].upper()
+        elif token.upper().startswith("--METHOD="):
+            explicit = token.split("=", 1)[1].upper()
+        elif token.startswith("-X") and token != "-X":
+            explicit = token[2:].lstrip("=").upper()
+        elif (
+            token in GLAB_API_POST_PARAMETER_FLAGS
+            or any(token.startswith(f"{flag}=") for flag in GLAB_API_POST_PARAMETER_FLAGS)
+            or token.startswith(("-f", "-F"))
+        ):
+            implicit_post = True
+    return implicit_post if explicit is None else explicit == "POST"
 
 
 def api_has_merge_requests_endpoint(args: list[str]) -> bool:
@@ -240,6 +245,9 @@ GITHUB_WRITES = {
     "release": {"create", "upload", "edit", "delete", "delete-asset"},
     "workflow": {"run", "enable", "disable"},
 }
+# Provider reads with no write mode. `ls` is gh's alias for `list`.
+GH_READ_VERBS = {"view", "list", "ls", "status", "checks", "diff"}
+READ_API_METHODS = {"GET", "HEAD", "OPTIONS"}
 SUPPORTED_OPERATIONS = {
     "issue": {"create", "comment", "close", "edit", "reopen", "view", "list"},
     "pr": {"create", "comment", "close", "edit", "merge", "ready", "review",
@@ -423,6 +431,35 @@ def gh_switches(args: list[str]) -> set[str]:
     return switches
 
 
+def gh_issue_pr_is_read_only(args: list[str], verb: str) -> bool:
+    """Reads and help-only forms; any other flag shape stays a write.
+
+    Help is exempt only as the whole argv (`gh pr --help`, `gh pr merge -h`):
+    in a longer argv, an unlisted value option can swallow `--help` as data.
+    """
+    if args[0] == "issue" and verb == "develop":
+        rest = args[2:]
+        return "--list" in rest and all(item == "--list" or item.isdigit() for item in rest)
+    help_only = args[-1] in ("--help", "-h") and (
+        len(args) == 2 or (len(args) == 3 and not args[1].startswith("-"))
+    )
+    return len(args) == 1 or help_only or verb in GH_READ_VERBS
+
+
+def graphql_is_literal_read(fields: list[str], input_body: bool) -> bool:
+    """One literal query document; files and opaque input cannot be proved."""
+    queries = [field.partition("=")[2] for field in fields if field.startswith("query=")]
+    if input_body or len(queries) != 1:
+        return False
+    query_tokens = graphql_tokens(queries[0])
+    if query_tokens is None:
+        return False
+    query_tokens = query_tokens.lstrip()
+    return not re.search(r"\bmutation\b", query_tokens) and bool(
+        query_tokens.startswith("{") or re.match(r"query(?:\s|\(|\{|$)", query_tokens)
+    )
+
+
 def raw_write_hint(tokens: list[str]) -> str | None:
     # These tokens already name a process argv, not a new shell boundary.
     invocation = invocation_tokens(tokens, shell_boundary=False)
@@ -437,6 +474,8 @@ def raw_write_hint(tokens: list[str]) -> str | None:
             verb = args[verb_index] if verb_index < len(args) else ""
             if verb == "comment" and switches & {"--edit-last", "--delete-last"}:
                 return write_hint("comment-mutation")
+            if gh_issue_pr_is_read_only(args, verb):
+                return None
             return write_hint(args[0], "create" if verb == "new" else verb)
         # Only an unambiguous help-only form is exempt. In a larger argv,
         # '--help' can be data for a value option (e.g. release --notes).
@@ -448,21 +487,14 @@ def raw_write_hint(tokens: list[str]) -> str | None:
             return None
         method, endpoints, fields, input_body = request_parts(args[1:])
         endpoint = endpoints[0] if endpoints else ""
-        if method != "GET":
-            return api_hint(endpoint, method)
         if urlsplit(endpoint).path.strip("/") == "graphql":
-            queries = [field.partition("=")[2] for field in fields if field.startswith("query=")]
-            # Only explicit GET with a literal read document is admitted.
-            # Files and variable documents cannot be proved read-only here.
-            if not input_body and len(queries) == 1:
-                query_tokens = graphql_tokens(queries[0])
-                if query_tokens is not None:
-                    query_tokens = query_tokens.lstrip()
-                    if not re.search(r"\bmutation\b", query_tokens) and (
-                        query_tokens.startswith("{") or re.match(r"query(?:\s|\(|\{|$)", query_tokens)
-                    ):
-                        return None
+            # GraphQL always travels as POST; a literal read document is a read
+            # in either method, and mutations, files and opaque input are not.
+            if method in {"GET", "POST"} and graphql_is_literal_read(fields, input_body):
+                return None
             return write_hint("api")
+        if method not in READ_API_METHODS:
+            return api_hint(endpoint, method)
     elif executable == "curl":
         # --next resets curl's local request options; one transfer's GET must
         # never hide an earlier POST, nor inherit its method into a later read.
@@ -535,7 +567,7 @@ def main() -> int:
     hint = command_raw_write(command)
     if hint:
         emit_block(
-            "[forge-write: blocked] Raw gh issue/pr operations and GitHub "
+            "[forge-write: blocked] Raw gh issue/pr writes and other GitHub "
             f"writes are refused in every agent session. {hint}"
         )
         return ALLOW

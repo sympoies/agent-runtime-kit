@@ -2061,6 +2061,11 @@ def update_ref_target(arguments: list[str]) -> str | None:
     return None
 
 
+PULL_PREVIEW_FLAGS = frozenset(
+    {"--dry-run", "-v", "--verbose", "-q", "--quiet", "--all", "--tags", "--no-tags"}
+)
+
+
 def git_rewrite_is_non_authoring(subcommand: str, arguments: list[str]) -> bool:
     """Recognize the existing no-authoring forms without checkout probes."""
     if subcommand in {"merge", "cherry-pick"} and arguments in (
@@ -2069,10 +2074,30 @@ def git_rewrite_is_non_authoring(subcommand: str, arguments: list[str]) -> bool:
         return True
     if arguments in (["-h"], ["--help"]):
         return True
+    options = arguments[: arguments.index("--")] if "--" in arguments else arguments
+    if subcommand == "pull":
+        # Fetches in preview mode and stops before any merge or rebase. Other
+        # flags must be known value-less ones: a value option such as `-X` or
+        # `-s` could take `--dry-run` as its value and still fast-forward.
+        return "--dry-run" in options and all(
+            not token.startswith("-") or token in PULL_PREVIEW_FLAGS
+            for token in options
+        )
     return subcommand == "reset" and (
         not arguments
         or ("--" in arguments and arguments.index("--") < len(arguments) - 1)
+        or reset_target_is_head(options)
     )
+
+
+def reset_target_is_head(options: list[str]) -> bool:
+    """A reset to the current commit (or with no commit) never moves the branch.
+
+    Operands after the commit are paths. Any other first operand, including a
+    dynamic word or a value option's separate argument, stays an authoring reset.
+    """
+    operands = [token for token in options if not token.startswith("-")]
+    return not operands or operands[0] in {"HEAD", "@"}
 
 
 def git_default_branch_rewrite_targets_default(
@@ -2605,6 +2630,11 @@ def push_shape(arguments: list[str]) -> tuple[bool, bool, bool, bool, str, list[
     return dry_run, all_or_mirror, delete, tags_only, "origin", []
 
 
+def push_is_non_publishing(arguments: list[str]) -> bool:
+    """A dry run, or help as the whole argv, publishes nothing."""
+    return push_shape(arguments)[0] or arguments in (["-h"], ["--help"])
+
+
 # With no explicit refspec, Git may select a destination from
 # remote.<name>.push, branch pushRemote/upstream, remote.pushDefault, and
 # push.default. The checked-out branch alone cannot prove the destination is
@@ -2822,7 +2852,7 @@ def invocation_block_reason(
                 "The Git subcommand depends on shell expansion; use a literal "
                 "read-only or delivery operation."
             )
-        if subcommand == "push" and push_shape(action)[0]:
+        if subcommand == "push" and push_is_non_publishing(action):
             return ""
         if subcommand in GIT_RAW_PUBLISH_COMMANDS:
             return unclassifiable(raw_publish_detail(subcommand))
@@ -2890,7 +2920,7 @@ def invocation_block_reason(
             if subcommand in GIT_DEFAULT_BRANCH_REWRITE_COMMANDS:
                 return rewrite_reason(subcommand, action)
             return ""
-        if push_shape(action)[0]:
+        if push_is_non_publishing(action):
             return ""
         reason = push_verdict_reason(
             *push_classification(probe, action, cwd, config_arguments)
