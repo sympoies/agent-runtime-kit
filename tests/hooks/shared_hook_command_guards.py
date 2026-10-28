@@ -1348,6 +1348,7 @@ class CommandGuardsTests(HookTestCase):
             f"{marker} glab mr create --draft",
             f"{marker} glab mr new --draft",
             f"{marker} glab api -X POST /projects/1/merge_requests -f title=x",
+            f"{marker} glab api /projects/1/merge_requests --form title=x",
         ):
             with self.subTest(allowed=command):
                 code, decision, stderr = run_hook(
@@ -1360,6 +1361,10 @@ class CommandGuardsTests(HookTestCase):
             f"{marker} glab mr merge 7",
             f"{marker} glab issue create --title x",
             f"{marker} glab api -X POST /projects/1/issues -f title=x",
+            # Text in a field or header value is not the endpoint.
+            f"{marker} glab api projects/1/issues -X POST -f title=/merge_requests",
+            f"{marker} glab api projects/1/issues -X POST -H 'X-Note: /merge_requests' -f title=x",
+            f"{marker} glab api projects/1/issues --form title=/merge_requests",
             f"{marker} glab api -X PUT /projects/1/merge_requests/7/merge",
             f"{marker} bash -c 'glab mr merge 7'",
         ):

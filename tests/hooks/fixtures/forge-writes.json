@@ -1118,5 +1118,70 @@
     "id": "glab-api-issue-header-method-implicit",
     "command": "glab api projects/1/issues -H '-XGET: value' -f title=example",
     "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-issue-field-lookalike-mr-endpoint",
+    "command": "glab api projects/1/issues -X POST -f title=/merge_requests",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-issue-header-lookalike-mr-endpoint",
+    "command": "glab api projects/1/issues -X POST -H 'X-Note: /merge_requests' -f title=example",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-form-implies-post",
+    "command": "glab api projects/1/issues --form title=example",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-form-equals-implies-post",
+    "command": "glab api projects/1/issues/7/notes --form=body=example",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "glab-api-form-explicit-get",
+    "command": "glab api projects/1/issues --form title=example -X GET",
+    "hint": null
+  },
+  {
+    "id": "glab-release-repo-before-verb",
+    "command": "glab release --repo example/project create v1.0.0",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "glab-release-repo-equals-before-verb",
+    "command": "glab release --repo=example/project delete v1.0.0",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "glab-ci-repo-before-verb",
+    "command": "glab ci --repo example/project run",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "glab-ci-short-repo-before-verb",
+    "command": "glab ci -R example/project run",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "glab-release-repo-before-read",
+    "command": "glab release --repo example/project list",
+    "hint": null
+  },
+  {
+    "id": "glab-ci-repo-before-read",
+    "command": "glab ci --repo example/project status",
+    "hint": null
+  },
+  {
+    "id": "glab-ci-run-trig",
+    "command": "glab ci run-trig --repo example/project --branch main --token fixture",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "glab-ci-run-trig-bare",
+    "command": "glab ci run-trig",
+    "hint": "forge-cli has no workflow command"
   }
 ]

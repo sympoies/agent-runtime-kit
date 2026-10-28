@@ -81,9 +81,9 @@ BLOCK_REASON_MR = (
 CLI_OPTIONS_WITH_VALUE = {"-R", "--repo"}
 CLI_OPTIONS_WITH_VALUE_PREFIXES = ("--repo=",)
 GLAB_API_METHOD_FLAGS = {"-X", "--method"}
-GLAB_API_POST_PARAMETER_FLAGS = {"-F", "--field", "-f", "--raw-field", "--form"}
+GLAB_API_FIELD_FLAGS = {"-F", "--field", "-f", "--raw-field", "--form"}
 # Options whose next token is data, never a method or endpoint.
-GLAB_API_VALUE_FLAGS = {"-H", "--header", "--hostname", "--input", "-q", "--jq", "-t", "--template"}
+GLAB_API_VALUE_FLAGS = {"-H", "--header", "--hostname", "-q", "--jq", "-t", "--template"}
 # Match only the create endpoint itself: the bare path, optionally with a
 # single trailing slash, at end-of-path or before a query/fragment. A "/"
 # followed by a sub-resource segment must NOT match, or sub-resource POSTs
@@ -141,49 +141,56 @@ def invokes_glab_mr_create(simple_command: list[str]) -> bool:
     return args[:1] == ["mr"] and args[1:2] in (["create"], ["new"]) and args[2:] not in HELP_ONLY
 
 
-def api_method_is_post(args: list[str]) -> bool:
-    """An explicit method decides; fields imply POST only without one.
+def glab_api_parts(args: list[str]) -> tuple[str, str, list[str], bool]:
+    """Return method, endpoint, fields, and whether `--input` supplies a body.
 
-    Option values are data and are consumed before method recognition, so a
-    header or field that merely looks like `-XGET` cannot override the method.
-    A candidate counts only as a bare verb word, and any POST candidate wins.
+    One parse serves the method and the endpoint, so option values are data for
+    both: a header or field spelled like `-XGET` or `/merge_requests` can be
+    neither. The endpoint is the first positional (glab takes exactly one), a
+    method candidate counts only as a bare verb word, any POST candidate wins,
+    and fields, multipart `--form`, or `--input` imply POST only without one.
     """
     methods: list[str] = []
-    implicit_post = False
+    fields: list[str] = []
+    positionals: list[str] = []
+    input_body = False
     index = 0
     while index < len(args):
         token = args[index]
         flag, has_value, value = token.partition("=")
-        takes_value = flag in GLAB_API_VALUE_FLAGS or flag in GLAB_API_POST_PARAMETER_FLAGS
-        if flag in GLAB_API_METHOD_FLAGS:
+        if flag in GLAB_API_METHOD_FLAGS | GLAB_API_FIELD_FLAGS | GLAB_API_VALUE_FLAGS | {"--input"}:
             if not has_value:
                 index += 1
                 value = args[index] if index < len(args) else ""
-            methods.append(value)
+            if flag in GLAB_API_METHOD_FLAGS:
+                methods.append(value)
+            elif flag in GLAB_API_FIELD_FLAGS:
+                fields.append(value)
+            elif flag == "--input":
+                input_body = True
         elif token.startswith("-X") and token != "-X":
             methods.append(token[2:].lstrip("="))
-        elif takes_value:
-            implicit_post = implicit_post or flag in GLAB_API_POST_PARAMETER_FLAGS
-            index += 0 if has_value else 1
-        elif token.startswith(("-f", "-F")):
-            implicit_post = True
+        elif token.startswith(("-f", "-F")) and len(token) > 2:
+            fields.append(token[2:])
+        elif not token.startswith("-"):
+            positionals.append(token)
         index += 1
     verbs = [method.upper() for method in methods if re.fullmatch(r"[A-Za-z]+", method)]
     if "POST" in verbs:
-        return True
-    return implicit_post and not verbs
-
-
-def api_has_merge_requests_endpoint(args: list[str]) -> bool:
-    return any(MR_ENDPOINT_RE.search(token) for token in args)
+        method = "POST"
+    elif verbs:
+        method = verbs[-1]
+    else:
+        method = "POST" if fields or input_body else "GET"
+    return method, positionals[0] if positionals else "", fields, input_body
 
 
 def invokes_glab_api_mr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "glab")
     if args[:1] != ["api"]:
         return False
-    api_args = args[1:]
-    return api_method_is_post(api_args) and api_has_merge_requests_endpoint(api_args)
+    method, endpoint, _, _ = glab_api_parts(args[1:])
+    return method == "POST" and bool(MR_ENDPOINT_RE.search(endpoint))
 
 
 def marker_value_before_command(
@@ -266,7 +273,7 @@ READ_API_METHODS = {"GET", "HEAD", "OPTIONS"}
 GLAB_READ_VERBS = GH_READ_VERBS | {"approvers", "issues"}
 GLAB_GROUP_WRITES = {
     "release": {"create", "upload", "delete", "update"},
-    "ci": {"run", "trigger"},
+    "ci": {"run", "run-trig", "trigger"},
 }
 # glab verb spellings and the forge-cli operation that replaces them.
 GLAB_VERB_ALIASES = {"new": "create", "note": "comment", "update": "edit", "approve": "review"}
@@ -525,15 +532,16 @@ def glab_write_hint(tokens: list[str]) -> str | None:
         group = "pr" if args[0] == "mr" else "issue"
         return write_hint(group, GLAB_VERB_ALIASES.get(verb, verb))
     if args[:1] in (["release"], ["ci"]):
-        if args[1:2] and args[1] in GLAB_GROUP_WRITES[args[0]] and not is_read_only_form(args, "", set()):
+        verb_index = skip_cli_global_options(args, 1)
+        verb = args[verb_index] if verb_index < len(args) else ""
+        if verb in GLAB_GROUP_WRITES[args[0]] and not is_read_only_form(args, "", set()):
             return write_hint("release" if args[0] == "release" else "workflow")
         return None
     if args[:1] != ["api"]:
         return None
     if is_read_only_form(args, "", set()) or invokes_glab_api_mr_create(tokens):
         return None
-    method, endpoints, fields, input_body = request_parts(args[1:])
-    endpoint = endpoints[0] if endpoints else ""
+    method, endpoint, fields, input_body = glab_api_parts(args[1:])
     if urlsplit(endpoint).path.strip("/") == "graphql":
         if method in {"GET", "POST"} and graphql_is_literal_read(fields, input_body):
             return None
