@@ -1183,5 +1183,50 @@
     "id": "glab-ci-run-trig-bare",
     "command": "glab ci run-trig",
     "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "glab-api-cluster-method-attached",
+    "command": "glab api -iXPOST projects/1/issues",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-cluster-method-separate",
+    "command": "glab api -iX POST projects/1/issues",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-cluster-field",
+    "command": "glab api -if title=example projects/1/issues",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-cluster-attached-field",
+    "command": "glab api -iftitle=example projects/1/issues",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-cluster-form",
+    "command": "glab api -i --form title=example projects/1/issues",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-cluster-mr-create-unmarked",
+    "command": "glab api -iXPOST projects/1/merge_requests -f title=example",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-cluster-explicit-get",
+    "command": "glab api -iXGET -f state=opened projects/1/issues",
+    "hint": null
+  },
+  {
+    "id": "glab-api-cluster-header-read",
+    "command": "glab api -iH '-XPOST' projects/1/issues",
+    "hint": null
+  },
+  {
+    "id": "glab-api-cluster-include-read",
+    "command": "glab api -i projects/1/issues",
+    "hint": null
   }
 ]

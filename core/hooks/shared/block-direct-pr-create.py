@@ -157,6 +157,15 @@ def glab_api_parts(args: list[str]) -> tuple[str, str, list[str], bool]:
     index = 0
     while index < len(args):
         token = args[index]
+        if token.startswith("-") and not token.startswith("--") and len(token) > 2:
+            # `-i` takes no value, so peel it off the front of a cluster and
+            # parse the option it was clustered with (`-iXPOST`, `-if k=v`).
+            rest = token[1:].lstrip("i")
+            if rest != token[1:]:
+                if not rest:
+                    index += 1
+                    continue
+                token = "-" + rest
         flag, has_value, value = token.partition("=")
         if flag in GLAB_API_METHOD_FLAGS | GLAB_API_FIELD_FLAGS | GLAB_API_VALUE_FLAGS | {"--input"}:
             if not has_value:

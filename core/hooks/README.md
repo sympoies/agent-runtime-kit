@@ -40,7 +40,8 @@ refused with the matching `forge-cli` operation. So are `glab release`
 `create|upload|delete|update` and `glab ci run|run-trig|trigger` (the verb is
 found after persistent options such as `--repo`), `glab api` requests that
 are not `GET`/`HEAD`/`OPTIONS` (one parse reads the method, the endpoint, and
-the fields, so option values are data: an explicit method decides regardless of
+the fields, so option values are data, and the value-less `-i` is peeled off a
+clustered option such as `-iXPOST`: an explicit method decides regardless of
 flag order, and fields, multipart `--form`, or `--input` imply POST only without
 one), GraphQL other than one
 literal read document, and `curl` writes to GitLab REST or GraphQL paths
