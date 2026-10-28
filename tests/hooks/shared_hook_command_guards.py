@@ -1344,6 +1344,35 @@ class CommandGuardsTests(HookTestCase):
                 self.assert_blocked(decision, "forge-cli")
 
 
+    def test_glab_skill_marker_admits_mr_creation_only(self) -> None:
+        marker = "AGENT_RUNTIME_PR_SKILL=pr:deliver-pr"
+        for command in (
+            f"{marker} glab mr create --draft",
+            f"{marker} glab mr new --draft",
+            f"{marker} glab api -X POST /projects/1/merge_requests -f title=x",
+        ):
+            with self.subTest(allowed=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        for command in (
+            f"{marker} glab mr merge 7",
+            f"{marker} glab issue create --title x",
+            f"{marker} glab api -X POST /projects/1/issues -f title=x",
+            f"{marker} glab api -X PUT /projects/1/merge_requests/7/merge",
+            f"{marker} bash -c 'glab mr merge 7'",
+        ):
+            with self.subTest(blocked=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "forge-cli")
+
+
     def test_git_commit_help_and_dry_run_are_admitted_only_without_a_message(self) -> None:
         for command in (
             "git commit --help",

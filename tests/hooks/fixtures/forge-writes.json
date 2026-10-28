@@ -858,5 +858,255 @@
     "id": "glab-api-explicit-get-with-header",
     "command": "glab api projects/1/merge_requests -H 'Accept: application/json' -f state=opened -X GET",
     "hint": null
+  },
+  {
+    "id": "glab-issue-create",
+    "command": "glab issue create --title fixture",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-issue-new",
+    "command": "glab issue new --title fixture",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-issue-note",
+    "command": "glab issue note 7 -m fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "glab-issue-close",
+    "command": "glab issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "glab-issue-reopen",
+    "command": "glab issue reopen 7",
+    "hint": "forge-cli issue reopen"
+  },
+  {
+    "id": "glab-issue-update",
+    "command": "glab issue update 7 --title fixture",
+    "hint": "forge-cli issue edit"
+  },
+  {
+    "id": "glab-issue-delete",
+    "command": "glab issue delete 7",
+    "hint": "forge-cli has no issue delete"
+  },
+  {
+    "id": "glab-mr-merge",
+    "command": "glab mr merge 7",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "glab-mr-note",
+    "command": "glab mr note 7 -m fixture",
+    "hint": "forge-cli pr comment"
+  },
+  {
+    "id": "glab-mr-close",
+    "command": "glab mr close 7",
+    "hint": "forge-cli pr close"
+  },
+  {
+    "id": "glab-mr-update",
+    "command": "glab mr update 7 --title fixture",
+    "hint": "forge-cli pr edit"
+  },
+  {
+    "id": "glab-mr-approve",
+    "command": "glab mr approve 7",
+    "hint": "forge-cli pr review"
+  },
+  {
+    "id": "glab-mr-rebase",
+    "command": "glab mr rebase 7",
+    "hint": "forge-cli has no pr rebase"
+  },
+  {
+    "id": "glab-mr-create",
+    "command": "glab mr create --draft",
+    "hint": "forge-cli pr deliver"
+  },
+  {
+    "id": "glab-mr-new",
+    "command": "glab mr new --draft",
+    "hint": "forge-cli pr deliver"
+  },
+  {
+    "id": "glab-release-create",
+    "command": "glab release create v1.0.0",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "glab-release-delete",
+    "command": "glab release delete v1.0.0",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "glab-ci-run",
+    "command": "glab ci run",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "glab-api-post-issue",
+    "command": "glab api -X POST projects/1/issues -f title=fixture",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-api-implicit-note",
+    "command": "glab api projects/1/issues/7/notes -f body=fixture",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "glab-api-mr-merge",
+    "command": "glab api -X PUT projects/1/merge_requests/7/merge",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "glab-api-mr-note",
+    "command": "glab api -X POST projects/1/merge_requests/7/notes -f body=fixture",
+    "hint": "forge-cli pr comment"
+  },
+  {
+    "id": "glab-api-delete-release",
+    "command": "glab api -X DELETE projects/1/releases/v1.0.0",
+    "hint": "forge-cli has no release command"
+  },
+  {
+    "id": "glab-api-input",
+    "command": "glab api projects/1/issues --input body.json",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-graphql-mutation",
+    "command": "glab api graphql -f 'query=mutation { createNote(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-nested-shell",
+    "command": "bash -c 'glab issue close 7'",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "glab-wrapper",
+    "command": "timeout 5 glab mr merge 7",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "glab-global-repo",
+    "command": "glab --repo example/project issue close 7",
+    "hint": "forge-cli issue close"
+  },
+  {
+    "id": "glab-note-help-value",
+    "command": "glab issue note 7 -m --help",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "glab-merge-unlisted-value-help",
+    "command": "glab mr merge 7 --sha --help",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "glab-curl-post-issue",
+    "command": "curl -X POST https://gitlab.example.org/api/v4/projects/1/issues",
+    "hint": "forge-cli issue create"
+  },
+  {
+    "id": "glab-curl-implicit-note",
+    "command": "curl --data body=fixture https://gitlab.example.org/api/v4/projects/1/merge_requests/7/notes",
+    "hint": "forge-cli pr comment"
+  },
+  {
+    "id": "glab-curl-put-merge",
+    "command": "curl -X PUT https://gitlab.example.org/api/v4/projects/1/merge_requests/7/merge",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "glab-curl-graphql-post",
+    "command": "curl -X POST https://gitlab.example.org/api/graphql -d '{}'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-issue-view",
+    "command": "glab issue view 7",
+    "hint": null
+  },
+  {
+    "id": "glab-issue-list",
+    "command": "glab issue list --opened",
+    "hint": null
+  },
+  {
+    "id": "glab-mr-view",
+    "command": "glab mr view 7",
+    "hint": null
+  },
+  {
+    "id": "glab-mr-list-repo",
+    "command": "glab mr list --repo example/project",
+    "hint": null
+  },
+  {
+    "id": "glab-mr-diff",
+    "command": "glab mr diff 7",
+    "hint": null
+  },
+  {
+    "id": "glab-issue-help",
+    "command": "glab issue --help",
+    "hint": null
+  },
+  {
+    "id": "glab-mr-merge-help",
+    "command": "glab mr merge --help",
+    "hint": null
+  },
+  {
+    "id": "glab-mr-bare",
+    "command": "glab mr",
+    "hint": null
+  },
+  {
+    "id": "glab-mr-create-help",
+    "command": "glab mr create --help",
+    "hint": null
+  },
+  {
+    "id": "glab-api-read",
+    "command": "glab api projects/1/issues",
+    "hint": null
+  },
+  {
+    "id": "glab-api-explicit-get-fields",
+    "command": "glab api projects/1/issues -f state=opened -X GET",
+    "hint": null
+  },
+  {
+    "id": "glab-api-graphql-read",
+    "command": "glab api graphql -f 'query=query { currentUser { id } }'",
+    "hint": null
+  },
+  {
+    "id": "glab-ci-status",
+    "command": "glab ci status",
+    "hint": null
+  },
+  {
+    "id": "glab-release-list",
+    "command": "glab release list",
+    "hint": null
+  },
+  {
+    "id": "glab-curl-read",
+    "command": "curl https://gitlab.example.org/api/v4/projects/1/issues",
+    "hint": null
+  },
+  {
+    "id": "glab-curl-other-api-v4",
+    "command": "curl -X POST https://chat.example.org/api/v4/posts -d fixture",
+    "hint": null
   }
 ]
