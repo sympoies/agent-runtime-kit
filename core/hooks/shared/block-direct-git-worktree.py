@@ -100,6 +100,22 @@ def git_subcommand_with_index(simple_command: list[str]) -> tuple[str, int] | No
     return None
 
 
+def worktree_form_is_read_only(action: str, rest: list[str]) -> bool:
+    """Help for any action, and `prune` previewing with no other operand.
+
+    Help counts only as the whole remaining argv: an operand or an unlisted
+    value option could otherwise carry `--help` as data.
+    """
+    if rest in (["--help"], ["-h"]):
+        return True
+    previews = {"--dry-run", "-n"}
+    return (
+        action == "prune"
+        and any(token in previews for token in rest)
+        and all(token in previews | {"--verbose", "-v"} for token in rest)
+    )
+
+
 def git_worktree_action(simple_command: list[str]) -> str | None:
     invocation = invocation_tokens(simple_command)
     if not invocation:
@@ -119,6 +135,8 @@ def git_worktree_action(simple_command: list[str]) -> str | None:
         if token.startswith("-") and token != "-":
             index += 1
             continue
+        if worktree_form_is_read_only(token, invocation[index + 1:]):
+            return None
         return token
     return None
 

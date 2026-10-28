@@ -222,7 +222,7 @@
   {
     "id": "api-head",
     "command": "gh api repos/example/project/issues --method=HEAD",
-    "hint": "forge-cli"
+    "hint": null
   },
   {
     "id": "graphql-query",
@@ -237,17 +237,17 @@
   {
     "id": "read-issue-view",
     "command": "gh issue view",
-    "hint": "forge-cli issue view"
+    "hint": null
   },
   {
     "id": "read-pr-view",
     "command": "gh pr view",
-    "hint": "forge-cli pr view"
+    "hint": null
   },
   {
     "id": "read-pr-checks",
     "command": "gh pr checks",
-    "hint": "forge-cli pr checks"
+    "hint": null
   },
   {
     "id": "read-release-list",
@@ -317,7 +317,7 @@
   {
     "id": "issue-develop-list",
     "command": "gh issue develop 7 --list",
-    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+    "hint": null
   },
   {
     "id": "curl-data-ascii",
@@ -367,7 +367,7 @@
   {
     "id": "comment-help",
     "command": "gh issue comment --help",
-    "hint": "forge-cli issue comment"
+    "hint": null
   },
   {
     "id": "curl-schemeless-post",
@@ -427,7 +427,7 @@
   {
     "id": "wrapper-read",
     "command": "timeout 5 gh issue view 7",
-    "hint": "forge-cli issue view"
+    "hint": null
   },
   {
     "id": "wrapper-nested-shell",
@@ -552,22 +552,22 @@
   {
     "id": "read-issue-list",
     "command": "gh issue list --state open",
-    "hint": "forge-cli issue list"
+    "hint": null
   },
   {
     "id": "read-pr-list",
     "command": "gh pr list --state open",
-    "hint": "forge-cli pr list"
+    "hint": null
   },
   {
     "id": "read-pr-status",
     "command": "gh pr status",
-    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+    "hint": null
   },
   {
     "id": "read-pr-diff",
     "command": "gh pr diff 7",
-    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+    "hint": null
   },
   {
     "id": "read-pr-checkout",
@@ -577,32 +577,32 @@
   {
     "id": "issue-help",
     "command": "gh issue --help",
-    "hint": "forge-cli issue --help"
+    "hint": null
   },
   {
     "id": "pr-help",
     "command": "gh pr --help",
-    "hint": "forge-cli pr --help"
+    "hint": null
   },
   {
     "id": "pr-view-help",
     "command": "gh pr view --help",
-    "hint": "forge-cli pr view"
+    "hint": null
   },
   {
     "id": "issue-bare",
     "command": "gh issue",
-    "hint": "forge-cli issue --help"
+    "hint": null
   },
   {
     "id": "pr-bare",
     "command": "gh pr",
-    "hint": "forge-cli pr --help"
+    "hint": null
   },
   {
     "id": "issue-status-missing",
     "command": "gh issue status",
-    "hint": "https://github.com/sympoies/nils-cli/issues/2138"
+    "hint": null
   },
   {
     "id": "pr-reopen-missing",
@@ -612,37 +612,37 @@
   {
     "id": "read-issue-nested",
     "command": "bash -c 'gh issue view 7'",
-    "hint": "forge-cli issue view"
+    "hint": null
   },
   {
     "id": "read-pr-global-repo",
     "command": "gh -Rexample/project pr list",
-    "hint": "forge-cli pr list"
+    "hint": null
   },
   {
     "id": "read-pr-substitution",
     "command": "printf \"%s\" \"$(gh pr view 7)\"",
-    "hint": "forge-cli pr view"
+    "hint": null
   },
   {
     "id": "read-pr-marker-no-bypass",
     "command": "AGENT_RUNTIME_PR_SKILL=deliver-pr gh pr view 7",
-    "hint": "forge-cli pr view"
+    "hint": null
   },
   {
     "id": "api-options",
     "command": "gh api repos/example/project/issues -XOPTIONS",
-    "hint": "forge-cli"
+    "hint": null
   },
   {
     "id": "graphql-query-post",
     "command": "gh api graphql -f 'query=query { viewer { login } }'",
-    "hint": "forge-cli"
+    "hint": null
   },
   {
     "id": "graphql-query-explicit-post",
     "command": "gh api graphql -XPOST -f 'query={ viewer { login } }'",
-    "hint": "forge-cli"
+    "hint": null
   },
   {
     "id": "curl-patch",
@@ -677,7 +677,7 @@
   {
     "id": "forge-then-raw-read",
     "command": "forge-cli pr view 7; gh pr view 7",
-    "hint": "forge-cli pr view"
+    "hint": null
   },
   {
     "id": "api-pulls-get-fields",
@@ -692,12 +692,12 @@
   {
     "id": "issue-repo-before-verb",
     "command": "gh issue --repo example/project view 7",
-    "hint": "forge-cli issue view"
+    "hint": null
   },
   {
     "id": "issue-repo-attached-before-verb",
     "command": "gh issue -Rexample/project list",
-    "hint": "forge-cli issue list"
+    "hint": null
   },
   {
     "id": "issue-repo-equals-before-verb",
@@ -707,12 +707,12 @@
   {
     "id": "pr-repo-before-verb",
     "command": "gh pr -R example/project view 7",
-    "hint": "forge-cli pr view"
+    "hint": null
   },
   {
     "id": "pr-repo-attached-before-verb",
     "command": "gh pr -Rexample/project checks 7",
-    "hint": "forge-cli pr checks"
+    "hint": null
   },
   {
     "id": "pr-repo-equals-before-verb",
@@ -793,5 +793,70 @@
     "id": "curl-cluster-data-single-switch",
     "command": "curl -sd body=fixture https://api.github.com/repos/o/r/issues/7/comments",
     "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "pr-create-help",
+    "command": "gh pr create --help",
+    "hint": null
+  },
+  {
+    "id": "pr-merge-help",
+    "command": "gh pr merge --help",
+    "hint": null
+  },
+  {
+    "id": "read-pr-view-json",
+    "command": "gh pr view 7 --json title --jq .title",
+    "hint": null
+  },
+  {
+    "id": "graphql-variables-post",
+    "command": "gh api graphql -f 'query=query($owner: String!) { repository(owner: $owner, name: \"x\") { name } }' -F owner=example",
+    "hint": null
+  },
+  {
+    "id": "comment-body-file-help",
+    "command": "gh issue comment 7 --body-file --help",
+    "hint": "forge-cli issue comment"
+  },
+  {
+    "id": "merge-unlisted-value-help",
+    "command": "gh pr merge 7 --match-head-commit --help",
+    "hint": "forge-cli pr merge"
+  },
+  {
+    "id": "create-title-help",
+    "command": "gh pr create --title --help",
+    "hint": "forge-cli pr create"
+  },
+  {
+    "id": "develop-list-with-write",
+    "command": "gh issue develop 7 --list --name topic",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "graphql-post-mutation",
+    "command": "gh api graphql -XPOST -f 'query=mutation { addComment(input: {}) { clientMutationId } }'",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-header-method-override",
+    "command": "glab api projects/1/merge_requests -X POST -H '-XGET: value' -f title=example -f source_branch=topic -f target_branch=main",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-header-method-override-implicit",
+    "command": "glab api projects/1/merge_requests -H '-XGET: value' -f title=example -f source_branch=topic",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-field-value-method-lookalike",
+    "command": "glab api projects/1/merge_requests -X POST -f '-XGET=value' -f title=example",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-explicit-get-with-header",
+    "command": "glab api projects/1/merge_requests -H 'Accept: application/json' -f state=opened -X GET",
+    "hint": null
   }
 ]

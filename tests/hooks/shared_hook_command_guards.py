@@ -1305,6 +1305,109 @@ class CommandGuardsTests(HookTestCase):
                     self.assert_allowed(decision)
 
 
+    def test_glab_help_and_explicit_get_are_reads_not_creates(self) -> None:
+        for command in (
+            "glab mr create --help",
+            "glab mr create -h",
+            # An explicit method decides regardless of where the fields sit.
+            "glab api /projects/1/merge_requests -f state=opened -X GET",
+            "glab api /projects/1/merge_requests -F state=opened --method=GET",
+            "glab api -f state=opened -XGET /projects/1/merge_requests",
+            "glab api /projects/1/merge_requests -H 'Accept: application/json' -f state=opened -X GET",
+        ):
+            with self.subTest(allowed=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        for command in (
+            # Help is data for a value option, so this still creates.
+            "glab mr create --title --help",
+            "glab mr create --help --title x",
+            "glab api -f source_branch=topic /projects/1/merge_requests",
+            "glab api /projects/1/merge_requests -X GET -f title=x -X POST",
+            "glab api /projects/1/merge_requests -f title=x --method=POST",
+            # An option value is data: a header or field that merely looks
+            # like a method flag must not override the real method.
+            "glab api /projects/1/merge_requests -X POST -H '-XGET: value' -f title=x",
+            "glab api /projects/1/merge_requests -H '-XGET: value' -f title=x",
+            "glab api /projects/1/merge_requests -X POST -f '-XGET=value' -f title=x",
+            "glab api /projects/1/merge_requests -X POST --header=--method=GET -f title=x",
+        ):
+            with self.subTest(blocked=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-pr-create.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "forge-cli")
+
+
+    def test_git_commit_help_and_dry_run_are_admitted_only_without_a_message(self) -> None:
+        for command in (
+            "git commit --help",
+            "git commit -h",
+            "git -C /tmp/example commit --dry-run",
+            "git commit --dry-run --short --branch",
+            "git commit -a --dry-run",
+            "bash -c 'git commit --help'",
+        ):
+            with self.subTest(allowed=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        for command in (
+            "git commit -m --help",
+            "git commit -m fixture --dry-run",
+            "git commit --dry-run -F message.txt",
+            "git commit --dry-run --author --help",
+            "git commit --help --amend",
+            "git commit --amend --no-edit",
+            "bash -c 'git commit -m fixture'",
+        ):
+            with self.subTest(blocked=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-commit.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "semantic-commit")
+
+
+    def test_git_worktree_help_and_prune_preview_are_reads(self) -> None:
+        for command in (
+            "git worktree add --help",
+            "git worktree remove -h",
+            "git worktree prune --dry-run",
+            "git worktree prune -n -v",
+            "bash -c 'git worktree prune --dry-run'",
+        ):
+            with self.subTest(allowed=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-worktree.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+        for command in (
+            "git worktree prune",
+            "git worktree prune --expire now",
+            "git worktree prune --dry-run --expire=now",
+            "git worktree add --help ../repo-topic",
+            "git worktree remove ../repo-topic",
+            "bash -c 'git worktree prune'",
+        ):
+            with self.subTest(blocked=command):
+                code, decision, stderr = run_hook(
+                    "block-direct-git-worktree.py", command_payload(command)
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "git-cli worktree")
+
+
     def test_backslash_cr_is_not_a_line_continuation(self) -> None:
         # A backslash before a CR is NOT a bash line continuation: `\<CR>` escapes
         # the CR and a following LF still separates commands, so `git \<CR><LF>

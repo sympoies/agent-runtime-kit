@@ -1657,6 +1657,52 @@ class DefaultDeliveryTests(HookTestCase):
                     self.assert_allowed(decision)
 
 
+    def test_default_delivery_hook_allows_help_previews_and_head_resets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            allowed = (
+                "git push --help",
+                "git push -h",
+                "git pull --dry-run",
+                "git pull --dry-run origin main",
+                # Resetting to the current commit cannot move the branch.
+                "git reset HEAD",
+                "git reset HEAD README.md",
+                "git reset @",
+                "git reset -q",
+                "git reset --hard",
+                "git reset --hard HEAD",
+            )
+            blocked = (
+                "git push --help origin main",
+                "git push origin main",
+                "git pull",
+                "git pull --ff-only",
+                # A value option can take `--dry-run` as its value and still
+                # fast-forward the branch.
+                "git pull -X --dry-run",
+                "git pull -s ours --dry-run",
+                "git reset --hard HEAD~1",
+                "git reset --soft origin/main",
+                "git reset origin/main",
+                "git reset --hard $REVISION",
+            )
+            for expected, commands in ((None, allowed), ("default-delivery", blocked)):
+                for command in commands:
+                    with self.subTest(command=command):
+                        code, decision, stderr = run_hook(
+                            "block-unsafe-default-delivery.py",
+                            command_payload(command),
+                            cwd=repo,
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        if expected is None:
+                            self.assert_allowed(decision)
+                        else:
+                            self.assert_blocked(decision, expected)
+
+
     def test_default_delivery_hook_allows_expanded_non_governed_executables(
         self,
     ) -> None:
@@ -2926,7 +2972,7 @@ class DefaultDeliveryTests(HookTestCase):
             )
             for command in (
                 "semantic-commit commit --message 'fix: x'",
-                "git reset --hard HEAD",
+                "git reset --hard HEAD~1",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(
@@ -3578,7 +3624,7 @@ class DefaultDeliveryTests(HookTestCase):
             commands = (
                 "git merge main",
                 "git pull origin main",
-                "git reset --hard HEAD",
+                "git reset --hard HEAD~1",
                 "git cherry-pick HEAD",
                 "git update-ref refs/heads/main HEAD",
                 "git push origin HEAD",
