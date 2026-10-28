@@ -82,6 +82,8 @@ CLI_OPTIONS_WITH_VALUE = {"-R", "--repo"}
 CLI_OPTIONS_WITH_VALUE_PREFIXES = ("--repo=",)
 GLAB_API_METHOD_FLAGS = {"-X", "--method"}
 GLAB_API_POST_PARAMETER_FLAGS = {"-F", "--field", "-f", "--raw-field", "--form"}
+# Options whose next token is data, never a method or endpoint.
+GLAB_API_VALUE_FLAGS = {"-H", "--header", "--hostname", "--input", "-q", "--jq", "-t", "--template"}
 # Match only the create endpoint itself: the bare path, optionally with a
 # single trailing slash, at end-of-path or before a query/fragment. A "/"
 # followed by a sub-resource segment must NOT match, or sub-resource POSTs
@@ -140,23 +142,36 @@ def invokes_glab_mr_create(simple_command: list[str]) -> bool:
 
 
 def api_method_is_post(args: list[str]) -> bool:
-    """An explicit method decides; fields imply POST only without one."""
-    explicit: str | None = None
+    """An explicit method decides; fields imply POST only without one.
+
+    Option values are data and are consumed before method recognition, so a
+    header or field that merely looks like `-XGET` cannot override the method.
+    A candidate counts only as a bare verb word, and any POST candidate wins.
+    """
+    methods: list[str] = []
     implicit_post = False
-    for index, token in enumerate(args):
-        if token in GLAB_API_METHOD_FLAGS and index + 1 < len(args):
-            explicit = args[index + 1].upper()
-        elif token.upper().startswith("--METHOD="):
-            explicit = token.split("=", 1)[1].upper()
+    index = 0
+    while index < len(args):
+        token = args[index]
+        flag, has_value, value = token.partition("=")
+        takes_value = flag in GLAB_API_VALUE_FLAGS or flag in GLAB_API_POST_PARAMETER_FLAGS
+        if flag in GLAB_API_METHOD_FLAGS:
+            if not has_value:
+                index += 1
+                value = args[index] if index < len(args) else ""
+            methods.append(value)
         elif token.startswith("-X") and token != "-X":
-            explicit = token[2:].lstrip("=").upper()
-        elif (
-            token in GLAB_API_POST_PARAMETER_FLAGS
-            or any(token.startswith(f"{flag}=") for flag in GLAB_API_POST_PARAMETER_FLAGS)
-            or token.startswith(("-f", "-F"))
-        ):
+            methods.append(token[2:].lstrip("="))
+        elif takes_value:
+            implicit_post = implicit_post or flag in GLAB_API_POST_PARAMETER_FLAGS
+            index += 0 if has_value else 1
+        elif token.startswith(("-f", "-F")):
             implicit_post = True
-    return implicit_post if explicit is None else explicit == "POST"
+        index += 1
+    verbs = [method.upper() for method in methods if re.fullmatch(r"[A-Za-z]+", method)]
+    if "POST" in verbs:
+        return True
+    return implicit_post and not verbs
 
 
 def api_has_merge_requests_endpoint(args: list[str]) -> bool:

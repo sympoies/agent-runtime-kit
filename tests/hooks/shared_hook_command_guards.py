@@ -1313,6 +1313,7 @@ class CommandGuardsTests(HookTestCase):
             "glab api /projects/1/merge_requests -f state=opened -X GET",
             "glab api /projects/1/merge_requests -F state=opened --method=GET",
             "glab api -f state=opened -XGET /projects/1/merge_requests",
+            "glab api /projects/1/merge_requests -H 'Accept: application/json' -f state=opened -X GET",
         ):
             with self.subTest(allowed=command):
                 code, decision, stderr = run_hook(
@@ -1328,6 +1329,12 @@ class CommandGuardsTests(HookTestCase):
             "glab api -f source_branch=topic /projects/1/merge_requests",
             "glab api /projects/1/merge_requests -X GET -f title=x -X POST",
             "glab api /projects/1/merge_requests -f title=x --method=POST",
+            # An option value is data: a header or field that merely looks
+            # like a method flag must not override the real method.
+            "glab api /projects/1/merge_requests -X POST -H '-XGET: value' -f title=x",
+            "glab api /projects/1/merge_requests -H '-XGET: value' -f title=x",
+            "glab api /projects/1/merge_requests -X POST -f '-XGET=value' -f title=x",
+            "glab api /projects/1/merge_requests -X POST --header=--method=GET -f title=x",
         ):
             with self.subTest(blocked=command):
                 code, decision, stderr = run_hook(

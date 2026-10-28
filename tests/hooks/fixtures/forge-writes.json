@@ -838,5 +838,25 @@
     "id": "graphql-post-mutation",
     "command": "gh api graphql -XPOST -f 'query=mutation { addComment(input: {}) { clientMutationId } }'",
     "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-header-method-override",
+    "command": "glab api projects/1/merge_requests -X POST -H '-XGET: value' -f title=example -f source_branch=topic -f target_branch=main",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-header-method-override-implicit",
+    "command": "glab api projects/1/merge_requests -H '-XGET: value' -f title=example -f source_branch=topic",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-field-value-method-lookalike",
+    "command": "glab api projects/1/merge_requests -X POST -f '-XGET=value' -f title=example",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-explicit-get-with-header",
+    "command": "glab api projects/1/merge_requests -H 'Accept: application/json' -f state=opened -X GET",
+    "hint": null
   }
 ]
