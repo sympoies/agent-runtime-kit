@@ -1228,13 +1228,14 @@ class CommandGuardsTests(HookTestCase):
                     self.assert_blocked(decision, "forge-cli")
 
 
-    def test_github_subresource_writes_refused_and_gitlab_subresources_allowed(self) -> None:
+    def test_forge_subresource_writes_refused_and_only_the_create_endpoint_is_marker_gated(self) -> None:
         # Regression for agent-runtime-kit#474: the pulls / merge_requests
         # endpoint regexes used a trailing [/?#] class, so they over-matched the
         # whole /pulls/... and /merge_requests/... subtree. A POST to any
         # sub-resource (review comments, replies, reviews, reactions, notes) was
-        # wrongly blocked as a PR/MR create. GitLab retains that contract;
-        # all GitHub API writes are now refused, including subresources.
+        # wrongly blocked as a PR/MR create. The marker allow-list still gates
+        # only the create endpoint; every GitHub and GitLab API write,
+        # subresources included, is refused with a typed forge-cli route.
         still_blocked = (
             # GitHub PR create endpoint at end of path.
             "gh api --method POST repos/example/project/pulls "
@@ -1293,16 +1294,13 @@ class CommandGuardsTests(HookTestCase):
             "-f name=thumbsup",
         )
         for command in subresource_commands:
-            with self.subTest(allowed=command):
+            with self.subTest(blocked=command):
                 code, decision, stderr = run_hook(
                     "block-direct-pr-create.py",
                     command_payload(command),
                 )
                 self.assertEqual(code, 0, stderr)
-                if command.startswith("gh "):
-                    self.assert_blocked(decision, "forge-cli")
-                else:
-                    self.assert_allowed(decision)
+                self.assert_blocked(decision, "forge-cli")
 
 
     def test_glab_help_and_explicit_get_are_reads_not_creates(self) -> None:
