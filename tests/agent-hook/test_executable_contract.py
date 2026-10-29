@@ -853,6 +853,7 @@ capability = {{ id = "runtime-kit.handler.v1", handler_id = "session-start-healt
                 case_env = {
                     **self.env,
                     "PATH": f"{bin_dir}{os.pathsep}{self.env.get('PATH', '')}",
+                    "AGENT_MEMORY_STARTUP_RECALL": "1",
                     "AGENT_MEMORY_FIXTURE_LOG": str(
                         self.root / f"agent-memory-{product}.log"
                     ),

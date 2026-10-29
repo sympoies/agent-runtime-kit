@@ -2,12 +2,19 @@
 #
 # SessionStart hook: inject bounded shared agent-memory context.
 #
-# Codex and Claude receive the same curated, git-backed profile at each
-# startup/resume/clear lifecycle boundary. Claude native auto-memory remains a
-# separate per-project or explicit persona scope; producer candidates are never
-# read by this hook.
+# Off by default. Set AGENT_MEMORY_STARTUP_RECALL=1 in the product's launch
+# environment to opt in; the stored memory and the manual agent-memory CLI are
+# untouched either way. When enabled, Codex and Claude receive the same
+# curated, git-backed profile at each startup/resume/clear lifecycle boundary.
+# Claude native auto-memory is a separate per-project or explicit persona scope
+# (see autoMemoryEnabled in the managed Claude settings); producer candidates
+# are never read by this hook.
 #
 set -uo pipefail
+
+if [[ "${AGENT_MEMORY_STARTUP_RECALL:-0}" != "1" ]]; then
+  exit 0
+fi
 
 if [[ "${AGENT_RUNTIME_SUPPRESS_MEMORY:-0}" == "1" ||
   "${AGENT_MEMORY_SUPPRESS:-0}" == "1" ]]; then
