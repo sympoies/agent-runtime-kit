@@ -95,8 +95,8 @@ Options:
   --check-home-policy
       Read-only probe of the Codex and Claude home-policy links. Prints one
       JSON document (schema agent-runtime-kit.home-policy.v1) naming each
-      product's link state (healthy, legacy, absent, dangling, unreadable,
-      empty, foreign), source identity, and remediation; exits 1 unless every
+      product's link state (healthy, absent, dangling, unreadable, empty,
+      foreign), source identity, and remediation; exits 1 unless every
       selected link is healthy. Never mutates and needs no agent-hook.
   --codex-plugin-activation
       Deprecated compatibility flag. Codex plugin marketplace activation is now
@@ -700,7 +700,7 @@ ensure_home_prompt() {
       fi
       return 0
     fi
-    if [ "$existing" = "$old_expected" ] || [ "$existing" = "$rendered" ] ||
+    if [ "$existing" = "$old_expected" ] ||
       is_managed_rendered_home_prompt_target "$product" "$existing"; then
       log "rewiring managed home prompt product=$product target=$target"
       run_cmd rm "$target"

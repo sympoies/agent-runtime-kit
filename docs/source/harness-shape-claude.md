@@ -68,15 +68,16 @@ a uniform shape:
   `scripts/sync-runtime-surfaces.sh --apply --product claude` publishes it as
   an owner-managed copy at `<claude_state_home>/home-policy/AGENT_HOME.md`
   (plus a `source.json` identity record) and wires `$HOME/.claude/CLAUDE.md`
-  to that copy, so cleaning `build/` cannot orphan the link. Older links into
-  `<source_root>/build/claude/AGENT_HOME.md` are rewired by the next sync. The
+  to that copy, so cleaning `build/` cannot orphan the link. A link left
+  from the earlier build-output layout is not owner-managed: remove it once and
+  rerun sync. The
   source filename is
   deliberately distinct from project-local `AGENTS.md` and `CLAUDE.md` so
   Claude does not load it again as project policy in this repo.
 - Acceptance lane: `tests/ci/test_home_policy_lifetime.py` proves the link
   survives build cleanup and that `sync-runtime-surfaces.sh
-  --check-home-policy` reports absent, dangling, unreadable, empty, foreign,
-  and legacy links; sync's verification step fails on an unhealthy link. Fresh
+  --check-home-policy` reports absent, dangling, unreadable, empty, and
+  foreign links; sync's verification step fails on an unhealthy link. Fresh
   authenticated Claude behavior is not covered: Claude has no prompt-input
   probe.
 - Support today: **shipped (rendered + linked)**.

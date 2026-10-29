@@ -92,15 +92,16 @@ a uniform shape:
   `scripts/sync-runtime-surfaces.sh --apply --product codex` publishes it as
   an owner-managed copy at `<codex_state_home>/home-policy/AGENT_HOME.md`
   (plus a `source.json` identity record) and wires `$CODEX_HOME/AGENTS.md` to
-  that copy, so cleaning `build/` cannot orphan the link. Older links into
-  `<source_root>/build/codex/AGENT_HOME.md` are rewired by the next sync. The
+  that copy, so cleaning `build/` cannot orphan the link. A link left
+  from the earlier build-output layout is not owner-managed: remove it once and
+  rerun sync. The
   source filename is deliberately
   distinct from repo-local `AGENTS.md` so Codex does not load duplicate
   home/project policy in this repo.
 - Acceptance lane: `tests/ci/test_home_policy_lifetime.py` proves the link
   survives build cleanup and that `sync-runtime-surfaces.sh
-  --check-home-policy` reports absent, dangling, unreadable, empty, foreign,
-  and legacy links; sync's verification step fails on an unhealthy link and
+  --check-home-policy` reports absent, dangling, unreadable, empty, and
+  foreign links; sync's verification step fails on an unhealthy link and
   `codex debug prompt-input` still runs after it.
 - Support today: **shipped (rendered + linked)**.
 

@@ -89,7 +89,6 @@ def installed_record(store_dir):
 
 def probe(product, link, store_dir, source_root):
     owned = canon(os.path.join(store_dir, POLICY_NAME))
-    legacy = canon(os.path.join(source_root, "build", product, POLICY_NAME))
     target = None
     if not os.path.lexists(link):
         state = "absent"
@@ -100,14 +99,14 @@ def probe(product, link, store_dir, source_root):
         if target == owned:
             state = read_state(target)
             state = "healthy" if state == "ok" else state
-        elif target == legacy:
-            state = read_state(target)
-            state = "legacy" if state == "ok" else state
+        elif not os.path.exists(target):
+            state = "dangling"
         else:
             state = "foreign"
     sync = "bash %s --apply --product %s" % (os.path.join(source_root, SYNC_SCRIPT), product)
-    remediation = ("review the link, move it aside manually, then run: " + sync
-                   if state == "foreign" else sync)
+    manual = state == "foreign" or (target is not None and target != owned)
+    remediation = ("review the link and move it aside manually, then run: " + sync
+                   if manual else sync)
     return {"product": product, "state": state, "healthy": state == "healthy", "link": link,
             "target": target, "expected_target": owned,
             "source": {"root": source_root, "installed": installed_record(store_dir)},

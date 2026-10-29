@@ -120,11 +120,8 @@ class HomePolicyLifetimeTests(unittest.TestCase):
             elif kind == "foreign":
                 link.unlink()
                 link.symlink_to(foreign)
-            elif kind == "legacy":
-                link.unlink()
-                link.symlink_to(self.source / "build" / product / "AGENT_HOME.md")
 
-        for kind in ("absent", "dangling", "empty", "unreadable", "foreign", "legacy"):
+        for kind in ("absent", "dangling", "empty", "unreadable", "foreign"):
             with self.subTest(kind=kind):
                 if kind == "unreadable" and os.geteuid() == 0:
                     self.skipTest("root bypasses file modes")
@@ -146,16 +143,21 @@ class HomePolicyLifetimeTests(unittest.TestCase):
                     if link.is_symlink() or link.exists():
                         link.unlink()
 
-    def test_sync_recovers_legacy_dangling_link_and_preserves_foreign_files(self):
-        self.assertEqual(self.wire("codex").returncode, 0)
-        # The observed incident shape: link into build output that no longer exists.
-        self.links["codex"].unlink()
-        self.links["codex"].symlink_to(self.source / "build/codex/AGENT_HOME.md")
-        shutil.rmtree(self.source / "build")
+    def test_sync_never_adopts_foreign_links_and_wires_after_removal(self):
+        # A link that does not lead to the owner-managed copy or a managed checkout's
+        # rendered output is reported and never silently adopted; the operator removes it.
+        elsewhere = self.home / "elsewhere/AGENT_HOME.md"
+        self.links["codex"].symlink_to(elsewhere)
         self.assertEqual(self.states()["codex"], "dangling")
+        refused = self.wire("codex")
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(os.readlink(self.links["codex"]), str(elsewhere))
+        _, report = self.probe("codex")
+        self.assertIn("manually", report["products"][0]["remediation"])
         user_file = self.links["claude"]
         user_file.write_text("my own claude rules\n")
 
+        self.links["codex"].unlink()
         self.assertEqual(self.wire("codex").returncode, 0)
         self.assertEqual(self.states()["codex"], "healthy")
         self.assertEqual(os.path.realpath(self.links["codex"]), str(self.store["codex"].resolve()))
