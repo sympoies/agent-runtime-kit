@@ -78,6 +78,23 @@ class OwnCompatAuditTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("unlisted", result.stdout)
 
+    def test_product_selector_does_not_match_ordinary_calls(self):
+        for expression in ("result = choose(both)", "result = choose( both)",
+                           "result = choose(both) # ordinary expression",
+                           'err "invalid --product value: $PRODUCT (expected codex|claude|hermes|both)"'):
+            with self.subTest(expression=expression):
+                self.write("scripts/example.py", expression + "\n")
+                result = self.run_audit()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_product_selector_shell_case_arms_remain_hits(self):
+        for arm in ("both)", "    both) echo selected ;;", "    codex | both) ;;"):
+            with self.subTest(arm=arm):
+                self.write("scripts/example.py", 'case "$product" in\n' + arm + "\nesac\n")
+                result = self.run_audit()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("both)", result.stdout)
+
     def test_exact_baseline_accepts_and_rejects_new_occurrence(self):
         self.allow()
         result = self.run_audit()

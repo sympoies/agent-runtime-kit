@@ -42,7 +42,7 @@ PATTERNS = [
     re.compile(r"\b(?:cleanup_retired_managed_product_links|bootstrap_host_available|rollback_agent_hook_cutover|capture_agent_hook_cutover|restore_agent_hook_cutover)\b"),
     re.compile(r"agent-runtime-kit\.hook-rollback\.v[0-9]+|\bcompatibility hold\b", re.I),
     re.compile(r"\b(?:AGENT_DOCS_HOME|AGENT_DOCS_ROOT|minimum_supported_tag|DEFAULT_PROFILE)\b"),
-    re.compile(r"--product[ =]+both\b|\bboth\)"),
+    re.compile(r"--product[ =]+both\b"),
     re.compile(r"\bbackwards?[- ]compatib(?:ility|le)\b|\bcompatibility (?:shim|alias|fallback)\b", re.I),
     re.compile(r"\b(?:retain|accept|support|read|restore)(?:s|ed|ing)? (?:the )?(?:old|legacy|retired) (?:format|schema|layout|version|shared.marker)\b", re.I),
     re.compile(r"#\[(?:serde|clap|command|arg)\([^\n]*(?:alias|aliases)\s*=[^\n]*\)\]"),
@@ -71,6 +71,12 @@ def scan_text(text):
     for number, line in enumerate(text.splitlines(), 1):
         if NEGATIVE.search(line):
             continue
+        # Match the retired shell selector construct, not ordinary calls with
+        # a variable named both or diagnostic prose. Keep the exact baseline
+        # substring so only the proven false-positive occurrence leaves it.
+        selector_arm = re.match(r"^\s*(?:[a-z]+\s*\|\s*)*both\)(?:\s|$)", line)
+        if selector_arm:
+            yield number, "both)"
         spans = []
         for pattern in PATTERNS:
             for match in pattern.finditer(line):

@@ -586,7 +586,7 @@ expires = "2026-11-30"
 [[allow]]
 path = "scripts/sync-runtime-surfaces.sh"
 match = "both)"
-count = 6
+count = 5
 kind = "scheduled"
 reason = "Migrate historical identifiers and their active callers together under K5."
 issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
