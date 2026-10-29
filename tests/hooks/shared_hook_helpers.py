@@ -1072,6 +1072,7 @@ class HookTestCase(unittest.TestCase):
             f"with open({str(record)!r}, 'w', encoding='utf-8') as handle:\n"
             "    json.dump({\n"
             "        'argv': sys.argv[1:],\n"
+            "        'cwd': os.getcwd(),\n"
             "        'is_socket': is_socket,\n"
             "        'peer_is_parent': peer_is_parent,\n"
             "        'digest': hashlib.sha256(data).hexdigest(),\n"
