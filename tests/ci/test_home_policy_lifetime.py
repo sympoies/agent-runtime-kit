@@ -144,14 +144,16 @@ class HomePolicyLifetimeTests(unittest.TestCase):
                         link.unlink()
 
     def test_sync_never_adopts_foreign_links_and_wires_after_removal(self):
-        # A link that does not lead to the owner-managed copy or a managed checkout's
-        # rendered output is reported and never silently adopted; the operator removes it.
-        elsewhere = self.home / "elsewhere/AGENT_HOME.md"
-        self.links["codex"].symlink_to(elsewhere)
+        # The former layout (a link into build output) is never re-adopted by steady-state
+        # sync, even after sync re-renders that file; it is reported and the operator removes
+        # it once. Links to unrelated paths are treated the same way.
+        former = self.source / "build/codex/AGENT_HOME.md"
+        self.links["codex"].symlink_to(former)
         self.assertEqual(self.states()["codex"], "dangling")
         refused = self.wire("codex")
         self.assertNotEqual(refused.returncode, 0)
-        self.assertEqual(os.readlink(self.links["codex"]), str(elsewhere))
+        self.assertEqual(os.readlink(self.links["codex"]), str(former))
+        self.assertEqual(self.states()["codex"], "foreign")
         _, report = self.probe("codex")
         self.assertIn("manually", report["products"][0]["remediation"])
         user_file = self.links["claude"]

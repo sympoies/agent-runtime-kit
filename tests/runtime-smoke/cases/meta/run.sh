@@ -539,6 +539,7 @@ run_sync_runtime_surfaces_home_prompt_apply_probe() {
   local stub_bin="$root/bin"
   local stub_log="$root/codex.log"
   local expected_home_prompt
+  local former_out
   local status
 
   rm -rf "$root"
@@ -773,6 +774,30 @@ SH
   chmod +x "$stub_bin/agent-runtime" "$stub_bin/agent-hook" "$stub_bin/codex"
   : >"$stub_log"
 
+  # A link into a managed checkout's build output (the former layout) is never
+  # re-adopted by steady-state sync; the operator removes it once.
+  former_out="$META_ARTIFACTS_DIR/sync-runtime-surfaces.home-prompt-former-layout.txt"
+  set +e
+  (
+    cd "$REPO_ROOT"
+    PATH="$stub_bin:$PATH" HOME="$home" CODEX_HOME="$codex_home" \
+      AGENT_HOME="$state_home" \
+      CODEX_AGENT_STATE_HOME="$state_home" CODEX_STUB_LOG="$stub_log" \
+      bash scripts/sync-runtime-surfaces.sh \
+      --source-root "$source_root" \
+      --product codex \
+      --no-pull \
+      --no-prune \
+      --no-verify \
+      --apply
+  ) >"$former_out" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ]
+  grep -q "expected $state_home/home-policy/AGENT_HOME.md" "$former_out"
+  assert_symlink_target "$codex_home/AGENTS.md" "$previous_source_root/build/codex/AGENT_HOME.md"
+  rm -f "$codex_home/AGENTS.md"
+
   (
     cd "$REPO_ROOT"
     PATH="$stub_bin:$PATH" HOME="$home" CODEX_HOME="$codex_home" \
@@ -788,7 +813,7 @@ SH
   ) >"$out" 2>&1
 
   assert_symlink_target "$codex_home/AGENTS.md" "$state_home/home-policy/AGENT_HOME.md"
-  grep -q "rewiring managed home prompt product=codex" "$out"
+  grep -q "wiring home prompt product=codex" "$out"
   grep -q "home-prompt=wired" "$out"
   grep -q "codex plugin registry installed: marketplace=codex-kit" "$out"
   grep -q "plugin marketplace add $state_home/plugin-marketplaces/codex-kit" "$stub_log"
@@ -3590,7 +3615,7 @@ record_case "meta.worktree-triage" "worktree triage scan classified safe, rescue
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe
 record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
 record_case "meta.sync-runtime-surfaces.cli-contract" "sync-runtime-surfaces help and validation enumerate every supported product" run_sync_runtime_surfaces_cli_contract_probe
-record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply rewires managed home prompt symlinks" run_sync_runtime_surfaces_home_prompt_apply_probe
+record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply wires the owner-managed home prompt and refuses the former layout" run_sync_runtime_surfaces_home_prompt_apply_probe
 record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
 record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktrees and AGENT_HOME runtime-state source roots" run_sync_runtime_surfaces_worktree_guard_probe
 record_case "meta.sync-runtime-surfaces.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe

@@ -670,6 +670,7 @@ ensure_home_prompt() {
   local expected
   local old_expected
   local store_dir
+  local owner_managed=0
   local existing
 
   target="$(product_home_prompt_path "$product")"
@@ -683,6 +684,7 @@ ensure_home_prompt() {
   fi
 
   if store_dir="$(home_policy_store_dir "$product")"; then
+    owner_managed=1
     run_cmd runtime_python "$SCRIPT_DIR/lib/home-policy.py" publish \
       --product "$product" --source "$rendered" --store-dir "$store_dir" \
       --source-root "$SOURCE_ROOT"
@@ -700,8 +702,11 @@ ensure_home_prompt() {
       fi
       return 0
     fi
-    if [ "$existing" = "$old_expected" ] ||
-      is_managed_rendered_home_prompt_target "$product" "$existing"; then
+    # Owner-managed products accept only their own target or an absent link;
+    # a link into build output is never re-adopted here.
+    if [ "$owner_managed" = "0" ] &&
+      { [ "$existing" = "$old_expected" ] ||
+        is_managed_rendered_home_prompt_target "$product" "$existing"; }; then
       log "rewiring managed home prompt product=$product target=$target"
       run_cmd rm "$target"
       run_cmd ln -s "$expected" "$target"
