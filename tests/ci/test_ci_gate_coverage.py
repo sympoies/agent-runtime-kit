@@ -22,6 +22,7 @@ ci/all.sh coverage boundary:
 - provider CI: replays the canonical stack at minimum and validated nils-cli release lanes
 - committed-state: position 8 runs convergence; dirty sources stop before position 1
 - conditional: host/authenticated product acceptance runs only when affected
+- repository-only: position 15 audits existing compatibility debt and release fences
 """
 
 

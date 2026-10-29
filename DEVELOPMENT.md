@@ -40,6 +40,41 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
   binary. Compatibility and validated pins move only through their owning
   release workflow.
 
+## Repository current-contract rule
+
+This rule applies only to development of this repository. Maintain only the
+current kit contract: migrate every supported caller in the same change and
+remove the replaced format, flag, path, name or schema. Do not introduce old-form
+aliases, fallback readers, dual writes or compatibility shims. A required fleet
+migration belongs in the delivery handoff, with its deployment owner.
+
+External provider, OS and tool support remains separate: name the supported
+external version when retaining its behavior. Current defaults, refusal tests
+and immutable retirement/provenance ledgers are not retained old-form support.
+Local home layouts, restore snapshots and historical labels alone do not justify
+a rollback exception. Only actual cross-host wire/state spanning two named
+adjacent releases may use a rollback window, with the coordinator's concrete
+next-release removal fence and a calendar deadline. Never invent that pair.
+
+`bash scripts/ci/own-compat-audit.sh` checks tracked active source, tests and
+current documentation; immutable history and derived output are excluded.
+The exact path/substrings and occurrence counts in
+`scripts/ci/own-compat-allowlist.toml` inventory existing debt, not permission to
+add compatibility. Every row has a kind, reason, owning public issue and hard
+expiry; deletion slices remove their rows. Unlisted, malformed, stale, changed
+counts and expired rows fail. When fetched `origin/main` is available, the audit
+also rejects new baselined occurrences and weakened scheduled removal deadlines
+or ownership. External rows name supported versions. Narrow negative declarations are ignored; other current defaults, rejection fixtures
+and immutable provenance references require explicit classification.
+
+Before release, run `bash scripts/ci/own-compat-audit.sh --release YYYY.MM.DD`
+with the actual kit release. Rollback windows require the supplied adjacent
+`release_sequence` and fail at or after `remove_before_release`; tag-context CI
+also applies that fence. The release script checks before publication, and the
+image workflow checks the actual release tag before building. The preference in
+this section must never be rendered into home prompts, shared policies, skills,
+agents or target consumer rules.
+
 ## Change workflow
 
 1. Define the observable contract delta and list the canonical and derived
