@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import io
+import json
+import subprocess
 import sys
 import tempfile
 import threading
@@ -12,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +37,51 @@ topic_radar = load_topic_radar()
 
 
 class TopicRadarSecurityTest(unittest.TestCase):
+    def test_generic_profile_default_and_retired_aliases(self) -> None:
+        default = topic_radar.normalize_args([])
+        explicit = topic_radar.normalize_args(["--profile", "ai-tech"])
+        self.assertEqual(default.profile, "ai-tech")
+        self.assertEqual(default.topics, explicit.topics)
+        for alias in ("personal", "default"):
+            with self.subTest(alias=alias):
+                with self.assertRaisesRegex(topic_radar.UsageError, "unknown profile"):
+                    topic_radar.normalize_args(["--profile", alias])
+        self.assertFalse(hasattr(topic_radar, "PROFILE_" + "ALIASES"))
+
+    def test_profile_inputs_reach_json_output_without_network(self) -> None:
+        consumer_preset = dict(topic_radar.PRESETS["radar"], topics=["Synthetic topic"])
+        cases = [
+            ([], topic_radar.PROFILE_TOPICS["ai-tech"]),
+            (["--profile", "ai-tech"], topic_radar.PROFILE_TOPICS["ai-tech"]),
+            (["--topic", "Custom topic"], ["Custom topic"]),
+            (["--preset", "consumer"], ["Synthetic topic"]),
+        ]
+        with patch.dict(topic_radar.PRESETS, {"consumer": consumer_preset}):
+            for argv, topics in cases:
+                with self.subTest(argv=argv), patch.object(topic_radar, "gather", return_value=([], {}, [])) as gather:
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(topic_radar.main([*argv, "--format", "json"]), 0)
+                    self.assertEqual(gather.call_args.args[0].topics, topics)
+                    self.assertEqual(json.loads(output.getvalue())["profile"], "ai-tech")
+        for alias in ("personal", "default"):
+            error = io.StringIO()
+            with self.subTest(alias=alias), contextlib.redirect_stderr(error):
+                self.assertEqual(topic_radar.main(["--profile", alias]), 2)
+                self.assertIn("unknown profile", error.getvalue())
+
+    def test_rendered_profile_help_matches_generic_default(self) -> None:
+        for product in ("codex", "claude", "hermes"):
+            root = REPO_ROOT / "tests/golden" / product / "plugins/reporting/skills/topic-radar/expected"
+            with self.subTest(product=product):
+                help_text = subprocess.run(
+                    [sys.executable, str(root / "bin/topic_radar.py"), "--help"],
+                    check=True, capture_output=True, text=True,
+                ).stdout
+                self.assertIn("ai-tech (default)", help_text)
+                self.assertNotIn("personal/", help_text)
+                self.assertIn("`ai-tech` (default)", (root / "SKILL.md").read_text())
+
     def radar_args(self) -> SimpleNamespace:
         start = datetime(2026, 6, 19, tzinfo=topic_radar.UTC)
         return SimpleNamespace(
