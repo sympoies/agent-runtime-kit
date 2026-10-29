@@ -231,6 +231,21 @@ For non-technical operators setting up another Mac through an agent, use the
 copyable clean-reinstall prompt in
 [`macos-agent-bootstrap-prompt.md`](macos-agent-bootstrap-prompt.md).
 
+## Diagnosing Untrusted-Input Failures
+
+Agent runtime trust checks intentionally reject writable policy, handler, or
+producer inputs. A checkout created under a group-writable umask such as `0002`
+can materialize group-writable files even when Git records only the executable
+bit. When a clean source revision reports an untrusted-input failure, inspect
+the resolved path and mode before diagnosing a repository defect; installed
+managed surfaces use stricter modes, and `tests/hooks/run.sh` sets `umask 022`
+for the same reason.
+
+Long-running agent processes also keep the environment present at launch.
+Removing an export from shell configuration does not remove it from an existing
+Codex, Claude, tmux, or gateway process. Compare a fresh process or a narrowly
+sanitized invocation before attributing a sudden suite-wide change to source.
+
 ## Overlaying Private Skills
 
 Personal **global skills** — ones that should be available in every session but

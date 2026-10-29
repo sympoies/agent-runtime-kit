@@ -341,6 +341,11 @@ a uniform shape:
   backup restore rehearsal, retired-surface prune, stubbed plugin activation,
   active-ID read-back, installed-runtime provenance, and idempotent reapply in
   an isolated runtime home.
+- Operating caution: inspect Codex login state with `codex login status` or
+  `codex login --help`. Bare `codex login` starts a browser flow that replaces
+  `$CODEX_HOME/auth.json` up front, so interrupting it leaves the account
+  logged out. Apply the same rule to any auth-managing CLI: read state through
+  a status or help subcommand, never the bare login verb.
 - Support today: **shipped (env var + runtime allocator)**.
 
 ### 14. Codex local skill root (`skills/<domain>/<skill>/SKILL.md`)
