@@ -32,6 +32,49 @@ mkdir -p "$root/build/$product"
 printf '# rendered %s home policy\\n' "$product" >"$root/build/$product/AGENT_HOME.md"
 """
 
+BREW_STUB = """#!/usr/bin/env bash
+case "${1:-}" in
+  --prefix) printf '/opt/homebrew\n' ;;
+  list) exit 1 ;;
+  *) printf 'stub brew %s\n' "$*" ;;
+esac
+"""
+
+SETUP_RENDER_STUB = """#!/usr/bin/env bash
+set -euo pipefail
+cmd="${1:-}"; shift || true
+root=""; product=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --source-root) root="$2"; shift 2 ;;
+    --product) product="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$cmd" in
+  render)
+    name="${product:-neutral}"
+    mkdir -p "$root/build/$name"
+    printf '# rendered %s home policy\n' "$name" >"$root/build/$name/AGENT_HOME.md"
+    ;;
+  install | prune-stale | doctor) mkdir -p "$root/build/$product" ;;
+  *) exit 64 ;;
+esac
+"""
+
+# Stands in for the sync owner's external operations only (plugin and hook activation);
+# home-policy wiring is the real owner function from scripts/sync-runtime-surfaces.sh.
+SYNC_WRAPPER = """#!/usr/bin/env bash
+set -euo pipefail
+export SYNC_RUNTIME_SURFACES_LIB=1
+. "$REAL_SYNC"
+parse_args "$@"
+require_runtime_python
+resolve_source_root
+render_home_prompt_product "$PRODUCT"
+ensure_home_prompt "$PRODUCT"
+"""
+
 
 class HomePolicyLifetimeTests(unittest.TestCase):
     def setUp(self):
@@ -178,6 +221,50 @@ class HomePolicyLifetimeTests(unittest.TestCase):
         proc = self.owner("PRODUCT=both; verify_home_policy\n")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("claude", proc.stdout)
+
+    def run_setup(self, home):
+        """Run the real scripts/setup.sh against a fixture home whose sync is the real owner wiring."""
+        checkout = home / ".config/agent-runtime-kit"
+        (checkout / "scripts").mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True)
+        (checkout / "AGENT_HOME.md").write_text("# raw policy\n")
+        wrapper = checkout / "scripts/sync-runtime-surfaces.sh"
+        wrapper.write_text(SYNC_WRAPPER)
+        wrapper.chmod(0o755)
+        for name, body in (("brew", BREW_STUB), ("agent-runtime", SETUP_RENDER_STUB)):
+            stub = self.bin / name
+            stub.write_text(body)
+            stub.chmod(0o755)
+        env = {**self.env, "HOME": str(home), "CODEX_HOME": str(home / ".codex"), "REAL_SYNC": str(SYNC),
+               "XDG_STATE_HOME": str(home / "state")}
+        proc = subprocess.run(["bash", str(ROOT / "scripts/setup.sh"), "--profile", "core",
+                               "--skip-homebrew-install", "--skip-cli-tools"], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        return checkout, env, proc
+
+    def test_fresh_setup_hands_home_wiring_to_sync_and_ends_healthy(self):
+        home = Path(self._tmp.name).resolve() / "setup-home"
+        (home / ".codex").mkdir(parents=True)
+        (home / ".claude").mkdir(parents=True)
+        checkout, env, proc = self.run_setup(home)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        report = json.loads(subprocess.run(
+            ["bash", str(SYNC), "--source-root", str(checkout), "--product", "both", "--check-home-policy"],
+            env=env, stdout=subprocess.PIPE, text=True, check=True).stdout)
+        self.assertTrue(report["ok"], report)
+        for link in (home / ".codex/AGENTS.md", home / ".claude/CLAUDE.md"):
+            self.assertTrue(link.read_text().strip())
+            self.assertNotIn("/build/", os.readlink(link))
+
+    def test_setup_still_refuses_and_preserves_a_users_own_policy_file(self):
+        home = Path(self._tmp.name).resolve() / "setup-collision-home"
+        (home / ".codex").mkdir(parents=True)
+        (home / ".claude").mkdir(parents=True)
+        (home / ".codex/AGENTS.md").write_text("manual codex policy\n")
+        _, _, proc = self.run_setup(home)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual((home / ".codex/AGENTS.md").read_text(), "manual codex policy\n")
+        self.assertFalse((home / ".codex/AGENTS.md").is_symlink())
 
 
 if __name__ == "__main__":

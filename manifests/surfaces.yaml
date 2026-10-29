@@ -24,7 +24,7 @@ surfaces:
     products:
       codex:
         state: shipped
-        mechanism: "`agent-runtime render --target home-prompt --product codex` writes `build/codex/AGENT_HOME.md`; `scripts/setup.sh` and `sync-runtime-surfaces.sh --apply --product codex` publish it as an owner-managed copy under the Codex state home (`home-policy/AGENT_HOME.md`, outside `build/`) and wire `$CODEX_HOME/AGENTS.md` to that copy; `sync-runtime-surfaces.sh --check-home-policy` probes the link"
+        mechanism: "`agent-runtime render --target home-prompt --product codex` writes `build/codex/AGENT_HOME.md`; `sync-runtime-surfaces.sh --apply --product codex` (which `scripts/setup.sh` runs) publishes it as an owner-managed copy under the Codex state home (`home-policy/AGENT_HOME.md`, outside `build/`) and wire `$CODEX_HOME/AGENTS.md` to that copy; `sync-runtime-surfaces.sh --check-home-policy` probes the link"
         source_artifacts:
           - AGENT_HOME.md
           - build/codex/AGENT_HOME.md
@@ -45,7 +45,7 @@ surfaces:
           - AGENT_HOME.md
       claude:
         state: shipped
-        mechanism: "`agent-runtime render --target home-prompt --product claude` writes `build/claude/AGENT_HOME.md`; `scripts/setup.sh` and `sync-runtime-surfaces.sh --apply --product claude` publish it as an owner-managed copy under the Claude state home (`home-policy/AGENT_HOME.md`, outside `build/`) and wire `$HOME/.claude/CLAUDE.md` to that copy; `sync-runtime-surfaces.sh --check-home-policy` probes the link"
+        mechanism: "`agent-runtime render --target home-prompt --product claude` writes `build/claude/AGENT_HOME.md`; `sync-runtime-surfaces.sh --apply --product claude` (which `scripts/setup.sh` runs) publishes it as an owner-managed copy under the Claude state home (`home-policy/AGENT_HOME.md`, outside `build/`) and wire `$HOME/.claude/CLAUDE.md` to that copy; `sync-runtime-surfaces.sh --check-home-policy` probes the link"
         source_artifacts:
           - AGENT_HOME.md
           - build/claude/AGENT_HOME.md

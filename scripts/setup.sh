@@ -45,12 +45,13 @@ Bootstrap a host so it can run sympoies/agent-runtime-kit. Installs Homebrew
 when missing, taps sympoies/tap, installs nils-cli (which ships the
 agent-runtime binary), installs the profile-selected third-party CLI tools
 from manifests/cli-tools.yaml, clones agent-runtime-kit into
-\$HOME/.config/agent-runtime-kit when missing, wires the home prompt docs
-symlinks, and then uses
+\$HOME/.config/agent-runtime-kit when missing, renders the home prompts, and
+then uses
 \`agent-runtime bootstrap-host\` for the runtime surface bootstrap when the
 installed nils-cli surface provides it. Older nils-cli pins fall back to the
 manual render / install / prune-stale phase commands. It then delegates to
-\`scripts/sync-runtime-surfaces.sh\` to activate the plugin registries and the
+\`scripts/sync-runtime-surfaces.sh\` to wire the home prompt links (the sole owner of
+that wiring) and activate the plugin registries and the
 \`agent-hook\`-owned provider hook ingress. The script finishes with
 \`agent-runtime doctor\` for both products.
 
@@ -407,21 +408,6 @@ product_state_home() {
   esac
 }
 
-agent_home_raw_source() {
-  printf '%s\n' "$REPO_HOME_DEFAULT/AGENT_HOME.md"
-}
-
-agent_home_source() {
-  case "$1" in
-    claude | codex) printf '%s\n' "$REPO_HOME_DEFAULT/build/$1/AGENT_HOME.md" ;;
-    neutral) printf '%s\n' "$REPO_HOME_DEFAULT/build/neutral/AGENT_HOME.md" ;;
-    *)
-      err "unknown product: $1"
-      exit 2
-      ;;
-  esac
-}
-
 product_home_prompt_path() {
   case "$1" in
     claude) printf '%s\n' "$HOME/.claude/CLAUDE.md" ;;
@@ -431,98 +417,6 @@ product_home_prompt_path() {
       exit 2
       ;;
   esac
-}
-
-canonical_path() {
-  local path="$1"
-  local dir
-  local base
-  dir="$(dirname "$path")"
-  base="$(basename "$path")"
-  if (
-    cd "$dir" 2>/dev/null &&
-      printf '%s/%s\n' "$(pwd -P)" "$base"
-  ); then
-    return 0
-  fi
-  printf '%s\n' "$path"
-}
-
-resolve_symlink_target() {
-  local link_path="$1"
-  local raw_target
-  local link_dir
-  local target_dir
-  local target_base
-
-  raw_target="$(readlink "$link_path")" || return 1
-  case "$raw_target" in
-    /*)
-      printf '%s\n' "$raw_target"
-      ;;
-    *)
-      link_dir="$(dirname "$link_path")"
-      target_dir="$(dirname "$raw_target")"
-      target_base="$(basename "$raw_target")"
-      (
-        cd "$link_dir" &&
-          cd "$target_dir" 2>/dev/null &&
-          printf '%s/%s\n' "$(pwd -P)" "$target_base"
-      ) || printf '%s/%s\n' "$link_dir" "$raw_target"
-      ;;
-  esac
-}
-
-ensure_home_prompt() {
-  local product="$1"
-  local target
-  local target_dir
-  local expected
-  local old_expected
-  local existing
-
-  target="$(product_home_prompt_path "$product")"
-  target_dir="$(dirname "$target")"
-  expected="$(canonical_path "$(agent_home_source "$product")")"
-  old_expected="$(canonical_path "$(agent_home_raw_source)")"
-
-  if [ "$DRY_RUN" = "0" ] && [ ! -f "$expected" ]; then
-    err "missing home policy source: $expected"
-    exit 1
-  fi
-
-  if [ -L "$target" ]; then
-    existing="$(resolve_symlink_target "$target")"
-    if [ "$existing" = "$expected" ]; then
-      log "home prompt already wired product=$product target=$target"
-      return 0
-    fi
-    if [ "$existing" = "$old_expected" ]; then
-      log "rewiring managed home prompt product=$product target=$target"
-      run_cmd rm "$target"
-      run_cmd ln -s "$expected" "$target"
-      return 0
-    fi
-    if [ "$DRY_RUN" = "1" ]; then
-      warn "$target is a symlink to $existing; apply would require $expected"
-      return 0
-    fi
-    err "$target is a symlink to $existing; expected $expected"
-    exit 1
-  fi
-
-  if [ -e "$target" ]; then
-    if [ "$DRY_RUN" = "1" ]; then
-      warn "$target exists and is not a symlink to $expected; apply would refuse to overwrite"
-      return 0
-    fi
-    err "$target exists and is not a symlink to $expected; refusing to overwrite"
-    exit 1
-  fi
-
-  log "wiring home prompt product=$product target=$target"
-  run_cmd mkdir -p "$target_dir"
-  run_cmd ln -s "$expected" "$target"
 }
 
 render_home_prompts() {
@@ -538,13 +432,6 @@ render_home_prompts() {
     --source-root "$REPO_HOME_DEFAULT" \
     --target home-prompt \
     --product claude
-}
-
-ensure_home_prompts() {
-  local product
-  for product in codex claude; do
-    ensure_home_prompt "$product"
-  done
 }
 
 bootstrap_host_available() {
@@ -725,8 +612,8 @@ Summary
 - runtime_surface_bootstrap: $BOOTSTRAP_SURFACE
 - claude_live_home: $(product_live_home claude)
 - codex_live_home: $(product_live_home codex)
-- claude_home_prompt: $(product_home_prompt_path claude) -> $(agent_home_source claude)
-- codex_home_prompt: $(product_home_prompt_path codex) -> $(agent_home_source codex)
+- claude_home_prompt: $(product_home_prompt_path claude) (wired by sync-runtime-surfaces)
+- codex_home_prompt: $(product_home_prompt_path codex) (wired by sync-runtime-surfaces)
 - claude_plugin_registry_activation: $CLAUDE_PLUGIN_REGISTRY_SURFACE
 - codex_plugin_registry_activation: $CODEX_PLUGIN_REGISTRY_SURFACE
 EOF
@@ -751,7 +638,6 @@ main() {
   ensure_runtime_python
   ensure_repo_clone
   render_home_prompts
-  ensure_home_prompts
   run_surface_bootstrap
   sync_claude_plugin_registry_activation
   sync_codex_plugin_registry_activation

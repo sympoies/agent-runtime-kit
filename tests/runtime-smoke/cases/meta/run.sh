@@ -921,7 +921,8 @@ link_lines = [
     if line.startswith("+ ln -s ")
 ]
 
-assert len(link_lines) == 2, link_lines
+# Home-prompt wiring belongs to sync-runtime-surfaces.sh; setup creates no link itself.
+assert link_lines == [], link_lines
 assert not any("agent-docs" in line for line in lines), lines
 assert len(sync_lines) == 2, sync_lines
 sync_products = []
@@ -947,7 +948,6 @@ if bootstrap_lines:
     assert "--dry-run" in bootstrap_line, bootstrap_line
     assert "--skip-homebrew-install" in bootstrap_line, bootstrap_line
     assert "--skip-cli-tools" in bootstrap_line, bootstrap_line
-    assert max(idx for idx, _ in link_lines) < bootstrap_lines[0][0], lines
     assert bootstrap_lines[0][0] < min(idx for idx, _ in sync_lines), lines
 else:
     home_render_lines = [
@@ -963,8 +963,7 @@ else:
     assert len(install_lines) == 2, install_lines
     assert any("--product codex" in line for _, line in product_render_lines), product_render_lines
     assert any("--product claude" in line for _, line in product_render_lines), product_render_lines
-    assert max(idx for idx, _ in home_render_lines) < min(idx for idx, _ in link_lines), lines
-    assert max(idx for idx, _ in link_lines) < min(idx for idx, _ in product_render_lines), lines
+    assert max(idx for idx, _ in home_render_lines) < min(idx for idx, _ in product_render_lines), lines
     assert max(idx for idx, _ in product_render_lines) < min(idx for idx, _ in install_lines), lines
     assert max(idx for idx, _ in install_lines) < min(idx for idx, _ in sync_lines), lines
 PY
@@ -1080,8 +1079,9 @@ SH
       --skip-cli-tools
   ) >"$apply_out" 2>&1
 
-  assert_symlink_target "$apply_home/.codex/AGENTS.md" "$source_root/build/codex/AGENT_HOME.md"
-  assert_symlink_target "$apply_home/.claude/CLAUDE.md" "$source_root/build/claude/AGENT_HOME.md"
+  # Setup must not pre-link the former build-output layout; sync (stubbed here) owns the wiring.
+  test ! -e "$apply_home/.codex/AGENTS.md" && test ! -L "$apply_home/.codex/AGENTS.md"
+  test ! -e "$apply_home/.claude/CLAUDE.md" && test ! -L "$apply_home/.claude/CLAUDE.md"
   ! grep -q "agent-docs" "$apply_out"
   grep -q "+ bash $source_root/scripts/sync-runtime-surfaces.sh --source-root $source_root --product claude --no-pull --no-prune --no-verify --apply" "$apply_out"
   grep -q "+ bash $source_root/scripts/sync-runtime-surfaces.sh --source-root $source_root --product codex --no-pull --no-verify --apply" "$apply_out"
@@ -1111,10 +1111,12 @@ assert events == [
 ], events
 PY
 
-  mkdir -p "$collision_home/.codex" "$collision_source_root/.git"
+  mkdir -p "$collision_home/.codex" "$collision_source_root/.git" "$collision_source_root/scripts"
+  cp "$source_root/scripts/sync-runtime-surfaces.sh" "$collision_source_root/scripts/sync-runtime-surfaces.sh"
   printf '# AGENT_HOME fixture\n' >"$collision_source_root/AGENT_HOME.md"
   printf 'manual codex policy\n' >"$collision_home/.codex/AGENTS.md"
-  set +e
+  # Setup leaves a user-owned policy file alone; the refusal itself is the sync owner's
+  # (covered by the sync home-prompt case and tests/ci/test_home_policy_lifetime.py).
   (
     cd "$REPO_ROOT"
     PATH="$stub_bin:$PATH" HOME="$collision_home" CODEX_HOME="$collision_home/.codex" \
@@ -1123,10 +1125,8 @@ PY
       --skip-homebrew-install \
       --skip-cli-tools
   ) >"$collision_out" 2>&1
-  status=$?
-  set -e
-  [ "$status" -ne 0 ]
-  grep -q "refusing to overwrite" "$collision_out"
+  test ! -L "$collision_home/.codex/AGENTS.md"
+  test "$(cat "$collision_home/.codex/AGENTS.md")" = "manual codex policy"
 }
 
 run_sync_runtime_surfaces_no_prune_probe() {
