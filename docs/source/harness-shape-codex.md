@@ -88,14 +88,21 @@ a uniform shape:
 - Source: root `AGENT_HOME.md`, rendered per product to
   `build/codex/AGENT_HOME.md` (`AGENT_HOME.md`, `DEVELOPMENT.md`).
 - Install mechanism: `agent-runtime render --target home-prompt --product
-  codex` writes the rendered file, and `scripts/setup.sh` plus
-  `scripts/sync-runtime-surfaces.sh --apply --product codex` wire
-  `$CODEX_HOME/AGENTS.md` to
-  `<source_root>/build/codex/AGENT_HOME.md`. The source filename is deliberately
+  codex` writes the rendered file, and
+  `scripts/sync-runtime-surfaces.sh --apply --product codex` publishes it as
+  an owner-managed copy at `<codex_state_home>/home-policy/AGENT_HOME.md`
+  (plus a `source.json` identity record) and wires `$CODEX_HOME/AGENTS.md` to
+  that copy, so cleaning `build/` cannot orphan the link. A link left
+  from the earlier build-output layout is not owner-managed: remove it once and
+  rerun sync. The
+  source filename is deliberately
   distinct from repo-local `AGENTS.md` so Codex does not load duplicate
   home/project policy in this repo.
-- Acceptance lane: covered by home-policy cutover and live Codex session
-  observation; no dedicated CI gate diffs the link target.
+- Acceptance lane: `tests/ci/test_home_policy_lifetime.py` proves the link
+  survives build cleanup and that `sync-runtime-surfaces.sh
+  --check-home-policy` reports absent, dangling, unreadable, empty, and
+  foreign links; sync's verification step fails on an unhealthy link and
+  `codex debug prompt-input` still runs after it.
 - Support today: **shipped (rendered + linked)**.
 
 ### 2. Project-scope prompt (`./AGENTS.md`)
@@ -397,7 +404,7 @@ a uniform shape:
 
 | # | Surface | runtime-kit ships | Mechanism | Min Codex | Min nils-cli |
 |---|---|---|---|---|---|
-| 1 | `AGENTS.md` (home) | yes | rendered home prompt symlink to `build/codex/AGENT_HOME.md` | 0.130.0 | v1.12.1 |
+| 1 | `AGENTS.md` (home) | yes | home prompt symlink to the owner-managed copy of `build/codex/AGENT_HOME.md` | 0.130.0 | v1.12.1 |
 | 2 | `./AGENTS.md` (repo-local) | yes | repo working tree | 0.130.0 | n/a |
 | 3 | `.codex-plugin/plugin.json` | yes | plugin-manifest-copy; Codex loads it via the `codex-kit` marketplace (skills auto-discovered, manifest `skills` field ignored) | 0.141.0 | v0.17.5 |
 | 4 | `.agents/plugins/marketplace.json` | yes | `codex-kit` marketplace activated by `sync-runtime-surfaces.sh` / `setup.sh` | 0.141.0 | v0.17.5 |

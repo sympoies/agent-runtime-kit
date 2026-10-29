@@ -17,6 +17,7 @@ PRODUCT="both"
 NO_PULL=0
 NO_VERIFY=0
 NO_PRUNE=0
+CHECK_HOME_POLICY=0
 SOURCE_ROOT=""
 OWNED_SOURCE_ROOTS=()
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +54,7 @@ CLAUDE_AGENTS_MD_INSTRUCTION_FILES="claude-md-and-agents-md"
 
 print_help() {
   cat <<EOF
-Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--codex-plugin-activation]
+Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--check-home-policy] [--codex-plugin-activation]
 
 Refresh sympoies/agent-runtime-kit managed runtime surfaces into local Codex,
 Claude, and Hermes runtime homes. This is the daily runtime surface refresh
@@ -91,6 +92,12 @@ Options:
       may remain until a later refresh runs without this flag.
   --no-verify
       Skip post-install skill-surface doctor and Codex prompt-input probes.
+  --check-home-policy
+      Read-only probe of the Codex and Claude home-policy links. Prints one
+      JSON document (schema agent-runtime-kit.home-policy.v1) naming each
+      product's link state (healthy, absent, dangling, unreadable, empty,
+      foreign), source identity, and remediation; exits 1 unless every
+      selected link is healthy. Never mutates and needs no agent-hook.
   --codex-plugin-activation
       Deprecated compatibility flag. Codex plugin marketplace activation is now
       the default runtime-kit skill-discovery path.
@@ -205,6 +212,10 @@ parse_args() {
         ;;
       --no-verify)
         NO_VERIFY=1
+        shift
+        ;;
+      --check-home-policy)
+        CHECK_HOME_POLICY=1
         shift
         ;;
       --codex-plugin-activation)
@@ -641,22 +652,45 @@ render_home_prompt_product() {
     --product "$product"
 }
 
+# Claude and Codex read their home policy through a link into an owner-managed
+# copy under the product state home, so cleaning disposable `build/` output
+# cannot orphan an installed link. Hermes keeps linking the rendered output.
+home_policy_store_dir() {
+  case "$1" in
+    claude | codex) printf '%s\n' "$(product_state_home "$1")/home-policy" ;;
+    *) return 1 ;;
+  esac
+}
+
 ensure_home_prompt() {
   local product="$1"
   local target
   local target_dir
+  local rendered
   local expected
   local old_expected
+  local store_dir
+  local owner_managed=0
   local existing
 
   target="$(product_home_prompt_path "$product")"
   target_dir="$(dirname "$target")"
-  expected="$(canonical_path "$(agent_home_source "$product")")"
+  rendered="$(canonical_path "$(agent_home_source "$product")")"
   old_expected="$(canonical_path "$(agent_home_raw_source)")"
 
-  if [ "$APPLY" = "1" ] && [ ! -f "$expected" ]; then
-    err "missing home policy source: $expected"
+  if [ "$APPLY" = "1" ] && [ ! -f "$rendered" ]; then
+    err "missing home policy source: $rendered"
     exit 1
+  fi
+
+  if store_dir="$(home_policy_store_dir "$product")"; then
+    owner_managed=1
+    run_cmd runtime_python "$SCRIPT_DIR/lib/home-policy.py" publish \
+      --product "$product" --source "$rendered" --store-dir "$store_dir" \
+      --source-root "$SOURCE_ROOT"
+    expected="$(canonical_path "$store_dir/AGENT_HOME.md")"
+  else
+    expected="$rendered"
   fi
 
   if [ -L "$target" ]; then
@@ -668,8 +702,11 @@ ensure_home_prompt() {
       fi
       return 0
     fi
-    if [ "$existing" = "$old_expected" ] ||
-      is_managed_rendered_home_prompt_target "$product" "$existing"; then
+    # Owner-managed products accept only their own target or an absent link;
+    # a link into build output is never re-adopted here.
+    if [ "$owner_managed" = "0" ] &&
+      { [ "$existing" = "$old_expected" ] ||
+        is_managed_rendered_home_prompt_target "$product" "$existing"; }; then
       log "rewiring managed home prompt product=$product target=$target"
       run_cmd rm "$target"
       run_cmd ln -s "$expected" "$target"
@@ -701,6 +738,51 @@ ensure_home_prompt() {
   if [ "$APPLY" = "1" ]; then
     HOME_PROMPT_STATUS="wired"
   fi
+}
+
+# Probe the Codex and Claude home-policy links of the selected products and
+# print one JSON document. Read-only; non-zero unless every link is healthy.
+check_home_policy() {
+  local product
+  local store_dir
+  local -a entries=()
+
+  for product in $(selected_products); do
+    if store_dir="$(home_policy_store_dir "$product")"; then
+      entries+=(--entry "$product" "$(product_home_prompt_path "$product")" "$store_dir")
+    fi
+  done
+  if [ "${#entries[@]}" -eq 0 ]; then
+    err "--check-home-policy covers codex and claude; nothing selected by --product $PRODUCT"
+    return 2
+  fi
+  runtime_python "$SCRIPT_DIR/lib/home-policy.py" check --source-root "$SOURCE_ROOT" "${entries[@]+"${entries[@]}"}"
+}
+
+# Post-sync gate: every selected link must resolve to a nonempty owner-managed
+# file. A preview only warns, since nothing has been published yet.
+verify_home_policy() {
+  local report
+  local status
+
+  [ "$PRODUCT" = "hermes" ] && return 0
+  set +e
+  report="$(check_home_policy)"
+  status=$?
+  set -e
+  case "$status" in
+    0)
+      log "home policy verified (products=$(selected_products | tr '\n' ' ' | sed 's/ *$//'))"
+      ;;
+    *)
+      printf '%s\n' "$report" >&2
+      if [ "$APPLY" = "1" ]; then
+        err "home policy link is not healthy after sync; see the report above (remediation is in the report)"
+        return 1
+      fi
+      warn "home policy links are not healthy yet; apply would publish and wire them"
+      ;;
+  esac
 }
 
 render_product() {
@@ -4620,6 +4702,7 @@ run_verification() {
     return 0
   fi
 
+  verify_home_policy
   for product in $(selected_products); do
     doctor_product "$product"
     doctor_agent_hook_product "$product"
@@ -4682,6 +4765,10 @@ main() {
   require_runtime_python
   resolve_source_root
   resolve_owned_source_roots
+  if [ "$CHECK_HOME_POLICY" = "1" ]; then
+    check_home_policy
+    return $?
+  fi
   resolve_agent_hook_paths
   validate_live_sync_source_root
 

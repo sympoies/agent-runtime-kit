@@ -26,7 +26,7 @@ project-local overlay smoke, the shared hook contract, version-baseline
 mirrors, product leakage audit, and deterministic memory
 policy/retired-reference routing.
 `scripts/setup.sh` contains the brew-first host bootstrap path for installing
-the released `agent-runtime` binary, rendering and wiring home prompt docs,
+the released `agent-runtime` binary, rendering home prompt docs (sync wires them),
 activating Claude/Codex runtime homes and their `agent-hook`-owned provider
 hook ingress (through the `sync-runtime-surfaces.sh` delegation), pruning stale
 managed surfaces, and running doctor.

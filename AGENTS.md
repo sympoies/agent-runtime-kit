@@ -5,7 +5,10 @@
 - Repo-local agent policy for `agent-runtime-kit`. Global / home-scope
   defaults live in `AGENT_HOME.md`, loaded by Codex via
   `$HOME/.codex/AGENTS.md` and by Claude via `$HOME/.claude/CLAUDE.md`
-  (both symlinks point at this repo's rendered `AGENT_HOME.md`). Hermes loads
+  (both symlinks point at an owner-managed copy of this repo's rendered
+  `AGENT_HOME.md` under the product state home, so `build/` cleanup cannot
+  orphan them; `sync-runtime-surfaces.sh --check-home-policy` probes them).
+  Hermes loads
   the rendered development-policy skill referenced by its `SOUL.md`.
 - Codex and Hermes read this `AGENTS.md` natively. Claude Code reads it only
   because `scripts/sync-runtime-surfaces.sh` owns the user setting
