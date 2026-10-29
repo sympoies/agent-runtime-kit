@@ -2933,14 +2933,23 @@ def run_dirty_adoption_launcher(arguments: list[str]) -> int:
         command.append(f"--format={values['--format']}")
     try:
         with tempfile.TemporaryDirectory(prefix="ara-adopt-") as directory:
-            address = os.path.join(directory, "channel")
             listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             sender = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
-                listener.bind(address)
-                listener.listen(1)
-                sender.connect(address)
-                receiver, _peer = listener.accept()
+                caller_cwd = os.open(".", os.O_RDONLY)
+                try:
+                    # AF_UNIX limits the address length even when TMPDIR is long.
+                    # Keep the named channel inside the same private directory.
+                    os.chdir(directory)
+                    listener.bind("channel")
+                    listener.listen(1)
+                    sender.connect("channel")
+                    receiver, _peer = listener.accept()
+                finally:
+                    try:
+                        os.fchdir(caller_cwd)
+                    finally:
+                        os.close(caller_cwd)
             finally:
                 listener.close()
             try:

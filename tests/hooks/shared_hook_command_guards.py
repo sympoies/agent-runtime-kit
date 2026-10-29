@@ -3481,7 +3481,7 @@ class CommandGuardsTests(HookTestCase):
     def test_dirty_adoption_launcher_passes_bearer_through_parent_socket(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
             root = Path(tmp)
             record = root / "record.json"
             bin_dir = root / "bin"
@@ -3492,35 +3492,77 @@ class CommandGuardsTests(HookTestCase):
             reason_file.parent.mkdir()
             reason_file.write_text("Adopt the warned state.\n", encoding="utf-8")
 
-            result = self._run_dirty_adoption_launcher(
-                ["--reason-file", str(reason_file), "--format=json"],
-                token + "\n",
-                bin_dir,
-            )
+            long_parent = root / ("long-parent-" + "x" * 120)
+            long_parent.mkdir()
+            for parent in (root, long_parent):
+                with self.subTest(long_parent=parent == long_parent), mock.patch.dict(
+                    os.environ, {"TMPDIR": str(parent)}
+                ):
+                    result = self._run_dirty_adoption_launcher(
+                        ["--reason-file", str(reason_file), "--format=json"],
+                        token + "\n",
+                        bin_dir,
+                    )
 
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stderr, "")
-            self.assertEqual(json.loads(result.stdout), {"ok": True})
-            observed = json.loads(record.read_text(encoding="utf-8"))
-            self.assertEqual(
-                observed["argv"],
-                [
-                    "worktree",
-                    "adopt-dirty",
-                    "--challenge-fd",
-                    "0",
-                    "--reason-file",
-                    str(reason_file),
-                    "--format=json",
-                ],
-            )
-            self.assertTrue(observed["is_socket"])
-            self.assertEqual(observed["digest"], digest)
-            self.assertFalse(observed["bearer_in_argv"])
-            self.assertFalse(observed["bearer_in_env"])
-            if sys.platform.startswith("linux"):
-                self.assertTrue(observed["peer_is_parent"])
-            self.assertNotIn(token, result.stdout + result.stderr)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stderr, "")
+                    self.assertEqual(json.loads(result.stdout), {"ok": True})
+                    observed = json.loads(record.read_text(encoding="utf-8"))
+                    self.assertEqual(
+                        observed["argv"],
+                        [
+                            "worktree",
+                            "adopt-dirty",
+                            "--challenge-fd",
+                            "0",
+                            "--reason-file",
+                            str(reason_file),
+                            "--format=json",
+                        ],
+                    )
+                    self.assertEqual(observed["cwd"], str(Path.cwd()))
+                    self.assertTrue(observed["is_socket"])
+                    self.assertEqual(observed["digest"], digest)
+                    self.assertFalse(observed["bearer_in_argv"])
+                    self.assertFalse(observed["bearer_in_env"])
+                    if sys.platform.startswith("linux"):
+                        self.assertTrue(observed["peer_is_parent"])
+                    self.assertNotIn(token, result.stdout + result.stderr)
+
+
+    def test_dirty_adoption_launcher_restores_cwd_before_channel_failure(self) -> None:
+        import io
+
+        module = self._load("dirty_adoption_channel_failure", "checkout-lease-guard.py")
+        caller_cwd = Path.cwd()
+        token = secrets.token_hex(32)
+        digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            reason_file = Path(tmp) / f"{digest}.txt"
+            reason_file.write_text("Adopt the warned state.\n", encoding="utf-8")
+            channel = mock.MagicMock()
+            channel.bind.side_effect = OSError("injected channel failure")
+            report_failure = module.dirty_adoption_launcher_failure
+
+            def observe_failure(*args):
+                self.assertEqual(Path.cwd(), caller_cwd)
+                return report_failure(*args)
+
+            with (
+                mock.patch.object(module.sys, "stdin", buffer=io.BytesIO(token.encode("ascii"))),
+                mock.patch.object(module.shutil, "which", return_value="/fixture/git-cli"),
+                mock.patch.object(module, "resolved_executable_matches", return_value=True),
+                mock.patch.object(module.socket, "socket", return_value=channel),
+                mock.patch.object(module.subprocess, "run") as spawn,
+                mock.patch.object(module, "dirty_adoption_launcher_failure", side_effect=observe_failure),
+                mock.patch.object(module.sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                result = module.run_dirty_adoption_launcher(["--reason-file", str(reason_file)])
+                self.assertEqual(result, 70)
+                self.assertIn("channel-unavailable", stderr.getvalue())
+                self.assertNotIn(token, stderr.getvalue())
+                spawn.assert_not_called()
+            self.assertEqual(Path.cwd(), caller_cwd)
 
 
     def test_dirty_adoption_launcher_rejects_unbound_or_malformed_input(
