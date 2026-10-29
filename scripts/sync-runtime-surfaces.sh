@@ -751,7 +751,7 @@ check_home_policy() {
     err "--check-home-policy covers codex and claude; nothing selected by --product $PRODUCT"
     return 2
   fi
-  runtime_python "$SCRIPT_DIR/lib/home-policy.py" check --source-root "$SOURCE_ROOT" "${entries[@]}"
+  runtime_python "$SCRIPT_DIR/lib/home-policy.py" check --source-root "$SOURCE_ROOT" "${entries[@]+"${entries[@]}"}"
 }
 
 # Post-sync gate: every selected link must resolve to a nonempty owner-managed
