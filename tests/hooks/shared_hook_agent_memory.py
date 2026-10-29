@@ -38,6 +38,7 @@ class AgentMemoryTests(HookTestCase):
             home.mkdir()
             env = {
                 "AGENT_RUNTIME_PRODUCT": "codex",
+                "AGENT_MEMORY_STARTUP_RECALL": "1",
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -106,6 +107,7 @@ class AgentMemoryTests(HookTestCase):
             home.mkdir()
             env = {
                 "AGENT_RUNTIME_PRODUCT": "claude",
+                "AGENT_MEMORY_STARTUP_RECALL": "1",
                 "HOME": str(home),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             }
@@ -148,6 +150,52 @@ class AgentMemoryTests(HookTestCase):
             )
 
 
+    def test_agent_memory_cue_is_off_by_default_and_restored_by_opt_in(self) -> None:
+        for product in ("codex", "claude"):
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                log_path = root / "agent-memory.args"
+                agent_memory = bin_dir / "agent-memory"
+                agent_memory.write_text(
+                    "#!/usr/bin/env bash\n"
+                    f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log_path))}\n"
+                    "printf '%s\\n' '- Startup memory fixture.'\n",
+                    encoding="utf-8",
+                )
+                agent_memory.chmod(0o755)
+                home = root / "home"
+                home.mkdir()
+                env = {
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "HOME": str(home),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                payload = {"hook_event_name": "SessionStart", "source": "startup"}
+
+                code, decision, stderr = run_shell_hook(
+                    "user-prompt-agent-memory.sh", payload, cwd=root, env=env
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIsNone(decision)
+                self.assertFalse(log_path.exists())
+
+                code, decision, stderr = run_shell_hook(
+                    "user-prompt-agent-memory.sh",
+                    payload,
+                    cwd=root,
+                    env={**env, "AGENT_MEMORY_STARTUP_RECALL": "1"},
+                )
+                self.assertEqual(code, 0, stderr)
+                assert decision is not None
+                context = decision["hookSpecificOutput"]["additionalContext"]
+                self.assertIn("Startup memory fixture.", context)
+                self.assertEqual(
+                    log_path.read_text(encoding="utf-8").splitlines(),
+                    ["recall startup"],
+                )
+
     def test_agent_memory_cue_noops_outside_supported_products(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -170,6 +218,7 @@ class AgentMemoryTests(HookTestCase):
                 cwd=root,
                 env={
                     "AGENT_RUNTIME_PRODUCT": "hermes",
+                    "AGENT_MEMORY_STARTUP_RECALL": "1",
                     "HOME": str(home),
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 },
@@ -206,6 +255,7 @@ class AgentMemoryTests(HookTestCase):
                     cwd=root,
                     env={
                         "AGENT_RUNTIME_PRODUCT": product,
+                        "AGENT_MEMORY_STARTUP_RECALL": "1",
                         suppression: "1",
                         "HOME": str(home),
                         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -232,6 +282,7 @@ class AgentMemoryTests(HookTestCase):
                 cwd=root,
                 env={
                     "AGENT_RUNTIME_PRODUCT": "codex",
+                    "AGENT_MEMORY_STARTUP_RECALL": "1",
                     "HOME": str(home),
                     "PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin",
                 },
@@ -266,6 +317,7 @@ class AgentMemoryTests(HookTestCase):
                         cwd=root,
                         env={
                             "AGENT_RUNTIME_PRODUCT": product,
+                            "AGENT_MEMORY_STARTUP_RECALL": "1",
                             "HOME": str(home),
                             "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                         },
@@ -305,6 +357,7 @@ class AgentMemoryTests(HookTestCase):
                 cwd=root,
                 env={
                     "AGENT_RUNTIME_PRODUCT": "codex",
+                    "AGENT_MEMORY_STARTUP_RECALL": "1",
                     "HOME": str(home),
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 },
@@ -359,6 +412,7 @@ class AgentMemoryTests(HookTestCase):
                     cwd=root,
                     env={
                         "AGENT_RUNTIME_PRODUCT": product,
+                        "AGENT_MEMORY_STARTUP_RECALL": "1",
                         "AGENT_MEMORY_CONTEXT_MAX_BYTES": configured_limit,
                         "HOME": str(home),
                         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -406,6 +460,7 @@ class AgentMemoryTests(HookTestCase):
                     cwd=root,
                     env={
                         "AGENT_RUNTIME_PRODUCT": "codex",
+                        "AGENT_MEMORY_STARTUP_RECALL": "1",
                         "AGENT_MEMORY_FIXTURE_FILE": str(memory_file),
                         "HOME": str(home),
                         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -458,6 +513,7 @@ class AgentMemoryTests(HookTestCase):
                 cwd=root,
                 env={
                     "AGENT_RUNTIME_PRODUCT": "codex",
+                    "AGENT_MEMORY_STARTUP_RECALL": "1",
                     "HOME": str(home),
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 },
