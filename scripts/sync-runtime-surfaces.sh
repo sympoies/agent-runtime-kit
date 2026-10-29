@@ -1920,6 +1920,12 @@ def ensure_agents_md_setting(settings):
     node["instructionFiles"] = instruction_files
 
 
+def default_auto_memory_off(settings):
+    # Only the absent key is defaulted, so an explicit autoMemoryEnabled: true
+    # (the documented way to re-enable) survives every later sync.
+    settings.setdefault("autoMemoryEnabled", False)
+
+
 source_hooks = load_fragment(fragment_path)
 settings = load_settings(settings_path)
 settings_hooks = settings.setdefault("hooks", {})
@@ -1929,6 +1935,7 @@ if not isinstance(settings_hooks, dict):
 remove_managed_hooks(settings_hooks)
 managed_count = append_source_hooks(settings_hooks, source_hooks)
 ensure_agents_md_setting(settings)
+default_auto_memory_off(settings)
 summary = (
     f"managed_hooks={managed_count} "
     f"agents_md_instruction_files={instruction_files} target={settings_path}"

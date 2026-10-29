@@ -2529,6 +2529,7 @@ run_sync_runtime_surfaces_claude_agents_md_setting_probe() {
   local claude_home="$root/claude-home"
   local missing_home="$root/missing-home"
   local invalid_home="$root/invalid-home"
+  local optin_home="$root/optin-home"
   local settings="$claude_home/settings.json"
   local status
 
@@ -2545,6 +2546,8 @@ run_sync_runtime_surfaces_claude_agents_md_setting_probe() {
 JSON
   printf '{"theme": "light"}\n' >"$missing_home/settings.json"
   printf '{"pluginConfigs": []}\n' >"$invalid_home/settings.json"
+  mkdir -p "$optin_home"
+  printf '{"autoMemoryEnabled": true}\n' >"$optin_home/settings.json"
 
   # shellcheck disable=SC1090,SC2034
   (
@@ -2554,6 +2557,7 @@ JSON
     APPLY=1
     sync_claude_settings_hooks "$claude_home" || exit 11
     sync_claude_settings_hooks "$claude_home" || exit 12
+    sync_claude_settings_hooks "$optin_home" || exit 18
     verify_claude_agents_md_setting "$claude_home" || exit 13
     if verify_claude_agents_md_setting "$missing_home"; then
       exit 14
@@ -2574,12 +2578,15 @@ JSON
   status=$?
   [ "$status" -eq 0 ] || return 1
 
-  python3 - "$settings" "$missing_home/settings.json" "$invalid_home/settings.json" <<'PY'
+  python3 - "$settings" "$missing_home/settings.json" "$invalid_home/settings.json" "$optin_home/settings.json" <<'PY'
 import json
 import sys
 
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["theme"] == "dark", settings
+# Native auto-memory defaults off; an explicit user opt-in survives every sync.
+assert settings["autoMemoryEnabled"] is False, settings
+assert json.load(open(sys.argv[4], encoding="utf-8"))["autoMemoryEnabled"] is True
 plugin_configs = settings["pluginConfigs"]
 assert plugin_configs["other@market"] == {"options": {"keep": True}}, plugin_configs
 agents_md = plugin_configs["agents-md@builtin"]

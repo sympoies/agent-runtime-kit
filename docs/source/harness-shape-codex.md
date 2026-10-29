@@ -260,7 +260,9 @@ a uniform shape:
   `core/policies/agent-hook/runtime-kit-v1.toml` and
   `manifests/hook-rules.yaml`.
   The shared `user-prompt-agent-memory.sh` hook is registered separately for
-  Codex and Claude at each `startup|resume|clear` SessionStart boundary. It
+  Codex and Claude at each `startup|resume|clear` SessionStart boundary. It is
+  off by default and acts only when `AGENT_MEMORY_STARTUP_RECALL=1` is in the
+  launch environment. When enabled it
   invokes `agent-memory recall startup` and reads at most 768 bytes without
   falling back to the full global index or any producer-candidate root. It
   keeps no delivery stamp, so an aggregate block cannot suppress recall on the

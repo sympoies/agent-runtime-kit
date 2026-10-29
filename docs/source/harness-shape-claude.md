@@ -225,12 +225,15 @@ a uniform shape:
 - Source: portable logic under `core/hooks/shared/`; Claude adapter slot
   reserved under `core/hooks/claude/` (`core/hooks/` tree present in
   repo).
-- The shared `user-prompt-agent-memory.sh` handler injects the curated
-  `agent-memory recall startup` profile at each `startup|resume|clear`
+- The shared `user-prompt-agent-memory.sh` handler is off by default; with
+  `AGENT_MEMORY_STARTUP_RECALL=1` in the launch environment it injects the
+  curated `agent-memory recall startup` profile at each `startup|resume|clear`
   SessionStart boundary with a 768-byte hard cap, no global-index or candidate
   fallback, and failure-open behavior. The handler owns no delivery stamp, so a
   blocked aggregate cannot consume the next eligible startup-memory delivery.
-  Claude native auto-memory remains project-local; persona isolation is an
+  Claude native auto-memory remains project-local and is switched off by the
+  sync-managed `autoMemoryEnabled: false` default (an explicit `true` in the
+  user settings re-enables it); persona isolation is an
   explicit launcher/settings concern rather than a hook-owned store. Deeper
   shared recall uses `agent-memory recall on-demand <term>` after loading the
   governed memory policy.
