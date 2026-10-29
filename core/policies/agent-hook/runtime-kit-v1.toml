@@ -1,6 +1,6 @@
 schema_version = "agent-hook.policy.v1"
 bundle_id = "runtime-kit"
-version = "2026.10.15.1"
+version = "2026.10.29.1"
 [[rules]]
 id = "runtime.codex.pre-tool-use.bash.checkout-lease-guard"
 # inventory: {"state_owner":"agent-runtime.checkout-lease.v2","transformation":"context-block-stop-audit","recovery":"exact-capability-only","docs":"core/hooks/README.md","test_owner":"tests/hooks/test_shared_hooks.py","disposition":"typed-capability","legacy_handler":"checkout-lease-guard"}
@@ -246,6 +246,32 @@ failure_posture = "closed"
 timeout_posture = "closed"
 override_class = "locked"
 capability = { id = "runtime-kit.handler.v1", handler_id = "checkout-lease-guard" }
+
+[[rules]]
+id = "runtime.codex.session-start.project-readback"
+# inventory: {"state_owner":"none","transformation":"additional-context","recovery":"config-or-exact-capability","docs":"core/hooks/README.md","test_owner":"tests/agent-hook/test_executable_contract.py","disposition":"added-project-readback","legacy_handler":null}
+products = ["codex"]
+events = ["SessionStart"]
+matcher = "compact"
+priority = 120
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-docs" }
+
+[[rules]]
+id = "runtime.codex.session-start.startup-resume-clear.project-readback"
+# inventory: {"state_owner":"none","transformation":"additional-context","recovery":"config-or-exact-capability","docs":"core/hooks/README.md","test_owner":"tests/agent-hook/test_executable_contract.py","disposition":"added-project-readback","legacy_handler":null}
+products = ["codex"]
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 120
+mode = "enforce"
+failure_posture = "open"
+timeout_posture = "warn"
+override_class = "free"
+capability = { id = "runtime-kit.handler.v1", handler_id = "user-prompt-agent-docs" }
 
 [[rules]]
 id = "runtime.codex.session-start.startup-resume-clear.user-prompt-agent-memory"

@@ -438,6 +438,72 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         self.assertFalse(envelope["ok"])
         self.assertEqual(envelope["error"]["code"], "provider-event-unsupported")
 
+    def test_compact_selects_project_reminder_without_startup_memory_or_health(self) -> None:
+        decision = self.json_result(
+            self.run_hook(
+                "dispatch", "--product", "codex", "--shadow", "--format", "json",
+                payload={
+                    "hook_event_name": "SessionStart", "source": "compact",
+                    "cwd": str(self.root),
+                },
+            )
+        )
+        self.assertEqual(
+            {row["rule_id"] for row in decision.get("shadow", [])},
+            {"runtime.codex.session-start.project-readback"},
+        )
+
+    def test_project_readback_provider_context_preserves_complete_existing_paths(self) -> None:
+        self.install_source_handler("codex", "user-prompt-agent-docs.sh")
+        for handler in ("session-start-healthcheck", "user-prompt-agent-memory"):
+            self.install_fixture_handler("codex", handler, "{}")
+        # More than the startup-memory budget, including spaces and JSON quoting.
+        nested = self.root
+        while len(str(nested).encode("utf-8")) < 780:
+            nested = nested / ("segment-" + "x" * 80)
+        nested.mkdir(parents=True)
+        first = nested / 'project "instructions".md'
+        second = self.root / "read back.md"
+        for path in (first, second):
+            path.write_text("synthetic contents must not be injected", encoding="utf-8")
+        missing = self.root / "missing.md"
+        self.env["AGENT_RUNTIME_PROJECT_READBACK_PATHS"] = json.dumps(
+            [str(first), str(missing), "relative.md", str(self.root), str(second)]
+        )
+        for source in ("startup", "resume", "clear", "compact"):
+            with self.subTest(source=source):
+                result = self.run_hook(
+                    "dispatch", "--product", "codex", "--format", "provider",
+                    payload={
+                        "hook_event_name": "SessionStart", "source": source,
+                        "cwd": str(self.root),
+                    },
+                )
+                output = json.loads(result.stdout)["hookSpecificOutput"]
+                self.assertEqual(output["hookEventName"], "SessionStart")
+                context = output["additionalContext"]
+                self.assertEqual(
+                    [json.loads(line[2:]) for line in context.splitlines()[1:]],
+                    [str(first), str(second)],
+                )
+                self.assertNotIn("synthetic contents", context)
+
+    def test_project_readback_is_silent_without_existing_absolute_paths(self) -> None:
+        self.install_source_handler("codex", "user-prompt-agent-docs.sh")
+        for value in ("", "not-json", "{}", "[]", json.dumps([
+            str(self.root / "missing.md"), "relative.md", str(self.root), None,
+        ])):
+            with self.subTest(value=value):
+                result = self.run_hook(
+                    "dispatch", "--product", "codex", "--format", "provider",
+                    payload={
+                        "hook_event_name": "SessionStart", "source": "compact",
+                        "cwd": str(self.root),
+                    },
+                    env={**self.env, "AGENT_RUNTIME_PROJECT_READBACK_PATHS": value},
+                )
+                self.assertEqual(json.loads(result.stdout), {})
+
     def test_shadow_only_writes_dispatch_observation_for_stateful_capabilities(
         self,
     ) -> None:

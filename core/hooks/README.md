@@ -619,3 +619,46 @@ Install surfaces:
   empty.
 - `scripts/sync-runtime-surfaces.sh` installs the shared digest-pinned policy
   and delegates exact Codex/Claude provider ingress to `agent-hook setup`.
+
+## Project read-back reminders
+
+Codex SessionStart routes `compact` to `user-prompt-agent-docs.sh`, using an
+existing dispatcher handler slot. A separate rule uses the existing
+`startup|resume|clear` group, so native ingress groups do not overlap and run
+the same policy twice. Startup memory and health retain their original
+matchers; Claude is unchanged.
+
+The consuming project launcher supplies `AGENT_RUNTIME_PROJECT_READBACK_PATHS`
+in the Codex process environment: a JSON array of **complete absolute file
+paths**, in read-back order. For example, a project can construct the value
+from its own resolved paths:
+
+```python
+import json
+import os
+
+os.environ["AGENT_RUNTIME_PROJECT_READBACK_PATHS"] = json.dumps(
+    [str(instructions_path.resolve()), str(current_work_path.resolve())]
+)
+# Launch Codex with this environment through the project-owned launcher.
+```
+
+The project owns path selection and any role-specific instructions inside
+those files. The adapter does not discover roles, search parent directories,
+execute project scripts, or read file contents. It emits a SessionStart
+`hookSpecificOutput.additionalContext` reminder listing existing absolute
+files, preserving complete paths without a startup-memory truncation budget.
+Missing files, directories, relative paths, and non-string entries are omitted.
+An absent, malformed, non-array, or empty setting produces no reminder. It is
+stateless, so a later compact boundary checks file existence again.
+
+Normal sync materializes the handler and `agent-hook setup` previews and owns
+the new compact ingress; never hand-edit the legacy target fragments or
+bypass provider hook trust review. Source dispatch/setup fixtures establish
+policy and output behavior only. Fresh native acceptance requires an
+authorized tester to trust the exact hook normally and confirm that real
+Codex 0.162.x automatic compaction delivers the reminder before the next model
+request, following the [native SessionStart contract](https://learn.chatgpt.com/docs/hooks#sessionstart).
+The trusted ingress probe is recorded in
+[#297](https://github.com/sympoies/agent-runtime-kit/issues/297); it does not
+establish installation or consumer adoption of this adapter.

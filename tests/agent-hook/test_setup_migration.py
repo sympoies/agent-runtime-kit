@@ -122,6 +122,20 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
             self.agent_hook("setup", "--product", product, *action, "--dry-run")
         )["data"]
 
+    def test_codex_setup_owns_compact_ingress(self) -> None:
+        preview = self.setup_preview("codex")
+        groups = {
+            group.get("matcher", "")
+            for group in preview["owned_groups"]
+            if group["event"] == "SessionStart"
+        }
+        self.assertIn("startup|resume|clear", groups)
+        self.assertIn("compact", groups)
+        # Each native group dispatches the complete policy. Overlapping groups
+        # would execute memory/health and the reminder twice on startup.
+        for source in ("startup", "resume", "clear", "compact"):
+            self.assertEqual(sum(source in matcher.split("|") for matcher in groups), 1)
+
     def setup_apply(
         self,
         product: str,
