@@ -276,8 +276,12 @@ need_command gh
 need_command curl
 need_command python3
 
-repo="$(repo_slug)" || die "could not resolve GitHub repository slug"
 version="$(normalize_version "$version")"
+if [ "$mode" != "verify-only" ]; then
+  bash scripts/ci/own-compat-audit.sh --release "$version" ||
+    die "repository compatibility retirement audit failed"
+fi
+repo="$(repo_slug)" || die "could not resolve GitHub repository slug"
 tag="v$version"
 title="${title:-$tag}"
 

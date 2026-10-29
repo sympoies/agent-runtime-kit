@@ -33,6 +33,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Audit compatibility release fences
+        env:
+          KIT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: bash scripts/ci/own-compat-audit.sh --release "${KIT_RELEASE_TAG#v}"
+
       - name: Resolve validated nils-cli release
         id: pin
         # Single-source the nils-cli version from the validated policy role, mirroring

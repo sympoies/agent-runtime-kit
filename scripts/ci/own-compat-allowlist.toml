@@ -1,0 +1,1115 @@
+# Existing occurrences only: exact path + detector substring + occurrence count.
+# Shrink rows with their owning removal slices; additions are not compatibility permission.
+# Classified external/current/provenance/guidance rows explain hits that are not kit debt.
+# Expiry is an inclusive calendar review/removal deadline, never a rolling interval.
+# No rollback window is asserted: local layouts, snapshots and labels do not qualify.
+# A real window needs the coordinator's actual adjacent release_sequence and next fence.
+schema = 1
+
+[[allow]]
+path = ".agents/skills/project-version-baseline/SKILL.md"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = ".github/workflows/ci.yml"
+match = "minimum_supported_tag"
+count = 2
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "AGENTS.md"
+match = "AGENT_DOCS_HOME"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "README.md"
+match = "AGENT_DOCS_HOME"
+count = 2
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/agents/code-review/reviewer-api-contract/AGENT.md.tera"
+match = "Backward compatibility"
+count = 2
+kind = "guidance"
+reason = "Neutral review/design guidance for arbitrary consumer repositories; does not declare support for a retired kit contract."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+
+[[allow]]
+path = "core/agents/code-review/reviewer-security/AGENT.md.tera"
+match = "backwards-compatibility"
+count = 2
+kind = "guidance"
+reason = "Neutral review/design guidance for arbitrary consumer repositories; does not declare support for a retired kit contract."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+
+[[allow]]
+path = "core/hooks/shared/block-direct-pr-create.py"
+match = "GLAB_VERB_ALIASES"
+count = 2
+kind = "external"
+reason = "Classifies external GitLab verb spellings for write enforcement; does not accept a retired kit contract."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+external = "GitLab API v4 / glab 1.x"
+
+[[allow]]
+path = "core/hooks/shared/finish-line-record.py"
+match = "retain the legacy shared marker"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/hook_common.py"
+match = "legacy_dirty"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "AGENT_DOCS_HOME"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "cleanup_legacy_dirty"
+count = 4
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "legacy_dirty"
+count = 7
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "legacy_dirty_exists"
+count = 3
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "legacy_dirty_mtime"
+count = 3
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "legacy_metadata"
+count = 3
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "legacy_path"
+count = 4
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "legacy_paths"
+count = 2
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "raw_legacy_dirty_mtime"
+count = 5
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/hooks/shared/stop-finish-line-gate.py"
+match = "remove_legacy_dirty"
+count = 2
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/policies/agent-hook/README.md"
+match = "legacy_handler"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/policies/agent-hook/runtime-kit-v1.toml"
+match = "legacy_handler"
+count = 87
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/policies/agent-hook/runtime-kit-v1.toml"
+match = "legacy_ttl_seconds"
+count = 5
+kind = "external"
+reason = "Current external hook runner ownership/liveness policy, not obsolete kit enforce-mode support."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+external = "nils-cli agent-hook 1.36.21"
+
+[[allow]]
+path = "core/policies/forge-label-taxonomy.md"
+match = "compatibility hold"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/skills/code-review/code-review-specialists/references/REVIEW_OUTCOME_POSTING_CONTRACT.md"
+match = "compatibility alias"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "core/skills/code-review/code-review-specialists/references/specialists/api-contract.md"
+match = "Backward compatibility"
+count = 1
+kind = "guidance"
+reason = "Neutral review/design guidance for arbitrary consumer repositories; does not declare support for a retired kit contract."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+
+[[allow]]
+path = "core/skills/code-review/code-review-specialists/references/specialists/security.md"
+match = "backwards-compatibility"
+count = 1
+kind = "guidance"
+reason = "Neutral review/design guidance for arbitrary consumer repositories; does not declare support for a retired kit contract."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+
+[[allow]]
+path = "core/skills/conversation/guided-feature-build/SKILL.md.tera"
+match = "backward compatibility"
+count = 1
+kind = "guidance"
+reason = "Neutral review/design guidance for arbitrary consumer repositories; does not declare support for a retired kit contract."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+
+[[allow]]
+path = "core/skills/meta/nils-cli-bump/SKILL.md.tera"
+match = "minimum_supported_tag"
+count = 3
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "core/skills/meta/sync-runtime-surfaces/SKILL.md.tera"
+match = "AGENT_DOCS_HOME"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
+match = "DEFAULT_PROFILE"
+count = 3
+kind = "scheduled"
+reason = "Remove the previous profile default/alias contract through the separate public profile cleanup."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
+match = "PRESET_ALIASES"
+count = 2
+kind = "current-default"
+reason = "Current preset/source shorthand vocabulary, not a retired profile or version reader; preserve supported explicit presets and sources."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
+expires = "2026-12-31"
+
+[[allow]]
+path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
+match = "PROFILE_ALIASES"
+count = 2
+kind = "scheduled"
+reason = "Remove the previous profile default/alias contract through the separate public profile cleanup."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
+expires = "2026-11-30"
+
+[[allow]]
+path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
+match = "SOURCE_ALIASES"
+count = 2
+kind = "current-default"
+reason = "Current preset/source shorthand vocabulary, not a retired profile or version reader; preserve supported explicit presets and sources."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
+expires = "2026-12-31"
+
+[[allow]]
+path = "docker/Dockerfile"
+match = "AGENT_DOCS_HOME"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "docker/entrypoint.sh"
+match = "AGENT_DOCS_HOME"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "docs/source/development-reference.md"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-minimum-digest.yaml"
+match = "minimum_supported_tag"
+count = 2
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-pin.yaml"
+match = "minimum_supported_tag"
+count = 2
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-surface.md"
+match = "backward compatible"
+count = 2
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-surface.md"
+match = "backward-compatible"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-surface.md"
+match = "compatibility shim"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-surface.md"
+match = "minimum_supported_tag"
+count = 3
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "docs/source/nils-cli-version-workflows.md"
+match = "minimum_supported_tag"
+count = 4
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "manifests/forge-labels.yaml"
+match = "Compatibility hold"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "manifests/hook-rules.yaml"
+match = "legacy_handler"
+count = 87
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "manifests/hook-rules.yaml"
+match = "legacy_handler_count"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "manifests/hook-rules.yaml"
+match = "legacy_registration_count"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "manifests/hook-rules.yaml"
+match = "legacy_ttl_seconds"
+count = 5
+kind = "external"
+reason = "Current external hook runner ownership/liveness policy, not obsolete kit enforce-mode support."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+external = "nils-cli agent-hook 1.36.21"
+
+[[allow]]
+path = "scripts/ci/all.sh"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "scripts/ci/nils-cli-policy-matrix.py"
+match = "minimum_supported_tag"
+count = 12
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "scripts/ci/security-hardening-audit.py"
+match = "minimum_supported_tag"
+count = 4
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "scripts/ci/version-baseline-audit.py"
+match = "minimum_supported_tag"
+count = 4
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "scripts/dev/hook_policy_inventory.py"
+match = "legacy_handler"
+count = 5
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/dev/hook_policy_inventory.py"
+match = "legacy_handler_count"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/dev/hook_policy_inventory.py"
+match = "legacy_lines"
+count = 3
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/dev/hook_policy_inventory.py"
+match = "legacy_registration_count"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/dev/hook_policy_inventory.py"
+match = "legacy_registrations"
+count = 2
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/setup.sh"
+match = "--product both"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/setup.sh"
+match = "bootstrap_host_available"
+count = 2
+kind = "scheduled"
+reason = "Remove obsolete bootstrap capability branching only after released capability proof under K2."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/328"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-private-skills.sh"
+match = "backward compatibility"
+count = 1
+kind = "guidance"
+reason = "Missing product metadata means the current all-product default; no previous format or alias is read."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+
+[[allow]]
+path = "scripts/sync-private-skills.sh"
+match = "both)"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "agent-runtime-kit.hook-rollback.v1"
+count = 2
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "both)"
+count = 6
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "cleanup_codex_legacy_flat_skill_root"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "cleanup_hermes_legacy_runtime_kit_profile_roots"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "cleanup_hermes_legacy_runtime_kit_skill_root"
+count = 4
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "cleanup_retired_managed_product_links"
+count = 2
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "legacy_root"
+count = 23
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "scripts/sync-runtime-surfaces.sh"
+match = "rollback_agent_hook_cutover"
+count = 4
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_cutover_contract.py"
+match = "legacy_handler"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_executable_contract.py"
+match = "legacy_ttl_seconds"
+count = 2
+kind = "external"
+reason = "Current external hook runner ownership/liveness policy, not obsolete kit enforce-mode support."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+external = "nils-cli agent-hook 1.36.21"
+
+[[allow]]
+path = "tests/agent-hook/test_executable_contract.py"
+match = "test_owner_liveness_is_conservative_and_uses_five_minute_legacy_ttl"
+count = 1
+kind = "external"
+reason = "Current external hook runner ownership/liveness policy, not obsolete kit enforce-mode support."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/326"
+expires = "2026-12-31"
+external = "nils-cli agent-hook 1.36.21"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "HISTORICAL_LEGACY_SHA256"
+count = 2
+kind = "provenance"
+reason = "Immutable registration/retirement evidence or its refusal fixture; K5 may rename annotations while preserving provenance bytes."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-12-31"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "LEGACY_REGISTRATIONS"
+count = 8
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "frozen_legacy_registrations"
+count = 6
+kind = "provenance"
+reason = "Immutable registration/retirement evidence or its refusal fixture; K5 may rename annotations while preserving provenance bytes."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-12-31"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "legacy_groups"
+count = 2
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "legacy_handler"
+count = 10
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "legacy_handler_count"
+count = 3
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "legacy_registration_count"
+count = 3
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "legacy_registrations"
+count = 3
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "legacy_rules"
+count = 3
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "test_historical_legacy_annotation_swap_is_rejected"
+count = 1
+kind = "provenance"
+reason = "Immutable registration/retirement evidence or its refusal fixture; K5 may rename annotations while preserving provenance bytes."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-12-31"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "test_inventory_dispositions_cover_every_legacy_handler"
+count = 2
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_policy_contract.py"
+match = "test_retained_legacy_binding_cannot_be_erased_by_annotation"
+count = 1
+kind = "provenance"
+reason = "Immutable registration/retirement evidence or its refusal fixture; K5 may rename annotations while preserving provenance bytes."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-12-31"
+
+[[allow]]
+path = "tests/agent-hook/test_setup_migration.py"
+match = "legacy_codex_config"
+count = 3
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_setup_migration.py"
+match = "test_forced_setup_failure_preserves_legacy_provider_bytes"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_setup_migration.py"
+match = "test_production_sync_prepares_setup_before_legacy_hook_cleanup"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/agent-hook/test_setup_migration.py"
+match = "test_successful_cutover_remove_restores_exact_legacy_bytes"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/ci/test_nils_cli_version_policy.py"
+match = "minimum_supported_tag"
+count = 9
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "tests/ci/test_policy_simplification.py"
+match = "AGENT_DOCS_HOME"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_command_guards.py"
+match = "legacy_handler"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_finish_line.py"
+match = "AGENT_DOCS_HOME"
+count = 2
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_finish_line.py"
+match = "legacy_decision"
+count = 6
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_finish_line.py"
+match = "legacy_dirty"
+count = 9
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_finish_line.py"
+match = "legacy_validation"
+count = 2
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_finish_line.py"
+match = "test_finish_line_identified_session_retires_satisfied_legacy_only_state"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_finish_line.py"
+match = "test_finish_line_legacy_dirty_requires_transition_validation"
+count = 1
+kind = "scheduled"
+reason = "K6 owns migration-era marker/snapshot/provider restore contracts and their fixtures. Local rollback is scheduled debt, not a cross-host exception."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/332"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/hooks/shared_hook_helpers.py"
+match = "legacy_handler"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/dispatch/run.sh"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/issue/run.sh"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "--product both"
+count = 1
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "cleanup_codex_legacy_flat_skill_root"
+count = 1
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "cleanup_hermes_legacy_runtime_kit_profile_roots"
+count = 4
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "cleanup_hermes_legacy_runtime_kit_skill_root"
+count = 15
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "cleanup_retired_managed_product_links"
+count = 9
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "codex_legacy_alias"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "codex_legacy_foreign"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "codex_legacy_regular"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "codex_legacy_stale"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "minimum_supported_tag"
+count = 2
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "retired_legacy_root"
+count = 2
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/cases/meta/run.sh"
+match = "run_sync_runtime_surfaces_hermes_legacy_cleanup_probe"
+count = 2
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/codex-agent/run.py"
+match = "minimum_supported_tag"
+count = 1
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
+
+[[allow]]
+path = "tests/runtime-smoke/convergence/run.sh"
+match = "cleanup_hermes_legacy_runtime_kit_skill_root"
+count = 3
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/convergence/run.sh"
+match = "collect_hermes_legacy_ids"
+count = 6
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/convergence/run.sh"
+match = "legacy_ids"
+count = 12
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/convergence/run.sh"
+match = "validate_legacy_generated_state_upgrade"
+count = 2
+kind = "scheduled"
+reason = "Migrate historical identifiers and their active callers together under K5."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/331"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/lib/runtime-home.sh"
+match = "cleanup_retired_managed_product_links"
+count = 1
+kind = "scheduled"
+reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
+expires = "2026-11-30"
+
+[[allow]]
+path = "tests/runtime-smoke/lib/tracker-commands.sh"
+match = "minimum_supported_tag"
+count = 2
+kind = "external"
+reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
+issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
+expires = "2026-12-31"
+external = "nils-cli 1.36.21"
