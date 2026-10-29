@@ -36,30 +36,8 @@ PROFILE_TOPICS = {
         "NVIDIA",
         "Hugging Face",
     ],
-    "terry-ai-tech": [
-        "AI agents",
-        "agentic coding",
-        "model releases",
-        "developer tools",
-        "AI infrastructure",
-        "inference serving",
-        "semiconductors",
-        "NVIDIA",
-        "robotics",
-        "embodied AI",
-        "OpenAI",
-        "Anthropic",
-        "Google DeepMind",
-        "Hugging Face",
-    ],
 }
-PROFILE_ALIASES = {
-    "default": "terry-ai-tech",
-    "personal": "terry-ai-tech",
-    "terry": "terry-ai-tech",
-}
-DEFAULT_PROFILE = "terry-ai-tech"
-DEFAULT_TOPICS = PROFILE_TOPICS[DEFAULT_PROFILE]
+DEFAULT_TOPICS = PROFILE_TOPICS["ai-tech"]
 DEFAULT_SOURCES = ["polymarket", "hn", "github", "arxiv", "hf", "official", "news"]
 AI_NEWS_TOPICS = [
     "AI",
@@ -2194,8 +2172,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--profile",
-        default=DEFAULT_PROFILE,
-        help="Topic profile to use: terry-ai-tech, ai-tech, or aliases personal/terry/default.",
+        default="ai-tech",
+        help="Topic profile to use: ai-tech (default).",
     )
     parser.add_argument("--topic", action="append", dest="topics", help="Topic of interest. Repeatable.")
     parser.add_argument(
@@ -2257,7 +2235,7 @@ def normalize_args(argv: list[str]) -> argparse.Namespace:
         raise UsageError(f"unknown preset: {requested_preset} (available: {available})")
     preset = PRESETS[args.preset]
     requested_profile = normalize_space(args.profile).lower()
-    args.profile = PROFILE_ALIASES.get(requested_profile, requested_profile)
+    args.profile = requested_profile
     if args.profile not in PROFILE_TOPICS:
         available = ", ".join(sorted(PROFILE_TOPICS))
         raise UsageError(f"unknown profile: {requested_profile} (available: {available})")

@@ -275,30 +275,12 @@ expires = "2026-11-30"
 
 [[allow]]
 path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
-match = "DEFAULT_PROFILE"
-count = 3
-kind = "scheduled"
-reason = "Remove the previous profile default/alias contract through the separate public profile cleanup."
-issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
-expires = "2026-11-30"
-
-[[allow]]
-path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
 match = "PRESET_ALIASES"
 count = 2
 kind = "current-default"
 reason = "Current preset/source shorthand vocabulary, not a retired profile or version reader; preserve supported explicit presets and sources."
 issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
 expires = "2026-12-31"
-
-[[allow]]
-path = "core/skills/reporting/topic-radar/bin/topic_radar.py"
-match = "PROFILE_ALIASES"
-count = 2
-kind = "scheduled"
-reason = "Remove the previous profile default/alias contract through the separate public profile cleanup."
-issue = "https://github.com/sympoies/agent-runtime-kit/issues/327"
-expires = "2026-11-30"
 
 [[allow]]
 path = "core/skills/reporting/topic-radar/bin/topic_radar.py"

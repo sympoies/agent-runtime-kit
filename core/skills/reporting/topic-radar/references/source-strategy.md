@@ -20,16 +20,11 @@ definitive news feed.
 
 ## Profiles
 
-- `terry-ai-tech` is the default personal profile. It tracks AI agents,
-  agentic coding, model releases, developer tools, AI infrastructure, inference
-  serving, semiconductors, NVIDIA, robotics, embodied AI, OpenAI, Anthropic,
-  Google DeepMind, and Hugging Face.
-- `ai-tech` is the generic baseline profile retained for broader AI and
-  technology scans.
+- `ai-tech` is the default generic profile for AI and technology scans.
 
 ## Presets
 
-- `radar` is the broad source scan. It uses the default personal profile and
+- `radar` is the broad source scan. It uses the default generic profile and
   all source roles.
 - `ai-news` is the fast daily news entrypoint. It narrows sources to
   `official,news,hn`, uses a five-day window, enables clustered brief output,

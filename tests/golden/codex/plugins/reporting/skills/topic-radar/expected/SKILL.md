@@ -21,7 +21,7 @@ Prereqs:
 Inputs:
 
 - Natural-language AI or technology topics.
-- Optional profile name: `terry-ai-tech` by default, `ai-tech` for the generic baseline, or aliases `terry`, `personal`, and `default`.
+- Optional profile name: `ai-tech` (default).
 - Optional preset: `radar` by default, or `ai-news` for a faster daily AI news scan focused on official/news/HN sources.
 - Optional source list: `polymarket`, `hn`, `github`, `arxiv`, `hf`, `official`, `news`, or `all`.
 - Daily, weekly, or monthly report request, custom rolling day window, fixed `--from/--to` or `--month` window, result limit, parallel fetch
@@ -98,8 +98,7 @@ agent-out path-for --domain tools
    ```
 
 3. Use the broad radar preset when the user asks for general AI/Tech trend scanning across market, developer, research, model, official, and
-   news surfaces. The default profile tracks AI agents, agentic coding, model releases, developer tools, AI infrastructure, inference
-   serving, semiconductors, NVIDIA, robotics, embodied AI, OpenAI, Anthropic, Google DeepMind, and Hugging Face:
+   news surfaces. The default profile tracks AI agents, language models, developer tools, model releases, and AI technology organizations:
 
    ```bash
    $CODEX_HOME/plugins/reporting/skills/topic-radar/scripts/topic-radar.sh --report daily
