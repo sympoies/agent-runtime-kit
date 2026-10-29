@@ -985,6 +985,16 @@
     "hint": "forge-cli"
   },
   {
+    "id": "glab-api-ci-job-play-post-then-delete",
+    "command": "glab api -X POST -X DELETE projects/1/jobs/5/play",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-ci-job-play-delete-then-post",
+    "command": "glab api -X DELETE --method POST projects/1/jobs/5/play",
+    "hint": "forge-cli"
+  },
+  {
     "id": "glab-api-ci-job-erase",
     "command": "glab api -X POST projects/1/jobs/5/erase",
     "hint": "forge-cli"
