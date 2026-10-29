@@ -692,7 +692,8 @@ class AgentHookPolicyContractTests(unittest.TestCase):
             legacy_groups
             | TERMINAL_COORDINATION_GROUPS
             | EXACT_ATTENTION_GROUPS
-            | ACTIVITY_INGRESS_GROUPS,
+            | ACTIVITY_INGRESS_GROUPS
+            | {("codex", "SessionStart", "compact")},
         )
 
         for rule in rules:

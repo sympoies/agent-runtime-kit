@@ -27,6 +27,12 @@
     },
     {
       "product": "codex",
+      "event": "SessionStart",
+      "matcher_field": "source",
+      "matcher": "compact"
+    },
+    {
+      "product": "codex",
       "event": "Stop",
       "matcher_field": null,
       "matcher": null
