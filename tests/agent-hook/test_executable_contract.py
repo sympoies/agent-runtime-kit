@@ -256,13 +256,27 @@ class AgentHookExecutableContractTests(unittest.TestCase):
         }
         current_session = self.session_state / "sessions/fixture-current/session.json"
         current_session.parent.mkdir(parents=True, mode=0o700)
+        # Sibling diagnostics read a complete record; this fixture never launches a runtime.
         current_session.write_text(
             json.dumps(
                 {
                     "schema_version": "agent-session.session.v1",
                     "id": "fixture-current",
                     "coordination_mode": "enforce",
-                    "runtime": {"launch_id": "incarnation-current"},
+                    "agent": "codex",
+                    "mode": "interactive",
+                    "cwd": str(self.root),
+                    "tmux_session": "fixture-tmux",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                    "tmux_runtime_never_launched": "incarnation-current",
+                    "runtime": {
+                        "launch_id": "incarnation-current",
+                        "kind": "tmux",
+                        "tmux_session": "fixture-tmux",
+                        "generation": 1,
+                        "started_at": "2026-01-01T00:00:00Z",
+                    },
                 }
             )
             + "\n",
