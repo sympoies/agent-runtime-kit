@@ -43,7 +43,9 @@ are not `GET`/`HEAD`/`OPTIONS` (one parse reads the method, the endpoint, and
 the fields, so option values are data, and the value-less `-i` is peeled off a
 clustered option such as `-iXPOST`: an explicit method decides regardless of
 flag order, and fields, multipart `--form`, or `--input` imply POST only without
-one), GraphQL other than one
+one; a POST to the GitLab CI `jobs/:id/(play|retry|cancel)` and
+`pipelines/:id/(retry|cancel)` actions is admitted because forge-cli has no
+typed equivalent), GraphQL other than one
 literal read document, and `curl` writes to GitLab REST or GraphQL paths
 (`/api/v4/{projects,groups,issues,merge_requests,snippets}/...`,
 `/api/graphql`) on any host. Other products' `/api/v4` paths are not matched.

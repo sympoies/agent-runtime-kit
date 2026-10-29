@@ -291,6 +291,10 @@ GLAB_VERB_ALIASES = {"new": "create", "note": "comment", "update": "edit", "appr
 GITLAB_API_PATH_RE = re.compile(
     r"^/api/(?:v4/(?:projects|groups|issues|merge_requests|snippets)(?:/|$)|graphql/?$)"
 )
+# GitLab CI job and pipeline actions that forge-cli has no typed command for.
+GITLAB_CI_ACTION_PATH_RE = re.compile(
+    r"^projects/[^/]+/(?:jobs/[^/]+/(?:play|retry|cancel)|pipelines/[^/]+/(?:retry|cancel))$"
+)
 SUPPORTED_OPERATIONS = {
     "issue": {"create", "comment", "close", "edit", "reopen", "view", "list"},
     "pr": {"create", "comment", "close", "edit", "merge", "ready", "review",
@@ -556,6 +560,8 @@ def glab_write_hint(tokens: list[str]) -> str | None:
             return None
         return write_hint("api")
     if method in READ_API_METHODS:
+        return None
+    if method == "POST" and GITLAB_CI_ACTION_PATH_RE.match(urlsplit(endpoint).path.strip("/")):
         return None
     return gitlab_api_hint(endpoint, method)
 

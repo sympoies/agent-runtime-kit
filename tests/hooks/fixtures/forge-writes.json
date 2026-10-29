@@ -975,6 +975,36 @@
     "hint": "forge-cli has no release command"
   },
   {
+    "id": "glab-api-mr-edit-put",
+    "command": "glab api -X PUT projects/1/merge_requests/7 -f title=fixture",
+    "hint": "forge-cli pr edit"
+  },
+  {
+    "id": "glab-api-ci-job-play-wrong-method",
+    "command": "glab api -X DELETE projects/1/jobs/5/play",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-ci-job-erase",
+    "command": "glab api -X POST projects/1/jobs/5/erase",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-ci-pipeline-create",
+    "command": "glab api -X POST projects/1/pipeline -f ref=main",
+    "hint": "forge-cli has no workflow command"
+  },
+  {
+    "id": "glab-api-ci-action-nested-under-mr",
+    "command": "glab api -X POST projects/1/merge_requests/7/jobs/5/play",
+    "hint": "forge-cli"
+  },
+  {
+    "id": "glab-api-ci-action-then-mr-merge",
+    "command": "glab api -X POST projects/1/jobs/5/play && glab api -X PUT projects/1/merge_requests/7/merge",
+    "hint": "forge-cli pr merge"
+  },
+  {
     "id": "glab-api-input",
     "command": "glab api projects/1/issues --input body.json",
     "hint": "forge-cli"
@@ -1087,6 +1117,41 @@
   {
     "id": "glab-api-graphql-read",
     "command": "glab api graphql -f 'query=query { currentUser { id } }'",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-job-play",
+    "command": "glab api -X POST projects/1/jobs/5/play",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-job-play-encoded-project",
+    "command": "glab api -X POST projects/group%2Fproject/jobs/5/play",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-job-play-implicit-fields",
+    "command": "glab api projects/1/jobs/5/play -f 'job_variables_attributes[][key]=K'",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-job-retry",
+    "command": "glab api --method POST /projects/1/jobs/5/retry",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-job-cancel",
+    "command": "glab api -X POST projects/1/jobs/5/cancel",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-pipeline-retry",
+    "command": "glab api -X POST projects/1/pipelines/9/retry",
+    "hint": null
+  },
+  {
+    "id": "glab-api-ci-pipeline-cancel",
+    "command": "glab api -X POST projects/group%2Fproject/pipelines/9/cancel",
     "hint": null
   },
   {
