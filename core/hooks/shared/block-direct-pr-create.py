@@ -141,8 +141,8 @@ def invokes_glab_mr_create(simple_command: list[str]) -> bool:
     return args[:1] == ["mr"] and args[1:2] in (["create"], ["new"]) and args[2:] not in HELP_ONLY
 
 
-def glab_api_parts(args: list[str]) -> tuple[str, str, list[str], bool]:
-    """Return method, endpoint, fields, and whether `--input` supplies a body.
+def glab_api_parts(args: list[str]) -> tuple[str, str, list[str], bool, list[str]]:
+    """Return method, endpoint, fields, whether `--input` supplies a body, and the verbs.
 
     One parse serves the method and the endpoint, so option values are data for
     both: a header or field spelled like `-XGET` or `/merge_requests` can be
@@ -191,14 +191,14 @@ def glab_api_parts(args: list[str]) -> tuple[str, str, list[str], bool]:
         method = verbs[-1]
     else:
         method = "POST" if fields or input_body else "GET"
-    return method, positionals[0] if positionals else "", fields, input_body
+    return method, positionals[0] if positionals else "", fields, input_body, verbs
 
 
 def invokes_glab_api_mr_create(simple_command: list[str]) -> bool:
     args = cli_subcommands(simple_command, "glab")
     if args[:1] != ["api"]:
         return False
-    method, endpoint, _, _ = glab_api_parts(args[1:])
+    method, endpoint, *_ = glab_api_parts(args[1:])
     return method == "POST" and bool(MR_ENDPOINT_RE.search(endpoint))
 
 
@@ -290,6 +290,10 @@ GLAB_VERB_ALIASES = {"new": "create", "note": "comment", "update": "edit", "appr
 # so only the GitLab resource roots count.
 GITLAB_API_PATH_RE = re.compile(
     r"^/api/(?:v4/(?:projects|groups|issues|merge_requests|snippets)(?:/|$)|graphql/?$)"
+)
+# GitLab CI job and pipeline actions that forge-cli has no typed command for.
+GITLAB_CI_ACTION_PATH_RE = re.compile(
+    r"^projects/[^/]+/(?:jobs/[^/]+/(?:play|retry|cancel)|pipelines/[^/]+/(?:retry|cancel))$"
 )
 SUPPORTED_OPERATIONS = {
     "issue": {"create", "comment", "close", "edit", "reopen", "view", "list"},
@@ -550,12 +554,17 @@ def glab_write_hint(tokens: list[str]) -> str | None:
         return None
     if is_read_only_form(args, "", set()) or invokes_glab_api_mr_create(tokens):
         return None
-    method, endpoint, fields, input_body = glab_api_parts(args[1:])
+    method, endpoint, fields, input_body, verbs = glab_api_parts(args[1:])
     if urlsplit(endpoint).path.strip("/") == "graphql":
         if method in {"GET", "POST"} and graphql_is_literal_read(fields, input_body):
             return None
         return write_hint("api")
     if method in READ_API_METHODS:
+        return None
+    # `method` is POST whenever any explicit verb is, so a CI action also needs
+    # every explicit verb to be POST.
+    ci_action = GITLAB_CI_ACTION_PATH_RE.match(urlsplit(endpoint).path.strip("/"))
+    if ci_action and method == "POST" and set(verbs) <= {"POST"}:
         return None
     return gitlab_api_hint(endpoint, method)
 
