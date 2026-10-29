@@ -787,7 +787,7 @@ SH
       --apply
   ) >"$out" 2>&1
 
-  assert_symlink_target "$codex_home/AGENTS.md" "$source_root/build/codex/AGENT_HOME.md"
+  assert_symlink_target "$codex_home/AGENTS.md" "$state_home/home-policy/AGENT_HOME.md"
   grep -q "rewiring managed home prompt product=codex" "$out"
   grep -q "home-prompt=wired" "$out"
   grep -q "codex plugin registry installed: marketplace=codex-kit" "$out"
@@ -813,7 +813,7 @@ SH
   [ "$status" -ne 0 ]
   expected_home_prompt="$(
     python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' \
-      "$source_root/build/codex/AGENT_HOME.md"
+      "$state_home-lookalike/home-policy/AGENT_HOME.md"
   )"
   grep -Fq "expected $expected_home_prompt" "$lookalike_out"
   assert_symlink_target "$lookalike_codex_home/AGENTS.md" \

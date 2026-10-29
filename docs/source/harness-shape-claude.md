@@ -64,14 +64,21 @@ a uniform shape:
 - Source: root `AGENT_HOME.md`, rendered per product to
   `build/claude/AGENT_HOME.md`; see `DEVELOPMENT.md`.
 - Install mechanism: `agent-runtime render --target home-prompt --product
-  claude` writes the rendered file, and `scripts/setup.sh` plus
-  `scripts/sync-runtime-surfaces.sh --apply --product claude` wire
-  `$HOME/.claude/CLAUDE.md` to
-  `<source_root>/build/claude/AGENT_HOME.md`. The source filename is
+  claude` writes the rendered file, and
+  `scripts/sync-runtime-surfaces.sh --apply --product claude` publishes it as
+  an owner-managed copy at `<claude_state_home>/home-policy/AGENT_HOME.md`
+  (plus a `source.json` identity record) and wires `$HOME/.claude/CLAUDE.md`
+  to that copy, so cleaning `build/` cannot orphan the link. Older links into
+  `<source_root>/build/claude/AGENT_HOME.md` are rewired by the next sync. The
+  source filename is
   deliberately distinct from project-local `AGENTS.md` and `CLAUDE.md` so
   Claude does not load it again as project policy in this repo.
-- Acceptance lane: covered by the cross-product home-policy cutover
-  plans; no dedicated CI gate diffs the link target.
+- Acceptance lane: `tests/ci/test_home_policy_lifetime.py` proves the link
+  survives build cleanup and that `sync-runtime-surfaces.sh
+  --check-home-policy` reports absent, dangling, unreadable, empty, foreign,
+  and legacy links; sync's verification step fails on an unhealthy link. Fresh
+  authenticated Claude behavior is not covered: Claude has no prompt-input
+  probe.
 - Support today: **shipped (rendered + linked)**.
 
 ### 2. Project-scope prompt (`./AGENTS.md`)
@@ -344,7 +351,7 @@ a uniform shape:
 
 | # | Surface | runtime-kit ships | Mechanism | Min Claude | Min nils-cli |
 |---|---|---|---|---|---|
-| 1 | `CLAUDE.md` (home) | yes | rendered home prompt symlink to `build/claude/AGENT_HOME.md` | 2.1.145 | v1.12.1 |
+| 1 | `CLAUDE.md` (home) | yes | home prompt symlink to the owner-managed copy of `build/claude/AGENT_HOME.md` | 2.1.145 | v1.12.1 |
 | 2 | `./AGENTS.md` (repo-local) | yes | native `AGENTS.md` discovery | 2.1.277 | n/a |
 | 3 | `.claude-plugin/plugin.json` | yes | rendered + copy-install | 2.1.145 | v0.17.5 |
 | 4 | `.claude-plugin/marketplace.json` | yes | rendered + copy-install | 2.1.145 | v0.17.5 |
