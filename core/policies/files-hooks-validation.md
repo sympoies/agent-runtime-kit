@@ -53,11 +53,9 @@ runbooks and CLIs.
   `agent-out project --topic <topic> --mkdir` directory outside the repository.
   Never commit runtime evidence, receipts, credentials, logs, or caches. Never
   create an `agent-out` directory for scratch: the command owns the path.
-  Regular source files may have a nested `agent-out` component: allow exact
-  existing Git-tracked files and new or untracked files whose existing parent
-  contains a Git-tracked regular sibling. Untracked paths must be literal and
-  not Git-ignored. This does not admit untracked scratch directories, repo-root
-  artifact directories, symlink aliases, or cache routes.
+  Nested `agent-out` files must be regular: Git-tracked or literal,
+  nonignored and beside a tracked regular file in an existing parent. Scratch
+  directories, root artifacts, symlink aliases and cache are blocked.
 - A checkout's `.cache/` is not scratch space. Only `.cache/agent-validation/`
   is repo-local by design, holding the validation marker each repository
   declares in `VALIDATION.toml`; route everything else to the allocated
