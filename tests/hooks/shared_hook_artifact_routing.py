@@ -7,6 +7,7 @@ from shared_hook_helpers import (
     Path,
     command_payload,
     run_hook,
+    subprocess,
     tempfile,
 )
 
@@ -78,15 +79,143 @@ class ArtifactRoutingTests(HookTestCase):
             self.assert_allowed(decision)
 
 
+    def test_artifact_routing_allows_new_source_in_tracked_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            for target in (
+                "crates/agent-out/src/new_module.rs",
+                "crates/agent-out/tests/integration/new.rs",
+            ):
+                self.assertFalse((repo / target).exists())
+                payloads = (
+                    {"tool_name": "Write", "tool_input": {"file_path": target}},
+                    {"tool_name": "apply_patch", "tool_input": {"input": (
+                        "*** Begin Patch\n"
+                        f"*** Add File: {target}\n"
+                        "+source fixture\n*** End Patch\n"
+                    )}},
+                    command_payload(f"echo source > {target}"),
+                    command_payload(f"touch {target}"),
+                )
+                for payload in payloads:
+                    with self.subTest(target=target, tool=payload["tool_name"]):
+                        code, decision, stderr = run_hook(
+                            self.ARTIFACT_ROUTING_HOOK, payload, cwd=repo)
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+                # A new source remains editable before it is staged.
+                (repo / target).write_text("source fixture\n", encoding="utf-8")
+                code, decision, stderr = run_hook(
+                    self.ARTIFACT_ROUTING_HOOK,
+                    {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                    cwd=repo)
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+
+    def test_artifact_routing_source_copy_move_requires_regular_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            (repo / "fixture-tree").mkdir()
+            (repo / "fixture-tree/leaf").write_text("fixture\n", encoding="utf-8")
+            for command in (
+                "cp -R fixture-tree crates/agent-out/src/newdir",
+                "mv fixture-tree crates/agent-out/src/newdir",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, command_payload(command), cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+            for command in (
+                "cp fixture-tree/leaf crates/agent-out/src/new.rs",
+                "mv fixture-tree/leaf crates/agent-out/src/new.rs",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, command_payload(command), cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+
+    def test_artifact_routing_copy_types_use_payload_workdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            inputs = repo / "inputs"
+            inputs.mkdir()
+            (inputs / "tree").mkdir()
+            (inputs / "regular").write_text("source\n", encoding="utf-8")
+            process = Path(tmp) / "process"
+            (process / "inputs/regular").mkdir(parents=True)
+            (process / "inputs/tree").write_text("decoy\n", encoding="utf-8")
+            for command, allowed in (
+                ("cd inputs && cp -R tree ../crates/agent-out/src/newdir", False),
+                ("cd inputs && cp regular ../crates/agent-out/src/new.rs", True),
+                (f"cp {inputs / 'regular'} crates/agent-out/src/absolute.rs", True),
+            ):
+                with self.subTest(command=command):
+                    payload = command_payload(command)
+                    payload["cwd"] = str(repo)
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, payload, cwd=process)
+                    self.assertEqual(code, 0, stderr)
+                    if allowed:
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, "agent-out")
+
+
+    def test_artifact_routing_source_rejects_symlink_dotdot_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            outside = Path(tmp) / "outside"
+            (outside / "subdir").mkdir(parents=True)
+            (outside / "crates/agent-out/src").mkdir(parents=True)
+            (repo / "jump").symlink_to(outside / "subdir", target_is_directory=True)
+            target = "jump/../crates/agent-out/src/new.rs"
+            self.assertFalse((repo / target).resolve().is_relative_to(repo))
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload(f"echo source > {target}"), cwd=repo)
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "agent-out")
+
+
+    def test_artifact_routing_source_rejects_wildcard_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            literal = repo / "crates/agent-out/src[ab]"
+            literal.mkdir()
+            (literal / "lib.rs").write_text("tracked source\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "--literal-pathspecs", "add", "--",
+                 "crates/agent-out/src[ab]/lib.rs"], cwd=repo, check=True)
+            expanded = repo / "crates/agent-out/srca"
+            expanded.mkdir()
+            (expanded / "new.rs").write_text("untracked source\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("echo source > crates/agent-out/src[ab]/new.rs"),
+                cwd=repo)
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "agent-out")
+
+
     def test_artifact_routing_tracked_source_does_not_allow_scratch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._artifact_routing_tracked_worktree(tmp)
+            (repo / "crates/agent-out/scratch").mkdir()
+            (repo / "crates/agent-out/src/.gitignore").write_text(
+                "ignored.rs\n", encoding="utf-8")
             payloads = (
-                {"tool_name": "Write", "tool_input": {
-                    "file_path": "crates/agent-out/tests/integration/new.rs"}},
                 {"tool_name": "Write", "tool_input": {
                     "file_path": "crates/agent-out/tests/integration/retention?.rs"}},
                 command_payload("mkdir -p crates/agent-out/scratch/new"),
+                command_payload("mkdir -p crates/agent-out/src/scratch"),
+                {"tool_name": "Write", "tool_input": {
+                    "file_path": "crates/agent-out/scratch/notes.md"}},
+                {"tool_name": "Write", "tool_input": {
+                    "file_path": "crates/agent-out/src/ignored.rs"}},
                 {"tool_name": "Edit", "tool_input": {
                     "file_path": "agent-out/tracked-scratch.md"}},
                 {"tool_name": "Edit", "tool_input": {
@@ -109,6 +238,7 @@ class ArtifactRoutingTests(HookTestCase):
             for target in (
                 "notes/tests/integration/retention.rs",
                 "crates/agent-out/alias.rs",
+                "notes/tests/integration/new.rs",
             ):
                 with self.subTest(target=target):
                     code, decision, stderr = run_hook(

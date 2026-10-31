@@ -1220,6 +1220,7 @@ class HookTestCase(unittest.TestCase):
         primary = Path(tmp) / "primary"
         self._init_checkout_lease_repo(primary)
         for relative in (
+            "crates/agent-out/src/lib.rs",
             "crates/agent-out/tests/integration/retention.rs",
             "agent-out/tracked-scratch.md",
             ".cache/agent-out/tracked-scratch.md",
