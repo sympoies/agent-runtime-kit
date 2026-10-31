@@ -7,6 +7,7 @@ from shared_hook_helpers import (
     Path,
     command_payload,
     run_hook,
+    subprocess,
     tempfile,
 )
 
@@ -110,6 +111,67 @@ class ArtifactRoutingTests(HookTestCase):
                     cwd=repo)
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
+
+
+    def test_artifact_routing_source_copy_move_requires_regular_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            (repo / "fixture-tree").mkdir()
+            (repo / "fixture-tree/leaf").write_text("fixture\n", encoding="utf-8")
+            for command in (
+                "cp -R fixture-tree crates/agent-out/src/newdir",
+                "mv fixture-tree crates/agent-out/src/newdir",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, command_payload(command), cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "agent-out")
+            for command in (
+                "cp fixture-tree/leaf crates/agent-out/src/new.rs",
+                "mv fixture-tree/leaf crates/agent-out/src/new.rs",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, command_payload(command), cwd=repo)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+
+
+    def test_artifact_routing_source_rejects_symlink_dotdot_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            outside = Path(tmp) / "outside"
+            (outside / "subdir").mkdir(parents=True)
+            (outside / "crates/agent-out/src").mkdir(parents=True)
+            (repo / "jump").symlink_to(outside / "subdir", target_is_directory=True)
+            target = "jump/../crates/agent-out/src/new.rs"
+            self.assertFalse((repo / target).resolve().is_relative_to(repo))
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload(f"echo source > {target}"), cwd=repo)
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "agent-out")
+
+
+    def test_artifact_routing_source_rejects_wildcard_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            literal = repo / "crates/agent-out/src[ab]"
+            literal.mkdir()
+            (literal / "lib.rs").write_text("tracked source\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "--literal-pathspecs", "add", "--",
+                 "crates/agent-out/src[ab]/lib.rs"], cwd=repo, check=True)
+            expanded = repo / "crates/agent-out/srca"
+            expanded.mkdir()
+            (expanded / "new.rs").write_text("untracked source\n", encoding="utf-8")
+            code, decision, stderr = run_hook(
+                self.ARTIFACT_ROUTING_HOOK,
+                command_payload("echo source > crates/agent-out/src[ab]/new.rs"),
+                cwd=repo)
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "agent-out")
 
 
     def test_artifact_routing_tracked_source_does_not_allow_scratch(self) -> None:

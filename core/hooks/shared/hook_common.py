@@ -5144,7 +5144,8 @@ def _join_directory_target(directory: str, basename: str) -> str:
 
 
 def _copy_style_targets_from_invocation(
-    invocation: list[str], *, cwd: str = "", known_dirs: set[str] | None = None
+    invocation: list[str], *, cwd: str = "", known_dirs: set[str] | None = None,
+    non_regular_only: bool = False,
 ) -> list[str]:
     if not invocation:
         return []
@@ -5185,6 +5186,13 @@ def _copy_style_targets_from_invocation(
         sources = positional[:-1]
         destinations = [positional[-1]]
     else:
+        return []
+
+    if non_regular_only and all(
+        Path(os.path.expanduser(_resolve_bash_path(source, cwd))).is_file()
+        and not Path(os.path.expanduser(_resolve_bash_path(source, cwd))).is_symlink()
+        for source in sources
+    ):
         return []
 
     expanded: list[str] = []
@@ -5301,7 +5309,7 @@ def bash_path_creation_targets(command: str, *, directories_only: bool = False) 
     return targets
 
 
-def bash_copy_style_write_targets(command: str) -> list[str]:
+def bash_copy_style_write_targets(command: str, *, non_regular_only: bool = False) -> list[str]:
     targets: list[str] = []
     known_dirs: set[str] = set()
     cwd = ""
@@ -5317,11 +5325,13 @@ def bash_copy_style_write_targets(command: str) -> list[str]:
                 invocation,
                 cwd=cwd,
                 known_dirs=known_dirs,
+                non_regular_only=non_regular_only,
             )
         )
         payload = nested_shell_payload(invocation)
         if payload:
-            targets.extend(bash_copy_style_write_targets(payload))
+            targets.extend(bash_copy_style_write_targets(
+                payload, non_regular_only=non_regular_only))
         if separator in {";", "&&"}:
             known_dirs.update(_mkdir_created_dirs_from_invocation(invocation, cwd))
             cwd = _cd_target_from_invocation(invocation, cwd) or cwd
@@ -5717,7 +5727,9 @@ def is_agent_out_path(path: Path) -> bool:
     return ARTIFACT_FORBIDDEN_SEGMENT in path.parts
 
 
-def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
+def tracked_artifact_source(
+    named: Path, target: Path, repo_root: Path, *, allow_untracked: bool = True,
+) -> bool:
     """Allow regular source files in tracked directories, never scratch or aliases."""
     try:
         relative = target.relative_to(repo_root)
@@ -5762,9 +5774,9 @@ def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
         return target.is_file()
     # An untracked source file needs an existing parent with a tracked regular
     # sibling. Repository membership alone must not authorize a scratch tree.
-    if entries != [b""] or not target.parent.is_dir():
+    if not allow_untracked or entries != [b""] or not target.parent.is_dir():
         return False
-    if any(character in relative.name for character in "*?["):
+    if any(character in relative.as_posix() for character in "*?["):
         return False
     try:
         ignored = subprocess.run(
@@ -5824,7 +5836,12 @@ def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
     # named, and the physical path it actually reaches. A symlinked alias
     # resolves into the guarded tree only in the latter.
     lexical = [artifact_normalized(path, workdir) for path in paths]
-    resolved = [artifact_physical(path) for path in lexical]
+    # Resolve the original spelling: collapsing `..` first changes its meaning
+    # when the preceding component is a symlink.
+    resolved = [
+        artifact_physical(workdir / os.path.expanduser(path.replace("\\", "/")))
+        for path in paths
+    ]
 
     # Git source may itself contain an agent-out component. Resolve its index
     # only for guarded candidates; ordinary writes keep the no-Git fast path.
@@ -5836,16 +5853,20 @@ def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
 
     toplevel = git_toplevel(str(workdir))
     repo_root = artifact_physical(Path(toplevel)) if toplevel else None
-    # The source exception admits files, not newly created scratch directories.
-    directories = {
+    # Prospective files need regular copy/move inputs; mkdir and directory or
+    # unproven copy effects cannot borrow a parent's tracked-source proof.
+    non_regular_targets = {
         artifact_normalized(path, workdir)
-        for path in bash_path_creation_targets(
-            command_from(payload), directories_only=True)
+        for path in (
+            *bash_path_creation_targets(command_from(payload), directories_only=True),
+            *bash_copy_style_write_targets(command_from(payload), non_regular_only=True),
+        )
     } if str(payload.get("tool_name", "")) == "Bash" else set()
     for named, target in zip(lexical, resolved):
         if is_agent_out_path(named) or is_agent_out_path(target):
-            if (named not in directories and repo_root is not None
-                    and tracked_artifact_source(named, target, repo_root)):
+            if (repo_root is not None and tracked_artifact_source(
+                    named, target, repo_root,
+                    allow_untracked=named not in non_regular_targets)):
                 continue
             return ARTIFACT_AGENT_OUT_REASON.format(path=named)
     for path in resolved:
