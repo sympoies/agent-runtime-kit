@@ -5145,7 +5145,7 @@ def _join_directory_target(directory: str, basename: str) -> str:
 
 def _copy_style_targets_from_invocation(
     invocation: list[str], *, cwd: str = "", known_dirs: set[str] | None = None,
-    non_regular_only: bool = False,
+    non_regular_source_root: Path | None = None,
 ) -> list[str]:
     if not invocation:
         return []
@@ -5188,12 +5188,13 @@ def _copy_style_targets_from_invocation(
     else:
         return []
 
-    if non_regular_only and all(
-        Path(os.path.expanduser(_resolve_bash_path(source, cwd))).is_file()
-        and not Path(os.path.expanduser(_resolve_bash_path(source, cwd))).is_symlink()
-        for source in sources
-    ):
-        return []
+    if non_regular_source_root is not None:
+        source_paths = [
+            non_regular_source_root / os.path.expanduser(_resolve_bash_path(source, cwd))
+            for source in sources
+        ]
+        if all(path.is_file() and not path.is_symlink() for path in source_paths):
+            return []
 
     expanded: list[str] = []
     for destination in destinations:
@@ -5309,7 +5310,9 @@ def bash_path_creation_targets(command: str, *, directories_only: bool = False) 
     return targets
 
 
-def bash_copy_style_write_targets(command: str, *, non_regular_only: bool = False) -> list[str]:
+def bash_copy_style_write_targets(
+    command: str, *, non_regular_source_root: Path | None = None,
+) -> list[str]:
     targets: list[str] = []
     known_dirs: set[str] = set()
     cwd = ""
@@ -5325,13 +5328,13 @@ def bash_copy_style_write_targets(command: str, *, non_regular_only: bool = Fals
                 invocation,
                 cwd=cwd,
                 known_dirs=known_dirs,
-                non_regular_only=non_regular_only,
+                non_regular_source_root=non_regular_source_root,
             )
         )
         payload = nested_shell_payload(invocation)
         if payload:
             targets.extend(bash_copy_style_write_targets(
-                payload, non_regular_only=non_regular_only))
+                payload, non_regular_source_root=non_regular_source_root))
         if separator in {";", "&&"}:
             known_dirs.update(_mkdir_created_dirs_from_invocation(invocation, cwd))
             cwd = _cd_target_from_invocation(invocation, cwd) or cwd
@@ -5859,7 +5862,8 @@ def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
         artifact_normalized(path, workdir)
         for path in (
             *bash_path_creation_targets(command_from(payload), directories_only=True),
-            *bash_copy_style_write_targets(command_from(payload), non_regular_only=True),
+            *bash_copy_style_write_targets(
+                command_from(payload), non_regular_source_root=workdir),
         )
     } if str(payload.get("tool_name", "")) == "Bash" else set()
     for named, target in zip(lexical, resolved):

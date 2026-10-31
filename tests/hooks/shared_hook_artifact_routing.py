@@ -138,6 +138,33 @@ class ArtifactRoutingTests(HookTestCase):
                     self.assert_allowed(decision)
 
 
+    def test_artifact_routing_copy_types_use_payload_workdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            inputs = repo / "inputs"
+            inputs.mkdir()
+            (inputs / "tree").mkdir()
+            (inputs / "regular").write_text("source\n", encoding="utf-8")
+            process = Path(tmp) / "process"
+            (process / "inputs/regular").mkdir(parents=True)
+            (process / "inputs/tree").write_text("decoy\n", encoding="utf-8")
+            for command, allowed in (
+                ("cd inputs && cp -R tree ../crates/agent-out/src/newdir", False),
+                ("cd inputs && cp regular ../crates/agent-out/src/new.rs", True),
+                (f"cp {inputs / 'regular'} crates/agent-out/src/absolute.rs", True),
+            ):
+                with self.subTest(command=command):
+                    payload = command_payload(command)
+                    payload["cwd"] = str(repo)
+                    code, decision, stderr = run_hook(
+                        self.ARTIFACT_ROUTING_HOOK, payload, cwd=process)
+                    self.assertEqual(code, 0, stderr)
+                    if allowed:
+                        self.assert_allowed(decision)
+                    else:
+                        self.assert_blocked(decision, "agent-out")
+
+
     def test_artifact_routing_source_rejects_symlink_dotdot_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._artifact_routing_tracked_worktree(tmp)
