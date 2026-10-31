@@ -78,15 +78,55 @@ class ArtifactRoutingTests(HookTestCase):
             self.assert_allowed(decision)
 
 
+    def test_artifact_routing_allows_new_source_in_tracked_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._artifact_routing_tracked_worktree(tmp)
+            for target in (
+                "crates/agent-out/src/new_module.rs",
+                "crates/agent-out/tests/integration/new.rs",
+            ):
+                self.assertFalse((repo / target).exists())
+                payloads = (
+                    {"tool_name": "Write", "tool_input": {"file_path": target}},
+                    {"tool_name": "apply_patch", "tool_input": {"input": (
+                        "*** Begin Patch\n"
+                        f"*** Add File: {target}\n"
+                        "+source fixture\n*** End Patch\n"
+                    )}},
+                    command_payload(f"echo source > {target}"),
+                    command_payload(f"touch {target}"),
+                )
+                for payload in payloads:
+                    with self.subTest(target=target, tool=payload["tool_name"]):
+                        code, decision, stderr = run_hook(
+                            self.ARTIFACT_ROUTING_HOOK, payload, cwd=repo)
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+                # A new source remains editable before it is staged.
+                (repo / target).write_text("source fixture\n", encoding="utf-8")
+                code, decision, stderr = run_hook(
+                    self.ARTIFACT_ROUTING_HOOK,
+                    {"tool_name": "Edit", "tool_input": {"file_path": target}},
+                    cwd=repo)
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+
+
     def test_artifact_routing_tracked_source_does_not_allow_scratch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._artifact_routing_tracked_worktree(tmp)
+            (repo / "crates/agent-out/scratch").mkdir()
+            (repo / "crates/agent-out/src/.gitignore").write_text(
+                "ignored.rs\n", encoding="utf-8")
             payloads = (
-                {"tool_name": "Write", "tool_input": {
-                    "file_path": "crates/agent-out/tests/integration/new.rs"}},
                 {"tool_name": "Write", "tool_input": {
                     "file_path": "crates/agent-out/tests/integration/retention?.rs"}},
                 command_payload("mkdir -p crates/agent-out/scratch/new"),
+                command_payload("mkdir -p crates/agent-out/src/scratch"),
+                {"tool_name": "Write", "tool_input": {
+                    "file_path": "crates/agent-out/scratch/notes.md"}},
+                {"tool_name": "Write", "tool_input": {
+                    "file_path": "crates/agent-out/src/ignored.rs"}},
                 {"tool_name": "Edit", "tool_input": {
                     "file_path": "agent-out/tracked-scratch.md"}},
                 {"tool_name": "Edit", "tool_input": {
@@ -109,6 +149,7 @@ class ArtifactRoutingTests(HookTestCase):
             for target in (
                 "notes/tests/integration/retention.rs",
                 "crates/agent-out/alias.rs",
+                "notes/tests/integration/new.rs",
             ):
                 with self.subTest(target=target):
                     code, decision, stderr = run_hook(

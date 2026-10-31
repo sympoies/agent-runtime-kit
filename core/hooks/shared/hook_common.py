@@ -5263,7 +5263,7 @@ def _touch_targets_from_invocation(invocation: list[str], cwd: str = "") -> list
     return targets
 
 
-def bash_path_creation_targets(command: str) -> list[str]:
+def bash_path_creation_targets(command: str, *, directories_only: bool = False) -> list[str]:
     """Return paths a command brings into existence without writing content.
 
     ``bash_write_operations`` models content writes and
@@ -5282,10 +5282,12 @@ def bash_path_creation_targets(command: str) -> list[str]:
             return
         invocation = invocation_tokens(current)
         targets.extend(_mkdir_created_dirs_from_invocation(invocation, cwd))
-        targets.extend(_touch_targets_from_invocation(invocation, cwd))
+        if not directories_only:
+            targets.extend(_touch_targets_from_invocation(invocation, cwd))
         payload = nested_shell_payload(invocation)
         if payload:
-            targets.extend(bash_path_creation_targets(payload))
+            targets.extend(bash_path_creation_targets(
+                payload, directories_only=directories_only))
         if separator in {";", "&&"}:
             cwd = _cd_target_from_invocation(invocation, cwd) or cwd
         current = []
@@ -5716,7 +5718,7 @@ def is_agent_out_path(path: Path) -> bool:
 
 
 def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
-    """Allow an exact tracked regular file, never scratch roots or aliases."""
+    """Allow regular source files in tracked directories, never scratch or aliases."""
     try:
         relative = target.relative_to(repo_root)
     except ValueError:
@@ -5725,7 +5727,7 @@ def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
         ARTIFACT_FORBIDDEN_SEGMENT, ARTIFACT_CACHE_SEGMENT
     }:
         return False
-    if named.is_symlink() or not target.is_file():
+    if named.is_symlink() or (target.exists() and not target.is_file()):
         return False
     # Git reports a physical root. Preserve the same relative spelling when
     # system ancestors resolve differently, while rejecting aliases inside it.
@@ -5747,15 +5749,47 @@ def tracked_artifact_source(named: Path, target: Path, repo_root: Path) -> bool:
     except (OSError, ValueError):
         return False
     entries = tracked.stdout.split(b"\0")
-    if tracked.returncode != 0 or len(entries) != 2 or entries[-1]:
+    if tracked.returncode != 0 or entries[-1]:
         return False
     metadata, separator, filename = entries[0].partition(b"\t")
     fields = metadata.split()
-    return bool(
-        separator and filename == os.fsencode(relative.as_posix())
+    if (
+        len(entries) == 2 and separator
+        and filename == os.fsencode(relative.as_posix())
         and len(fields) == 3 and fields[0] in {b"100644", b"100755"}
         and fields[2] == b"0"
-    )
+    ):
+        return target.is_file()
+    # An untracked source file needs an existing parent with a tracked regular
+    # sibling. Repository membership alone must not authorize a scratch tree.
+    if entries != [b""] or not target.parent.is_dir():
+        return False
+    if any(character in relative.name for character in "*?["):
+        return False
+    try:
+        ignored = subprocess.run(
+            ["git", "check-ignore", "--quiet", "--", relative.as_posix()],
+            cwd=repo_root, capture_output=True, check=False,
+        )
+        if ignored.returncode != 1:
+            return False
+        siblings = subprocess.run(
+            ["git", "--literal-pathspecs", "ls-files", "--stage", "-z", "--",
+             relative.parent.as_posix() + "/"],
+            cwd=repo_root, capture_output=True, check=False,
+        )
+    except (OSError, ValueError):
+        return False
+    if siblings.returncode != 0:
+        return False
+    for entry in siblings.stdout.split(b"\0"):
+        metadata, separator, filename = entry.partition(b"\t")
+        fields = metadata.split()
+        if (separator and len(fields) == 3
+                and fields[0] in {b"100644", b"100755"} and fields[2] == b"0"
+                and Path(os.fsdecode(filename)).parent == relative.parent):
+            return True
+    return False
 
 
 def repo_local_cache_scratch(path: Path, repo_root: Path | None) -> bool:
@@ -5802,9 +5836,16 @@ def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
 
     toplevel = git_toplevel(str(workdir))
     repo_root = artifact_physical(Path(toplevel)) if toplevel else None
+    # The source exception admits files, not newly created scratch directories.
+    directories = {
+        artifact_normalized(path, workdir)
+        for path in bash_path_creation_targets(
+            command_from(payload), directories_only=True)
+    } if str(payload.get("tool_name", "")) == "Bash" else set()
     for named, target in zip(lexical, resolved):
         if is_agent_out_path(named) or is_agent_out_path(target):
-            if repo_root is not None and tracked_artifact_source(named, target, repo_root):
+            if (named not in directories and repo_root is not None
+                    and tracked_artifact_source(named, target, repo_root)):
                 continue
             return ARTIFACT_AGENT_OUT_REASON.format(path=named)
     for path in resolved:
