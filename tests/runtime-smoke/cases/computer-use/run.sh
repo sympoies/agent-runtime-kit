@@ -439,7 +439,11 @@ PY
   assert_journal "$remote_out"
   grep -q '"transport":"local"' "$local_out/manifest.json"
   grep -q '"transport":"ssh"' "$remote_out/manifest.json"
-  if PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$local_out" --tool-profile interact --runtime app >"$CASE_ARTIFACTS/mixed-exec-mcp.stdout.txt" 2>"$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt"; then
+  if PATH="$FAKE_BIN:$PATH" python3 "$REPO_ROOT/tests/runtime-smoke/cases/computer-use/mcp-supervisor.py" macos-agent mcp --out-dir "$local_out" --tool-profile interact --runtime app >"$CASE_ARTIFACTS/mixed-exec-mcp.stdout.txt" 2>"$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt"; then
+    return 1
+  fi
+  if grep -q 'synthetic MCP process timed out' "$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt"; then
+    cat "$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt" >&2
     return 1
   fi
   grep -q 'journal manifest does not match this execution session' "$CASE_ARTIFACTS/mixed-exec-mcp.stderr.txt"
@@ -530,7 +534,7 @@ PY
   fi
 
   for profile in observe interact extended; do
-    PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$mcp_out-$profile" --tool-profile "$profile" --runtime app >"$CASE_ARTIFACTS/mcp-$profile.json"
+    PATH="$FAKE_BIN:$PATH" python3 "$REPO_ROOT/tests/runtime-smoke/cases/computer-use/mcp-supervisor.py" macos-agent mcp --out-dir "$mcp_out-$profile" --tool-profile "$profile" --runtime app >"$CASE_ARTIFACTS/mcp-$profile.json"
     python3 - "$CASE_ARTIFACTS/mcp-$profile.json" "$profile" <<'PY'
 import json
 import pathlib
@@ -554,7 +558,10 @@ PY
   printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shell","arguments":{}}}' \
     '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' |
-    PATH="$FAKE_BIN:$PATH" macos-agent mcp --out-dir "$mcp_out-denied" --tool-profile extended >"$CASE_ARTIFACTS/mcp-denied.stdout.txt" 2>"$CASE_ARTIFACTS/mcp-denied.stderr.txt"
+    PATH="$FAKE_BIN:$PATH" python3 "$REPO_ROOT/tests/runtime-smoke/cases/computer-use/mcp-supervisor.py" macos-agent mcp --out-dir "$mcp_out-denied" --tool-profile extended >"$CASE_ARTIFACTS/mcp-denied.stdout.txt" 2>"$CASE_ARTIFACTS/mcp-denied.stderr.txt" || {
+    cat "$CASE_ARTIFACTS/mcp-denied.stderr.txt" >&2
+    return 1
+  }
   test ! -s "$CASE_ARTIFACTS/mcp-denied.stderr.txt"
   python3 - "$CASE_ARTIFACTS/mcp-denied.stdout.txt" <<'PY'
 import json
