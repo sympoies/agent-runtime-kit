@@ -447,6 +447,7 @@ bash scripts/ci/sandbox-install-rehearsal.sh
 # Position 11 — deterministic runtime skill smoke
 # -----------------------------------------------------------------------------
 banner 11 "runtime skill deterministic smoke"
+python3 tests/ci/test_computer_use_deadline.py
 bash tests/runtime-smoke/run.sh --mode deterministic
 
 # -----------------------------------------------------------------------------
