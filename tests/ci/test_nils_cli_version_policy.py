@@ -767,6 +767,9 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         self.assertIn("only with explicit current", baseline)
         self.assertIn("request authorization", baseline)
         self.assertIn("adopt <stable-tag>", baseline)
+        audit = baseline.split('### A.', 1)[1].split('### B.', 1)[0]
+        self.assertNotIn("fix the mirror", audit)
+
 
     def test_runtime_smoke_tracks_the_active_exact_ci_lane(self) -> None:
         smoke = read("tests/runtime-smoke/cases/evidence/run.sh")

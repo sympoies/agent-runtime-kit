@@ -87,8 +87,9 @@ renderer-owned.
    floor/installed/latest for codex & claude (verdict `current` / `update
    available` / `HOST BELOW FLOOR`) and both nils-cli roles, then the consistency
    gate result. (Or the skill wrapper above from any cwd.)
-2. If the gate reports drift, fix the mirror that disagrees with its source of
-   truth (the table above names the owner), or run a bump (Section B).
+2. Report any mismatched mirror and its source of truth. Keep check/report
+   verify-only; edits require explicit adoption (Section C) or product-floor
+   bump authority (Section B).
 
 ### B. Product-floor bump ceremony (codex or claude)
 
