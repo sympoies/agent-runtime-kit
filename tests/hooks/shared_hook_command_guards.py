@@ -1104,6 +1104,15 @@ class CommandGuardsTests(HookTestCase):
             self.assert_blocked(decision, "uv run --locked python")
 
 
+    def test_unsupported_api_write_guides_user_command(self) -> None:
+        code, decision, stderr = run_hook(
+            "block-direct-pr-create.py",
+            command_payload("gh api -X POST repos/example/project/pages"),
+        )
+        self.assertEqual(code, 0, stderr)
+        for fragment in ("Stop", "tell the user", "exact command", "! <command>", "secrets", "do not retry"):
+            self.assert_blocked(decision, fragment)
+
     def test_github_has_no_skill_marker_bypass_and_gitlab_retains_it(self) -> None:
         code, decision, stderr = run_hook(
             "block-direct-pr-create.py",

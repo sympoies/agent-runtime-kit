@@ -319,17 +319,22 @@ def write_hint(group: str, verb: str = "") -> str:
     }.get(group)
     if not missing and group in {"issue", "pr"}:
         missing = f"{group} {verb}"
+    guidance = (
+        "Stop and tell the user in one or two sentences what is needed and why; "
+        "give them the exact command to run themselves without tokens or secrets. "
+        "In Claude Code they can type `! <command>` to bring output into the session; "
+        "never run it for them and do not retry the refused command."
+    )
     if missing:
         help_command = f"forge-cli {group} --help" if group in {"issue", "pr"} else "forge-cli --help"
         return (
             f"forge-cli has no {missing} command yet ({MISSING_COMMANDS}). "
-            f"Use `{help_command}` for supported operations and defer this "
-            "operation until its typed equivalent is available."
+            f"Use `{help_command}` for supported operations. {guidance}"
         )
     return (
         "Use the matching typed `forge-cli issue` or `forge-cli pr` command "
         "through the owning workflow. Missing API equivalents are tracked in "
-        f"{MISSING_COMMANDS}; defer unsupported operations."
+        f"{MISSING_COMMANDS}. {guidance}"
     )
 
 
