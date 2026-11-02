@@ -1,23 +1,27 @@
 # nils-cli Surface Snapshot
 
-- Snapshot date: 2026-10-24 (refreshed for `v1.36.21`)
-- Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (tag `v1.36.21`)
+- Snapshot date: 2026-11-02 (refreshed for `v1.40.5`)
+- Source repo: [`sympoies/nils-cli`](https://github.com/sympoies/nils-cli) (tag `v1.40.5`)
 - Source command: `ls crates/` and `bash scripts/workspace-bins.sh` in the
   `sympoies/nils-cli` release worktree
-- Active `git describe --tags` output: `v1.36.21`
+- Active `git describe --tags` output: `v1.40.5`
 - Machine-readable version policy for CI and packaging:
   `docs/source/nils-cli-pin.yaml` (`minimum_supported_tag: v1.36.21`,
-  `validated_tag: v1.36.21`), consumed by `scripts/ci/all.sh` Position 1 via
+  `validated_tag: v1.40.5`), consumed by `scripts/ci/all.sh` Position 1 via
   `agent-runtime doctor --class version-alignment`. Keep both role cues in
   lock-step with that manifest; the active describe mirrors validated.
-- Head commit: `fc71dc608d305d947bcfc6bd630f64007cab62d2`
-  (`chore(release): bump cli versions to 1.36.21 (#2775)`)
+- Head commit: `06d8756af8b61522e097bbad1b251f52cc328689`
+  (`chore(release): bump cli versions to 1.40.5 (#3244)`)
 - Release:
-  [`v1.36.21`](https://github.com/sympoies/nils-cli/releases/tag/v1.36.21),
+  [`v1.40.5`](https://github.com/sympoies/nils-cli/releases/tag/v1.40.5),
   Homebrew tap formula at `Formula/nils-cli.rb` on `sympoies/homebrew-tap`
   `main`
 
 ## Current validated release
+
+`v1.40.5` is the validated package; `v1.36.21` remains the compatibility minimum. The released agent-hook fix preserves the shadow dispatch state boundary ([nils-cli #3237](https://github.com/sympoies/nils-cli/pull/3237)). No per-binary floor moves. CI retains separate minimum and validated lanes.
+
+## Previous validated release: v1.36.21
 
 `v1.36.21` is both the validated package and the compatibility minimum.
 The Codex-only Interrupt activity rule requires the released normalization and
@@ -1797,7 +1801,7 @@ runbooks by name.
 Notes on derivation:
 
 - The **Crate** column lists every directory under
-  `crates/` at the source tag in the header (43 entries).
+  `crates/` at the source tag in the header (42 entries).
 - The **Binary** column lists every binary the crate produces. Library
   crates show `(library only)`. Crates that ship more than one binary
   enumerate them comma-separated.
@@ -1807,7 +1811,7 @@ Notes on derivation:
 ## Crate → binary table
 
 This inventory is frozen to the source tag in the header. Each upstream
-README link resolves to `v1.36.21`, not to the upstream default branch.
+README link resolves to `v1.40.5`, not to the upstream default branch.
 The consumption links below preserve this kit’s release-specific context.
 
 | Crate | Binary | Purpose and references |
@@ -1839,7 +1843,6 @@ The consumption links below preserve this kit’s release-specific context.
 | `github-app-cli` | `github-app-cli` | Mint GitHub App installation tokens. [README][source-github-app-cli]; [kit consumption](#github-app-cli-consumption) |
 | `image-processing` | `image-processing` | User-facing image-processing CLI. [README][source-image-processing] |
 | `macos-agent` | `macos-agent` | Guarded adapter around the pinned Peekaboo release. [README][source-macos-agent]; [kit consumption](#macos-agent-consumption) |
-| `memo` | `memo` | Memo storage CLI. [README][source-memo] |
 | `nils-build-info` | (library only) | Build metadata helper for the workspace `--version` output; consumed transitively, never appears in `required_clis`. New crate as of `v0.28.0` (#625). [README][source-nils-build-info] |
 | `nils-common` | (library only) | Shared workspace utilities; never appears in `required_clis`. [README][source-nils-common] |
 | `nils-evidence` | `evidence` | Query and migrate the scrubbed evidence archive. [README][source-nils-evidence]; [kit consumption](#nils-evidence-consumption) |
@@ -1848,8 +1851,10 @@ The consumption links below preserve this kit’s release-specific context.
 | `nils-scrub` | (library only) | Shared secret-scrub library; never a required CLI. [README][source-nils-scrub]; [kit consumption](#nils-scrub-consumption) |
 | `nils-term` | (library only) | Terminal / TTY helpers; never appears in `required_clis`. [README][source-nils-term] |
 | `nils-test-support` | (library only) | Integration-test harness; test-only, never appears in `required_clis`. [README][source-nils-test-support] |
+| `research-cli` | `research-cli` | Research CLI. [README][source-research-cli] |
 | `screen-record` | `screen-record` | Record a window or display on macOS or Linux. [README][source-screen-record] |
 | `secrets` | `secrets` | Pull and push repository environment files through a SOPS store. [README][source-secrets]; [kit consumption](#secrets-consumption) |
+| `speech-test-cli` | `speech-test-cli` | Speech testing CLI. [README][source-speech-test-cli] |
 | `semantic-commit` | `semantic-commit` | Semantic commit message validator and committer. [README][source-semantic-commit] |
 | `web-evidence` | `web-evidence` | Web evidence capture helper. [README][source-web-evidence] |
 | `zsh-kit` | `zsh-kit` | Bootstrap an operator-supplied Zsh repository. [README][source-zsh-kit]; [kit consumption](#zsh-kit-consumption) |
@@ -2059,88 +2064,87 @@ As of `v1.0.12`, native plugin fetch/update/maybe-update/status helpers are avai
 
 
 
-[source-agent-hook]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-hook/README.md
+[source-agent-hook]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-hook/README.md
 
-[source-agent-memory]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-memory/README.md
+[source-agent-memory]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-memory/README.md
 
-[source-agent-out]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-out/README.md
+[source-agent-out]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-out/README.md
 
-[source-agent-runtime]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-runtime/README.md
+[source-agent-runtime]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-runtime/README.md
 
-[source-agent-scope-lock]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-scope-lock/README.md
+[source-agent-scope-lock]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-scope-lock/README.md
 
-[source-agent-session]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-session/README.md
+[source-agent-session]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-session/README.md
 
-[source-agent-workflow-primitives]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/agent-workflow-primitives/README.md
+[source-agent-workflow-primitives]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/agent-workflow-primitives/README.md
 
-[source-api-gql]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/api-gql/README.md
+[source-api-gql]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/api-gql/README.md
 
-[source-api-grpc]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/api-grpc/README.md
+[source-api-grpc]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/api-grpc/README.md
 
-[source-api-rest]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/api-rest/README.md
+[source-api-rest]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/api-rest/README.md
 
-[source-api-test]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/api-test/README.md
+[source-api-test]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/api-test/README.md
 
-[source-api-testing-core]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/api-testing-core/README.md
+[source-api-testing-core]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/api-testing-core/README.md
 
-[source-api-websocket]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/api-websocket/README.md
+[source-api-websocket]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/api-websocket/README.md
 
-[source-claude-cli]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/claude-cli/README.md
+[source-claude-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/claude-cli/README.md
 
-[source-cli-template]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/cli-template/README.md
+[source-cli-template]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/cli-template/README.md
 
-[source-codex-cli]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/codex-cli/README.md
+[source-codex-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/codex-cli/README.md
 
-[source-devlog]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/devlog/README.md
+[source-devlog]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/devlog/README.md
 
-[source-docker-tools]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/docker-tools/README.md
+[source-docker-tools]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/docker-tools/README.md
 
-[source-forge-cli]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/forge-cli/README.md
+[source-forge-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/forge-cli/README.md
 
-[source-fzf-cli]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/fzf-cli/README.md
+[source-fzf-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/fzf-cli/README.md
 
-[source-git-cli]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/git-cli/README.md
+[source-git-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/git-cli/README.md
 
-[source-git-lock]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/git-lock/README.md
+[source-git-lock]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/git-lock/README.md
 
-[source-git-scope]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/git-scope/README.md
+[source-git-scope]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/git-scope/README.md
 
-[source-git-summary]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/git-summary/README.md
+[source-git-summary]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/git-summary/README.md
 
-[source-github-app-cli]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/github-app-cli/README.md
+[source-github-app-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/github-app-cli/README.md
 
-[source-image-processing]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/image-processing/README.md
+[source-image-processing]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/image-processing/README.md
 
-[source-macos-agent]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/macos-agent/README.md
+[source-macos-agent]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/macos-agent/README.md
 
 
-[source-memo]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/memo/README.md
 
-[source-nils-build-info]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-build-info/README.md
+[source-nils-build-info]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-build-info/README.md
 
-[source-nils-common]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-common/README.md
+[source-nils-common]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-common/README.md
 
-[source-nils-evidence]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-evidence/README.md
+[source-nils-evidence]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-evidence/README.md
 
-[source-nils-markdown]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-markdown/README.md
+[source-nils-markdown]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-markdown/README.md
 
-[source-nils-provider-resume]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-provider-resume/README.md
+[source-nils-provider-resume]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-provider-resume/README.md
 
-[source-nils-scrub]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-scrub/README.md
+[source-nils-scrub]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-scrub/README.md
 
-[source-nils-term]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-term/README.md
+[source-nils-term]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-term/README.md
 
-[source-nils-test-support]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/nils-test-support/README.md
+[source-nils-test-support]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/nils-test-support/README.md
 
-[source-screen-record]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/screen-record/README.md
+[source-screen-record]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/screen-record/README.md
 
-[source-secrets]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/secrets/README.md
+[source-secrets]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/secrets/README.md
 
-[source-semantic-commit]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/semantic-commit/README.md
+[source-semantic-commit]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/semantic-commit/README.md
 
-[source-web-evidence]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/web-evidence/README.md
+[source-web-evidence]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/web-evidence/README.md
 
-[source-zsh-kit]: https://github.com/sympoies/nils-cli/blob/v1.36.21/crates/zsh-kit/README.md
+[source-zsh-kit]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/zsh-kit/README.md
 
 ## Refresh procedure
 
@@ -2159,3 +2163,6 @@ When `sympoies/nils-cli` cuts a new release that consumers should pin against:
 6. Bump the snapshot date and head commit pointer.
 7. Manifest authors then refresh `required_clis` pins in
    `manifests/skills.yaml` / `manifests/plugins.yaml` against the new surface.
+
+[source-research-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/research-cli/README.md
+[source-speech-test-cli]: https://github.com/sympoies/nils-cli/blob/v1.40.5/crates/speech-test-cli/README.md
