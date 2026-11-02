@@ -173,19 +173,18 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
         self.assertEqual(yaml_scalar(manifest, "schema_version"), "2")
         self.assertEqual(yaml_scalar(manifest, "minimum_supported_tag"), "v1.36.21")
-        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.36.21")
+        self.assertEqual(yaml_scalar(manifest, "validated_tag"), "v1.40.5")
         self.assertNotIn("pinned_tag:", manifest)
         # Interrupt is part of the whole-policy validation contract. Pre-Interrupt
         # consumers reject the bundle before even ordinary hooks can dispatch.
-        # Minimum and validated intentionally move together to the released
-        # Interrupt-capable consumer; both lanes retain pinned archive identity.
+        # The validated release advances independently of the retained minimum.
         self.assertEqual(
             yaml_scalar(manifest, "linux_amd64"),
-            "30bcb579ac44b97c507733b1e48c21c7a540f467f6de755b513949aa308bd200",
+            "7beacb6bed0166519f6f557fc8e3cc653c8b901c4ab66c5d8678186be48b2c67",
         )
         self.assertEqual(
             yaml_scalar(manifest, "linux_arm64"),
-            "6dd02f1945617c66c922a14cd35a3b5ceecb738ed6fb9fcc049438b9fec7d06d",
+            "432263c1d95da389dcfb835ee7c2a1a917a0cda3357dd48c3bc6ace7a638ffed",
         )
         minimum_manifest = read("docs/source/nils-cli-minimum-digest.yaml")
         self.assertEqual(yaml_scalar(minimum_manifest, "schema_version"), "1")
@@ -349,7 +348,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
 
     def test_candidate_version_must_be_stable_and_not_older_than_validated(self) -> None:
         script = ROOT / "scripts/ci/nils-cli-policy-matrix.py"
-        for candidate in ("v1.36.21", "v1.36.22", "v1.37.0"):
+        for candidate in ("v1.40.5", "v1.40.6", "v1.41.0"):
             with self.subTest(candidate=candidate):
                 subprocess.run(
                     ["python3", str(script), "--assert-candidate-at-least-validated", candidate],
@@ -359,6 +358,8 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
                     text=True,
                 )
         for candidate in (
+            "v1.40.4",
+            "v1.36.21",
             "v1.36.20",
             "v1.31.15",
             "v1.31.14",
@@ -729,7 +730,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             self.assertNotIn("pinned_tag", surface)
             self.assertIn("linux_amd64", surface)
             self.assertIn("linux_arm64", surface)
-        self.assertIn("ARG NILS_CLI_VERSION=v1.36.21", dockerfile)
+        self.assertIn("ARG NILS_CLI_VERSION=v1.40.5", dockerfile)
         manifest = load_workflow("docs/source/nils-cli-pin.yaml")
         digests = manifest["nils_cli"]["release_sha256"]
         self.assertIn(
