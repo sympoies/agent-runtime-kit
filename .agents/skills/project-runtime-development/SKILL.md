@@ -9,16 +9,11 @@ allowed-tools: Bash, Read, Edit, Write
 
 # Project Runtime Development
 
-Use this project-local skill for material changes to `agent-runtime-kit`.
-Apply the repository's existing `project-dev` intent and `DEVELOPMENT.md`; this
-skill supplies the small project-specific decision loop and does not duplicate
-their engineering, Git, review, or delivery contracts.
+Use for material kit changes with the repository's `project-dev` intent and
+`DEVELOPMENT.md`, which own inspection, test-first work, validation, Git,
+review and delivery.
 
 ## Project Delta
-
-Apply the repository's active `project-dev` documents and `DEVELOPMENT.md` for
-inspection, test-first work, validation, Git, review, and delivery. This skill
-adds only the replacement for the retired heuristic workflow:
 
 1. Route recurring friction to the earliest owning test, diagnostic, policy,
    skill, runbook, or external repository.
@@ -30,7 +25,8 @@ adds only the replacement for the retired heuristic workflow:
 
 ## Managed Skill Lifecycle
 
-For managed creation/removal, load the separate acceptance procedures in `docs/source/development-reference.md#skill-lifecycle-changes`.
+For managed creation/removal, load the separate acceptance procedures in
+`docs/source/development-reference.md#skill-lifecycle-changes`.
 Inventory active references; preserve historical plans.
 
 ## Boundary
