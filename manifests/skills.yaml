@@ -110,29 +110,6 @@ skills:
       agent-run: ">=0.20.0"
     state_out_mode: runtime
 
-  - id: meta.sync-runtime-surfaces
-    domain: meta
-    source: core/skills/meta/sync-runtime-surfaces
-    invocation:
-      role: maintenance
-      intents: [project-dev]
-      example_request: "Refresh my managed Codex and Claude runtime surfaces"
-      admission_rationale: "Users intentionally request runtime synchronization and stale-surface cleanup."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: sync-runtime-surfaces
-        render_to: plugins/meta/skills/sync-runtime-surfaces/SKILL.md
-      claude:
-        name: sync-runtime-surfaces
-        render_to: plugins/meta/skills/sync-runtime-surfaces/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/sync-runtime-surfaces/SKILL.md
-    required_clis:
-      agent-runtime: ">=0.22.4"
-    state_out_mode: runtime
-
   - id: meta.deploy
     domain: meta
     source: core/skills/meta/deploy
@@ -177,96 +154,6 @@ skills:
         render_to: plugins/meta/skills/execution-capsule/SKILL.md
     required_clis:
       agent-out: ">=1.19.2"
-    state_out_mode: runtime
-
-  - id: meta.create-skill
-    domain: meta
-    source: core/skills/meta/create-skill
-    invocation:
-      role: maintenance
-      intents: [project-dev]
-      example_request: "Add a new governed runtime-kit skill"
-      admission_rationale: "Creating a governed runtime capability is a deliberate multi-surface user outcome."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: create-skill
-        render_to: plugins/meta/skills/create-skill/SKILL.md
-      claude:
-        name: create-skill
-        render_to: plugins/meta/skills/create-skill/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/create-skill/SKILL.md
-    required_clis:
-      agent-runtime: ">=0.18.0"
-    state_out_mode: runtime
-
-  - id: meta.create-project-skill
-    domain: meta
-    source: core/skills/meta/create-project-skill
-    invocation:
-      role: maintenance
-      intents: [project-dev]
-      example_request: "Create a project-local skill for this repository"
-      admission_rationale: "Project-local capability authoring is distinct from repo-owned runtime-kit skill authoring."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: create-project-skill
-        render_to: plugins/meta/skills/create-project-skill/SKILL.md
-      claude:
-        name: create-project-skill
-        render_to: plugins/meta/skills/create-project-skill/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/create-project-skill/SKILL.md
-    required_clis: {}
-    state_out_mode: runtime
-
-  - id: meta.remove-skill
-    domain: meta
-    source: core/skills/meta/remove-skill
-    invocation:
-      role: maintenance
-      intents: [project-dev]
-      example_request: "Remove this governed runtime-kit skill safely"
-      admission_rationale: "Safe governed removal is a deliberate cross-surface user outcome."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: remove-skill
-        render_to: plugins/meta/skills/remove-skill/SKILL.md
-      claude:
-        name: remove-skill
-        render_to: plugins/meta/skills/remove-skill/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/remove-skill/SKILL.md
-    required_clis:
-      agent-runtime: ">=0.18.0"
-    state_out_mode: runtime
-
-  - id: meta.remove-project-skill
-    domain: meta
-    source: core/skills/meta/remove-project-skill
-    invocation:
-      role: maintenance
-      intents: [project-dev]
-      example_request: "Remove this project-local skill and its owned wrapper"
-      admission_rationale: "Project-local removal has a distinct ownership and retention contract."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: remove-project-skill
-        render_to: plugins/meta/skills/remove-project-skill/SKILL.md
-      claude:
-        name: remove-project-skill
-        render_to: plugins/meta/skills/remove-project-skill/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/remove-project-skill/SKILL.md
-    required_clis: {}
     state_out_mode: runtime
 
   - id: meta.repo-docs-boundary
@@ -334,30 +221,6 @@ skills:
       hermes:
         render_to: plugins/meta/skills/setup-project/SKILL.md
     required_clis: {}
-    state_out_mode: runtime
-
-  - id: meta.nils-cli-bump
-    domain: meta
-    source: core/skills/meta/nils-cli-bump
-    invocation:
-      role: maintenance
-      intents: [project-dev]
-      example_request: "Bump this repository to the latest released nils-cli surface"
-      admission_rationale: "A coordinated dependency pin and consumer refresh is a deliberate repository outcome."
-    exposure:
-      profile: default
-    products:
-      codex:
-        name: nils-cli-bump
-        render_to: plugins/meta/skills/nils-cli-bump/SKILL.md
-      claude:
-        name: nils-cli-bump
-        render_to: plugins/meta/skills/nils-cli-bump/SKILL.md
-      hermes:
-        render_to: plugins/meta/skills/nils-cli-bump/SKILL.md
-    required_clis:
-      agent-runtime: ">=1.25.0"
-      forge-cli: ">=1.11.2"
     state_out_mode: runtime
 
   - id: meta.worktree-triage

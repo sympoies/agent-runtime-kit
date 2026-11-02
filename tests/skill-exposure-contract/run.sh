@@ -35,6 +35,16 @@ assert "pending_disposition: []" in skill_text
 skill_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", skill_text, re.M)
 pending_ids = re.findall(r"^    - ([a-z0-9.-]+)$", skill_text.split("skills:", 1)[0], re.M)
 assert len(skill_ids) == len(set(skill_ids))
+expected_meta = {
+    "meta.bootstrap", "meta.deploy", "meta.release", "meta.execution-capsule",
+    "meta.repo-docs-boundary", "meta.setup-project", "meta.worktree-triage",
+}
+assert {skill_id for skill_id in skill_ids if skill_id.startswith("meta.")} == expected_meta
+plugin_text = (root / "manifests/plugins.yaml").read_text()
+meta_plugin = next(chunk for chunk in re.split(r"(?=^  - id: )", plugin_text, flags=re.M)
+                   if re.match(r"^  - id: meta$", chunk, re.M))
+assert set(re.findall(r"^      - (meta\.[a-z-]+)$", meta_plugin, re.M)) == expected_meta
+
 assert set(pending_ids).issubset(skill_ids)
 assert pending_ids == [skill_id for skill_id in skill_ids if skill_id in set(pending_ids)]
 assert pending_ids == progress["pending_ids"]
@@ -253,7 +263,7 @@ assert report["product"] == product, (product, report.get("product"))
 skills = report["skills"]
 manifest = Path(sys.argv[3]).read_text()
 active_ids = re.findall(r"^  - id: ([a-z0-9.-]+)$", manifest, re.M)
-assert len(active_ids) == 27, (product, len(active_ids))
+assert len(active_ids) == 21, (product, len(active_ids))
 assert "conversation.main-agent-mode" not in active_ids
 pending_ids = set(
     re.findall(r"^    - ([a-z0-9.-]+)$", manifest.split("skills:", 1)[0], re.M)

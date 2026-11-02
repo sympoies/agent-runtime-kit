@@ -42,6 +42,12 @@
     "dispatch.review-dispatch-lane-pr",
     "dispatch.execute-dispatch-lane",
     "dispatch.deliver-plan-tracking-issue",
+    "meta.sync-runtime-surfaces",
+    "meta.create-skill",
+    "meta.create-project-skill",
+    "meta.remove-skill",
+    "meta.remove-project-skill",
+    "meta.nils-cli-bump",
     "conversation.main-agent-mode"
   ]
 }

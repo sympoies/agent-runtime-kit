@@ -4,7 +4,7 @@
 #
 # This is a deliberately thin companion to sync-runtime-surfaces.sh. It does NOT
 # render, install through nils-cli, or touch any runtime-kit manifest. It only
-# symlinks already-native project-local skills (the create-project-skill layout:
+# symlinks already-native project-local skills (the setup-project skill layout:
 # <home>/.agents/skills/<name>/SKILL.md) from a PRIVATE source tree into the
 # global per-user skill directories that each declared product discovers:
 #
@@ -91,7 +91,7 @@ canonical children of its configured runtime home. All selected targets are
 preflighted before apply or prune starts, preventing partial multi-product work.
 
 The private source tree is located via \$AGENT_PRIVATE_SKILLS_HOME (a
-create-project-skill root containing .agents/skills/). When that env is unset
+project skill source root containing .agents/skills/). When that env is unset
 and --private-home is not given, this script reports "no private home" and
 exits 0 without touching anything.
 
@@ -882,8 +882,8 @@ main() {
 
   if [ ! -d "$SKILLS_SRC_DIR" ]; then
     log "$PROG_NAME: no skills source at $SKILLS_SRC_DIR; nothing to overlay."
-    log "  author private skills there with the create-project-skill layout:"
-    log "    cd \"$PRIVATE_HOME\" && /create-project-skill --target codex <name>"
+    log "  author private skills there with the setup-project skill layout:"
+    log "    cd \"$PRIVATE_HOME\" && /setup-project create <name> (Codex-only)"
     exit 0
   fi
 

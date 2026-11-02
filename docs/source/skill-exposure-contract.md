@@ -92,9 +92,9 @@ surfaces must not expose them as callable skills.
 
 ## Lifecycle And Validation
 
-- `meta.create-skill` requires v2 admission metadata and never adds a pending
+- The kit-local managed creation procedure requires v2 admission metadata and never adds a pending
   row.
-- `meta.remove-skill` retains reviewed disposition history for baseline IDs.
+- The kit-local managed removal procedure retains reviewed disposition history for baseline IDs.
 - `scripts/ci/skill-governance-audit.sh` cross-checks active skills, the pending
   set, and the disposition ledger, including negative fixtures.
 - `agent-runtime list-skills --format json` reports invocation, exposure, and

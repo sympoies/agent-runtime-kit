@@ -4687,7 +4687,7 @@ verify_nils_cli_version_alignment() {
   fi
   log "verifying installed nils-cli against pin ($pin)"
   if ! agent-runtime doctor --class version-alignment --pin "$pin" --format text; then
-    log "error: installed nils-cli is below the pinned minimum; refusing to sync surfaces against a stale toolchain (upgrade nils-cli, or move the pin via meta:nils-cli-bump)"
+    log "error: installed nils-cli is below the pinned minimum; refusing to sync surfaces against a stale toolchain (upgrade nils-cli, or move the pin via project-version-baseline adopt)"
     return 1
   fi
   return 0

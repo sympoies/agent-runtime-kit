@@ -187,7 +187,7 @@ through its external skill root:
 
 Representative skills include `pr:deliver-pr`,
 `dispatch:deliver-dispatch-plan`, `issue:issue-triage`,
-`meta:sync-runtime-surfaces`, `reporting:project-retro`, and
+`meta:setup-project`, `reporting:project-retro`, and
 `computer-use:macos-desktop`.
 
 The authoritative skill list and CLI floors live in `manifests/skills.yaml`.

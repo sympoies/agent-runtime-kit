@@ -90,15 +90,9 @@
     "reporting.project-retro",
     "reporting.topic-radar",
     "meta.bootstrap",
-    "meta.sync-runtime-surfaces",
     "meta.deploy",
-    "meta.create-skill",
-    "meta.create-project-skill",
-    "meta.remove-skill",
-    "meta.remove-project-skill",
     "meta.release",
     "meta.setup-project",
-    "meta.nils-cli-bump",
     "meta.worktree-triage",
     "media.image-processing",
     "media.screen-record",
@@ -153,6 +147,12 @@
     "dispatch.execute-plan-tracking-issue",
     "dispatch.review-dispatch-lane-pr",
     "dispatch.execute-dispatch-lane",
-    "dispatch.deliver-plan-tracking-issue"
+    "dispatch.deliver-plan-tracking-issue",
+    "meta.sync-runtime-surfaces",
+    "meta.create-skill",
+    "meta.create-project-skill",
+    "meta.remove-skill",
+    "meta.remove-project-skill",
+    "meta.nils-cli-bump"
   ]
 }

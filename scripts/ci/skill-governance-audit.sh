@@ -17,10 +17,10 @@ Checks:
   default                   Validate active repo source/manifests/plugins/counts.
   --check-counts            Check maintained active skill-count references only.
   --update-counts           Refresh maintained active skill-count references.
-  --fixture create          Validate the create-skill fixture completeness.
-  --fixture remove          Validate the remove-skill dry-run fixture coverage.
-  --fixture create-project  Validate the create-project-skill fixture completeness.
-  --fixture remove-project  Validate the remove-project-skill dry-run fixture coverage.
+  --fixture create          Validate the managed creation fixture completeness.
+  --fixture remove          Validate the managed removal dry-run fixture coverage.
+  --fixture create-project  Validate the project creation fixture completeness.
+  --fixture remove-project  Validate the project removal dry-run fixture coverage.
   --fixture count-refresh   Validate stale count detection and whitelist updates.
   --fixture codex-plugin    Validate Codex plugin skill-list drift detection.
   --fixture reviewer-profile  Validate missing Codex reviewer profile fields fail closed.
@@ -1061,7 +1061,7 @@ def audit_skill_body_shape(skill_id: str, source: str) -> None:
     if headings[0] != "Contract":
         fail(
             f"{skill_id} first H2 must be `## Contract`, found `## {headings[0]}` "
-            f"(see core/skills/meta/create-skill for the standard skill shape)"
+            f"(see docs/source/development-reference.md#skill-lifecycle-changes for the standard skill shape)"
         )
     last_canonical_index = -1
     last_canonical_name = "Contract"
@@ -1835,17 +1835,18 @@ def validate_repo() -> None:
     codex_ids = sandbox_skill_ids(ROOT, "codex")
     claude_ids = sandbox_skill_ids(ROOT, "claude")
     semver = re.compile(r"^>=\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$")
-    lifecycle_ids = {
-        "meta.create-skill",
-        "meta.create-project-skill",
-        "meta.remove-skill",
-        "meta.remove-project-skill",
+    lifecycle_doc = read(ROOT / "docs/source/development-reference.md")
+    lifecycle_bodies = {
+        "managed-create": lifecycle_doc.split("### Managed skill creation", 1)[1].split("### Managed skill removal", 1)[0],
+        "managed-remove": lifecycle_doc.split("### Managed skill removal", 1)[1].split("## Coupled nils-cli Work", 1)[0],
+        "project-create": read(ROOT / "core/skills/meta/setup-project/references/create.md"),
+        "project-remove": read(ROOT / "core/skills/meta/setup-project/references/remove.md"),
     }
-    repo_lifecycle_ids = {"meta.create-skill", "meta.remove-skill"}
-    project_lifecycle_ids = {
-        "meta.create-project-skill",
-        "meta.remove-project-skill",
-    }
+    for procedure, body in lifecycle_bodies.items():
+        needles = ("core/skills", "manifests/skills.yaml", "manifests/plugins.yaml", "agent-runtime") if procedure.startswith("managed-") else (".agents/skills", ".agents/scripts", "git rev-parse --show-toplevel")
+        for needle in needles:
+            if needle not in body:
+                fail(f"{procedure} missing lifecycle contract phrase: {needle}")
 
     for skill_id, entry in sorted(by_id.items()):
         domain, skill = skill_id.split(".", 1)
@@ -1881,17 +1882,6 @@ def validate_repo() -> None:
             if "<TBD" in floor or not semver.match(floor):
                 fail(f"{skill_id} required_clis {cli} has invalid floor {floor!r}")
 
-        if skill_id in repo_lifecycle_ids:
-            body = read(ROOT / source / "SKILL.md.tera")
-            for needle in ("core/skills", "manifests/skills.yaml", "manifests/plugins.yaml", "agent-runtime"):
-                if needle not in body:
-                    fail(f"{skill_id} missing lifecycle contract phrase: {needle}")
-        if skill_id in project_lifecycle_ids:
-            body = read(ROOT / source / "SKILL.md.tera")
-            for needle in (".agents/skills", ".agents/scripts", "git rev-parse --show-toplevel"):
-                if needle not in body:
-                    fail(f"{skill_id} missing project lifecycle contract phrase: {needle}")
-
     retired = set(
         json.loads(read(ROOT / "manifests" / "retired-skill-ids.json"))["skills"]
     )
@@ -1911,7 +1901,7 @@ def validate_repo() -> None:
     count = validate_counts(ROOT)
     print(
         "skill-governance-audit: repo OK "
-        f"skills={len(skills)} plugins={len(plugins)} lifecycle={len(lifecycle_ids)} "
+        f"skills={len(skills)} plugins={len(plugins)} lifecycle={len(lifecycle_bodies)} "
         f"count_targets={len(COUNT_TARGETS)} active_count={count} "
         f"desc_max={desc_max}/{DESCRIPTION_MAX_CHARS} "
         f"desc_over120={desc_over_120} desc_over220={desc_over_220}"
@@ -1919,7 +1909,7 @@ def validate_repo() -> None:
 
 
 def validate_create_fixture() -> None:
-    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "create-skill"
+    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "managed-create"
     expected = [
         "core/skills/fixture/sample-prose/SKILL.md.tera",
         "manifests/skills.yaml",
@@ -1950,7 +1940,7 @@ def validate_create_fixture() -> None:
 
 
 def validate_remove_fixture() -> None:
-    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "remove-skill"
+    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "managed-remove"
     expected_classes = {
         "source",
         "skills-manifest",
@@ -1995,8 +1985,8 @@ def validate_remove_fixture() -> None:
 
 
 def validate_create_project_fixture() -> None:
-    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "create-project-skill"
-    helper = ROOT / "core" / "skills" / "meta" / "create-project-skill" / "scripts" / "create-project-skill.sh"
+    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "project-create"
+    helper = ROOT / "core" / "skills" / "meta" / "setup-project" / "scripts" / "create-project-skill.sh"
     if not helper.is_file() or not os.access(helper, os.X_OK):
         fail("create-project helper missing or not executable")
     expected = [
@@ -2032,7 +2022,7 @@ def validate_create_project_fixture() -> None:
 
 
 def validate_remove_project_fixture() -> None:
-    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "remove-project-skill"
+    fixture = ROOT / "tests" / "runtime-smoke" / "fixtures" / "skill-lifecycle" / "project-remove"
     expected_classes = {
         "project-skill-source",
         "skill-owned-script",
@@ -2133,21 +2123,21 @@ def validate_count_refresh_fixture() -> None:
 
 def validate_codex_plugin_fixture() -> None:
     by_id = {
-        "meta.sync-runtime-surfaces": {
-            "source": "core/skills/meta/sync-runtime-surfaces",
+        "meta.setup-project": {
+            "source": "core/skills/meta/setup-project",
             "products": {
                 "codex": {
-                    "name": "sync-runtime-surfaces",
-                    "render_to": "plugins/meta/skills/sync-runtime-surfaces/SKILL.md",
+                    "name": "setup-project",
+                    "render_to": "plugins/meta/skills/setup-project/SKILL.md",
                 },
                 "claude": {
-                    "name": "sync-runtime-surfaces",
-                    "render_to": "plugins/meta/skills/sync-runtime-surfaces/SKILL.md",
+                    "name": "setup-project",
+                    "render_to": "plugins/meta/skills/setup-project/SKILL.md",
                 },
             },
         }
     }
-    contained = ["meta.sync-runtime-surfaces"]
+    contained = ["meta.setup-project"]
     with tempfile.TemporaryDirectory(prefix="codex-plugin-skills-") as tmp:
         manifest = Path(tmp) / "plugin.json"
         manifest.write_text(
@@ -2157,8 +2147,8 @@ def validate_codex_plugin_fixture() -> None:
                     "version": "0.1.0",
                     "skills": [
                         {
-                            "id": "sync-runtime-skills",
-                            "source": "core/skills/meta/sync-runtime-skills",
+                            "id": "stale-fixture-skill",
+                            "source": "core/skills/meta/stale-fixture-skill",
                         }
                     ],
                 }
@@ -2176,8 +2166,8 @@ def validate_codex_plugin_fixture() -> None:
                     "version": "0.1.0",
                     "skills": [
                         {
-                            "id": "sync-runtime-surfaces",
-                            "source": "core/skills/meta/sync-runtime-surfaces",
+                            "id": "setup-project",
+                            "source": "core/skills/meta/setup-project",
                         }
                     ],
                 }

@@ -111,4 +111,4 @@ Provider closeout and delivery remain with their owning workflows.
 
 - `deliver-pr` — provider delivery of preserved unfinished work.
 - `semantic-commit` — governed commits in the owner's delivery workflow.
-- `sync-runtime-surfaces` — runtime activation through its separate owner.
+- `scripts/sync-runtime-surfaces.sh` — runtime activation through its separate owner.

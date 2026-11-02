@@ -741,7 +741,7 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
         )
 
     def test_audits_and_maintenance_skill_understand_both_roles(self) -> None:
-        bump_skill = read("core/skills/meta/nils-cli-bump/SKILL.md.tera")
+        bump_skill = read("docs/source/nils-cli-version-workflows.md")
         surfaces = (
             read("scripts/ci/security-hardening-audit.py"),
             read("scripts/ci/version-baseline-audit.py"),
@@ -762,10 +762,11 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             "remote-canary bootstrap exception",
             read("docs/source/nils-cli-version-workflows.md"),
         )
-        self.assertNotIn(
-            "plugins/meta/skills/nils-cli-bump/SKILL.md",
-            read("scripts/ci/product-leak-allow.yaml"),
-        )
+        baseline = read(".agents/skills/project-version-baseline/SKILL.md")
+        self.assertIn("verify-only deterministic consistency gate", baseline)
+        self.assertIn("only with explicit current", baseline)
+        self.assertIn("request authorization", baseline)
+        self.assertIn("adopt <stable-tag>", baseline)
 
     def test_runtime_smoke_tracks_the_active_exact_ci_lane(self) -> None:
         smoke = read("tests/runtime-smoke/cases/evidence/run.sh")

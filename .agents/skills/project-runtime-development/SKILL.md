@@ -28,6 +28,11 @@ adds only the replacement for the retired heuristic workflow:
    `issue-follow-up` record in the canonical repository. Keep chronology in the
    issue and public-safe devlog.
 
+## Managed Skill Lifecycle
+
+For managed creation/removal, load the separate acceptance procedures in `docs/source/development-reference.md#skill-lifecycle-changes`.
+Inventory active references; preserve historical plans.
+
 ## Boundary
 
 This skill coordinates development decisions inside

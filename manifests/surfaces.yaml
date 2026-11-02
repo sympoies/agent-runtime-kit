@@ -115,7 +115,7 @@ surfaces:
         min_nils_cli: "n/a"
         acceptance:
           - kind: ci
-            note: "meta.sync-runtime-surfaces.claude-agents-md smoke (settings merge + verify)"
+            note: "meta.runtime-sync.claude-agents-md smoke (settings merge + verify)"
             descriptive_only: true
           - kind: live
             note: "live Claude session in repo"

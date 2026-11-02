@@ -106,7 +106,7 @@ a uniform shape:
 - Install mechanism: not installed by `agent-runtime`; it ships as part
   of the repo working tree. The enabling user setting is owned by
   `sync_claude_settings_hooks` in `scripts/sync-runtime-surfaces.sh`.
-- Acceptance lane: `meta.sync-runtime-surfaces.claude-agents-md` covers the
+- Acceptance lane: `meta.runtime-sync.claude-agents-md` covers the
   settings merge and verification; loading itself is covered indirectly by
   any Claude session opened in this repo.
 - Support today: **shipped (repo-local, requires the managed user setting)**.
@@ -281,7 +281,7 @@ a uniform shape:
   claude` clears retired runtime-kit commands, installs the digest-pinned XDG
   policy/config, then applies the exact reviewed `agent-hook setup` plan.
   Setup preserves custom user hooks and unrelated settings.
-- Acceptance lane: runtime-smoke `meta.sync-runtime-surfaces` fixture
+- Acceptance lane: runtime-smoke `meta.runtime-sync` fixture
   validates custom hook preservation, retired managed hook removal,
   setup-owned insertion, and idempotency. Agent-hook migration tests enforce
   one dispatcher per event/matcher group.
