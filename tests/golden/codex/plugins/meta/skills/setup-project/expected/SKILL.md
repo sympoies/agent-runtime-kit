@@ -1,108 +1,46 @@
 ---
 name: setup-project
-description: >
-  Guide a repository into the project-local `.agents/` conventions used by
-  retained runtime-kit dispatcher skills.
+description: Set up repository .agents conventions and create or remove project-local skills.
 ---
 
 # Setup Project
 
 ## Contract
 
-Prereqs:
+Run inside the target Git repository unless another target is explicitly named.
+Choose the requested procedure and load only its reference:
 
-- Run inside the target repository root unless the user explicitly names
-  another repository path.
-- The target repository is a git work tree.
-- First-time host/global runtime installation has already been handled outside
-  this workflow by `scripts/setup.sh` and the released runtime install path.
-- Existing project-local files are never overwritten without explicit user
-  approval.
+- Adopt repository `.agents/` conventions: `references/adoption.md`.
+- Create a project-local skill or Claude discovery bridge: `references/create.md`.
+- Remove a project-local skill and its approved wrappers: `references/remove.md`.
 
-Inputs:
-
-- Optional repository path when setting up another checkout.
-- Dry-run or apply intent. Dry-run is the default.
-- Required apply-time validation command for `.agents/scripts/pre-pr.sh`, passed
-  as `--pre-pr-command <command>`.
-- Optional `--bootstrap-command`, `--deploy-command`, and `--release-command`
-  values to create retained dispatcher scripts.
-
-Outputs:
-
-- A repository adoption report covering `.agents/`, `.agents/scripts/`,
-  `.agents/skills/`, retained dispatcher scripts, and common validation command
-  candidates.
-- In apply mode, `.agents/scripts/pre-pr.sh` created from an explicit validation
-  command and optional retained dispatcher scripts created from explicit
-  commands.
-- A blocking diagnostic when an adopted repository is missing an executable
-  `.agents/scripts/pre-pr.sh`.
-
-Failure modes:
-
-- The target path is not a git work tree.
-- Apply mode is requested without `--pre-pr-command` when `pre-pr.sh` is
-  missing.
-- A target script already exists and replacement was not explicitly approved.
-- A requested command is empty or unsupported by the generated Bash wrapper.
-- The adopted repository is missing executable `pre-pr.sh`.
+Preview adoption and removal before applying. Existing files are never
+overwritten without explicit approval. Preserve historical records unless their
+cleanup is separately authorized.
 
 ## Entrypoint
 
-Use the bundled helper in dry-run mode first:
+The bundled helpers live under this skill's `scripts/` directory:
 
-```bash
-$CODEX_HOME/plugins/meta/skills/setup-project/scripts/setup-project.sh \
-  --repo "$repo_root" \
-  --dry-run
-```
+- `scripts/setup-project.sh` for adoption (dry-run by default).
+- `scripts/create-project-skill.sh` for creation (use `--dry-run` to preview).
 
-Apply only after the project validation command is known:
-
-```bash
-$CODEX_HOME/plugins/meta/skills/setup-project/scripts/setup-project.sh \
-  --repo "$repo_root" \
-  --apply \
-  --pre-pr-command "bash scripts/ci/all.sh"
-```
-
-Optional retained dispatchers are explicit:
-
-```bash
-$CODEX_HOME/plugins/meta/skills/setup-project/scripts/setup-project.sh \
-  --repo "$repo_root" \
-  --apply \
-  --pre-pr-command "bash scripts/ci/all.sh" \
-  --bootstrap-command "bash scripts/bootstrap.sh" \
-  --deploy-command "bash scripts/deploy.sh" \
-  --release-command "bash scripts/release.sh"
-```
+Resolve helper paths from the installed skill directory and run them with the
+target repository as the working directory. The selected reference owns flags,
+prerequisites, failure handling and acceptance checks.
 
 ## Workflow
 
-1. Resolve the target repository root with `git rev-parse --show-toplevel`.
-2. Inspect `.agents/`, `.agents/scripts/`, `.agents/skills/`, retained
-   dispatcher scripts, and common validation entrypoints.
-3. Classify the repository as:
-   - `unadopted` when `.agents/` is absent.
-   - `partial` when `.agents/` exists but required project runtime pieces are
-     incomplete.
-   - `adopted` when `.agents/` exists and executable `pre-pr.sh` is present.
-4. In dry-run mode, report the classification and proposed next action without
-   writing files.
-5. In apply mode, create `.agents/scripts/` and `.agents/skills/` as needed.
-6. Create `.agents/scripts/pre-pr.sh` only from an explicit
-   `--pre-pr-command`; never create a successful no-op validation gate.
-7. Create optional `bootstrap`, `deploy`, and `release` scripts only from their
-   explicit command flags.
-8. Refuse destructive overwrite unless the user explicitly approves it.
-9. Report created paths and the final adoption status.
+1. Resolve the target root with `git rev-parse --show-toplevel` and inspect its
+   `.agents/skills`, `.agents/scripts`, policy and validation entrypoints.
+2. Load the adoption, create or remove reference for the requested outcome.
+3. Follow its inventory, approval, execution and validation steps.
+4. Report changed paths, retained history, validation and remaining work.
 
 ## Boundary
 
-This skill owns project-local runtime adoption only. It does not install host
-tools, mutate global Codex or Claude runtime homes, rename the `bootstrap`
-dispatcher, or create runtime-kit managed skills. Project-local skill
-scaffolding remains owned by `create-project-skill`; use that workflow when a
-repository needs `.agents/skills/<skill>/`.
+This skill owns repository adoption and project-local skills. Host setup and
+runtime synchronization use the kit's documented setup/sync scripts. Managed
+runtime-kit catalog changes use the kit-local `project-runtime-development`
+skill and its development reference. Do not mutate global runtime homes or
+runtime-kit manifests during a consuming project's local skill operation.

@@ -40,146 +40,29 @@ cases:
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
-  - id: meta.create-skill.shared-cli.deterministic
+  - id: meta.setup-project.create.shared-cli.deterministic
     product: shared-cli
     domain: meta
-    skill_id: meta.create-skill
+    skill_id: meta.setup-project
     mode: deterministic
-    fixture_workspace: tests/runtime-smoke/fixtures/skill-lifecycle/create-skill
-    setup: use repo-owned skill lifecycle fixture
-    invocation: verify create-skill source, manifests, sandbox pins, and governance fixture audit
-    expected_exit_code: 0
-    expected_artifacts: rendered skill files and governance fixture report
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.create-project-skill.shared-cli.deterministic
-    product: shared-cli
-    domain: meta
-    skill_id: meta.create-project-skill
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/fixtures/skill-lifecycle/create-project-skill
+    fixture_workspace: tests/runtime-smoke/fixtures/skill-lifecycle/project-create
     setup: use project-local skill lifecycle fixture
-    invocation: verify create-project-skill source, helper modes, removed Claude-only flags, project-local fixture shape, and governance fixture audit
+    invocation: verify setup-project creation reference, helper modes, removed Claude-only flags, project-local fixture shape, and governance fixture audit
     expected_exit_code: 0
     expected_artifacts: project-local skill files, helper mode outputs, and governance fixture report
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
-  - id: meta.remove-skill.shared-cli.deterministic
+  - id: meta.setup-project.remove.shared-cli.deterministic
     product: shared-cli
     domain: meta
-    skill_id: meta.remove-skill
+    skill_id: meta.setup-project
     mode: deterministic
-    fixture_workspace: tests/runtime-smoke/fixtures/skill-lifecycle/remove-skill
-    setup: use repo-owned skill lifecycle fixture
-    invocation: verify remove-skill source, dry-run reference classes, and governance fixture audit
-    expected_exit_code: 0
-    expected_artifacts: rendered skill files and governance fixture report
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.remove-project-skill.shared-cli.deterministic
-    product: shared-cli
-    domain: meta
-    skill_id: meta.remove-project-skill
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/fixtures/skill-lifecycle/remove-project-skill
+    fixture_workspace: tests/runtime-smoke/fixtures/skill-lifecycle/project-remove
     setup: use project-local skill removal fixture
-    invocation: verify remove-project-skill source, dry-run reference classes, and governance fixture audit
+    invocation: verify setup-project removal reference, dry-run reference classes, and governance fixture audit
     expected_exit_code: 0
     expected_artifacts: project-local dry-run classes and governance fixture report
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.deterministic
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: run from repo root with no-pull dry-run
-    invocation: sync-runtime-surfaces planned codex refresh without runtime mutation
-    expected_exit_code: 0
-    expected_artifacts: planned render install doctor and summary output
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.session-coordination
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: render isolated Codex Claude and Hermes surfaces with the source-bound nils-cli contract
-    invocation: verify advisory-by-default session-coordination intent plus Codex and Claude pre post failure and stop hook registration while Hermes remains policy-only
-    expected_exit_code: 0
-    expected_artifacts: converged home prompts hook registration and privacy-safe deterministic guard evidence
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.worktree-guard
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: create linked git worktree from repo root
-    invocation: sync-runtime-surfaces apply with linked worktree source root
-    expected_exit_code: nonzero
-    expected_artifacts: refusal output naming durable primary checkout
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.no-prune
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: run from repo root with no-pull dry-run and no-prune
-    invocation: sync-runtime-surfaces planned codex refresh with prune skipped
-    expected_exit_code: 0
-    expected_artifacts: skipped prune warning and summary output
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.codex-missing-cli
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: source sync-runtime-surfaces in library mode with Codex selected and no codex binary on PATH
-    invocation: sync-runtime-surfaces Codex plugin registry apply helper
-    expected_exit_code: nonzero
-    expected_artifacts: actionable Codex CLI 0.141.0+ requirement message and no skipped activation
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.prune-fixture
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: create temp Codex and Claude live homes with stale owned and user-owned surfaces
-    invocation: agent-runtime prune-stale applies to temp live homes
-    expected_exit_code: 0
-    expected_artifacts: stale owned symlinks removed while foreign symlinks and regular files remain
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.sync-runtime-surfaces.shared-cli.claude-plugin-registry
-    product: shared-cli
-    domain: meta
-    skill_id: meta.sync-runtime-surfaces
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: create a temp Claude source tree/state home with a claude-kit marketplace and stub claude CLI
-    invocation: sync-runtime-surfaces Claude activation helper materializes the marketplace, refreshes installed plugins, and installs every plugin ref
-    expected_exit_code: 0
-    expected_artifacts: symlink-free materialized marketplace plus stub log with marketplace remove/add, uninstall refresh, and per-plugin install
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none
@@ -245,19 +128,6 @@ cases:
     invocation: setup-project dry-run and apply probes
     expected_exit_code: 0
     expected_artifacts: adoption diagnostics and generated pre-pr script
-    cleanup: temp-output-only
-    expected_disposition: pass
-    skip_policy: none
-  - id: meta.nils-cli-bump.shared-cli.deterministic
-    product: shared-cli
-    domain: meta
-    skill_id: meta.nils-cli-bump
-    mode: deterministic
-    fixture_workspace: tests/runtime-smoke/workspaces/basic-repo
-    setup: write schema-v2 fixture policies for below-minimum, equal exact roles, ahead-warning admission, and an inverted relationship
-    invocation: agent-runtime doctor --class version-alignment across below-minimum, exact-role, ahead-warning, and malformed policies
-    expected_exit_code: 0
-    expected_artifacts: typed minimum block, exact-role pass, admitted ahead warning with downstream sentinel, and invalid-range failure
     cleanup: temp-output-only
     expected_disposition: pass
     skip_policy: none

@@ -85,5 +85,5 @@ jobs:
             echo "## Canary outcome"
             echo "- Resolved version: ${{ steps.latest.outputs.tag || 'unresolved' }}"
             echo "- Result: ${{ job.status }}"
-            echo "- Remediation: inspect the failed step, reproduce with scripts/dev/with-nils-version.sh, then use meta:nils-cli-bump only after compatibility is restored."
+            echo "- Remediation: inspect the failed step, reproduce with scripts/dev/with-nils-version.sh, then use the repository-local project-version-baseline adopt procedure only with explicit authorization and after compatibility is restored."
           } >> "$GITHUB_STEP_SUMMARY"

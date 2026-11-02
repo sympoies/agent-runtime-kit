@@ -5,53 +5,31 @@
 # omit it only for files whose purpose is cross-product capability prose.
 allow:
   - product: codex
-    path: build/codex/plugins/meta/skills/sync-runtime-surfaces/SKILL.md
-    reason: This skill operates on both runtime homes and reports both plugin registries.
-  - product: codex
-    path: build/codex/plugins/meta/skills/create-project-skill/SKILL.md
-    sentinel: Claude
-    reason: Project-local skill scaffolding documents the Claude bridge and rejected Claude-only modes.
-  - product: codex
-    path: build/codex/plugins/meta/skills/create-project-skill/scripts/create-project-skill.sh
-    sentinel: Claude
-    reason: The helper writes project-local Claude bridge comments when requested.
-  - product: codex
     path: build/codex/plugins/meta/skills/setup-project/SKILL.md
     sentinel: Claude
     reason: Project setup explicitly refuses global runtime-home mutation for either product.
-  - product: codex
-    path: build/codex/plugins/meta/skills/remove-project-skill/SKILL.md
-    sentinel: Claude
-    reason: Project-local removal describes the Claude bridge surface it may inspect.
   - product: claude
     path: build/claude/plugins/code-review/skills/code-review-*.md
     sentinel: Codex
     reason: Code-review skills intentionally explain reviewer behavior across host capability classes.
-  - product: claude
-    path: build/claude/plugins/meta/skills/sync-runtime-surfaces/SKILL.md
-    reason: This skill operates on both runtime homes and reports both plugin registries.
-  - product: claude
-    path: build/claude/plugins/meta/skills/create-project-skill/SKILL.md
-    sentinel: Codex
-    reason: Project-local skill scaffolding documents Codex-style source consumers and Codex-only modes.
-  - product: claude
-    path: build/claude/plugins/meta/skills/setup-project/SKILL.md
-    sentinel: Codex
-    reason: Project setup explicitly refuses global runtime-home mutation for either product.
-  # Hermes sees both Codex and Claude as foreign; these meta skills are
-  # cross-product capability prose that intentionally name the other products.
-  - product: hermes
-    path: build/hermes/plugins/meta/skills/sync-runtime-surfaces/SKILL.md
-    reason: This skill operates on all runtime homes and reports each product's plugin registry.
   - product: hermes
     path: build/hermes/plugins/meta/skills/setup-project/SKILL.md
     reason: Project setup explicitly refuses global runtime-home mutation for any product.
+  - product: codex
+    path: build/codex/plugins/meta/skills/setup-project/references/*.md
+    sentinel: Claude
+    reason: Project-local procedures and helpers describe the canonical source layout and Claude discovery bridge.
+  - product: codex
+    path: build/codex/plugins/meta/skills/setup-project/scripts/create-project-skill.sh
+    sentinel: Claude
+    reason: Project-local procedures and helpers describe the canonical source layout and Claude discovery bridge.
+  - product: claude
+    path: build/claude/plugins/meta/skills/setup-project/references/*.md
+    sentinel: Codex
+    reason: Project-local procedures and helpers describe the canonical source layout and Claude discovery bridge.
   - product: hermes
-    path: build/hermes/plugins/meta/skills/create-project-skill/SKILL.md
-    reason: Project-local skill scaffolding documents the Codex source layout and Claude bridge.
+    path: build/hermes/plugins/meta/skills/setup-project/references/*.md
+    reason: Project-local procedures and helpers describe the canonical source layout and Claude discovery bridge.
   - product: hermes
-    path: build/hermes/plugins/meta/skills/create-project-skill/scripts/create-project-skill.sh
-    reason: The helper writes project-local Codex/Claude bridge comments when requested.
-  - product: hermes
-    path: build/hermes/plugins/meta/skills/remove-project-skill/SKILL.md
-    reason: Project-local removal describes the Codex/Claude bridge surfaces it may inspect.
+    path: build/hermes/plugins/meta/skills/setup-project/scripts/create-project-skill.sh
+    reason: Project-local procedures and helpers describe the canonical source layout and Claude discovery bridge.

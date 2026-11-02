@@ -9,7 +9,7 @@
 # packaging target. A newer host is admitted with an explicit warning and must
 # still complete the downstream behavioral gates. Ordinary release uptake
 # moves validated only; minimum moves only when compatibility is intentionally
-# retired (see the `meta:nils-cli-bump` skill).
+# retired (see the `project-version-baseline adopt` skill).
 #
 # The human-readable surface snapshot — crate -> binary table, consumed
 # surfaces, refresh procedure — stays in docs/source/nils-cli-surface.md.

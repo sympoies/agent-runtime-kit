@@ -882,7 +882,7 @@ entrypoints. The current binary inventory is in the table below.
 - `v1.20.1` advances the runtime-kit host pin from `v1.20.0`. It completes the
   hermes product target across the remaining subcommands —
   `list-skills --product hermes` and `prune-stale --product hermes` previously
-  rejected the product, which blocked `sync-runtime-surfaces --product hermes`
+  rejected the product, which blocked `scripts/sync-runtime-surfaces.sh --product hermes`
   (its prune step) and the sandbox-install rehearsal's hermes arm — adds
   **Hermes** to the `SUPPORT_MATRIX` header, and bumps `anyhow` to clear
   `RUSTSEC-2026-0190` (sympoies/nils-cli#993).
@@ -1783,7 +1783,7 @@ in `manifests/skills.yaml` and `manifests/plugins.yaml`. Manifest authors
 should reference binary names from the **Binary** column when declaring
 `required_clis`, and refresh this snapshot at every nils-cli release that
 changes a consumed surface. The machine-readable pin the CI gate enforces
-lives in `docs/source/nils-cli-pin.yaml`; the `meta:nils-cli-bump` skill
+lives in `docs/source/nils-cli-pin.yaml`; the `project-version-baseline adopt` skill
 keeps both in sync on a release bump.
 
 As of `v1.21.17`, the consumed rows below have these additive floors:
@@ -1892,9 +1892,9 @@ As of `v1.19.3`, runtime-kit consumes `agent-out cleanup plan/apply` for reviewe
 
 Runtime kit CLI. As of `v0.20.0`, this repo consumes released `render`, `install`, `uninstall`, `doctor` (including `--class skill-surface --product codex`), `audit-drift`, `gc-backups`, `restore-backups`, `purge-state`, and `pr-body render` bodies through Homebrew. The `pr-body render` surface renders standardized feature / bug PR and MR bodies before `forge-cli pr create` / `forge-cli pr deliver`.
 
-As of `v0.22.4`, `sync-runtime-surfaces` consumes `agent-runtime prune-stale` to remove stale managed Codex and Claude skill surfaces after install. As of `v0.28.0`, ships `doctor --class version-alignment --pin <manifest>` (the surface-pin drift gate this repo's Position 1 consumes via `docs/source/nils-cli-pin.yaml`) and adds build metadata to the `agent-runtime --version` output.
+As of `v0.22.4`, `scripts/sync-runtime-surfaces.sh` consumes `agent-runtime prune-stale` to remove stale managed Codex and Claude skill surfaces after install. As of `v0.28.0`, ships `doctor --class version-alignment --pin <manifest>` (the surface-pin drift gate this repo's Position 1 consumes via `docs/source/nils-cli-pin.yaml`) and adds build metadata to the `agent-runtime --version` output.
 
-As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `sync-runtime-surfaces` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)).
+As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `scripts/sync-runtime-surfaces.sh` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)).
 
 As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup feature-detects it and keeps a phase-command fallback for older hosts ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)).
 

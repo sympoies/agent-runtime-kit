@@ -88,16 +88,16 @@ dispositions:
   - id: meta.sync-runtime-surfaces
     status: reviewed
     example_request: "Refresh my managed Codex and Claude runtime surfaces"
-    user_outcome: yes
-    destination: entrypoint
+    user_outcome: no
+    destination: internal-workflow
     parent_intents: [project-dev]
     current_clis: [agent-runtime]
     current_hooks: []
     enforcement_point: "Runtime sync script ownership, stale pruning, and doctor checks."
-    migration_path: "Retain as explicit runtime maintenance with preview and apply behavior."
+    migration_path: "Procedure now lives in scripts/sync-runtime-surfaces.sh and the development reference."
     compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Users intentionally request runtime synchronization and stale-surface cleanup."
+    live_cleanup_required: true
+    rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
   - id: meta.deploy
     status: reviewed
     example_request: "Deploy this project through its repository-owned workflow"
@@ -150,55 +150,57 @@ dispositions:
   - id: meta.create-skill
     status: reviewed
     example_request: "Add a new governed runtime-kit skill"
-    user_outcome: yes
-    destination: entrypoint
+    user_outcome: no
+    destination: internal-workflow
     parent_intents: [project-dev]
     current_clis: [agent-runtime]
     current_hooks: ["skill governance checks"]
     enforcement_point: "Governed source, manifest, render, acceptance, and validation lifecycle."
-    migration_path: "Retain as an explicit repository maintenance outcome."
+    migration_path: "Procedure now lives in project-runtime-development and managed lifecycle procedures."
     compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Creating a governed runtime capability is a deliberate multi-surface user outcome."
+    live_cleanup_required: true
+    rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
   - id: meta.create-project-skill
     status: reviewed
     example_request: "Create a project-local skill for this repository"
-    user_outcome: yes
-    destination: entrypoint
+    user_outcome: no
+    destination: merge
     parent_intents: [project-dev]
     current_clis: []
     current_hooks: []
     enforcement_point: "Project-local scaffold ownership and validation."
-    migration_path: "Retain as the project-local skill authoring outcome."
+    migration_path: "Procedure now lives in meta.setup-project."
+    replacement: meta.setup-project
     compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Project-local capability authoring is distinct from repo-owned runtime-kit skill authoring."
+    live_cleanup_required: true
+    rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
   - id: meta.remove-skill
     status: reviewed
     example_request: "Remove this governed runtime-kit skill safely"
-    user_outcome: yes
-    destination: entrypoint
+    user_outcome: no
+    destination: internal-workflow
     parent_intents: [project-dev]
     current_clis: [agent-runtime]
     current_hooks: ["skill governance checks"]
     enforcement_point: "Dry-run reference audit and governed removal lifecycle."
-    migration_path: "Retain as an explicit repository maintenance outcome."
+    migration_path: "Procedure now lives in project-runtime-development and managed lifecycle procedures."
     compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Safe governed removal is a deliberate cross-surface user outcome."
+    live_cleanup_required: true
+    rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
   - id: meta.remove-project-skill
     status: reviewed
     example_request: "Remove this project-local skill and its owned wrapper"
-    user_outcome: yes
-    destination: entrypoint
+    user_outcome: no
+    destination: merge
     parent_intents: [project-dev]
     current_clis: []
     current_hooks: []
     enforcement_point: "Project-local ownership inventory and explicit cleanup approval."
-    migration_path: "Retain as the project-local skill removal outcome."
+    migration_path: "Procedure now lives in meta.setup-project."
+    replacement: meta.setup-project
     compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Project-local removal has a distinct ownership and retention contract."
+    live_cleanup_required: true
+    rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
   - id: meta.pre-pr
     status: reviewed
     user_outcome: no
@@ -327,16 +329,16 @@ dispositions:
   - id: meta.nils-cli-bump
     status: reviewed
     example_request: "Bump this repository to the latest released nils-cli surface"
-    user_outcome: yes
-    destination: entrypoint
+    user_outcome: no
+    destination: internal-workflow
     parent_intents: [project-dev]
     current_clis: [agent-runtime, forge-cli]
     current_hooks: ["version alignment gate"]
     enforcement_point: "Surface diff, pin alignment, consumer refresh, and PR delivery."
-    migration_path: "Retain as explicit release-consumer maintenance."
+    migration_path: "Procedure now lives in project-version-baseline adopt mode."
     compatibility_required: false
-    live_cleanup_required: false
-    rationale: "A coordinated dependency pin and consumer refresh is a deliberate repository outcome."
+    live_cleanup_required: true
+    rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
   - id: meta.worktree-triage
     status: reviewed
     example_request: "Triage and clean stale managed worktrees"

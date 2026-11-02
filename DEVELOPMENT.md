@@ -104,8 +104,8 @@ agents or target consumer rules.
 | Change | Canonical guidance |
 | --- | --- |
 | Host setup, runtime sync, private overlays, hooks | [`Development reference`](docs/source/development-reference.md#setup) |
-| Managed runtime skill creation or removal | Managed `meta:create-skill` / `meta:remove-skill` workflows and [`Skill lifecycle changes`](docs/source/development-reference.md#skill-lifecycle-changes) |
-| Project-local skill creation or removal | Managed `meta:create-project-skill` / `meta:remove-project-skill` workflows |
+| Managed runtime skill creation or removal | Repo-local `project-runtime-development` and [`Skill lifecycle changes`](docs/source/development-reference.md#skill-lifecycle-changes) |
+| Project-local skill creation or removal | `meta:setup-project` create/remove references |
 | Coupled or pinned `nils-cli` work | [`nils-cli version workflows`](docs/source/nils-cli-version-workflows.md) |
 | Render and golden refresh | [`Build and render`](docs/source/development-reference.md#build-and-render) |
 | Targeted validation and smoke modes | [`Validation reference`](docs/source/development-reference.md#validation) |

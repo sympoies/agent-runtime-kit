@@ -27,15 +27,9 @@ plugins:
       - meta.bootstrap
       - meta.deploy
       - meta.execution-capsule
-      - meta.create-skill
-      - meta.create-project-skill
-      - meta.remove-skill
-      - meta.remove-project-skill
       - meta.repo-docs-boundary
-      - meta.sync-runtime-surfaces
       - meta.release
       - meta.setup-project
-      - meta.nils-cli-bump
       - meta.worktree-triage
     product_manifests:
       codex: targets/codex/plugins/meta/.codex-plugin/plugin.json

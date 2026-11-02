@@ -306,50 +306,49 @@ run_project_runtime_development_probe() {
 }
 
 run_lifecycle_skill_probe() {
-  local skill="$1"
+  local procedure="$1"
   local fixture="$2"
-  local out="$META_ARTIFACTS_DIR/${skill}.governance.txt"
-  local body="$REPO_ROOT/core/skills/meta/$skill/SKILL.md.tera"
+  local out="$META_ARTIFACTS_DIR/${procedure}.governance.txt"
+  local body="$REPO_ROOT/docs/source/development-reference.md"
 
-  test -f "$body"
-  test -f "$REPO_ROOT/build/codex/plugins/meta/skills/$skill/SKILL.md"
-  test -f "$REPO_ROOT/build/claude/plugins/meta/skills/$skill/SKILL.md"
+  test -f "$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
+  grep -q "### Managed skill ${procedure}" "$body"
   grep -q 'core/skills' "$body"
   grep -q 'manifests/skills.yaml' "$body"
   grep -q 'manifests/plugins.yaml' "$body"
   grep -q 'agent-runtime' "$body"
-
   bash "$REPO_ROOT/scripts/ci/skill-governance-audit.sh" --fixture "$fixture" >"$out" 2>&1
   grep -q "skill-governance-audit: ${fixture} fixture OK" "$out"
 }
 
 run_create_skill_probe() {
-  run_lifecycle_skill_probe create-skill create
+  run_lifecycle_skill_probe creation create
 }
 
 run_remove_skill_probe() {
-  run_lifecycle_skill_probe remove-skill remove
+  run_lifecycle_skill_probe removal remove
 }
 
 run_project_lifecycle_skill_probe() {
-  local skill="$1"
+  local procedure="$1"
   local fixture="$2"
-  local out="$META_ARTIFACTS_DIR/${skill}.governance.txt"
-  local body="$REPO_ROOT/core/skills/meta/$skill/SKILL.md.tera"
+  local out="$META_ARTIFACTS_DIR/project-${procedure}.governance.txt"
+  local product
+  local body
 
-  test -f "$body"
-  test -f "$REPO_ROOT/build/codex/plugins/meta/skills/$skill/SKILL.md"
-  test -f "$REPO_ROOT/build/claude/plugins/meta/skills/$skill/SKILL.md"
-  grep -q '.agents/skills' "$body"
-  grep -q 'git rev-parse --show-toplevel' "$body"
-  grep -q '.agents/scripts' "$body"
-
+  for product in codex claude hermes; do
+    body="$REPO_ROOT/build/$product/plugins/meta/skills/setup-project/references/${procedure}.md"
+    test -f "$body"
+    grep -q '.agents/skills' "$body"
+    grep -q 'git rev-parse --show-toplevel' "$body"
+    grep -q '.agents/scripts' "$body"
+  done
   bash "$REPO_ROOT/scripts/ci/skill-governance-audit.sh" --fixture "$fixture" >"$out" 2>&1
   grep -q "skill-governance-audit: ${fixture} fixture OK" "$out"
 }
 
 run_create_project_helper_probe() {
-  local helper="$REPO_ROOT/core/skills/meta/create-project-skill/scripts/create-project-skill.sh"
+  local helper="$REPO_ROOT/build/codex/plugins/meta/skills/setup-project/scripts/create-project-skill.sh"
   local default_root="$TMP_ROOT/workspaces/create-project-default"
   local codex_root="$TMP_ROOT/workspaces/create-project-codex"
   local bridge_root="$TMP_ROOT/workspaces/create-project-bridge"
@@ -430,12 +429,12 @@ run_create_project_helper_probe() {
 }
 
 run_create_project_skill_probe() {
-  run_project_lifecycle_skill_probe create-project-skill create-project
+  run_project_lifecycle_skill_probe create create-project
   run_create_project_helper_probe
 }
 
 run_remove_project_skill_probe() {
-  run_project_lifecycle_skill_probe remove-project-skill remove-project
+  run_project_lifecycle_skill_probe remove remove-project
 }
 
 run_repo_retro_probe() {
@@ -3236,13 +3235,13 @@ run_evidence_prune_source_probe() {
   [ -d "$retained" ]
 }
 
-run_nils_cli_bump_probe() {
-  local below="$META_ARTIFACTS_DIR/nils-cli-bump.below-minimum.json"
-  local exact="$META_ARTIFACTS_DIR/nils-cli-bump.exact-roles.json"
-  local ahead="$META_ARTIFACTS_DIR/nils-cli-bump.ahead-warning.json"
-  local incompatible="$META_ARTIFACTS_DIR/nils-cli-bump.incompatible-newer-surface.txt"
-  local malformed="$META_ARTIFACTS_DIR/nils-cli-bump.malformed-range.txt"
-  local pin_dir="$META_ARTIFACTS_DIR/nils-cli-bump"
+run_version_policy_probe() {
+  local below="$META_ARTIFACTS_DIR/version-policy.below-minimum.json"
+  local exact="$META_ARTIFACTS_DIR/version-policy.exact-roles.json"
+  local ahead="$META_ARTIFACTS_DIR/version-policy.ahead-warning.json"
+  local incompatible="$META_ARTIFACTS_DIR/version-policy.incompatible-newer-surface.txt"
+  local malformed="$META_ARTIFACTS_DIR/version-policy.malformed-range.txt"
+  local pin_dir="$META_ARTIFACTS_DIR/version-policy"
   local host_tag status
   require_meta_bin agent-runtime || return 1
   mkdir -p "$pin_dir"
@@ -3473,7 +3472,7 @@ run_meta_outcome_routing_probe() {
     return 1
   }
 
-  rendered_contract_assert_skill meta sync-runtime-surfaces
+  rendered_contract_assert_skill meta setup-project
   rendered_contract_assert_skill pr deliver-pr
   rendered_contract_assert_skill reporting project-retro
 }
@@ -3597,10 +3596,10 @@ record_case "meta.bootstrap" "project-local bootstrap shim executed fixture scri
 record_case "meta.deploy" "project-local deploy shim executed fixture script" run_project_local_shim_probe deploy
 record_case "meta.execution-capsule" "execution capsule workflow rendered with direct supervised and host-access boundaries" run_execution_capsule_probe
 record_case "meta.project-runtime-development" "project development owner routing is compact and the retired heuristic root is absent" run_project_runtime_development_probe
-record_case "meta.create-skill" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
-record_case "meta.create-project-skill" "project skill lifecycle create surface and fixture passed" run_create_project_skill_probe
-record_case "meta.remove-skill" "skill lifecycle removal surface and governance fixture passed" run_remove_skill_probe
-record_case "meta.remove-project-skill" "project skill lifecycle removal surface and fixture passed" run_remove_project_skill_probe
+record_case "meta.project-runtime-development.create" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
+record_case "meta.setup-project.create" "project skill lifecycle create surface and fixture passed" run_create_project_skill_probe
+record_case "meta.project-runtime-development.remove" "skill lifecycle removal surface and governance fixture passed" run_remove_skill_probe
+record_case "meta.setup-project.remove" "project skill lifecycle removal surface and fixture passed" run_remove_project_skill_probe
 record_case "meta.outcome-routing.pre-pr" "project-local pre-pr shim executed fixture script" run_project_local_shim_probe pre-pr
 record_case "meta.release" "project-local release shim executed fixture script" run_project_local_shim_probe release
 record_case "meta.outcome-routing.repo-retro" "repo-retro JSON report probe passed against temp git workspace" run_repo_retro_probe
@@ -3609,31 +3608,31 @@ record_case "meta.setup-project" "setup-project dry-run/apply adoption probes pa
 record_case "meta.outcome-routing.evidence-migrate" "evidence migrate dry-run JSON probe resolved an archive target and reported a blocked malformed record" run_evidence_migrate_probe
 record_case "meta.outcome-routing.evidence-prune" "evidence prune-source dry-run JSON probe retained unarchived source and marked archived source prunable" run_evidence_prune_source_probe
 record_case "meta.outcome-routing.contract" "meta primitives route through parent policy, delivery, and event-driven evidence closeout" run_meta_outcome_routing_probe
-record_case "meta.nils-cli-bump" "schema-v2 doctor blocked below minimum, admitted ahead into a real downstream gate, rejected an incompatible newer surface, and rejected an inverted range" run_nils_cli_bump_probe
+record_case "meta.version-policy" "schema-v2 doctor blocked below minimum, admitted ahead into a real downstream gate, rejected an incompatible newer surface, and rejected an inverted range" run_version_policy_probe
 record_case "meta.repo-docs-boundary" "repo docs placement contract rendered consistently for all products" run_repo_docs_boundary_probe
 record_case "meta.worktree-triage" "worktree triage scan classified safe, rescue, and protected integration worktrees" run_worktree_triage_probe
 record_case "meta.setup" "setup dry-run renders codex and claude before install and delegates Claude plugin activation" run_setup_render_before_install_probe
-record_case "meta.sync-runtime-surfaces.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
-record_case "meta.sync-runtime-surfaces.cli-contract" "sync-runtime-surfaces help and validation enumerate every supported product" run_sync_runtime_surfaces_cli_contract_probe
-record_case "meta.sync-runtime-surfaces.home-prompt" "sync-runtime-surfaces apply wires the owner-managed home prompt and refuses the former layout" run_sync_runtime_surfaces_home_prompt_apply_probe
-record_case "meta.sync-runtime-surfaces.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
-record_case "meta.sync-runtime-surfaces.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktrees and AGENT_HOME runtime-state source roots" run_sync_runtime_surfaces_worktree_guard_probe
-record_case "meta.sync-runtime-surfaces.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
-record_case "meta.sync-runtime-surfaces.prior-owned-root" "sync-runtime-surfaces forwards an explicitly authorized prior source root to prune-stale" run_sync_runtime_surfaces_prior_owned_root_probe
-record_case "meta.sync-runtime-surfaces.hermes-legacy" "sync-runtime-surfaces quarantines owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
-record_case "meta.sync-runtime-surfaces.retired-managed-links" "sync-runtime-surfaces removes repository-owned retired symlink trees and preserves modified trees" run_sync_runtime_surfaces_retired_managed_links_probe
-record_case "meta.sync-runtime-surfaces.registry-preflight" "sync-runtime-surfaces validates provider registry data before any apply mutation" run_sync_runtime_surfaces_registry_preflight_probe
-record_case "meta.sync-runtime-surfaces.recursive-stale" "prune-stale skips retired recursive-file managed skill directory (upstream gap characterization)" run_sync_runtime_surfaces_prune_recursive_stale_probe
-record_case "meta.sync-runtime-surfaces.review-report" "sync-runtime-surfaces reports prune=review-needed when prune-stale leaves stale candidates" run_sync_runtime_surfaces_prune_review_reporting_probe
-record_case "meta.sync-runtime-surfaces.hermes-wording" "sync-runtime-surfaces uses neutral non-destructive wording for hermes prune-skipped paths" run_sync_runtime_surfaces_prune_review_hermes_wording_probe
-record_case "meta.sync-runtime-surfaces.claude-hooks" "sync-runtime-surfaces merges Claude settings hooks without dropping custom hooks" run_sync_runtime_surfaces_claude_settings_hooks_probe
-record_case "meta.sync-runtime-surfaces.claude-agents-md" "sync-runtime-surfaces owns the Claude agents-md instructionFiles setting and verifies it" run_sync_runtime_surfaces_claude_agents_md_setting_probe
-record_case "meta.sync-runtime-surfaces.claude-registry" "sync-runtime-surfaces materializes and installs Claude plugins for skill visibility" run_sync_runtime_surfaces_claude_plugin_registry_probe
-record_case "meta.sync-runtime-surfaces.codex-marketplace" "sync-runtime-surfaces ships Codex marketplace entries with required policy metadata" run_sync_runtime_surfaces_codex_marketplace_shape_probe
-record_case "meta.sync-runtime-surfaces.codex-registry" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe
-record_case "meta.sync-runtime-surfaces.codex-missing" "sync-runtime-surfaces fails Codex plugin activation when the Codex CLI is unavailable" run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe
-record_case "meta.sync-runtime-surfaces.codex-preview" "sync-runtime-surfaces prints a Codex activation plan without executing it under dry-run" run_sync_runtime_surfaces_codex_plugin_registry_planned_probe
-record_case "meta.sync-runtime-surfaces.codex-hook-order" "Codex activation restores managed surfaces and reconciles hooks after registry writes and preserves activation failures" run_sync_runtime_surfaces_codex_hook_order_probe
+record_case "meta.runtime-sync.preview" "sync-runtime-surfaces dry-run planned codex refresh without mutation" run_sync_runtime_surfaces_probe
+record_case "meta.runtime-sync.cli-contract" "sync-runtime-surfaces help and validation enumerate every supported product" run_sync_runtime_surfaces_cli_contract_probe
+record_case "meta.runtime-sync.home-prompt" "sync-runtime-surfaces apply wires the owner-managed home prompt and refuses the former layout" run_sync_runtime_surfaces_home_prompt_apply_probe
+record_case "meta.runtime-sync.no-prune" "sync-runtime-surfaces no-prune flag reports skipped prune" run_sync_runtime_surfaces_no_prune_probe
+record_case "meta.runtime-sync.worktree-guard" "sync-runtime-surfaces apply refuses linked git worktrees and AGENT_HOME runtime-state source roots" run_sync_runtime_surfaces_worktree_guard_probe
+record_case "meta.runtime-sync.prune" "sync-runtime-surfaces prune fixture removes stale owned surfaces only" run_sync_runtime_surfaces_prune_fixture_probe
+record_case "meta.runtime-sync.prior-owned-root" "sync-runtime-surfaces forwards an explicitly authorized prior source root to prune-stale" run_sync_runtime_surfaces_prior_owned_root_probe
+record_case "meta.runtime-sync.hermes-legacy" "sync-runtime-surfaces quarantines owned Hermes legacy copies and blocks on modified copies" run_sync_runtime_surfaces_hermes_legacy_cleanup_probe
+record_case "meta.runtime-sync.retired-managed-links" "sync-runtime-surfaces removes repository-owned retired symlink trees and preserves modified trees" run_sync_runtime_surfaces_retired_managed_links_probe
+record_case "meta.runtime-sync.registry-preflight" "sync-runtime-surfaces validates provider registry data before any apply mutation" run_sync_runtime_surfaces_registry_preflight_probe
+record_case "meta.runtime-sync.recursive-stale" "prune-stale skips retired recursive-file managed skill directory (upstream gap characterization)" run_sync_runtime_surfaces_prune_recursive_stale_probe
+record_case "meta.runtime-sync.review-report" "sync-runtime-surfaces reports prune=review-needed when prune-stale leaves stale candidates" run_sync_runtime_surfaces_prune_review_reporting_probe
+record_case "meta.runtime-sync.hermes-wording" "sync-runtime-surfaces uses neutral non-destructive wording for hermes prune-skipped paths" run_sync_runtime_surfaces_prune_review_hermes_wording_probe
+record_case "meta.runtime-sync.claude-hooks" "sync-runtime-surfaces merges Claude settings hooks without dropping custom hooks" run_sync_runtime_surfaces_claude_settings_hooks_probe
+record_case "meta.runtime-sync.claude-agents-md" "sync-runtime-surfaces owns the Claude agents-md instructionFiles setting and verifies it" run_sync_runtime_surfaces_claude_agents_md_setting_probe
+record_case "meta.runtime-sync.claude-registry" "sync-runtime-surfaces materializes and installs Claude plugins for skill visibility" run_sync_runtime_surfaces_claude_plugin_registry_probe
+record_case "meta.runtime-sync.codex-marketplace" "sync-runtime-surfaces ships Codex marketplace entries with required policy metadata" run_sync_runtime_surfaces_codex_marketplace_shape_probe
+record_case "meta.runtime-sync.codex-registry" "sync-runtime-surfaces materializes and installs Codex plugins by default" run_sync_runtime_surfaces_codex_plugin_registry_probe
+record_case "meta.runtime-sync.codex-missing" "sync-runtime-surfaces fails Codex plugin activation when the Codex CLI is unavailable" run_sync_runtime_surfaces_codex_plugin_registry_missing_cli_probe
+record_case "meta.runtime-sync.codex-preview" "sync-runtime-surfaces prints a Codex activation plan without executing it under dry-run" run_sync_runtime_surfaces_codex_plugin_registry_planned_probe
+record_case "meta.runtime-sync.codex-hook-order" "Codex activation restores managed surfaces and reconciles hooks after registry writes and preserves activation failures" run_sync_runtime_surfaces_codex_hook_order_probe
 record_case "meta.product-leak-unused-allow" "product leak audit rejects allowlist entries without active rendered artifacts" run_product_leak_unused_allow_probe
 
 exit "$failures"

@@ -253,7 +253,7 @@ do not belong in this repo's governed, rendered catalog — are created under
 `$AGENT_PRIVATE_SKILLS_HOME`, not committed here and not hand-placed in the
 runtime homes. This is the canonical home for opening a new global skill
 (including sensitive or machine-local ones): scaffold it with the
-create-project-skill tooling into `$AGENT_PRIVATE_SKILLS_HOME/.agents/skills/<name>/`,
+the `setup-project` creation helper into `$AGENT_PRIVATE_SKILLS_HOME/.agents/skills/<name>/`,
 then manage it from here through `scripts/sync-private-skills.sh`. The script
 keeps that private skill SOURCE tree separate and symlinks each skill into the
 per-user skill namespaces the local agent products discover:
@@ -337,20 +337,226 @@ stable machine output, extract it to nils-cli and declare it in `required_clis`.
 
 ## Skill Lifecycle Changes
 
-Use the `meta:create-skill` and `meta:remove-skill` skills for repo-owned managed
-skill additions and removals. Use `meta:create-project-skill` and
-`meta:remove-project-skill` for consuming-repo `.agents/skills` additions and
-removals. The managed-skill workflows cover source, manifests, product render
-output, sandbox pins, runtime-smoke coverage, and retained historical records;
-the project-skill workflows must not mutate runtime-kit manifests or product
-render output.
+Use the repo-local `project-runtime-development` skill for managed catalog
+creation and removal. These procedures apply only to this kit. Consuming-repo
+project-local adoption, creation and removal use `meta:setup-project` and its
+on-demand references; they must not edit kit manifests or product output.
 
-`skill-governance` is not a user-facing skill. The repo-owned governance check is
-`bash scripts/ci/skill-governance-audit.sh`, with fixture modes for create/remove
-lifecycle coverage. If lifecycle work needs deterministic mutation, dry-run/apply
-plans, or machine-readable reference graphs, implement that primitive in
-`sympoies/nils-cli`, release it, then declare the consumed binary in
-`required_clis`.
+### Managed skill creation
+
+#### Contract
+
+Prereqs:
+
+- Run from the `agent-runtime-kit` repository root.
+- The request is for a repo-owned managed skill, not a project-local overlay.
+- `agent-runtime` is installed from the released nils-cli package and available
+  on `PATH`.
+- The caller has supplied or accepted a canonical skill ID in the form
+  `<domain>.<skill>`.
+
+Inputs:
+
+- Skill ID, domain, skill name, supported products, description,
+  `required_clis` floors, parent intents, example user request, and admission
+  rationale.
+- Optional skill-owned `scripts/`, `bin/`, `fixtures/`, or docs support
+  folders when the workflow needs them.
+- Explicit approval for any new plugin domain.
+
+Outputs:
+
+- `core/skills/<domain>/<skill>/SKILL.md.tera`.
+- `manifests/skills.yaml` v2 entry with complete `invocation`, honest
+  `exposure.profile: default`, and concrete `required_clis` values or an
+  explicit empty map for prose-only skills.
+- `manifests/plugins.yaml` containment update, and product plugin metadata
+  only when a new domain was approved.
+- Rendered product output, golden snapshots, sandbox expected skill list
+  updates, and runtime-smoke matrix/case coverage.
+
+Failure modes:
+
+- The skill ID is malformed or collides with an existing source or manifest
+  entry.
+- A new domain was requested without explicit user approval.
+- `required_clis` contains placeholders or references an unreleased binary.
+- The capability is agent bookkeeping, a one-command wrapper, execution mode,
+  or child lifecycle phase without a reviewed direct-user outcome.
+- The entry claims `advanced`, `internal`, or `opt-in` exposure that the three
+  product installers cannot implement.
+- The workflow would leave a skill without render, sandbox, or runtime-smoke
+  acceptance coverage.
+
+#### Entrypoint
+
+Use the repository shape directly:
+
+```bash
+skill_id="<domain>.<skill>"
+domain="${skill_id%%.*}"
+skill="${skill_id#*.}"
+
+mkdir -p "core/skills/$domain/$skill"
+$EDITOR "core/skills/$domain/$skill/SKILL.md.tera"
+$EDITOR manifests/skills.yaml
+$EDITOR manifests/plugins.yaml
+```
+
+After editing, run governance and render validation:
+
+```bash
+bash scripts/ci/skill-governance-audit.sh --update-counts
+bash scripts/ci/skill-governance-audit.sh
+agent-runtime render --product codex --update-golden
+agent-runtime render --product claude --update-golden
+agent-runtime render --product hermes --update-golden
+bash scripts/ci/sandbox-install-rehearsal.sh
+bash tests/runtime-smoke/run.sh --mode deterministic --domain "$domain"
+```
+
+Use the full gate before committing or opening a PR:
+
+```bash
+bash scripts/ci/all.sh
+```
+
+#### Workflow
+
+1. Resolve the canonical ID and reject project-local overlay requests.
+2. Inspect existing `core/skills/<domain>/`, `manifests/skills.yaml`, and
+   `manifests/plugins.yaml` before editing.
+3. If the domain is new, stop and get explicit approval because it changes both
+   product surfaces.
+4. Create `SKILL.md.tera` with the standard front matter, H1, Contract,
+   Entrypoint, Workflow, and Boundary sections.
+5. Add the v2 skill manifest entry for every supported product. Name the parent
+   intent, a direct example request, and why this is a user outcome. New skills
+   must never enter `migration.pending_disposition` or the #562 ledger.
+6. Add plugin containment for the skill. For existing domains, do not touch
+   unrelated plugin metadata.
+7. Add runtime-smoke matrix coverage and any case-runner probe needed to prove
+   the skill surface.
+8. Run `bash scripts/ci/skill-governance-audit.sh --update-counts` after the
+   source, manifest, sandbox, and runtime-smoke surfaces are in place.
+9. Render all supported products, refresh golden snapshots, run governance audit, and
+   run the relevant smoke checks.
+10. Leave staging, commit, PR creation, and issue state updates to the caller's
+    delivery workflow.
+
+#### Boundary
+
+This skill owns scope judgment and the ordered lifecycle checklist for adding a
+repo-owned skill. It does not hide broad YAML rewrites inside prose. If repeated
+adds require structured mutation, dry-run/apply plans, or reference graph
+output, extract that behavior to released `nils-cli` first and then call it
+from this workflow.
+
+### Managed skill removal
+
+#### Contract
+
+Prereqs:
+
+- Run from the `agent-runtime-kit` repository root.
+- The target is a repo-owned managed skill in `manifests/skills.yaml`.
+- The first pass is dry-run only. File mutation requires explicit apply
+  approval from the user or the active delivery plan.
+- `agent-runtime` is installed from the released nils-cli package and available
+  on `PATH`.
+
+Inputs:
+
+- Canonical skill ID in the form `<domain>.<skill>`.
+- Optional explicit cleanup approval for retained historical docs. Historical
+  plan records are retained by default.
+
+Outputs:
+
+- A dry-run list of active files and reference classes that would change.
+- After apply approval: removed `core/skills/<domain>/<skill>/` source,
+  `manifests/skills.yaml` entry, `manifests/plugins.yaml` containment, product
+  render metadata, golden snapshots, sandbox expected skill pins, runtime-smoke
+  cases, hook metadata, and maintained docs references.
+- A reviewed `manifests/skill-dispositions.yaml` row is retained when the skill
+  belongs to the frozen #562 migration cohort; it records destination,
+  replacement/compatibility needs, and live cleanup instead of deleting history.
+- A validation summary proving no active references remain.
+
+Failure modes:
+
+- The target skill is ambiguous or not represented in the manifest.
+- Active references remain after apply.
+- The workflow would edit historical `docs/plans/**` records without explicit
+  cleanup approval.
+- The validation gate fails after removal.
+
+#### Entrypoint
+
+Start with a dry-run reference inventory:
+
+```bash
+skill_id="<domain>.<skill>"
+domain="${skill_id%%.*}"
+skill="${skill_id#*.}"
+
+rg -n "$skill_id|$skill" \
+  core manifests targets tests docs/source SUPPORT_MATRIX.md DEVELOPMENT.md
+```
+
+Classify matches before editing:
+
+- source skill directory
+- skill manifest entry
+- plugin containment
+- product plugin metadata or target path
+- rendered build output and golden snapshots
+- sandbox expected skill lists
+- runtime-smoke matrix and case-runner probes
+- hook metadata
+- maintained docs
+- retained historical records under `docs/plans/**`
+
+After apply approval and edits:
+
+```bash
+bash scripts/ci/skill-governance-audit.sh --update-counts
+bash scripts/ci/skill-governance-audit.sh
+agent-runtime render --product codex --update-golden
+agent-runtime render --product claude --update-golden
+agent-runtime render --product hermes --update-golden
+bash scripts/ci/sandbox-install-rehearsal.sh
+bash tests/runtime-smoke/run.sh --mode deterministic --domain "$domain"
+bash scripts/ci/all.sh
+```
+
+#### Workflow
+
+1. Confirm the skill ID exists exactly once in `manifests/skills.yaml`.
+2. Build the dry-run inventory with `rg` and classify every active reference.
+3. Exclude `docs/plans/**` from default mutation. Keep those records as
+   historical evidence unless the user explicitly asks for cleanup.
+4. Present the planned active delta and stop unless apply approval is already
+   part of the active plan.
+5. Remove the source directory and active manifest entry. If the ID belongs to
+   the frozen migration cohort, update its disposition row to `reviewed`; never
+   delete or replace a baseline row to make a new pending skill fit.
+6. Remove plugin containment and product metadata for the target skill.
+7. Remove rendered/golden/sandbox/runtime-smoke/hook references.
+8. Run `bash scripts/ci/skill-governance-audit.sh --update-counts` to refresh
+   maintained active skill-count surfaces without touching historical
+   `docs/plans/**` records.
+9. Re-run the reference inventory and fail if active references remain outside
+   the allowed historical set.
+10. Run governance, render, sandbox, runtime-smoke, and full CI validation.
+
+#### Boundary
+
+This skill owns safe removal sequencing and the decision to retain historical
+records. It does not own a general-purpose deletion engine. If removal needs a
+stable dry-run/apply planner or machine-readable reference graph, implement and
+release that primitive in `sympoies/nils-cli`, then pin the consumed binary in
+`manifests/skills.yaml`.
 
 ## Coupled nils-cli Work
 
@@ -382,7 +588,7 @@ Mind the version-policy gate: Position 1 blocks below the compatibility minimum,
 admits exact minimum through validated, and warns while continuing when the host
 is newer than validated. This lets coupled development run the full behavior
 stack without calling an unreleased/ahead surface validated. Policy movement is
-owned by `meta:nils-cli-bump`; `cargo install --path` is never the default loop.
+owned by `project-version-baseline adopt`; `cargo install --path` is never the default loop.
 
 `docs/source/nils-cli-version-workflows.md` owns the full clone / worktree /
 downgrade / coupled-dev / bump procedures and the exact content-gate command
