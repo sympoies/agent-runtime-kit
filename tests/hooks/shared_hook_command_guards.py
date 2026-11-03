@@ -3850,6 +3850,7 @@ class CommandGuardsTests(HookTestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "cannot be searched")
+                self.assert_blocked(decision, str(linked))
                 for base in (Path(tmp), other):
                     with self.subTest(base=base):
                         payload["tool_input"]["workdir"] = str(base)
