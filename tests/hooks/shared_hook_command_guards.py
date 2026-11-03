@@ -3796,8 +3796,12 @@ class CommandGuardsTests(HookTestCase):
                 readable = run_hook("checkout-lease-guard.py", payload, cwd=primary, env=env)
                 directory.chmod(0)
                 try:
-                    with self.assertRaises(PermissionError):
+                    try:
                         target.stat()
+                    except PermissionError:
+                        pass
+                    else:
+                        self.skipTest("directory search permission is not enforced")
                     checkout = module.checkout_from(target)
                     self.assertEqual(checkout.root if checkout else None,
                                      primary if parent == primary else None)
@@ -3809,6 +3813,43 @@ class CommandGuardsTests(HookTestCase):
                 self.assertEqual(code, 0, stderr)
                 self.assertEqual(decision, readable[1])
                 self.assert_allowed(decision)
+
+    def test_unsearchable_worktree_workdir_blocks_raw_deletion(self) -> None:
+        spec = importlib.util.spec_from_file_location("unsearchable_worktree", HOOK_DIR / "checkout-lease-guard.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "primary"
+            self._init_checkout_lease_repo(primary)
+            linked = self._add_checkout_lease_worktree(primary, "feature/unsearchable")
+            linked.chmod(0)
+            try:
+                try:
+                    os.stat(str(linked) + "/.")
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                with self.assertRaises(module.LeaseError):
+                    module.raw_worktree_deletion_reason(
+                        f"sudo rm -rf {shlex.quote(str(linked))}", linked
+                    )
+                payload = self._checkout_lease_payload(
+                    "owner", linked, tool_name="Bash",
+                    command=f"sudo rm -rf {shlex.quote(str(linked))}",
+                )
+                payload["tool_input"]["workdir"] = str(linked)
+                code, decision, stderr = run_hook(
+                    "checkout-lease-guard.py", payload, cwd=primary,
+                    env={"AGENT_SESSION_COORDINATION_MODE": "enforce"},
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, "cannot be searched")
+            finally:
+                linked.chmod(0o700)
 
     def test_raw_rm_registered_worktree_stays_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

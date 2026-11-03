@@ -3268,6 +3268,11 @@ def raw_worktree_deletion_reason(command: str, base: Path) -> str:
     if not any(raw_deletion_arguments(invocation_without_redirections(invocation_tokens(tokens)))
                is not None for tokens in commands):
         return ""
+    try:
+        if base.is_dir():
+            os.stat(os.fspath(base) + "/.")
+    except PermissionError as exc:
+        raise LeaseError("deletion workdir cannot be searched") from exc
     roots = listed_worktree_paths(base) if checkout_from(base) else []
     guidance = "Use git-cli worktree remove to preserve registered worktrees; use literal targets for ordinary file deletion."
     # Resolve only a literal assignment followed by the sole deletion command. Do not
