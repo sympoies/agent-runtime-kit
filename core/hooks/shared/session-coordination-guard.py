@@ -44,10 +44,12 @@ from hook_common import (
     emit_block,
     invocation_is_opaque,
     invocation_tokens,
+    invocation_without_redirections,
     is_managed_cli_home_bin,
     normalized_cli_argv,
     output_redirect_targets,
     patch_text_candidates,
+    raw_deletion_arguments,
     read_payload,
     resolves_within_its_directory,
     semantic_commit_invocation_effects,
@@ -1636,9 +1638,6 @@ def pull_request_head_target(
     }
 
 
-DELETION_EXECUTABLES = frozenset({"rm", "rmdir", "unlink"})
-
-
 class UnsearchableTarget(Exception):
     """A stat-able directory operand whose contents cannot be searched."""
 
@@ -1688,20 +1687,21 @@ def explicit_cross_repository(
         elif "/" in token and not token.startswith(("-", "http://", "https://")):
             candidates.append(token)
     # A bare deletion operand resolves inside the workdir, so it cannot name another
-    # checkout, but it may name a directory that cannot be searched. Only operands
-    # of a deletion executable are probed; executable and data words are not paths.
-    invocation = invocation_tokens(words)
-    if invocation and os.path.basename(invocation[0]) in DELETION_EXECUTABLES:
-        operands_only = False
-        for token in invocation[1:]:
-            if not operands_only and token == "--":
-                operands_only = True
-                continue
-            if not operands_only and token.startswith("-"):
-                continue
-            if not token or "/" in token or token.startswith("~") or token in {".", ".."}:
-                continue
-            searchable_probe(base / token)
+    # checkout, but it may name a directory that cannot be searched. Deletion operands
+    # come from the shared deletion grammar (rm/unlink/shred, find -delete and find
+    # -exec deletions) used by the checkout-lease guard; executable and data words
+    # are not operands.
+    invocation = invocation_without_redirections(invocation_tokens(words))
+    operands = raw_deletion_arguments(invocation)
+    if operands is None and invocation and os.path.basename(invocation[0]) == "rmdir":
+        # This guard also treats rmdir as a mutation; its operands are directories.
+        operands = [argument for argument in invocation[1:] if not argument.startswith("-")]
+    for token in operands or []:
+        if not token or "/" in token or "{}" in token or token.startswith(("~", "$")):
+            continue
+        if token in {".", ".."}:
+            continue
+        searchable_probe(base / token)
     for raw in candidates:
         path = Path(raw).expanduser()
         if not path.is_absolute():

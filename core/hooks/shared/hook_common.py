@@ -5878,3 +5878,76 @@ def artifact_routing_block_reason(payload: Mapping[str, Any]) -> str | None:
             return ARTIFACT_CACHE_REASON.format(path=path)
 
     return None
+
+
+RAW_DELETION_VERBS = frozenset({"rm", "unlink", "shred"})
+FIND_EXEC_END = "__agent_runtime_find_exec_end__"
+
+
+def raw_deletion_arguments(invocation: list[str]) -> list[str] | None:
+    """Resolve operands of supported deletion patterns, not arbitrary programs."""
+    if not invocation:
+        return None
+    executable = os.path.basename(invocation[0])
+    if executable in RAW_DELETION_VERBS:
+        return [argument for argument in invocation[1:] if not argument.startswith("-")]
+    if executable != "find":
+        return None
+    arguments = invocation[1:]
+    paths: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"-H", "-L", "-P", "--"} or argument.startswith("-O"):
+            index += 1
+        elif argument == "-D":
+            index += 2
+        elif argument == "-f" and index + 1 < len(arguments):
+            paths.append(arguments[index + 1])
+            index += 2
+        elif argument.startswith("-") or argument in {"!", "(", "__find_expression_open__"}:
+            break
+        else:
+            paths.append(argument)
+            index += 1
+    destructive = False
+    deletes_search_results = False
+    extra_targets: list[str] = []
+    # Predicate operands and exec payloads are data: a name or echo argument
+    # equal to -delete must not become a deletion action.
+    predicates_with_value = {
+        "-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename",
+        "-regex", "-iregex", "-lname", "-ilname", "-type", "-xtype",
+        "-user", "-group", "-uid", "-gid", "-inum", "-links", "-perm",
+        "-size", "-amin", "-atime", "-cmin", "-ctime", "-mmin", "-mtime",
+        "-newer", "-anewer", "-cnewer", "-newermt", "-maxdepth", "-mindepth",
+        "-regextype", "-printf", "-fprint", "-fprint0", "-fls",
+    }
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "-delete":
+            destructive = True
+            deletes_search_results = True
+        elif argument in {"-exec", "-execdir", "-ok", "-okdir"}:
+            end = index + 1
+            while end < len(arguments) and arguments[end] not in {"+", FIND_EXEC_END}:
+                end += 1
+            payload = invocation_tokens(arguments[index + 1:end])
+            if payload and os.path.basename(payload[0]) in RAW_DELETION_VERBS:
+                destructive = True
+                for target in raw_deletion_arguments(payload) or []:
+                    if "{}" in target:
+                        deletes_search_results = True
+                        continue  # The search roots bound substituted find results.
+                    if argument in {"-execdir", "-okdir"} and not Path(target).is_absolute():
+                        target = "$unresolved_find_directory"
+                    extra_targets.append(target)
+            index = end
+        elif argument == "-fprintf":
+            index += 2
+        elif argument in predicates_with_value:
+            index += 1
+        index += 1
+    if not destructive:
+        return None
+    return ((paths or ["."]) if deletes_search_results else []) + extra_targets

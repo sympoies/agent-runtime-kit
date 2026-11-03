@@ -444,6 +444,12 @@ exit 64
                 "rm -rf ./inner/",
                 "rm -rf -- 'inner'",
                 "sudo -n rm -rf -- inner",
+                "sudo -n find inner -delete",
+                "find inner -name '*.tmp' -delete",
+                "rmdir inner",
+                "unlink inner",
+                "shred -u inner",
+                "xargs rm -rf -- inner",
             ):
                 payload = command_payload(command)
                 payload["cwd"] = str(repo)
@@ -454,6 +460,15 @@ exit 64
             decoy.mkdir()
             ordinary = command_payload("touch generated.txt")
             ordinary["cwd"] = str(repo)
+            # A predicate argument is data, with or without a deletion action.
+            predicate_forms = []
+            for command in ("find . -name payload", "find . -name payload -delete"):
+                predicate = command_payload(command)
+                predicate["cwd"] = str(repo)
+                predicate_forms.append(predicate)
+            # find -exec payloads are already unresolved shell targets; they stay refused.
+            exec_form = command_payload("find inner -exec rm -rf {} +")
+            exec_form["cwd"] = str(repo)
             data_decoy = repo / "payload"
             data_decoy.mkdir()
             data_word = command_payload("sed -i -e payload generated.txt")
@@ -483,6 +498,10 @@ exit 64
                 ]
                 ordinary_result = guard.operation_targets(ordinary, "Bash")
                 data_result = guard.operation_targets(data_word, "Bash")
+                exec_result = guard.operation_targets(exec_form, "Bash")
+                predicate_results = [
+                    guard.operation_targets(payload, "Bash") for payload in predicate_forms
+                ]
             finally:
                 data_decoy.chmod(0o700)
                 decoy.chmod(0o700)
@@ -512,6 +531,9 @@ exit 64
                 self.assertTrue(str(result[1]).rstrip("/").endswith("/inner"), result)
             self.assertEqual(ordinary_result[0], "shell", ordinary_result)
             self.assertEqual(data_result[0], "shell", data_result)
+            self.assertEqual(exec_result[0], None, exec_result)
+            for result in predicate_results:
+                self.assertEqual(result[0], "shell", result)
 
     def test_session_coordination_edit_target_with_denied_search(self) -> None:
         spec = importlib.util.spec_from_file_location(
