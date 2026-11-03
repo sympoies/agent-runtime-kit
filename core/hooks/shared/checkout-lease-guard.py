@@ -276,8 +276,15 @@ def canonical_path(raw: str, base: Path) -> Path:
 
 
 def existing_ancestor(path: Path) -> Path:
-    candidate = path if path.is_dir() else path.parent
-    while not candidate.exists() and candidate != candidate.parent:
+    candidate = path
+    while candidate != candidate.parent:
+        try:
+            if candidate.is_dir():
+                # A directory may be statable while search permission is denied.
+                os.stat(os.fspath(candidate) + "/.")
+                return candidate
+        except PermissionError:
+            pass
         candidate = candidate.parent
     return candidate
 
@@ -3261,6 +3268,11 @@ def raw_worktree_deletion_reason(command: str, base: Path) -> str:
     if not any(raw_deletion_arguments(invocation_without_redirections(invocation_tokens(tokens)))
                is not None for tokens in commands):
         return ""
+    try:
+        if base.is_dir():
+            os.stat(os.fspath(base) + "/.")
+    except PermissionError as exc:
+        raise LeaseError(f"deletion workdir cannot be searched: {base}") from exc
     roots = listed_worktree_paths(base) if checkout_from(base) else []
     guidance = "Use git-cli worktree remove to preserve registered worktrees; use literal targets for ordinary file deletion."
     # Resolve only a literal assignment followed by the sole deletion command. Do not
@@ -3297,6 +3309,15 @@ def raw_worktree_deletion_reason(command: str, base: Path) -> str:
             if any(character in argument for character in DYNAMIC_ARGUMENT_CHARS):
                 return "Raw deletion target is unresolved. " + guidance
             target = canonical_path(argument, base)
+            try:
+                is_directory = target.is_dir()
+            except PermissionError:
+                is_directory = False
+            if is_directory:
+                try:
+                    os.stat(os.fspath(target) + "/.")
+                except PermissionError:
+                    return f"Raw deletion target cannot be searched: {target}. " + guidance
             checkout = checkout_from(target)
             target_roots = listed_worktree_paths(checkout.root) if checkout else []
             if any(target == root or target in root.parents for root in roots + target_roots):
