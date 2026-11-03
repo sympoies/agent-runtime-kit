@@ -1636,6 +1636,9 @@ def pull_request_head_target(
     }
 
 
+DELETION_EXECUTABLES = frozenset({"rm", "rmdir", "unlink"})
+
+
 class UnsearchableTarget(Exception):
     """A stat-able directory operand whose contents cannot be searched."""
 
@@ -1684,9 +1687,20 @@ def explicit_cross_repository(
             candidates.append(token.split("=", 1)[1])
         elif "/" in token and not token.startswith(("-", "http://", "https://")):
             candidates.append(token)
-        elif token and not token.startswith(("-", "~")) and token not in {".", ".."}:
-            # A bare operand resolves inside the workdir, so it cannot name another
-            # checkout, but it may name a directory that cannot be searched.
+    # A bare deletion operand resolves inside the workdir, so it cannot name another
+    # checkout, but it may name a directory that cannot be searched. Only operands
+    # of a deletion executable are probed; executable and data words are not paths.
+    invocation = invocation_tokens(words)
+    if invocation and os.path.basename(invocation[0]) in DELETION_EXECUTABLES:
+        operands_only = False
+        for token in invocation[1:]:
+            if not operands_only and token == "--":
+                operands_only = True
+                continue
+            if not operands_only and token.startswith("-"):
+                continue
+            if not token or "/" in token or token.startswith("~") or token in {".", ".."}:
+                continue
             searchable_probe(base / token)
     for raw in candidates:
         path = Path(raw).expanduser()

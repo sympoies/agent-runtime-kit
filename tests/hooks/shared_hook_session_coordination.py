@@ -448,6 +448,18 @@ exit 64
                 payload = command_payload(command)
                 payload["cwd"] = str(repo)
                 inner_forms.append(payload)
+            # A same-name unsearchable directory must not block an ordinary mutation:
+            # executable and data words are not operands.
+            decoy = repo / "touch"
+            decoy.mkdir()
+            ordinary = command_payload("touch generated.txt")
+            ordinary["cwd"] = str(repo)
+            data_decoy = repo / "payload"
+            data_decoy.mkdir()
+            data_word = command_payload("sed -i -e payload generated.txt")
+            data_word["cwd"] = str(repo)
+            data_decoy.chmod(0)
+            decoy.chmod(0)
             inner.chmod(0)
             outside.chmod(0)
             sealed.chmod(0)
@@ -469,7 +481,11 @@ exit 64
                 inner_results = [
                     guard.operation_targets(payload, "Bash") for payload in inner_forms
                 ]
+                ordinary_result = guard.operation_targets(ordinary, "Bash")
+                data_result = guard.operation_targets(data_word, "Bash")
             finally:
+                data_decoy.chmod(0o700)
+                decoy.chmod(0o700)
                 inner.chmod(0o700)
                 outside.chmod(0o700)
                 sealed.chmod(0o700)
@@ -494,6 +510,8 @@ exit 64
                     str(result[1]).startswith("unsearchable-shell-target:"), result
                 )
                 self.assertTrue(str(result[1]).rstrip("/").endswith("/inner"), result)
+            self.assertEqual(ordinary_result[0], "shell", ordinary_result)
+            self.assertEqual(data_result[0], "shell", data_result)
 
     def test_session_coordination_edit_target_with_denied_search(self) -> None:
         spec = importlib.util.spec_from_file_location(
