@@ -397,6 +397,172 @@ exit 64
                 },
             )
 
+    def test_session_coordination_shell_targets_with_denied_search(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_denied_search_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(
+                ["git", "init", "--quiet", "--initial-branch", "main"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repository.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            outside = root / "outside"
+            nested = outside / "cache" / "src"
+            nested.mkdir(parents=True)
+            sealed = root / "sealed"
+            sealed.mkdir()
+            below = command_payload(f"rm -rf -- {shlex.quote(str(nested))}")
+            below["cwd"] = str(repo)
+            operand = command_payload(f"rm -rf -- {shlex.quote(str(sealed))}")
+            operand["cwd"] = str(repo)
+            workdir = command_payload("touch generated.txt")
+            workdir["cwd"] = str(sealed)
+            inner = repo / "inner"
+            inner.mkdir()
+            inner_forms = []
+            for command in (
+                "rm -rf -- inner",
+                "rm -rf ./inner/",
+                "rm -rf -- 'inner'",
+                "sudo -n rm -rf -- inner",
+                "sudo -n find inner -delete",
+                "find inner -name '*.tmp' -delete",
+                "rmdir inner",
+                "unlink inner",
+                "shred -u inner",
+                "xargs rm -rf -- inner",
+            ):
+                payload = command_payload(command)
+                payload["cwd"] = str(repo)
+                inner_forms.append(payload)
+            # A same-name unsearchable directory must not block an ordinary mutation:
+            # executable and data words are not operands.
+            decoy = repo / "touch"
+            decoy.mkdir()
+            ordinary = command_payload("touch generated.txt")
+            ordinary["cwd"] = str(repo)
+            # A predicate argument is data, with or without a deletion action.
+            predicate_forms = []
+            for command in ("find . -name payload", "find . -name payload -delete"):
+                predicate = command_payload(command)
+                predicate["cwd"] = str(repo)
+                predicate_forms.append(predicate)
+            # find -exec payloads are already unresolved shell targets; they stay refused.
+            exec_form = command_payload("find inner -exec rm -rf {} +")
+            exec_form["cwd"] = str(repo)
+            data_decoy = repo / "payload"
+            data_decoy.mkdir()
+            data_word = command_payload("sed -i -e payload generated.txt")
+            data_word["cwd"] = str(repo)
+            data_decoy.chmod(0)
+            decoy.chmod(0)
+            inner.chmod(0)
+            outside.chmod(0)
+            sealed.chmod(0)
+            try:
+                try:
+                    nested.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                # The target cannot be stat'ed through an unsearchable ancestor:
+                # attribute it from the nearest searchable ancestor, as #351 does.
+                below_result = guard.operation_targets(below, "Bash")
+                # A stat-able operand that cannot be searched may hide a checkout.
+                operand_result = guard.operation_targets(operand, "Bash")
+                # An unsearchable effective workdir fails closed, naming the path.
+                workdir_result = guard.operation_targets(workdir, "Bash")
+                # Every operand form naming the unsearchable directory is refused.
+                inner_results = [
+                    guard.operation_targets(payload, "Bash") for payload in inner_forms
+                ]
+                ordinary_result = guard.operation_targets(ordinary, "Bash")
+                data_result = guard.operation_targets(data_word, "Bash")
+                exec_result = guard.operation_targets(exec_form, "Bash")
+                predicate_results = [
+                    guard.operation_targets(payload, "Bash") for payload in predicate_forms
+                ]
+            finally:
+                data_decoy.chmod(0o700)
+                decoy.chmod(0o700)
+                inner.chmod(0o700)
+                outside.chmod(0o700)
+                sealed.chmod(0o700)
+
+            self.assertEqual(below_result[0], "shell")
+            self.assertEqual(operand_result[0], None)
+            self.assertEqual(
+                operand_result[1], f"unsearchable-shell-target:{sealed.resolve()}"
+            )
+            message = guard.mutation_target_recovery(operand_result[1])
+            self.assertIn(str(sealed.resolve()), message)
+            self.assertIn("[reason: unsearchable-shell-target]", message)
+            self.assertEqual(
+                workdir_result, (None, f"unsearchable-workdir:{sealed.resolve()}")
+            )
+            message = guard.mutation_target_recovery(workdir_result[1])
+            self.assertIn(str(sealed.resolve()), message)
+            self.assertIn("[reason: unsearchable-workdir]", message)
+            for result in inner_results:
+                self.assertEqual(result[0], None)
+                self.assertTrue(
+                    str(result[1]).startswith("unsearchable-shell-target:"), result
+                )
+                self.assertTrue(str(result[1]).rstrip("/").endswith("/inner"), result)
+            self.assertEqual(ordinary_result[0], "shell", ordinary_result)
+            self.assertEqual(data_result[0], "shell", data_result)
+            self.assertEqual(exec_result[0], None, exec_result)
+            for result in predicate_results:
+                self.assertEqual(result[0], "shell", result)
+
+    def test_session_coordination_edit_target_with_denied_search(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_denied_edit_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sealed = root / "sealed"
+            target = sealed / "inner" / "file.txt"
+            target.parent.mkdir(parents=True)
+            payload = {"cwd": str(root), "tool_input": {"file_path": str(target)}}
+            sealed.chmod(0)
+            try:
+                try:
+                    target.parent.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                result = guard.operation_targets(payload, "Edit")
+            finally:
+                sealed.chmod(0o700)
+
+            self.assertEqual(result, (None, "target-boundary-unavailable"))
+
 
     def test_session_coordination_pull_request_head_targets_per_command_shape(
         self,

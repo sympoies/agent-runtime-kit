@@ -44,10 +44,12 @@ from hook_common import (
     emit_block,
     invocation_is_opaque,
     invocation_tokens,
+    invocation_without_redirections,
     is_managed_cli_home_bin,
     normalized_cli_argv,
     output_redirect_targets,
     patch_text_candidates,
+    raw_deletion_arguments,
     read_payload,
     resolves_within_its_directory,
     semantic_commit_invocation_effects,
@@ -1636,6 +1638,43 @@ def pull_request_head_target(
     }
 
 
+class UnsearchableTarget(Exception):
+    """A stat-able directory operand whose contents cannot be searched."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(str(path))
+        self.path = path
+
+
+def searchable_probe(path: Path) -> Path:
+    """Return the nearest searchable directory at or above ``path``.
+
+    A target below an unsearchable ancestor cannot be stat'ed, so attribution
+    starts from the nearest searchable ancestor. A directory operand that can be
+    stat'ed but not searched may hide a checkout and is refused instead.
+    """
+    try:
+        is_directory = path.is_dir()
+    except PermissionError:
+        is_directory = False
+    if is_directory:
+        try:
+            os.stat(os.fspath(path) + "/.")
+        except PermissionError as exc:
+            raise UnsearchableTarget(path.resolve(strict=False)) from exc
+        return path
+    candidate = path.parent
+    while candidate != candidate.parent:
+        try:
+            if candidate.is_dir():
+                os.stat(os.fspath(candidate) + "/.")
+                return candidate
+        except PermissionError:
+            pass
+        candidate = candidate.parent
+    return candidate
+
+
 def explicit_cross_repository(
     words: list[str], base: Path, root: Path
 ) -> bool:
@@ -1647,13 +1686,27 @@ def explicit_cross_repository(
             candidates.append(token.split("=", 1)[1])
         elif "/" in token and not token.startswith(("-", "http://", "https://")):
             candidates.append(token)
+    # A bare deletion operand resolves inside the workdir, so it cannot name another
+    # checkout, but it may name a directory that cannot be searched. Deletion operands
+    # come from the shared deletion grammar (rm/unlink/shred, find -delete and find
+    # -exec deletions) used by the checkout-lease guard; executable and data words
+    # are not operands.
+    invocation = invocation_without_redirections(invocation_tokens(words))
+    operands = raw_deletion_arguments(invocation)
+    if operands is None and invocation and os.path.basename(invocation[0]) == "rmdir":
+        # This guard also treats rmdir as a mutation; its operands are directories.
+        operands = [argument for argument in invocation[1:] if not argument.startswith("-")]
+    for token in operands or []:
+        if not token or "/" in token or "{}" in token or token.startswith(("~", "$")):
+            continue
+        if token in {".", ".."}:
+            continue
+        searchable_probe(base / token)
     for raw in candidates:
         path = Path(raw).expanduser()
         if not path.is_absolute():
             path = base / path
-        probe = path if path.is_dir() else path.parent
-        while not probe.exists() and probe != probe.parent:
-            probe = probe.parent
+        probe = searchable_probe(path)
         candidate_root = bounded_git_toplevel(str(probe))
         if candidate_root and Path(candidate_root).resolve() != root:
             return True
@@ -1700,6 +1753,11 @@ def operation_targets(
             targets.append(target)
             checkouts.append(checkout)
     else:
+        try:
+            if base.is_dir():
+                os.stat(os.fspath(base) + "/.")
+        except PermissionError:
+            return None, f"unsearchable-workdir:{base}"
         root_raw = bounded_git_toplevel(str(base))
         if not root_raw:
             return None, "outside-governed-repository"
@@ -1747,7 +1805,11 @@ def operation_targets(
         elif words and os.path.basename(words[0]) in {"gh", "forge-cli"}:
             return None, "provider-target-unresolved"
         else:
-            if explicit_cross_repository(target_words, base, root):
+            try:
+                cross_repository = explicit_cross_repository(target_words, base, root)
+            except UnsearchableTarget as exc:
+                return None, f"unsearchable-shell-target:{exc.path}"
+            if cross_repository:
                 return None, "cross-repository-shell-target"
             operation = "shell"
             # `agent-session` binds this opaque repository-form target to the
@@ -1908,6 +1970,19 @@ def mutation_target_recovery(reason: str) -> str:
             "`agent-run exec --cwd`; use a target-rooted managed session when the "
             "host cannot attest the workdir. "
             "[reason: cross-repository-shell-target]"
+        )
+    if reason.startswith("unsearchable-shell-target:"):
+        path = reason.split(":", 1)[1]
+        return (
+            f"Managed mutation target cannot be searched: {path}. The guard cannot "
+            "prove that it is outside a checkout, so the mutation is refused. "
+            "[reason: unsearchable-shell-target]"
+        )
+    if reason.startswith("unsearchable-workdir:"):
+        path = reason.split(":", 1)[1]
+        return (
+            f"Managed mutation workdir cannot be searched: {path}. Run the command "
+            "from a workdir the session can search. [reason: unsearchable-workdir]"
         )
     return (
         "Managed mutation targets could not be proven as a subset of the active claim. "
