@@ -1684,6 +1684,10 @@ def explicit_cross_repository(
             candidates.append(token.split("=", 1)[1])
         elif "/" in token and not token.startswith(("-", "http://", "https://")):
             candidates.append(token)
+        elif token and not token.startswith(("-", "~")) and token not in {".", ".."}:
+            # A bare operand resolves inside the workdir, so it cannot name another
+            # checkout, but it may name a directory that cannot be searched.
+            searchable_probe(base / token)
     for raw in candidates:
         path = Path(raw).expanduser()
         if not path.is_absolute():
@@ -1735,6 +1739,11 @@ def operation_targets(
             targets.append(target)
             checkouts.append(checkout)
     else:
+        try:
+            if base.is_dir():
+                os.stat(os.fspath(base) + "/.")
+        except PermissionError:
+            return None, f"unsearchable-workdir:{base}"
         root_raw = bounded_git_toplevel(str(base))
         if not root_raw:
             return None, "outside-governed-repository"
@@ -1954,6 +1963,12 @@ def mutation_target_recovery(reason: str) -> str:
             f"Managed mutation target cannot be searched: {path}. The guard cannot "
             "prove that it is outside a checkout, so the mutation is refused. "
             "[reason: unsearchable-shell-target]"
+        )
+    if reason.startswith("unsearchable-workdir:"):
+        path = reason.split(":", 1)[1]
+        return (
+            f"Managed mutation workdir cannot be searched: {path}. Run the command "
+            "from a workdir the session can search. [reason: unsearchable-workdir]"
         )
     return (
         "Managed mutation targets could not be proven as a subset of the active claim. "

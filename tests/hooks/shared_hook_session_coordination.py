@@ -434,6 +434,21 @@ exit 64
             below["cwd"] = str(repo)
             operand = command_payload(f"rm -rf -- {shlex.quote(str(sealed))}")
             operand["cwd"] = str(repo)
+            workdir = command_payload("touch generated.txt")
+            workdir["cwd"] = str(sealed)
+            inner = repo / "inner"
+            inner.mkdir()
+            inner_forms = []
+            for command in (
+                "rm -rf -- inner",
+                "rm -rf ./inner/",
+                "rm -rf -- 'inner'",
+                "sudo -n rm -rf -- inner",
+            ):
+                payload = command_payload(command)
+                payload["cwd"] = str(repo)
+                inner_forms.append(payload)
+            inner.chmod(0)
             outside.chmod(0)
             sealed.chmod(0)
             try:
@@ -448,7 +463,14 @@ exit 64
                 below_result = guard.operation_targets(below, "Bash")
                 # A stat-able operand that cannot be searched may hide a checkout.
                 operand_result = guard.operation_targets(operand, "Bash")
+                # An unsearchable effective workdir fails closed, naming the path.
+                workdir_result = guard.operation_targets(workdir, "Bash")
+                # Every operand form naming the unsearchable directory is refused.
+                inner_results = [
+                    guard.operation_targets(payload, "Bash") for payload in inner_forms
+                ]
             finally:
+                inner.chmod(0o700)
                 outside.chmod(0o700)
                 sealed.chmod(0o700)
 
@@ -460,6 +482,18 @@ exit 64
             message = guard.mutation_target_recovery(operand_result[1])
             self.assertIn(str(sealed.resolve()), message)
             self.assertIn("[reason: unsearchable-shell-target]", message)
+            self.assertEqual(
+                workdir_result, (None, f"unsearchable-workdir:{sealed.resolve()}")
+            )
+            message = guard.mutation_target_recovery(workdir_result[1])
+            self.assertIn(str(sealed.resolve()), message)
+            self.assertIn("[reason: unsearchable-workdir]", message)
+            for result in inner_results:
+                self.assertEqual(result[0], None)
+                self.assertTrue(
+                    str(result[1]).startswith("unsearchable-shell-target:"), result
+                )
+                self.assertTrue(str(result[1]).rstrip("/").endswith("/inner"), result)
 
     def test_session_coordination_edit_target_with_denied_search(self) -> None:
         spec = importlib.util.spec_from_file_location(
