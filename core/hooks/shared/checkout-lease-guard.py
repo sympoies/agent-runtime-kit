@@ -3309,6 +3309,15 @@ def raw_worktree_deletion_reason(command: str, base: Path) -> str:
             if any(character in argument for character in DYNAMIC_ARGUMENT_CHARS):
                 return "Raw deletion target is unresolved. " + guidance
             target = canonical_path(argument, base)
+            try:
+                is_directory = target.is_dir()
+            except PermissionError:
+                is_directory = False
+            if is_directory:
+                try:
+                    os.stat(os.fspath(target) + "/.")
+                except PermissionError:
+                    return f"Raw deletion target cannot be searched: {target}. " + guidance
             checkout = checkout_from(target)
             target_roots = listed_worktree_paths(checkout.root) if checkout else []
             if any(target == root or target in root.parents for root in roots + target_roots):

@@ -3825,6 +3825,8 @@ class CommandGuardsTests(HookTestCase):
             primary = Path(tmp) / "primary"
             self._init_checkout_lease_repo(primary)
             linked = self._add_checkout_lease_worktree(primary, "feature/unsearchable")
+            other = Path(tmp) / "other"
+            self._init_checkout_lease_repo(other)
             linked.chmod(0)
             try:
                 try:
@@ -3848,6 +3850,15 @@ class CommandGuardsTests(HookTestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_blocked(decision, "cannot be searched")
+                for base in (Path(tmp), other):
+                    with self.subTest(base=base):
+                        payload["tool_input"]["workdir"] = str(base)
+                        code, decision, stderr = run_hook(
+                            "checkout-lease-guard.py", payload, cwd=primary,
+                            env={"AGENT_SESSION_COORDINATION_MODE": "enforce"},
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_blocked(decision, str(linked))
             finally:
                 linked.chmod(0o700)
 
