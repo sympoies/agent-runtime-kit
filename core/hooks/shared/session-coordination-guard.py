@@ -1636,6 +1636,43 @@ def pull_request_head_target(
     }
 
 
+class UnsearchableTarget(Exception):
+    """A stat-able directory operand whose contents cannot be searched."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(str(path))
+        self.path = path
+
+
+def searchable_probe(path: Path) -> Path:
+    """Return the nearest searchable directory at or above ``path``.
+
+    A target below an unsearchable ancestor cannot be stat'ed, so attribution
+    starts from the nearest searchable ancestor. A directory operand that can be
+    stat'ed but not searched may hide a checkout and is refused instead.
+    """
+    try:
+        is_directory = path.is_dir()
+    except PermissionError:
+        is_directory = False
+    if is_directory:
+        try:
+            os.stat(os.fspath(path) + "/.")
+        except PermissionError as exc:
+            raise UnsearchableTarget(path.resolve(strict=False)) from exc
+        return path
+    candidate = path.parent
+    while candidate != candidate.parent:
+        try:
+            if candidate.is_dir():
+                os.stat(os.fspath(candidate) + "/.")
+                return candidate
+        except PermissionError:
+            pass
+        candidate = candidate.parent
+    return candidate
+
+
 def explicit_cross_repository(
     words: list[str], base: Path, root: Path
 ) -> bool:
@@ -1651,9 +1688,7 @@ def explicit_cross_repository(
         path = Path(raw).expanduser()
         if not path.is_absolute():
             path = base / path
-        probe = path if path.is_dir() else path.parent
-        while not probe.exists() and probe != probe.parent:
-            probe = probe.parent
+        probe = searchable_probe(path)
         candidate_root = bounded_git_toplevel(str(probe))
         if candidate_root and Path(candidate_root).resolve() != root:
             return True
@@ -1747,7 +1782,11 @@ def operation_targets(
         elif words and os.path.basename(words[0]) in {"gh", "forge-cli"}:
             return None, "provider-target-unresolved"
         else:
-            if explicit_cross_repository(target_words, base, root):
+            try:
+                cross_repository = explicit_cross_repository(target_words, base, root)
+            except UnsearchableTarget as exc:
+                return None, f"unsearchable-shell-target:{exc.path}"
+            if cross_repository:
                 return None, "cross-repository-shell-target"
             operation = "shell"
             # `agent-session` binds this opaque repository-form target to the
@@ -1908,6 +1947,13 @@ def mutation_target_recovery(reason: str) -> str:
             "`agent-run exec --cwd`; use a target-rooted managed session when the "
             "host cannot attest the workdir. "
             "[reason: cross-repository-shell-target]"
+        )
+    if reason.startswith("unsearchable-shell-target:"):
+        path = reason.split(":", 1)[1]
+        return (
+            f"Managed mutation target cannot be searched: {path}. The guard cannot "
+            "prove that it is outside a checkout, so the mutation is refused. "
+            "[reason: unsearchable-shell-target]"
         )
     return (
         "Managed mutation targets could not be proven as a subset of the active claim. "

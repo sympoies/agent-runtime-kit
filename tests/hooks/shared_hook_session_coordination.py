@@ -397,6 +397,98 @@ exit 64
                 },
             )
 
+    def test_session_coordination_shell_targets_with_denied_search(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_denied_search_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(
+                ["git", "init", "--quiet", "--initial-branch", "main"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://example.invalid/example/repository.git",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            outside = root / "outside"
+            nested = outside / "cache" / "src"
+            nested.mkdir(parents=True)
+            sealed = root / "sealed"
+            sealed.mkdir()
+            below = command_payload(f"rm -rf -- {shlex.quote(str(nested))}")
+            below["cwd"] = str(repo)
+            operand = command_payload(f"rm -rf -- {shlex.quote(str(sealed))}")
+            operand["cwd"] = str(repo)
+            outside.chmod(0)
+            sealed.chmod(0)
+            try:
+                try:
+                    nested.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                # The target cannot be stat'ed through an unsearchable ancestor:
+                # attribute it from the nearest searchable ancestor, as #351 does.
+                below_result = guard.operation_targets(below, "Bash")
+                # A stat-able operand that cannot be searched may hide a checkout.
+                operand_result = guard.operation_targets(operand, "Bash")
+            finally:
+                outside.chmod(0o700)
+                sealed.chmod(0o700)
+
+            self.assertEqual(below_result[0], "shell")
+            self.assertEqual(operand_result[0], None)
+            self.assertEqual(
+                operand_result[1], f"unsearchable-shell-target:{sealed.resolve()}"
+            )
+            message = guard.mutation_target_recovery(operand_result[1])
+            self.assertIn(str(sealed.resolve()), message)
+            self.assertIn("[reason: unsearchable-shell-target]", message)
+
+    def test_session_coordination_edit_target_with_denied_search(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "session_coordination_denied_edit_under_test",
+            HOOK_DIR / "session-coordination-guard.py",
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sealed = root / "sealed"
+            target = sealed / "inner" / "file.txt"
+            target.parent.mkdir(parents=True)
+            payload = {"cwd": str(root), "tool_input": {"file_path": str(target)}}
+            sealed.chmod(0)
+            try:
+                try:
+                    target.parent.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                result = guard.operation_targets(payload, "Edit")
+            finally:
+                sealed.chmod(0o700)
+
+            self.assertEqual(result, (None, "target-boundary-unavailable"))
+
 
     def test_session_coordination_pull_request_head_targets_per_command_shape(
         self,
