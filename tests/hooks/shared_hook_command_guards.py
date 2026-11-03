@@ -3771,6 +3771,45 @@ class CommandGuardsTests(HookTestCase):
                     self.assert_blocked(decision, "git-cli worktree")
 
 
+    def test_deletion_targets_below_unreadable_directories(self) -> None:
+        spec = importlib.util.spec_from_file_location("deletion_attribution", HOOK_DIR / "checkout-lease-guard.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            self._init_checkout_lease_repo(primary)
+            for parent in (root, primary):
+                directory = parent / "unreadable"
+                directory.mkdir()
+                target = directory / "child"
+                target.mkdir()
+                payload = self._checkout_lease_payload(
+                    "owner", primary, tool_name="Bash",
+                    command=f"rm -rf {shlex.quote(str(target))}",
+                )
+                env = {"AGENT_SESSION_COORDINATION_MODE": "enforce",
+                       "AGENT_RUNTIME_STATE_HOME": str(root / "state")}
+                readable = run_hook("checkout-lease-guard.py", payload, cwd=primary, env=env)
+                directory.chmod(0)
+                try:
+                    with self.assertRaises(PermissionError):
+                        target.stat()
+                    checkout = module.checkout_from(target)
+                    self.assertEqual(checkout.root if checkout else None,
+                                     primary if parent == primary else None)
+                    code, decision, stderr = run_hook(
+                        "checkout-lease-guard.py", payload, cwd=primary, env=env
+                    )
+                finally:
+                    directory.chmod(0o700)
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(decision, readable[1])
+                self.assert_allowed(decision)
+
     def test_raw_rm_registered_worktree_stays_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             primary = Path(tmp) / "primary"

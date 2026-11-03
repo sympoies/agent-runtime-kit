@@ -276,8 +276,15 @@ def canonical_path(raw: str, base: Path) -> Path:
 
 
 def existing_ancestor(path: Path) -> Path:
-    candidate = path if path.is_dir() else path.parent
-    while not candidate.exists() and candidate != candidate.parent:
+    candidate = path
+    while candidate != candidate.parent:
+        try:
+            if candidate.is_dir():
+                # A directory may be statable while search permission is denied.
+                os.stat(os.fspath(candidate) + "/.")
+                return candidate
+        except PermissionError:
+            pass
         candidate = candidate.parent
     return candidate
 
