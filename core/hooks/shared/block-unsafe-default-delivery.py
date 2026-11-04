@@ -3268,7 +3268,19 @@ def command_block_reason(
             try:
                 is_directory = Path(target).is_dir()
             except PermissionError:
+                candidate = cwd / target
+                while candidate != candidate.parent:
+                    candidate = candidate.parent
+                    try:
+                        if candidate.is_dir():
+                            os.stat(os.fspath(candidate) + "/.")
+                            cwd = candidate
+                            base_source = "the nearest searchable ancestor of a literal `cd`"
+                            break
+                    except PermissionError:
+                        continue
                 is_directory = False
+                continue
             if is_directory:
                 try:
                     os.stat(os.fspath(Path(target)) + "/.")

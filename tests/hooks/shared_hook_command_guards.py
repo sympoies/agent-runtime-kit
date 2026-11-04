@@ -56,6 +56,14 @@ class CommandGuardsTests(HookTestCase):
                 )
                 self.assertEqual(code, 0, stderr)
                 self.assert_allowed(decision)
+                module = self._load("delivery_inaccessible", "block-unsafe-default-delivery.py")
+                with mock.patch.object(module, "candidate_block_reason", return_value="") as classify, \
+                     mock.patch.object(module, "executable_resolution_rejection", return_value=""):
+                    module.command_block_reason(
+                        f"cd {shlex.quote(str(target))} && semantic-commit commit", Path("/")
+                    )
+                self.assertTrue(classify.called)
+                self.assertEqual(classify.call_args.args[2], Path(tmp), classify.call_args_list)
                 code, decision, stderr = run_hook(
                     "block-unsafe-default-delivery.py",
                     command_payload(f"cd {shlex.quote(str(sealed))} && git status"),
