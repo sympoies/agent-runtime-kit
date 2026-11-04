@@ -35,6 +35,18 @@ from shared_hook_helpers import (
 
 
 class CommandGuardsTests(HookTestCase):
+    def test_delivery_cd_symlink_loop_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = Path(tmp) / "loop"
+            loop.symlink_to(loop)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(f"cd {shlex.quote(str(loop))} && git status"),
+                cwd=Path(tmp),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, str(loop))
+
     def test_delivery_cd_below_unsearchable_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             sealed = Path(tmp) / "sealed"

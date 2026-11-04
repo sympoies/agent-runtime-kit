@@ -3284,6 +3284,8 @@ def command_block_reason(
                 continue
             except (FileNotFoundError, NotADirectoryError):
                 is_directory = False
+            except OSError:
+                return unresolved(f"Cannot inspect directory target {target}.")
             if is_directory:
                 try:
                     os.stat(os.fspath(Path(target)) + "/.")
