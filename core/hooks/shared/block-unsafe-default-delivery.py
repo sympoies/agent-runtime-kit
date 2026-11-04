@@ -44,6 +44,7 @@ import selectors
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -3266,7 +3267,7 @@ def command_block_reason(
         )
         if target is not None:
             try:
-                is_directory = Path(target).is_dir()
+                is_directory = stat.S_ISDIR(Path(target).stat().st_mode)
             except PermissionError:
                 candidate = cwd / target
                 while candidate != candidate.parent:
@@ -3281,6 +3282,8 @@ def command_block_reason(
                         continue
                 is_directory = False
                 continue
+            except (FileNotFoundError, NotADirectoryError):
+                is_directory = False
             if is_directory:
                 try:
                     os.stat(os.fspath(Path(target)) + "/.")
