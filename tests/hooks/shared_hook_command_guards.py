@@ -35,6 +35,55 @@ from shared_hook_helpers import (
 
 
 class CommandGuardsTests(HookTestCase):
+    def test_delivery_cd_below_unsearchable_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sealed = Path(tmp) / "sealed"
+            sealed.mkdir()
+            target = sealed / "child"
+            target.mkdir()
+            sealed.chmod(0)
+            try:
+                try:
+                    target.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                code, decision, stderr = run_hook(
+                    "block-unsafe-default-delivery.py",
+                    command_payload(f"cd {shlex.quote(str(target))} && git status"),
+                    cwd=Path(tmp),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                code, decision, stderr = run_hook(
+                    "block-unsafe-default-delivery.py",
+                    command_payload(f"cd {shlex.quote(str(sealed))} && git status"),
+                    cwd=Path(tmp),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, str(sealed))
+            finally:
+                sealed.chmod(0o700)
+
+    def test_artifact_target_below_unsearchable_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sealed = root / "sealed"
+            sealed.mkdir()
+            target = sealed / "child"
+            sealed.chmod(0)
+            try:
+                try:
+                    target.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                self.assertFalse(hook_common.tracked_artifact_source(target, target, root))
+            finally:
+                sealed.chmod(0o700)
+
     def test_graphql_masking_has_bounded_runtime(self) -> None:
         # A strict child deadline bounds a regression in the classifier itself,
         # without timing the shared shell parser.

@@ -3264,10 +3264,19 @@ def command_block_reason(
         target = (
             literal_directory_target(simple_command) if resolves_directories else None
         )
-        if target is not None and Path(target).is_dir():
-            cwd = Path(target)
-            base_source = "a literal `cd` in the same command"
-            continue
+        if target is not None:
+            try:
+                is_directory = Path(target).is_dir()
+            except PermissionError:
+                is_directory = False
+            if is_directory:
+                try:
+                    os.stat(os.fspath(Path(target)) + "/.")
+                except PermissionError:
+                    return unresolved(f"Cannot search directory target {target}.")
+                cwd = Path(target)
+                base_source = "a literal `cd` in the same command"
+                continue
         directory_resolved = False
     return ""
 
