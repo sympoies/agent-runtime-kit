@@ -5742,7 +5742,10 @@ def tracked_artifact_source(
         ARTIFACT_FORBIDDEN_SEGMENT, ARTIFACT_CACHE_SEGMENT
     }:
         return False
-    if named.is_symlink() or (target.exists() and not target.is_file()):
+    try:
+        if named.is_symlink() or (target.exists() and not target.is_file()):
+            return False
+    except PermissionError:
         return False
     # Git reports a physical root. Preserve the same relative spelling when
     # system ancestors resolve differently, while rejecting aliases inside it.
@@ -5774,10 +5777,16 @@ def tracked_artifact_source(
         and len(fields) == 3 and fields[0] in {b"100644", b"100755"}
         and fields[2] == b"0"
     ):
-        return target.is_file()
+        try:
+            return target.is_file()
+        except PermissionError:
+            return False
     # An untracked source file needs an existing parent with a tracked regular
     # sibling. Repository membership alone must not authorize a scratch tree.
-    if not allow_untracked or entries != [b""] or not target.parent.is_dir():
+    try:
+        if not allow_untracked or entries != [b""] or not target.parent.is_dir():
+            return False
+    except PermissionError:
         return False
     if any(character in relative.as_posix() for character in "*?["):
         return False

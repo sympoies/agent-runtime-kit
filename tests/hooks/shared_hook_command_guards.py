@@ -35,6 +35,75 @@ from shared_hook_helpers import (
 
 
 class CommandGuardsTests(HookTestCase):
+    def test_delivery_cd_symlink_loop_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = Path(tmp) / "loop"
+            loop.symlink_to(loop)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py",
+                command_payload(f"cd {shlex.quote(str(loop))} && git status"),
+                cwd=Path(tmp),
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, str(loop))
+
+    def test_delivery_cd_below_unsearchable_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sealed = Path(tmp) / "sealed"
+            sealed.mkdir()
+            target = sealed / "child"
+            target.mkdir()
+            sealed.chmod(0)
+            try:
+                try:
+                    target.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                code, decision, stderr = run_hook(
+                    "block-unsafe-default-delivery.py",
+                    command_payload(f"cd {shlex.quote(str(target))} && git status"),
+                    cwd=Path(tmp),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_allowed(decision)
+                module = self._load("delivery_inaccessible", "block-unsafe-default-delivery.py")
+                with mock.patch.object(module, "candidate_block_reason", return_value="") as classify, \
+                     mock.patch.object(module, "executable_resolution_rejection", return_value=""):
+                    module.command_block_reason(
+                        f"cd {shlex.quote(str(target))} && semantic-commit commit", Path("/")
+                    )
+                self.assertTrue(classify.called)
+                self.assertEqual(classify.call_args.args[2], Path(tmp), classify.call_args_list)
+                code, decision, stderr = run_hook(
+                    "block-unsafe-default-delivery.py",
+                    command_payload(f"cd {shlex.quote(str(sealed))} && git status"),
+                    cwd=Path(tmp),
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assert_blocked(decision, str(sealed))
+            finally:
+                sealed.chmod(0o700)
+
+    def test_artifact_target_below_unsearchable_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sealed = root / "sealed"
+            sealed.mkdir()
+            target = sealed / "child"
+            sealed.chmod(0)
+            try:
+                try:
+                    target.stat()
+                except PermissionError:
+                    pass
+                else:
+                    self.skipTest("directory search permission is not enforced")
+                self.assertFalse(hook_common.tracked_artifact_source(target, target, root))
+            finally:
+                sealed.chmod(0o700)
+
     def test_graphql_masking_has_bounded_runtime(self) -> None:
         # A strict child deadline bounds a regression in the classifier itself,
         # without timing the shared shell parser.

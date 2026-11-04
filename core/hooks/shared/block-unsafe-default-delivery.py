@@ -44,6 +44,7 @@ import selectors
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -3264,10 +3265,35 @@ def command_block_reason(
         target = (
             literal_directory_target(simple_command) if resolves_directories else None
         )
-        if target is not None and Path(target).is_dir():
-            cwd = Path(target)
-            base_source = "a literal `cd` in the same command"
-            continue
+        if target is not None:
+            try:
+                is_directory = stat.S_ISDIR(Path(target).stat().st_mode)
+            except PermissionError:
+                candidate = cwd / target
+                while candidate != candidate.parent:
+                    candidate = candidate.parent
+                    try:
+                        if candidate.is_dir():
+                            os.stat(os.fspath(candidate) + "/.")
+                            cwd = candidate
+                            base_source = "the nearest searchable ancestor of a literal `cd`"
+                            break
+                    except PermissionError:
+                        continue
+                is_directory = False
+                continue
+            except (FileNotFoundError, NotADirectoryError):
+                is_directory = False
+            except OSError:
+                return unresolved(f"Cannot inspect directory target {target}.")
+            if is_directory:
+                try:
+                    os.stat(os.fspath(Path(target)) + "/.")
+                except PermissionError:
+                    return unresolved(f"Cannot search directory target {target}.")
+                cwd = Path(target)
+                base_source = "a literal `cd` in the same command"
+                continue
         directory_resolved = False
     return ""
 
