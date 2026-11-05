@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Installed-pair acceptance must exist and reject unsafe observations."""
 import importlib.util
+import os
+import tempfile
+from unittest.mock import patch
 from pathlib import Path
 import unittest
 
@@ -17,6 +20,24 @@ class InstalledPairRecoveryTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         cls.verify = staticmethod(module.verify_observation)
+        cls.resolve_targets = staticmethod(module.resolve_targets)
+
+    def test_selected_pair_and_explicit_targets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            selected, poison = root / "selected", root / "poison"
+            selected.mkdir()
+            poison.mkdir()
+            for directory in (selected, poison):
+                for name in ("agent-session", "agent-hook"):
+                    executable = directory / name
+                    executable.write_text("#!/bin/sh\nexit 0\n")
+                    executable.chmod(0o755)
+            with patch.dict(os.environ, {"PATH": str(poison), "AGENT_SESSION_BIN": str(selected / "agent-session"), "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(selected)}):
+                self.assertEqual(self.resolve_targets(), (str(selected / "agent-session"), str(selected / "agent-hook")))
+                self.assertEqual(self.resolve_targets("/explicit/session", "/explicit/hook"), ("/explicit/session", "/explicit/hook"))
+            with patch.dict(os.environ, {"PATH": str(poison), "AGENT_SESSION_BIN": "", "AGENT_RUNTIME_TRUSTED_CLI_ROOT": ""}):
+                self.assertEqual(self.resolve_targets(), (str(poison / "agent-session"), str(poison / "agent-hook")))
 
     def observation(self, case):
         value = {"case": case, "commands": {"broker prepare-admission-proof": 1, "broker proof": 1},

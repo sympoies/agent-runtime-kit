@@ -471,6 +471,7 @@ python3 tests/ci/test_hook_dispatch_budget.py
 # The installed-pair entrypoint is opt-in; its unsafe-observation controls are
 # portable and run even when CI has no matching runtime hook installation.
 python3 tests/ci/test_installed_pair_recovery.py
+python3 tests/ci/test_selected_hook_sync.py
 # setup.sh and sync-runtime-surfaces.sh must resolve Python 3.11+ themselves:
 # a macOS PATH can put the system 3.9 python3 ahead of Homebrew's (#211).
 python3 tests/ci/test_runtime_python_resolver.py
