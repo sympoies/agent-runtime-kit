@@ -376,6 +376,20 @@ def resolved_trusted_cli(name: str) -> str | None:
 
 
 def resolved_agent_session() -> str | None:
+    configured = os.environ.get("AGENT_SESSION_BIN", "").strip()
+    if configured and os.path.isabs(configured) and os.path.basename(configured) == "agent-session":
+        resolved = os.path.realpath(configured)
+        if os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+            return resolved
+    roots = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "").strip()
+    if roots:
+        for root in roots.split(os.pathsep):
+            if not os.path.isabs(root) or not os.path.isdir(root):
+                continue
+            candidate = os.path.realpath(os.path.join(root, "agent-session"))
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+        return None
     return resolved_trusted_cli("agent-session")
 
 
@@ -460,7 +474,7 @@ def literal_claim_bootstrap_words(command: str) -> list[str] | None:
             return None
         sanitized = sanitized.replace(literal, sentinel)
     words = simple_words(sanitized)
-    if not words or words[:3] != ["agent-session", "work-context", "claim"]:
+    if not words or words[1:3] != ["work-context", "claim"]:
         return None
     values = {sentinel: value for _literal, sentinel, value in replacements}
     return [values.get(word, word) for word in words]
@@ -919,13 +933,9 @@ def provider_group_action(words: list[str]) -> tuple[int, str, str] | None:
 def claim_bootstrap_invocation(
     words: list[str], agent_session_executable: str, base: Path | None
 ) -> bool:
-    if words[:3] != [
-        "agent-session",
-        "work-context",
-        "claim",
-    ]:
+    if words[1:3] != ["work-context", "claim"]:
         return False
-    candidate = shutil.which(words[0])
+    candidate = words[0] if os.path.isabs(words[0]) else shutil.which(words[0])
     if not candidate or os.path.realpath(candidate) != os.path.realpath(
         agent_session_executable
     ):
