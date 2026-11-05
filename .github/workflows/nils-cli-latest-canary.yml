@@ -74,6 +74,7 @@ jobs:
       - name: Run full downstream behavior gate
         env:
           GH_TOKEN: ${{ github.token }}
+          DEVLOG_CHECK_BASE: origin/main
           NILS_RELEASE_SHA256: ${{ steps.latest.outputs.sha256 }}
           # Hosted runners keep the known #689 shared-hook race serialized.
           HOOKS_TEST_JOBS: "1"

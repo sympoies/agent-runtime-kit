@@ -70,6 +70,7 @@ jobs:
       - name: Print toolchain versions and run scripts/ci/all.sh
         env:
           GH_TOKEN: ${{ github.token }}
+          DEVLOG_CHECK_BASE: origin/main
           NILS_RELEASE_SHA256: ${{ matrix.sha256 }}
           # Run the shared-hook suite serially on CI. Its process-sharding
           # (default: min(nproc,16)) is a real local speedup, but on the

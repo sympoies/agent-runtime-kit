@@ -18,9 +18,14 @@ const bullets = n => Array.from({length: n}, (_, i) => `- **Label ${i}**: value`
 check('two labels', bullets(2), []);
 check('three labels', bullets(3), ['HUM001']);
 check('separate runs', `${bullets(3)}\n- plain\n${bullets(3)}`, ['HUM001', 'HUM001']);
+check('80 character labels', Array(3).fill(`- **${'x'.repeat(80)}** value`).join('\n'), ['HUM001']);
+check('81 character labels', Array(3).fill(`- **${'x'.repeat(81)}** value`).join('\n'), []);
+check('no separator', Array(3).fill('- **Label**value').join('\n'), []);
 check('ordered list', '1. **One**: x\n2. **Two**: x\n3. **Three**: x', []);
 check('600 code points', '中'.repeat(600), []);
 check('601 code points', '😀'.repeat(601), ['HUM002']);
+check('soft line breaks are one paragraph', `${'x'.repeat(300)}\n${'x'.repeat(300)}`, ['HUM002']);
+check('separate paragraphs', `${'x'.repeat(300)}\n\n${'x'.repeat(300)}`, []);
 check('list paragraph', `- ${'a '.repeat(301)}`, ['HUM002']);
 check('inline code and link destination excluded', `Text \`${'x'.repeat(700)}\` [label](https://example.com/${'x'.repeat(700)})`, []);
 check('link label included', `[${'x'.repeat(601)}](https://example.com)`, ['HUM002']);
