@@ -11,8 +11,7 @@ Setup recipes, render commands, hook details, targeted test matrices, coupled
 - Read [`AGENTS.md`](AGENTS.md), the canonical repository policy. Codex reads
   it natively; Claude Code reads it through the agents-md user setting that
   `scripts/sync-runtime-surfaces.sh` manages.
-- Use [`.agents/skills/project-runtime-development/SKILL.md`](.agents/skills/project-runtime-development/SKILL.md)
-  for the repository-specific validation and self-improvement loop.
+- Route recurring friction to its earliest owning test, diagnostic, policy, skill, runbook, or external repository. Fix in-scope owners; route authorized durable follow-up to an ordinary issue and public-safe devlog.
 - Identify the source owner and every rendered, manifest, fixture, golden, and
   product-adapter surface affected by the change.
 - Read the edit contract (`core/policies/files-hooks-validation.md`) and the
@@ -104,7 +103,7 @@ agents or target consumer rules.
 | Change | Canonical guidance |
 | --- | --- |
 | Host setup, runtime sync, private overlays, hooks | [`Development reference`](docs/source/development-reference.md#setup) |
-| Managed runtime skill creation or removal | Repo-local `project-runtime-development` and [`Skill lifecycle changes`](docs/source/development-reference.md#skill-lifecycle-changes) |
+| Managed runtime skill creation or removal | [`Skill lifecycle changes`](docs/source/development-reference.md#skill-lifecycle-changes) |
 | Project-local skill creation or removal | `meta:setup-project` create/remove references |
 | Coupled or pinned `nils-cli` work | [`nils-cli version workflows`](docs/source/nils-cli-version-workflows.md) |
 | Render and golden refresh | [`Build and render`](docs/source/development-reference.md#build-and-render) |

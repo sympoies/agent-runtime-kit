@@ -156,7 +156,7 @@ dispositions:
     current_clis: [agent-runtime]
     current_hooks: ["skill governance checks"]
     enforcement_point: "Governed source, manifest, render, acceptance, and validation lifecycle."
-    migration_path: "Procedure now lives in project-runtime-development and managed lifecycle procedures."
+    migration_path: "Procedure now lives in docs/source/development-reference.md managed lifecycle procedures."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
@@ -183,7 +183,7 @@ dispositions:
     current_clis: [agent-runtime]
     current_hooks: ["skill governance checks"]
     enforcement_point: "Dry-run reference audit and governed removal lifecycle."
-    migration_path: "Procedure now lives in project-runtime-development and managed lifecycle procedures."
+    migration_path: "Procedure now lives in docs/source/development-reference.md managed lifecycle procedures."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Global wrapper removed under #347; the existing owner retains the procedure."
@@ -335,7 +335,7 @@ dispositions:
     current_clis: [agent-runtime, forge-cli]
     current_hooks: ["version alignment gate"]
     enforcement_point: "Surface diff, pin alignment, consumer refresh, and PR delivery."
-    migration_path: "Procedure now lives in project-version-baseline adopt mode."
+    migration_path: "Procedure now lives in docs/source/nils-cli-version-workflows.md."
     compatibility_required: false
     live_cleanup_required: true
     rationale: "Global wrapper removed under #347; the existing owner retains the procedure."

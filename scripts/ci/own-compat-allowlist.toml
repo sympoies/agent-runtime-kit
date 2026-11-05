@@ -7,16 +7,6 @@
 schema = 1
 
 [[allow]]
-path = ".agents/skills/project-version-baseline/SKILL.md"
-match = "minimum_supported_tag"
-count = 1
-kind = "external"
-reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
-issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
-expires = "2026-12-31"
-external = "nils-cli 1.36.21"
-
-[[allow]]
 path = ".github/workflows/ci.yml"
 match = "minimum_supported_tag"
 count = 2
@@ -993,15 +983,6 @@ reason = "Named external CLI support surface; canonical version-policy keys rema
 issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
 expires = "2026-12-31"
 external = "nils-cli 1.36.21"
-
-[[allow]]
-path = "tests/runtime-smoke/cases/meta/run.sh"
-match = "retired_legacy_root"
-count = 2
-kind = "scheduled"
-reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
-issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
-expires = "2026-11-30"
 
 [[allow]]
 path = "tests/runtime-smoke/cases/meta/run.sh"

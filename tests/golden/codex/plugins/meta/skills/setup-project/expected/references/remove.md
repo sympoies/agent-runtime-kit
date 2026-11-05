@@ -6,7 +6,7 @@ Prereqs:
 
 - Run inside the target consuming project's git work tree.
 - The target is a project-local skill under `.agents/skills/<skill>`, not a
-  repo-owned runtime-kit managed skill. Use the kit-local `project-runtime-development` managed remove procedure for managed
+  repo-owned runtime-kit managed skill. Use the managed removal procedure in `docs/source/development-reference.md` for managed
   runtime-kit skills.
 - The first pass is dry-run only. File mutation requires explicit apply
   approval from the user or the active delivery plan.
@@ -74,7 +74,7 @@ rm -rf "$skill_dir"
 
 1. Resolve the target project root with `git rev-parse --show-toplevel`.
 2. Confirm this is a project-local skill removal. If the target lives in
-   runtime-kit manifests, switch to the kit-local `project-runtime-development` managed removal procedure.
+   runtime-kit manifests, switch to the managed removal procedure in `docs/source/development-reference.md`.
 3. Confirm `.agents/skills/<skill>/` exists exactly once.
 4. Build the dry-run inventory with `rg` and classify every active reference.
 5. Exclude `docs/plans/**` from default mutation. Keep those records as

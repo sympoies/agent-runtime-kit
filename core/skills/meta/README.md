@@ -13,11 +13,8 @@ The `meta` domain contains seven global repository maintenance skills.
 | [setup-project](./setup-project/) | Adopt `.agents/` conventions and create or remove project-local skills. |
 | [worktree-triage](./worktree-triage/) | Classify and safely clean managed worktrees. |
 
-Managed kit catalog changes use the repo-local
-[`project-runtime-development`](../../../.agents/skills/project-runtime-development/SKILL.md)
-skill and the [managed lifecycle procedures](../../../docs/source/development-reference.md#skill-lifecycle-changes).
-Version adoption uses repo-local
-[`project-version-baseline`](../../../.agents/skills/project-version-baseline/SKILL.md).
+Managed kit catalog changes use the [managed lifecycle procedures](../../../docs/source/development-reference.md#skill-lifecycle-changes).
+Version adoption uses the [version workflows](../../../docs/source/nils-cli-version-workflows.md).
 Runtime refresh uses the public
 [`scripts/sync-runtime-surfaces.sh`](../../../scripts/sync-runtime-surfaces.sh)
 and its [setup/sync reference](../../../docs/source/development-reference.md#refreshing-runtime-surfaces).
@@ -29,9 +26,9 @@ removed; use their existing procedure owners:
 
 | Removed global name | Procedure now lives in |
 | --- | --- |
-| `meta:nils-cli-bump` | Repo-local `project-version-baseline` authorized `adopt` mode and [version workflows](../../../docs/source/nils-cli-version-workflows.md#workflow-c--adopt-a-stable-release). Default check/report stay verify-only. |
-| `meta:create-skill` | Repo-local `project-runtime-development` and [managed creation](../../../docs/source/development-reference.md#managed-skill-creation). |
-| `meta:remove-skill` | Repo-local `project-runtime-development` and [managed removal](../../../docs/source/development-reference.md#managed-skill-removal). |
+| `meta:nils-cli-bump` | Authorized adoption in [version workflows](../../../docs/source/nils-cli-version-workflows.md#workflow-c--adopt-a-stable-release). Default check/report stay verify-only. |
+| `meta:create-skill` | [managed creation](../../../docs/source/development-reference.md#managed-skill-creation). |
+| `meta:remove-skill` | [managed removal](../../../docs/source/development-reference.md#managed-skill-removal). |
 | `meta:create-project-skill` | `meta:setup-project`, [create reference](./setup-project/references/create.md), and `setup-project/scripts/create-project-skill.sh`. |
 | `meta:remove-project-skill` | `meta:setup-project` and its [remove reference](./setup-project/references/remove.md). |
 | `meta:sync-runtime-surfaces` | The public `scripts/sync-runtime-surfaces.sh` and [setup/sync reference](../../../docs/source/development-reference.md#refreshing-runtime-surfaces). |

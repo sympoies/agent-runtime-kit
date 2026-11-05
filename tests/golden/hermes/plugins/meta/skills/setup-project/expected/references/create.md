@@ -6,7 +6,7 @@ Prereqs:
 
 - Run inside the target consuming project's git work tree.
 - The request is for a project-local skill, not a repo-owned runtime-kit managed
-  skill. Use the kit-local `project-runtime-development` managed create procedure for `agent-runtime-kit` managed skills.
+  skill. Use the managed creation procedure in `docs/source/development-reference.md` for `agent-runtime-kit` managed skills.
 - The caller has supplied or accepted a lowercase hyphenated skill name that
   starts with `project-` (project-local skills) or `private-` (skills under the
   private overlay home, `$AGENT_PRIVATE_SKILLS_HOME`).
@@ -89,7 +89,7 @@ scripts/create-project-skill.sh <skill-name> --with-script --with-tests --with-w
 
 1. Resolve the target project root with `git rev-parse --show-toplevel`.
 2. Confirm this is a project-local skill request. If the user wants a
-   runtime-kit managed skill, switch to the kit-local `project-runtime-development` managed create procedure.
+   runtime-kit managed skill, switch to the managed creation procedure in `docs/source/development-reference.md`.
 3. Normalize and validate the skill name as lowercase hyphenated text that
    starts with `project-` (project-local) or `private-` (private overlay);
    reject any other prefix.

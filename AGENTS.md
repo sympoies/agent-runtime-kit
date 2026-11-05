@@ -89,8 +89,7 @@
 ## Project Development Workflow
 
 - For material repository changes, use
-  `.agents/skills/project-runtime-development/SKILL.md` together with the
-  `project-dev` intent. It routes recurring gaps to the earliest owning test,
+  `DEVELOPMENT.md` and the `project-dev` intent. It routes recurring gaps to the earliest owning test,
   diagnostic, policy, skill, or ordinary issue instead of a parallel retained
   record system.
 

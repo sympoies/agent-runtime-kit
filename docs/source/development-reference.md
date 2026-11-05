@@ -337,8 +337,7 @@ stable machine output, extract it to nils-cli and declare it in `required_clis`.
 
 ## Skill Lifecycle Changes
 
-Use the repo-local `project-runtime-development` skill for managed catalog
-creation and removal. These procedures apply only to this kit. Consuming-repo
+Use these procedures for managed catalog creation and removal. These procedures apply only to this kit. Consuming-repo
 project-local adoption, creation and removal use `meta:setup-project` and its
 on-demand references; they must not edit kit manifests or product output.
 
@@ -588,7 +587,7 @@ Mind the version-policy gate: Position 1 blocks below the compatibility minimum,
 admits exact minimum through validated, and warns while continuing when the host
 is newer than validated. This lets coupled development run the full behavior
 stack without calling an unreleased/ahead surface validated. Policy movement is
-owned by `project-version-baseline adopt`; `cargo install --path` is never the default loop.
+governed by the authorized adoption workflow; `cargo install --path` is never the default loop.
 
 `docs/source/nils-cli-version-workflows.md` owns the full clone / worktree /
 downgrade / coupled-dev / bump procedures and the exact content-gate command
@@ -888,3 +887,32 @@ coupled change is stable:
 
 Do not touch `sympoies/homebrew-tap` for ordinary day-to-day development. It is
 the release destination only.
+
+## Product-floor bumps
+
+Only make a floor bump when explicitly authorized. Check and report are verify-only; `python3 scripts/ci/version-baseline-audit.py check` is also CI Position 14. The sources are `manifests/runtime-roots.yaml`, `docs/source/nils-cli-pin.yaml`, and `manifests/surfaces.yaml`.
+
+
+Only the **product floor** moves here. Follow
+`.github/PULL_REQUEST_TEMPLATE/min-version-bump.md`.
+
+1. Confirm target: `python3 scripts/ci/version-baseline-audit.py report` shows the latest stable; the dev host should already
+   run it.
+2. Edit the **lockstep set** to the new version:
+   - `manifests/runtime-roots.yaml` — `<product>.min_version` and
+     `recommended_version` → new version; `min_version_effective_from` → a
+     forward date (~14-day runway from today).
+   - `README.md` "Version baseline" row for the product (value + `(effective …)`).
+   - `docs/source/harness-shape-<product>.md` "Version Floors" statement
+     (`min_version` / `recommended_version` and `min_version_effective_from`).
+3. **Do NOT** touch per-surface `min_product` in `manifests/surfaces.yaml`,
+   `SUPPORT_MATRIX.md` / goldens, or the nils-cli policy (those are
+   independent / rendered / owned by the separate `adopt` procedure).
+4. `agent-runtime render --product codex && … --product claude && … --target
+   support-matrix`, then confirm `git diff -- tests/golden/` is clean (a pure
+   floor bump produces no golden churn).
+5. `bash scripts/ci/all.sh && bash tests/hooks/run.sh` — Position 14 must be
+   green (mirrors consistent).
+6. Commit via `semantic-commit` (`chore(runtime): …`) and open the PR via
+   `forge-cli`, filling the `min-version-bump` template (include
+   `agent-runtime doctor --product <product> --suggest-upgrade` output).

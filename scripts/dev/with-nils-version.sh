@@ -5,8 +5,7 @@
 # Use it to reproduce a regression against an older release (downgrade), or to
 # develop coupled changes against an unreleased build before it ships. The
 # minimum/validated roles in docs/source/nils-cli-pin.yaml move only through
-# project-version-baseline adopt. Full workflows:
-#   docs/source/nils-cli-version-workflows.md
+# the authorized workflows in docs/source/nils-cli-version-workflows.md.
 #
 # Compatibility: macOS system bash 3.2 and Linux bash 4+.
 # Avoid associative arrays, mapfile, and ${var,,} lowercasing.

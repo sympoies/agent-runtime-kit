@@ -13,7 +13,7 @@ update rules:
     ``docs/source/nils-cli-pin.yaml`` (``minimum_supported_tag`` and
     ``validated_tag``). Both roles are mirrored in the README table, the
     ``docs/source/nils-cli-surface.md`` snapshot, and each ``harness-shape``
-    doc. (Policy movement is owned by the ``project-version-baseline adopt`` skill; this
+    doc. (Policy movement is owned by the ``docs/source/nils-cli-version-workflows.md`` reference; this
     audit only checks that the prose mirrors agree with the manifest.)
   * Per-surface product and nils-cli floors — source of truth is
     ``manifests/surfaces.yaml``. The Codex and Claude harness coverage tables
@@ -448,8 +448,8 @@ def run_report() -> int:
         nils_installed = m.group(0) if m else nils_installed
     print("  %-10s %-12s %-12s %-12s %s" % (
         "nils-cli", "%s/%s" % (policy["minimum"], policy["validated"]),
-        nils_installed or "?", "(project-version-baseline adopt)",
-        "authorized adopt mode",
+        nils_installed or "?", "see workflows",
+        "authorized adoption",
     ))
 
     print("\nLatest lookups are best-effort (network). Consistency gate result:")
@@ -474,7 +474,7 @@ def _emit(res: Result):
             "\nDrift detected. The source of truth is manifests/runtime-roots.yaml "
             "(product floor), docs/source/nils-cli-pin.yaml (version policy), and "
             "manifests/surfaces.yaml (per-surface floors); update the "
-            "mirrors to match, or use the project-version-baseline skill."
+            "mirrors to match, or use the version workflows reference."
         )
 
 

@@ -41,6 +41,5 @@ prerequisites, failure handling and acceptance checks.
 
 This skill owns repository adoption and project-local skills. Host setup and
 runtime synchronization use the kit's documented setup/sync scripts. Managed
-runtime-kit catalog changes use the kit-local `project-runtime-development`
-skill and its development reference. Do not mutate global runtime homes or
+runtime-kit catalog changes use `docs/source/development-reference.md`. Do not mutate global runtime homes or
 runtime-kit manifests during a consuming project's local skill operation.
