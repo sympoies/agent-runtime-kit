@@ -4284,6 +4284,43 @@ class CommandGuardsTests(HookTestCase):
         self.assertEqual(source_block, codex_link_map_hook_body())
 
 
+    def test_delivery_trusts_absolute_configured_cli_before_path_winner(self) -> None:
+        with self._managed_cli_home_fixture() as (trusted, other):
+            module = self._load("delivery_configured_absolute", "block-unsafe-default-delivery.py")
+            os.environ["PATH"] = f"{other}{os.pathsep}{trusted}"
+            os.environ["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(trusted)
+            self.assertTrue(module.trusted_managed_cli_invocation(
+                str(Path(trusted) / "semantic-commit"), "semantic-commit"
+            ))
+
+
+    def test_delivery_configured_absolute_refusals_and_session_bin(self) -> None:
+        with self._managed_cli_home_fixture() as (trusted, other):
+            module = self._load("delivery_absolute_cases", "block-unsafe-default-delivery.py")
+            os.environ["PATH"] = f"{other}{os.pathsep}{trusted}"
+            target = Path(trusted) / "semantic-commit"
+            os.environ["AGENT_SESSION_BIN"] = str(Path(trusted) / "agent-session")
+            self.assertTrue(module.trusted_managed_cli_invocation(str(target), "semantic-commit"))
+            os.environ.pop("AGENT_SESSION_BIN")
+            os.environ["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = str(trusted)
+            outside = Path(other) / "outside"
+            outside.write_text("#!/bin/sh\n")
+            outside.chmod(0o755)
+            self.assertFalse(module.trusted_managed_cli_invocation(str(outside), "semantic-commit"))
+            target.unlink()
+            target.symlink_to(outside)
+            self.assertFalse(module.trusted_managed_cli_invocation(str(target), "semantic-commit"))
+            target.unlink()
+            target.write_text("#!/bin/sh\n")
+            target.chmod(0o644)
+            self.assertFalse(module.trusted_managed_cli_invocation(str(target), "semantic-commit"))
+            target.chmod(0o755)
+            self.assertFalse(module.trusted_managed_cli_invocation("./semantic-commit", "semantic-commit"))
+            for invalid in ("relative", str(target)):
+                os.environ["AGENT_RUNTIME_TRUSTED_CLI_ROOT"] = invalid
+                self.assertFalse(module.trusted_managed_cli_invocation(str(target), "semantic-commit"))
+
+
     def test_delivery_trusts_the_per_user_root_without_any_override(self) -> None:
         with self._managed_cli_home_fixture() as (home_bin, _other_bin):
             module = self._load("delivery_home_root", "block-unsafe-default-delivery.py")
