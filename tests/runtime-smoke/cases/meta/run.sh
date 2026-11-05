@@ -282,36 +282,12 @@ run_agent_scope_lock_probe() {
   grep -q '"ok": true' "$validate_out"
 }
 
-run_project_runtime_development_probe() {
-  local body="$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
-  local retired_root="$REPO_ROOT/core/policies/heuristic-system"
-  local retired_legacy_root="$REPO_ROOT/heuristic-system"
-  local out="$META_ARTIFACTS_DIR/project-runtime-development.contract.txt"
-  local bytes
-
-  test -f "$body"
-  test ! -e "$retired_root"
-  test ! -e "$retired_legacy_root"
-  bytes="$(wc -c <"$body" | tr -d ' ')"
-  test "$bytes" -le 2048
-  grep -Fq 'earliest owning' "$body"
-  grep -Fq 'issue and public-safe devlog' "$body"
-  grep -Fq 'does not grant automatic issue creation' "$body"
-  grep -Fq 'no parallel inbox' "$body"
-  {
-    printf 'body=%s\n' "$body"
-    printf 'bytes=%s\n' "$bytes"
-    printf 'verified=owner-routing issue-boundary compact-context retired-root-absent\n'
-  } >"$out"
-}
-
 run_lifecycle_skill_probe() {
   local procedure="$1"
   local fixture="$2"
   local out="$META_ARTIFACTS_DIR/${procedure}.governance.txt"
   local body="$REPO_ROOT/docs/source/development-reference.md"
 
-  test -f "$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
   grep -q "### Managed skill ${procedure}" "$body"
   grep -q 'core/skills' "$body"
   grep -q 'manifests/skills.yaml' "$body"
@@ -3438,7 +3414,6 @@ PY
 run_meta_outcome_routing_probe() {
   local files_policy="$REPO_ROOT/core/policies/files-hooks-validation.md"
   local git_policy="$REPO_ROOT/core/policies/git-delivery.md"
-  local project_skill="$REPO_ROOT/.agents/skills/project-runtime-development/SKILL.md"
   local evidence_policy="$REPO_ROOT/core/policies/evidence-archive/EVIDENCE_ARCHIVE.md"
 
   grep -Fq '## Parent Workflow Routing' "$files_policy" || {
@@ -3456,15 +3431,6 @@ run_meta_outcome_routing_probe() {
   }
   grep -Fq '`.agents/scripts/pre-pr.sh`' "$git_policy" || {
     echo "runtime-smoke meta: git policy missing pre-PR dispatcher routing" >&2
-    return 1
-  }
-  grep -Fq '## Project Delta' "$project_skill" || {
-    echo "runtime-smoke meta: project skill missing replacement delta" >&2
-    return 1
-  }
-  grep -Fq 'earliest owning' "$project_skill" &&
-    grep -Fq 'does not grant automatic issue creation' "$project_skill" || {
-    echo "runtime-smoke meta: project skill missing owner and provider boundaries" >&2
     return 1
   }
   grep -Fq 'evidence-control-plane closeout' "$evidence_policy" &&
@@ -3598,10 +3564,9 @@ record_case "meta.outcome-routing.scope-lock" "scope lock create and validate pa
 record_case "meta.bootstrap" "project-local bootstrap shim executed fixture script" run_project_local_shim_probe bootstrap
 record_case "meta.deploy" "project-local deploy shim executed fixture script" run_project_local_shim_probe deploy
 record_case "meta.execution-capsule" "execution capsule workflow rendered with direct supervised and host-access boundaries" run_execution_capsule_probe
-record_case "meta.project-runtime-development" "project development owner routing is compact and the retired heuristic root is absent" run_project_runtime_development_probe
-record_case "meta.project-runtime-development.create" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
+record_case "meta.managed-skill.create" "skill lifecycle create surface and governance fixture passed" run_create_skill_probe
 record_case "meta.setup-project.create" "project skill lifecycle create surface and fixture passed" run_create_project_skill_probe
-record_case "meta.project-runtime-development.remove" "skill lifecycle removal surface and governance fixture passed" run_remove_skill_probe
+record_case "meta.managed-skill.remove" "skill lifecycle removal surface and governance fixture passed" run_remove_skill_probe
 record_case "meta.setup-project.remove" "project skill lifecycle removal surface and fixture passed" run_remove_project_skill_probe
 record_case "meta.outcome-routing.pre-pr" "project-local pre-pr shim executed fixture script" run_project_local_shim_probe pre-pr
 record_case "meta.release" "project-local release shim executed fixture script" run_project_local_shim_probe release

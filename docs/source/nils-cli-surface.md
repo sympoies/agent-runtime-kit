@@ -1783,7 +1783,7 @@ in `manifests/skills.yaml` and `manifests/plugins.yaml`. Manifest authors
 should reference binary names from the **Binary** column when declaring
 `required_clis`, and refresh this snapshot at every nils-cli release that
 changes a consumed surface. The machine-readable pin the CI gate enforces
-lives in `docs/source/nils-cli-pin.yaml`; the `project-version-baseline adopt` skill
+lives in `docs/source/nils-cli-pin.yaml`; the `docs/source/nils-cli-version-workflows.md` reference
 keeps both in sync on a release bump.
 
 As of `v1.21.17`, the consumed rows below have these additive floors:

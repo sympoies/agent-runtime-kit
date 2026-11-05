@@ -208,7 +208,7 @@ if ! agent-runtime doctor --class version-alignment --pin "$PIN_MANIFEST" --form
   echo >&2
   echo "  Remediation:" >&2
   echo "  - Host below minimum: brew upgrade sympoies/tap/nils-cli" >&2
-  echo "  - Consumed behavior changed: update policy through project-version-baseline adopt" >&2
+  echo "  - Consumed behavior changed: update policy through docs/source/nils-cli-version-workflows.md" >&2
   echo "    and refresh consumers; ordinary uptake moves validated only, while an" >&2
   echo "    intentional compatibility retirement may move minimum." >&2
   echo "    The skill updates $PIN_MANIFEST, docs/source/nils-cli-surface.md," >&2

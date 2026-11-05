@@ -17,8 +17,6 @@ HOME_PRODUCT_EXCEPTIONS = {
 }
 HOME_BUDGET_BYTES = 4 * 1024 + 256
 EDIT_DOC_BUDGET_BYTES = 20 * 1024
-PRE_REPLACEMENT_EDIT_CONTEXT_BYTES = 8135
-PROJECT_SKILL_CONTEXT_DELTA_BYTES = 2 * 1024
 
 
 def read(relative: str) -> str:
@@ -452,25 +450,11 @@ class PolicySimplificationContractTests(unittest.TestCase):
 
     def test_issue_backed_project_improvement_is_event_driven(self) -> None:
         evidence = read("core/policies/evidence-control-plane.md")
-        project_skill = read(
-            ".agents/skills/project-runtime-development/SKILL.md"
-        )
 
         self.assertIn("Evidence is conditional", evidence)
         self.assertNotIn(
             "For testable behavior, initialize the record before production edits",
             evidence,
-        )
-        self.assertIn("earliest owning", project_skill)
-        self.assertIn("issue and public-safe devlog", project_skill)
-        self.assertIn("does not grant automatic issue creation", project_skill)
-        required_bytes = (ROOT / "core/policies/files-hooks-validation.md").stat().st_size
-        project_skill_bytes = len(project_skill.encode("utf-8"))
-        self.assertLessEqual(project_skill_bytes, PROJECT_SKILL_CONTEXT_DELTA_BYTES)
-        self.assertLessEqual(
-            required_bytes + project_skill_bytes,
-            PRE_REPLACEMENT_EDIT_CONTEXT_BYTES
-            + PROJECT_SKILL_CONTEXT_DELTA_BYTES,
         )
         self.assertFalse((ROOT / "core/policies/heuristic-system").exists())
         self.assertFalse((ROOT / "heuristic-system").exists())

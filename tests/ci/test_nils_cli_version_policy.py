@@ -746,7 +746,6 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             read("scripts/ci/security-hardening-audit.py"),
             read("scripts/ci/version-baseline-audit.py"),
             bump_skill,
-            read(".agents/skills/project-version-baseline/SKILL.md"),
         )
 
         for surface in surfaces:
@@ -762,13 +761,6 @@ class NilsCliVersionPolicyTest(unittest.TestCase):
             "remote-canary bootstrap exception",
             read("docs/source/nils-cli-version-workflows.md"),
         )
-        baseline = read(".agents/skills/project-version-baseline/SKILL.md")
-        self.assertIn("verify-only deterministic consistency gate", baseline)
-        self.assertIn("only with explicit current", baseline)
-        self.assertIn("request authorization", baseline)
-        self.assertIn("adopt <stable-tag>", baseline)
-        audit = baseline.split('### A.', 1)[1].split('### B.', 1)[0]
-        self.assertNotIn("fix the mirror", audit)
 
 
     def test_runtime_smoke_tracks_the_active_exact_ci_lane(self) -> None:

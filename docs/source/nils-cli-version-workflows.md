@@ -16,8 +16,7 @@ resolves the greatest strict stable semantic release without mutating policy or
 becoming a required pull-request check.
 
 The mechanics for scoped version switching live in
-`scripts/dev/with-nils-version.sh`. The repo-local `project-version-baseline`
-skill owns authorized adoption and mirror refresh; its default check/report modes remain verify-only.
+`scripts/dev/with-nils-version.sh`. This reference owns authorized adoption and mirror refresh. `python3 scripts/ci/version-baseline-audit.py check` and `report` remain verify-only.
 
 ## Core principles
 
@@ -89,8 +88,7 @@ snapshots as the formal validated baseline before a stable release exists.
 
 ## Workflow C — Adopt a stable release
 
-Use `project-version-baseline adopt <stable-tag>` only when the current request
-explicitly authorizes adoption. `check` (the default) and `report` verify policy
+Adopt a stable tag only when the current request explicitly authorizes adoption. `check` (the default) and `report` verify policy
 and mirrors without moving either role. An installed newer release is not
 adoption authority. Adoption of the greatest stable tag is allowed when the
 request authorizes that selection. The procedure below is guided; it adds no

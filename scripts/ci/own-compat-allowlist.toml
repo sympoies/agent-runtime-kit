@@ -7,16 +7,6 @@
 schema = 1
 
 [[allow]]
-path = ".agents/skills/project-version-baseline/SKILL.md"
-match = "minimum_supported_tag"
-count = 1
-kind = "external"
-reason = "Named external CLI support surface; canonical version-policy keys remain current. Review with the pin owner, not as a kit old-form alias."
-issue = "https://github.com/sympoies/agent-runtime-kit/issues/329"
-expires = "2026-12-31"
-external = "nils-cli 1.36.21"
-
-[[allow]]
 path = ".github/workflows/ci.yml"
 match = "minimum_supported_tag"
 count = 2
