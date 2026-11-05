@@ -53,6 +53,9 @@ jobs:
 
       # Cache only the release archive. The helper verifies these bytes and
       # creates a fresh extracted surface once for the combined lane command.
+      - name: Set default branch reference
+        run: git remote set-head origin main
+
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -70,7 +73,6 @@ jobs:
       - name: Print toolchain versions and run scripts/ci/all.sh
         env:
           GH_TOKEN: ${{ github.token }}
-          DEVLOG_CHECK_BASE: origin/main
           NILS_RELEASE_SHA256: ${{ matrix.sha256 }}
           # Run the shared-hook suite serially on CI. Its process-sharding
           # (default: min(nproc,16)) is a real local speedup, but on the

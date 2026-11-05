@@ -57,6 +57,9 @@ jobs:
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "resolved newest stable nils-cli: $tag" | tee "$GITHUB_STEP_SUMMARY"
 
+      - name: Set default branch reference
+        run: git remote set-head origin main
+
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -74,7 +77,6 @@ jobs:
       - name: Run full downstream behavior gate
         env:
           GH_TOKEN: ${{ github.token }}
-          DEVLOG_CHECK_BASE: origin/main
           NILS_RELEASE_SHA256: ${{ steps.latest.outputs.sha256 }}
           # Hosted runners keep the known #689 shared-hook race serialized.
           HOOKS_TEST_JOBS: "1"
