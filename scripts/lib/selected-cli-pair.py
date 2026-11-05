@@ -19,21 +19,27 @@ def selected_pair():
     session = guard.resolved_agent_session()
     if not session:
         return None, None
-    candidates = [os.environ.get('AGENT_SESSION_BIN', '')]
-    candidates.extend(str(Path(root) / 'agent-session') for root in os.environ.get('AGENT_RUNTIME_TRUSTED_CLI_ROOT', '').split(os.pathsep) if root and os.path.isabs(root))
-    candidates.extend([shutil.which('agent-session') or '', session])
-    for candidate in candidates:
-        if candidate and os.path.realpath(candidate) == session:
-            hook = Path(candidate).parent / 'agent-hook'
-            if hook.is_file() and os.access(hook, os.X_OK):
-                return session, str(hook.resolve())
+    configured = os.environ.get('AGENT_SESSION_BIN', '').strip()
+    roots = os.environ.get('AGENT_RUNTIME_TRUSTED_CLI_ROOT', '').strip()
+    if configured and os.path.isabs(configured) and os.path.basename(configured) == 'agent-session' and os.path.realpath(configured) == session and os.path.isfile(configured) and os.access(configured, os.X_OK):
+        candidate = configured
+    elif roots:
+        candidate = next((str(Path(root) / 'agent-session') for root in roots.split(os.pathsep)
+                          if os.path.isabs(root) and os.path.realpath(Path(root) / 'agent-session') == session
+                          and os.path.isfile(Path(root) / 'agent-session') and os.access(Path(root) / 'agent-session', os.X_OK)), '')
+    else:
+        candidate = shutil.which('agent-session') or ''
+    if candidate:
+        hook = Path(candidate).parent / 'agent-hook'
+        if hook.is_file() and os.access(hook, os.X_OK):
+            return session, str(hook.resolve())
     return session, None
 
 
 if __name__ == '__main__':
     session, hook = selected_pair()
     if hook:
-        print(hook)
+        sys.stdout.buffer.write(os.fsencode(hook) + b'\n')
     elif session or os.environ.get('AGENT_RUNTIME_TRUSTED_CLI_ROOT', '').strip() or os.environ.get('AGENT_SESSION_BIN', '').strip():
         print('selected agent-session pair is unavailable', file=sys.stderr)
         sys.exit(1)

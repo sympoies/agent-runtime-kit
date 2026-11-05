@@ -21,6 +21,26 @@ class SelectedHookSyncTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "agent-hook")
         self.assertIn("unselected PATH", result.stderr)
 
+    def test_path_alias_cannot_supply_selected_hook(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            selected, poison = root / "selected", root / "poison"
+            selected.mkdir()
+            poison.mkdir()
+            session = selected / "agent-session"
+            session.write_text("#!/bin/sh\nexit 0\n")
+            session.chmod(0o755)
+            (poison / "agent-session").symlink_to(session)
+            hook = poison / "agent-hook"
+            hook.write_text("#!/bin/sh\nexit 99\n")
+            hook.chmod(0o755)
+            env = os.environ.copy()
+            env.update(PATH=str(poison), AGENT_SESSION_BIN=str(session), AGENT_RUNTIME_TRUSTED_CLI_ROOT="")
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/lib/selected-cli-pair.py")],
+                                    env=env, text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(str(hook), result.stdout)
+
     def test_selected_hook_owns_sync_and_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
