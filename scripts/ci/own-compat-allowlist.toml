@@ -986,15 +986,6 @@ external = "nils-cli 1.36.21"
 
 [[allow]]
 path = "tests/runtime-smoke/cases/meta/run.sh"
-match = "retired_legacy_root"
-count = 2
-kind = "scheduled"
-reason = "K4 owns completed layout/managed-link migration cleanup and its disposable acceptance fixtures; preserve ownership and restore safety."
-issue = "https://github.com/sympoies/agent-runtime-kit/issues/330"
-expires = "2026-11-30"
-
-[[allow]]
-path = "tests/runtime-smoke/cases/meta/run.sh"
 match = "run_sync_runtime_surfaces_hermes_legacy_cleanup_probe"
 count = 2
 kind = "scheduled"
