@@ -11,37 +11,22 @@ policy; `bash scripts/ci/all.sh` installs the locked dependencies and runs both.
 
 ## Use in another repository
 
-Copy `readability.json` and `human-prose.cjs` unchanged into
-`vendor/docs-readability/` from a specific commit of this repository. Record
-its repository URL, full commit SHA, and the SHA-256 of each copied file in a
-`SOURCE.json` beside them. Update these files together in a reviewed change;
-never fetch an unpinned branch during CI. Link to the policy rather than
-copying it. Install `markdownlint-cli2` at exactly `0.24.0` with the consumer's
-package manager and commit its lockfile. A repository without a Node package
-can use an isolated package and lockfile under `tools/docs-lint/`.
+Check out this kit at a reviewed, full merge commit SHA and record that pin in
+the consumer's setup or CI. Install its locked dependencies with
+`npm ci --ignore-scripts --prefix <kit-checkout>/tools/docs-readability`.
+From the consumer's working directory, run:
 
-A root `.markdownlint-cli2.cjs` can inventory maintained Markdown:
-
-```javascript
-module.exports = {
-  config: require('./vendor/docs-readability/readability.json'),
-  customRules: ['./vendor/docs-readability/human-prose.cjs'],
-  globs: [
-    '**/*.md',
-    '#**/{journal,reports,devlog,evidence,archive,discussions}/**',
-    '#**/{fixtures,testdata,vendor,node_modules,dist,.git}/**',
-    '#**/NOW.md',
-    '#**/CHANGELOG*.md'
-  ]
-};
+```sh
+<kit-checkout>/tools/docs-readability/bin/docs-lint README.md docs/guide.md
 ```
 
-Use `markdownlint-cli2 --no-globs README.md` to enforce only the first cleaned
-file. Expand that explicit list as maintained documents are cleaned, including
-new or modified maintained documents. Keep historical records and fixtures out
-of the gate. Check for nested configs that override the shared rules. Run the
-same command in the repository's existing local validation and CI, using its
-resource wrapper where applicable.
+Pass the maintained files or directories to check; directories are searched
+recursively for Markdown files. Paths are relative to the working directory.
+Missing paths fail with exit code 2; findings return 1 and a clean run returns
+0. Only the supplied paths are linted. Do not copy the rules or configuration
+into the consumer: the entrypoint loads them from the pinned checkout. Expand
+the list as maintained documents are cleaned, and run the same command in local
+validation and CI using the consumer's resource wrapper where applicable.
 
 The checks flag three consecutive bold-label bullets, prose paragraphs longer
 than 600 Unicode code points, and paragraphs with two em dashes or headings

@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const lint = require('markdownlint/sync');
+const MarkdownIt = require('markdown-it');
+const options = require('../.markdownlint-cli2.cjs');
+
+try {
+  if (process.argv.length < 3) throw new Error('usage: docs-lint <paths...>');
+  const files = new Set();
+  function collect(name) {
+    let stat;
+    try { stat = fs.statSync(name); } catch (error) {
+      if (error.code === 'ENOENT') throw new Error(`path does not exist: ${name}`);
+      throw error;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(name)) collect(path.join(name, entry));
+    } else if (stat.isFile() && /\.(md|markdown)$/i.test(name)) {
+      files.add(name);
+    }
+  }
+  for (const name of process.argv.slice(2)) collect(name);
+  const customRules = options.customRules.flatMap(rule => require(path.resolve(__dirname, '..', rule)));
+  const result = lint.lint({ files: [...files], config: options.config, customRules,
+    markdownItFactory: () => new MarkdownIt() });
+  const findings = Object.entries(result).flatMap(([file, errors]) =>
+    errors.map(error => `${file}:${error.lineNumber} ${error.ruleNames.join('/')} ${error.ruleDescription}`));
+  if (findings.length) {
+    console.error(findings.join('\n'));
+    process.exitCode = 1;
+  }
+} catch (error) {
+  console.error(`docs-lint: ${error.message}`);
+  process.exitCode = 2;
+}
