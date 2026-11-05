@@ -239,6 +239,9 @@ python3 tests/ci/test_devlog_capability.py
 python3 tests/ci/test_devlog_fragments.py
 python3 tests/ci/test_devlog_fold.py
 bash scripts/ci/devlog-check.sh
+npm ci --ignore-scripts --prefix tools/docs-readability
+npm test --prefix tools/docs-readability
+npm run lint --prefix tools/docs-readability
 python3 tests/ci/test_tracker_row_grammar_fixtures.py
 
 # docs/discussions is staging, not storage: a capture must stay deletable, so no
