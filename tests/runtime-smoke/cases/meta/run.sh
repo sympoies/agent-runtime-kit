@@ -770,7 +770,10 @@ case "$command_name" in
     ;;
 esac
 SH
-  chmod +x "$stub_bin/agent-runtime" "$stub_bin/agent-hook" "$stub_bin/codex"
+  cp "$stub_bin/agent-hook" "$stub_bin/agent-session"
+  chmod +x "$stub_bin/agent-runtime" "$stub_bin/agent-hook" "$stub_bin/agent-session" "$stub_bin/codex"
+  local AGENT_SESSION_BIN="$stub_bin/agent-session"
+  export AGENT_SESSION_BIN
   : >"$stub_log"
 
   # A link into a managed checkout's build output (the former layout) is never
