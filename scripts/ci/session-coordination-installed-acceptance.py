@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK_FILES = ("session-coordination-guard.py", "hook_common.py")
@@ -329,13 +332,32 @@ capability = { id = "agent-session.coordination.v1", reason_code = "coordination
         return value
 
 
+def resolve_targets(session_override=None, hook_override=None):
+    spec = importlib.util.spec_from_file_location("selected_cli_pair", ROOT / "scripts/lib/selected-cli-pair.py")
+    selector = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(selector)
+    session, hook = selector.selected_pair()
+    if not hook and not hook_override and (session or os.environ.get("AGENT_SESSION_BIN", "").strip() or os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "").strip()):
+        raise AssertionError("selected agent-session has no executable agent-hook sibling")
+    return (session_override or session or shutil.which("agent-session"),
+            hook_override or hook or shutil.which("agent-hook"))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--agent-session-bin", default=shutil.which("agent-session"))
-    parser.add_argument("--agent-hook-bin", default=shutil.which("agent-hook"))
+    parser.add_argument("--agent-session-bin", default=None)
+    parser.add_argument("--agent-hook-bin", default=None)
     parser.add_argument("--installed-hooks", type=Path,
                         default=Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "hooks")
     args = parser.parse_args()
+    explicit_session, explicit_hook = args.agent_session_bin, args.agent_hook_bin
+    args.agent_session_bin, args.agent_hook_bin = resolve_targets(explicit_session, explicit_hook)
+    spec = importlib.util.spec_from_file_location("selected_cli_pair", ROOT / "scripts/lib/selected-cli-pair.py")
+    selector = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(selector)
+    selected_session, selected_hook = selector.selected_pair()
+    target_selection = {"agent-session": "explicit" if explicit_session else ("selected" if selected_session else "unselected-path"),
+                        "agent-hook": "explicit" if explicit_hook else ("selected" if selected_hook else "unselected-path")}
     binaries, versions, hashes = {}, {}, {}
     for name, raw in (("agent-session", args.agent_session_bin), ("agent-hook", args.agent_hook_bin)):
         require(raw and Path(raw).is_absolute(), "installed executable must be an absolute path")
@@ -358,7 +380,7 @@ def main():
             root.mkdir(mode=0o700)
             observations.append(Fixture(root, binaries["agent-session"], binaries["agent-hook"], args.installed_hooks).observe(case))
     print(json.dumps({"schema_version": "runtime-kit.installed-pair-acceptance.v1", "status": "pass",
-                      "versions": versions, "binary_sha256": hashes, "installed_hook_sha256": hooks,
+                      "target_selection": target_selection, "versions": versions, "binary_sha256": hashes, "installed_hook_sha256": hooks,
                       "observations": observations}, sort_keys=True))
 
 

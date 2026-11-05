@@ -381,12 +381,13 @@ source "$1"
 SOURCE_ROOT="$2"
 APPLY=1
 resolve_agent_hook_paths
-agent-hook() {
+fake_agent_hook() {
   case " $* " in
     *" --apply "*) return 73 ;;
   esac
   "$AGENT_HOOK_BIN" "$@"
 }
+AGENT_HOOK_EXECUTABLE=fake_agent_hook
 if prepare_agent_hook_cutover codex; then
   exit 99
 else

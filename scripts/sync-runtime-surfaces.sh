@@ -42,6 +42,7 @@ AGENT_HOOK_CONFIG=""
 AGENT_HOOK_POLICY=""
 AGENT_HOOK_STATE_DIR=""
 AGENT_HOOK_REMOVE=0
+AGENT_HOOK_EXECUTABLE=""
 # Claude's builtin agents-md plugin skips AGENTS.md whenever an ancestor holds a
 # CLAUDE.md. Under CLAUDE_CONFIG_DIR, ~/.claude/CLAUDE.md is such an ancestor
 # for every repo under $HOME, so the kit owns this user setting.
@@ -1268,6 +1269,7 @@ PY
 }
 
 resolve_agent_hook_paths() {
+  AGENT_HOOK_EXECUTABLE="$(runtime_python "$SCRIPT_DIR/lib/selected-cli-pair.py")"
   AGENT_HOOK_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/agent-hook/config.toml"
   AGENT_HOOK_POLICY="${XDG_DATA_HOME:-$HOME/.local/share}/agent-hook/policies/runtime-kit-v1.toml"
   AGENT_HOOK_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/agent-hook"
@@ -1443,7 +1445,7 @@ print(
 PY
 
   if [ "$APPLY" = "1" ]; then
-    run_cmd agent-hook validate \
+    run_cmd "$AGENT_HOOK_EXECUTABLE" validate \
       --config "$AGENT_HOOK_CONFIG" \
       --state-dir "$AGENT_HOOK_STATE_DIR" \
       --format json
@@ -1492,7 +1494,7 @@ sync_agent_hook_setup() {
 
   log "syncing agent-hook setup product=$product action=${action:---add}"
   if [ "$product" = "hermes" ]; then
-    run_cmd agent-hook setup \
+    run_cmd "$AGENT_HOOK_EXECUTABLE" setup \
       --config "$AGENT_HOOK_CONFIG" \
       --state-dir "$AGENT_HOOK_STATE_DIR" \
       --product "$product" \
@@ -1503,14 +1505,14 @@ sync_agent_hook_setup() {
   fi
 
   if [ "$APPLY" = "0" ]; then
-    run_cmd agent-hook setup \
+    run_cmd "$AGENT_HOOK_EXECUTABLE" setup \
       --config "$AGENT_HOOK_CONFIG" \
       --state-dir "$AGENT_HOOK_STATE_DIR" \
       --product "$product" \
       ${action:+"$action"} \
       --dry-run \
       --format json
-    print_cmd agent-hook setup \
+    print_cmd "$AGENT_HOOK_EXECUTABLE" setup \
       --config "$AGENT_HOOK_CONFIG" \
       --state-dir "$AGENT_HOOK_STATE_DIR" \
       --product "$product" \
@@ -1520,14 +1522,14 @@ sync_agent_hook_setup() {
     return 0
   fi
 
-  print_cmd agent-hook setup \
+  print_cmd "$AGENT_HOOK_EXECUTABLE" setup \
     --config "$AGENT_HOOK_CONFIG" \
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
     ${action:+"$action"} \
     --dry-run \
     --format json
-  if preview_json="$(agent-hook setup \
+  if preview_json="$("$AGENT_HOOK_EXECUTABLE" setup \
     --config "$AGENT_HOOK_CONFIG" \
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
@@ -1546,14 +1548,14 @@ sync_agent_hook_setup() {
     return $?
   fi
 
-  print_cmd agent-hook setup \
+  print_cmd "$AGENT_HOOK_EXECUTABLE" setup \
     --config "$AGENT_HOOK_CONFIG" \
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
     "$apply_action" \
     --expected-plan-digest "$plan_digest" \
     --format json
-  if apply_json="$(agent-hook setup \
+  if apply_json="$("$AGENT_HOOK_EXECUTABLE" setup \
     --config "$AGENT_HOOK_CONFIG" \
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
@@ -4609,7 +4611,7 @@ doctor_agent_hook_product() {
     expected="unsupported"
   fi
   if [ "$APPLY" = "0" ]; then
-    run_cmd agent-hook doctor \
+    run_cmd "$AGENT_HOOK_EXECUTABLE" doctor \
       --config "$AGENT_HOOK_CONFIG" \
       --state-dir "$AGENT_HOOK_STATE_DIR" \
       --product "$product" \
@@ -4617,12 +4619,12 @@ doctor_agent_hook_product() {
     return 0
   fi
 
-  print_cmd agent-hook doctor \
+  print_cmd "$AGENT_HOOK_EXECUTABLE" doctor \
     --config "$AGENT_HOOK_CONFIG" \
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
     --format json
-  doctor_json="$(agent-hook doctor \
+  doctor_json="$("$AGENT_HOOK_EXECUTABLE" doctor \
     --config "$AGENT_HOOK_CONFIG" \
     --state-dir "$AGENT_HOOK_STATE_DIR" \
     --product "$product" \
@@ -4773,7 +4775,7 @@ main() {
   validate_live_sync_source_root
 
   if [ "$APPLY" = "1" ]; then
-    require_commands agent-runtime agent-hook
+    require_commands agent-runtime "$AGENT_HOOK_EXECUTABLE"
     if ! verify_nils_cli_version_alignment; then
       return 1
     fi
