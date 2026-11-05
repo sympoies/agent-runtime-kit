@@ -75,3 +75,9 @@ are optional: omit the whole section rather than leaving a placeholder in it.
 - [2026-07](2026-07.md)
 - [2026-06](2026-06.md)
 - [2026-05](2026-05.md)
+
+## Pending
+
+<!-- devlog-pending-index -->
+
+- [2026-11-06-human-docs-checks](pending/2026-11-06-human-docs-checks.md)

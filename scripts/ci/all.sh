@@ -242,6 +242,7 @@ bash scripts/ci/devlog-check.sh
 npm ci --ignore-scripts --prefix tools/docs-readability
 npm test --prefix tools/docs-readability
 npm run lint --prefix tools/docs-readability
+node tools/docs-readability/test-consumer.cjs
 python3 tests/ci/test_tracker_row_grammar_fixtures.py
 
 # docs/discussions is staging, not storage: a capture must stay deletable, so no
