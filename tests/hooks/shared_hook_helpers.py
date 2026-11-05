@@ -321,7 +321,7 @@ AMBIENT_GATE_ENVS = (
 # on a split nils-cli install legitimately exports the trusted CLI root, which
 # prepare_trusted_test_cli_root cannot tell that inherited value apart from a
 # fixture-supplied one and would skip installing the per-fixture trusted root.
-AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT",)
+AMBIENT_TRUST_ENVS = ("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "AGENT_SESSION_BIN")
 
 
 def scrub_ambient_envs(full_env: dict[str, str]) -> None:
