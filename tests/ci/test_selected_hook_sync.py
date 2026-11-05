@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -12,6 +13,14 @@ SYNC = ROOT / 'scripts/sync-runtime-surfaces.sh'
 
 
 class SelectedHookSyncTests(unittest.TestCase):
+    def test_standalone_without_hook_keeps_dry_run_command(self):
+        env = os.environ.copy()
+        env.update(PATH="", AGENT_SESSION_BIN="", AGENT_RUNTIME_TRUSTED_CLI_ROOT="")
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/lib/selected-cli-pair.py")],
+                                env=env, text=True, capture_output=True, check=True)
+        self.assertEqual(result.stdout.strip(), "agent-hook")
+        self.assertIn("unselected PATH", result.stderr)
+
     def test_selected_hook_owns_sync_and_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

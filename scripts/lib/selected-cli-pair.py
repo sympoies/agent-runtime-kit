@@ -40,5 +40,4 @@ if __name__ == '__main__':
     else:
         print('warning: no selected pair; using unselected PATH agent-hook', file=sys.stderr)
         fallback = shutil.which('agent-hook')
-        if fallback:
-            print(os.path.abspath(fallback))
+        print(os.path.abspath(fallback) if fallback else 'agent-hook')
