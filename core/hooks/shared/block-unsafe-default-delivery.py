@@ -2441,19 +2441,17 @@ def default_branch_rejection(
 def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
     """Require an exact invocation of the active trusted managed CLI."""
     candidate = shutil.which(name)
-    if not candidate or not os.path.isabs(candidate):
-        return False
     if raw == name:
+        if not candidate or not os.path.isabs(candidate):
+            return False
         invoked = candidate
     elif os.path.isabs(raw):
         invoked = raw
     else:
         return False
     try:
-        lexical = os.path.abspath(candidate)
-        resolved = os.path.realpath(candidate)
-        if os.path.realpath(invoked) != resolved:
-            return False
+        lexical = os.path.abspath(invoked)
+        resolved = os.path.realpath(invoked)
     except OSError:
         return False
     if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
@@ -2464,7 +2462,7 @@ def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
         for item in os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "").split(
             os.pathsep
         )
-        if item.strip()
+        if os.path.isabs(item) and os.path.isdir(item)
     }
     session_bin = os.environ.get("AGENT_SESSION_BIN", "").strip()
     if (
@@ -2475,9 +2473,15 @@ def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
         and os.access(os.path.realpath(session_bin), os.X_OK)
     ):
         trusted_roots.add(os.path.realpath(os.path.dirname(session_bin)))
+    for root in trusted_roots:
+        try:
+            if os.path.commonpath((resolved, root)) == root:
+                return True
+        except ValueError:
+            continue
+    if not candidate or not os.path.isabs(candidate) or os.path.realpath(candidate) != resolved:
+        return False
     lexical_dir = os.path.realpath(os.path.dirname(lexical))
-    if lexical_dir in trusted_roots:
-        return True
     if lexical_dir == "/usr/bin" and resolves_within_its_directory(lexical, resolved):
         return True
     if is_managed_cli_home_bin(lexical_dir) and resolves_within_its_directory(lexical, resolved):
