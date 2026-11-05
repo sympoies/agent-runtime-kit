@@ -34,6 +34,44 @@ from shared_hook_helpers import (
 
 class ValidationCoordinationTests(HookTestCase):
 
+    def test_configured_agent_session_selection_and_claim_identity(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "coordination_selected_helper", HOOK_DIR / "session-coordination-guard.py"
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trusted, path_first = root / "trusted", root / "path-first"
+            trusted.mkdir()
+            path_first.mkdir()
+            for directory in (trusted, path_first):
+                helper = directory / "agent-session"
+                helper.write_text("#!/bin/sh\nexit 0\n")
+                helper.chmod(0o755)
+            claim = root / "claim.json"
+            capability = root / "capability"
+            claim.write_text("{}")
+            capability.write_text("fixture")
+            env = {"AGENT_RUNTIME_TRUSTED_CLI_ROOT": os.pathsep.join(map(str, (trusted, path_first))),
+                   "AGENT_SESSION_BIN": str(trusted / "agent-session"),
+                   "PATH": os.pathsep.join(map(str, (path_first, trusted))),
+                   "AGENT_SESSION_ID": "fixture-session",
+                   "AGENT_SESSION_CAPABILITY_FILE": str(capability)}
+            with mock.patch.dict(os.environ, env, clear=True):
+                selected = str(trusted / "agent-session")
+                self.assertEqual(guard.resolved_agent_session(), selected)
+                del os.environ["AGENT_SESSION_BIN"]
+                self.assertEqual(guard.resolved_agent_session(), selected)
+                os.environ["PATH"] = str(path_first)
+                self.assertEqual(guard.resolved_agent_session(), selected)
+                tail = (f' work-context claim --session "$AGENT_SESSION_ID" --file {claim}'
+                        f' --capability-file "$AGENT_SESSION_CAPABILITY_FILE"'
+                        ' --idempotency-key fixture-key --format json')
+                self.assertTrue(guard.command_bypasses_admission(selected + tail, selected))
+                self.assertFalse(guard.command_bypasses_admission("agent-session" + tail, selected))
+
     def test_managed_sessions_forge_operation_fixtures_without_broker(self) -> None:
         cases = json.loads((REPO_ROOT / "tests/hooks/fixtures/forge-writes.json").read_text())
         with tempfile.TemporaryDirectory() as tmp:
