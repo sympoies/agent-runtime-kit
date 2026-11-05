@@ -57,6 +57,11 @@ jobs:
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "resolved newest stable nils-cli: $tag" | tee "$GITHUB_STEP_SUMMARY"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
       - name: Cache nils-cli release archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

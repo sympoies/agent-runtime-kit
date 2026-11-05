@@ -1,0 +1,6 @@
+{
+  "name": "docs-readability",
+  "private": true,
+  "scripts": {"test": "node test.cjs", "lint": "markdownlint-cli2 --config .markdownlint-cli2.cjs --no-globs ../../core/policies/human-docs.md"},
+  "devDependencies": {"markdownlint-cli2": "0.24.0"}
+}
