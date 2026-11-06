@@ -8,6 +8,8 @@ The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
 requires different behavior.
 
+## Provider and Git command guards
+
 `block-direct-pr-create.py` refuses raw GitHub writes in Codex and Claude agent
 sessions: `gh issue` / `gh pr` write verbs (create, comment, close, edit,
 reopen, merge, ready, review, and any unrecognized verb), `gh pr checkout`,
@@ -32,7 +34,9 @@ Write refusals name the matching typed `forge-cli` operation when available and
 link [missing equivalents](https://github.com/sympoies/nils-cli/issues/2138).
 Unsupported operations must wait for their typed equivalent. The PR-skill
 marker and command-local environment clearing cannot exempt raw GitHub
-operations. `glab` follows the same policy as `gh`: `glab issue` / `glab mr`
+operations.
+
+`glab` follows the same policy as `gh`: `glab issue` / `glab mr`
 reads (`view`, `list`, `diff`, `approvers`, `issues`), a bare group, and help as
 the whole argv stay available, while every other verb (`create`, `new`, `note`,
 `update`, `close`, `reopen`, `merge`, `approve`, `rebase`, `delete`, ...) is
@@ -74,6 +78,8 @@ custom enterprise API hosts need an owning configured guard. Provider
 authentication and authorization remain the final boundary. Any downstream
 runtime that copies these shared hooks must mirror the contract and fixtures;
 this repository has no separate downstream deployment owner.
+
+## Finish-line validation
 
 The finish-line hooks read each repository's declared validation contract
 from its root `VALIDATION.toml`: `[[validation]]` tables with `context`,
@@ -178,6 +184,8 @@ names; repository-local candidates are always rejected. These hooks are mechanic
 product launch environment, managed runtime home, and an explicit trusted-root
 override remain host trust boundaries. Hermes has no runtime-kit hook runner.
 
+## Command context
+
 The shared `command_context` helper in `hook_common.py` resolves the canonical
 working directory, source, attestation, and optional stable diagnostic for a
 tool call. Its `effective_workdir` compatibility wrapper means
@@ -192,7 +200,9 @@ workdir keys (`workdir`, `cwd`, `current_working_directory`,
 matching this call's `tool_use_id`/`call_id`; then non-session payload metadata;
 then the top-level session `cwd`; then a bounded 64 KiB private managed-session
 record whose id, agent, ready state, runtime incarnation, owner/mode, and cwd all
-match the current hook process; and finally process cwd. Absolute inline,
+match the current hook process; and finally process cwd.
+
+Absolute inline,
 matching-transcript, payload, ordinary session-cwd, and authenticated
 managed-session-cwd values are attested. Relative values and plain process cwd
 are not. A transcript-call mismatch keeps payload/session cwd un-attested, but
@@ -208,7 +218,9 @@ engine read that subset identically. In the object-literal form, duplicate
 keys, nested values, spreads, computed keys, comments, template or
 single-quoted strings, and other bindings stay unreadable; strict JSON keeps
 its own rules, where the last duplicate key wins as it does in JavaScript and
-only the top-level `workdir` is read. The wrapper may bind the result and render it with `text(r)`,
+only the top-level `workdir` is read.
+
+The wrapper may bind the result and render it with `text(r)`,
 `text(r.output)`, or `text(JSON.stringify(r))`, or render the call directly as
 `text(await tools.exec_command(...))` or
 `text((await tools.exec_command(...)).output)`. When the matching transcript
@@ -223,6 +235,8 @@ refusal names the literal absolute `git -C <topic-checkout> merge --no-commit
 Direct-edit verification stays target-based; shell verification is
 command-context based.
 
+## Checkout writer lease
+
 `checkout-lease-guard.py` coordinates one writer per physical Git checkout
 across Codex and Claude only when the managed launch explicitly selects
 `AGENT_SESSION_COORDINATION_MODE=enforce`. Missing, invalid, `advisory`, and
@@ -236,7 +250,9 @@ forms do not acquire a writer lease unless the command includes the
 file-writing `--message-out` option; a mutating `default-branch` invocation is
 classified as a checkout writer too. Managed worktree slugs resolve through the
 authoritative `git-cli` inventory, and removal must be the command's sole
-mutation with exactly one removal target. In every mode a trusted
+mutation with exactly one removal target.
+
+In every mode a trusted
 `git-cli worktree remove <target> --format json` delegates fencing and
 preservation to the CLI without claiming a writer lease in PreToolUse.
 Optional `--safe`, `--acknowledge-backup-omissions`, and `--format text|json`
@@ -244,7 +260,9 @@ may appear in any order around the target; unrelated flags are refused. Literal
 `cd <primary> && git-cli worktree remove <target>` also works. Enforce mode
 still rejects a live foreign target lease but admits
 the caller's own lease. Raw `git worktree remove` remains blocked even with
-`ALLOW_DIRECT_GIT_WORKTREE=1`. Raw filesystem deletion detection is based on
+`ALLOW_DIRECT_GIT_WORKTREE=1`.
+
+Raw filesystem deletion detection is based on
 command patterns: `rm`, `unlink`, `shred`, and `find` with `-delete` or a direct
 `rm`/`unlink`/`shred` payload in `-exec`, `-execdir`, `-ok`, or `-okdir`. Search
 roots bound substituted find targets; literal payload targets use ordinary
@@ -255,6 +273,7 @@ interpreter code such as `python -c` with `shutil.rmtree` or `perl -e`, and
 `rsync --delete` and `mv` are outside its command-pattern contract. It is not a
 sandbox for arbitrary programs. Agents must still use the preserving lifecycle
 command to remove registered worktrees.
+
 The shared invocation parser also resolves literal `sudo`, `nice`, `nohup`, and
 `xargs` payloads. It respects launcher option values, `--`, and non-executing
 help/version forms. `nice` supports adjustment options; `sudo` supports ordinary
@@ -310,6 +329,8 @@ releases clean matching owner leases across the current repository and prunes
 lease state for physically removed worktrees while retaining the stable
 per-checkout lock inode; dirty or mismatched ownership is retained and reported.
 Stop never removes a worktree, branch, commit, or dirty file.
+
+## Session coordination
 
 `session-coordination-guard.py` is a separate semantic awareness layer for
 managed Codex and Claude launches. `advisory` is the default when the mode is
@@ -412,6 +433,8 @@ The guard accepts `--capabilities --format json` as a side-effect-free
 self-probe. Its capability map contains no retired orchestration admission
 contracts; ordinary intent and coordination enforcement still applies.
 
+## Runtime deadlines and degraded outcomes
+
 Executable runtime rules use independent child deadlines and an explicit
 `timeout_posture`. A timeout no longer erases completed outcomes or skips later
 mandatory rules. Allowed `warn` or `effect_gated` timeouts create mode-0600,
@@ -421,6 +444,8 @@ paths, prompts, or provider identifiers. A bounded summary keyed by policy,
 rule, error, effect, product, and platform aggregates recurrence and the latest
 completion. Completed blocks and closed/unknown effect outcomes remain
 authoritative.
+
+## Dirty-checkout adoption
 
 Dirty-checkout adoption is an opt-in advisory layered over the enforce-mode
 checkout gate. With `AGENT_RUNTIME_DIRTY_CHECKOUT_ADOPTION` set to `1` and
@@ -466,6 +491,8 @@ mutations, and every co-resident working-tree/index write are rejected. File and
 index protection remains unconditional for staged, unstaged, and untracked-only
 dirt. Codex and Claude register the shared guard on `UserPromptSubmit`; Hermes
 has no runtime-kit hook runner and does not support this enforcement.
+
+## Default-branch delivery guard
 
 `block-unsafe-default-delivery.py` owns the shell-side delivery-mode boundary.
 It admits a non-governed executable when shell expansion changes only its path
