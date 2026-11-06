@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import tempfile
 import tomllib
@@ -25,6 +26,65 @@ def write_private(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     path.chmod(0o600)
+
+
+# nils-cli v1.40.11 provider_entrypoint::selector; exact equality matches
+# the producer's ownership test and rejects lookalike shell programs.
+SELECTOR = """resolve() {
+  target=$1; count=0
+  directory=$(CDPATH= cd -P "${target%/*}" 2>/dev/null && pwd -P) || return 1
+  target=$directory/${target##*/}
+  while [ -L "$target" ]; do
+    count=$((count + 1)); [ "$count" -le 40 ] || return 1
+    link=$(/usr/bin/readlink "$target") || return 1
+    case "$link" in /*) target=$link ;; *) target=${target%/*}/$link ;; esac
+    directory=$(CDPATH= cd -P "${target%/*}" 2>/dev/null && pwd -P) || return 1
+    target=$directory/${target##*/}
+  done
+  printf '%s' "$target"
+}
+configured=${AGENT_SESSION_BIN:-}
+case "$configured" in /*/agent-session) if [ -f "$configured" ] && [ -x "$configured" ]; then selected=${configured%/*}/{executable}; session_real=$(resolve "$configured") && selected_real=$(resolve "$selected") && [ "${session_real%/*}" = "${selected_real%/*}" ] && [ -f "$selected" ] && [ -x "$selected" ] && exec "$selected" "$@"; exit 127; fi ;; esac
+configured_roots=${AGENT_RUNTIME_TRUSTED_CLI_ROOT:-}
+roots=${configured_roots:-/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:${HOME:-/nonexistent}/.local/nils-cli/bin}
+trusted_default() {
+  target=$1; approved=$2
+  approved=$(CDPATH= cd -P "$approved" 2>/dev/null && pwd -P) || return 1
+  target=$(resolve "$target") || return 1
+  case "$approved" in
+    /opt/homebrew/bin|/home/linuxbrew/.linuxbrew/bin)
+      case "$target" in "$approved/{executable}"|"${approved%/bin}/Cellar/nils-cli/"*) return 0 ;; esac ;;
+    *) [ "$target" = "$approved/{executable}" ] && return 0 ;;
+  esac
+  return 1
+}
+set -f
+old_ifs=$IFS; IFS=:
+for root in $roots; do
+  case "$root" in /*) selected=$root/{executable}; if [ -f "$selected" ] && [ -x "$selected" ] && { [ -n "$configured_roots" ] || trusted_default "$selected" "$root"; }; then IFS=$old_ifs; exec "$selected" "$@"; fi ;; esac
+done
+exit 127"""
+
+
+def selector(executable: str) -> str:
+    return SELECTOR.replace("{executable}", executable)
+
+
+def is_owned_dispatch(command: str, product: str) -> bool:
+    # Supported nils-cli v1.36.21 through v1.40.10 use the bare command.
+    if command == f"agent-hook dispatch --product {product}":
+        return True
+    return shlex.split(command) == [
+        "/bin/sh", "-c", selector("agent-hook"), "provider-entrypoint",
+        "dispatch", "--product", product,
+    ]
+
+
+def is_owned_notify(argv: list[str]) -> bool:
+    return argv == [
+        "/bin/sh", "-c", selector("agent-session"), "provider-entrypoint",
+        "activity", "notify", "--agent", "codex",
+    ]
 
 
 def read_json(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
@@ -121,6 +181,26 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
         return read_json(
             self.agent_hook("setup", "--product", product, *action, "--dry-run")
         )["data"]
+
+    def test_selector_ownership_rejects_lookalikes(self) -> None:
+        for executable in ("agent-hook", "agent-session"):
+            programs = (
+                f'exit 0 # selected=$root/{executable} exec "$selected" "$@"',
+                selector(executable).replace(f"$root/{executable}", f"$root/{executable}-other"),
+            )
+            for program in programs:
+                if executable == "agent-hook":
+                    for product in ("codex", "claude"):
+                        command = shlex.join([
+                            "/bin/sh", "-c", program, "provider-entrypoint",
+                            "dispatch", "--product", product,
+                        ])
+                        self.assertFalse(is_owned_dispatch(command, product))
+                else:
+                    self.assertFalse(is_owned_notify([
+                        "/bin/sh", "-c", program, "provider-entrypoint",
+                        "activity", "notify", "--agent", "codex",
+                    ]))
 
     def test_codex_setup_owns_compact_ingress(self) -> None:
         preview = self.setup_preview("codex")
@@ -502,18 +582,22 @@ remove_agent_hook_cutover codex
             for group in groups
             for hook in group["hooks"]
         ]
-        owned = [command for command in commands if command.startswith("agent-hook dispatch")]
+        owned = [command for command in commands if is_owned_dispatch(command, "codex")]
         self.assertEqual(len(owned), len(applied["owned_groups"]))
         self.assertEqual(commands.count("third-party-hook"), 1)
+        self.assertFalse(is_owned_dispatch("third-party-hook", "codex"))
         self.assertFalse(any("/hooks/" in command for command in owned))
-        self.assertEqual(document["notify"][:5], [
-            "agent-session",
-            "activity",
-            "notify",
-            "--agent",
-            "codex",
-        ])
-        self.assertIn("--forward-notify-argv-json", document["notify"])
+        notify = document["notify"]
+        if notify[0] == "agent-session":
+            # Supported nils-cli v1.36.21 through v1.40.10 use bare argv.
+            self.assertEqual(notify[:5], ["agent-session", "activity", "notify", "--agent", "codex"])
+            forward = notify[5:]
+        else:
+            self.assertTrue(is_owned_notify(notify[:8]))
+            forward = notify[8:]
+        self.assertEqual(len(forward), 2)
+        self.assertEqual(forward[0], "--forward-notify-argv-json")
+        self.assertEqual(json.loads(forward[1]), original_notify)
         self.assert_doctor("codex")
 
         remove = self.setup_preview("codex", "--remove")
@@ -574,7 +658,7 @@ remove_agent_hook_cutover codex
             for group in groups
             for hook in group["hooks"]
         ]
-        owned = [command for command in commands if command.startswith("agent-hook dispatch")]
+        owned = [command for command in commands if is_owned_dispatch(command, "claude")]
         self.assertEqual(len(owned), len(applied["owned_groups"]))
         self.assertEqual(commands.count("third-party-hook"), 1)
         self.assertIn("StopFailure", applied["owned_events"])
