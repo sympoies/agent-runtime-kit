@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import tempfile
 import tomllib
@@ -25,6 +26,21 @@ def write_private(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     path.chmod(0o600)
+
+
+def is_owned_dispatch(command: str, product: str) -> bool:
+    # Supported nils-cli v1.36.21 through v1.40.10 use the bare command.
+    if command == f"agent-hook dispatch --product {product}":
+        return True
+    # nils-cli v1.40.11 renders a selected toolchain shell entrypoint.
+    argv = shlex.split(command)
+    return (
+        len(argv) == 7
+        and argv[:2] == ["/bin/sh", "-c"]
+        and "selected=$root/agent-hook" in argv[2]
+        and 'exec "$selected" "$@"' in argv[2]
+        and argv[3:] == ["provider-entrypoint", "dispatch", "--product", product]
+    )
 
 
 def read_json(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
@@ -502,18 +518,27 @@ remove_agent_hook_cutover codex
             for group in groups
             for hook in group["hooks"]
         ]
-        owned = [command for command in commands if command.startswith("agent-hook dispatch")]
+        owned = [command for command in commands if is_owned_dispatch(command, "codex")]
         self.assertEqual(len(owned), len(applied["owned_groups"]))
         self.assertEqual(commands.count("third-party-hook"), 1)
+        self.assertFalse(is_owned_dispatch("third-party-hook", "codex"))
         self.assertFalse(any("/hooks/" in command for command in owned))
-        self.assertEqual(document["notify"][:5], [
-            "agent-session",
-            "activity",
-            "notify",
-            "--agent",
-            "codex",
-        ])
-        self.assertIn("--forward-notify-argv-json", document["notify"])
+        notify = document["notify"]
+        if notify[0] == "agent-session":
+            # Supported nils-cli v1.36.21 through v1.40.10 use bare argv.
+            self.assertEqual(notify[:5], ["agent-session", "activity", "notify", "--agent", "codex"])
+            forward = notify[5:]
+        else:
+            self.assertEqual(notify[:2], ["/bin/sh", "-c"])
+            self.assertIn("selected=$root/agent-session", notify[2])
+            self.assertIn('exec "$selected" "$@"', notify[2])
+            self.assertEqual(notify[3:8], [
+                "provider-entrypoint", "activity", "notify", "--agent", "codex"
+            ])
+            forward = notify[8:]
+        self.assertEqual(len(forward), 2)
+        self.assertEqual(forward[0], "--forward-notify-argv-json")
+        self.assertEqual(json.loads(forward[1]), original_notify)
         self.assert_doctor("codex")
 
         remove = self.setup_preview("codex", "--remove")
@@ -574,7 +599,7 @@ remove_agent_hook_cutover codex
             for group in groups
             for hook in group["hooks"]
         ]
-        owned = [command for command in commands if command.startswith("agent-hook dispatch")]
+        owned = [command for command in commands if is_owned_dispatch(command, "claude")]
         self.assertEqual(len(owned), len(applied["owned_groups"]))
         self.assertEqual(commands.count("third-party-hook"), 1)
         self.assertIn("StopFailure", applied["owned_events"])
