@@ -681,7 +681,12 @@ That currently performs:
    version-alignment --pin docs/source/nils-cli-pin.yaml` — blocks below
    `minimum_supported_tag` or any `required_clis[]` floor, admits through
    `validated_tag`, and warns above validated before continuing downstream
-2. `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks
+2. `scripts/ci/skill-governance-audit.sh` repo/create/remove fixture checks,
+   plus the human documentation checks: `npm ci --ignore-scripts --prefix
+   tools/docs-readability`, `npm test --prefix tools/docs-readability`,
+   `npm run lint --prefix tools/docs-readability`, and
+   `node tools/docs-readability/test-consumer.cjs`. The shared writing policy
+   is in [`human-docs.md`](../../core/policies/human-docs.md).
 3. `agent-runtime render --target home-prompt` for neutral / Codex / Claude /
    Hermes,
    then `agent-runtime render --product codex`
