@@ -2838,8 +2838,10 @@ def invocation_block_reason(
             )
             return unresolved(
                 f"{evidence} The command context could not attest the repository "
-                "where this commit lands, so "
-                f"its repository was not classified. {REPO_HINT}"
+                "where this commit lands, so its repository was not "
+                "classified. Run it as the only command of one `exec_command` "
+                "call with an absolute `workdir`, or bind it explicitly. "
+                f"{REPO_HINT}"
             )
         return semantic_commit_block_reason(probe, invocation[1:], base, base_source)
     if executable == "git":

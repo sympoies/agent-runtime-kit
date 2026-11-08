@@ -228,8 +228,11 @@ call exists but its workdir is unreadable, a managed-session-cwd result
 reports `call_workdir_unreadable`: that session record attests the session
 root, not this call, and `block-unsafe-default-delivery.py` then treats the
 call's repository as unresolved. Native Codex nested calls use an independent
-`exec-*` id; when only a session/process cwd fallback is available, the
-default-delivery guard also treats their repository as unresolved. Its merge
+`exec-*` id. When the transcript has exactly one still-pending outer `exec`
+call whose single `exec_command` has the identical `cmd` and an absolute
+`workdir` (all such calls agreeing), that workdir attests the nested call;
+otherwise, with only a session/process cwd fallback, the
+default-delivery guard treats their repository as unresolved. Its merge
 refusal names the literal absolute `git -C <topic-checkout> merge --no-commit
 --no-ff --no-edit <sha>` route, which still verifies the target branch.
 Direct-edit verification stays target-based; shell verification is

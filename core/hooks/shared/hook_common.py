@@ -440,13 +440,33 @@ def _custom_exec_arguments(
         return None, "transcript-custom-input-malformed"
     workdir = parsed.get("workdir")
     if workdir is None:
-        return {}, None
+        return {"cmd": parsed["cmd"]}, None
     if not isinstance(workdir, str) or not workdir:
         return None, "transcript-custom-input-malformed"
-    # The exec_command schema owns workdir at the top level. Returning only
-    # that field prevents command or metadata content from impersonating host
-    # context through the generic recursive envelope reader.
-    return {"workdir": workdir}, None
+    # The exec_command schema owns cmd and workdir at the top level. Returning
+    # only those fields prevents command or metadata content from impersonating
+    # host context through the generic recursive envelope reader.
+    return {"cmd": parsed["cmd"], "workdir": workdir}, None
+
+
+def _transcript_tail_lines(transcript_path: str) -> list[str] | None:
+    """Bounded tail of a transcript as lines, or None on ANY read error."""
+    try:
+        path = Path(transcript_path).expanduser()
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            start = max(0, size - MAX_TRANSCRIPT_BYTES)
+            handle.seek(start)
+            data = handle.read(MAX_TRANSCRIPT_BYTES)
+        lines = data.decode("utf-8", errors="replace").splitlines()
+        # Drop a leading partial line when the tail started mid-file; the newest
+        # matching event we care about is at the end and stays intact.
+        if start > 0 and lines:
+            lines = lines[1:]
+        return lines
+    except Exception:
+        return None
 
 
 @functools.lru_cache(maxsize=64)
@@ -462,20 +482,8 @@ def _transcript_workdir_result(
     public context intentionally collapses these private details to
     ``workdir-attestation-missing``.
     """
-    try:
-        path = Path(transcript_path).expanduser()
-        with open(path, "rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            start = max(0, size - MAX_TRANSCRIPT_BYTES)
-            handle.seek(start)
-            data = handle.read(MAX_TRANSCRIPT_BYTES)
-        lines = data.decode("utf-8", errors="replace").splitlines()
-        # Drop a leading partial line when the tail started mid-file; the newest
-        # matching event we care about is at the end and stays intact.
-        if start > 0 and lines:
-            lines = lines[1:]
-    except Exception:
+    lines = _transcript_tail_lines(transcript_path)
+    if lines is None:
         return TranscriptWorkdirResult(None, "transcript-unavailable")
     for line in reversed(lines):
         try:
@@ -503,6 +511,57 @@ def _transcript_workdir_result(
             return TranscriptWorkdirResult(value, None)
         return TranscriptWorkdirResult(None, "transcript-workdir-missing")
     return TranscriptWorkdirResult(None, "transcript-call-mismatch")
+
+
+@functools.lru_cache(maxsize=64)
+def _pending_outer_call_workdir(transcript_path: str, command: str) -> str | None:
+    """Workdir of the one pending outer exec call that runs ``command``.
+
+    Native Codex code mode reaches the hook with an independent nested ``exec-*``
+    id that never appears in the transcript, which records only the outer call.
+    The nested call is attributable to an outer call only when exactly one
+    still-pending outer call carries a readable, single ``exec_command`` whose
+    ``cmd`` equals the hook's command, and every such call names the same
+    absolute workdir. A pending unreadable call, or conflicting workdirs,
+    yield None so the target stays unattested.
+    """
+    lines = _transcript_tail_lines(transcript_path)
+    if lines is None or not command:
+        return None
+    finished: set[str] = set()
+    outer_calls: list[Mapping[str, Any]] = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event_payload = event.get("payload") if isinstance(event, Mapping) else None
+        if not isinstance(event_payload, Mapping):
+            continue
+        event_type = event_payload.get("type")
+        call_id = event_payload.get("call_id")
+        if event_type == "custom_tool_call_output" and isinstance(call_id, str):
+            finished.add(call_id)
+        elif event_type == "custom_tool_call" and isinstance(call_id, str):
+            outer_calls.append(event_payload)
+    workdirs: set[str] = set()
+    for event_payload in outer_calls:
+        if event_payload.get("call_id") in finished:
+            continue
+        if event_payload.get("name") != "exec":
+            continue
+        arguments, _diagnostic = _custom_exec_arguments(event_payload)
+        if arguments is None:
+            # A pending exec call that cannot be decoded may run this command
+            # in any checkout, so the binding is ambiguous.
+            return None
+        if arguments.get("cmd") != command:
+            continue
+        workdir = arguments.get("workdir")
+        if not isinstance(workdir, str) or not Path(workdir).is_absolute():
+            return None
+        workdirs.add(workdir)
+    return next(iter(workdirs)) if len(workdirs) == 1 else None
 
 
 def _context_from_value(
@@ -644,6 +703,18 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
                     result.value, source="matching-transcript-call"
                 )
             transcript_diagnostic = result.diagnostic
+            if (
+                transcript_diagnostic == "transcript-call-mismatch"
+                and os.environ.get("AGENT_RUNTIME_PRODUCT") == "codex"
+                and tool_use_id.startswith("exec-")
+            ):
+                outer_workdir = _pending_outer_call_workdir(
+                    transcript_path, command_from(payload)
+                )
+                if outer_workdir is not None:
+                    return _context_from_value(
+                        outer_workdir, source="matching-transcript-call"
+                    )
         else:
             transcript_diagnostic = "transcript-call-id-missing"
 
