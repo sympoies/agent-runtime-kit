@@ -3557,8 +3557,10 @@ class DefaultDeliveryTests(HookTestCase):
                     source = literal.replace(
                         json.dumps(command), json.dumps(git_command)
                     )
+                    # The only outer call runs a different command, so it is
+                    # no evidence for this nested call's target.
                     code, decision, stderr = run(
-                        source, call_id=nested_id, command=git_command
+                        literal, call_id=nested_id, command=git_command
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "[default-delivery: unverified]")
@@ -3608,6 +3610,118 @@ class DefaultDeliveryTests(HookTestCase):
                 else:
                     self.assert_blocked(decision, "checked-out default branch")
 
+
+    def test_default_delivery_hook_binds_nested_codex_call_to_its_outer_call(
+        self,
+    ) -> None:
+        # A managed Codex session rooted in its own worktree runs
+        # `semantic-commit commit` through code mode. The hook sees an
+        # independent `exec-*` id, so the transcript match fails; the single
+        # pending outer call that carries the identical command and an absolute
+        # workdir is the only evidence of the nested call's target.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "repo"
+            self._init_checkout_lease_repo(primary)
+            worktree = self._add_checkout_lease_worktree(
+                primary, "feat/managed-nested"
+            )
+            state = root / "agent-session-state"
+            session_dir = state / "sessions" / "managed-codex"
+            session_dir.mkdir(parents=True)
+            record = session_dir / "session.json"
+            record.write_text(
+                json.dumps(
+                    {
+                        "id": "managed-codex",
+                        "agent": "codex",
+                        "cwd": str(worktree),
+                        "runtime": {"launch_id": "managed-launch"},
+                        "startup": {"state": "ready"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            record.chmod(0o600)
+            env = {
+                "AGENT_SESSION_ID": "managed-codex",
+                "AGENT_SESSION_STATE_DIR": str(state),
+                "AGENT_SESSION_RUNTIME_ID": "managed-launch",
+                "AGENT_RUNTIME_PRODUCT": "codex",
+            }
+            command = (
+                "semantic-commit commit --type fix --scope hooks "
+                "--subject 'bind the nested call' --format json"
+            )
+            nested_id = "exec-00000000-0000-4000-8000-000000000001"
+            transcript = root / "transcript.jsonl"
+
+            def outer(call_id: str, cmd: str, workdir: Path) -> dict[str, object]:
+                return {
+                    "payload": {
+                        "type": "custom_tool_call",
+                        "name": "exec",
+                        "call_id": call_id,
+                        "input": (
+                            f"const r = await tools.exec_command({{cmd: "
+                            f"{json.dumps(cmd)}, workdir: "
+                            f"{json.dumps(str(workdir))}}});\ntext(r);\n"
+                        ),
+                    }
+                }
+
+            def run(*events: dict[str, object]):
+                transcript.write_text(
+                    "".join(json.dumps(event) + "\n" for event in events),
+                    encoding="utf-8",
+                )
+                payload = command_payload(command)
+                payload.update(
+                    {
+                        "tool_use_id": nested_id,
+                        "transcript_path": str(transcript),
+                        "cwd": str(worktree),
+                    }
+                )
+                return run_hook(
+                    "block-unsafe-default-delivery.py",
+                    payload,
+                    cwd=worktree,
+                    env=env,
+                )
+
+            code, decision, stderr = run(outer("outer-1", command, worktree))
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            # A completed outer call, a different command, or a different
+            # pending workdir is not evidence for this nested call.
+            finished = {
+                "payload": {"type": "custom_tool_call_output", "call_id": "outer-1"}
+            }
+            unbound_cases = {
+                "completed": (outer("outer-1", command, worktree), finished),
+                "other-command": (outer("outer-1", "git status", worktree),),
+                "conflicting-workdirs": (
+                    outer("outer-1", command, worktree),
+                    outer("outer-2", command, primary),
+                ),
+            }
+            for name, events in unbound_cases.items():
+                with self.subTest(unbound=name):
+                    code, decision, stderr = run(*events)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "[default-delivery: unverified]")
+                    self.assert_blocked(
+                        decision, "diagnostic=workdir-attestation-missing"
+                    )
+                    self.assert_blocked(decision, "absolute `workdir`")
+
+            # A bound call still faces the default-branch verdict of its target.
+            code, decision, stderr = run(outer("outer-1", command, primary))
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "[default-delivery: blocked]")
+            self.assert_blocked(decision, "context=matching-transcript-call")
 
     def test_default_delivery_hook_rejects_unattested_raw_git_context(
         self,
