@@ -522,8 +522,8 @@ def _pending_outer_call_workdir(transcript_path: str, command: str) -> str | Non
     The nested call is attributable to an outer call only when exactly one
     still-pending outer call carries a readable, single ``exec_command`` whose
     ``cmd`` equals the hook's command, and every such call names the same
-    absolute workdir. Completed, unreadable, differing-command, or
-    conflicting-workdir calls yield None so the target stays unattested.
+    absolute workdir. A pending unreadable call, or conflicting workdirs,
+    yield None so the target stays unattested.
     """
     lines = _transcript_tail_lines(transcript_path)
     if lines is None or not command:
@@ -548,8 +548,14 @@ def _pending_outer_call_workdir(transcript_path: str, command: str) -> str | Non
     for event_payload in outer_calls:
         if event_payload.get("call_id") in finished:
             continue
+        if event_payload.get("name") != "exec":
+            continue
         arguments, _diagnostic = _custom_exec_arguments(event_payload)
-        if arguments is None or arguments.get("cmd") != command:
+        if arguments is None:
+            # A pending exec call that cannot be decoded may run this command
+            # in any checkout, so the binding is ambiguous.
+            return None
+        if arguments.get("cmd") != command:
             continue
         workdir = arguments.get("workdir")
         if not isinstance(workdir, str) or not Path(workdir).is_absolute():

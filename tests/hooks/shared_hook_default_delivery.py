@@ -3699,7 +3699,25 @@ class DefaultDeliveryTests(HookTestCase):
             finished = {
                 "payload": {"type": "custom_tool_call_output", "call_id": "outer-1"}
             }
+            opaque = {
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "outer-2",
+                    "input": (
+                        f"const w = [{json.dumps(str(primary))}][0];\n"
+                        f"await tools.exec_command({{cmd: {json.dumps(command)}, "
+                        "workdir: w});\n"
+                    ),
+                }
+            }
             unbound_cases = {
+                "unreadable-pending-after": (
+                    outer("outer-1", command, worktree), opaque,
+                ),
+                "unreadable-pending-before": (
+                    opaque, outer("outer-1", command, worktree),
+                ),
                 "completed": (outer("outer-1", command, worktree), finished),
                 "other-command": (outer("outer-1", "git status", worktree),),
                 "conflicting-workdirs": (
