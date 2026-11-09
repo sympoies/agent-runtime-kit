@@ -2684,6 +2684,18 @@ class CommandGuardsTests(HookTestCase):
                     "transcript-custom-input-malformed",
                 ),
                 (
+                    "single-quoted-javascript-only-escape",
+                    "const r = await tools.exec_command({cmd:'x', "
+                    "workdir:'/fixture\\x41'});",
+                    "transcript-custom-input-malformed",
+                ),
+                (
+                    "single-quoted-concatenation",
+                    "const r = await tools.exec_command({cmd:'x', "
+                    "workdir:'/fixture' + suffix});",
+                    "transcript-custom-input-malformed",
+                ),
+                (
                     "nested-object-value",
                     'const r = await tools.exec_command({cmd: "x", workdir: '
                     + json.dumps(str(target))
@@ -2796,6 +2808,34 @@ class CommandGuardsTests(HookTestCase):
                         context.diagnostic, diagnostic
                     )
 
+
+    def test_effective_workdir_reads_single_quoted_exec_scalars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "quoted '\" \\ \u2603"
+            command = "printf '%s\\n' \"quoted\""
+
+            def quoted(value: str) -> str:
+                return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+            event = {
+                "type": "custom_tool_call", "name": "exec", "call_id": "quoted",
+                "input": (
+                    "const r = await tools.exec_command({cmd:" + quoted(command)
+                    + ",workdir:" + quoted(str(target)) + "}); text(r.output);"
+                ),
+            }
+            arguments, diagnostic = hook_common._custom_exec_arguments(event)
+            self.assertEqual(arguments, {"cmd": command, "workdir": str(target)})
+            self.assertIsNone(diagnostic)
+            transcript = Path(tmp) / "quoted.jsonl"
+            transcript.write_text(json.dumps({"payload": event}) + "\n", encoding="utf-8")
+            context = hook_common.command_context({
+                "tool_name": "Bash", "tool_input": {"command": command},
+                "tool_use_id": "quoted", "transcript_path": str(transcript),
+            })
+            self.assertEqual(context.path, target.resolve())
+            self.assertEqual(context.source, "matching-transcript-call")
+            self.assertTrue(context.attested)
 
     def test_effective_workdir_reads_literal_custom_exec_objects(self) -> None:
         # Codex code-mode calls are written as JavaScript object literals far
@@ -3082,7 +3122,7 @@ class CommandGuardsTests(HookTestCase):
             unreadable_cases = (
                 (
                     "unreadable-malformed",
-                    "const r = await tools.exec_command({cmd: 'x'});",
+                    'const r = await tools.exec_command({cmd: () => "x"});',
                     "unreadable-malformed",
                     "transcript-custom-input-malformed",
                     True,

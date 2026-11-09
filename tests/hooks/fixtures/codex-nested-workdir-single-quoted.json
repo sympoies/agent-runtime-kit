@@ -1,0 +1,29 @@
+{
+  "description": "Sanitized live disposable replay of the post-sync single-quoted caller shape; all command contents, paths and identities substituted.",
+  "payload_keys": [
+    "cwd",
+    "hook_event_name",
+    "model",
+    "permission_mode",
+    "session_id",
+    "tool_input",
+    "tool_name",
+    "tool_use_id",
+    "transcript_path",
+    "turn_id"
+  ],
+  "tool_input_keys": [
+    "command"
+  ],
+  "tool_name": "Bash",
+  "call_id_kind": "nested-exec",
+  "direct_diagnostic": "transcript-call-mismatch",
+  "outer_diagnostic": "transcript-custom-input-malformed",
+  "context_source": "managed-session-cwd",
+  "outer": {
+    "type": "custom_tool_call",
+    "name": "exec",
+    "call_id": "outer-single-quoted-fixture",
+    "input": "const r = await tools.exec_command({cmd:'$COMMAND_SINGLE_QUOTED',workdir:'$WORKDIR_SINGLE_QUOTED',yield_time:1000,max_output_tokens:1000}); text(r.output); text(`exit_code=${r.exit_code}`);\n"
+  }
+}
