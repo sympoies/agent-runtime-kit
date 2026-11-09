@@ -3342,7 +3342,7 @@ def main() -> int:
         )
         if context.call_workdir_unreadable or unbound_codex_nested_call:
             base_resolved = False
-            base_diagnostic = "workdir-attestation-missing"
+            base_diagnostic = context.diagnostic or "workdir-attestation-missing"
         reason = command_block_reason(
             command,
             context.path,

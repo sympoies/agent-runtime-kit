@@ -3389,7 +3389,7 @@ class DefaultDeliveryTests(HookTestCase):
             self.assert_blocked(decision, "operation=semantic-commit commit")
             self.assert_blocked(decision, "context=session-cwd")
             self.assert_blocked(
-                decision, "diagnostic=workdir-attestation-missing"
+                decision, "diagnostic=transcript-custom-input-malformed"
             )
             self.assert_blocked(decision, "--repo <absolute path>")
             reason = str((decision or {}).get("reason", ""))
@@ -3564,7 +3564,7 @@ class DefaultDeliveryTests(HookTestCase):
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "[default-delivery: unverified]")
-                    self.assert_blocked(decision, "diagnostic=workdir-attestation-missing")
+                    self.assert_blocked(decision, "diagnostic=transcript-call-mismatch")
                     reason = str((decision or {}).get("reason", ""))
                     self.assertNotIn("checked-out default branch", reason)
                     if git_command == merge:
@@ -3711,27 +3711,58 @@ class DefaultDeliveryTests(HookTestCase):
                     ),
                 }
             }
+            # Replayed from the sanitized disposable managed-session capture.
+            fixture = json.loads(
+                (Path(__file__).parent / "fixtures" /
+                 "codex-nested-workdir-extra-render.json").read_text(encoding="utf-8")
+            )
+            captured = {"payload": dict(fixture["outer"])}
+            captured["payload"]["input"] = (
+                captured["payload"]["input"]
+                .replace("$COMMAND_JSON", json.dumps(command))
+                .replace("$WORKDIR_JSON", json.dumps(str(worktree)))
+            )
+            code, decision, stderr = run(captured)
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+            unsafe_render = {"payload": dict(captured["payload"])}
+            unsafe_render["payload"]["input"] = (
+                unsafe_render["payload"]["input"].replace(
+                    "${r.exit_code}", "${tools.exec_command({cmd: 'other'})}"
+                )
+            )
             unbound_cases = {
+                "render-with-call": ((unsafe_render,), fixture["outer_diagnostic"]),
                 "unreadable-pending-after": (
-                    outer("outer-1", command, worktree), opaque,
+                    (outer("outer-1", command, worktree), opaque),
+                    "transcript-custom-input-unrecognized",
                 ),
                 "unreadable-pending-before": (
-                    opaque, outer("outer-1", command, worktree),
+                    (opaque, outer("outer-1", command, worktree)),
+                    "transcript-custom-input-unrecognized",
                 ),
-                "completed": (outer("outer-1", command, worktree), finished),
-                "other-command": (outer("outer-1", "git status", worktree),),
+                "completed": (
+                    (outer("outer-1", command, worktree), finished),
+                    "transcript-call-mismatch",
+                ),
+                "other-command": (
+                    (outer("outer-1", "git status", worktree),),
+                    "transcript-call-mismatch",
+                ),
                 "conflicting-workdirs": (
-                    outer("outer-1", command, worktree),
-                    outer("outer-2", command, primary),
+                    (outer("outer-1", command, worktree),
+                     outer("outer-2", command, primary)),
+                    "transcript-custom-input-ambiguous",
                 ),
             }
-            for name, events in unbound_cases.items():
+            for name, (events, expected_diagnostic) in unbound_cases.items():
                 with self.subTest(unbound=name):
                     code, decision, stderr = run(*events)
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "[default-delivery: unverified]")
                     self.assert_blocked(
-                        decision, "diagnostic=workdir-attestation-missing"
+                        decision, f"diagnostic={expected_diagnostic}"
                     )
                     self.assert_blocked(decision, "absolute `workdir`")
 
@@ -3784,7 +3815,7 @@ class DefaultDeliveryTests(HookTestCase):
                         decision, "rule=governed-authoring-target"
                     )
                     self.assert_blocked(
-                        decision, "diagnostic=workdir-attestation-missing"
+                        decision, "diagnostic=transcript-call-mismatch"
                     )
 
             explicit = f"git -C {shlex.quote(str(feature))} merge main"
