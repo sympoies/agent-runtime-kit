@@ -221,7 +221,10 @@ its own rules, where the last duplicate key wins as it does in JavaScript and
 only the top-level `workdir` is read.
 
 The wrapper may bind the result and render it with `text(r)`,
-`text(r.output)`, or `text(JSON.stringify(r))`, or render the call directly as
+`text(r.output)`, or `text(JSON.stringify(r))`, including multiple such
+rendering statements. The fixed result rendering
+``text(`exit_code=${r.exit_code}`)`` may follow the output; other template
+interpolations remain unreadable. The wrapper may also render the call directly as
 `text(await tools.exec_command(...))` or
 `text((await tools.exec_command(...)).output)`. When the matching transcript
 call exists but its workdir is unreadable, a managed-session-cwd result
@@ -232,7 +235,10 @@ call's repository as unresolved. Native Codex nested calls use an independent
 call whose single `exec_command` has the identical `cmd` and an absolute
 `workdir` (all such calls agreeing), that workdir attests the nested call;
 otherwise, with only a session/process cwd fallback, the
-default-delivery guard treats their repository as unresolved. Its merge
+default-delivery guard treats their repository as unresolved. Rejections retain
+the fixed transcript lookup or pending-outer parser diagnostic, such as
+`transcript-call-mismatch` or `transcript-custom-input-ambiguous`, without
+exposing transcript contents. Its merge
 refusal names the literal absolute `git -C <topic-checkout> merge --no-commit
 --no-ff --no-edit <sha>` route, which still verifies the target branch.
 Direct-edit verification stays target-based; shell verification is

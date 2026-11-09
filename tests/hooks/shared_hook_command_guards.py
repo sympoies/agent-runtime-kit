@@ -2577,12 +2577,14 @@ class CommandGuardsTests(HookTestCase):
                 (
                     "javascript-object",
                     f"const r = await tools.exec_command({{workdir: '{target}'}});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "string-bait",
                     "const bait = \"await tools.exec_command("
                     + json.dumps({"workdir": str(target)})
                     + ")\";",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "multiple-calls",
@@ -2591,6 +2593,7 @@ class CommandGuardsTests(HookTestCase):
                     + "); tools.exec_command("
                     + json.dumps({"cmd": "y", "workdir": str(target)})
                     + ");",
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "multiple-calls-spaced",
@@ -2599,6 +2602,7 @@ class CommandGuardsTests(HookTestCase):
                     + "); await tools.exec_command ("
                     + json.dumps({"cmd": "y", "workdir": str(root)})
                     + ");",
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "nested-workdir-bait",
@@ -2610,6 +2614,7 @@ class CommandGuardsTests(HookTestCase):
                         }
                     )
                     + ");",
+                    "transcript-workdir-missing",
                 ),
                 (
                     "non-string-command",
@@ -2621,6 +2626,7 @@ class CommandGuardsTests(HookTestCase):
                         }
                     )
                     + ");",
+                    "transcript-custom-input-malformed",
                 ),
                 # The object-literal subset admits only JSON-compatible scalar
                 # values, identifier or JSON keys, and names bound by a leading
@@ -2628,6 +2634,7 @@ class CommandGuardsTests(HookTestCase):
                 (
                     "unbound-identifier",
                     'const r = await tools.exec_command({cmd: "x", workdir: w});',
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "duplicate-key",
@@ -2636,12 +2643,14 @@ class CommandGuardsTests(HookTestCase):
                     + ', "workdir": '
                     + json.dumps(str(target))
                     + "});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "template-literal",
                     "const r = await tools.exec_command({cmd: `x`, workdir: `"
                     + str(target)
                     + "`});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "computed-key",
@@ -2649,6 +2658,7 @@ class CommandGuardsTests(HookTestCase):
                     '{cmd: "x", [k]: '
                     + json.dumps(str(target))
                     + "});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "spread",
@@ -2656,6 +2666,7 @@ class CommandGuardsTests(HookTestCase):
                     "workdir: "
                     + json.dumps(str(target))
                     + "});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "comment",
@@ -2663,18 +2674,21 @@ class CommandGuardsTests(HookTestCase):
                     "workdir: "
                     + json.dumps(str(target))
                     + "});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "javascript-only-escape",
                     'const r = await tools.exec_command({cmd: "x", workdir: "'
                     + str(target)
                     + '\\x41"});',
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "nested-object-value",
                     'const r = await tools.exec_command({cmd: "x", workdir: '
                     + json.dumps(str(target))
                     + ', env: {A: "b"}});',
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "let-binding",
@@ -2682,6 +2696,7 @@ class CommandGuardsTests(HookTestCase):
                     + json.dumps(str(target))
                     + '; const r = await tools.exec_command({cmd: "x", '
                     "workdir: w});",
+                    "transcript-custom-input-unrecognized",
                 ),
                 (
                     "multi-declarator",
@@ -2689,6 +2704,7 @@ class CommandGuardsTests(HookTestCase):
                     + json.dumps(str(target))
                     + '; const r = await tools.exec_command({cmd: "x", '
                     "workdir: w});",
+                    "transcript-custom-input-malformed",
                 ),
                 (
                     "reassigned-binding",
@@ -2698,30 +2714,35 @@ class CommandGuardsTests(HookTestCase):
                     + json.dumps(str(target))
                     + '; const r = await tools.exec_command({cmd: "x", '
                     "workdir: w});",
+                    "transcript-custom-input-unrecognized",
                 ),
                 (
                     "statement-after-call",
                     'const r = await tools.exec_command({cmd: "x", workdir: '
                     + json.dumps(str(target))
                     + '}); await tools.exec_command({cmd: "y"});',
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "rendered-call-then-call",
                     'text(await tools.exec_command({cmd: "x", workdir: '
                     + json.dumps(str(target))
                     + '})); await tools.exec_command({cmd: "y"});',
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "rendered-call-member",
                     'text(await tools.exec_command({cmd: "x", workdir: '
                     + json.dumps(str(target))
                     + "}).output);",
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "stringify-with-arguments",
                     'const r = await tools.exec_command({cmd: "x", workdir: '
                     + json.dumps(str(target))
                     + "}); text(JSON.stringify(r, null, tools));",
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "binding-shadows-declaration",
@@ -2729,6 +2750,7 @@ class CommandGuardsTests(HookTestCase):
                     + json.dumps(str(root))
                     + '; const r = await tools.exec_command({cmd: "x", '
                     "workdir: r});",
+                    "transcript-custom-input-ambiguous",
                 ),
                 (
                     "parallel-calls",
@@ -2738,9 +2760,10 @@ class CommandGuardsTests(HookTestCase):
                     + '}), tools.exec_command({cmd: "y", workdir: '
                     + json.dumps(str(target))
                     + "})]);",
+                    "transcript-custom-input-unrecognized",
                 ),
             )
-            for call_id, source in cases:
+            for call_id, source, diagnostic in cases:
                 with self.subTest(call_id=call_id):
                     transcript = root / f"{call_id}.jsonl"
                     transcript.write_text(
@@ -2770,7 +2793,7 @@ class CommandGuardsTests(HookTestCase):
                     self.assertEqual(context.source, "session-cwd")
                     self.assertFalse(context.attested)
                     self.assertEqual(
-                        context.diagnostic, "workdir-attestation-missing"
+                        context.diagnostic, diagnostic
                     )
 
 
@@ -2946,7 +2969,7 @@ class CommandGuardsTests(HookTestCase):
             self.assertEqual(mismatched.path, root.resolve())
             self.assertEqual(mismatched.source, "session-cwd")
             self.assertFalse(mismatched.attested)
-            self.assertEqual(mismatched.diagnostic, "workdir-attestation-missing")
+            self.assertEqual(mismatched.diagnostic, "transcript-call-mismatch")
 
             missing_call_id = resolver(
                 {
@@ -2959,7 +2982,7 @@ class CommandGuardsTests(HookTestCase):
             self.assertEqual(missing_call_id.source, "session-cwd")
             self.assertFalse(missing_call_id.attested)
             self.assertEqual(
-                missing_call_id.diagnostic, "workdir-attestation-missing"
+                missing_call_id.diagnostic, "transcript-call-id-missing"
             )
 
             payload_metadata = resolver(
@@ -3044,7 +3067,9 @@ class CommandGuardsTests(HookTestCase):
                 managed_before_transcript_flush.source, "managed-session-cwd"
             )
             self.assertTrue(managed_before_transcript_flush.attested)
-            self.assertIsNone(managed_before_transcript_flush.diagnostic)
+            self.assertEqual(
+                managed_before_transcript_flush.diagnostic, "transcript-call-mismatch"
+            )
             self.assertFalse(
                 managed_before_transcript_flush.call_workdir_unreadable
             )
@@ -3126,7 +3151,7 @@ class CommandGuardsTests(HookTestCase):
                     self.assertEqual(context.path, target.resolve())
                     self.assertEqual(context.source, "managed-session-cwd")
                     self.assertTrue(context.attested)
-                    self.assertIsNone(context.diagnostic)
+                    self.assertEqual(context.diagnostic, diagnostic)
                     self.assertIs(context.call_workdir_unreadable, unreadable)
 
             with (

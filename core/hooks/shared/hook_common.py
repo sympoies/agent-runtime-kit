@@ -192,8 +192,10 @@ class CommandContext(NamedTuple):
     therefore retain same-repository compatibility without silently treating a
     process-local fallback as an attested cross-repository target.
 
-    ``call_workdir_unreadable`` is true when a transcript event matched this
-    call but its own workdir could not be decoded. A ``managed-session-cwd``
+    ``diagnostic`` retains a fixed transcript lookup/parser reason even when
+    an authenticated session record attests the fallback session root.
+    ``call_workdir_unreadable`` is true when a matching call or pending outer
+    call's own workdir could not be decoded. A ``managed-session-cwd``
     context then attests only the session root, not the call's target.
     """
 
@@ -261,16 +263,29 @@ def _custom_exec_remainder_is_canonical(
         index += 1
     if binding is None:
         return False
-    # `text(r)`, `text(r.output)`, and `text(JSON.stringify(r))` only render
-    # the call's own result.
-    for render in (
+    # Codex 0.162.1 also renders the exit code after rendering the output.
+    # Keep template interpolation exact: arbitrary expressions could execute
+    # another command, so only this result's exit_code is readable here.
+    renders = (
         (f"{binding}.output",),
         ("JSON.stringify", "(", binding, ")"),
         (binding,),
-    ):
-        if terminal(expect(expect(index, "text", "("), *render, ")")):
+        (f"`exit_code=${{{binding}.exit_code}}`",),
+    )
+    while True:
+        for render in renders:
+            end = expect(expect(index, "text", "("), *render, ")")
+            if end is not None:
+                break
+        else:
+            return False
+        if terminal(end):
             return True
-    return False
+        index = skip_space(end)
+        if index < len(remainder) and remainder[index] == ";":
+            index += 1
+        elif "\n" not in remainder[end:index] and "\r" not in remainder[end:index]:
+            return False
 
 
 def _skip_js_literal_space(source: str, index: int) -> int:
@@ -479,8 +494,7 @@ def _transcript_workdir_result(
     the transcript once. Reads only the tail (``MAX_TRANSCRIPT_BYTES``) and fails
     soft on ANY error (missing, unreadable, oversized/OOM, malformed) so a
     hostile or corrupt transcript can never crash a fail-closed guard. The
-    public context intentionally collapses these private details to
-    ``workdir-attestation-missing``.
+    context retains only a fixed diagnostic, never transcript contents.
     """
     lines = _transcript_tail_lines(transcript_path)
     if lines is None:
@@ -514,8 +528,10 @@ def _transcript_workdir_result(
 
 
 @functools.lru_cache(maxsize=64)
-def _pending_outer_call_workdir(transcript_path: str, command: str) -> str | None:
-    """Workdir of the one pending outer exec call that runs ``command``.
+def _pending_outer_call_workdir_result(
+    transcript_path: str, command: str
+) -> TranscriptWorkdirResult:
+    """Workdir or fixed diagnostic of the pending outer exec for ``command``.
 
     Native Codex code mode reaches the hook with an independent nested ``exec-*``
     id that never appears in the transcript, which records only the outer call.
@@ -523,11 +539,13 @@ def _pending_outer_call_workdir(transcript_path: str, command: str) -> str | Non
     still-pending outer call carries a readable, single ``exec_command`` whose
     ``cmd`` equals the hook's command, and every such call names the same
     absolute workdir. A pending unreadable call, or conflicting workdirs,
-    yield None so the target stays unattested.
+    yield a fixed diagnostic so the target stays unattested.
     """
     lines = _transcript_tail_lines(transcript_path)
-    if lines is None or not command:
-        return None
+    if lines is None:
+        return TranscriptWorkdirResult(None, "transcript-unavailable")
+    if not command:
+        return TranscriptWorkdirResult(None, "transcript-call-mismatch")
     finished: set[str] = set()
     outer_calls: list[Mapping[str, Any]] = []
     for line in lines:
@@ -550,18 +568,23 @@ def _pending_outer_call_workdir(transcript_path: str, command: str) -> str | Non
             continue
         if event_payload.get("name") != "exec":
             continue
-        arguments, _diagnostic = _custom_exec_arguments(event_payload)
+        arguments, diagnostic = _custom_exec_arguments(event_payload)
         if arguments is None:
             # A pending exec call that cannot be decoded may run this command
             # in any checkout, so the binding is ambiguous.
-            return None
+            return TranscriptWorkdirResult(None, diagnostic)
         if arguments.get("cmd") != command:
             continue
         workdir = arguments.get("workdir")
         if not isinstance(workdir, str) or not Path(workdir).is_absolute():
-            return None
+            return TranscriptWorkdirResult(None, "transcript-workdir-missing")
         workdirs.add(workdir)
-    return next(iter(workdirs)) if len(workdirs) == 1 else None
+    if len(workdirs) == 1:
+        return TranscriptWorkdirResult(next(iter(workdirs)), None)
+    return TranscriptWorkdirResult(
+        None,
+        "transcript-custom-input-ambiguous" if workdirs else "transcript-call-mismatch",
+    )
 
 
 def _context_from_value(
@@ -574,7 +597,7 @@ def _context_from_value(
     absolute = expanded.is_absolute()
     path = expanded if absolute else Path.cwd() / expanded
     diagnostic = inherited_diagnostic
-    if not absolute or diagnostic is not None:
+    if not absolute and diagnostic is None:
         diagnostic = "workdir-attestation-missing"
     return CommandContext(
         path.resolve(strict=False),
@@ -708,13 +731,14 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
                 and os.environ.get("AGENT_RUNTIME_PRODUCT") == "codex"
                 and tool_use_id.startswith("exec-")
             ):
-                outer_workdir = _pending_outer_call_workdir(
+                outer_result = _pending_outer_call_workdir_result(
                     transcript_path, command_from(payload)
                 )
-                if outer_workdir is not None:
+                if outer_result.value is not None:
                     return _context_from_value(
-                        outer_workdir, source="matching-transcript-call"
+                        outer_result.value, source="matching-transcript-call"
                     )
+                transcript_diagnostic = outer_result.diagnostic
         else:
             transcript_diagnostic = "transcript-call-id-missing"
 
@@ -736,7 +760,7 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
                 managed_cwd,
                 "managed-session-cwd",
                 True,
-                None,
+                transcript_diagnostic,
                 transcript_diagnostic in TRANSCRIPT_CALL_WORKDIR_UNREADABLE,
             )
         return context
@@ -754,7 +778,7 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
                 managed_cwd,
                 "managed-session-cwd",
                 True,
-                None,
+                transcript_diagnostic,
                 transcript_diagnostic in TRANSCRIPT_CALL_WORKDIR_UNREADABLE,
             )
         return context
@@ -763,14 +787,14 @@ def command_context(payload: Mapping[str, Any]) -> CommandContext:
             managed_cwd,
             "managed-session-cwd",
             True,
-            None,
+            transcript_diagnostic,
             transcript_diagnostic in TRANSCRIPT_CALL_WORKDIR_UNREADABLE,
         )
     return CommandContext(
         Path.cwd().resolve(strict=False),
         "process-cwd",
         False,
-        "workdir-attestation-missing",
+        transcript_diagnostic or "workdir-attestation-missing",
     )
 
 
