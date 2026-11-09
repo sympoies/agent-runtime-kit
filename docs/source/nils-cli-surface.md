@@ -21,6 +21,13 @@
 
 `v1.40.5` is the validated package; `v1.36.21` remains the compatibility minimum. The released agent-hook fix preserves the shadow dispatch state boundary ([nils-cli #3237](https://github.com/sympoies/nils-cli/pull/3237)). No per-binary floor moves. CI retains separate minimum and validated lanes.
 
+Use this snapshot by task:
+
+- [Current surface inventory](#current-surface-inventory) and [crate-to-binary table](#crate--binary-table).
+- [Kit consumption](#kit-consumption-at-this-snapshot), grouped by tool.
+- [Refresh procedure](#refresh-procedure) for updating the snapshot and pin.
+- [Historical release notes](#historical-release-notes) for earlier decisions.
+
 ## Previous validated release: v1.36.21
 
 `v1.36.21` is both the validated package and the compatibility minimum.
