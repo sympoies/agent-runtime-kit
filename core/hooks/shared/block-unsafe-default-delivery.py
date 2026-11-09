@@ -833,8 +833,14 @@ def command_local_git_environment_is_safe(
         prefix = [*simple_command[:env_index], *normalized[:normalized_command_index]]
 
     def sensitive(name: str) -> bool:
+        # These semantic-commit fields change author metadata, not where its
+        # commit lands. All other Git overrides and referenced config variables
+        # still invalidate the probe context; raw Git keeps its existing rule.
+        author_metadata = executable == "semantic-commit" and name in {
+            "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+        }
         return (
-            name.startswith("GIT_")
+            (name.startswith("GIT_") and not author_metadata)
             or name in GIT_CONFIG_ENVIRONMENT_NAMES
             or name in referenced
         )

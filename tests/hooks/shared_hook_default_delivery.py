@@ -822,6 +822,7 @@ class DefaultDeliveryTests(HookTestCase):
                 f"{shlex.quote(str(repo_b))} git push origin HEAD:trunk'",
                 "env - git push origin HEAD:refs/heads/feat/safe",
                 "env --pa=/usr/bin git push origin HEAD:refs/heads/feat/safe",
+                'GIT_AUTHOR_NAME="Fixture" git push origin HEAD:refs/heads/feat/safe',
             )
             for command in commands:
                 with self.subTest(command=command):
@@ -3355,7 +3356,7 @@ class DefaultDeliveryTests(HookTestCase):
             self.assert_allowed(decision)
 
             # A JavaScript object outside the JSON-compatible literal subset
-            # (here, single-quoted strings) is deliberately not interpreted as
+            # (here, a function call for the workdir) is not interpreted as
             # host attestation. It must report the failed classifier instead of
             # claiming the fallback primary checkout is the command target.
             transcript.write_text(
@@ -3367,7 +3368,7 @@ class DefaultDeliveryTests(HookTestCase):
                             "call_id": "semantic-call",
                             "input": (
                                 "const r = await tools.exec_command({"
-                                f"cmd: 'semantic-commit commit', workdir: '{repo}'"
+                                f"cmd: 'semantic-commit commit', workdir: String({json.dumps(str(repo))})"
                                 "});\ntext(r.output);\n"
                             ),
                         }
@@ -3650,6 +3651,7 @@ class DefaultDeliveryTests(HookTestCase):
                 "AGENT_RUNTIME_PRODUCT": "codex",
             }
             command = (
+                'GIT_AUTHOR_NAME="Fixture" GIT_AUTHOR_EMAIL="fixture@example.invalid" '
                 "semantic-commit commit --type fix --scope hooks "
                 "--subject 'bind the nested call' --format json"
             )
@@ -3711,20 +3713,29 @@ class DefaultDeliveryTests(HookTestCase):
                     ),
                 }
             }
-            # Replayed from the sanitized disposable managed-session capture.
-            fixture = json.loads(
-                (Path(__file__).parent / "fixtures" /
-                 "codex-nested-workdir-extra-render.json").read_text(encoding="utf-8")
-            )
-            captured = {"payload": dict(fixture["outer"])}
-            captured["payload"]["input"] = (
-                captured["payload"]["input"]
-                .replace("$COMMAND_JSON", json.dumps(command))
-                .replace("$WORKDIR_JSON", json.dumps(str(worktree)))
-            )
-            code, decision, stderr = run(captured)
-            self.assertEqual(code, 0, stderr)
-            self.assert_allowed(decision)
+            # Replayed from sanitized disposable managed-session captures.
+            quoted_command = command.replace("\\", "\\\\").replace("'", "\\'")
+            quoted_workdir = str(worktree).replace("\\", "\\\\").replace("'", "\\'")
+            for fixture_name in (
+                "codex-nested-workdir-extra-render.json",
+                "codex-nested-workdir-single-quoted.json",
+            ):
+                fixture = json.loads(
+                    (Path(__file__).parent / "fixtures" / fixture_name)
+                    .read_text(encoding="utf-8")
+                )
+                captured = {"payload": dict(fixture["outer"])}
+                captured["payload"]["input"] = (
+                    captured["payload"]["input"]
+                    .replace("$COMMAND_JSON", json.dumps(command))
+                    .replace("$WORKDIR_JSON", json.dumps(str(worktree)))
+                    .replace("$COMMAND_SINGLE_QUOTED", quoted_command)
+                    .replace("$WORKDIR_SINGLE_QUOTED", quoted_workdir)
+                )
+                with self.subTest(captured=fixture_name):
+                    code, decision, stderr = run(captured)
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
 
             unsafe_render = {"payload": dict(captured["payload"])}
             unsafe_render["payload"]["input"] = (
@@ -3733,7 +3744,7 @@ class DefaultDeliveryTests(HookTestCase):
                 )
             )
             unbound_cases = {
-                "render-with-call": ((unsafe_render,), fixture["outer_diagnostic"]),
+                "render-with-call": ((unsafe_render,), "transcript-custom-input-ambiguous"),
                 "unreadable-pending-after": (
                     (outer("outer-1", command, worktree), opaque),
                     "transcript-custom-input-unrecognized",
@@ -4607,6 +4618,9 @@ class DefaultDeliveryTests(HookTestCase):
                 "commit --message 'fix: tiny repair'",
                 f"env -C {shlex.quote(str(primary))} semantic-commit commit "
                 "--message 'fix: tiny repair'",
+                'GIT_AUTHOR_NAME="Fixture" GIT_AUTHOR_EMAIL="fixture@example.invalid" '
+                f"GIT_DIR={shlex.quote(str(primary / '.git'))} semantic-commit "
+                "commit --message 'fix: tiny repair'",
             ):
                 with self.subTest(command=command):
                     code, decision, stderr = run_hook(

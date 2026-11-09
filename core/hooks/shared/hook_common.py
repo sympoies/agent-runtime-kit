@@ -297,7 +297,34 @@ def _skip_js_literal_space(source: str, index: int) -> int:
 def _js_literal_scalar(
     source: str, index: int, bindings: Mapping[str, str]
 ) -> tuple[Any, int] | None:
-    """Decode one JSON scalar, JSON literal name, or bound ``const`` name."""
+    """Decode a literal scalar or a name bound by a leading const declaration."""
+    if source[index : index + 1] == "'":
+        # Codex 0.162.1 also emits single-quoted scalar values. Translate only
+        # their literal characters and JSON-compatible escapes (plus \') into
+        # JSON; unknown JS escapes, line continuations and expressions stay
+        # unreadable rather than acquiring JavaScript evaluation semantics.
+        encoded = ['"']
+        cursor = index + 1
+        while cursor < len(source):
+            char = source[cursor]
+            cursor += 1
+            if char == "'":
+                encoded.append('"')
+                try:
+                    return json.loads("".join(encoded)), cursor
+                except json.JSONDecodeError:
+                    return None
+            if char == '"':
+                encoded.append('\\"')
+            elif char == "\\":
+                if cursor == len(source):
+                    return None
+                escaped = source[cursor]
+                cursor += 1
+                encoded.append("'" if escaped == "'" else "\\" + escaped)
+            else:
+                encoded.append(char)
+        return None
     identifier = JS_IDENTIFIER_RE.match(source, index)
     if identifier is not None:
         name = identifier.group()
@@ -319,11 +346,12 @@ def _js_literal_object(
 ) -> tuple[dict[str, Any], int] | None:
     """Decode a flat object literal in the JSON-compatible JavaScript subset.
 
-    Keys are identifiers or JSON strings; values are JSON scalars or names
+    Keys are identifiers or JSON strings; values are JSON scalars,
+    single-quoted literal strings with the same escape subset, or names
     bound by a leading ``const NAME = "<JSON string>"``. Within that subset a
     JSON decoder and a JavaScript engine read identical values, so the decoded
     workdir is the one the call runs with. Duplicate keys, nested values,
-    spreads, computed keys, comments, and non-JSON string forms are refused
+    spreads, computed keys, comments, and dynamic string forms are refused
     rather than interpreted. The scan is linear in the source length.
     """
     if source[:1] != "{":

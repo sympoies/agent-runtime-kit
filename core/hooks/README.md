@@ -207,18 +207,24 @@ matching-transcript, payload, ordinary session-cwd, and authenticated
 managed-session-cwd values are attested. Relative values and plain process cwd
 are not. A transcript-call mismatch keeps payload/session cwd un-attested, but
 does not suppress an independently authenticated managed-session cwd matching
-that same resolved path. The transcript tail remains capped at 4 MiB.
+that same resolved path. Command-local `GIT_AUTHOR_NAME` and
+`GIT_AUTHOR_EMAIL` are author metadata for `semantic-commit` and preserve an
+otherwise attested target.
+Repository/configuration environment overrides and raw Git retain their existing
+checks. The transcript tail remains capped at 4 MiB.
 The custom-tool form accepts one optional strict-JSON `// @exec:` pragma and
 one complete canonical wrapper only; additional JavaScript or another exec
 call makes the workdir ambiguous rather than borrowing the first call's target.
 Its argument is strict JSON or a flat object literal whose keys are identifiers
-or JSON strings and whose values are JSON scalars or names bound by leading
-`const NAME = "<JSON string>"` declarations; a JSON decoder and a JavaScript
-engine read that subset identically. In the object-literal form, duplicate
-keys, nested values, spreads, computed keys, comments, template or
-single-quoted strings, and other bindings stay unreadable; strict JSON keeps
-its own rules, where the last duplicate key wins as it does in JavaScript and
-only the top-level `workdir` is read.
+or JSON strings and whose values are JSON scalars, single-quoted literal
+strings, or names bound by leading `const NAME = "<JSON string>"` declarations.
+The decoder preserves the same literal values as the JavaScript engine. In the
+object-literal form, duplicate keys, nested values, spreads, computed keys, comments, template strings,
+and other bindings stay unreadable. Single-quoted values use JSON-compatible
+escapes plus escaped apostrophes; unknown JavaScript escapes and line
+continuations remain unreadable. Strict JSON keeps its own rules, where the last
+duplicate key wins as it does in JavaScript and only the top-level `workdir` is
+read.
 
 The wrapper may bind the result and render it with `text(r)`,
 `text(r.output)`, or `text(JSON.stringify(r))`, including multiple such
