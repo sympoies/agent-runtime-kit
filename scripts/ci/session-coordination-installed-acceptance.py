@@ -356,8 +356,14 @@ def main():
     selector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(selector)
     selected_session, selected_hook = selector.selected_pair()
-    target_selection = {"agent-session": "explicit" if explicit_session else ("selected" if selected_session else "unselected-path"),
-                        "agent-hook": "explicit" if explicit_hook else ("selected" if selected_hook else "unselected-path")}
+    configured = os.environ.get("AGENT_SESSION_BIN", "").strip()
+    roots = os.environ.get("AGENT_RUNTIME_TRUSTED_CLI_ROOT", "").strip()
+    configured_selection = bool(selected_session and (roots or (
+        os.path.isabs(configured) and os.path.basename(configured) == "agent-session"
+        and os.path.realpath(configured) == selected_session
+        and os.path.isfile(configured) and os.access(configured, os.X_OK))))
+    target_selection = {"agent-session": "explicit" if explicit_session else ("selected" if configured_selection else "unselected-path"),
+                        "agent-hook": "explicit" if explicit_hook else ("selected" if configured_selection and selected_hook else "unselected-path")}
     binaries, versions, hashes = {}, {}, {}
     for name, raw in (("agent-session", args.agent_session_bin), ("agent-hook", args.agent_hook_bin)):
         require(raw and Path(raw).is_absolute(), "installed executable must be an absolute path")
