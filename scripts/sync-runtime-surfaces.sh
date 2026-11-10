@@ -1593,6 +1593,47 @@ agent_hook_provider_path() {
   esac
 }
 
+# agent-hook resolves the Claude provider config from CLAUDE_CONFIG_DIR when it
+# is set, but every Claude surface this script owns targets the live home
+# (product_live_home claude -> $HOME/.claude, agent_hook_provider_path ->
+# $HOME/.claude/settings.json). An account directory whose settings.json is a
+# symlink therefore fails agent-hook setup with provider-config-untrusted after
+# the migration has begun (#387). Pin the override to the live home when the
+# symlink already points at the live file; otherwise name the cause and the
+# workaround before anything mutates.
+resolve_claude_config_dir_override() {
+  local live_home
+  local live_settings
+  local override_settings
+  local override_target
+
+  if [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
+    return 0
+  fi
+  live_home="$(product_live_home claude)"
+  live_settings="$live_home/settings.json"
+  override_settings="$CLAUDE_CONFIG_DIR/settings.json"
+  if [ ! -L "$override_settings" ]; then
+    # Absent or regular settings.json: agent-hook trusts it as-is.
+    return 0
+  fi
+  # Resolve the symlink target, then compare file identity (-ef) instead of
+  # path strings: MSYS/macOS path spellings of the same file differ.
+  override_target="$(runtime_python -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$override_settings")"
+  if [ -e "$live_settings" ] && [ ! -L "$live_settings" ] && [ "$override_target" -ef "$live_settings" ]; then
+    log "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR exposes settings.json through a symlink to the live home; pinning CLAUDE_CONFIG_DIR=$live_home for managed surfaces (#387)"
+    export CLAUDE_CONFIG_DIR="$live_home"
+    return 0
+  fi
+  if [ "$APPLY" = "1" ]; then
+    err "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR exposes $override_settings as a symlink agent-hook cannot trust (provider-config-untrusted); managed surfaces target the live home $live_home."
+    err "workaround: unset CLAUDE_CONFIG_DIR so agent-hook targets $live_home, or replace the symlink with a regular settings.json."
+    return 1
+  fi
+  warn "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR exposes $override_settings as a symlink agent-hook cannot trust (provider-config-untrusted); agent-hook setup would fail after the migration begins (#387). Workaround: unset CLAUDE_CONFIG_DIR or replace the symlink with a regular settings.json."
+  return 0
+}
+
 agent_hook_cutover_state() {
   local product="$1"
   local action="$2"
@@ -4772,6 +4813,11 @@ main() {
     return $?
   fi
   resolve_agent_hook_paths
+  if [ "$PRODUCT" != "codex" ] && [ "$PRODUCT" != "hermes" ]; then
+    if ! resolve_claude_config_dir_override; then
+      return 1
+    fi
+  fi
   validate_live_sync_source_root
 
   if [ "$APPLY" = "1" ]; then
