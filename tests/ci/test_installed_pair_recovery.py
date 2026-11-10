@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Installed-pair acceptance must exist and reject unsafe observations."""
 import importlib.util
+import contextlib
+import io
+import json
+import shutil
+import sys
 import os
 import tempfile
 from unittest.mock import patch
@@ -19,6 +24,7 @@ class InstalledPairRecoveryTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("installed_pair_acceptance", ENTRYPOINT)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        cls.module = module
         cls.verify = staticmethod(module.verify_observation)
         cls.resolve_targets = staticmethod(module.resolve_targets)
 
@@ -38,6 +44,43 @@ class InstalledPairRecoveryTests(unittest.TestCase):
                 self.assertEqual(self.resolve_targets("/explicit/session", "/explicit/hook"), ("/explicit/session", "/explicit/hook"))
             with patch.dict(os.environ, {"PATH": str(poison), "AGENT_SESSION_BIN": "", "AGENT_RUNTIME_TRUSTED_CLI_ROOT": ""}):
                 self.assertEqual(self.resolve_targets(), (str(poison / "agent-session"), str(poison / "agent-hook")))
+
+    def test_trusted_path_discovery_receipt_is_unselected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            bindir = home / ".local/nils-cli/bin"
+            bindir.mkdir(parents=True)
+            hooks = home / "hooks"
+            hooks.mkdir()
+            for name in ("agent-session", "agent-hook"):
+                binary = bindir / name
+                binary.write_text(f"#!/bin/sh\necho '{name} 1.2.3 (fixture)'\n")
+                binary.chmod(0o755)
+            for name in self.module.HOOK_FILES:
+                shutil.copyfile(ROOT / "core/hooks/shared" / name, hooks / name)
+            base = {"HOME": str(home), "ZDOTDIR": str(home), "PATH": str(bindir),
+                    "AGENT_SESSION_BIN": "", "AGENT_RUNTIME_TRUSTED_CLI_ROOT": ""}
+            cases = (
+                ({}, [], ("unselected-path", "unselected-path")),
+                ({"AGENT_SESSION_BIN": str(bindir / "agent-session")}, [], ("selected", "selected")),
+                ({"AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(home / "missing") + os.pathsep + str(bindir)}, [], ("selected", "selected")),
+                ({}, ["--agent-session-bin", str(bindir / "agent-session"), "--agent-hook-bin", str(bindir / "agent-hook")], ("explicit", "explicit")),
+                ({"AGENT_SESSION_BIN": "relative/agent-session"}, [], ("unselected-path", "unselected-path")),
+            )
+            for extra, flags, expected in cases:
+                with self.subTest(extra=extra, flags=flags):
+                    output = io.StringIO()
+                    with patch.dict(os.environ, {**base, **extra}), patch.object(sys, "argv", [str(ENTRYPOINT), "--installed-hooks", str(hooks), *flags]), \
+                         patch.object(self.module, "Fixture") as fixture, contextlib.redirect_stdout(output):
+                        fixture.return_value.observe.return_value = {}
+                        self.assertEqual(self.resolve_targets(), (str(bindir / "agent-session"), str(bindir / "agent-hook")))
+                        self.module.main()
+                    self.assertEqual(json.loads(output.getvalue())["target_selection"],
+                                     dict(zip(("agent-session", "agent-hook"), expected)))
+            (bindir / "agent-hook").unlink()
+            with patch.dict(os.environ, {**base, "AGENT_SESSION_BIN": str(bindir / "agent-session")}):
+                with self.assertRaisesRegex(AssertionError, "no executable agent-hook sibling"):
+                    self.resolve_targets()
 
     def observation(self, case):
         value = {"case": case, "commands": {"broker prepare-admission-proof": 1, "broker proof": 1},
