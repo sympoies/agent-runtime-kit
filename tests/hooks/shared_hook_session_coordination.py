@@ -3206,6 +3206,62 @@ exit 64
 
 
 
+    def test_lifecycle_selected_executable_symlink_identity(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "coordination_lifecycle_identity", HOOK_DIR / "session-coordination-guard.py"
+        )
+        assert spec is not None and spec.loader is not None
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real_dir = root / "real"
+            real_dir.mkdir()
+            executable = real_dir / "agent-session"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            alias_dir = root / "alias"
+            alias_dir.mkdir()
+            alias = alias_dir / "agent-session"
+            alias.symlink_to(executable)
+            capability = root / "capability"
+            capability.write_text("fixture\n", encoding="utf-8")
+            capability.chmod(0o600)
+            env = {
+                "AGENT_SESSION_BIN": str(alias),
+                "AGENT_SESSION_ID": "managed-session",
+                "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+            }
+            suffix = (
+                ' work-context renew --session "$AGENT_SESSION_ID" --claim claim-1234 '
+                '--if-revision 7 --capability-file "$AGENT_SESSION_CAPABILITY_FILE" '
+                '--idempotency-key renew-key-0001 --format json'
+            )
+            with mock.patch.dict(os.environ, env):
+                selected = guard.resolved_agent_session()
+                self.assertEqual(selected, str(executable))
+                self.assertTrue(
+                    guard.command_bypasses_admission(str(executable) + suffix, selected)
+                )
+                self.assertTrue(
+                    guard.command_bypasses_admission(str(alias) + suffix, selected)
+                )
+                ancestor = root / "linked-dir"
+                ancestor.symlink_to(real_dir, target_is_directory=True)
+                self.assertTrue(
+                    guard.command_bypasses_admission(
+                        str(ancestor / "agent-session") + suffix, selected
+                    )
+                )
+                with mock.patch.dict(
+                    os.environ,
+                    {"AGENT_SESSION_BIN": "", "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(alias_dir)},
+                ):
+                    self.assertEqual(guard.resolved_agent_session(), selected)
+                    self.assertTrue(
+                        guard.command_bypasses_admission(str(alias) + suffix, selected)
+                    )
+
     def test_session_coordination_guard_allows_only_exact_projected_lifecycle_commands(
         self,
     ) -> None:
@@ -3424,7 +3480,11 @@ exit 64
             )
 
             for index, command in enumerate(
-                (*bare_projected_commands, *pinned_projected_commands)
+                (
+                    *bare_projected_commands,
+                    *pinned_projected_commands,
+                    projected_release.replace("agent-session", str(alias_agent_session), 1),
+                )
             ):
                 with self.subTest(allowed=command):
                     payload = command_payload(command)
@@ -3516,11 +3576,6 @@ exit 64
                 projected_release.replace(
                     "agent-session",
                     str(shadow_agent_session.resolve()),
-                    1,
-                ),
-                projected_release.replace(
-                    "agent-session",
-                    str(alias_agent_session),
                     1,
                 ),
                 projected_release.replace(

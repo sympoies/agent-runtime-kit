@@ -1323,7 +1323,7 @@ def command_bypasses_admission(
     if lifecycle_words is not None:
         executable = lifecycle_words[0]
         if os.path.isabs(executable):
-            return executable == agent_session_executable
+            return os.path.realpath(executable) == os.path.realpath(agent_session_executable)
         candidate = shutil.which(executable)
         return (
             executable == "agent-session"
