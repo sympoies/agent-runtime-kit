@@ -476,6 +476,9 @@ python3 tests/ci/test_hook_dispatch_budget.py
 # portable and run even when CI has no matching runtime hook installation.
 python3 tests/ci/test_installed_pair_recovery.py
 python3 tests/ci/test_selected_hook_sync.py
+# A symlinked CLAUDE_CONFIG_DIR settings.json must not surface as a generic
+# provider-config-untrusted rollback after the migration begins (#387).
+python3 tests/ci/test_claude_config_dir_override.py
 # setup.sh and sync-runtime-surfaces.sh must resolve Python 3.11+ themselves:
 # a macOS PATH can put the system 3.9 python3 ahead of Homebrew's (#211).
 python3 tests/ci/test_runtime_python_resolver.py
