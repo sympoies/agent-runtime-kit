@@ -228,8 +228,11 @@ class SessionCoordinationTests(HookTestCase):
             unsafe = root / "unsafe-capability"
             unsafe.write_text("fixture-private-material\n", encoding="utf-8")
             unsafe.chmod(0o644)
+            private = root / "private-capability"
+            private.write_text("fixture-private-material\n", encoding="utf-8")
+            private.chmod(0o600)
             linked = root / "linked-capability"
-            linked.symlink_to(unsafe)
+            linked.symlink_to(private)
             for product in ("codex", "claude"):
                 for capability in ("", str(root / "missing"), str(unsafe), str(linked)):
                     env = {
@@ -295,6 +298,40 @@ class SessionCoordinationTests(HookTestCase):
             self.assertEqual(code, 0, stderr)
             self.assert_allowed(decision)
             self.assertFalse((root / "user.txt").exists())
+
+    def test_session_coordination_incomplete_owner_metadata_for_registered_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for product, tools in (
+                ("codex", ("Bash", "Write", "Edit", "NotebookEdit", "apply_patch")),
+                ("claude", ("Bash", "Write", "Edit", "NotebookEdit", "MultiEdit")),
+            ):
+                env = {
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "AGENT_SESSION_ID": "fixture-owner",
+                    "AGENT_SESSION_CAPABILITY_FILE": "",
+                    "AGENT_SESSION_STATE_DIR": str(root),
+                }
+                for tool in tools:
+                    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+                        payload = {"tool_name": tool, "tool_input": {"command": "touch user.txt"},
+                                   "hook_event_name": event}
+                        with self.subTest(product=product, tool=tool, event=event):
+                            code, decision, stderr = run_enforced_hook(
+                                "session-coordination-guard.py", payload, cwd=root, env=env
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            if event == "PreToolUse":
+                                self.assert_blocked(decision, "[reason: managed-metadata-incomplete]")
+                            else:
+                                self.assertIn("lacks complete managed session metadata", str(decision))
+                with self.subTest(product=product, event="Stop"):
+                    code, decision, stderr = run_enforced_hook(
+                        "session-coordination-guard.py", {"hook_event_name": "Stop"},
+                        cwd=root, env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIn("lacks complete managed session metadata", str(decision))
 
     def test_session_coordination_guard_requires_claim_for_managed_mutation(
         self,
