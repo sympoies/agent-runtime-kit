@@ -385,7 +385,8 @@ the session runtime (`agent-session`) owns capability recovery. The hook never
 creates or repairs capabilities. Enforced audited text reads refuse the session
 state root, the selected capability file, and hook session-coordination proof
 state. The guard resolves literal paths through symlinks and parent traversal,
-including pattern-file options and recursive searches of protected ancestors,
+including pattern-file options and effective recursive search roots (explicit
+paths or the current directory) that contain protected descendants,
 and emits only a fixed diagnostic without reading private file bytes. Project
 and documentation reads outside these locations retain their admission lane.
 Advisory, off, and unmanaged behavior is unchanged.

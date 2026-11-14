@@ -132,6 +132,81 @@ class SessionCoordinationTests(HookTestCase):
             # Private reads must be rejected before any broker/admission work.
             self.assertFalse(calls.exists())
 
+    def test_session_coordination_recursive_reads_check_effective_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "project"
+            public = repo / "public"
+            public.mkdir(parents=True)
+            (public / "README.md").write_text("public documentation\n", encoding="utf-8")
+            (public / "patterns").write_text("public\n", encoding="utf-8")
+            state = repo / "private-state"
+            state.mkdir()
+            capability = state / "capability-current"
+            capability.write_text("fixture-secret-canary\n", encoding="utf-8")
+            capability.chmod(0o600)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            calls = root / "broker-calls"
+            for name in ("agent-session", "rg"):
+                executable = bin_dir / name
+                executable.write_text(
+                    f"#!/bin/sh\nprintf called >> {shlex.quote(str(calls))}\nexit 64\n",
+                    encoding="utf-8",
+                )
+                executable.chmod(0o755)
+            for product in ("codex", "claude"):
+                env = {
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                    "AGENT_RUNTIME_STATE_HOME": str(root / "hook-state"),
+                    "AGENT_SESSION_ID": "fixture-owner",
+                    "AGENT_SESSION_CAPABILITY_FILE": str(capability),
+                    "AGENT_SESSION_STATE_DIR": str(state),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                for command in (
+                    "rg --no-config fixture-secret-canary",
+                    "grep -r fixture-secret-canary",
+                    "grep --directories=recurse fixture-secret-canary .",
+                    "grep -d recurse fixture-secret-canary .",
+                    "grep -drecurse fixture-secret-canary .",
+                    "rg --no-config -e fixture-secret-canary",
+                    "grep -r -e fixture-secret-canary",
+                    "rg --no-config --files",
+                ):
+                    payload = command_payload(command)
+                    payload["hook_event_name"] = "PreToolUse"
+                    with self.subTest(product=product, private_search=command):
+                        code, decision, stderr = run_enforced_hook(
+                            "session-coordination-guard.py", payload, cwd=repo, env=env
+                        )
+                        self.assertEqual(code, 0)
+                        self.assert_blocked(decision, "[reason: private-runtime-read]")
+                        for private in (str(root), "fixture-secret-canary", "fixture-owner"):
+                            self.assertNotIn(private, json.dumps(decision) + stderr)
+                for command in (
+                    "rg --no-config documentation public/README.md",
+                    "rg --no-config . public",
+                    "rg --no-config --files public",
+                    "grep -r . public",
+                    "rg --no-config -e documentation public",
+                    "rg --no-config --glob '*.md' documentation public",
+                    "grep -r documentation public",
+                    "grep --directories=recurse documentation public",
+                    "grep -d recurse -e documentation public",
+                    "grep -r -f public/patterns public",
+                ):
+                    payload = command_payload(command)
+                    payload["hook_event_name"] = "PreToolUse"
+                    with self.subTest(product=product, public_search=command):
+                        code, decision, stderr = run_enforced_hook(
+                            "session-coordination-guard.py", payload, cwd=repo, env=env
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+            self.assertFalse(calls.exists())
+
     def test_session_coordination_missing_capability_preserves_admission_boundary(
         self,
     ) -> None:

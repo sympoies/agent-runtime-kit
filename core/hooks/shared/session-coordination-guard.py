@@ -13,6 +13,7 @@ and CLI error messages never leave this process.
 from __future__ import annotations
 
 import fcntl
+import getopt
 import hashlib
 import json
 import math
@@ -993,6 +994,58 @@ def claim_bootstrap_invocation(
     return True
 
 
+def audited_search_roots(words: list[str]) -> tuple[bool, list[str]]:
+    """Separate search patterns/options from roots that can be traversed."""
+    name = os.path.basename(words[0])
+    if name not in {"rg", "grep", "egrep", "fgrep"}:
+        recursive = name == "ls" and any(
+            word == "--recursive" or (word.startswith("-") and "R" in word[1:])
+            for word in words[1:]
+        )
+        return recursive, [word for word in words[1:] if not word.startswith("-")] or ["."]
+    value_options = [
+        "regexp=", "file=", "max-count=", "after-context=", "before-context=", "context=",
+    ]
+    flag_options = [
+        "ignore-case", "invert-match", "line-number", "with-filename", "no-filename",
+        "files-with-matches", "files-without-match", "count", "only-matching", "quiet",
+        "word-regexp", "line-regexp", "fixed-strings", "extended-regexp", "perl-regexp",
+        "text", "null", "null-data", "help", "version", "color", "colour",
+    ]
+    if name == "rg":
+        short_options = "e:f:g:t:T:A:B:C:m:j:E:r:aFhisSwxvnNHIlLcoqUuPzhV"
+        value_options += ["glob=", "iglob=", "type=", "type-not=", "encoding=", "threads=",
+                          "max-depth=", "sort=", "sortr=", "replace=", "ignore-file="]
+        flag_options += ["no-config", "files", "hidden", "follow", "no-ignore", "smart-case"]
+    else:
+        short_options = "e:f:d:D:A:B:C:m:EFGPHhIiLlnqRrsvVwxcboazZ"
+        value_options += ["directories=", "devices=", "include=", "exclude=", "exclude-from=",
+                          "exclude-dir=", "label=", "binary-files="]
+        flag_options += ["recursive", "dereference-recursive"]
+    try:
+        options, operands = getopt.gnu_getopt(words[1:], short_options, value_options + flag_options)
+    except getopt.GetoptError:
+        # An unfamiliar option may consume a value or select recursion. Keep
+        # every literal candidate and cwd as possible roots instead of guessing.
+        return True, ["."] + [word.split("=", 1)[-1] for word in words[1:]]
+    recursive = name == "rg" or any(
+        option in {"-r", "-R", "--recursive", "--dereference-recursive"}
+        or (option in {"-d", "--directories"} and value == "recurse")
+        for option, value in options
+    )
+    # -e/-f provide the pattern separately; rg --files has no pattern operand.
+    supplied_pattern = any(
+        option in {"-e", "--regexp", "-f", "--file", "--files"}
+        for option, _value in options
+    )
+    roots = operands if supplied_pattern else operands[1:]
+    # POSIXLY_CORRECT can leave trailing options in operands. Such a shape is
+    # uncertain and must still account for an implicit current-directory root.
+    if any(word.startswith("-") for word in operands):
+        return True, ["."] + operands
+    return recursive, roots or ["."]
+
+
 def audited_read_touches_private_runtime(words: list[str], base: Path | None) -> bool:
     """Check literal read arguments without opening private runtime material."""
     if not audited_text_read_invocation(words):
@@ -1010,15 +1063,7 @@ def audited_read_touches_private_runtime(words: list[str], base: Path | None) ->
         selector = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
         private_files = [(base / selector).resolve()] if selector else []
         name = os.path.basename(words[0])
-        recursive = name == "rg" or (
-            name in {"grep", "egrep", "fgrep", "ls"}
-            and any(
-                word in {"--recursive", "--dereference-recursive"}
-                or (word.startswith("-") and not word.startswith("--")
-                    and any(flag in word[1:] for flag in "rR"))
-                for word in words[1:]
-            )
-        )
+        recursive, search_roots = audited_search_roots(words)
         candidates = []
         options_ended = False
         for word in words[1:]:
@@ -1034,17 +1079,21 @@ def audited_read_touches_private_runtime(words: list[str], base: Path | None) ->
                 attached = re.fullmatch(r"-[^-]*?f(.+)", word)
                 if attached:
                     candidates.append(attached.group(1))
-        if recursive and not candidates:
-            candidates.append(str(base))
         for raw in candidates:
             path = (base / raw).resolve()
             if path in private_files or any(path.is_relative_to(root) for root in private_roots):
                 return True
-            # Recursive searches of a parent can read protected descendants.
-            if recursive and path.is_dir() and any(
-                root.is_relative_to(path) for root in private_roots + private_files
-            ):
-                return True
+        # Check effective roots separately: a positional pattern is not a root,
+        # and a pattern alone still searches cwd when recursion is enabled.
+        if recursive:
+            for raw in search_roots:
+                path = (base / raw).resolve()
+                if any(path.is_relative_to(root) for root in private_roots) or path in private_files:
+                    return True
+                if path.is_dir() and any(
+                    root.is_relative_to(path) for root in private_roots + private_files
+                ):
+                    return True
         return False
     except (OSError, RuntimeError, ValueError):
         # Resolution failure must not restore the unauthenticated read lane.
