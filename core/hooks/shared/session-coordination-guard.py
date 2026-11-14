@@ -13,6 +13,7 @@ and CLI error messages never leave this process.
 from __future__ import annotations
 
 import fcntl
+import getopt
 import hashlib
 import json
 import math
@@ -49,6 +50,7 @@ from hook_common import (
     normalized_cli_argv,
     output_redirect_targets,
     patch_text_candidates,
+    pipe_only_commands,
     raw_deletion_arguments,
     read_payload,
     resolves_within_its_directory,
@@ -992,6 +994,141 @@ def claim_bootstrap_invocation(
     return True
 
 
+def audited_search_roots(words: list[str]) -> tuple[bool, list[str]]:
+    """Separate search patterns/options from roots that can be traversed."""
+    name = os.path.basename(words[0])
+    if name not in {"rg", "grep", "egrep", "fgrep"}:
+        recursive = name == "ls" and any(
+            word == "--recursive" or (word.startswith("-") and "R" in word[1:])
+            for word in words[1:]
+        )
+        return recursive, [word for word in words[1:] if not word.startswith("-")] or ["."]
+    value_options = [
+        "regexp=", "file=", "max-count=", "after-context=", "before-context=", "context=",
+    ]
+    flag_options = [
+        "ignore-case", "invert-match", "line-number", "with-filename", "no-filename",
+        "files-with-matches", "files-without-match", "count", "only-matching", "quiet",
+        "word-regexp", "line-regexp", "fixed-strings", "extended-regexp", "perl-regexp",
+        "text", "null", "null-data", "help", "version", "line-buffered",
+        "byte-offset", "no-messages",
+    ]
+    if name == "rg":
+        short_options = "e:f:g:t:T:A:B:C:m:j:E:r:d:M:"
+        short_options += "aFhisSwxvnNHIlLcoqUuPzhVbp."
+        value_options += ["glob=", "iglob=", "type=", "type-not=", "encoding=", "threads=",
+                          "max-depth=", "sort=", "sortr=", "replace=", "ignore-file=",
+                          "color=", "colors=", "engine=", "max-columns=", "max-filesize=",
+                          "context-separator=", "field-context-separator=", "field-match-separator=",
+                          "path-separator=", "hyperlink-format=", "type-add=", "type-clear=",
+                          "dfa-size-limit=", "regex-size-limit=", "generate="]
+        flag_options += [
+            "no-config", "files", "hidden", "follow", "no-ignore", "smart-case",
+            "case-sensitive", "crlf", "mmap", "multiline", "multiline-dotall", "no-unicode",
+            "pcre2", "stop-on-nonmatch", "auto-hybrid-regex", "no-pcre2-unicode", "binary",
+            "glob-case-insensitive", "ignore-file-case-insensitive", "no-ignore-dot",
+            "no-ignore-exclude", "no-ignore-files", "no-ignore-global", "no-ignore-parent",
+            "no-ignore-vcs", "no-require-git", "one-file-system", "unrestricted",
+            "block-buffered", "column", "no-column", "heading", "no-heading", "include-zero",
+            "no-line-number", "max-columns-preview", "passthru", "pretty", "trim", "vimgrep",
+            "sort-files", "count-matches", "json", "debug", "no-ignore-messages", "stats",
+            "trace", "pcre2-version",
+        ]
+    else:
+        short_options = "e:f:d:D:A:B:C:m:"
+        short_options += "EFGPHhIiLlnqRrsvVwxcboazZTU"
+        short_options += "0123456789"
+        value_options += ["directories=", "devices=", "include=", "exclude=", "exclude-from=",
+                          "exclude-dir=", "label=", "binary-files=", "group-separator="]
+        flag_options += ["recursive", "dereference-recursive", "color", "colour",
+                         "basic-regexp", "no-ignore-case", "silent", "initial-tab",
+                         "no-group-separator", "binary"]
+    arguments = words[1:]
+    if name != "rg":
+        # GNU grep's --color[=WHEN] has an optional attached value; rg's
+        # --color WHEN requires a value. Both are current external CLI forms.
+        arguments = [
+            word.split("=", 1)[0] if word.startswith(("--color=", "--colour=")) else word
+            for word in arguments
+        ]
+    try:
+        options, operands = getopt.gnu_getopt(arguments, short_options, value_options + flag_options)
+    except getopt.GetoptError:
+        # An unfamiliar option may consume a value or select recursion. Keep
+        # every literal candidate and cwd as possible roots instead of guessing.
+        return True, ["."] + [word.split("=", 1)[-1] for word in words[1:]]
+    recursive = name == "rg" or any(
+        option in {"-r", "-R", "--recursive", "--dereference-recursive"}
+        or (option in {"-d", "--directories"} and value == "recurse")
+        for option, value in options
+    )
+    # -e/-f provide the pattern separately; rg --files has no pattern operand.
+    supplied_pattern = any(
+        option in {"-e", "--regexp", "-f", "--file", "--files"}
+        for option, _value in options
+    )
+    roots = operands if supplied_pattern else operands[1:]
+    # POSIXLY_CORRECT can leave trailing options in operands. Such a shape is
+    # uncertain and must still account for an implicit current-directory root.
+    if any(word.startswith("-") for word in operands):
+        return True, ["."] + operands
+    return recursive, roots or ["."]
+
+
+def audited_read_touches_private_runtime(words: list[str], base: Path | None) -> bool:
+    """Check literal read arguments without opening private runtime material."""
+    if not audited_text_read_invocation(words):
+        return False
+    try:
+        base = base if base is not None else Path.cwd()
+        xdg = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+        session_state = Path(os.environ.get("AGENT_SESSION_STATE_DIR") or xdg / "agent-session")
+        # Session state contains owner/delegated credentials; hook operation
+        # state contains execution tokens and retained authentication proofs.
+        private_roots = [session_state.resolve()] + [
+            (state_root(product) / "session-coordination").resolve()
+            for product in SUPPORTED_PRODUCTS
+        ]
+        selector = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+        private_files = [(base / selector).resolve()] if selector else []
+        name = os.path.basename(words[0])
+        recursive, search_roots = audited_search_roots(words)
+        candidates = []
+        options_ended = False
+        for word in words[1:]:
+            if word == "--":
+                options_ended = True
+                continue
+            if options_ended or not word.startswith("-"):
+                candidates.append(word)
+            elif "=" in word:
+                candidates.append(word.split("=", 1)[1])
+            elif name in {"grep", "egrep", "fgrep", "rg"}:
+                # Pattern-file options can be attached after short flag clusters.
+                attached = re.fullmatch(r"-[^-]*?f(.+)", word)
+                if attached:
+                    candidates.append(attached.group(1))
+        for raw in candidates:
+            path = (base / raw).resolve()
+            if path in private_files or any(path.is_relative_to(root) for root in private_roots):
+                return True
+        # Check effective roots separately: a positional pattern is not a root,
+        # and a pattern alone still searches cwd when recursion is enabled.
+        if recursive:
+            for raw in search_roots:
+                path = (base / raw).resolve()
+                if any(path.is_relative_to(root) for root in private_roots) or path in private_files:
+                    return True
+                if path.is_dir() and any(
+                    root.is_relative_to(path) for root in private_roots + private_files
+                ):
+                    return True
+        return False
+    except (OSError, RuntimeError, ValueError):
+        # Resolution failure must not restore the unauthenticated read lane.
+        return True
+
+
 def invocation_bypasses_admission(
     words: list[str], agent_session_executable: str, base: Path | None = None
 ) -> bool:
@@ -1019,7 +1156,10 @@ def invocation_bypasses_admission(
             }
         return trusted and words[1] == "activity"
     if audited_text_read_invocation(words):
-        return trusted_command(words[0], name)
+        return (
+            trusted_command(words[0], name)
+            and not audited_read_touches_private_runtime(words, base)
+        )
     if name == "git":
         return trusted_command(words[0], name) and git_read_only(words[1:])
     if name in {"gh", "forge-cli"}:
@@ -3832,6 +3972,17 @@ def main() -> int:
     if not managed_session and not capability_file:
         return ALLOW
     if mode == "enforce" and event == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
+        base = effective_workdir(payload).resolve()
+        if any(
+            audited_read_touches_private_runtime(words, base)
+            for words in pipe_only_commands(command_from(payload)) or []
+        ):
+            emit_block(
+                "Audited reads of private runtime capability or credential state are "
+                "not permitted. Use the exact runtime diagnostic commands. "
+                "[reason: private-runtime-read]"
+            )
+            return ALLOW
         # Preserve the existing audited-read and exact lifecycle lane even when
         # the runtime has lost its capability. This grants no mutation lease.
         if command_bypasses_admission(
