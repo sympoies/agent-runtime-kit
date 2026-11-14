@@ -1010,20 +1010,46 @@ def audited_search_roots(words: list[str]) -> tuple[bool, list[str]]:
         "ignore-case", "invert-match", "line-number", "with-filename", "no-filename",
         "files-with-matches", "files-without-match", "count", "only-matching", "quiet",
         "word-regexp", "line-regexp", "fixed-strings", "extended-regexp", "perl-regexp",
-        "text", "null", "null-data", "help", "version", "color", "colour",
+        "text", "null", "null-data", "help", "version", "line-buffered",
+        "byte-offset", "no-messages",
     ]
     if name == "rg":
-        short_options = "e:f:g:t:T:A:B:C:m:j:E:r:aFhisSwxvnNHIlLcoqUuPzhV"
+        short_options = "e:f:g:t:T:A:B:C:m:j:E:r:d:M:aFhisSwxvnNHIlLcoqUuPzhVbp."
         value_options += ["glob=", "iglob=", "type=", "type-not=", "encoding=", "threads=",
-                          "max-depth=", "sort=", "sortr=", "replace=", "ignore-file="]
-        flag_options += ["no-config", "files", "hidden", "follow", "no-ignore", "smart-case"]
+                          "max-depth=", "sort=", "sortr=", "replace=", "ignore-file=",
+                          "color=", "colors=", "engine=", "max-columns=", "max-filesize=",
+                          "context-separator=", "field-context-separator=", "field-match-separator=",
+                          "path-separator=", "hyperlink-format=", "type-add=", "type-clear=",
+                          "dfa-size-limit=", "regex-size-limit=", "generate="]
+        flag_options += [
+            "no-config", "files", "hidden", "follow", "no-ignore", "smart-case",
+            "case-sensitive", "crlf", "mmap", "multiline", "multiline-dotall", "no-unicode",
+            "pcre2", "stop-on-nonmatch", "auto-hybrid-regex", "no-pcre2-unicode", "binary",
+            "glob-case-insensitive", "ignore-file-case-insensitive", "no-ignore-dot",
+            "no-ignore-exclude", "no-ignore-files", "no-ignore-global", "no-ignore-parent",
+            "no-ignore-vcs", "no-require-git", "one-file-system", "unrestricted",
+            "block-buffered", "column", "no-column", "heading", "no-heading", "include-zero",
+            "no-line-number", "max-columns-preview", "passthru", "pretty", "trim", "vimgrep",
+            "sort-files", "count-matches", "json", "debug", "no-ignore-messages", "stats",
+            "trace", "pcre2-version",
+        ]
     else:
-        short_options = "e:f:d:D:A:B:C:m:EFGPHhIiLlnqRrsvVwxcboazZ"
+        short_options = "e:f:d:D:A:B:C:m:EFGPHhIiLlnqRrsvVwxcboazZTU0123456789"
         value_options += ["directories=", "devices=", "include=", "exclude=", "exclude-from=",
-                          "exclude-dir=", "label=", "binary-files="]
-        flag_options += ["recursive", "dereference-recursive"]
+                          "exclude-dir=", "label=", "binary-files=", "group-separator="]
+        flag_options += ["recursive", "dereference-recursive", "color", "colour",
+                         "basic-regexp", "no-ignore-case", "silent", "initial-tab",
+                         "no-group-separator", "binary"]
+    arguments = words[1:]
+    if name != "rg":
+        # GNU grep's --color[=WHEN] has an optional attached value; rg's
+        # --color WHEN requires a value. Both are current external CLI forms.
+        arguments = [
+            word.split("=", 1)[0] if word.startswith(("--color=", "--colour=")) else word
+            for word in arguments
+        ]
     try:
-        options, operands = getopt.gnu_getopt(words[1:], short_options, value_options + flag_options)
+        options, operands = getopt.gnu_getopt(arguments, short_options, value_options + flag_options)
     except getopt.GetoptError:
         # An unfamiliar option may consume a value or select recursion. Keep
         # every literal candidate and cwd as possible roots instead of guessing.

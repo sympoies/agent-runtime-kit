@@ -172,6 +172,7 @@ class SessionCoordinationTests(HookTestCase):
                     "grep -d recurse fixture-secret-canary .",
                     "grep -drecurse fixture-secret-canary .",
                     "rg --no-config -e fixture-secret-canary",
+                    "rg --no-config --color never fixture-secret-canary",
                     "grep -r -e fixture-secret-canary",
                     "rg --no-config --files",
                 ):
@@ -187,6 +188,13 @@ class SessionCoordinationTests(HookTestCase):
                             self.assertNotIn(private, json.dumps(decision) + stderr)
                 for command in (
                     "rg --no-config documentation public/README.md",
+                    "rg --no-config --color=never documentation public/README.md",
+                    "rg --no-config --color never documentation public/README.md",
+                    "rg --no-config --line-buffered documentation public/README.md",
+                    "grep --line-buffered documentation public/README.md",
+                    "grep -2 --line-buffered documentation public/README.md",
+                    "grep --color=never documentation public/README.md",
+                    "grep --color documentation public/README.md",
                     "rg --no-config . public",
                     "rg --no-config --files public",
                     "grep -r . public",
