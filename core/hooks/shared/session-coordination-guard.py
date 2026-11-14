@@ -1014,7 +1014,8 @@ def audited_search_roots(words: list[str]) -> tuple[bool, list[str]]:
         "byte-offset", "no-messages",
     ]
     if name == "rg":
-        short_options = "e:f:g:t:T:A:B:C:m:j:E:r:d:M:aFhisSwxvnNHIlLcoqUuPzhVbp."
+        short_options = "e:f:g:t:T:A:B:C:m:j:E:r:d:M:"
+        short_options += "aFhisSwxvnNHIlLcoqUuPzhVbp."
         value_options += ["glob=", "iglob=", "type=", "type-not=", "encoding=", "threads=",
                           "max-depth=", "sort=", "sortr=", "replace=", "ignore-file=",
                           "color=", "colors=", "engine=", "max-columns=", "max-filesize=",
@@ -1034,7 +1035,9 @@ def audited_search_roots(words: list[str]) -> tuple[bool, list[str]]:
             "trace", "pcre2-version",
         ]
     else:
-        short_options = "e:f:d:D:A:B:C:m:EFGPHhIiLlnqRrsvVwxcboazZTU0123456789"
+        short_options = "e:f:d:D:A:B:C:m:"
+        short_options += "EFGPHhIiLlnqRrsvVwxcboazZTU"
+        short_options += "0123456789"
         value_options += ["directories=", "devices=", "include=", "exclude=", "exclude-from=",
                           "exclude-dir=", "label=", "binary-files=", "group-separator="]
         flag_options += ["recursive", "dereference-recursive", "color", "colour",
