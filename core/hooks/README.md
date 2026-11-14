@@ -378,6 +378,12 @@ destinations, commands outside a governed repository, wrapped provider clients,
 and unresolved provider targets fail closed. Provider `--repo`/`-R` overrides
 bind the effective provider reference rather than the hook checkout.
 
+Missing managed owner metadata or a missing/unsafe capability file refuses
+governed mutations in `enforce` mode with a bounded diagnostic. Audited reads
+and exact diagnostic/lifecycle commands keep their existing admission lane;
+the session runtime (`agent-session`) owns capability recovery. The hook never
+creates or repairs capabilities. Advisory, off, and unmanaged behavior is unchanged.
+
 `forge-cli pr create` and `forge-cli pr deliver --no-merge` name their pull
 request by head branch, so they resolve to one `pull-request-head` target
 (repository from `--repo` or the checkout origin, head from `--head` or the
