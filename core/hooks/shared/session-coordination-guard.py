@@ -542,10 +542,8 @@ def projected_lifecycle_invocation(
     # resolves argv[0] and requires it to match the trusted agent-session.
     words = normalized
 
-    capability = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
-    if not capability or not lifecycle_private_file(capability, repository):
-        return False
-
+    # These exact diagnostics do not grant mutation authority. The runtime CLI
+    # owns their authentication, including reporting a missing capability file.
     if words in (
         [
             "agent-session",
@@ -581,6 +579,10 @@ def projected_lifecycle_invocation(
         ],
     ):
         return True
+
+    capability = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+    if not capability or not lifecycle_private_file(capability, repository):
+        return False
 
     if words[1:3] == ["work-context", "renew"] or words[1:3] == [
         "work-context",
@@ -3829,6 +3831,15 @@ def main() -> int:
     state_dir = os.environ.get("AGENT_SESSION_STATE_DIR", "").strip()
     if not managed_session and not capability_file:
         return ALLOW
+    if mode == "enforce" and event == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
+        # Preserve the existing audited-read and exact lifecycle lane even when
+        # the runtime has lost its capability. This grants no mutation lease.
+        if command_bypasses_admission(
+            command_from(payload),
+            resolved_agent_session() or "",
+            effective_workdir(payload).resolve(),
+        ):
+            return ALLOW
     if not managed_session or not capability_file or not state_dir:
         if event == "Stop":
             emit_stop_coordination_result(
@@ -3839,6 +3850,12 @@ def main() -> int:
             return ALLOW
         if mode == "advisory":
             emit_advisory_unavailable("managed-metadata-incomplete")
+        elif event == "PreToolUse" and tool_name(payload) in EDIT_TOOLS | COMMAND_TOOLS:
+            emit_block(
+                "Managed mutation requires complete owner metadata. Request capability "
+                "recovery from the session-runtime owner (agent-session). "
+                "[reason: managed-metadata-incomplete]"
+            )
         else:
             emit_system(
                 "Session coordination is unavailable because this launch lacks complete managed "
@@ -3883,9 +3900,10 @@ def main() -> int:
         if mode == "advisory":
             emit_advisory_unavailable("capability-file-invalid")
         else:
-            emit_system(
-                "Session coordination is unavailable because the managed capability file is "
-                "not a private regular file; no enforcement claim is made."
+            emit_block(
+                "Managed mutation requires a private regular owner capability file. "
+                "Request capability recovery from the session-runtime owner (agent-session). "
+                "[reason: capability-file-invalid]"
             )
         return ALLOW
     executable = resolved_agent_session()

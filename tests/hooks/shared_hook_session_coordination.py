@@ -30,6 +30,87 @@ from shared_hook_helpers import (
 
 class SessionCoordinationTests(HookTestCase):
 
+    def test_session_coordination_missing_capability_preserves_admission_boundary(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text("#!/bin/sh\nexit 64\n", encoding="utf-8")
+            agent_session.chmod(0o755)
+            unsafe = root / "unsafe-capability"
+            unsafe.write_text("fixture-private-material\n", encoding="utf-8")
+            unsafe.chmod(0o644)
+            linked = root / "linked-capability"
+            linked.symlink_to(unsafe)
+            for product in ("codex", "claude"):
+                for capability in ("", str(root / "missing"), str(unsafe), str(linked)):
+                    env = {
+                        "AGENT_RUNTIME_PRODUCT": product,
+                        "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                        "AGENT_SESSION_ID": "managed-fixture-owner",
+                        "AGENT_SESSION_CAPABILITY_FILE": capability,
+                        "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
+                        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                    }
+                    for payload in (
+                        write_payload("user.txt", "preserved\n"),
+                        command_payload("touch user.txt"),
+                        command_payload("pwd; touch user.txt"),
+                        command_payload("agent-session work-context status > user.txt"),
+                    ):
+                        payload["hook_event_name"] = "PreToolUse"
+                        with self.subTest(product=product, capability=capability, payload=payload):
+                            code, decision, stderr = run_enforced_hook(
+                                "session-coordination-guard.py", payload, cwd=root, env=env
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            self.assert_blocked(decision, "session-runtime owner")
+                            reason = str(decision)
+                            self.assertIn("[reason:", reason)
+                            self.assertLess(len(reason), 512)
+                            for private in (str(root), "managed-fixture-owner", "fixture-private-material"):
+                                self.assertNotIn(private, reason)
+                        for mode in ("advisory", "off", "", "invalid"):
+                            with self.subTest(product=product, capability=capability, mode=mode):
+                                code, decision, stderr = run_hook(
+                                    "session-coordination-guard.py", payload, cwd=root,
+                                    env={**env, "AGENT_SESSION_COORDINATION_MODE": mode},
+                                )
+                                self.assertEqual(code, 0, stderr)
+                                self.assertNotEqual((decision or {}).get("decision"), "block")
+                    reads = (
+                        "pwd",
+                        "cat user.txt | head -n 1",
+                        "agent-session work-context status",
+                        "agent-session work-context set",
+                    )
+                    if capability:
+                        reads += (
+                            'agent-session broker status --session "$AGENT_SESSION_ID" '
+                            '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json',
+                        )
+                    for command in reads:
+                        with self.subTest(product=product, capability=capability, read=command):
+                            payload = command_payload(command)
+                            payload["hook_event_name"] = "PreToolUse"
+                            code, decision, stderr = run_enforced_hook(
+                                "session-coordination-guard.py", payload, cwd=root, env=env
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            self.assertNotEqual((decision or {}).get("decision"), "block")
+            payload = write_payload("user.txt", "preserved\n")
+            payload["hook_event_name"] = "PreToolUse"
+            code, decision, stderr = run_enforced_hook(
+                "session-coordination-guard.py", payload, cwd=root,
+                env={**env, "AGENT_SESSION_ID": "", "AGENT_SESSION_CAPABILITY_FILE": ""},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+            self.assertFalse((root / "user.txt").exists())
+
     def test_session_coordination_guard_requires_claim_for_managed_mutation(
         self,
     ) -> None:
