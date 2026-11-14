@@ -30,6 +30,108 @@ from shared_hook_helpers import (
 
 class SessionCoordinationTests(HookTestCase):
 
+    def test_session_coordination_audited_reads_refuse_private_runtime_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "project"
+            repo.mkdir()
+            document = repo / "README.md"
+            document.write_text("public documentation\n", encoding="utf-8")
+            public_alias = repo / "linked-document"
+            public_alias.symlink_to(document)
+            state = root / "session-state"
+            canonical = state / "sessions" / "fixture-owner" / "coordination" / "capability-current"
+            selected = root / "selected-capability"
+            credential = state / "coordination" / "credentials" / "worker.json"
+            proof = root / "hook-state" / "session-coordination" / "fixture-owner" / "proof.token"
+            private_files = (canonical, selected, credential, proof)
+            for path in private_files:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture-secret-canary\n", encoding="utf-8")
+                path.chmod(0o600)
+            alias = repo / "linked-private"
+            alias.symlink_to(canonical)
+            state_alias = root / "linked-state"
+            state_alias.symlink_to(state, target_is_directory=True)
+            (repo / "child").mkdir()
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            calls = root / "broker-calls"
+            agent_session = bin_dir / "agent-session"
+            agent_session.write_text(
+                f"#!/bin/sh\nprintf called >> {shlex.quote(str(calls))}\nexit 64\n",
+                encoding="utf-8",
+            )
+            agent_session.chmod(0o755)
+            trusted_rg = bin_dir / "rg"
+            trusted_rg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            trusted_rg.chmod(0o755)
+            # Every admitted verb that can inspect file bytes, including cmp's
+            # byte-wise output and grep's pattern-file inputs. less is not admitted.
+            readers = (
+                "cat {path}", "tac {path}", "head -n 1 {path}",
+                "tail -n 1 {path}", "sed -n '1,2p' {path}",
+                "nl -ba {path}", "grep . {path}", "egrep . {path}",
+                "fgrep fixture {path}", "rg --no-config . {path}",
+                "wc -L {path}", "cmp -l {path} README.md",
+                "comm {path} README.md", "grep -f {path} README.md",
+                "grep --file={path} README.md", "grep -f{path} README.md",
+                "grep -nf{path} README.md",
+            )
+            paths = (*private_files, alias, state_alias / canonical.relative_to(state),
+                     repo / "child" / ".." / "linked-private")
+            for product in ("codex", "claude"):
+                env = {
+                    "AGENT_RUNTIME_PRODUCT": product,
+                    "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(bin_dir),
+                    "AGENT_RUNTIME_STATE_HOME": str(root / "hook-state"),
+                    "AGENT_SESSION_ID": "fixture-owner",
+                    "AGENT_SESSION_CAPABILITY_FILE": str(selected),
+                    "AGENT_SESSION_STATE_DIR": str(state_alias),
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                }
+                commands = [reader.format(path=shlex.quote(str(path)))
+                            for path in paths for reader in readers]
+                commands += [
+                    "cat linked-private | head -n 1",
+                    "head -n 1 README.md | cat linked-private",
+                    f"rg --no-config . {shlex.quote(str(state.parent))}",
+                    f"grep -r . {shlex.quote(str(state.parent))}",
+                    "rg --no-config .",
+                ]
+                for index, command in enumerate(commands):
+                    # Model rg's implicit cwd within private state separately.
+                    cwd = state if index == len(commands) - 1 else repo
+                    payload = command_payload(command)
+                    payload["hook_event_name"] = "PreToolUse"
+                    with self.subTest(product=product, case=index):
+                        code, decision, stderr = run_enforced_hook(
+                            "session-coordination-guard.py", payload, cwd=cwd, env=env
+                        )
+                        self.assertEqual(code, 0)
+                        self.assert_blocked(decision, "[reason: private-runtime-read]")
+                        output = json.dumps(decision) + stderr
+                        for private in (str(root), "fixture-secret-canary", "fixture-owner"):
+                            self.assertNotIn(private, output)
+                for command in (
+                    "cat README.md | head -n 1", "sed -n '1,2p' README.md",
+                    "grep documentation README.md", "rg --no-config documentation README.md",
+                    "cat child/../README.md", "cat linked-document", "pwd",
+                    "agent-session work-context status",
+                    'agent-session broker status --session "$AGENT_SESSION_ID" '
+                    '--capability-file "$AGENT_SESSION_CAPABILITY_FILE" --format json',
+                ):
+                    payload = command_payload(command)
+                    payload["hook_event_name"] = "PreToolUse"
+                    with self.subTest(product=product, public_read=command):
+                        code, decision, stderr = run_enforced_hook(
+                            "session-coordination-guard.py", payload, cwd=repo, env=env
+                        )
+                        self.assertEqual(code, 0, stderr)
+                        self.assert_allowed(decision)
+            # Private reads must be rejected before any broker/admission work.
+            self.assertFalse(calls.exists())
+
     def test_session_coordination_missing_capability_preserves_admission_boundary(
         self,
     ) -> None:

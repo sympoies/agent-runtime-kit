@@ -382,7 +382,13 @@ Missing managed owner metadata or a missing/unsafe capability file refuses
 governed mutations in `enforce` mode with a bounded diagnostic. Audited reads
 and exact diagnostic/lifecycle commands keep their existing admission lane;
 the session runtime (`agent-session`) owns capability recovery. The hook never
-creates or repairs capabilities. Advisory, off, and unmanaged behavior is unchanged.
+creates or repairs capabilities. Enforced audited text reads refuse the session
+state root, the selected capability file, and hook session-coordination proof
+state. The guard resolves literal paths through symlinks and parent traversal,
+including pattern-file options and recursive searches of protected ancestors,
+and emits only a fixed diagnostic without reading private file bytes. Project
+and documentation reads outside these locations retain their admission lane.
+Advisory, off, and unmanaged behavior is unchanged.
 
 `forge-cli pr create` and `forge-cli pr deliver --no-merge` name their pull
 request by head branch, so they resolve to one `pull-request-head` target

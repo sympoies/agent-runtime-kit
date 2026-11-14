@@ -49,6 +49,7 @@ from hook_common import (
     normalized_cli_argv,
     output_redirect_targets,
     patch_text_candidates,
+    pipe_only_commands,
     raw_deletion_arguments,
     read_payload,
     resolves_within_its_directory,
@@ -992,6 +993,64 @@ def claim_bootstrap_invocation(
     return True
 
 
+def audited_read_touches_private_runtime(words: list[str], base: Path | None) -> bool:
+    """Check literal read arguments without opening private runtime material."""
+    if not audited_text_read_invocation(words):
+        return False
+    try:
+        base = base if base is not None else Path.cwd()
+        xdg = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+        session_state = Path(os.environ.get("AGENT_SESSION_STATE_DIR") or xdg / "agent-session")
+        # Session state contains owner/delegated credentials; hook operation
+        # state contains execution tokens and retained authentication proofs.
+        private_roots = [session_state.resolve()] + [
+            (state_root(product) / "session-coordination").resolve()
+            for product in SUPPORTED_PRODUCTS
+        ]
+        selector = os.environ.get("AGENT_SESSION_CAPABILITY_FILE", "").strip()
+        private_files = [(base / selector).resolve()] if selector else []
+        name = os.path.basename(words[0])
+        recursive = name == "rg" or (
+            name in {"grep", "egrep", "fgrep", "ls"}
+            and any(
+                word in {"--recursive", "--dereference-recursive"}
+                or (word.startswith("-") and not word.startswith("--")
+                    and any(flag in word[1:] for flag in "rR"))
+                for word in words[1:]
+            )
+        )
+        candidates = []
+        options_ended = False
+        for word in words[1:]:
+            if word == "--":
+                options_ended = True
+                continue
+            if options_ended or not word.startswith("-"):
+                candidates.append(word)
+            elif "=" in word:
+                candidates.append(word.split("=", 1)[1])
+            elif name in {"grep", "egrep", "fgrep", "rg"}:
+                # Pattern-file options can be attached after short flag clusters.
+                attached = re.fullmatch(r"-[^-]*?f(.+)", word)
+                if attached:
+                    candidates.append(attached.group(1))
+        if recursive and not candidates:
+            candidates.append(str(base))
+        for raw in candidates:
+            path = (base / raw).resolve()
+            if path in private_files or any(path.is_relative_to(root) for root in private_roots):
+                return True
+            # Recursive searches of a parent can read protected descendants.
+            if recursive and path.is_dir() and any(
+                root.is_relative_to(path) for root in private_roots + private_files
+            ):
+                return True
+        return False
+    except (OSError, RuntimeError, ValueError):
+        # Resolution failure must not restore the unauthenticated read lane.
+        return True
+
+
 def invocation_bypasses_admission(
     words: list[str], agent_session_executable: str, base: Path | None = None
 ) -> bool:
@@ -1019,7 +1078,10 @@ def invocation_bypasses_admission(
             }
         return trusted and words[1] == "activity"
     if audited_text_read_invocation(words):
-        return trusted_command(words[0], name)
+        return (
+            trusted_command(words[0], name)
+            and not audited_read_touches_private_runtime(words, base)
+        )
     if name == "git":
         return trusted_command(words[0], name) and git_read_only(words[1:])
     if name in {"gh", "forge-cli"}:
@@ -3832,6 +3894,17 @@ def main() -> int:
     if not managed_session and not capability_file:
         return ALLOW
     if mode == "enforce" and event == "PreToolUse" and tool_name(payload) in COMMAND_TOOLS:
+        base = effective_workdir(payload).resolve()
+        if any(
+            audited_read_touches_private_runtime(words, base)
+            for words in pipe_only_commands(command_from(payload)) or []
+        ):
+            emit_block(
+                "Audited reads of private runtime capability or credential state are "
+                "not permitted. Use the exact runtime diagnostic commands. "
+                "[reason: private-runtime-read]"
+            )
+            return ALLOW
         # Preserve the existing audited-read and exact lifecycle lane even when
         # the runtime has lost its capability. This grants no mutation lease.
         if command_bypasses_admission(
