@@ -862,6 +862,117 @@ only when the host has isolated provider/auth state for the product prompt path.
 Product mode must not read or mutate real `$HOME/.codex`, `$HOME/.claude`,
 auth, sessions, history, logs, or caches.
 
+### Tester runbook: isolated full-policy fixture profile
+
+Use the **isolated full-policy fixture** profile for disposable Claude
+acceptance (#408, option b). It runs the canonical policy with every locked
+guard present. There is no activity-only policy or profile selector for a
+governed session to use; attempts to disable the checkout rule through config
+are rejected. A synthetic working directory does not waive authenticated
+mutation admission.
+
+`agent-session activity setup` installs provider ingress, not runtime-kit
+handler files. In particular, `CLAUDE_CONFIG_DIR` selects Claude settings,
+while `agent-hook` resolves Claude handlers under `$HOME/.claude/hooks`.
+An isolated settings directory with an empty HOME therefore still refuses
+prompts with `checkout-lease-guard:capability-failure-closed`. That diagnostic
+can mean **missing handler**, rather than missing session capability. Inspect
+`agent-hook doctor --product claude`; do not remove or downgrade guard groups.
+
+The credential-free executable recipe uses a stub provider, a private tmux
+socket, fresh runtime-issued authority, and the actual installed prompt/Stop
+ingress. It verifies working/idle reporting, the missing-handler refusal,
+restoration, missing-authority mutation denial and locked-override rejection:
+
+```bash
+AGENT_HOOK_BIN="$(command -v agent-hook)" \
+  python3 tests/agent-hook/test_setup_migration.py \
+  AgentHookSetupMigrationTests.test_isolated_full_policy_launch_keeps_guards
+```
+
+It requires the matching `agent-hook`/`agent-session` pair and tmux. Without
+tmux the test reports a skip; that is not acceptance evidence. The canonical
+gate includes this test. On Linux, apply the repository/dispatcher resource
+budget when invoking a focused test directly.
+
+For a tester-owned candidate launch, allocate a new artifact root with
+`agent-out project --topic isolated-acceptance --mkdir`. Set `kit_root` to the
+candidate checkout, `fixture_root` to that allocation, `cli_root` to the
+candidate CLI pair's directory, `python_root` to the directory of a supported
+Python 3.11+ interpreter, and `provider_bin` to the synthetic provider
+executable. Set `socket_parent` to a short writable OS temporary directory;
+tmux sockets must fit the platform's Unix socket path limit. Their fresh
+`socket_root` stays separate from the evidence root and provider `TMPDIR`.
+Use absolute paths. Start with empty directories; never copy a
+live provider home, environment, session record, capability or checkpoint.
+
+```bash
+socket_root="$(mktemp -d "${socket_parent:?}/acceptance-tmux.XXXXXXXX")"
+mkdir -p "$fixture_root/home/.claude" "$fixture_root/provider-config" \
+  "$fixture_root/cwd" "$fixture_root/tmp"
+chmod 700 "$fixture_root/home" "$fixture_root/home/.claude" "$fixture_root/provider-config" \
+  "$fixture_root/tmp" "$socket_root"
+env -i PATH="$cli_root:$python_root:/usr/bin:/bin" SHELL=/bin/sh TERM=xterm \
+  HOME="$fixture_root/home" CLAUDE_CONFIG_DIR="$fixture_root/provider-config" \
+  XDG_CONFIG_HOME="$fixture_root/config" XDG_DATA_HOME="$fixture_root/data" \
+  XDG_STATE_HOME="$fixture_root/state" AGENT_HOME="$fixture_root/runtime" \
+  AGENT_RUNTIME_STATE_HOME="$fixture_root/runtime-state" \
+  AGENT_SESSION_STATE_DIR="$fixture_root/session-state" \
+  AGENT_SESSION_BIN="$cli_root/agent-session" \
+  AGENT_RUNTIME_TRUSTED_CLI_ROOT="$cli_root" \
+  TMPDIR="$fixture_root/tmp" TMUX_TMPDIR="$socket_root" \
+  bash -s -- "$kit_root" "$provider_bin" "$fixture_root/cwd" <<'SH'
+set -euo pipefail
+kit_root=$1
+provider_bin=$2
+fixture_cwd=$3
+SYNC_RUNTIME_SURFACES_LIB=1 . "$kit_root/scripts/sync-runtime-surfaces.sh"
+SOURCE_ROOT=$kit_root
+resolve_agent_hook_paths
+# Preview only these fixture surfaces; do not run the live-runtime sync main.
+sync_agent_hook_handlers claude "$HOME/.claude"
+sync_agent_hook_policy
+APPLY=1
+sync_agent_hook_handlers claude "$HOME/.claude"
+sync_agent_hook_policy
+# Activity setup targets $CLAUDE_CONFIG_DIR/settings.json in this environment.
+agent-session activity setup --agent claude --dry-run --format json
+agent-session activity setup --agent claude --apply --format json
+agent-hook doctor --product claude --format json
+agent-session start --agent claude --agent-bin "$provider_bin" \
+  --cwd "$fixture_cwd" --id fixture --coordination-mode enforce --format json
+SH
+```
+
+`agent-session start` must provision the following inputs together; do not
+invent their contents or copy them from another launch:
+
+| Input | Required binding |
+| --- | --- |
+| `AGENT_SESSION_ID`, `AGENT_SESSION_RUNTIME_ID` | The new session record and its current runtime incarnation |
+| `AGENT_SESSION_STATE_DIR` | The isolated session state root, including its broker/heartbeat |
+| `AGENT_SESSION_CAPABILITY_FILE` | Runtime-issued owner capability, private regular file (mode `0600`) |
+| `AGENT_SESSION_CHECKPOINT_FILE` | Runtime-issued checkpoint for this session/runtime |
+| `AGENT_SESSION_ATTENTION_AUTHORITY` | Authority installed by this launch for provider activity |
+| `AGENT_SESSION_COORDINATION_MODE` | `enforce`, with the normal claim/operation requirements |
+| Provider event `session_id` | The provider conversation identity selected by this launch, not the managed session ID |
+
+From inside the launched provider, `agent-session readiness --format json`
+must pass before acceptance. Submit a synthetic prompt through registered
+ingress and verify `agent-session activity status fixture --format json`
+reports `working`, then `waiting` (idle) after provider completion evidence
+(the fixture uses a Stop followed by a Claude `idle_prompt` notification).
+Mutation acceptance additionally needs
+a valid work-context claim and clean eligible checkout; the profile grants
+neither automatically. Keep the full policy and trusted handler copies intact.
+
+Use the same isolated environment and tmux socket directory for inspection
+and cleanup. Stop only the fixture runtime, then remove its disposable state
+through its owner. This profile proves hook/runtime integration with synthetic
+inputs. It does not prove native provider UI behavior, authentication,
+compaction/resume, or deployment. Route native provider/device acceptance to
+the designated tester with separately authorized test credentials.
+
 Portable convergence mode stays credential-free and isolated. From a clean
 committed clone, it verifies a historical 66-to-current-skill upgrade, receipt
   revision transition, independently rebuilt receipt entry/plan digests,

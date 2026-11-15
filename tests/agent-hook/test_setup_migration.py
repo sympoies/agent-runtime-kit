@@ -9,6 +9,8 @@ import os
 import shutil
 import shlex
 import subprocess
+import sys
+import time
 import tempfile
 import tomllib
 import unittest
@@ -181,6 +183,163 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
         return read_json(
             self.agent_hook("setup", "--product", product, *action, "--dry-run")
         )["data"]
+
+    @unittest.skipUnless(shutil.which("tmux"), "isolated runtime acceptance requires tmux")
+    def test_isolated_full_policy_launch_keeps_guards(self) -> None:
+        """Real launcher, registered ingress, synthetic provider; no live authority."""
+        cli_root = Path(AGENT_HOOK).resolve().parent
+        producer = cli_root / "agent-session"
+        self.assertTrue(producer.is_file(), "acceptance needs the released CLI pair")
+        cwd = self.root / "synthetic-cwd"
+        cwd.mkdir()
+        provider_config = self.root / "provider-config"
+        provider_config.mkdir()
+        # A whitelist, rather than inherited managed identity or provider auth.
+        self.env = {
+            "HOME": str(self.home), "PATH": str(cli_root) + os.pathsep + os.defpath,
+            "SHELL": "/bin/sh", "TERM": "xterm",
+            "CLAUDE_CONFIG_DIR": str(provider_config),
+            "XDG_CONFIG_HOME": str(self.config_home),
+            "XDG_DATA_HOME": str(self.data_home), "XDG_STATE_HOME": str(self.state_home),
+            "AGENT_HOME": str(self.root / "runtime"),
+            "AGENT_RUNTIME_STATE_HOME": str(self.root / "runtime-state"),
+            "AGENT_SESSION_STATE_DIR": str(self.root / "session-state"),
+            "AGENT_SESSION_BIN": str(producer),
+            "AGENT_RUNTIME_TRUSTED_CLI_ROOT": str(cli_root),
+            "TMPDIR": str(self.root), "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        # Exercise the same bounded handler owner used by the tester recipe.
+        # setUp's other tests use direct trusted copies; this profile starts empty.
+        shutil.rmtree(self.claude_home / "hooks")
+        for apply in (False, True):
+            handlers = self.sync_trusted_handlers(
+                REPO_ROOT, "claude", self.claude_home, apply=apply,
+            )
+            self.assertEqual(handlers.returncode, 0, "isolated handler sync failed")
+        # Settings and handler roots deliberately differ: CLAUDE_CONFIG_DIR
+        # never changes agent-hook's $HOME/.claude/hooks lookup.
+        for action in ("--dry-run", "--apply"):
+            setup = subprocess.run([
+                str(producer), "activity", "setup", "--agent", "claude", action,
+                "--format", "json",
+            ], env=self.env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(setup.returncode, 0, "isolated activity setup failed")
+        settings = json.loads((provider_config / "settings.json").read_text())
+        prompt_commands = [h["command"] for g in settings["hooks"]["UserPromptSubmit"]
+                           for h in g["hooks"] if h["type"] == "command"]
+        self.assertEqual(len(prompt_commands), 1)
+        tmux = self.root / "fixture-tmux"
+        tmux.write_text("#!/bin/sh\nexec " + shlex.join([
+            shutil.which("tmux"), "-S", str(self.root / "tmux.sock")]) + ' "$@"\n')
+        tmux.chmod(0o700)
+        provider = self.root / "fixture-claude"
+        provider.write_text("#!" + sys.executable + "\n" + r'''
+import json, os, pathlib, subprocess, sys, time
+root = pathlib.Path(os.environ["HOME"]).parent
+# Wait for the launcher to finish its initial runtime activity activation.
+while not (root / "launch-ready").exists():
+    time.sleep(.05)
+report = {}
+def call(args, payload=None, env=None):
+    return subprocess.run(args, input=json.dumps(payload) if payload else None,
+                          env=env, text=True, capture_output=True, timeout=30)
+def dispatch(payload, env=None):
+    result = call(["agent-hook", "dispatch", "--product", "claude", "--format", "json"], payload, env)
+    data = json.loads(result.stdout)["data"]
+    return {"action": data["action"], "codes": [r["code"] for r in data["reasons"]]}
+try:
+    report["readiness"] = call(["agent-session", "readiness", "--format", "json"]).returncode
+    report["runtime_inputs"] = all(os.environ.get(k) for k in (
+        "AGENT_SESSION_ID", "AGENT_SESSION_RUNTIME_ID", "AGENT_SESSION_CAPABILITY_FILE",
+        "AGENT_SESSION_CHECKPOINT_FILE", "AGENT_SESSION_ATTENTION_AUTHORITY"))
+    report["mode"] = os.environ.get("AGENT_SESSION_COORDINATION_MODE")
+    payload = {"hook_event_name": "UserPromptSubmit", "cwd": os.getcwd(),
+               "session_id": sys.argv[sys.argv.index("--session-id") + 1], "prompt": "synthetic"}
+    settings = json.loads((pathlib.Path(os.environ["CLAUDE_CONFIG_DIR"]) / "settings.json").read_text())
+    command = settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+    report["native_prompt_exit"] = call(["/bin/sh", "-c", command], payload).returncode
+    activity = call(["agent-session", "activity", "status", os.environ["AGENT_SESSION_ID"], "--format", "json"])
+    report["working_phase"] = json.loads(activity.stdout)["data"]["turn_state"]["phase"]
+    handler = pathlib.Path(os.environ["HOME"]) / ".claude/hooks/checkout-lease-guard.py"
+    saved = handler.with_suffix(".saved")
+    handler.rename(saved)
+    try:
+        report["missing_handler"] = dispatch(payload)
+    finally:
+        saved.rename(handler)
+    report["restored_handler"] = dispatch(payload)
+    stop = dict(payload, hook_event_name="Stop", stop_hook_active=False, background_tasks=[])
+    command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+    report["native_stop_exit"] = call(["/bin/sh", "-c", command], stop).returncode
+    # Stop is observed evidence; the provider's idle notification completes
+    # the turn on the supported released consumer surfaces.
+    idle = dict(payload, hook_event_name="Notification", notification_type="idle_prompt")
+    command = settings["hooks"]["Notification"][0]["hooks"][0]["command"]
+    report["native_idle_exit"] = call(["/bin/sh", "-c", command], idle).returncode
+    deadline = time.monotonic() + 5
+    while True:
+        activity = call(["agent-session", "activity", "status", os.environ["AGENT_SESSION_ID"], "--format", "json"])
+        report["idle_phase"] = json.loads(activity.stdout)["data"]["turn_state"]["phase"]
+        if report["idle_phase"] == "waiting" or time.monotonic() >= deadline:
+            break
+        time.sleep(.05)
+    # This is a managed enforce-mode owner, so removing its capability may
+    # never turn this full-policy fixture into an activity-only mutation lane.
+    mutation = {"hook_event_name": "PreToolUse", "cwd": os.getcwd(),
+                "session_id": payload["session_id"], "tool_use_id": "synthetic-write",
+                "tool_name": "Write", "tool_input": {
+                    "file_path": str(pathlib.Path.cwd() / "output.txt"), "content": "synthetic"}}
+    missing = dict(os.environ)
+    missing.pop("AGENT_SESSION_CAPABILITY_FILE", None)
+    report["missing_authority"] = dispatch(mutation, missing)
+    config = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agent-hook/config.toml"
+    locked = root / "locked.toml"
+    locked.write_text(config.read_text() + '\n[overrides."runtime.claude.user-prompt-submit.all.checkout-lease-guard"]\nmode = "disabled"\n')
+    locked.chmod(0o600)
+    result = call(["agent-hook", "--config", str(locked), "validate", "--format", "json"])
+    report["locked_override"] = {"exit": result.returncode, "code": json.loads(result.stdout).get("error", {}).get("code")}
+except Exception:
+    # Never retain raw stderr, provider output, capability or checkpoint bytes.
+    report = {"fixture_error": True}
+(root / "receipt.tmp").write_text(json.dumps(report))
+(root / "receipt.tmp").replace(root / "receipt.json")
+while not (root / "finish").exists():
+    time.sleep(.05)
+''')
+        provider.chmod(0o700)
+        try:
+            launch = subprocess.run([
+                str(producer), "start", "--agent", "claude", "--id", "fixture",
+                "--agent-bin", str(provider), "--tmux-bin", str(tmux),
+                "--cwd", str(cwd), "--coordination-mode", "enforce", "--format", "json",
+            ], env=self.env, cwd=cwd, capture_output=True, text=True, timeout=45)
+            self.assertEqual(launch.returncode, 0, "isolated synthetic runtime failed to start")
+            (self.root / "launch-ready").touch()
+            receipt = self.root / "receipt.json"
+            deadline = time.monotonic() + 30
+            while not receipt.exists() and time.monotonic() < deadline:
+                time.sleep(.05)
+            self.assertTrue(receipt.exists(), "synthetic provider did not finish its probe")
+            report = json.loads(receipt.read_text())
+            self.assertNotIn("fixture_error", report, "synthetic provider probe failed")
+            self.assertEqual(report["readiness"], 0)
+            self.assertTrue(report["runtime_inputs"])
+            self.assertEqual(report["mode"], "enforce")
+            self.assertEqual(report["native_prompt_exit"], 0)
+            self.assertEqual(report["working_phase"], "working")
+            self.assertEqual(report["native_stop_exit"], 0)
+            self.assertEqual(report["native_idle_exit"], 0)
+            self.assertEqual(report["idle_phase"], "waiting")
+            self.assertEqual(report["missing_handler"]["action"], "block")
+            self.assertIn("runtime.claude.user-prompt-submit.all.checkout-lease-guard:capability-failure-closed",
+                          report["missing_handler"]["codes"])
+            self.assertNotEqual(report["restored_handler"]["action"], "block")
+            self.assertEqual(report["missing_authority"]["action"], "block")
+            self.assertEqual(report["locked_override"], {"exit": 65, "code": "locked-rule-override"})
+            self.assertFalse((cwd / "output.txt").exists())
+        finally:
+            (self.root / "finish").touch()
+            subprocess.run([str(tmux), "kill-server"], env=self.env, capture_output=True, timeout=10)
 
     def test_selector_ownership_rejects_lookalikes(self) -> None:
         for executable in ("agent-hook", "agent-session"):
