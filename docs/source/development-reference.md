@@ -908,12 +908,12 @@ live provider home, environment, session record, capability or checkpoint.
 
 ```bash
 socket_root="$(mktemp -d "${socket_parent:?}/acceptance-tmux.XXXXXXXX")"
-mkdir -p "$fixture_root/home/.claude" "$fixture_root/provider-config" \
+mkdir -p "$fixture_root/provider-home/.claude" "$fixture_root/provider-config" \
   "$fixture_root/cwd" "$fixture_root/tmp"
-chmod 700 "$fixture_root/home" "$fixture_root/home/.claude" "$fixture_root/provider-config" \
+chmod 700 "$fixture_root/provider-home" "$fixture_root/provider-home/.claude" "$fixture_root/provider-config" \
   "$fixture_root/tmp" "$socket_root"
 env -i PATH="$cli_root:$python_root:/usr/bin:/bin" SHELL=/bin/sh TERM=xterm \
-  HOME="$fixture_root/home" CLAUDE_CONFIG_DIR="$fixture_root/provider-config" \
+  HOME="$fixture_root/provider-home" CLAUDE_CONFIG_DIR="$fixture_root/provider-config" \
   XDG_CONFIG_HOME="$fixture_root/config" XDG_DATA_HOME="$fixture_root/data" \
   XDG_STATE_HOME="$fixture_root/state" AGENT_HOME="$fixture_root/runtime" \
   AGENT_RUNTIME_STATE_HOME="$fixture_root/runtime-state" \
