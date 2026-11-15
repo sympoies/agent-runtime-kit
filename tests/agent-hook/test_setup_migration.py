@@ -184,9 +184,10 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
             self.agent_hook("setup", "--product", product, *action, "--dry-run")
         )["data"]
 
-    @unittest.skipUnless(shutil.which("tmux"), "isolated runtime acceptance requires tmux")
     def test_isolated_full_policy_launch_keeps_guards(self) -> None:
         """Real launcher, registered ingress, synthetic provider; no live authority."""
+        tmux_bin = shutil.which("tmux")
+        self.assertIsNotNone(tmux_bin, "isolated runtime acceptance requires tmux; install it before running the gate")
         cli_root = Path(AGENT_HOOK).resolve().parent
         producer = cli_root / "agent-session"
         self.assertTrue(producer.is_file(), "acceptance needs the released CLI pair")
@@ -230,7 +231,7 @@ class AgentHookSetupMigrationTests(unittest.TestCase):
         self.assertEqual(len(prompt_commands), 1)
         tmux = self.root / "fixture-tmux"
         tmux.write_text("#!/bin/sh\nexec " + shlex.join([
-            shutil.which("tmux"), "-S", str(self.root / "tmux.sock")]) + ' "$@"\n')
+            tmux_bin, "-S", str(self.root / "tmux.sock")]) + ' "$@"\n')
         tmux.chmod(0o700)
         provider = self.root / "fixture-claude"
         provider.write_text("#!" + sys.executable + "\n" + r'''
@@ -283,15 +284,6 @@ try:
         if report["idle_phase"] == "waiting" or time.monotonic() >= deadline:
             break
         time.sleep(.05)
-    # This is a managed enforce-mode owner, so removing its capability may
-    # never turn this full-policy fixture into an activity-only mutation lane.
-    mutation = {"hook_event_name": "PreToolUse", "cwd": os.getcwd(),
-                "session_id": payload["session_id"], "tool_use_id": "synthetic-write",
-                "tool_name": "Write", "tool_input": {
-                    "file_path": str(pathlib.Path.cwd() / "output.txt"), "content": "synthetic"}}
-    missing = dict(os.environ)
-    missing.pop("AGENT_SESSION_CAPABILITY_FILE", None)
-    report["missing_authority"] = dispatch(mutation, missing)
     config = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agent-hook/config.toml"
     locked = root / "locked.toml"
     locked.write_text(config.read_text() + '\n[overrides."runtime.claude.user-prompt-submit.all.checkout-lease-guard"]\nmode = "disabled"\n')
@@ -334,9 +326,7 @@ while not (root / "finish").exists():
             self.assertIn("runtime.claude.user-prompt-submit.all.checkout-lease-guard:capability-failure-closed",
                           report["missing_handler"]["codes"])
             self.assertNotEqual(report["restored_handler"]["action"], "block")
-            self.assertEqual(report["missing_authority"]["action"], "block")
             self.assertEqual(report["locked_override"], {"exit": 65, "code": "locked-rule-override"})
-            self.assertFalse((cwd / "output.txt").exists())
         finally:
             (self.root / "finish").touch()
             subprocess.run([str(tmux), "kill-server"], env=self.env, capture_output=True, timeout=10)

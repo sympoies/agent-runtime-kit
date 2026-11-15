@@ -882,7 +882,7 @@ can mean **missing handler**, rather than missing session capability. Inspect
 The credential-free executable recipe uses a stub provider, a private tmux
 socket, fresh runtime-issued authority, and the actual installed prompt/Stop
 ingress. It verifies working/idle reporting, the missing-handler refusal,
-restoration, missing-authority mutation denial and locked-override rejection:
+restoration and locked-override rejection:
 
 ```bash
 AGENT_HOOK_BIN="$(command -v agent-hook)" \
@@ -890,10 +890,10 @@ AGENT_HOOK_BIN="$(command -v agent-hook)" \
   AgentHookSetupMigrationTests.test_isolated_full_policy_launch_keeps_guards
 ```
 
-It requires the matching `agent-hook`/`agent-session` pair and tmux. Without
-tmux the test reports a skip; that is not acceptance evidence. The canonical
-gate includes this test. On Linux, apply the repository/dispatcher resource
-budget when invoking a focused test directly.
+It requires the matching `agent-hook`/`agent-session` pair and tmux. Missing
+tmux fails the test, so the canonical gate cannot pass by skipping this
+scenario. The canonical gate includes this test. On Linux, apply the
+repository/dispatcher resource budget when invoking a focused test directly.
 
 For a tester-owned candidate launch, allocate a new artifact root with
 `agent-out project --topic isolated-acceptance --mkdir`. Set `kit_root` to the
@@ -970,8 +970,9 @@ Use the same isolated environment and tmux socket directory for inspection
 and cleanup. Stop only the fixture runtime, then remove its disposable state
 through its owner. This profile proves hook/runtime integration with synthetic
 inputs. It does not prove native provider UI behavior, authentication,
-compaction/resume, or deployment. Route native provider/device acceptance to
-the designated tester with separately authorized test credentials.
+compaction/resume, deployment, or shared-device behavior. Route native
+provider/device acceptance to the designated tester with separately
+authorized test credentials.
 
 Portable convergence mode stays credential-free and isolated. From a clean
 committed clone, it verifies a historical 66-to-current-skill upgrade, receipt
