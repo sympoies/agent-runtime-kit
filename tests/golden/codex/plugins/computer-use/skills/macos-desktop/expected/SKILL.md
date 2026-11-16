@@ -438,8 +438,9 @@ A functional claim passes only when all applicable checks hold:
 7. Release transition recovery is proven without changing the accepted live
    state: an authenticated v3.9.3 predecessor can upgrade in place and recover
    after interruption, but it cannot be reactivated or selected as rollback;
-   rollback dry-run reports an authorized target or a clear refusal, and a
-   subsequent status read-back reports the unchanged v4.9.6 receipt.
+   rollback dry-run confirms v3.9.3 is not a target and reports an authorized
+   compatible target or a clear refusal; subsequent status read-back reports
+   the unchanged v4.9.6 receipt.
 
 The canonical status/evidence inventory is
 [`docs/source/macos-agent-capability-matrix.md`](https://github.com/sympoies/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
