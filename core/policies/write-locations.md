@@ -19,20 +19,23 @@ no class may hard-code the default.
 
 | Class | Path | Selected by | Owner (writes / reclaims) | Content | Retention |
 | --- | --- | --- | --- | --- | --- |
-| evidence | `${AGENT_HOME}/out/projects/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project` | `agent-out` allocates; `agent-out cleanup` reclaims | Small kept artifacts: logs, screenshots, reports, receipts | Long (default 30 days; class-configurable); may be promoted to an evidence archive. No build trees. |
+| evidence | `${AGENT_HOME}/out/projects/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project` | `agent-out` allocates; `agent-out cleanup` reclaims | Small kept artifacts: logs, screenshots, reports, receipts | Long; cleanup is opt-in, with 30 days as the default when a consumer enables retention. May be promoted to an evidence archive. No build trees. |
 | scratch | `${AGENT_HOME}/out/scratch/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project --kind scratch` (planned) | `agent-out` | Rebuildable run intermediates: fixtures, unpacked archives, one-off clones | Short (default 3 days) |
-| build | `${AGENT_HOME}/build/<worktree-slug>/` or `${AGENT_HOME}/build/run/<run-id>/` | `CARGO_TARGET_DIR` and equivalents, exported by the worktree or run owner | `git-cli` for worktree builds; `agent-out` for run builds | Compiler and bundler output | Deleted with its worktree or run; never inside `out/` |
+| build | `${AGENT_HOME}/build/<repo-key>/<slug>/` or `${AGENT_HOME}/build/run/<run-id>/` | `CARGO_TARGET_DIR` and equivalents, exported by the worktree or run owner | `git-cli` for worktree builds; `agent-out` for run builds | Compiler and bundler output | Deleted with its worktree or run; never inside `out/` |
 | tmp | `${AGENT_HOME}/tmp/<session-id>/` | `TMPDIR`, injected by the session launcher | `agent-session` creates at start, reclaims at stop | Harness scratchpads, `mktemp` output | Removed at session stop plus a grace period (default 24 h); orphans swept when the session record is gone |
 | worktrees | `${AGENT_HOME}/worktrees/<repo>-<hash>/<slug>` | `AGENT_HOME` | `git-cli worktree`; `worktree-triage` | Managed checkouts | Delivered or idle policy (unchanged) |
 | tool state | `${XDG_STATE_HOME}/<tool>/` or a tool env such as `AGENT_SESSION_STATE_DIR` | Tool-specific env, XDG fallback | The tool | Durable tool state with its own bound | Owner-declared bound (size or age) |
 
-Evidence and worktrees are shipped today. The `scratch` selector, the `build`
-exports, and the per-session `TMPDIR` are owner implementations that follow
-this contract; until an owner ships its selector, keep build output out of
-evidence runs (rule 2) and prefer a worktree-local build directory. Until the
-scratch kind ships, allocate temporary and debug artifacts with
-`agent-out project --topic <topic> --mkdir`; never hand-build an `out/scratch`
-directory.
+For a managed worktree, evaluate `git-cli worktree go <slug> --build --shell`
+to select the checkout and export `CARGO_TARGET_DIR`, or use the `build_dir`
+from the worktree add record. No per-worktree Cargo configuration is written.
+Evidence cleanup requires an explicit retention setting, such as
+`agent-out cleanup plan --include-projects --project-retention-days 30`.
+
+The `scratch` selector and per-session `TMPDIR` are owner implementations that
+follow this contract. Until the scratch kind ships, allocate temporary and debug
+artifacts with `agent-out project --topic <topic> --mkdir`; never hand-build an
+`out/scratch` directory.
 
 ## Rules
 
@@ -67,3 +70,5 @@ Record each change to a class, path, selector, owner, or default retention here
 with its tracking reference.
 
 - Initial contract adopted from #302 as designed.
+- Aligned build paths, evidence retention, and build environment with the
+  shipped implementation (#305).
