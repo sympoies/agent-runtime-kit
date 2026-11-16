@@ -4,7 +4,7 @@
 
 This is the canonical runtime-kit claim for the Peekaboo-backed
 `computer-use.macos-desktop` route. It describes nils-cli `macos-agent` adapter
-v3, introduced by the v1.27.3 migration and locked to Peekaboo v4.2.2.
+v3, introduced by the v1.27.3 migration and currently locked to Peekaboo v4.9.6.
 The adapter implementation was reviewed and merged in
 [sympoies/nils-cli#1478](https://github.com/sympoies/nils-cli/pull/1478); live
 v4.2.2 cutover evidence is retained by the consumer delivery for this matrix.
@@ -82,7 +82,7 @@ fresh-session discovery, journal validity, privacy suppression, and release
 transition readiness must pass. Wrong target, false success, unusable interaction, leaked
 sensitive data, or non-repeatable mutation blocks acceptance.
 
-Peekaboo v4.2.2 requires notarized CLI and app artifacts and reports full
+Peekaboo v4.9.6 requires notarized CLI and app artifacts and reports full
 distribution-security posture. The v3.9.3 waiver is retained only inside the
 transition-only tuple needed to authenticate an installed predecessor; it does
 not authorize execution or rollback under adapter v3. Any broader or silent

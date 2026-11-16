@@ -2031,6 +2031,8 @@ As of `v1.22.6`, the native engine is replaced by a guarded adapter around immut
 
 As of `v1.22.7`, strict doctor probes permissions and Bridge readiness through one stable app socket, preventing stale default-runtime selection from reporting a false blocker; the existing command and envelopes are unchanged, so the floor remains `>= 1.22.6` ([#1247](https://github.com/sympoies/nils-cli/pull/1247)).
 
+The current macOS backend lock pins Peekaboo `v4.9.6`.
+
 As of `v1.27.3`, runtime-kit adopts adapter v3 and immutable Peekaboo `v4.2.2`: the scenario surface is retired in favor of individually reviewed chained `exec` calls, the remote wire schema advances to v3, active CLI/app artifacts require full notarization posture, and v3.9.3 remains transition-only for authenticated in-place upgrade and interrupted-upgrade recovery. The compatibility floor therefore moves to `>= 1.27.3` ([#1478](https://github.com/sympoies/nils-cli/pull/1478)).
 
 ### nils-evidence consumption

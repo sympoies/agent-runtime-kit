@@ -24,7 +24,7 @@ macos-agent backend install --strict --format json
 macos-agent backend verify --strict --format json
 ```
 
-The locked Peekaboo v4.2.2 CLI and app both require notarization and report
+The locked Peekaboo v4.9.6 CLI and app both require notarization and report
 `security_posture=full`. The exact v3.9.3 tuple is recognized only to
 authenticate an in-place upgrade; it is not an active or rollback-capable
 runtime under the v4 adapter contract. Gatekeeper, archive and executable
@@ -122,9 +122,9 @@ commands.
 ## Release Transition Readiness
 
 Rollback is available only when an exact compatible previous release is in the
-adapter's rollback allowlist. The v4.2.2 lock intentionally has no rollback
-target because v3.9.3 cannot satisfy the v4 command contract. Status and a
-dry-run must therefore be reviewed rather than assuming rollback exists:
+adapter's rollback allowlist. The v4.9.6 lock lists compatible rollback
+releases; v3.9.3 remains transition-only. Review status and a dry-run rather
+than assuming a rollback target is available:
 
 ```bash
 macos-agent backend rollback --dry-run --strict --format json
