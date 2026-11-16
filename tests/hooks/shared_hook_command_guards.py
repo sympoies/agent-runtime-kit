@@ -3853,6 +3853,38 @@ class CommandGuardsTests(HookTestCase):
             sys.modules.pop("trusted_removal_acknowledgement", None)
 
 
+    def test_trusted_removal_forge_delivery_options(self) -> None:
+        module = self._load("trusted_removal_forge_delivery", "checkout-lease-guard.py")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                primary = Path(tmp) / "primary"
+                self._init_checkout_lease_repo(primary)
+                linked = self._add_checkout_lease_worktree(primary, "feature/removal-forge")
+                for target in ("removal-forge", str(linked)):
+                    for options in itertools.permutations((target, "--forge-delivery", "--format json")):
+                        invocation = ["git-cli", "worktree", "remove"] + shlex.split(" ".join(options))
+                        with self.subTest(invocation=invocation):
+                            self.assertEqual(module.worktree_remove_target_argument(invocation), target)
+                for option in ("--unknown", "--forge-delivery=true"):
+                    with self.subTest(option=option), self.assertRaises(module.MutationScopeError):
+                        module.worktree_remove_target_argument(
+                            ["git-cli", "worktree", "remove", str(linked), "--forge-delivery", option]
+                        )
+                for options in ((str(linked), "--forge-delivery", "--format=json"),
+                                ("--forge-delivery", "--format", "json", str(linked))):
+                    command = "git-cli worktree remove " + " ".join(options)
+                    payload = self._checkout_lease_payload("owner", primary, tool_name="Bash", command=command)
+                    with mock.patch.dict(os.environ, {"AGENT_SESSION_COORDINATION_MODE": "enforce"}), \
+                         mock.patch.object(module, "read_payload", return_value=payload), \
+                         mock.patch.object(module, "resolved_executable_matches", return_value=True), \
+                         mock.patch.object(module, "emit_block") as blocked:
+                        module.main()
+                    blocked.assert_not_called()
+                self.assertTrue(linked.exists())
+        finally:
+            sys.modules.pop("trusted_removal_forge_delivery", None)
+
+
     def test_trusted_removal_refuses_unrelated_flags_and_formats(self) -> None:
         module = self._load("trusted_removal_options", "checkout-lease-guard.py")
         try:

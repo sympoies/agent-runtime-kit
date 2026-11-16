@@ -752,7 +752,7 @@ def worktree_remove_target_argument(invocation: list[str]) -> str:
                 )
             index += 1
             continue
-        if argument in {"--safe", "--acknowledge-backup-omissions"}:
+        if argument in {"--safe", "--forge-delivery", "--acknowledge-backup-omissions"}:
             index += 1
             continue
         if argument.startswith("-"):
