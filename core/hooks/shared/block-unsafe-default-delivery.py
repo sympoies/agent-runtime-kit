@@ -2794,6 +2794,7 @@ def invocation_block_reason(
     base_source: str = "the tool workdir",
     base_diagnostic: str = "",
     context_note: str = "",
+    git_assignment_unsafe: bool = False,
 ) -> str:
     def unclassifiable(detail: str) -> str:
         """An unverified verdict, preferring the concrete tripped condition."""
@@ -2842,6 +2843,12 @@ def invocation_block_reason(
                 context_source=base_source,
                 diagnostic=base_diagnostic,
             )
+            if git_assignment_unsafe:
+                return unresolved(
+                    f"{evidence} A Git environment assignment prevents resolving "
+                    "the authoring target. Drop the `GIT_*` assignments; the "
+                    "identity profile supplies the author, committer, and signing."
+                )
             return unresolved(
                 f"{evidence} The command context could not attest the repository "
                 "where this commit lands, so its repository was not "
@@ -2980,6 +2987,13 @@ def candidate_block_reason(
         candidate,
         cwd,
         environment_safe=command_safe and shell_context_safe,
+        git_assignment_unsafe=not command_safe and any(
+            is_assignment(token)
+            and token.split("=", 1)[0].startswith("GIT_")
+            and not command_local_git_environment_is_safe([token, *candidate], candidate)
+            for command in environment_commands
+            for token in command
+        ),
         target_resolved=command_safe
         and (
             (shell_context_safe and base_resolved)
