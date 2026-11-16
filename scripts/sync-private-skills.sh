@@ -79,7 +79,7 @@ product's skill directory.
 
 Each skill may declare a product subset in agents/products.txt, with one exact
 codex, claude, or hermes entry per line. Missing metadata means all products
-for backward compatibility. Existing metadata must be non-empty and contain no
+as the current default. Existing metadata must be non-empty and contain no
 blank, duplicate, or unknown entries; the full catalog is validated before any
 runtime mutation.
 
@@ -105,7 +105,7 @@ Options:
       Limit the overlay to one product. Default: all. In the default set the
       hermes target is presence-gated (skipped unless \$HOME/.hermes exists);
       an explicit --product hermes on a host without \$HOME/.hermes is an
-      error. "both" is accepted as a legacy alias for "all".
+      error.
       Hermes links land in \$HOME/.hermes/external-skills/private/<name>; that
       root must be registered once per Hermes profile config under
       skills.external_dirs (the script prints the snippet when unregistered).
@@ -251,10 +251,6 @@ parse_args() {
   done
 
   case "$PRODUCT" in
-    both)
-      # Legacy alias from the two-product era.
-      PRODUCT="all"
-      ;;
     codex | claude | hermes | all) ;;
     *)
       err "invalid --product value: $PRODUCT (expected codex|claude|hermes|all)"

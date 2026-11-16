@@ -156,9 +156,7 @@ using this narrow admission path.
   use `git-cli worktree add`. Never infer authorization from the task or invoke
   `adopt-dirty` merely because the challenge exists.
 - After authorization, run only the displayed sole adoption command unchanged.
-  An older git-cli gets `git-cli worktree adopt-dirty --challenge <bearer>
-  --reason-file <file>`. A released git-cli that reads the challenge only
-  through `--challenge-fd` gets the hook's launcher,
+  Use the hook's launcher to pass the challenge through a file descriptor:
   `checkout-lease-guard.py adopt-dirty --reason-file <file> <<< <bearer>`.
   The PreToolUse gate requires the resolved managed executable or the hook's own
   launcher path and binds challenge consumption to the issuing agent session. The released CLI rechecks the snapshot and competing lease
@@ -193,7 +191,7 @@ using this narrow admission path.
    file activity, excluding build directories. Explicitly protected persistent
    branches and the primary checkout remain outside cleanup scope.
 3. Always use `git-cli worktree remove <path-or-slug> --format json`. The trusted
-   CLI owns collision fencing and, from v1.33.2, automatic preservation of unsaved work;
+   CLI owns collision fencing and automatic preservation of unsaved work;
    it releases the caller's own lease and refuses live foreign holders. Dirty,
    unpushed, unmerged, pending-review, missing-report, missing-owner-release,
    and advisory-mode state are not cleanup retention reasons.
@@ -208,9 +206,7 @@ Record the CLI receipt, including `backup_ref` when present, and report any
 or retry through a raw route. Preservation, backup inventory and
 `git-cli worktree restore <backup-ref>` require git-cli
 [v1.33.2](https://github.com/sympoies/nils-cli/releases/tag/v1.33.2) or newer.
-Older versions retain their native checks and may lack recovery commands;
-use the normal CLI upgrade path, never bypass their refusals. Hook admission
-does not supply newer CLI behavior.
+Hook admission does not supply CLI recovery behavior.
 
 Preservation excludes ignored files. If the CLI reports backup omissions for
 non-ignored files, retain the target and report the listed paths to the user.

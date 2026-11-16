@@ -738,16 +738,6 @@ def exposure_contract_errors(root: Path) -> list[str]:
         if missing:
             errors.append(f"{row_id} reviewed disposition is missing {missing}")
 
-    from datetime import date
-
-    def valid_date(value: object) -> bool:
-        if not isinstance(value, str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", value):
-            return False
-        try:
-            date.fromisoformat(value)
-        except ValueError:
-            return False
-        return True
     disposition_by_id = {str(row["id"]): row for row in rows}
     for entry in skills:
         skill_id = str(entry["id"])
@@ -761,7 +751,7 @@ def exposure_contract_errors(root: Path) -> list[str]:
             errors.append(f"{skill_id} retained skill requires invocation and exposure metadata")
             continue
         role = invocation.get("role")
-        if role not in {"workflow", "maintenance", "advanced", "compatibility"}:
+        if role not in {"workflow", "maintenance", "advanced"}:
             errors.append(f"{skill_id} invocation role is invalid")
         if role == "advanced":
             errors.append(f"{skill_id} advanced role has no supported opt-in exposure")
@@ -769,20 +759,8 @@ def exposure_contract_errors(root: Path) -> list[str]:
             errors.append(f"{skill_id} retained admission metadata is incomplete")
         if exposure.get("profile") != "default":
             errors.append(f"{skill_id} exposure profile must be default")
-        replacement = exposure.get("replacement")
-        retire_after = exposure.get("retire_after")
-        if role == "compatibility":
-            if (
-                not replacement
-                or replacement == skill_id
-                or replacement not in skill_id_set
-                or replacement in pending_set
-            ):
-                errors.append(f"{skill_id} compatibility replacement must name another reviewed active skill")
-            if not valid_date(retire_after):
-                errors.append(f"{skill_id} compatibility retire_after must be YYYY-MM-DD")
-        elif replacement is not None or retire_after is not None:
-            errors.append(f"{skill_id} non-compatibility role cannot carry lifecycle metadata")
+        if exposure.get("replacement") is not None or exposure.get("retire_after") is not None:
+            errors.append(f"{skill_id} exposure lifecycle fields are invalid")
 
         row = disposition_by_id.get(skill_id)
         if row is None or row.get("status") != "reviewed":
@@ -1452,45 +1430,6 @@ def validate_exposure_contract_fixture() -> None:
             )
         return promoted_id
 
-    def write_replacement_retained(root: Path) -> None:
-        skills_path = root / "manifests" / "skills.yaml"
-        dispositions_path = root / "manifests" / "skill-dispositions.yaml"
-        replacement_id = "reporting.project-retro"
-        skills = read(skills_path).replace(f"    - {replacement_id}\n", "", 1)
-        marker = f"  - id: {replacement_id}\n"
-        before, after = skills.split(marker, 1)
-        semantics = """    invocation:
-      role: workflow
-      intents: [project-retro]
-      example_request: "Prepare a project implementation retrospective"
-      admission_rationale: "Produces a distinct user-requested report."
-    exposure:
-      profile: default
-"""
-        after = after.replace("    products:\n", semantics + "    products:\n", 1)
-        skills_path.write_text(before + marker + after, encoding="utf-8")
-
-        reviewed = """  - id: reporting.project-retro
-    status: reviewed
-    example_request: "Prepare a project implementation retrospective"
-    user_outcome: yes
-    destination: entrypoint
-    parent_intents: [project-retro]
-    current_clis: [repo-retro]
-    current_hooks: []
-    enforcement_point: "Skill admission and product render governance."
-    migration_path: "Retain the existing entrypoint."
-    compatibility_required: false
-    live_cleanup_required: false
-    rationale: "Produces a distinct user-requested report."
-"""
-        dispositions = read(dispositions_path).replace(
-            "  - id: reporting.project-retro\n    status: pending\n",
-            reviewed,
-            1,
-        )
-        dispositions_path.write_text(dispositions, encoding="utf-8")
-
     def write_reviewed_without_active_metadata(root: Path) -> None:
         skills_path = root / "manifests" / "skills.yaml"
         dispositions_path = root / "manifests" / "skill-dispositions.yaml"
@@ -1732,34 +1671,7 @@ def validate_exposure_contract_fixture() -> None:
         shutil.copytree(retained, compatibility)
         skills_path = compatibility / "manifests" / "skills.yaml"
         skills_path.write_text(read(skills_path).replace("role: workflow", "role: compatibility", 1), encoding="utf-8")
-        expect_error(compatibility, "compatibility replacement must name another reviewed active skill")
-
-        bounded_compatibility = Path(tmp) / "bounded-compatibility"
-        shutil.copytree(retained, bounded_compatibility)
-        write_replacement_retained(bounded_compatibility)
-        skills_path = bounded_compatibility / "manifests" / "skills.yaml"
-        skills = read(skills_path).replace("role: workflow", "role: compatibility", 1)
-        skills = skills.replace(
-            "      profile: default\n",
-            """      profile: default
-      replacement: reporting.project-retro
-      retire_after: "2026-12-31"
-""",
-            1,
-        )
-        skills_path.write_text(skills, encoding="utf-8")
-        bounded_errors = exposure_contract_errors(bounded_compatibility)
-        if bounded_errors:
-            fail(f"exposure-contract fixture valid compatibility failed: {bounded_errors}")
-
-        invalid_date = Path(tmp) / "invalid-date"
-        shutil.copytree(bounded_compatibility, invalid_date)
-        skills_path = invalid_date / "manifests" / "skills.yaml"
-        skills_path.write_text(
-            read(skills_path).replace("2026-12-31", "2026-99-99", 1),
-            encoding="utf-8",
-        )
-        expect_error(invalid_date, "compatibility retire_after must be YYYY-MM-DD")
+        expect_error(compatibility, "invocation role is invalid")
 
         growth = Path(tmp) / "growth"
         shutil.copytree(base, growth)
@@ -1793,7 +1705,7 @@ def validate_exposure_contract_fixture() -> None:
     print(
         "skill-governance-audit: exposure-contract fixture OK "
         f"reviewed={reviewed_count} pending={pending_count} retained=true "
-        "advanced=false opt_in=false compatibility_bounded=true schema_types=true "
+        "advanced=false opt_in=false compatibility_rejected=true schema_types=true "
         "block_lists=true metadata_mismatch=false growth=false"
     )
 

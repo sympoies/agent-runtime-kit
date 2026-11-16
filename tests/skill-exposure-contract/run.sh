@@ -333,9 +333,8 @@ for skill_id in sorted(expected_ids):
         expected = manifest_semantics[skill_id]
         assert item["invocation"] == expected["invocation"], (product, skill_id, item["invocation"], expected["invocation"])
         assert item["exposure"] == expected["exposure"], (product, skill_id, item["exposure"], expected["exposure"])
-        if expected["invocation"]["role"] != "compatibility":
-            assert item["exposure"]["replacement"] is None, (product, skill_id)
-            assert item["exposure"]["retire_after"] is None, (product, skill_id)
+        assert item["exposure"]["replacement"] is None, (product, skill_id)
+        assert item["exposure"]["retire_after"] is None, (product, skill_id)
 PY
 done
 

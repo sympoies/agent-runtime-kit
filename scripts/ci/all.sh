@@ -485,6 +485,7 @@ python3 tests/ci/test_runtime_python_resolver.py
 # Installed Claude/Codex home policy must outlive disposable build output, and
 # its loss must be detectable by the read-only owner probe (#319).
 python3 tests/ci/test_home_policy_lifetime.py
+python3 tests/ci/test_retired_bootstrap_contract.py
 # Qualify the local formatter contract without depending on the runner's shfmt.
 python3 tests/ci/test_shfmt_qualification.py
 
