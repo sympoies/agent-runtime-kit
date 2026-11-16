@@ -243,6 +243,15 @@ class SessionCoordinationTests(HookTestCase):
                         "AGENT_SESSION_STATE_DIR": str(root / "session-state"),
                         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                     }
+                    if not capability:
+                        payload = {"tool_name": "Read", "tool_input": {"file_path": "user.txt"},
+                                   "hook_event_name": "PreToolUse"}
+                        with self.subTest(product=product, capability=capability, tool="Read"):
+                            code, decision, stderr = run_enforced_hook(
+                                "session-coordination-guard.py", payload, cwd=root, env=env
+                            )
+                            self.assertEqual(code, 0, stderr)
+                            self.assertNotEqual((decision or {}).get("decision"), "block")
                     for payload in (
                         write_payload("user.txt", "preserved\n"),
                         command_payload("touch user.txt"),
