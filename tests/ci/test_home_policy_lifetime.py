@@ -57,7 +57,7 @@ case "$cmd" in
     mkdir -p "$root/build/$name"
     printf '# rendered %s home policy\n' "$name" >"$root/build/$name/AGENT_HOME.md"
     ;;
-  install | prune-stale | doctor) mkdir -p "$root/build/$product" ;;
+  bootstrap-host | doctor) mkdir -p "$root/build/$product" ;;
   *) exit 64 ;;
 esac
 """
