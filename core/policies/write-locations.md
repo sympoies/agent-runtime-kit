@@ -19,7 +19,7 @@ no class may hard-code the default.
 
 | Class | Path | Selected by | Owner (writes / reclaims) | Content | Retention |
 | --- | --- | --- | --- | --- | --- |
-| evidence | `${AGENT_HOME}/out/projects/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project` | `agent-out` allocates; `agent-out cleanup` reclaims | Small kept artifacts: logs, screenshots, reports, receipts | Long; cleanup is opt-in, with 30 days as the default when a consumer enables retention. May be promoted to an evidence archive. No build trees. |
+| evidence | `${AGENT_HOME}/out/projects/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project` | `agent-out` allocates; `agent-out cleanup` reclaims | Small kept artifacts: logs, screenshots, reports, receipts | Short local retention (fleet default 3 days); promote long-term evidence to an archive outside the git tree. No build trees. |
 | scratch | `${AGENT_HOME}/out/scratch/<owner__repo>/<ts>-<topic>/` | `AGENT_HOME` via `agent-out project --kind scratch` (planned) | `agent-out` | Rebuildable run intermediates: fixtures, unpacked archives, one-off clones | Short (default 3 days) |
 | build | `${AGENT_HOME}/build/<repo-key>/<slug>/` or `${AGENT_HOME}/build/run/<run-id>/` | `CARGO_TARGET_DIR` and equivalents, exported by the worktree or run owner | `git-cli` for worktree builds; `agent-out` for run builds | Compiler and bundler output | Deleted with its worktree or run; never inside `out/` |
 | tmp | `${AGENT_HOME}/tmp/<session-id>/` | `TMPDIR`, injected by the session launcher | `agent-session` creates at start, reclaims at stop | Harness scratchpads, `mktemp` output | Removed at session stop plus a grace period (default 24 h); orphans swept when the session record is gone |
@@ -30,7 +30,9 @@ For a managed worktree, evaluate `git-cli worktree go <slug> --build --shell`
 to select the checkout and export `CARGO_TARGET_DIR`, or use the `build_dir`
 from the worktree add record. No per-worktree Cargo configuration is written.
 Evidence cleanup requires an explicit retention setting, such as
-`agent-out cleanup plan --include-projects --project-retention-days 30`.
+`agent-out cleanup plan --include-projects --project-retention-days 3`.
+For long-term retention, promote evidence to an archive outside the git tree:
+a private release asset of the owning repository, linked by its SHA-256.
 
 The `scratch` selector and per-session `TMPDIR` are owner implementations that
 follow this contract. Until the scratch kind ships, allocate temporary and debug
