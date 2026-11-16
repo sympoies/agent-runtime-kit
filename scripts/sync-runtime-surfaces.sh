@@ -997,6 +997,38 @@ def mode(metadata):
     return stat.S_IMODE(metadata.st_mode)
 
 
+def is_owned_bytecode_cache(directory_fd, name):
+    metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    if metadata.st_uid != owner or mode(metadata) & 0o022:
+        return False
+    if name.endswith(".pyc"):
+        return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+    if name != "__pycache__" or not stat.S_ISDIR(metadata.st_mode):
+        return False
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        cache_fd = os.open(name, flags, dir_fd=directory_fd)
+        try:
+            opened = os.fstat(cache_fd)
+            if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+                return False
+            for child in os.listdir(cache_fd):
+                child_metadata = os.stat(child, dir_fd=cache_fd, follow_symlinks=False)
+                if not (
+                    child.endswith(".pyc")
+                    and stat.S_ISREG(child_metadata.st_mode)
+                    and child_metadata.st_uid == owner
+                    and not mode(child_metadata) & 0o022
+                    and child_metadata.st_nlink == 1
+                ):
+                    return False
+            return True
+        finally:
+            os.close(cache_fd)
+    except OSError:
+        return False
+
+
 def read_source_files():
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -1012,6 +1044,10 @@ def read_source_files():
             if name == marker_name or name in {".", ".."} or "/" in name:
                 fail(f"reserved source handler name: {name}")
             before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            if name == "__pycache__" or name.endswith(".pyc"):
+                if not is_owned_bytecode_cache(directory_fd, name):
+                    fail(f"source bytecode cache is not owner-controlled: {name}")
+                continue
             if not stat.S_ISREG(before.st_mode) or before.st_uid != owner:
                 fail(f"source handler must be an owner-controlled regular file: {name}")
             file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -1121,7 +1157,14 @@ def verify_owned_directory(path):
         normalized.append(
             {"name": name, "mode": recorded_mode, "sha256": child_digest, "actual_mode": mode(child_metadata)}
         )
-    actual_names = set(os.listdir(path))
+    directory_fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        actual_names = set(os.listdir(directory_fd))
+        extra_names = actual_names - expected_names
+        if all(is_owned_bytecode_cache(directory_fd, name) for name in extra_names):
+            actual_names -= extra_names
+    finally:
+        os.close(directory_fd)
     if actual_names != expected_names:
         refuse_live(f"live handler directory contains unowned or missing entries: {path}")
     return metadata, marker_metadata, marker_content, normalized

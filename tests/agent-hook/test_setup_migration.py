@@ -473,6 +473,69 @@ while not (root / "finish").exists():
         self.assertEqual(converged.returncode, 0, converged.stderr)
         self.assertIn("changed=false", converged.stdout)
 
+    def test_sync_accepts_owned_bytecode_caches(self) -> None:
+        for location in ("source", "live"):
+            with self.subTest(location=location):
+                source_root = self.root / ("source-" + location)
+                source_hooks = source_root / "core/hooks/shared"
+                shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
+                live_home = self.root / ("home-" + location)
+                live_home.mkdir(mode=0o700)
+                initial = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                self.assertEqual(initial.returncode, 0, initial.stderr)
+                cache_root = source_hooks if location == "source" else live_home / "hooks"
+                cache = cache_root / "__pycache__"
+                cache.mkdir()
+                (cache / "helper.cpython-313.pyc").write_bytes(b"cache")
+                (cache_root / "legacy.pyc").write_bytes(b"cache")
+                result = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("changed=false", result.stdout)
+
+    def test_sync_refuses_writable_bytecode_caches(self) -> None:
+        for location in ("source", "live"):
+            for entry, write_bit in ((entry, bit) for entry in ("directory", "child", "file") for bit in (0o020, 0o002)):
+                with self.subTest(location=location, entry=entry, write_bit=write_bit):
+                    source_root = self.root / ("source-" + location + entry + str(write_bit))
+                    source_hooks = source_root / "core/hooks/shared"
+                    shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
+                    live_home = self.root / ("home-" + location + entry + str(write_bit))
+                    live_home.mkdir(mode=0o700)
+                    initial = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                    self.assertEqual(initial.returncode, 0, initial.stderr)
+                    cache_root = source_hooks if location == "source" else live_home / "hooks"
+                    if entry == "file":
+                        target = cache_root / "legacy.pyc"
+                        target.write_bytes(b"cache")
+                    else:
+                        cache = cache_root / "__pycache__"
+                        cache.mkdir(mode=0o700)
+                        target = cache / "helper.pyc"
+                        target.write_bytes(b"cache")
+                        if entry == "directory":
+                            target = cache
+                    target.chmod((0o755 if entry == "directory" else 0o644) | write_bit)
+                    result = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_sync_refuses_symlinked_bytecode_caches(self) -> None:
+        for location in ("source", "live"):
+            for name in ("__pycache__", "legacy.pyc", "__pycache__/nested.pyc", "__pycache__/unexpected.txt"):
+                with self.subTest(location=location, name=name):
+                    source_root = self.root / ("source-" + location + name)
+                    source_hooks = source_root / "core/hooks/shared"
+                    shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
+                    live_home = self.root / ("home-" + location + name)
+                    live_home.mkdir(mode=0o700)
+                    initial = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                    self.assertEqual(initial.returncode, 0, initial.stderr)
+                    cache_root = source_hooks if location == "source" else live_home / "hooks"
+                    if "/" in name:
+                        (cache_root / "__pycache__").mkdir()
+                    (cache_root / name).symlink_to(self.root)
+                    result = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                    self.assertNotEqual(result.returncode, 0)
+
     def test_sync_refuses_foreign_live_handler_symlink(self) -> None:
         source_root = self.root / "source"
         source_hooks = source_root / "core/hooks/shared"
