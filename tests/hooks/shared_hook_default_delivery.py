@@ -22,6 +22,26 @@ from shared_hook_helpers import (
 
 class DefaultDeliveryTests(HookTestCase):
 
+    def test_semantic_commit_git_assignments_explain_unresolved_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(repo)
+            command = (
+                'GIT_AUTHOR_NAME="Fixture" GIT_AUTHOR_EMAIL="fixture@example.invalid" '
+                'GIT_COMMITTER_NAME="Fixture" GIT_COMMITTER_EMAIL="fixture@example.invalid" '
+                f'semantic-commit commit --repo {shlex.quote(str(repo))}'
+            )
+            payload = command_payload(command)
+            payload["cwd"] = str(repo)
+            code, decision, stderr = run_hook(
+                "block-unsafe-default-delivery.py", payload, cwd=repo,
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_blocked(decision, "rule=governed-authoring-target")
+            self.assert_blocked(decision, "Git environment assignment")
+            self.assert_blocked(decision, "Drop the `GIT_*` assignments")
+            self.assert_blocked(decision, "identity profile")
+
     def test_default_delivery_collaboration_marker_grants_no_push_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             for marked in (True, False):
