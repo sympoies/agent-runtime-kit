@@ -66,7 +66,7 @@ required_clis:
     min: "1.0.9"
   - bin: agent-runtime    # schema-v2 version policy + home-prompt render, skills-manifest v2 diagnostics, and explicit prior-source ownership for portable stale-link pruning
     min: "1.25.0"
-  - bin: macos-agent      # Peekaboo v4.2.2 adapter: locked backend lifecycle, local/SSH exec, MCP profiles, journal/redaction/replay, doctor, and transition-only v3 upgrade
+  - bin: macos-agent      # Peekaboo v4.9.6 adapter: locked backend lifecycle, local/SSH exec, MCP profiles, journal/redaction/replay, doctor, and transition-only v3 upgrade
     min: "1.27.3"
   - bin: docs-impact      # durable scan disposition record/show/verify workflow
     min: "1.21.17"

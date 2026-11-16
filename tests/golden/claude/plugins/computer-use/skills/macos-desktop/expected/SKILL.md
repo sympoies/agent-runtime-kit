@@ -52,7 +52,7 @@ Outputs:
   caller-owned session root.
 - A pass/fail/blocked conclusion grounded in an observed postcondition, not
   merely process exit zero.
-- Explicit residuals for skipped capabilities. Active Peekaboo v4.2.2
+- Explicit residuals for skipped capabilities. Active Peekaboo v4.9.6
   readiness rejects any waived or reduced distribution result.
 
 ## Surface Selection
@@ -137,7 +137,7 @@ macos-agent capabilities --strict --format json
 
 For SSH, pass the runtime alias to each command. `doctor --strict` is a hard
 readiness gate for a live mutation. Report-only doctor may be used to inventory
-degraded capabilities. The v4.2.2 CLI and app require notarization and must
+degraded capabilities. The v4.9.6 CLI and app require notarization and must
 report `security_posture=full`; an active waived or reduced result is not ready.
 
 A strict doctor result whose backend verification and runtime pass, and whose
@@ -438,12 +438,12 @@ A functional claim passes only when all applicable checks hold:
 7. Release transition recovery is proven without changing the accepted live
    state: an authenticated v3.9.3 predecessor can upgrade in place and recover
    after interruption, but it cannot be reactivated or selected as rollback;
-   rollback dry-run refuses deterministically and a subsequent status read-back
-   reports the unchanged v4.2.2 receipt.
+   rollback dry-run reports an authorized target or a clear refusal, and a
+   subsequent status read-back reports the unchanged v4.9.6 receipt.
 
 The canonical status/evidence inventory is
 [`docs/source/macos-agent-capability-matrix.md`](https://github.com/sympoies/agent-runtime-kit/blob/main/docs/source/macos-agent-capability-matrix.md).
-Do not infer support beyond that matrix. Active v4.2.2 acceptance requires full
+Do not infer support beyond that matrix. Active v4.9.6 acceptance requires full
 distribution-security posture; the historical v3.9.3 notarization waiver is
 transition-authentication metadata only and never an accepted runtime
 residual. Privacy leaks, wrong targets, false success, or unusable behavior are
