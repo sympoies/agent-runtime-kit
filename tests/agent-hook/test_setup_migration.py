@@ -494,12 +494,12 @@ while not (root / "finish").exists():
 
     def test_sync_refuses_writable_bytecode_caches(self) -> None:
         for location in ("source", "live"):
-            for entry in ("directory", "child", "file"):
-                with self.subTest(location=location, entry=entry):
-                    source_root = self.root / ("source-" + location + entry)
+            for entry, write_bit in ((entry, bit) for entry in ("directory", "child", "file") for bit in (0o020, 0o002)):
+                with self.subTest(location=location, entry=entry, write_bit=write_bit):
+                    source_root = self.root / ("source-" + location + entry + str(write_bit))
                     source_hooks = source_root / "core/hooks/shared"
                     shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
-                    live_home = self.root / ("home-" + location + entry)
+                    live_home = self.root / ("home-" + location + entry + str(write_bit))
                     live_home.mkdir(mode=0o700)
                     initial = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
                     self.assertEqual(initial.returncode, 0, initial.stderr)
@@ -514,7 +514,7 @@ while not (root / "finish").exists():
                         target.write_bytes(b"cache")
                         if entry == "directory":
                             target = cache
-                    target.chmod(0o777 if entry == "directory" else 0o666)
+                    target.chmod((0o755 if entry == "directory" else 0o644) | write_bit)
                     result = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
                     self.assertNotEqual(result.returncode, 0, result.stdout)
 
