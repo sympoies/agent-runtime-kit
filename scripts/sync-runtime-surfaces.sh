@@ -999,7 +999,7 @@ def mode(metadata):
 
 def is_owned_bytecode_cache(directory_fd, name):
     metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-    if metadata.st_uid != owner:
+    if metadata.st_uid != owner or mode(metadata) & 0o022:
         return False
     if name.endswith(".pyc"):
         return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
@@ -1018,6 +1018,7 @@ def is_owned_bytecode_cache(directory_fd, name):
                     child.endswith(".pyc")
                     and stat.S_ISREG(child_metadata.st_mode)
                     and child_metadata.st_uid == owner
+                    and not mode(child_metadata) & 0o022
                     and child_metadata.st_nlink == 1
                 ):
                     return False
@@ -1043,7 +1044,9 @@ def read_source_files():
             if name == marker_name or name in {".", ".."} or "/" in name:
                 fail(f"reserved source handler name: {name}")
             before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-            if is_owned_bytecode_cache(directory_fd, name):
+            if name == "__pycache__" or name.endswith(".pyc"):
+                if not is_owned_bytecode_cache(directory_fd, name):
+                    fail(f"source bytecode cache is not owner-controlled: {name}")
                 continue
             if not stat.S_ISREG(before.st_mode) or before.st_uid != owner:
                 fail(f"source handler must be an owner-controlled regular file: {name}")

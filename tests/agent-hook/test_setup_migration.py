@@ -492,6 +492,32 @@ while not (root / "finish").exists():
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("changed=false", result.stdout)
 
+    def test_sync_refuses_writable_bytecode_caches(self) -> None:
+        for location in ("source", "live"):
+            for entry in ("directory", "child", "file"):
+                with self.subTest(location=location, entry=entry):
+                    source_root = self.root / ("source-" + location + entry)
+                    source_hooks = source_root / "core/hooks/shared"
+                    shutil.copytree(REPO_ROOT / "core/hooks/shared", source_hooks)
+                    live_home = self.root / ("home-" + location + entry)
+                    live_home.mkdir(mode=0o700)
+                    initial = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                    self.assertEqual(initial.returncode, 0, initial.stderr)
+                    cache_root = source_hooks if location == "source" else live_home / "hooks"
+                    if entry == "file":
+                        target = cache_root / "legacy.pyc"
+                        target.write_bytes(b"cache")
+                    else:
+                        cache = cache_root / "__pycache__"
+                        cache.mkdir(mode=0o700)
+                        target = cache / "helper.pyc"
+                        target.write_bytes(b"cache")
+                        if entry == "directory":
+                            target = cache
+                    target.chmod(0o777 if entry == "directory" else 0o666)
+                    result = self.sync_trusted_handlers(source_root, "codex", live_home, apply=True)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+
     def test_sync_refuses_symlinked_bytecode_caches(self) -> None:
         for location in ("source", "live"):
             for name in ("__pycache__", "legacy.pyc", "__pycache__/nested.pyc", "__pycache__/unexpected.txt"):
