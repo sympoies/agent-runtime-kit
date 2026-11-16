@@ -86,7 +86,7 @@ After the deterministic/product probes above pass, run the authenticated smoke
 against the same pinned package:
 
 ```bash
-export RUNTIME_SMOKE_ARTIFACTS_DIR="$(agent-out project --topic codex-agent-live --mkdir)"
+export RUNTIME_SMOKE_ARTIFACTS_DIR="$(agent-out project --topic codex-agent-live --mkdir)/authenticated"
 export RUNTIME_SMOKE_CODEX_AUTHENTICATED=1
 systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 \
   bash tests/runtime-smoke/codex-agent/pinned.sh \
@@ -99,7 +99,9 @@ then runs `codex-cli agent doctor --format json` and
 `codex-cli agent knowledge 'Reply with the active runtime mode only: isolated.'`
 in a temporary workspace. It requires ready doctor JSON, an exact `isolated`
 response, and no instruction sentinel or `agent-hook` text in product output.
-It enforces a 0700 external artifact directory and umask 077 before writing raw output, refuses a symlink destination, and removes the borrowed home afterward. A model saying `isolated` or absent
+It creates a new 0700 external artifact directory with umask 077, refuses existing
+destinations and symlinked path components, removes raw output on failure, and
+removes the borrowed home afterward. A model saying `isolated` or absent
 text is a smoke signal, not proof of hook suppression or sandbox enforcement.
 The script leaves A3/A4/A6/A7 acceptance pending explicitly.
 

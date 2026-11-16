@@ -365,18 +365,19 @@ class BoundaryAcceptance(unittest.TestCase):
                     RUNTIME_SMOKE_CODEX_CLI=str(wrapper))
 
     def test_A14_product_pin_mismatch_is_failure_not_skip(self):
-        env = dict(self.mismatch_environment(), REPO_ROOT=str(ROOT),
+        self.assertNotIn('PIN_MISMATCH_PROBE', os.environ, 'pin mismatch probe recursed')
+        env = dict(self.mismatch_environment(), PIN_MISMATCH_PROBE='1', REPO_ROOT=str(ROOT),
                    SCRIPT_DIR=str(ROOT / 'tests/runtime-smoke'),
                    TMP_ROOT=str(self.f.root / 'tmp'), ARTIFACTS_DIR=str(self.f.root / 'artifacts'),
                    RESULTS_FILE=str(self.f.root / 'results.tsv'), PROBE_ONLY='1', PRODUCT='codex')
         result = run([shutil.which('bash'), ROOT / 'tests/runtime-smoke/product/run.sh'],
                      env, self.f.workspace, check=False)
         self.assertNotEqual(result.returncode, 0, 'pin mismatch must not pass as a host skip')
+        self.assertIn('product acceptance requires the exact validated_tag release', result.stderr)
         self.assertIn('blocked-design', (self.f.root / 'results.tsv').read_text())
 
     def test_A14_live_output_is_private_and_outside_repository(self):
         output = self.f.root / 'live-output'
-        output.mkdir(mode=0o755)
         env = dict(self.mismatch_environment(), RUNTIME_SMOKE_CODEX_AUTHENTICATED='1',
                    RUNTIME_SMOKE_ARTIFACTS_DIR=str(output))
         result = run([shutil.which('bash'), HERE / 'authenticated.sh'],
@@ -398,7 +399,7 @@ class BoundaryAcceptance(unittest.TestCase):
                      dict(env, RUNTIME_SMOKE_ARTIFACTS_DIR=str(alias)),
                      self.f.workspace, check=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('non-symlink directory', result.stderr)
+        self.assertIn('artifact path', result.stderr)
 
     def test_A13_no_codex_agent_exemption_in_hook_control_surfaces(self):
         paths = [path for path in (ROOT / 'core/hooks').rglob('*')
@@ -466,6 +467,8 @@ def main():
         parser.error('codex-cli is below the repository compatibility minimum')
     if options.layer == 'product' and observed != validated:
         parser.error('product acceptance requires the exact validated_tag release; use scripts/dev/with-nils-version.sh')
+    if os.environ.get('PIN_MISMATCH_PROBE') == '1':
+        parser.error('pin mismatch probe reached the suite instead of rejecting the release')
     CODEX = shutil.which('codex') or ''
     if options.layer == 'product' and not CODEX:
         parser.error('real Codex is required for the product layer')

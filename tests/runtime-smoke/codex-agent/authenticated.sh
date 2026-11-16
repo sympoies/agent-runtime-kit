@@ -16,16 +16,29 @@ import sys
 from pathlib import Path
 repo = Path(sys.argv[1]).resolve()
 directory = Path(sys.argv[2]).absolute()
-if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
-    raise SystemExit('codex-agent acceptance: artifacts require a non-symlink directory')
+if any(part.is_symlink() for part in (directory, *directory.parents)):
+    raise SystemExit('codex-agent acceptance: artifact path must not contain symlinks')
 resolved = directory.resolve()
 if resolved == repo or repo in resolved.parents:
     raise SystemExit('codex-agent acceptance: artifacts must remain outside the repository')
-directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-directory.chmod(0o700)
+try:
+    directory.mkdir(parents=True, exist_ok=False, mode=0o700)
+except FileExistsError:
+    raise SystemExit('codex-agent acceptance: artifact path must not already exist')
+if directory.stat().st_mode & 0o777 != 0o700:
+    raise SystemExit('codex-agent acceptance: artifact directory must be private')
 print(resolved)
 PY
 )"
+probe=''
+cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    rm -f "$RUNTIME_SMOKE_ARTIFACTS_DIR/doctor.json" "$RUNTIME_SMOKE_ARTIFACTS_DIR/knowledge.stdout.txt" "$RUNTIME_SMOKE_ARTIFACTS_DIR/knowledge.stderr.txt"
+  fi
+  if [ -n "$probe" ]; then rm -rf "$probe"; fi
+}
+trap cleanup EXIT
 command -v codex >/dev/null
 command -v codex-cli >/dev/null
 python3 "$REPO_ROOT/tests/runtime-smoke/codex-agent/run.py" --layer product \
@@ -40,8 +53,6 @@ if [ ! -f "$source_home/auth.json" ]; then
 fi
 probe="$(mktemp -d "${TMPDIR:-/tmp}/codex-agent-authenticated.XXXXXX")"
 chmod 700 "$probe"
-cleanup() { rm -rf "$probe"; }
-trap cleanup EXIT
 mkdir -p "$probe/codex-home" "$probe/workspace" "$probe/shell/prompts" "$probe/xdg"
 ln -s "$source_home/auth.json" "$probe/codex-home/auth.json"
 printf 'AUTHENTICATED_HOME_INSTRUCTION_SENTINEL\n' >"$probe/codex-home/AGENTS.md"
