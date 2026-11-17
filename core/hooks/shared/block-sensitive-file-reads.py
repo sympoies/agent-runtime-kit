@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -65,7 +66,8 @@ def main() -> int:
         if not invocation or Path(invocation[0]).name not in READERS:
             continue
         if any(matches_path(arg, cwd, patterns) for arg in invocation[1:] if not arg.startswith("-")):
-            emit_block("Sensitive file read blocked. Use $AGENT_DOCS_HOME/core/hooks/shared/secret-structure <file> to inspect names and line counts, or grep -c for counts.")
+            helper = shlex.quote(str(Path(__file__).with_name("secret-structure")))
+            emit_block(f"Sensitive file read blocked. Use {helper} <file> to inspect names and line counts, or grep -c for counts.")
             return ALLOW
     return ALLOW
 

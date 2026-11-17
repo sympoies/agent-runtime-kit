@@ -102,7 +102,7 @@ class BlockHooksTests(HookTestCase):
                         env={"HOME": str(root)}, unset_env=("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
                     )
                     self.assertEqual(code, 0, stderr)
-                    self.assert_blocked(decision, "$AGENT_DOCS_HOME/core/hooks/shared/secret-structure")
+                    self.assert_blocked(decision, str(Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"))
 
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
