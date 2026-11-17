@@ -8,10 +8,101 @@ from shared_hook_helpers import (
     run_hook,
     shlex,
     tempfile,
+    subprocess,
 )
 
 
 class BlockHooksTests(HookTestCase):
+
+    def test_sensitive_read_guard_commands_and_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sensitive = root / "sample.env"
+            ordinary = root / "ordinary.txt"
+            sensitive.write_text("TOKEN=fake-value\n", encoding="utf-8")
+            ordinary.write_text("example\n", encoding="utf-8")
+            env = {"AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS": str(root / "*.env")}
+            readers = ("cat", "awk '{print $1}'", "sed -n p", "head", "tail", "less", "bat")
+            for reader in readers:
+                with self.subTest(reader=reader):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py",
+                        command_payload(f"{reader} {shlex.quote(str(sensitive))}"),
+                        cwd=root, env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "secret-structure")
+                    self.assertNotIn("fake-value", str(decision))
+            for command in (
+                f"grep -c TOKEN {shlex.quote(str(sensitive))}",
+                f"secret-structure {shlex.quote(str(sensitive))}",
+                f"cat {shlex.quote(str(ordinary))}",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload(command),
+                        cwd=root, env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+            code, decision, stderr = run_hook(
+                "block-sensitive-file-reads.py", command_payload(f"cat {shlex.quote(str(sensitive))}"),
+                cwd=root, env={"AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS": str(ordinary)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_secret_structure_outputs_names_and_counts_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            fixture.write_text("TOKEN=fake-value\nMODE=other-fake-value\nPrivateKey fake-private-value\nfake-unstructured-value\n", encoding="utf-8")
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("TOKEN", result.stdout)
+            self.assertIn("MODE", result.stdout)
+            self.assertIn("PrivateKey", result.stdout)
+            self.assertIn("4", result.stdout)
+            self.assertNotIn("fake-value", result.stdout + result.stderr)
+            self.assertNotIn("fake-private-value", result.stdout + result.stderr)
+            self.assertNotIn("fake-unstructured-value", result.stdout + result.stderr)
+
+    def test_sensitive_read_guard_default_patterns_and_nested_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("sample.env", "sample.enc.txt", ".ssh/config"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("VALUE=fake\n", encoding="utf-8")
+                command = f"bash -c {shlex.quote('cat ' + shlex.quote(str(path)))}"
+                with self.subTest(name=name):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload(command),
+                        cwd=root, env={"HOME": str(root)},
+                        unset_env=("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "secret-structure")
+
+    def test_sensitive_read_guard_resolves_shell_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            protected = root / ".ssh"
+            protected.mkdir()
+            (protected / "config").write_text("Key=fake-value\n", encoding="utf-8")
+            (root / "alias").symlink_to(protected / "config")
+            for command in ('cat "$HOME/.ssh/config"',
+                            f"cd {shlex.quote(str(protected))} && cat config",
+                            f"cd -- {shlex.quote(str(protected))} && cat config",
+                            f"cd -P {shlex.quote(str(protected))} && cat config",
+                            f"cat {shlex.quote(str(root / 'alias'))}"):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload(command), cwd=root,
+                        env={"HOME": str(root)}, unset_env=("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "$AGENT_DOCS_HOME/core/hooks/shared/secret-structure")
 
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
