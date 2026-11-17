@@ -27,7 +27,8 @@ absolute paths, and `~` expands to the deployment user's home. An empty list
 disables matching. Add deployment-specific paths through configuration rather
 than this shared default. Avoid embedding sensitive values in path names.
 
-For a structure-only view, run `$AGENT_DOCS_HOME/core/hooks/shared/secret-structure <file>`.
+For a structure-only view, run
+<code>$AGENT_DOCS_HOME/core/hooks/shared/secret&#45;structure &lt;file&gt;</code>.
 It prints the line count and recognized assignment keys or known directive names, omitting
 values and unrecognized lines. It treats the left side of an assignment as a
 key, so use it only on structured configuration files whose key names are not
