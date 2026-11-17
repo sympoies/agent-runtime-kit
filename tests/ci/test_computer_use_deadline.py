@@ -2,10 +2,10 @@
 """Exercise the computer-use MCP fixture with an open input stream."""
 import os
 import pathlib
+import select
 import signal
 import subprocess
 import tempfile
-import time
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -51,44 +51,70 @@ class ComputerUseDeadline(unittest.TestCase):
             root = pathlib.Path(directory)
             child_file = root / "child"
             group_file = root / "group"
+            supervisor = ROOT / "tests/runtime-smoke/cases/computer-use/mcp-supervisor.py"
+            supervisor_source = supervisor.read_text()
+            launch = "proc = subprocess.Popen(sys.argv[1:], start_new_session=True)"
+            self.assertEqual(supervisor_source.count(launch), 1)
+            supervisor_source = supervisor_source.replace(
+                launch, 'proc = subprocess.Popen(sys.argv[1:], start_new_session=True, '
+                        'pass_fds=(int(os.environ["COMPUTER_USE_READY_FD"]),))')
+            wait = "        code = proc.wait(timeout=deadline)"
+            self.assertEqual(supervisor_source.count(wait), 1)
+            # Inject the timeout only after the test observes the child. The
+            # production supervisor still owns the timeout and cleanup path.
+            supervisor_source = supervisor_source.replace(
+                wait, '        os.read(int(os.environ["COMPUTER_USE_TRIGGER_FD"]), 1)\n'
+                      '        raise subprocess.TimeoutExpired(proc.args, deadline)')
+            test_supervisor = root / "supervisor.py"
+            test_supervisor.write_text(supervisor_source)
             source = DOMAIN.read_text()
             needle = '    input="$(cat)"'
             self.assertEqual(source.count(needle), 1)
             source = source.replace(needle, '    echo "$$" >"$COMPUTER_USE_TEST_GROUP"\n'
-                                    '    sleep 300 &\n    echo "$!" >"$COMPUTER_USE_TEST_CHILD"\n' + needle)
+                                    '    sleep 300 &\n    echo "$!" >"$COMPUTER_USE_TEST_CHILD"\n'
+                                    '    printf x >&"$COMPUTER_USE_READY_FD"\n' + needle)
+            supervised = ('$REPO_ROOT/tests/runtime-smoke/cases/computer-use/mcp-supervisor.py" '
+                          'macos-agent mcp --out-dir "$mcp_out-$profile"')
+            self.assertEqual(source.count(supervised), 1)
+            source = source.replace(supervised, str(test_supervisor) + '" '
+                                    'macos-agent mcp --out-dir "$mcp_out-$profile"')
             fixture = root / "domain.sh"
             fixture.write_text(source)
+            ready_read, ready_write = os.pipe()
+            trigger_read, trigger_write = os.pipe()
             env = os.environ.copy()
-            # The domain runs several synthetic probes before reaching MCP. Give
-            # setup and child scheduling room under CPU contention; keep both
-            # the supervisor deadline and the outer watchdog finite.
             env.update(REPO_ROOT=str(ROOT), SCRIPT_DIR=str(ROOT / "tests/runtime-smoke"),
                        TMP_ROOT=str(root / "tmp"), ARTIFACTS_DIR=str(root / "artifacts"),
                        RESULTS_FILE=str(root / "results"), COMPUTER_USE_TEST_CHILD=str(child_file),
-                       COMPUTER_USE_TEST_GROUP=str(group_file), COMPUTER_USE_TEST_DEADLINE="5")
-            started = time.monotonic()
-            watchdog = False
+                       COMPUTER_USE_TEST_GROUP=str(group_file), COMPUTER_USE_READY_FD=str(ready_write),
+                       COMPUTER_USE_TRIGGER_FD=str(trigger_read))
             with (root / "stderr").open("w+") as stderr:
                 proc = subprocess.Popen(["bash", str(fixture)], stdin=subprocess.PIPE,
                                         stdout=subprocess.DEVNULL, stderr=stderr,
-                                        start_new_session=True, env=env)
+                                        start_new_session=True, env=env,
+                                        pass_fds=(ready_write, trigger_read))
+                os.close(ready_write)
+                os.close(trigger_read)
                 try:
-                    try:
-                        proc.wait(timeout=60)
-                    except subprocess.TimeoutExpired:
-                        watchdog = True
-                        os.killpg(proc.pid, signal.SIGKILL)
-                        proc.wait()
+                    self.assertTrue(select.select([ready_read], [], [], 60)[0],
+                                    "synthetic MCP child never became ready")
+                    self.assertEqual(os.read(ready_read, 1), b"x")
+                    self.assertTrue(child_file.exists(), "synthetic MCP child never started")
+                    self.assertTrue(child_alive(child_file), "synthetic MCP child exited before timeout")
+                    self.assertIsNone(proc.poll(), "domain exited before the timeout trigger")
+                    os.write(trigger_write, b"x")
+                    proc.wait(timeout=60)
                     alive = child_alive(child_file)
                 finally:
+                    if proc.poll() is None:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                        proc.wait()
                     cleanup_group(group_file)
                     proc.stdin.close()
+                    os.close(ready_read)
+                    os.close(trigger_write)
                 stderr.seek(0)
                 diagnostic = stderr.read()
-            elapsed = time.monotonic() - started
-            self.assertTrue(child_file.exists(), "synthetic MCP child never started")
-            self.assertFalse(watchdog, "domain exceeded bounded deadline; outer watchdog fired")
-            self.assertLess(elapsed, 60)
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("timed out", diagnostic)
             self.assertFalse(alive, "owned MCP child survived")
