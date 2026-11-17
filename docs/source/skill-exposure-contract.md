@@ -23,7 +23,6 @@ Every retained, non-pending skill declares one role:
 | `workflow` | A distinct user-requested outcome with meaningful orchestration. |
 | `maintenance` | A direct repository or runtime maintenance outcome a user may intentionally request. |
 | `advanced` | A real but non-default user outcome. It cannot be retained until products implement an honest opt-in exposure path. |
-| `compatibility` | A time-bounded alias or migration entrypoint with a canonical replacement and retirement date. |
 
 Retained entries also declare parent `intents`, one realistic
 `example_request`, and an `admission_rationale`. Missing metadata fails
@@ -44,18 +43,6 @@ There is no cross-product hidden/internal profile and no metadata-only opt-in
 profile. `advanced` plus `default`, `internal`, and `opt-in` therefore fail
 closed until an actual installer and discovery mechanism exists for every
 supported product.
-
-A `compatibility` entry additionally requires:
-
-```yaml
-exposure:
-  profile: default
-  replacement: domain.canonical-skill
-  retire_after: "YYYY-MM-DD"
-```
-
-Governance verifies that the replacement is another reviewed, non-pending
-active skill and that the retirement condition is bounded.
 
 ## Completed Disposition
 

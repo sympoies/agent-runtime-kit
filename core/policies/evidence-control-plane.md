@@ -130,8 +130,7 @@ Closeout is event-driven:
   `test_first.require_kinds` selects the gated kinds (default: feature and bug).
   With `require = true`, set `require_kinds = ["bug"]` to exempt features;
   cross-boundary feature contracts still require a tier A record by policy.
-  Older versions retain the feature/bug gate; satisfy active gates without
-  mislabeling the delivery kind.
+  Satisfy active gates without mislabeling the delivery kind.
 - Hook timeout/effect posture remains owned by the hook rule. Evidence never
   converts an external, destructive, sensitive, transaction, or unknown effect
   into an allowed one.

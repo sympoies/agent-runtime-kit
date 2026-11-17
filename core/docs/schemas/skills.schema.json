@@ -48,7 +48,7 @@
       "properties": {
         "role": {
           "type": "string",
-          "enum": ["workflow", "maintenance", "advanced", "compatibility"]
+          "enum": ["workflow", "maintenance", "advanced"]
         },
         "intents": {
           "type": "array",
@@ -77,11 +77,6 @@
           "type": "string",
           "const": "default",
           "description": "The only product-real exposure profile currently supported across Codex, Claude, and Hermes."
-        },
-        "replacement": { "$ref": "#/$defs/skillId" },
-        "retire_after": {
-          "type": "string",
-          "format": "date"
         }
       }
     },
@@ -116,10 +111,6 @@
           "enum": ["runtime", "literal"],
           "default": "runtime"
         },
-        "aliases": {
-          "type": "object",
-          "additionalProperties": { "type": "string", "minLength": 1 }
-        },
         "divergent": {
           "type": "boolean",
           "default": false
@@ -149,34 +140,6 @@
               }
             },
             "required": ["invocation"]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "invocation": {
-                "properties": { "role": { "const": "compatibility" } },
-                "required": ["role"]
-              }
-            },
-            "required": ["invocation"]
-          },
-          "then": {
-            "properties": {
-              "exposure": { "required": ["replacement", "retire_after"] }
-            }
-          },
-          "else": {
-            "properties": {
-              "exposure": {
-                "not": {
-                  "anyOf": [
-                    { "required": ["replacement"] },
-                    { "required": ["retire_after"] }
-                  ]
-                }
-              }
-            }
           }
         }
       ]

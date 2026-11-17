@@ -81,11 +81,8 @@ use their system `python3`. Without a suitable interpreter, both scripts stop
 before mutating anything and name what to install.
 
 The wrapper keeps the Homebrew / CLI-tool and home-prompt gates in shell, then
-feature-detects `agent-runtime bootstrap-host`. When the installed nils-cli
-surface provides that command, setup delegates runtime surface bootstrap to it
-for render, install, prune-stale, and skill-surface verification. When the host
-is still on an older pinned release, setup stays compatible by running the same
-manual phases directly. In both paths, setup then invokes
+delegates runtime surface bootstrap to `agent-runtime bootstrap-host` for render,
+install, prune-stale, and skill-surface verification. Setup then invokes
 `scripts/sync-runtime-surfaces.sh --product claude --no-pull --no-prune
 --no-verify` and the matching Codex command so the local `claude-kit` and
 `codex-kit` marketplaces are materialized into state home, registered, and

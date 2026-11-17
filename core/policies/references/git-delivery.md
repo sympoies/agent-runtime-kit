@@ -281,8 +281,7 @@ The [fold recipe](../devlog/ci-fold.md) owns workflow wiring and provider accept
   to `["feature", "bug"]` for compatibility. With `require = true`, set
   `require_kinds = ["bug"]` to exempt feature deliveries. The setting selects
   kinds, not semantic tiers: cross-boundary feature contracts still keep a
-  tier A record. Older versions retain the feature/bug gate. Satisfy active
-  gates with a record; do not mislabel the PR kind.
+  tier A record. Satisfy active gates with a record; do not mislabel the PR kind.
 - The gate is **off by default**. It is opt-in via `[test_first] require =
   true` in either a repo `.forge-cli.toml` or the user-global
   `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit

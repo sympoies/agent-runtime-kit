@@ -845,11 +845,8 @@ SH
 run_setup_render_before_install_probe() {
   local out="$META_ARTIFACTS_DIR/setup.render-before-install.dry-run.txt"
   local apply_out="$META_ARTIFACTS_DIR/setup.render-before-install.apply.txt"
-  local migration_out="$META_ARTIFACTS_DIR/setup.legacy-origin-migration.dry-run.txt"
   local home="$TMP_ROOT/setup-render-home"
   local apply_home="$TMP_ROOT/setup-render-apply-home"
-  local migration_home="$TMP_ROOT/setup-migration-home"
-  local migration_source_root="$migration_home/.config/agent-runtime-kit"
   local stub_bin="$TMP_ROOT/setup-render-bin"
   local source_root="$apply_home/.config/agent-runtime-kit"
   local collision_out="$META_ARTIFACTS_DIR/setup.home-prompt-collision.txt"
@@ -919,48 +916,14 @@ for _, sync_line in sync_lines:
     assert "--no-verify" in sync_line, sync_line
     assert "--dry-run" in sync_line, sync_line
 assert sync_products == ["claude", "codex"], sync_products
-if bootstrap_lines:
-    assert len(bootstrap_lines) == 1, bootstrap_lines
-    bootstrap_line = bootstrap_lines[0][1]
-    assert "--product both" in bootstrap_line, bootstrap_line
-    assert "--dry-run" in bootstrap_line, bootstrap_line
-    assert "--skip-homebrew-install" in bootstrap_line, bootstrap_line
-    assert "--skip-cli-tools" in bootstrap_line, bootstrap_line
-    assert bootstrap_lines[0][0] < min(idx for idx, _ in sync_lines), lines
-else:
-    home_render_lines = [
-        (idx, line) for idx, line in render_lines if "--target home-prompt" in line
-    ]
-    product_render_lines = [
-        (idx, line) for idx, line in render_lines if "--target home-prompt" not in line
-    ]
-    assert len(home_render_lines) == 3, home_render_lines
-    assert len(product_render_lines) == 2, product_render_lines
-    assert any("--target home-prompt --product codex" in line for _, line in home_render_lines), home_render_lines
-    assert any("--target home-prompt --product claude" in line for _, line in home_render_lines), home_render_lines
-    assert len(install_lines) == 2, install_lines
-    assert any("--product codex" in line for _, line in product_render_lines), product_render_lines
-    assert any("--product claude" in line for _, line in product_render_lines), product_render_lines
-    assert max(idx for idx, _ in home_render_lines) < min(idx for idx, _ in product_render_lines), lines
-    assert max(idx for idx, _ in product_render_lines) < min(idx for idx, _ in install_lines), lines
-    assert max(idx for idx, _ in install_lines) < min(idx for idx, _ in sync_lines), lines
+assert len(bootstrap_lines) == 1, bootstrap_lines
+bootstrap_line = bootstrap_lines[0][1]
+assert "--product both" in bootstrap_line, bootstrap_line
+assert "--dry-run" in bootstrap_line, bootstrap_line
+assert "--skip-homebrew-install" in bootstrap_line, bootstrap_line
+assert "--skip-cli-tools" in bootstrap_line, bootstrap_line
+assert bootstrap_lines[0][0] < min(idx for idx, _ in sync_lines), lines
 PY
-
-  mkdir -p "$migration_source_root"
-  git -C "$migration_source_root" init -q
-  git -C "$migration_source_root" remote add origin \
-    https://github.com/graysurf/agent-runtime-kit.git
-  (
-    cd "$REPO_ROOT"
-    HOME="$migration_home" CODEX_HOME="$migration_home/.codex" \
-      bash scripts/setup.sh \
-      --profile core \
-      --skip-homebrew-install \
-      --skip-cli-tools \
-      --dry-run
-  ) >"$migration_out" 2>&1
-  grep -Fq "+ git -C $migration_source_root remote set-url origin https://github.com/sympoies/agent-runtime-kit.git" \
-    "$migration_out"
 
   mkdir -p "$stub_bin" "$source_root/.git" "$source_root/scripts"
   printf '# AGENT_HOME fixture\n' >"$source_root/AGENT_HOME.md"
@@ -1030,9 +993,8 @@ case "$command_name" in
       printf 'render %s\n' "$product"
     fi
     ;;
-  install)
-    test -d "$source_root/build/$product"
-    printf 'install %s\n' "$product"
+  bootstrap-host)
+    printf 'bootstrap-host %s\n' "$product"
     ;;
   prune-stale)
     printf 'prune-stale %s\n' "$product"
@@ -1076,16 +1038,13 @@ import sys
 events = [
     line
     for line in open(sys.argv[1], encoding="utf-8").read().splitlines()
-    if line.startswith(("render ", "install "))
+    if line.startswith(("render ", "bootstrap-host "))
 ]
 assert events == [
     "render home-prompt neutral",
     "render home-prompt codex",
     "render home-prompt claude",
-    "render codex",
-    "render claude",
-    "install claude",
-    "install codex",
+    "bootstrap-host both",
 ], events
 PY
 

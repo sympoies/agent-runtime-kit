@@ -1903,7 +1903,7 @@ As of `v0.22.4`, `scripts/sync-runtime-surfaces.sh` consumes `agent-runtime prun
 
 As of `v1.0.5`, `render` reconciles `build/<product>/` for retired skills — a skill removed from the manifest has its outputs and `.render-cache.json` entry dropped on the next render, so `scripts/sync-runtime-surfaces.sh` + `prune-stale` no longer leave the retired skill in the live home ([#755](https://github.com/sympoies/nils-cli/pull/755)); `audit-drift` also gains `--json` / `--fail-on` and skips path/slug runs in entropy ([#754](https://github.com/sympoies/nils-cli/pull/754)).
 
-As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup feature-detects it and keeps a phase-command fallback for older hosts ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)).
+As of `v1.0.10`, `bootstrap-host` adds a single dry-run/apply wrapper over render, install, prune-stale, and skill-surface doctor plus a checkpoint/report schema; runtime-kit setup uses it for surface bootstrap ([#780](https://github.com/sympoies/nils-cli/pull/780), [#781](https://github.com/sympoies/nils-cli/pull/781)).
 
 As of `v1.3.0`, `render` adds an optional agents surface: an absent `manifests/agents.yaml` is a no-op, and when present each `core/agents/<id>/AGENT.md.tera` renders per product into `build/<product>/` at `render_to` (Codex TOML / Claude Markdown selected via the `product` Tera variable), cached in a separate `.render-cache-agents.json` and covered by `--update-golden` / `audit-drift` ([#839](https://github.com/sympoies/nils-cli/pull/839)).
 

@@ -55,7 +55,7 @@ CLAUDE_AGENTS_MD_INSTRUCTION_FILES="claude-md-and-agents-md"
 
 print_help() {
   cat <<EOF
-Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--check-home-policy] [--codex-plugin-activation]
+Usage: $PROG_NAME [--apply] [--agent-hook-remove] [--product codex|claude|hermes|both] [--source-root PATH] [--owned-source-root PATH] [--no-pull] [--no-prune] [--no-verify] [--check-home-policy]
 
 Refresh sympoies/agent-runtime-kit managed runtime surfaces into local Codex,
 Claude, and Hermes runtime homes. This is the daily runtime surface refresh
@@ -99,9 +99,6 @@ Options:
       product's link state (healthy, absent, dangling, unreadable, empty,
       foreign), source identity, and remediation; exits 1 unless every
       selected link is healthy. Never mutates and needs no agent-hook.
-  --codex-plugin-activation
-      Deprecated compatibility flag. Codex plugin marketplace activation is now
-      the default runtime-kit skill-discovery path.
   -h, --help
       Print this help and exit.
 EOF
@@ -217,9 +214,6 @@ parse_args() {
         ;;
       --check-home-policy)
         CHECK_HOME_POLICY=1
-        shift
-        ;;
-      --codex-plugin-activation)
         shift
         ;;
       -h | --help)

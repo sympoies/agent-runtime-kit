@@ -25,7 +25,7 @@ SKIP_HOMEBREW_INSTALL=0
 SKIP_CLI_TOOLS=0
 DRY_RUN=0
 BREW_PREFIX=""
-BOOTSTRAP_SURFACE="phase commands"
+BOOTSTRAP_SURFACE="not-run"
 CLAUDE_PLUGIN_REGISTRY_SURFACE="not-run"
 CODEX_PLUGIN_REGISTRY_SURFACE="not-run"
 SCRIPT_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,9 +47,7 @@ agent-runtime binary), installs the profile-selected third-party CLI tools
 from manifests/cli-tools.yaml, clones agent-runtime-kit into
 \$HOME/.config/agent-runtime-kit when missing, renders the home prompts, and
 then uses
-\`agent-runtime bootstrap-host\` for the runtime surface bootstrap when the
-installed nils-cli surface provides it. Older nils-cli pins fall back to the
-manual render / install / prune-stale phase commands. It then delegates to
+\`agent-runtime bootstrap-host\` for the runtime surface bootstrap. It then delegates to
 \`scripts/sync-runtime-surfaces.sh\` to wire the home prompt links (the sole owner of
 that wiring) and activate the plugin registries and the
 \`agent-hook\`-owned provider hook ingress. The script finishes with
@@ -359,20 +357,8 @@ ensure_runtime_python() {
 }
 
 ensure_repo_clone() {
-  local origin_url=""
-
   if [ -d "$REPO_HOME_DEFAULT/.git" ]; then
     log "agent-runtime-kit already cloned at $REPO_HOME_DEFAULT"
-    origin_url="$(git -C "$REPO_HOME_DEFAULT" config --get remote.origin.url 2>/dev/null || true)"
-    case "$origin_url" in
-      https://github.com/graysurf/agent-runtime-kit | \
-        https://github.com/graysurf/agent-runtime-kit.git | \
-        git@github.com:graysurf/agent-runtime-kit | \
-        git@github.com:graysurf/agent-runtime-kit.git)
-        log "migrating agent-runtime-kit origin from graysurf to sympoies"
-        run_cmd git -C "$REPO_HOME_DEFAULT" remote set-url origin "$REPO_REMOTE_DEFAULT"
-        ;;
-    esac
     return 0
   fi
   if [ -e "$REPO_HOME_DEFAULT" ]; then
@@ -434,13 +420,6 @@ render_home_prompts() {
     --product claude
 }
 
-bootstrap_host_available() {
-  if ! command -v agent-runtime >/dev/null 2>&1; then
-    return 1
-  fi
-  agent-runtime bootstrap-host --help >/dev/null 2>&1
-}
-
 run_bootstrap_host() {
   local mode_flag="--apply"
   if [ "$DRY_RUN" = "1" ]; then
@@ -457,64 +436,8 @@ run_bootstrap_host() {
     "$mode_flag"
 }
 
-activate_products() {
-  local product
-  local live_home
-  local state_home
-  local mode_flag="--apply"
-  if [ "$DRY_RUN" = "1" ]; then
-    mode_flag="--dry-run"
-  fi
-  for product in claude codex; do
-    live_home="$(product_live_home "$product")"
-    state_home="$(product_state_home "$product")"
-    run_cmd agent-runtime install \
-      --source-root "$REPO_HOME_DEFAULT" \
-      --product "$product" \
-      --live-home "$live_home" \
-      --state-home "$state_home" \
-      "$mode_flag"
-  done
-}
-
-prune_products() {
-  local product
-  local live_home
-  local mode_flag="--apply"
-  if [ "$DRY_RUN" = "1" ]; then
-    mode_flag="--dry-run"
-  fi
-  for product in claude codex; do
-    live_home="$(product_live_home "$product")"
-    run_cmd agent-runtime prune-stale \
-      --source-root "$REPO_HOME_DEFAULT" \
-      --product "$product" \
-      --live-home "$live_home" \
-      "$mode_flag"
-  done
-}
-
-render_products() {
-  local product
-  for product in codex claude; do
-    log "rendering product=$product"
-    run_cmd agent-runtime render \
-      --source-root "$REPO_HOME_DEFAULT" \
-      --product "$product"
-  done
-}
-
 run_surface_bootstrap() {
-  if bootstrap_host_available; then
-    run_bootstrap_host
-    return 0
-  fi
-
-  BOOTSTRAP_SURFACE="phase commands"
-  warn "agent-runtime bootstrap-host is unavailable; using render/install/prune fallback"
-  render_products
-  activate_products
-  prune_products
+  run_bootstrap_host
 }
 
 sync_claude_plugin_registry_activation() {

@@ -111,8 +111,8 @@ inventory. Track repo-scoped third-party license obligations in
 
 | Tool | Purpose | Use when | Avoid because this exists |
 | ---- | ------- | -------- | ------------------------- |
-| `agent-browser` (via `skills/tools/browser/agent-browser/scripts/agent-browser.sh`) | Optional legacy browser automation CLI fallback | Native Browser/Chrome tools are unavailable or insufficient and the task specifically benefits from `snapshot -i` plus `@ref` interactions | Starting with CLI browser automation for simple public web lookup |
-| `playwright` (via `skills/tools/browser/playwright/scripts/playwright_cli.sh`) | Deterministic browser automation for verification | Replaying browser steps with traceable artifacts and reproducible validation checks | Treating exploratory browser findings as final without deterministic replay |
+| `agent-browser` | Optional legacy browser automation CLI fallback | Native Browser/Chrome tools are unavailable or insufficient and the task specifically benefits from `snapshot -i` plus `@ref` interactions | Starting with CLI browser automation for simple public web lookup |
+| `playwright` | Deterministic browser automation for verification | Replaying browser steps with traceable artifacts and reproducible validation checks | Treating exploratory browser findings as final without deterministic replay |
 
 ---
 
