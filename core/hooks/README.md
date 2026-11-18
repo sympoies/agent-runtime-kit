@@ -30,9 +30,12 @@ than this shared default. Avoid embedding sensitive values in path names.
 For a structure-only view, run the helper in the selected product's hooks
 directory, for example <code>$HOME/.codex/hooks/secret&#45;structure &lt;file&gt;</code>.
 It prints the line count and recognized assignment keys or known directive names, omitting
-values and unrecognized lines. It treats the left side of an assignment as a
+values. It treats the left side of an assignment as a
 key, so use it only on structured configuration files whose key names are not
 themselves sensitive. Error messages do not include the filename or contents.
+When a line is unrecognized or could contain multiline or embedded values, the
+helper emits only the line count and a generic suppression notice instead of any
+names, including names seen before that line.
 
 ## Provider and Git command guards
 

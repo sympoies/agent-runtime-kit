@@ -55,17 +55,16 @@ class BlockHooksTests(HookTestCase):
     def test_secret_structure_outputs_names_and_counts_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fixture = Path(tmp) / "synthetic.env"
-            fixture.write_text("TOKEN=fake-value\nMODE=other-fake-value\nPrivateKey fake-private-value\nfake-unstructured-value\n", encoding="utf-8")
+            fixture.write_text("TOKEN=fake-value\nMODE=other-fake-value\nPrivateKey fake-private-value\n", encoding="utf-8")
             helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
             result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("TOKEN", result.stdout)
             self.assertIn("MODE", result.stdout)
             self.assertIn("PrivateKey", result.stdout)
-            self.assertIn("4", result.stdout)
+            self.assertIn("3", result.stdout)
             self.assertNotIn("fake-value", result.stdout + result.stderr)
             self.assertNotIn("fake-private-value", result.stdout + result.stderr)
-            self.assertNotIn("fake-unstructured-value", result.stdout + result.stderr)
 
     def test_sensitive_read_guard_default_patterns_and_nested_shell(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -119,7 +118,8 @@ class BlockHooksTests(HookTestCase):
             helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
             result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("TOKEN", result.stdout)
+            self.assertIn("structure suppressed: uncertain construct", result.stdout)
+            self.assertNotIn("TOKEN", result.stdout)
             for fragment in ("ListenPort", "SYNTHETIC_VALUE_FRAGMENT", "SYNTHETIC_SINGLE_FRAGMENT", "SYNTHETIC_DIRECTIVE_FRAGMENT", "SYNTHETIC_BLOCK_FRAGMENT", "SYNTHETIC_JSON_FRAGMENT", "SYNTHETIC_CONTINUATION_FRAGMENT", "SYNTHETIC_INLINE_FRAGMENT", "U1lOVEhFVElDX1ZBTFVF"):
                 self.assertNotIn(fragment, result.stdout + result.stderr)
 
@@ -136,6 +136,53 @@ class BlockHooksTests(HookTestCase):
                     )
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, "secret-structure")
+
+    def test_secret_structure_omits_heredoc_value_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            fixture.write_text("TOKEN=$(cat <<'EOF'\nSYNTHETIC_FRAGMENT=hidden\nEOF\n)\nAFTER=ok\n", encoding="utf-8")
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("structure suppressed: uncertain construct", result.stdout)
+            self.assertNotIn("TOKEN", result.stdout)
+            self.assertNotIn("AFTER", result.stdout)
+            self.assertNotIn("SYNTHETIC_FRAGMENT", result.stdout + result.stderr)
+
+    def test_secret_structure_fails_closed_on_uncertain_constructs(self) -> None:
+        cases = {
+            "quoted delimiter": "TOKEN=$(cat <<'EOF'\nSYNTHETIC_FRAGMENT=hidden\nEOF\n)\nAFTER=ok\n",
+            "unquoted delimiter": "TOKEN=$(cat <<EOF\nSYNTHETIC_FRAGMENT=hidden\nEOF\n)\nAFTER=ok\n",
+            "tab-stripping delimiter": "TOKEN=$(cat <<-EOF\n\tSYNTHETIC_FRAGMENT=hidden\n\tEOF\n)\nAFTER=ok\n",
+            "nested substitution": "TOKEN=$(echo $(cat <<EOF\nSYNTHETIC_FRAGMENT=hidden\nEOF\n))\nAFTER=ok\n",
+            "heredoc in function": "read_value() {\ncat <<EOF\nSYNTHETIC_FRAGMENT=hidden\nEOF\n}\nAFTER=ok\n",
+            "here-string": "TOKEN=$(cat <<< value)\nAFTER=ok\n",
+            "multiline substitution": "TOKEN=$(echo\nSYNTHETIC_FRAGMENT=hidden\n)\nAFTER=ok\n",
+            "backtick substitution": "TOKEN=`echo\nSYNTHETIC_FRAGMENT=hidden\n`\nAFTER=ok\n",
+            "process substitution": "TOKEN=<(echo\nSYNTHETIC_FRAGMENT=hidden\n)\nAFTER=ok\n",
+            "shell array": "TOKEN=(\nSYNTHETIC_FRAGMENT=hidden\n)\nAFTER=ok\n",
+            "unknown opener": "unknown construct\nSYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "yaml block": "TOKEN: |\n  SYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "yaml plain continuation": "TOKEN: first\n  SYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "yaml tagged block": "TOKEN: !!str |\n  SYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "toml multiline": 'TOKEN = """first\nSYNTHETIC_FRAGMENT=hidden\nlast"""\nAFTER=ok\n',
+            "toml literal multiline": "TOKEN = '''first\nSYNTHETIC_FRAGMENT=hidden\nlast'''\nAFTER=ok\n",
+            "json multiline": '{\n"TOKEN": "value",\n"SYNTHETIC_FRAGMENT": "hidden"\n}\n',
+            "escaped quote": 'TOKEN="one\\"two"\nAFTER=ok\n',
+            "inline block": '<auth-user-pass>\nSYNTHETIC_FRAGMENT=hidden\n</auth-user-pass>\nAFTER=ok\n',
+            "unterminated quote": 'TOKEN="first\nSYNTHETIC_FRAGMENT=hidden\n',
+            "continuation": "TOKEN=first\\\nSYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            for name, contents in cases.items():
+                with self.subTest(name=name):
+                    fixture.write_text(contents, encoding="utf-8")
+                    result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(), [f"lines: {len(contents.splitlines())}", "structure suppressed: uncertain construct"])
+                    self.assertNotIn("SYNTHETIC_FRAGMENT", result.stdout + result.stderr)
 
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
