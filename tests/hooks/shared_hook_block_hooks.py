@@ -104,6 +104,39 @@ class BlockHooksTests(HookTestCase):
                     self.assertEqual(code, 0, stderr)
                     self.assert_blocked(decision, str(Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"))
 
+    def test_secret_structure_omits_multiline_quoted_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            fixture.write_text(
+                'TOKEN="first\nSYNTHETIC_VALUE_FRAGMENT=remaining-value\nListenPort fake-directive-value\nlast"\n'
+                "MODE='first\nSYNTHETIC_SINGLE_FRAGMENT=remaining-value\nlast'\n"
+                'PrivateKey "first\nSYNTHETIC_DIRECTIVE_FRAGMENT=remaining-value\nlast"\n'
+                'DATA="\nU1lOVEhFVElDX1ZBTFVF==\n"\n'
+                'BLOCK: |\n  SYNTHETIC_BLOCK_FRAGMENT=remaining-value\nEND=done\n'
+                '"json-key": "first\nSYNTHETIC_JSON_FRAGMENT=remaining-value\nlast"\n'
+                'CONTINUED=first\\\nSYNTHETIC_CONTINUATION_FRAGMENT=remaining-value\n'
+                '<auth-user-pass>\nSYNTHETIC_INLINE_FRAGMENT=remaining-value\n</auth-user-pass>\n', encoding="utf-8")
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("TOKEN", result.stdout)
+            for fragment in ("ListenPort", "SYNTHETIC_VALUE_FRAGMENT", "SYNTHETIC_SINGLE_FRAGMENT", "SYNTHETIC_DIRECTIVE_FRAGMENT", "SYNTHETIC_BLOCK_FRAGMENT", "SYNTHETIC_JSON_FRAGMENT", "SYNTHETIC_CONTINUATION_FRAGMENT", "SYNTHETIC_INLINE_FRAGMENT", "U1lOVEhFVElDX1ZBTFVF"):
+                self.assertNotIn(fragment, result.stdout + result.stderr)
+
+    def test_sensitive_read_guard_matches_dash_prefixed_file_after_options(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "-secret.env").write_text("TOKEN=fake-value\n", encoding="utf-8")
+            for env in ({}, {"AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS": str(root / "*.env")}):
+                with self.subTest(configured=bool(env)):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload("cat -- -secret.env"),
+                        cwd=root, env=env,
+                        unset_env=() if env else ("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "secret-structure")
+
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (
             (

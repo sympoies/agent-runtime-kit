@@ -65,7 +65,14 @@ def main() -> int:
             continue
         if not invocation or Path(invocation[0]).name not in READERS:
             continue
-        if any(matches_path(arg, cwd, patterns) for arg in invocation[1:] if not arg.startswith("-")):
+        operands = []
+        end_options = False
+        for arg in invocation[1:]:
+            if arg == "--" and not end_options:
+                end_options = True
+            elif end_options or not arg.startswith("-"):
+                operands.append(arg)
+        if any(matches_path(arg, cwd, patterns) for arg in operands):
             helper = shlex.quote(str(Path(__file__).with_name("secret-structure")))
             emit_block(f"Sensitive file read blocked. Use {helper} <file> to inspect names and line counts, or grep -c for counts.")
             return ALLOW
