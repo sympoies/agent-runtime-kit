@@ -8,10 +8,181 @@ from shared_hook_helpers import (
     run_hook,
     shlex,
     tempfile,
+    subprocess,
 )
 
 
 class BlockHooksTests(HookTestCase):
+
+    def test_sensitive_read_guard_commands_and_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sensitive = root / "sample.env"
+            ordinary = root / "ordinary.txt"
+            sensitive.write_text("TOKEN=fake-value\n", encoding="utf-8")
+            ordinary.write_text("example\n", encoding="utf-8")
+            env = {"AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS": str(root / "*.env")}
+            readers = ("cat", "awk '{print $1}'", "sed -n p", "head", "tail", "less", "bat")
+            for reader in readers:
+                with self.subTest(reader=reader):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py",
+                        command_payload(f"{reader} {shlex.quote(str(sensitive))}"),
+                        cwd=root, env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "secret-structure")
+                    self.assertNotIn("fake-value", str(decision))
+            for command in (
+                f"grep -c TOKEN {shlex.quote(str(sensitive))}",
+                f"secret-structure {shlex.quote(str(sensitive))}",
+                f"cat {shlex.quote(str(ordinary))}",
+            ):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload(command),
+                        cwd=root, env=env,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_allowed(decision)
+            code, decision, stderr = run_hook(
+                "block-sensitive-file-reads.py", command_payload(f"cat {shlex.quote(str(sensitive))}"),
+                cwd=root, env={"AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS": str(ordinary)},
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assert_allowed(decision)
+
+    def test_secret_structure_outputs_names_and_counts_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            fixture.write_text("TOKEN=fake-value\nMODE=other-fake-value\nPrivateKey fake-private-value\n", encoding="utf-8")
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("TOKEN", result.stdout)
+            self.assertIn("MODE", result.stdout)
+            self.assertIn("PrivateKey", result.stdout)
+            self.assertIn("3", result.stdout)
+            self.assertNotIn("fake-value", result.stdout + result.stderr)
+            self.assertNotIn("fake-private-value", result.stdout + result.stderr)
+
+    def test_sensitive_read_guard_default_patterns_and_nested_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("sample.env", "sample.enc.txt", ".ssh/config"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("VALUE=fake\n", encoding="utf-8")
+                command = f"bash -c {shlex.quote('cat ' + shlex.quote(str(path)))}"
+                with self.subTest(name=name):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload(command),
+                        cwd=root, env={"HOME": str(root)},
+                        unset_env=("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "secret-structure")
+
+    def test_sensitive_read_guard_resolves_shell_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            protected = root / ".ssh"
+            protected.mkdir()
+            (protected / "config").write_text("Key=fake-value\n", encoding="utf-8")
+            (root / "alias").symlink_to(protected / "config")
+            for command in ('cat "$HOME/.ssh/config"',
+                            f"cd {shlex.quote(str(protected))} && cat config",
+                            f"cd -- {shlex.quote(str(protected))} && cat config",
+                            f"cd -P {shlex.quote(str(protected))} && cat config",
+                            f"cat {shlex.quote(str(root / 'alias'))}"):
+                with self.subTest(command=command):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload(command), cwd=root,
+                        env={"HOME": str(root)}, unset_env=("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, str(Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"))
+
+    def test_secret_structure_omits_multiline_quoted_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            fixture.write_text(
+                'TOKEN="first\nSYNTHETIC_VALUE_FRAGMENT=remaining-value\nListenPort fake-directive-value\nlast"\n'
+                "MODE='first\nSYNTHETIC_SINGLE_FRAGMENT=remaining-value\nlast'\n"
+                'PrivateKey "first\nSYNTHETIC_DIRECTIVE_FRAGMENT=remaining-value\nlast"\n'
+                'DATA="\nU1lOVEhFVElDX1ZBTFVF==\n"\n'
+                'BLOCK: |\n  SYNTHETIC_BLOCK_FRAGMENT=remaining-value\nEND=done\n'
+                '"json-key": "first\nSYNTHETIC_JSON_FRAGMENT=remaining-value\nlast"\n'
+                'CONTINUED=first\\\nSYNTHETIC_CONTINUATION_FRAGMENT=remaining-value\n'
+                '<auth-user-pass>\nSYNTHETIC_INLINE_FRAGMENT=remaining-value\n</auth-user-pass>\n', encoding="utf-8")
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("structure suppressed: uncertain construct", result.stdout)
+            self.assertNotIn("TOKEN", result.stdout)
+            for fragment in ("ListenPort", "SYNTHETIC_VALUE_FRAGMENT", "SYNTHETIC_SINGLE_FRAGMENT", "SYNTHETIC_DIRECTIVE_FRAGMENT", "SYNTHETIC_BLOCK_FRAGMENT", "SYNTHETIC_JSON_FRAGMENT", "SYNTHETIC_CONTINUATION_FRAGMENT", "SYNTHETIC_INLINE_FRAGMENT", "U1lOVEhFVElDX1ZBTFVF"):
+                self.assertNotIn(fragment, result.stdout + result.stderr)
+
+    def test_sensitive_read_guard_matches_dash_prefixed_file_after_options(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "-secret.env").write_text("TOKEN=fake-value\n", encoding="utf-8")
+            for env in ({}, {"AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS": str(root / "*.env")}):
+                with self.subTest(configured=bool(env)):
+                    code, decision, stderr = run_hook(
+                        "block-sensitive-file-reads.py", command_payload("cat -- -secret.env"),
+                        cwd=root, env=env,
+                        unset_env=() if env else ("AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS",),
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, "secret-structure")
+
+    def test_secret_structure_omits_heredoc_value_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            fixture.write_text("TOKEN=$(cat <<'EOF'\nSYNTHETIC_FRAGMENT=hidden\nEOF\n)\nAFTER=ok\n", encoding="utf-8")
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("structure suppressed: uncertain construct", result.stdout)
+            self.assertNotIn("TOKEN", result.stdout)
+            self.assertNotIn("AFTER", result.stdout)
+            self.assertNotIn("SYNTHETIC_FRAGMENT", result.stdout + result.stderr)
+
+    def test_secret_structure_fails_closed_on_uncertain_constructs(self) -> None:
+        cases = {
+            "quoted delimiter": "TOKEN=$(cat <<'EOF'\nSYNTHETIC_FRAGMENT=hidden\nEOF\n)\nAFTER=ok\n",
+            "unquoted delimiter": "TOKEN=$(cat <<EOF\nSYNTHETIC_FRAGMENT=hidden\nEOF\n)\nAFTER=ok\n",
+            "tab-stripping delimiter": "TOKEN=$(cat <<-EOF\n\tSYNTHETIC_FRAGMENT=hidden\n\tEOF\n)\nAFTER=ok\n",
+            "nested substitution": "TOKEN=$(echo $(cat <<EOF\nSYNTHETIC_FRAGMENT=hidden\nEOF\n))\nAFTER=ok\n",
+            "heredoc in function": "read_value() {\ncat <<EOF\nSYNTHETIC_FRAGMENT=hidden\nEOF\n}\nAFTER=ok\n",
+            "here-string": "TOKEN=$(cat <<< value)\nAFTER=ok\n",
+            "multiline substitution": "TOKEN=$(echo\nSYNTHETIC_FRAGMENT=hidden\n)\nAFTER=ok\n",
+            "backtick substitution": "TOKEN=`echo\nSYNTHETIC_FRAGMENT=hidden\n`\nAFTER=ok\n",
+            "process substitution": "TOKEN=<(echo\nSYNTHETIC_FRAGMENT=hidden\n)\nAFTER=ok\n",
+            "shell array": "TOKEN=(\nSYNTHETIC_FRAGMENT=hidden\n)\nAFTER=ok\n",
+            "unknown opener": "unknown construct\nSYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "yaml block": "TOKEN: |\n  SYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "yaml plain continuation": "TOKEN: first\n  SYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "yaml tagged block": "TOKEN: !!str |\n  SYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+            "toml multiline": 'TOKEN = """first\nSYNTHETIC_FRAGMENT=hidden\nlast"""\nAFTER=ok\n',
+            "toml literal multiline": "TOKEN = '''first\nSYNTHETIC_FRAGMENT=hidden\nlast'''\nAFTER=ok\n",
+            "json multiline": '{\n"TOKEN": "value",\n"SYNTHETIC_FRAGMENT": "hidden"\n}\n',
+            "escaped quote": 'TOKEN="one\\"two"\nAFTER=ok\n',
+            "inline block": '<auth-user-pass>\nSYNTHETIC_FRAGMENT=hidden\n</auth-user-pass>\nAFTER=ok\n',
+            "unterminated quote": 'TOKEN="first\nSYNTHETIC_FRAGMENT=hidden\n',
+            "continuation": "TOKEN=first\\\nSYNTHETIC_FRAGMENT=hidden\nAFTER=ok\n",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "synthetic.env"
+            helper = Path(__file__).resolve().parents[2] / "core/hooks/shared/secret-structure"
+            for name, contents in cases.items():
+                with self.subTest(name=name):
+                    fixture.write_text(contents, encoding="utf-8")
+                    result = subprocess.run([str(helper), str(fixture)], text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(), [f"lines: {len(contents.splitlines())}", "structure suppressed: uncertain construct"])
+                    self.assertNotIn("SYNTHETIC_FRAGMENT", result.stdout + result.stderr)
 
     def test_block_hooks_descend_into_nested_shell_wrappers(self) -> None:
         cases = (

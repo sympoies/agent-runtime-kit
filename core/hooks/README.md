@@ -8,6 +8,35 @@ The shared scripts accept neutral `AGENT_RUNTIME_*` environment variables. Do
 not fork a hook per product unless the payload protocol or runtime harness
 requires different behavior.
 
+## Sensitive file inspection
+
+`block-sensitive-file-reads.py` is a standalone PreToolUse handler. It is not
+registered in the installed policy yet; registration requires an `agent-hook`
+release that recognizes its handler ID. Until then it does not block tool calls.
+The handler refuses common value-printing readers (`cat`, `awk`, `sed`, `head`,
+`tail`, `less`, and `bat`) when an argument matches a sensitive path pattern.
+It does not read file contents or include paths in its diagnostic. Other tools,
+including `grep -c`, are outside this narrow command guard. This is not a
+general shell sandbox: dynamic shell expressions and other ways of reading
+files require the caller's usual care.
+
+By default the patterns are `*.env`, `*.enc.*`, and `~/.ssh/*`. Set
+`AGENT_RUNTIME_SENSITIVE_PATH_PATTERNS` in the deployment environment to a
+newline-separated replacement list; patterns use shell-style wildcards against
+absolute paths, and `~` expands to the deployment user's home. An empty list
+disables matching. Add deployment-specific paths through configuration rather
+than this shared default. Avoid embedding sensitive values in path names.
+
+For a structure-only view, run the helper in the selected product's hooks
+directory, for example <code>$HOME/.codex/hooks/secret&#45;structure &lt;file&gt;</code>.
+It prints the line count and recognized assignment keys or known directive names, omitting
+values. It treats the left side of an assignment as a
+key, so use it only on structured configuration files whose key names are not
+themselves sensitive. Error messages do not include the filename or contents.
+When a line is unrecognized or could contain multiline or embedded values, the
+helper emits only the line count and a generic suppression notice instead of any
+names, including names seen before that line.
+
 ## Provider and Git command guards
 
 `block-direct-pr-create.py` refuses raw GitHub writes in Codex and Claude agent
