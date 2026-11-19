@@ -18,9 +18,11 @@ per-session symlink in an unpredictable private system temporary directory;
 file contents still reside under `AGENT_HOME`. The launcher uses
 `/tmp/ark-<random-32-hex>/t`, independent of `TMPDIR`, and stores the token in
 `.agent-session-short` inside the backing directory. The token remains stable
-across relaunches; the owner recreates the short directory if `/tmp` is cleared
-and removes it during session reclamation. Sandbox write allowlists must cover
-both the short link and its resolved backing path under `AGENT_HOME`.
+across relaunches while the backing directory is retained; backing reclamation
+removes it, and a later launch creates a new token. The owner recreates the
+short directory if `/tmp` is cleared and removes it during session reclamation.
+Sandbox write allowlists must cover both the short link and its resolved backing
+path under `AGENT_HOME`.
 
 ## Classes
 
