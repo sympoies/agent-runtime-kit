@@ -68,25 +68,56 @@ done
 exit 127"""
 
 
+# nils-cli v1.41.9 adds resolved-directory ownership checks. Keep both exact
+# programs because the supported v1.40.5 baseline emits the earlier one.
+DIRECTORY_GUARD = """directory_policy() {
+  [ "$#" -eq 2 ] || return 1
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  case "$2" in ''|*[!0-7]*) return 1 ;; esac
+  { [ "$1" = "$caller_uid" ] || [ "$1" = 0 ]; } && [ "$((0$2 & 022))" -eq 0 ]
+}
+directory_controlled() {
+  directory=${1%/*}
+  [ -d "$directory" ] || return 1
+  # GNU stat on Linux; BSD stat on macOS. Both report numeric UID and octal mode.
+  metadata=$(/usr/bin/stat -c '%u %a' "$directory" 2>/dev/null) || metadata=$(/usr/bin/stat -f '%u %Lp' "$directory" 2>/dev/null) || return 1
+  directory_ifs=$IFS; IFS=' '; set -- $metadata; IFS=$directory_ifs
+  directory_policy "$@"
+}
+caller_uid=$(/usr/bin/id -u) || { exit 127; }
+"""
+CURRENT_SELECTOR = SELECTOR.replace("configured=${AGENT_SESSION_BIN:-}", DIRECTORY_GUARD + "configured=${AGENT_SESSION_BIN:-}").replace(
+    '[ -f "$selected" ] && [ -x "$selected" ] && exec "$selected" "$@"',
+    '[ -f "$selected_real" ] && [ -x "$selected_real" ] && directory_controlled "$selected_real" && exec "$selected_real" "$@"',
+).replace(
+    'if [ -f "$selected" ] && [ -x "$selected" ] && { [ -n "$configured_roots" ] || trusted_default "$selected" "$root"; }; then IFS=$old_ifs; exec "$selected" "$@"',
+    'if selected_real=$(resolve "$selected") && [ -f "$selected_real" ] && [ -x "$selected_real" ] && directory_controlled "$selected_real" && { [ -n "$configured_roots" ] || trusted_default "$selected" "$root"; }; then IFS=$old_ifs; exec "$selected_real" "$@"',
+)
+
+
 def selector(executable: str) -> str:
-    return SELECTOR.replace("{executable}", executable)
+    return CURRENT_SELECTOR.replace("{executable}", executable)
+
+
+def selectors(executable: str) -> tuple[str, str]:
+    return (selector(executable), SELECTOR.replace("{executable}", executable))
 
 
 def is_owned_dispatch(command: str, product: str) -> bool:
     # Supported nils-cli v1.36.21 through v1.40.10 use the bare command.
     if command == f"agent-hook dispatch --product {product}":
         return True
-    return shlex.split(command) == [
-        "/bin/sh", "-c", selector("agent-hook"), "provider-entrypoint",
+    return any(shlex.split(command) == [
+        "/bin/sh", "-c", program, "provider-entrypoint",
         "dispatch", "--product", product,
-    ]
+    ] for program in selectors("agent-hook"))
 
 
 def is_owned_notify(argv: list[str]) -> bool:
-    return argv == [
-        "/bin/sh", "-c", selector("agent-session"), "provider-entrypoint",
+    return any(argv == [
+        "/bin/sh", "-c", program, "provider-entrypoint",
         "activity", "notify", "--agent", "codex",
-    ]
+    ] for program in selectors("agent-session"))
 
 
 def read_json(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
