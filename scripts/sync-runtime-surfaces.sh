@@ -27,6 +27,8 @@ CODEX_PROMPT_STATUS="not-run"
 HOME_PROMPT_STATUS="not-run"
 CLAUDE_PLUGIN_STATUS="not-run"
 CODEX_PLUGIN_STATUS="not-run"
+CODEX_NOTICE_EXECUTABLE=""
+readonly CODEX_NOTICE_KEY="notice.hide_rate_limit_model_nudge"
 PRUNE_SKIPPED_TOTAL=0
 PRUNE_LAST_SKIPPED=0
 CLAUDE_PLUGIN_PREFLIGHT_DONE=0
@@ -2947,10 +2949,23 @@ EOF_CODEX_PLUGINS
   log "codex plugin registry ${CODEX_PLUGIN_STATUS}: marketplace=$marketplace source=$materialized_home plugins=$plugin_count refreshed=$refresh_count"
 }
 
+preflight_codex_notice_setter() {
+  local executable help
+  if executable="$(type -P codex-cli)" &&
+    help="$("$executable" config set --help 2>/dev/null)" &&
+    [[ "$help" == *--persist* && "$help" == *"$CODEX_NOTICE_KEY"* ]]; then
+    CODEX_NOTICE_EXECUTABLE="$executable"
+  else
+    CODEX_NOTICE_EXECUTABLE=""
+    warn "Codex rate-limit picker preference skipped: upgrade codex-cli on PATH to nils-cli v1.42.1 or newer (brew upgrade sympoies/tap/nils-cli)."
+  fi
+}
+
 sync_product_activation() {
   local product="$1"
   local live_home
   local state_home
+  local notice_cli
 
   case "$product" in
     claude)
@@ -2971,7 +2986,13 @@ sync_product_activation() {
         install_product "$product" || return $?
       fi
       sync_agent_hook_setup "$product" || return $?
-      run_cmd env "CODEX_HOME=$live_home" codex-cli config set notice.hide_rate_limit_model_nudge true --persist
+      notice_cli="$CODEX_NOTICE_EXECUTABLE"
+      if [ "$APPLY" = "0" ]; then
+        notice_cli=codex-cli
+      fi
+      if [ -n "$notice_cli" ]; then
+        run_cmd env "CODEX_HOME=$live_home" "$notice_cli" config set "$CODEX_NOTICE_KEY" true --persist
+      fi
       ;;
     hermes)
       log "hermes: no plugin registry to sync; runtime-kit skills are linked under ~/.hermes/external-skills/agent-runtime-kit/"
@@ -4862,6 +4883,9 @@ main() {
     require_commands agent-runtime "$AGENT_HOOK_EXECUTABLE"
     if ! verify_nils_cli_version_alignment; then
       return 1
+    fi
+    if [ "$AGENT_HOOK_REMOVE" = "0" ] && selected_includes_codex; then
+      preflight_codex_notice_setter
     fi
   fi
 

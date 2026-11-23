@@ -732,6 +732,11 @@ SH
   cat >"$stub_bin/codex-cli" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ $# -eq 3 && $1 == config && $2 == set && $3 == --help ]]; then
+  printf 'notice setter capability\n' >>"$CODEX_STUB_LOG"
+  printf '%s\n' '--persist  Save model or notice.hide_rate_limit_model_nudge to its config file'
+  exit 0
+fi
 [[ $# -eq 5 && $1 == config && $2 == set &&
   $3 == notice.hide_rate_limit_model_nudge && $4 == true && $5 == --persist ]]
 printf 'notice setter home=%s\n' "$CODEX_HOME" >>"$CODEX_STUB_LOG"
@@ -783,6 +788,7 @@ SH
   grep -q "expected $state_home/home-policy/AGENT_HOME.md" "$former_out"
   assert_symlink_target "$codex_home/AGENTS.md" "$previous_source_root/build/codex/AGENT_HOME.md"
   rm -f "$codex_home/AGENTS.md"
+  : >"$stub_log"
 
   (
     cd "$REPO_ROOT"
@@ -804,6 +810,7 @@ SH
   grep -q "codex plugin registry installed: marketplace=codex-kit" "$out"
   grep -q "plugin marketplace add $state_home/plugin-marketplaces/codex-kit" "$stub_log"
   grep -q "plugin add meta@codex-kit" "$stub_log"
+  [ "$(head -n 1 "$stub_log")" = "notice setter capability" ]
   grep -Fxq "notice setter home=$codex_home" "$stub_log"
 
   set +e
@@ -3483,7 +3490,6 @@ run_sync_runtime_surfaces_codex_hook_order_probe() {
       SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
       product_live_home() { printf '%s\n' "$TMP_ROOT/codex-hook-order"; }
       product_state_home() { printf '%s\n' "$TMP_ROOT/codex-hook-state"; }
-      run_cmd() { :; }
       # shellcheck disable=SC2034 # Read by the sourced sync implementation.
       APPLY=1
       hook_state=converged

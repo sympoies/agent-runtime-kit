@@ -162,6 +162,11 @@ class CodexNoticeActivationTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 
+if sys.argv[1:] == ["config", "set", "--help"]:
+    assert not Path(os.environ["HOOK_HOME"]).exists(), "capability checked after hook setup"
+    print("--persist  Save model or notice.hide_rate_limit_model_nudge to its config file")
+    sys.exit(0)
+
 home = os.environ["CODEX_HOME"]
 assert Path(os.environ["HOOK_HOME"]).read_text() == home, "setter ran before hook setup"
 with open(os.environ["PRODUCER_CALLS"], "a") as log:
@@ -183,8 +188,11 @@ if os.environ["FAIL_SETTER"] == "1":
             "RELEASED_CODEX_CLI": self.producer,
         }
 
-    def activate(self, home=None, *, apply=True, product="codex", fail=False):
+    def activate(self, home=None, *, apply=True, product="codex", fail=False, real=False):
         env = dict(self.env, FAIL_SETTER=str(int(fail)))
+        self.hook_home.unlink(missing_ok=True)
+        if real:
+            env["PATH"] = os.environ["PATH"]
         if home is not None:
             env["CODEX_HOME"] = str(home)
         return subprocess.run(
@@ -197,6 +205,9 @@ install_product() { :; }
 sync_agent_hook_setup() { printf '%s' "$(product_live_home "$1")" > "$HOOK_HOME"; }
 sync_claude_settings_hooks() { :; }
 sync_claude_plugin_registry() { :; }
+if [ "$APPLY" = "1" ] && selected_includes_codex; then
+  preflight_codex_notice_setter
+fi
 for product in $(selected_products); do
   sync_product_activation "$product" || exit $?
 done
@@ -255,6 +266,32 @@ done
         self.assertIn("config.toml" if self.producer else "fixture setter refused config",
                       result.stderr)
         self.assertEqual(config.read_bytes(), original)
+
+    def test_released_producer_version_boundary(self):
+        binary = shutil.which("codex-cli")
+        self.assertIsNotNone(binary, "the release toolchain must include codex-cli")
+        version = subprocess.run(
+            [binary, "--version"], env={"PATH": os.environ["PATH"], "HOME": str(self.home)},
+            check=True, capture_output=True, text=True, timeout=10,
+        ).stdout.split()[1]
+        supported = tuple(int(part) for part in version.split(".")) >= (1, 42, 1)
+        config_home = self.root / "released codex"
+        config_home.mkdir()
+        config = config_home / "config.toml"
+        original = b"# keep this comment\n[notice]\nhide_rate_limit_model_nudge = false\n"
+        config.write_bytes(original)
+        expected = original.replace(b"false", b"true") if supported else original
+
+        for _ in range(2):
+            result = self.activate(config_home, real=True)
+            self.assertEqual(result.returncode, 0, f"{version}: {result.stderr}")
+            self.assertEqual(config.read_bytes(), expected)
+            if supported:
+                self.assertNotIn("preference skipped", result.stderr)
+            else:
+                self.assertIn("preference skipped", result.stderr)
+                self.assertIn("v1.42.1 or newer", result.stderr)
+                self.assertIn("upgrade", result.stderr)
 
 
 class CodexConfigGuardTests(unittest.TestCase):
