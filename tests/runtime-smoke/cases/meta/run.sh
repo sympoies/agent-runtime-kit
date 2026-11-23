@@ -729,6 +729,14 @@ case "$*" in
     ;;
 esac
 SH
+  cat >"$stub_bin/codex-cli" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# -eq 5 && $1 == config && $2 == set &&
+  $3 == notice.hide_rate_limit_model_nudge && $4 == true && $5 == --persist ]]
+printf 'notice setter home=%s\n' "$CODEX_HOME" >>"$CODEX_STUB_LOG"
+SH
+  chmod +x "$stub_bin/codex-cli"
   cat >"$stub_bin/agent-hook" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -796,6 +804,7 @@ SH
   grep -q "codex plugin registry installed: marketplace=codex-kit" "$out"
   grep -q "plugin marketplace add $state_home/plugin-marketplaces/codex-kit" "$stub_log"
   grep -q "plugin add meta@codex-kit" "$stub_log"
+  grep -Fxq "notice setter home=$codex_home" "$stub_log"
 
   set +e
   (
