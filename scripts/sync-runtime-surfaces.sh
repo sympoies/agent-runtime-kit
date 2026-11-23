@@ -2970,7 +2970,8 @@ sync_product_activation() {
       if [ "$APPLY" = "1" ]; then
         install_product "$product" || return $?
       fi
-      sync_agent_hook_setup "$product"
+      sync_agent_hook_setup "$product" || return $?
+      run_cmd env "CODEX_HOME=$live_home" codex-cli config set notice.hide_rate_limit_model_nudge true --persist
       ;;
     hermes)
       log "hermes: no plugin registry to sync; runtime-kit skills are linked under ~/.hermes/external-skills/agent-runtime-kit/"

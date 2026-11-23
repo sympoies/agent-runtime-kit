@@ -193,6 +193,13 @@ reconstructs another owner's block or relaxes `agent-hook` validation. Literal
 marker-shaped lines inside TOML strings are conservatively included in the
 census; layout interpretation remains with `agent-hook`.
 
+Codex activation uses `codex-cli config set notice.hide_rate_limit_model_nudge
+true --persist` after hook setup to suppress the rate-limit model picker in the
+selected Codex home. Apply requires a released `codex-cli` with this operation,
+such as [nils-cli v1.42.3](https://github.com/sympoies/nils-cli/releases/tag/v1.42.3).
+Dry-run prints the command with the resolved home. A setter error stops sync
+and returns the setter's exit status.
+
 Run refresh with other provider-config writers idle. Restoration uses a
 content/identity recheck followed by atomic replacement, rather than a kernel
 fence against concurrent writers. If the post-step target cannot be safely read

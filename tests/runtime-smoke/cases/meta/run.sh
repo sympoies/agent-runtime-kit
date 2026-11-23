@@ -3474,6 +3474,7 @@ run_sync_runtime_surfaces_codex_hook_order_probe() {
       SYNC_RUNTIME_SURFACES_LIB=1 . "$REPO_ROOT/scripts/sync-runtime-surfaces.sh"
       product_live_home() { printf '%s\n' "$TMP_ROOT/codex-hook-order"; }
       product_state_home() { printf '%s\n' "$TMP_ROOT/codex-hook-state"; }
+      run_cmd() { :; }
       # shellcheck disable=SC2034 # Read by the sourced sync implementation.
       APPLY=1
       hook_state=converged

@@ -146,6 +146,117 @@ sync_codex_plugin_registry "$CODEX_HOME" "$FIXTURE_STATE"
         self.assertFalse(list(self.codex_home.glob(".codex-config-snapshot.*")))
 
 
+class CodexNoticeActivationTests(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory(prefix="kit-notice-sync-test-")
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.calls = self.root / "calls.jsonl"
+        self.hook_home = self.root / "hook-home"
+        self.producer = os.environ.get("KIT_TEST_RELEASED_CODEX_CLI", "")
+        binary = self.root / "bin/codex-cli"
+        binary.parent.mkdir()
+        binary.write_text(r"""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+
+home = os.environ["CODEX_HOME"]
+assert Path(os.environ["HOOK_HOME"]).read_text() == home, "setter ran before hook setup"
+with open(os.environ["PRODUCER_CALLS"], "a") as log:
+    log.write(json.dumps([home, sys.argv[1:]]) + "\n")
+producer = os.environ["RELEASED_CODEX_CLI"]
+if producer:
+    os.execv(producer, [producer, *sys.argv[1:]])
+if os.environ["FAIL_SETTER"] == "1":
+    print("fixture setter refused config", file=sys.stderr)
+    sys.exit(1)
+""")
+        binary.chmod(0o700)
+        self.env = {
+            "PATH": str(binary.parent) + os.pathsep + os.environ["PATH"],
+            "HOME": str(self.home),
+            "TMPDIR": str(self.root),
+            "PRODUCER_CALLS": str(self.calls),
+            "HOOK_HOME": str(self.hook_home),
+            "RELEASED_CODEX_CLI": self.producer,
+        }
+
+    def activate(self, home=None, *, apply=True, product="codex", fail=False):
+        env = dict(self.env, FAIL_SETTER=str(int(fail)))
+        if home is not None:
+            env["CODEX_HOME"] = str(home)
+        return subprocess.run(
+            ["bash", "-c", """
+SYNC_RUNTIME_SURFACES_LIB=1 . "$1/scripts/sync-runtime-surfaces.sh"
+APPLY="$2"
+PRODUCT="$3"
+sync_codex_plugin_registry() { :; }
+install_product() { :; }
+sync_agent_hook_setup() { printf '%s' "$(product_live_home "$1")" > "$HOOK_HOME"; }
+sync_claude_settings_hooks() { :; }
+sync_claude_plugin_registry() { :; }
+for product in $(selected_products); do
+  sync_product_activation "$product" || exit $?
+done
+""", "fixture", str(ROOT), str(int(apply)), product],
+            env=env, cwd=self.root, text=True, capture_output=True, timeout=15,
+        )
+
+    def test_apply_calls_setter_once_per_selected_home_on_each_sync(self):
+        selected_paths = (self.root / "explicit codex", self.home / ".codex")
+        originals = (
+            b"# explicit home\nmodel = 'example'\n[notice] # keep\nhide_rate_limit_model_nudge  = false # keep\n",
+            b"# default home\n[features]\nexample = true\n",
+        )
+        expected = (
+            originals[0].replace(b" = false", b" = true"),
+            originals[1] + b"\n[notice]\nhide_rate_limit_model_nudge = true\n",
+        )
+        for path, original in zip(selected_paths, originals):
+            path.mkdir()
+            (path / "config.toml").write_bytes(original)
+
+        for selected, path, original, updated in zip(
+            (selected_paths[0], None), selected_paths, originals, expected,
+        ):
+            for _ in range(2):
+                result = self.activate(selected)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((path / "config.toml").read_bytes(),
+                                 updated if self.producer else original)
+
+        args = ["config", "set", "notice.hide_rate_limit_model_nudge", "true", "--persist"]
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+        self.assertEqual(calls, [[str(path), args] for path in selected_paths for _ in range(2)])
+
+    def test_dry_run_prints_setter_and_non_codex_sync_omits_it(self):
+        selected = self.root / "dry run codex"
+        result = self.activate(selected, apply=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("codex-cli config set notice.hide_rate_limit_model_nudge true --persist",
+                      result.stdout)
+        self.assertFalse(selected.exists())
+        for product in ("claude", "hermes"):
+            result = self.activate(selected, product=product)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("notice.hide_rate_limit_model_nudge", result.stdout)
+        self.assertFalse(self.calls.exists())
+
+    def test_apply_propagates_setter_failure_and_preserves_malformed_config(self):
+        selected = self.root / "malformed"
+        selected.mkdir()
+        config = selected / "config.toml"
+        original = b"[notice\nmodel ="
+        config.write_bytes(original)
+        result = self.activate(selected, fail=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("config.toml" if self.producer else "fixture setter refused config",
+                      result.stderr)
+        self.assertEqual(config.read_bytes(), original)
+
+
 class CodexConfigGuardTests(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory(prefix="kit-guard-test-")
