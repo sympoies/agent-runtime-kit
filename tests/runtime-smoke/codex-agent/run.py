@@ -139,15 +139,50 @@ class BoundaryAcceptance(unittest.TestCase):
 
         Since nils-cli v1.42.1 the launch also writes a notice-only
         config.toml; earlier releases, including the compatibility minimum,
-        write none. Nothing else is admitted, and a present config.toml must
-        hold exactly that notice.
+        write none. Nothing else is admitted. A present config.toml must be a
+        regular file, not a link or directory, holding exactly that notice with
+        a real boolean true (not an integer or float that merely equals it).
         """
         self.assertEqual([name for name in child['entries'] if name != 'config.toml'], credentials)
-        if 'config.toml' in child['entries']:
-            self.assertEqual(tomllib.loads(child['config']),
-                             {'notice': {'hide_rate_limit_model_nudge': True}})
-        else:
-            self.assertIsNone(child['config'])
+        if 'config.toml' not in child['entries']:
+            self.assertEqual(child['config_kind'], 'absent')
+            return
+        self.assertEqual(child['config_kind'], 'file')
+        config = tomllib.loads(child['config'])
+        self.assertEqual(list(config), ['notice'])
+        self.assertEqual(list(config['notice']), ['hide_rate_limit_model_nudge'])
+        self.assertIs(config['notice']['hide_rate_limit_model_nudge'], True)
+
+    def test_private_home_config_check_rejects_lookalikes(self):
+        exact = '[notice]\nhide_rate_limit_model_nudge = true\n'
+        outside = self.f.root / 'outside-config.toml'
+        outside.write_text(exact)
+        cases = [
+            ('exact notice', lambda path: path.write_text(exact), True),
+            ('no config', None, True),
+            ('integer one', lambda path: path.write_text(exact.replace('true', '1')), False),
+            ('float one', lambda path: path.write_text(exact.replace('true', '1.0')), False),
+            ('symlink to exact content', lambda path: path.symlink_to(outside), False),
+            ('directory', lambda path: path.mkdir(), False),
+            ('extra table', lambda path: path.write_text(exact + '[hooks]\n'), False),
+        ]
+        for index, (name, make, accepted) in enumerate(cases):
+            with self.subTest(name=name):
+                # The real stub records whatever home it is launched in.
+                home = self.f.root / f'probe-home-{index}'
+                home.mkdir(mode=0o700)
+                (home / 'auth.json').write_text(AUTH_SENTINEL)
+                if make:
+                    make(home / 'config.toml')
+                self.f.clear()
+                run([self.f.bin / 'codex', 'exec', 'probe'],
+                    dict(self.f.env, CODEX_HOME=str(home)), self.f.workspace)
+                child = self.child()
+                if accepted:
+                    self.assert_private_home_entries(child, ['auth.json'])
+                else:
+                    with self.assertRaises(AssertionError):
+                        self.assert_private_home_entries(child, ['auth.json'])
 
     def test_A1_default_home_argv_environment_and_cleanup(self):
         homes = []
