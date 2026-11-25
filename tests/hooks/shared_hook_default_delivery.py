@@ -22,6 +22,132 @@ from shared_hook_helpers import (
 
 class DefaultDeliveryTests(HookTestCase):
 
+    def test_default_delivery_classifies_loop_and_worktree_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            feature = self._add_checkout_lease_worktree(primary, "fix/delivery")
+            target = shlex.quote(str(feature))
+            commit = "semantic-commit commit --message 'fix(hooks): classify commands'"
+            stage = f"git -C {target} add -- README.md"
+            push = "git push origin HEAD:refs/heads/main"
+            for name, cwd, command, refusal in (
+                ("fixed loop executable", primary,
+                 'TOOL=./bin/tool; for i in a b; do $TOOL now update "$i"; done',
+                 ""),
+                ("literal worktree change", primary, f"cd {target} && {commit}", ""),
+                ("staging before commit", feature, f"{stage} && {commit}", ""),
+                ("staging before explicitly targeted commit", primary,
+                 f"{stage} && {commit} --repo {target}", ""),
+                ("case pattern in loop", primary,
+                 """until grep -qE '"state": "(succeeded|failed)"' result; do
+                       case "$state" in
+                         succeeded) break ;;
+                         *failed*|error) printf '%s\\n' "$state" ;;
+                       esac
+                     done""",
+                 ""),
+                ("default push control", primary, push, "[default-delivery: blocked]"),
+                ("push inside a case arm", primary,
+                 f'case "$state" in *failed*) {push} ;; esac',
+                 "[default-delivery: blocked]"),
+                ("push inside the second case", primary,
+                 'case "$first" in *done*) printf ok ;; esac; '
+                 f'case "$second" in *failed*) {push} ;; esac',
+                 "[default-delivery: blocked]"),
+                ("staging does not retarget the commit", primary,
+                 f"{stage} && {commit}", "rule=executable-resolution"),
+                ("explicit default repo still blocks", primary,
+                 f"cd {target} && {commit} --repo {shlex.quote(str(primary))}",
+                 "[default-delivery: blocked]"),
+                ("loop overwrites the binding", primary,
+                 "TOOL=./bin/tool; for TOOL in git; do $TOOL push origin main; done",
+                 "rule=opaque-executable"),
+                ("quoted case is not shell syntax", primary,
+                 "'case' state in; *failed*; esac", "rule=opaque-executable"),
+            ):
+                with self.subTest(name=name):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=cwd,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if refusal:
+                        self.assert_blocked(decision, refusal)
+                    else:
+                        self.assert_allowed(decision)
+
+    def test_default_delivery_restricted_lexer_keeps_quoted_forms_disjoint(self) -> None:
+        hook = self._load("default_delivery_quote_test", "block-unsafe-default-delivery.py")
+        self.addCleanup(sys.modules.pop, hook.__name__, None)
+        # Only literal and variable-only quotes are part of the restricted
+        # lexer. Mixed quoted words must go to the existing fallback parser.
+        for word in ('"plain text"', '"$STATE"'):
+            with self.subTest(word=word):
+                tokens = hook.static_shell_tokens(f"case {word} in")
+                self.assertEqual([token[0] for token in tokens], ["case", word, "in"])
+        self.assertEqual(hook.static_shell_tokens('case "status $STATE" in'), [])
+
+        # Quoting never makes default-branch publishing or authoring pass,
+        # whether the quoted word is inside the restricted lexer or not.
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            for name, command, refusal in (
+                ("literal quoted push", 'git push origin "main"',
+                 "[default-delivery: blocked]"),
+                ("literal quoted authoring",
+                 'semantic-commit commit --message "fix(hooks): quoted"',
+                 "rule=governed-authoring-target"),
+                ("variable quoted authoring",
+                 'semantic-commit commit --message "$MSG"',
+                 "rule=governed-authoring-target"),
+                ("mixed quoted authoring",
+                 'semantic-commit commit --message "fix $SCOPE"',
+                 "rule=governed-authoring-target"),
+            ):
+                with self.subTest(name=name):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=primary,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, refusal)
+
+    def test_default_delivery_handles_long_case_words_within_hook_budget(self) -> None:
+        selector = "$STATE_" + "A" * 8192
+        operands = " ".join(['"$item"'] * 512)
+        command = f'case "{selector}" in *done*) printf "%s" {operands} ;; esac'
+        # Bound CPU work, not time spent waiting to be scheduled. The generous
+        # outer timeout is only a watchdog for a stalled test subprocess.
+        cpu_limited_hook = (
+            "import os, resource, sys\n"
+            "resource.setrlimit(resource.RLIMIT_CPU, (2, 2))\n"
+            "os.execv(sys.executable, [sys.executable, sys.argv[1]])"
+        )
+        for source, malformed in ((command, False), (command + ' "', True)):
+            with self.subTest(malformed=malformed):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        cpu_limited_hook,
+                        str(HOOK_DIR / "block-unsafe-default-delivery.py"),
+                    ],
+                    input=json.dumps(command_payload(source)),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=120,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                if malformed:
+                    self.assert_blocked(json.loads(completed.stdout), "[default-delivery: unverified]")
+                else:
+                    self.assertEqual(completed.stdout, "")
+
     def test_semantic_commit_git_assignments_explain_unresolved_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -4554,10 +4680,8 @@ class DefaultDeliveryTests(HookTestCase):
     def test_default_delivery_hook_fails_closed_after_literal_cd_for_bare_commit(
         self,
     ) -> None:
-        # Any preceding shell command can retarget a later bare executable
-        # through shell-specific state. Even a literal absolute `cd` therefore
-        # fails closed; callers must use a separate command tool call with the
-        # target checkout as its top-level workdir.
+        # A literal cd to the primary checkout is not a linked-worktree edge.
+        # The compound form also cannot authorize local-default authoring.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "repo"
