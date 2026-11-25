@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -133,6 +134,21 @@ class BoundaryAcceptance(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         return rows[0]
 
+    def assert_private_home_entries(self, child, credentials):
+        """Private child homes hold only the expected credential files.
+
+        Since nils-cli v1.42.1 the launch also writes a notice-only
+        config.toml; earlier releases, including the compatibility minimum,
+        write none. Nothing else is admitted, and a present config.toml must
+        hold exactly that notice.
+        """
+        self.assertEqual([name for name in child['entries'] if name != 'config.toml'], credentials)
+        if 'config.toml' in child['entries']:
+            self.assertEqual(tomllib.loads(child['config']),
+                             {'notice': {'hide_rate_limit_model_nudge': True}})
+        else:
+            self.assertIsNone(child['config'])
+
     def test_A1_default_home_argv_environment_and_cleanup(self):
         homes = []
         for _ in range(2):
@@ -161,7 +177,7 @@ class BoundaryAcceptance(unittest.TestCase):
 
     def test_A3_A4_child_has_no_ambient_runtime_surfaces(self):
         self.f.invoke('prompt', 'surface probe')
-        self.assertEqual(self.child()['entries'], ['auth.json'])
+        self.assert_private_home_entries(self.child(), ['auth.json'])
         self.f.clear()
         self.f.invoke('prompt', '--runtime', 'inherited', 'control', CODEX_ALLOW_DANGEROUS_ENABLED='true')
         child = self.child()
@@ -178,7 +194,7 @@ class BoundaryAcceptance(unittest.TestCase):
             child = self.child()
             self.assertTrue(child['auth_link'])
             self.assertEqual(child['auth_target'], str(alternate))
-            self.assertEqual(child['entries'], ['auth.json'])
+            self.assert_private_home_entries(child, ['auth.json'])
             self.assertEqual(alternate.read_text(), AUTH_SENTINEL)
             self.assertNotIn(AUTH_SENTINEL, result.stdout + result.stderr + self.f.log.read_text())
             self.assertFalse(Path(child['home']).exists())
@@ -190,7 +206,7 @@ class BoundaryAcceptance(unittest.TestCase):
         (self.f.codex_home / 'auth.json').unlink()
         self.f.clear()
         self.f.invoke('prompt', 'credential-store fallback')
-        self.assertEqual(self.child()['entries'], [])
+        self.assert_private_home_entries(self.child(), [])
 
     def test_A6_command_sandbox_selection(self):
         for command, sandbox in [('prompt', 'workspace-write'), ('advice', 'read-only'), ('knowledge', 'read-only')]:

@@ -68,6 +68,7 @@ def main():
                 'AGENT_HOOK_SENTINEL', 'AGENT_EVIDENCE_SENTINEL']
     emit('child', argv=args, home=str(home), mode=home.stat().st_mode & 0o777,
          entries=sorted(p.name for p in home.iterdir()),
+         config=(home / 'config.toml').read_text() if (home / 'config.toml').is_file() else None,
          auth_link=auth.is_symlink(), auth_target=os.readlink(auth) if auth.is_symlink() else None,
          cwd=os.getcwd(), shell_home=os.environ.get('HOME'),
          stripped={name: name in os.environ for name in stripped},
