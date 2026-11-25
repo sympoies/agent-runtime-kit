@@ -37,6 +37,8 @@ class DefaultDeliveryTests(HookTestCase):
                  ""),
                 ("literal worktree change", primary, f"cd {target} && {commit}", ""),
                 ("staging before commit", feature, f"{stage} && {commit}", ""),
+                ("staging before explicitly targeted commit", primary,
+                 f"{stage} && {commit} --repo {target}", ""),
                 ("case pattern in loop", primary,
                  """until grep -qE '"state": "(succeeded|failed)"' result; do
                        case "$state" in

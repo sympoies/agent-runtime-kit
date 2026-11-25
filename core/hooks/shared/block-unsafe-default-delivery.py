@@ -1118,11 +1118,13 @@ def literal_worktree_commit_prefix(
         or not trusted_managed_cli_invocation("git", "git")
     ):
         return False
+    _read_only, repo = semantic_commit_invocation_state(shlex.split(" ".join(after[1:])))
+    if repo and not Path(repo).is_absolute():
+        return False
     if len(before) == 2 and before[0] == "cd":
         target_word = before[1]
     elif (
-        base_resolved
-        and len(before) >= 6
+        len(before) >= 6
         and before[:2] == ["git", "-C"]
         and before[3:5] == ["add", "--"]
     ):
@@ -1133,8 +1135,11 @@ def literal_worktree_commit_prefix(
     if not path.is_absolute():
         return False
     try:
-        if before[0] == "git" and path.resolve() != base.resolve():
-            return False
+        if before[0] == "git":
+            if not repo and not base_resolved:
+                return False
+            if path.resolve() != (base / repo).resolve():
+                return False
         # A linked worktree has a separate per-checkout Git directory.
         dirs = probe.run(path, "rev-parse", "--absolute-git-dir", "--git-common-dir")
         if not dirs or dirs.returncode != 0:

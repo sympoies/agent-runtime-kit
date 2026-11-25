@@ -679,7 +679,8 @@ shell command tables may have changed; that refusal says the executable identity
 is unproven, not that the target is the default branch, and the one-shot waiver
 never admits it. The hook can classify a literal `cd /worktree && semantic-commit
 commit ...`, or `git -C /worktree add -- <paths> && semantic-commit commit ...`
-from that same linked worktree, when PATH contains only absolute directories.
+when the commit runs in or explicitly targets that same linked worktree and
+PATH contains only absolute directories.
 The managed executable and non-default commit target still have to pass their
 usual checks. Other compound forms should use a separate tool call with the
 target checkout as its top-level workdir. Help, `--dry-run`, and
