@@ -82,15 +82,27 @@ class DefaultDeliveryTests(HookTestCase):
         selector = "$STATE_" + "A" * 8192
         operands = " ".join(['"$item"'] * 512)
         command = f'case "{selector}" in *done*) printf "%s" {operands} ;; esac'
+        # Bound CPU work, not time spent waiting to be scheduled. The generous
+        # outer timeout is only a watchdog for a stalled test subprocess.
+        cpu_limited_hook = (
+            "import os, resource, sys\n"
+            "resource.setrlimit(resource.RLIMIT_CPU, (2, 2))\n"
+            "os.execv(sys.executable, [sys.executable, sys.argv[1]])"
+        )
         for source, malformed in ((command, False), (command + ' "', True)):
             with self.subTest(malformed=malformed):
                 completed = subprocess.run(
-                    [sys.executable, str(HOOK_DIR / "block-unsafe-default-delivery.py")],
+                    [
+                        sys.executable,
+                        "-c",
+                        cpu_limited_hook,
+                        str(HOOK_DIR / "block-unsafe-default-delivery.py"),
+                    ],
                     input=json.dumps(command_payload(source)),
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=5,
+                    timeout=120,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 if malformed:
