@@ -51,6 +51,10 @@ class DefaultDeliveryTests(HookTestCase):
                 ("push inside a case arm", primary,
                  f'case "$state" in *failed*) {push} ;; esac',
                  "[default-delivery: blocked]"),
+                ("push inside the second case", primary,
+                 'case "$first" in *done*) printf ok ;; esac; '
+                 f'case "$second" in *failed*) {push} ;; esac',
+                 "[default-delivery: blocked]"),
                 ("staging does not retarget the commit", primary,
                  f"{stage} && {commit}", "rule=executable-resolution"),
                 ("explicit default repo still blocks", primary,
@@ -73,6 +77,26 @@ class DefaultDeliveryTests(HookTestCase):
                         self.assert_blocked(decision, refusal)
                     else:
                         self.assert_allowed(decision)
+
+    def test_default_delivery_handles_long_case_words_within_hook_budget(self) -> None:
+        selector = "$STATE_" + "A" * 8192
+        operands = " ".join(['"$item"'] * 512)
+        command = f'case "{selector}" in *done*) printf "%s" {operands} ;; esac'
+        for source, malformed in ((command, False), (command + ' "', True)):
+            with self.subTest(malformed=malformed):
+                completed = subprocess.run(
+                    [sys.executable, str(HOOK_DIR / "block-unsafe-default-delivery.py")],
+                    input=json.dumps(command_payload(source)),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                if malformed:
+                    self.assert_blocked(json.loads(completed.stdout), "[default-delivery: unverified]")
+                else:
+                    self.assertEqual(completed.stdout, "")
 
     def test_semantic_commit_git_assignments_explain_unresolved_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

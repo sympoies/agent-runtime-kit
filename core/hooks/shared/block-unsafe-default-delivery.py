@@ -1001,13 +1001,16 @@ def shell_word_is_dynamic(token: str) -> bool:
 
 # Restricted shell vocabulary for proofs that need quote/operator provenance.
 # Anything outside it falls back to the original classifier.
+# Bare characters and complete quoted spans have unique boundaries. Keep
+# variable-only quotes separate from literal quotes to avoid backtracking
+# over competing ways to split a word.
 STATIC_SHELL_TOKEN_RE = re.compile(
     r"""[ \t]+|\n|&&|\|\||;;|[;|()]|"""
-    r"""(?:[A-Za-z0-9_./*?:=,+@%-]+|\$[A-Za-z_][A-Za-z0-9_]*"""
-    r"""|'[^'\n]*'|"(?:[^"\\`$\n]|\$[A-Za-z_][A-Za-z0-9_]*)*")+"""
+    r"""(?:[A-Za-z0-9_./*?:=,+@%$-]|'[^'\n]*'"""
+    r"""|"[^"\\`$\n]*"|"\$[A-Za-z_][A-Za-z0-9_]*")+"""
 )
 LITERAL_SHELL_WORD_RE = re.compile(
-    r"""(?:[A-Za-z0-9_./:=,+@%-]+|'[^'\n]*'|"[^"\\`$\n]*")+"""
+    r"""(?:[A-Za-z0-9_./:=,+@%-]|'[^'\n]*'|"[^"\\`$\n]*")+"""
 )
 SIMPLE_CASE_PATTERN_RE = re.compile(r"[A-Za-z0-9_.?*-]+")
 LITERAL_TOOL_LOOP_RE = re.compile(
