@@ -78,6 +78,44 @@ class DefaultDeliveryTests(HookTestCase):
                     else:
                         self.assert_allowed(decision)
 
+    def test_default_delivery_restricted_lexer_keeps_quoted_forms_disjoint(self) -> None:
+        hook = self._load("default_delivery_quote_test", "block-unsafe-default-delivery.py")
+        self.addCleanup(sys.modules.pop, hook.__name__, None)
+        # Only literal and variable-only quotes are part of the restricted
+        # lexer. Mixed quoted words must go to the existing fallback parser.
+        for word in ('"plain text"', '"$STATE"'):
+            with self.subTest(word=word):
+                tokens = hook.static_shell_tokens(f"case {word} in")
+                self.assertEqual([token[0] for token in tokens], ["case", word, "in"])
+        self.assertEqual(hook.static_shell_tokens('case "status $STATE" in'), [])
+
+        # Quoting never makes default-branch publishing or authoring pass,
+        # whether the quoted word is inside the restricted lexer or not.
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            for name, command, refusal in (
+                ("literal quoted push", 'git push origin "main"',
+                 "[default-delivery: blocked]"),
+                ("literal quoted authoring",
+                 'semantic-commit commit --message "fix(hooks): quoted"',
+                 "rule=governed-authoring-target"),
+                ("variable quoted authoring",
+                 'semantic-commit commit --message "$MSG"',
+                 "rule=governed-authoring-target"),
+                ("mixed quoted authoring",
+                 'semantic-commit commit --message "fix $SCOPE"',
+                 "rule=governed-authoring-target"),
+            ):
+                with self.subTest(name=name):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=primary,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    self.assert_blocked(decision, refusal)
+
     def test_default_delivery_handles_long_case_words_within_hook_budget(self) -> None:
         selector = "$STATE_" + "A" * 8192
         operands = " ".join(['"$item"'] * 512)
