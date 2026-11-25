@@ -22,6 +22,56 @@ from shared_hook_helpers import (
 
 class DefaultDeliveryTests(HookTestCase):
 
+    def test_default_delivery_classifies_loop_and_worktree_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "repo"
+            self._init_checkout_lease_repo(primary)
+            feature = self._add_checkout_lease_worktree(primary, "fix/delivery")
+            target = shlex.quote(str(feature))
+            commit = "semantic-commit commit --message 'fix(hooks): classify commands'"
+            stage = f"git -C {target} add -- README.md"
+            push = "git push origin HEAD:refs/heads/main"
+            for name, cwd, command, refusal in (
+                ("fixed loop executable", primary,
+                 'TOOL=./bin/tool; for i in a b; do $TOOL now update "$i"; done',
+                 ""),
+                ("literal worktree change", primary, f"cd {target} && {commit}", ""),
+                ("staging before commit", feature, f"{stage} && {commit}", ""),
+                ("case pattern in loop", primary,
+                 """until grep -qE '"state": "(succeeded|failed)"' result; do
+                       case "$state" in
+                         succeeded) break ;;
+                         *failed*|error) printf '%s\\n' "$state" ;;
+                       esac
+                     done""",
+                 ""),
+                ("default push control", primary, push, "[default-delivery: blocked]"),
+                ("push inside a case arm", primary,
+                 f'case "$state" in *failed*) {push} ;; esac',
+                 "[default-delivery: blocked]"),
+                ("staging does not retarget the commit", primary,
+                 f"{stage} && {commit}", "rule=executable-resolution"),
+                ("explicit default repo still blocks", primary,
+                 f"cd {target} && {commit} --repo {shlex.quote(str(primary))}",
+                 "[default-delivery: blocked]"),
+                ("loop overwrites the binding", primary,
+                 "TOOL=./bin/tool; for TOOL in git; do $TOOL push origin main; done",
+                 "rule=opaque-executable"),
+                ("quoted case is not shell syntax", primary,
+                 "'case' state in; *failed*; esac", "rule=opaque-executable"),
+            ):
+                with self.subTest(name=name):
+                    code, decision, stderr = run_hook(
+                        "block-unsafe-default-delivery.py",
+                        command_payload(command),
+                        cwd=cwd,
+                    )
+                    self.assertEqual(code, 0, stderr)
+                    if refusal:
+                        self.assert_blocked(decision, refusal)
+                    else:
+                        self.assert_allowed(decision)
+
     def test_semantic_commit_git_assignments_explain_unresolved_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -4554,10 +4604,8 @@ class DefaultDeliveryTests(HookTestCase):
     def test_default_delivery_hook_fails_closed_after_literal_cd_for_bare_commit(
         self,
     ) -> None:
-        # Any preceding shell command can retarget a later bare executable
-        # through shell-specific state. Even a literal absolute `cd` therefore
-        # fails closed; callers must use a separate command tool call with the
-        # target checkout as its top-level workdir.
+        # A literal cd to the primary checkout is not a linked-worktree edge.
+        # The compound form also cannot authorize local-default authoring.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             primary = root / "repo"

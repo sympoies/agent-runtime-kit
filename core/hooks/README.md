@@ -562,6 +562,11 @@ word could not be classified, that word (`word=`), so an unverified target is
 distinguishable from a proven default-branch write and the word to spell
 literally is named.
 
+In a simple `for` loop, the hook classifies a command variable assigned a
+literal path just before the loop if the loop cannot reassign that variable.
+Simple `case` patterns are not command words, but the arm bodies are still
+classified.
+
 The same opaque classification applies when glob, brace, extglob, tilde, zsh
 `=command`, or zsh glob-qualifier syntax appears directly in command position,
 even without a variable prefix. The zsh extended-glob repetition, exclusion, and
@@ -667,15 +672,19 @@ forms remain blocked.
 
 A `semantic-commit` target resolves from explicit `--repo`, so a
 cross-repository invocation is classified against the repository it mutates
-rather than the tool workdir. A bare authoring invocation after any earlier
+rather than the tool workdir. A bare authoring invocation after an unverified
 shell command fails closed as `[default-delivery: unverified]`
 (`rule=executable-resolution`) because PATH, hashes, aliases, functions, or
 shell command tables may have changed; that refusal says the executable identity
 is unproven, not that the target is the default branch, and the one-shot waiver
-never admits it. Compound routes, including `git add ... && semantic-commit
-commit`, must be split into a separate tool call with the target checkout as its
-top-level workdir. Help, `--dry-run`, and `--validate-only` forms author nothing
-and stay available after earlier commands. Relative or expanded destinations,
+never admits it. The hook can classify a literal `cd /worktree && semantic-commit
+commit ...`, or `git -C /worktree add -- <paths> && semantic-commit commit ...`
+from that same linked worktree, when PATH contains only absolute directories.
+The managed executable and non-default commit target still have to pass their
+usual checks. Other compound forms should use a separate tool call with the
+target checkout as its top-level workdir. Help, `--dry-run`, and
+`--validate-only` forms author nothing and stay available after earlier
+commands. Relative or expanded destinations,
 nested shells, and command-local `GIT_*`/`HOME` overrides also fail closed, and
 raw Git still fails closed after every shell-context change or missing per-call
 workdir attestation. An absolute `git -C /path/to/repository ...` target remains

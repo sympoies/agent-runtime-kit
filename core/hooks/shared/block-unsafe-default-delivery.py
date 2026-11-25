@@ -24,10 +24,11 @@ cannot see the discriminator cannot fix the invocation. Every reason leads with
 the second is worth restating — and names the governed surface for the operation
 that was actually attempted. ``semantic-commit`` is
 classified against the repository it actually commits in: ``--repo`` binds that
-target outright. A bare authoring invocation after any earlier shell command
-fails closed because executable resolution may have changed; use a separate
-tool call with the target checkout as its top-level workdir. Raw Git still fails closed after
-any shell-context change. Where the target
+target outright. A bare authoring invocation after an unverified shell command
+fails closed because executable resolution may have changed. A literal
+checkout or staging edge into a linked worktree still requires the ordinary
+branch and managed CLI checks. Raw Git still fails closed after any
+shell-context change. Where the target
 remains unresolvable, one command may state a reason inline as
 ``AGENT_RUNTIME_DEFAULT_DELIVERY_WAIVER=<reason> semantic-commit ...``; that
 admits only the unresolvable class, only for the governed CLI that re-verifies
@@ -996,6 +997,152 @@ def shell_word_is_dynamic(token: str) -> bool:
     return token.startswith("=") or any(
         marker in token for marker in "$`*?[]{}()#^~"
     )
+
+
+# Restricted shell vocabulary for proofs that need quote/operator provenance.
+# Anything outside it falls back to the original classifier.
+STATIC_SHELL_TOKEN_RE = re.compile(
+    r"""[ \t]+|\n|&&|\|\||;;|[;|()]|"""
+    r"""(?:[A-Za-z0-9_./*?:=,+@%-]+|\$[A-Za-z_][A-Za-z0-9_]*"""
+    r"""|'[^'\n]*'|"(?:[^"\\`$\n]|\$[A-Za-z_][A-Za-z0-9_]*)*")+"""
+)
+LITERAL_SHELL_WORD_RE = re.compile(
+    r"""(?:[A-Za-z0-9_./:=,+@%-]+|'[^'\n]*'|"[^"\\`$\n]*")+"""
+)
+SIMPLE_CASE_PATTERN_RE = re.compile(r"[A-Za-z0-9_.?*-]+")
+LITERAL_TOOL_LOOP_RE = re.compile(
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<path>(?:\./|/)[A-Za-z0-9_./+-]+);"
+    r"[ \t]*for (?P<item>[A-Za-z_][A-Za-z0-9_]*) in(?: [A-Za-z0-9_.-]+)+;"
+    r"""[ \t]*do (?P<word>\$(?P=name)|"\$(?P=name)")"""
+    r"""(?: (?:[A-Za-z0-9_./-]+|"\$(?P=item)"))*;[ \t]*done"""
+)
+
+
+def static_shell_tokens(command: str) -> list[re.Match[str]]:
+    tokens: list[re.Match[str]] = []
+    end = 0
+    for match in STATIC_SHELL_TOKEN_RE.finditer(command):
+        if match.start() != end:
+            return []
+        if not match[0].startswith((" ", "\t")):
+            tokens.append(match)
+        end = match.end()
+    return tokens if end == len(command) else []
+
+
+def delivery_control_source(command: str, tokens: list[re.Match[str]]) -> str:
+    """Expose a literal loop executable and keep case patterns out of argv."""
+    binding = LITERAL_TOOL_LOOP_RE.fullmatch(command)
+    if binding and binding["item"] != binding["name"]:
+        start, stop = binding.span("word")
+        return command[:start] + binding["path"] + command[stop:]
+
+    # Recognize flat case clauses in the restricted vocabulary. Strip only
+    # each pattern list through its closing parenthesis, not its arm body.
+    words = [token[0] for token in tokens]
+    if "case" not in words:
+        return command
+    position = 0
+    command_start = True
+    inside_case = False
+    patterns: list[tuple[int, int]] = []
+    boundaries = {"\n", ";", "&&", "||", "|"}
+    while position < len(words):
+        word = words[position]
+        if command_start and word in {"do", "then", "else", "elif", "if", "while", "until", "!"}:
+            position += 1
+            continue
+        if command_start and word == "case":
+            if (
+                inside_case
+                or position + 2 >= len(words)
+                or words[position + 1] in boundaries | {"(", ")", ";;"}
+                or words[position + 2] != "in"
+            ):
+                return command
+            inside_case = True
+            position += 3
+        elif inside_case and word == ";;":
+            position += 1
+        elif inside_case and command_start and word == "esac":
+            inside_case = False
+            command_start = False
+            position += 1
+            continue
+        elif word in {"(", ")", ";;"}:
+            return command
+        else:
+            command_start = word in boundaries
+            position += 1
+            continue
+        while position < len(words) and words[position] == "\n":
+            position += 1
+        if position < len(words) and words[position] == "esac":
+            command_start = True
+            continue
+        start = position
+        while position < len(words) and SIMPLE_CASE_PATTERN_RE.fullmatch(words[position]):
+            position += 1
+            if position == len(words) or words[position] != "|":
+                break
+            position += 1
+        if position == start or position == len(words) or words[position] != ")":
+            return command
+        patterns.append((tokens[start].start(), tokens[position].end()))
+        position += 1
+        command_start = True
+    if inside_case or not patterns:
+        return command
+    parts: list[str] = []
+    end = 0
+    for start, stop in patterns:
+        parts.extend((command[end:start], ";"))
+        end = stop
+    return "".join((*parts, command[end:]))
+
+
+def literal_worktree_commit_prefix(
+    tokens: list[re.Match[str]], base: Path, base_resolved: bool, probe: GitProbe
+) -> bool:
+    """Prove one literal checkout or staging edge into an ordinary commit."""
+    words = [token[0] for token in tokens]
+    if "&&" not in words:
+        return False
+    edge = words.index("&&")
+    before, after = words[:edge], words[edge + 1:]
+    if (
+        after[:2] != ["semantic-commit", "commit"]
+        or not all(LITERAL_SHELL_WORD_RE.fullmatch(word) for word in [*before, *after])
+        # A relative or empty PATH entry can resolve differently after cd.
+        or not all(os.path.isabs(path) for path in os.get_exec_path())
+        or not trusted_managed_cli_invocation("git", "git")
+    ):
+        return False
+    if len(before) == 2 and before[0] == "cd":
+        target_word = before[1]
+    elif (
+        base_resolved
+        and len(before) >= 6
+        and before[:2] == ["git", "-C"]
+        and before[3:5] == ["add", "--"]
+    ):
+        target_word = before[2]
+    else:
+        return False
+    path = Path(shlex.split(target_word)[0])
+    if not path.is_absolute():
+        return False
+    try:
+        if before[0] == "git" and path.resolve() != base.resolve():
+            return False
+        # A linked worktree has a separate per-checkout Git directory.
+        dirs = probe.run(path, "rev-parse", "--absolute-git-dir", "--git-common-dir")
+        if not dirs or dirs.returncode != 0:
+            return False
+        git_dir, common_dir = dirs.stdout.splitlines()
+        return (path / git_dir).resolve() != (path / common_dir).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def watch_target(arguments: list[str]) -> tuple[int | None, bool]:
@@ -2488,14 +2635,17 @@ def trusted_managed_cli_invocation(raw: str, name: str) -> bool:
     if not candidate or not os.path.isabs(candidate) or os.path.realpath(candidate) != resolved:
         return False
     lexical_dir = os.path.realpath(os.path.dirname(lexical))
-    if lexical_dir == "/usr/bin" and resolves_within_its_directory(lexical, resolved):
+    if (
+        (lexical_dir == "/usr/bin" or (name == "git" and lexical_dir == "/bin"))
+        and resolves_within_its_directory(lexical, resolved)
+    ):
         return True
     if is_managed_cli_home_bin(lexical_dir) and resolves_within_its_directory(lexical, resolved):
         return True
     for prefix in ("/opt/homebrew", "/home/linuxbrew/.linuxbrew", "/usr/local"):
         if os.path.dirname(lexical) != os.path.join(prefix, "bin"):
             continue
-        cellar = os.path.join(prefix, "Cellar", "nils-cli")
+        cellar = os.path.join(prefix, "Cellar", "git" if name == "git" else "nils-cli")
         try:
             return resolves_within_its_directory(
                 lexical, resolved
@@ -3032,8 +3182,23 @@ def command_block_reason(
     resolution_taint_source = ""
     repository_context_unresolved = initial_repository_context_unresolved
     executable_identity_unresolved = initial_executable_identity_unresolved
-    # Strict parsing drops comments and fails closed on untokenizable text.
-    scoped_commands = scoped_simple_commands_with_nested_shells(command, strict=True)
+    # Keep the raw spelling for narrow proofs that depend on the actual shell
+    # structure rather than quote-stripped argv.
+    source = command.strip(" \t\n")
+    static_tokens = static_shell_tokens(source) if "&&" in source or "case" in source else []
+    classified_source = delivery_control_source(source, static_tokens)
+    scoped_commands = scoped_simple_commands_with_nested_shells(
+        classified_source if classified_source != source else command, strict=True
+    )
+    literal_commit_edge = (
+        not inherited_environment_commands
+        and initial_shell_context_safe
+        and initial_directory_resolved
+        and initial_executable_resolution_safe
+        and not initial_executable_resolution_tainted
+        and len(scoped_commands) == 2
+        and literal_worktree_commit_prefix(static_tokens, base, base_resolved, probe)
+    )
     # A nested shell hides where its own `cd` stops applying, so a resolved
     # directory is only trustworthy across a flat command sequence.
     resolves_directories = not any(
@@ -3047,7 +3212,7 @@ def command_block_reason(
     # the enclosing state and leaving it restores that state, so the command
     # a substitution expands keeps the classification it would have alone.
     saved_scopes: list[tuple[tuple[int, ...], tuple[Any, ...]]] = []
-    for simple_command, scope in scoped_commands:
+    for index, (simple_command, scope) in enumerate(scoped_commands):
         while saved_scopes and scope[: len(saved_scopes[-1][0])] != saved_scopes[-1][0]:
             (
                 shell_context_safe,
@@ -3277,11 +3442,11 @@ def command_block_reason(
         ):
             executable_resolution_tainted = True
             resolution_taint_source = " ".join(simple_command)
-        # A preceding shell command can alter PATH, zsh/bash command tables,
+        # An unverified preceding command can alter PATH, command tables,
         # aliases, functions, hashes, or sourced state in ways this hook cannot
         # prove exhaustively. No later authoring invocation retains executable
         # identity; use a separate tool call with an attested top-level workdir.
-        executable_resolution_safe = False
+        executable_resolution_safe = literal_commit_edge and index == 0
         if not shell_command_changes_git_context(simple_command):
             continue
         # Raw Git keeps failing closed after any context change. Only the
