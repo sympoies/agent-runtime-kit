@@ -26,14 +26,14 @@ nils_cli:
   # the old minimum v1.31.1 fails with policy-event-unsupported.
   minimum_supported_tag: "v1.36.21"
   # Exact surface used by blocking validated CI and all packaged artifacts.
-  validated_tag: "v1.40.5"
+  validated_tag: "v1.42.9"
   # Release artifact SHA256 pins consumed by docker/build.sh and the GHCR
   # publish workflow. Keep these in lock-step with validated_tag so the Docker
   # image build verifies nils-cli against an in-repo digest, not only the
   # release sidecar downloaded from the same server.
   release_sha256:
-    linux_amd64: "7beacb6bed0166519f6f557fc8e3cc653c8b901c4ab66c5d8678186be48b2c67"
-    linux_arm64: "432263c1d95da389dcfb835ee7c2a1a917a0cda3357dd48c3bc6ace7a638ffed"
+    linux_amd64: "c0e79cc0d992e3cb4e2117b00591e5f1eb47f5e444a78a331b6b90bd68fc5f3b"
+    linux_arm64: "fea388e6f43f4367c06cd01f1f2ac4253c3f62e2fa7b5b88fbac9307aac65765"
 
 # Optional per-binary floors for the downstream-consumed CLIs. nils-cli
 # ships every crate in lock-step, so the two version roles above are the
