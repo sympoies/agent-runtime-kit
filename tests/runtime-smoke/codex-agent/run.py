@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -133,6 +134,56 @@ class BoundaryAcceptance(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         return rows[0]
 
+    def assert_private_home_entries(self, child, credentials):
+        """Private child homes hold only the expected credential files.
+
+        Since nils-cli v1.42.1 the launch also writes a notice-only
+        config.toml; earlier releases, including the compatibility minimum,
+        write none. Nothing else is admitted. A present config.toml must be a
+        regular file, not a link or directory, holding exactly that notice with
+        a real boolean true (not an integer or float that merely equals it).
+        """
+        self.assertEqual([name for name in child['entries'] if name != 'config.toml'], credentials)
+        if 'config.toml' not in child['entries']:
+            self.assertEqual(child['config_kind'], 'absent')
+            return
+        self.assertEqual(child['config_kind'], 'file')
+        config = tomllib.loads(child['config'])
+        self.assertEqual(list(config), ['notice'])
+        self.assertEqual(list(config['notice']), ['hide_rate_limit_model_nudge'])
+        self.assertIs(config['notice']['hide_rate_limit_model_nudge'], True)
+
+    def test_private_home_config_check_rejects_lookalikes(self):
+        exact = '[notice]\nhide_rate_limit_model_nudge = true\n'
+        outside = self.f.root / 'outside-config.toml'
+        outside.write_text(exact)
+        cases = [
+            ('exact notice', lambda path: path.write_text(exact), True),
+            ('no config', None, True),
+            ('integer one', lambda path: path.write_text(exact.replace('true', '1')), False),
+            ('float one', lambda path: path.write_text(exact.replace('true', '1.0')), False),
+            ('symlink to exact content', lambda path: path.symlink_to(outside), False),
+            ('directory', lambda path: path.mkdir(), False),
+            ('extra table', lambda path: path.write_text(exact + '[hooks]\n'), False),
+        ]
+        for index, (name, make, accepted) in enumerate(cases):
+            with self.subTest(name=name):
+                # The real stub records whatever home it is launched in.
+                home = self.f.root / f'probe-home-{index}'
+                home.mkdir(mode=0o700)
+                (home / 'auth.json').write_text(AUTH_SENTINEL)
+                if make:
+                    make(home / 'config.toml')
+                self.f.clear()
+                run([self.f.bin / 'codex', 'exec', 'probe'],
+                    dict(self.f.env, CODEX_HOME=str(home)), self.f.workspace)
+                child = self.child()
+                if accepted:
+                    self.assert_private_home_entries(child, ['auth.json'])
+                else:
+                    with self.assertRaises(AssertionError):
+                        self.assert_private_home_entries(child, ['auth.json'])
+
     def test_A1_default_home_argv_environment_and_cleanup(self):
         homes = []
         for _ in range(2):
@@ -161,7 +212,7 @@ class BoundaryAcceptance(unittest.TestCase):
 
     def test_A3_A4_child_has_no_ambient_runtime_surfaces(self):
         self.f.invoke('prompt', 'surface probe')
-        self.assertEqual(self.child()['entries'], ['auth.json'])
+        self.assert_private_home_entries(self.child(), ['auth.json'])
         self.f.clear()
         self.f.invoke('prompt', '--runtime', 'inherited', 'control', CODEX_ALLOW_DANGEROUS_ENABLED='true')
         child = self.child()
@@ -178,7 +229,7 @@ class BoundaryAcceptance(unittest.TestCase):
             child = self.child()
             self.assertTrue(child['auth_link'])
             self.assertEqual(child['auth_target'], str(alternate))
-            self.assertEqual(child['entries'], ['auth.json'])
+            self.assert_private_home_entries(child, ['auth.json'])
             self.assertEqual(alternate.read_text(), AUTH_SENTINEL)
             self.assertNotIn(AUTH_SENTINEL, result.stdout + result.stderr + self.f.log.read_text())
             self.assertFalse(Path(child['home']).exists())
@@ -190,7 +241,7 @@ class BoundaryAcceptance(unittest.TestCase):
         (self.f.codex_home / 'auth.json').unlink()
         self.f.clear()
         self.f.invoke('prompt', 'credential-store fallback')
-        self.assertEqual(self.child()['entries'], [])
+        self.assert_private_home_entries(self.child(), [])
 
     def test_A6_command_sandbox_selection(self):
         for command, sandbox in [('prompt', 'workspace-write'), ('advice', 'read-only'), ('knowledge', 'read-only')]:

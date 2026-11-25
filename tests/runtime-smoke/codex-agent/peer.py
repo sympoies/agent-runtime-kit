@@ -2,6 +2,7 @@
 """Fixture peers for the released wrapper; never run a model or publish Git."""
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,17 @@ FEATURES = ['hooks', 'plugins', 'remote_plugin', 'apps', 'memories', 'goals',
 def emit(event, **fields):
     with Path(os.environ['ACCEPTANCE_LOG']).open('a') as stream:
         stream.write(json.dumps(dict(event=event, **fields)) + '\n')
+
+
+def config_kind(path):
+    """Classify without following links: a link or directory is never a file."""
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return 'absent'
+    if stat.S_ISREG(mode):
+        return 'file'
+    return 'symlink' if stat.S_ISLNK(mode) else 'other'
 
 
 def option(args, name):
@@ -68,6 +80,8 @@ def main():
                 'AGENT_HOOK_SENTINEL', 'AGENT_EVIDENCE_SENTINEL']
     emit('child', argv=args, home=str(home), mode=home.stat().st_mode & 0o777,
          entries=sorted(p.name for p in home.iterdir()),
+         config_kind=config_kind(home / 'config.toml'),
+         config=(home / 'config.toml').read_text() if config_kind(home / 'config.toml') == 'file' else None,
          auth_link=auth.is_symlink(), auth_target=os.readlink(auth) if auth.is_symlink() else None,
          cwd=os.getcwd(), shell_home=os.environ.get('HOME'),
          stripped={name: name in os.environ for name in stripped},
