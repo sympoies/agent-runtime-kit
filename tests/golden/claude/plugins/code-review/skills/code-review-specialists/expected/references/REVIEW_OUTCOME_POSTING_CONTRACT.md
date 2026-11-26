@@ -108,8 +108,17 @@ a public body; the reviewer contract requires repository-relative paths for
 exactly this reason.
 
 Before any GitHub publication, validate the immutable body snapshot and diff
-anchors. Add `--thread-file` only when the generated array has actionable
-entries; a clean `[]` means omit the flag.
+anchors. The environment owns and maintains the governed
+`forge-review-publish` adapter outside this repository. The adapter performs
+this validation as its first step. It runs the command below for the target PR
+using the exact `--comment-file` it will publish and the same `--thread-file`
+when present.
+If validation fails, the adapter returns the validation error and aborts before
+any provider mutation, including review submission, metadata, and issue
+mirroring. For direct publication, the calling workflow runs this validation.
+
+Add `--thread-file` only when the generated array has actionable entries; a
+clean `[]` means omit the flag.
 
 ```bash
 forge-cli --provider github --repo "$OWNER_REPO" --format json \
