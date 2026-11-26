@@ -52,6 +52,12 @@ checks fail, a merge gate rejects, or a child remains open. Read current
 provider state and repair the owning lane or record before retrying. Never
 infer closeout from prose alone.
 
+## Acceptance and verification
+
+Before implementation, record the program's observable acceptance criteria
+and how each will be verified. Require the same for each lane in its child
+issue and task packet before assignment.
+
 ## Outcome Routing
 
 A plain `program` delivers child PRs independently. This specialization adds
@@ -85,11 +91,14 @@ an integration branch because lane PRs cannot safely land on main separately.
    validation, and stop condition. Record owner, branch, PR, and state in the
    child issue. Keep the same lane for CI repair and review follow-up unless
    the orchestrator records an explicit reassignment.
-4. Require test-first evidence for feature or bug lanes when project policy
-   enables it. Thread `--test-first-evidence` into the lane PR create/deliver
-   call when required. Use `agent-out` for local evidence and `git-cli` and
-   `semantic-commit` for governed worktree and commit operations. Lane PR
-   creation uses `forge-cli`; its base must be the integration branch.
+4. Apply the test-first tiers in `core/policies/files-hooks-validation.md`
+   to each lane. Tier B needs stable-interface tests before merge. No red
+   record is required. Follow `deliver-pr` for any active released evidence
+   gate, passing `--test-first-evidence` to the lane PR call when the CLI
+   requires it.
+   Use `agent-out` for local evidence and `git-cli` and `semantic-commit` for
+   governed worktree and commit operations. Lane PR creation uses `forge-cli`
+   with the integration branch as its base.
 5. Use `deliver-pr` through its reviewed readiness stop (`--no-merge`) for
    each lane PR, then read checks and the exact PR head. Select the risk-based
    `code-review-specialists` profile. On GitHub, publish the canonical

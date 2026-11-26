@@ -37,24 +37,22 @@ material, or retention is useful.
 ## Test-First Paths
 
 The engineering discipline applies whether or not a durable record is required.
-Its depth follows the tiers in `files-hooks-validation.md` (reversible; #289):
-red first for bug/regression fixes and cross-component or cross-repository
-contracts (tier A), acceptance criteria first for new features (tier B), and
-repository checks only for docs, config, generated output, small UI tweaks, and
-spikes (tier C).
+Follow the tiers in `files-hooks-validation.md`.
 
-1. **Declare the contract delta**: retained behavior, changed or removed
-   behavior, added behavior, and invariants.
+1. **State acceptance and verification** before implementation.
+   Declare the contract delta for behavior changes. Identify retained,
+   changed or removed, and added behavior, plus the invariants.
 2. Identify materially affected tests, fixtures, snapshots, mocks, contract
    consumers, and journeys. Keep, update, remove, add, or refactor each owner
    according to the intended contract.
-3. Choose the lowest stable behavioral boundary. Tier A:
-   **Capture meaningful red** before production edits when practical: the
-   command or scenario, identity, expected failure, and observed failure must
-   agree with the missing behavior. Setup, compilation, environment, unrelated,
-   or retry-only failures do not qualify. Tier B: write observable acceptance
-   criteria before implementing; tests on stable interfaces must exist before
-   merge, and pre-edit red is optional.
+3. Choose the lowest stable behavioral boundary. **Capture meaningful red**
+   before production edits for tier A. Run the regression test and confirm
+   that the assertion for the missing behavior fails. Match the command or
+   scenario, test identity, expected assertion, and observed failure to the
+   same behavior gap. Setup, compilation, missing symbols, environment errors,
+   fixture errors, timeouts, retry-only failures, and unrelated failures do not qualify.
+   For tier B, verify stable-interface tests before merge. No red record is
+   required. For tier C, run repository checks only.
 4. Implement narrowly and validate by risk across focused owners, affected
    suites, contract consumers, and integration/manual boundaries as needed.
    Coverage percentage is diagnostic, not an objective, and does not justify
@@ -65,11 +63,13 @@ spikes (tier C).
 Independent review and CI matter more than test ordering. Review checks for
 deleted tests or weakened assertions; no separate automated detector is claimed.
 
-A durable `test-first-evidence.record.v2` is required for tier A work, and for
-other tiers only when an active gate or workflow says so; tier B and C need no
-record by default. Initialize it before production edits, record affected
-test decisions plus meaningful red or a complete waiver, append scoped final
-validation, declare residual gaps, and run `verify`. Use
+A durable `test-first-evidence.record.v2` is required for tier A work. Other
+tiers need a record only when an active gate or workflow requires one. See
+[Enforcement Boundary](#enforcement-boundary) for release-specific gates.
+When a record is required, initialize it before production edits,
+record affected test decisions and the expected assertion failure or a
+complete waiver, append scoped final validation, declare residual gaps, and
+run `verify`. Use
 `test-first-evidence --help` for exact syntax; do not copy a second command
 manual into prompt policy.
 
@@ -124,13 +124,12 @@ Closeout is event-driven:
   validation. They cannot safely discover an arbitrary
   evidence directory or judge semantic proof, so the parent invokes evidence
   checks only when required.
-- `forge-cli` can require a complete v2 test-first record for feature/bug
-  delivery when repository or user configuration explicitly enables that gate.
-  The gate is otherwise off; see `git-delivery.md`. Since nils-cli 1.36.11,
-  `test_first.require_kinds` selects the gated kinds (default: feature and bug).
-  With `require = true`, set `require_kinds = ["bug"]` to exempt features;
-  cross-boundary feature contracts still require a tier A record by policy.
-  Satisfy active gates without mislabeling the delivery kind.
+- `forge-cli` owns opt-in delivery evidence gates. In the released per-kind
+  gate introduced in nils-cli 1.36.11, `test_first.require_kinds` defaults to
+  feature and bug. With `require = true`, `require_kinds = ["bug"]` exempts
+  feature deliveries from that gate. Under the tier policy, cross-boundary feature contracts
+  still need tier A proof. See the
+  [gate reference](references/git-delivery.md#test-first-evidence-gate).
 - Hook timeout/effect posture remains owned by the hook rule. Evidence never
   converts an external, destructive, sensitive, transaction, or unknown effect
   into an allowed one.

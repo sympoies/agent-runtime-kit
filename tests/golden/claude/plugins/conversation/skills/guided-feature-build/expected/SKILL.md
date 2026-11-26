@@ -75,8 +75,9 @@ re-implement review: phase 6 calls the existing code-review skills.
 
 ### Phase 1 — Discovery
 
-1. Restate the feature request and create a `TodoWrite` list with all seven
-   phases.
+1. Restate the feature request and draft an **Acceptance and verification**
+   section with observable criteria and a command, test, or check for each.
+   Create a `TodoWrite` list with all seven phases.
 2. If the request is unclear, ask what problem it solves, what the feature
    should do, and any constraints. Confirm the understanding before proceeding.
 
@@ -122,14 +123,15 @@ Do not start without explicit user approval.
    `references/DELEGATION_PROTOCOL.md`. Honor an explicit user preference when
    safe, but keep scope, write isolation, integration, and validation under the
    parent workflow.
-3. Follow the tiers in `core/policies/files-hooks-validation.md`: declare the
-   contract delta and scan affected tests. A, bug/regression fixes and boundary
-   contracts: meaningful red before production edits plus a verified
-   `test-first-evidence` record or complete waiver. B, new features: observable
-   acceptance criteria first and stable-interface tests before merge; red and a
-   record are optional. C, docs, config, generated output, small UI tweaks, and
-   spikes: repository checks only, no record. Honor any active evidence gate;
-   finish with scoped validation, suite convergence, and explicit residual gaps.
+3. Finalize **Acceptance and verification** before editing. Declare the
+   contract delta and scan affected tests. Follow the tiers in
+   `core/policies/files-hooks-validation.md`. Tier A (bug/regression fixes,
+   boundary contracts, security) needs the expected assertion to fail first
+   and a verified record or waiver. Tier B (features) requires stable-interface
+   tests before merge. No red record is required. Tier C (docs, config, generated
+   output, small UI tweaks, spikes) needs repo checks only. Follow any active
+   evidence gate. Finish with scoped validation, suite convergence, and
+   explicit residual gaps.
 4. Read the relevant files again, implement the chosen approach, follow codebase
    conventions strictly, and keep `TodoWrite` current.
 5. Run the project's required preflight and validation as edits land.

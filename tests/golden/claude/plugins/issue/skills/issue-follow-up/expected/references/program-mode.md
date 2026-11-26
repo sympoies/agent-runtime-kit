@@ -45,6 +45,10 @@ may link public children freely.
 
 Program key **`<key>`**. <What outcome the program delivers and why.>
 
+## Acceptance and verification
+
+- <Observable program criterion and the command, test, or check that verifies it.>
+
 ## How to resume (read this first)
 
 1. Read this body, then the latest checkpoint comment on this issue.
@@ -112,9 +116,9 @@ Depends on <ids>. <Parallelism note.>
 
 <What belongs to other items.>
 
-## Acceptance
+## Acceptance and verification
 
-- <Test-first, validation, and live-evidence requirements.>
+- <Observable child criterion and the command, test, or check that verifies it.>
 
 ## Unblocks
 

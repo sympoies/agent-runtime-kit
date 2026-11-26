@@ -162,6 +162,10 @@ repositories, held together by one tracker issue. Creating the tracker and
 children still requires the user's decision.
 
 1. Load `references/program-mode.md` for the tracker and child templates.
+   Fill in **Acceptance and verification** for the program and each child
+   before implementation. Follow `core/policies/files-hooks-validation.md`.
+   Tier B requires stable-interface tests before merge. No red record is
+   required.
 2. Deduplicate across every target repository; link existing related issues
    as children instead of duplicating them.
 3. Open the tracker first as a placeholder labeled `workflow::tracking`, then

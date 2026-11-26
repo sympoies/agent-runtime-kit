@@ -1,7 +1,7 @@
 # AGENT_HOME.md
 
 Home-scope fallback. A closer
-`AGENTS.md` may extend or override it. Keep invariants and routing; load detail on demand.
+`AGENTS.md` may extend or override it.
 
 ## Authority And Safety
 
@@ -17,32 +17,34 @@ Home-scope fallback. A closer
 
 ## Autonomous Work
 
-- Inspect targets, callers, tests, and rules; distinguish facts, assumptions, and inference.
-  Deliver the smallest correct solution for the accepted observable outcome;
-  exclude hypothetical hardening, unsupported edge cases, architecture preference,
-  and future flexibility; possible improvement is not incompleteness.
-- Test-first: A, bug/regression fixes and boundary contracts: meaningful red first,
-  verified record or waiver; B, features: acceptance criteria first, stable-interface
-  tests before merge (red/record optional); C, docs, config, generated output,
-  small UI tweaks, spikes: repo checks only, no record.
+- Start every task with observable acceptance criteria and how to verify
+  each before implementation.
+- Inspect targets, callers, tests, and rules. Separate facts, assumptions, and inference.
+  Deliver the smallest correct solution for the accepted observable outcome.
+  Exclude hypothetical hardening, unsupported edge cases, architecture preference,
+  and future flexibility. A possible improvement is not incompleteness.
+- Test-first tiers. A (bug/regression fixes, boundary contracts, security):
+  expected assertion fails first, verified record or waiver. B (features):
+  acceptance first, stable-interface tests before merge, no red record required.
+  C (docs, config, generated output, small UI tweaks, spikes): repo checks only,
+  no record.
   Run each declared validation once or report a waiver.
-- Be concise and verifiable; cite requirements and unstable claims. Use fixed
+- Be concise and verifiable. Cite requirements and unstable claims. Use fixed
   taxonomy only when required.
-- Treat voice input as a possibly misrecognized speech transcript. Use context;
-  before acting on an uncertain name, term, path, command, number, or
-  data-changing request, confirm it with the user.
+- Voice input may be misrecognized. Use context. For an uncertain name, term,
+  path, command, number, or data-changing request, confirm it with the user before acting.
 - For a material active-goal decision, use `AskUserQuestion` when available, not a plain-text question; otherwise follow the blocked-audit contract and do not stop prematurely. Only an explicit later user choice authorizes it.
 - In long managed work, check coordination at safe boundaries every five minutes.
-  Never interrupt an in-flight operation solely for a mailbox checkpoint; check
+  Never interrupt an in-flight operation solely for a mailbox checkpoint. Check
   after it finishes and before mutating again.
 
 ## Conditional Routing
 
-- Open only the needed runbook in the runtime kit's `core/policies/`:
+- Open only needed runbooks in the runtime kit's `core/policies/`:
   `files-hooks-validation.md` (edits, validation), `external-facts.md`
   (unstable facts), `browser-test-routing.md` (rendered interaction),
   `session-coordination.md` (peer delivery/overlap), and `devlog-capability.md`
-  in repos with `docs/devlog/` or `docs/source/devlog/`. A repo's
+  for repos with `docs/devlog/` or `docs/source/devlog/`. A repo's
   `VALIDATION.toml` declares its finish-line validation.
 - Keep `direct` internal; ask before creating durable state for `issue`/`program`
   tracking, provider artifacts, or ambiguous escalation; review by risk.
@@ -68,5 +70,4 @@ Home-scope fallback. A closer
   `semantic-commit default-branch` commit and outside-repo receipt. Never
   force-push a default branch, enable `extensions.worktreeConfig`, set
   per-worktree author or signing configuration, disable signing, or continue
-  when signing fails. Delivery authority is explicit. Load `git-delivery.md` for commit,
-  worktree, PR/MR, direct-main, default-branch, and cleanup rules.
+  when signing fails. Delivery authority is explicit. Load `git-delivery.md`.

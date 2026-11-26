@@ -83,10 +83,12 @@ run_home_prompt_render_probe() {
     "$claude_home" \
     "$hermes_home"; do
     grep -Fq 'Do not infer authorization' "$home_policy"
-    grep -Fq 'Test-first: A, bug/regression fixes and boundary contracts: meaningful red first,' "$home_policy"
-    grep -Fq 'verified record or waiver; B, features: acceptance criteria first, stable-interface' "$home_policy"
-    grep -Fq 'tests before merge (red/record optional); C, docs, config, generated output,' "$home_policy"
-    grep -Fq 'small UI tweaks, spikes: repo checks only, no record.' "$home_policy"
+    grep -Fq 'Start every task with observable acceptance criteria' "$home_policy"
+    grep -Fq 'each before implementation.' "$home_policy"
+    grep -Fq 'A (bug/regression fixes, boundary contracts, security)' "$home_policy"
+    grep -Fq 'expected assertion fails first, verified record or waiver' "$home_policy"
+    grep -Fq 'acceptance first, stable-interface tests before merge, no red record required' "$home_policy"
+    grep -Fq 'C (docs, config, generated output, small UI tweaks, spikes): repo checks only' "$home_policy"
     grep -Fq '`semantic-commit`' "$home_policy"
     grep -Fq 'Preserve user work' "$home_policy"
   done

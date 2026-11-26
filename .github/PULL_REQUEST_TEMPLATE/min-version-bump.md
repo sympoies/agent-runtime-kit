@@ -16,6 +16,11 @@ latest-stable floor with no rolling support window — keep a
 `agent-runtime doctor --suggest-upgrade`, and fill in this template.
 -->
 
+## Acceptance and verification
+
+<!-- Before implementation, list each observable criterion and the command,
+test, or check that will verify it. -->
+
 ## Product version bump summary
 
 - Product: `codex` / `claude` (pick one)

@@ -308,12 +308,13 @@ unassigned commands and self-run behavior remain unchanged.
 
 ## Validation
 
-For runtime-kit behavior changes, bind `RUNTIME_COORD_EVIDENCE_DIR` and follow
-`files-hooks-validation.md`: A, bug/regression fixes and boundary contracts,
-meaningful red before production edits plus a verified record or waiver; B,
-features, acceptance criteria first and stable-interface tests before merge
-(red/record optional); C, docs, config, generated output, small UI tweaks, and
-spikes, repository checks only, no record. Run affected hook/routing tests and
+Follow `files-hooks-validation.md` for acceptance, verification, and test
+tiers. For runtime-kit behavior changes, bind `RUNTIME_COORD_EVIDENCE_DIR`.
+Tier A (bug/regression fixes, boundary contracts, security) needs the expected
+assertion to fail first and a verified record or waiver. Tier B (features)
+needs stable-interface tests before merge. No red record is required. Tier C
+(docs, config, generated output, small UI tweaks, spikes) needs repo checks
+only. Run affected hook/routing tests and
 declared project validation, and retain privacy-canary coverage. Installed-home
 sync and live disposable-session acceptance remain separate explicit consent
 gates.

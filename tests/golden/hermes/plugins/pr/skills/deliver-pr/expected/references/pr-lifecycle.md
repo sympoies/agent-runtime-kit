@@ -22,8 +22,11 @@ skill's next action.
   when it reports `head_not_pushed`. A fresh managed worktree starts with no
   upstream at all, so the first publish must go through this surface — and
   `block-unsafe-default-delivery` refuses a raw push it cannot classify.
-- Rendered bodies must include `## Summary` and `## Test plan`. Do not
-  hand-write section scaffolding or derive title/body from `git log -1`.
+- Rendered bodies must include `## Summary` and `## Test plan`. Use the
+  body renderer for the standard scaffolding. Add the drafted
+  `## Acceptance and verification` section to its output. Draft the title and
+  body from the change and its verification evidence. Do not derive them from
+  `git log -1`.
 - Provider-visible bodies and comments must not contain raw machine-local home
   paths. Rewrite useful evidence paths to `$HOME/...`; omit local-only artifact
   paths when a remote reader cannot use them. The released `forge-cli` provider

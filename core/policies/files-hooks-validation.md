@@ -10,6 +10,8 @@ runbooks and CLIs.
 
 ## Before Editing
 
+- Start every task with observable acceptance criteria and a verification
+  method for each (command, test, or check). Record them before implementation.
 - Read the closest repository instructions and only the runbooks relevant to
   the work. Inspect the target plus material callers, loading paths,
   tests, generated surfaces, and local conventions.
@@ -27,21 +29,29 @@ runbooks and CLIs.
   that no longer protect a distinct still-valid risk. Prefer observable
   assertions over implementation shape.
 - Test-first is tiered (reversible; #289):
-  - **A, red first:** bug/regression fixes and cross-component or cross-repo
-    contracts. Capture a meaningful regression failure before production
-    edits, caused by the intended behavior gap, not setup, compilation,
-    environment, fixture, retry, or unrelated failure. Keep a verified
-    `test-first-evidence` record, or a waiver stating why red is impractical
-    plus substitute validation.
-  - **B, acceptance criteria first:** new features. Write observable criteria
-    first; stable-interface tests must exist before merge. Red and a record are
-    optional.
-  - **C, no record:** docs, config, generated output, small UI tweaks, spikes.
-    Repository checks only.
+  - **A, red first** applies to bug or regression fixes, boundary contracts,
+    and security changes. Before production edits, reproduce the behavior gap
+    through the expected assertion failing. Setup, compilation, missing
+    symbols, environment errors, fixture errors, timeouts, retry-only
+    failures, and unrelated failures do not qualify. Keep a verified
+    `test-first-evidence` record or a waiver with the reason red is impractical
+    and substitute validation.
+  - **B, acceptance criteria first** applies to new features. Write observable
+    criteria and verification methods before implementation and have
+    stable-interface tests before merge. No red record is required.
+  - **C, repository checks only** applies to docs, config, generated output,
+    small UI tweaks, and spikes. No record is required.
 - Review/CI outweigh ordering. Review checks for deleted tests or weakened assertions
   (no detector). Records: `evidence-control-plane.md`.
 - Flaky tests are defects. Quarantine needs an owner, expiry/removal condition,
   and substitute validation.
+
+### Worked examples
+
+- **A, product bug fix** — Reproduce a dropped empty value with the expected response assertion failing, retain the red record, then show the assertion passes after the fix.
+- **B, new feature** — Define the observable export contents and how to check them first, then show passing export-interface tests before merge. No red record is required.
+- **Test-only addition** — Add a case for an empty value that already works and show it passes against existing behavior. No product-behavior evidence is required (sympoies/nils-cli#4118).
+- **A, test race fix** — Reproduce the race so its ordering assertion fails, retain that red record, then show the assertion passes after the fix.
 
 ## Files And Sensitive Output
 

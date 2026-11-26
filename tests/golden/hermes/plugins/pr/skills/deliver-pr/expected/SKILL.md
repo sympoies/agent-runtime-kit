@@ -161,6 +161,14 @@ Failure modes:
 - `git-cli worktree remove` returns a `removal-*` refusal. Report the named
   live holder or other failure, retain the target, and do not retry with force.
 
+## Acceptance and verification
+
+For work this skill starts, draft observable acceptance criteria and the
+verification method for each before implementation. When adopting existing
+work, carry its criteria and methods into the PR/MR body under this heading.
+Follow the tiers in `core/policies/files-hooks-validation.md`. Tier B requires
+stable-interface tests before merge. No red record is required.
+
 ## Lifecycle Mode Selection
 
 The user requests the PR/MR outcome, not a lifecycle helper.
@@ -328,7 +336,9 @@ non-owning kind are rejected (`--changes-file` is feature-only;
 bug-only) instead of being silently dropped.
 
 Use the released provider CLI directly. `forge-cli` detects the provider from
-the remote; pass `--provider "$PROVIDER"` to pin it (`github` or `gitlab`):
+the remote; pass `--provider "$PROVIDER"` to pin it (`github` or `gitlab`).
+This example uses a feature-kind delivery subject to an active release-specific
+evidence gate.
 
 ```bash
 forge-cli pr deliver \
@@ -347,14 +357,10 @@ forge-cli pr deliver \
   --no-merge
 ```
 
-When the test-first gate is enabled — `[test_first].require = true` in a repo
-`.forge-cli.toml` or the user-global
-`${XDG_CONFIG_HOME:-~/.config}/forge-cli/config.toml` — a `--kind feature` /
-`bug` deliver (the create, adopt, and `--dry-run` preflight steps) also requires
-`--test-first-evidence "$EVIDENCE_DIR"`, pointing at the `verify`-clean directory
-the policy-owned `test-first-evidence` CLI flow produces. Omit it for the exempt kinds (`docs` /
-`chore` / `ci` / `refactor`); without it delivery fails closed with
-`test_first_evidence_required`.
+For an active release-specific evidence gate, follow
+[the gate reference](core/policies/references/git-delivery.md#test-first-evidence-gate).
+When the CLI requires `--test-first-evidence`, pass the directory verified by
+`test-first-evidence verify`.
 
 Run the generic code-review outcome in pre-merge context before merge. Start
 without forced lenses so scope can admit quick review; when quick is ineligible
@@ -678,7 +684,8 @@ all child and integration evidence is verified.
    dispatcher and stop on failure.
 4. Inspect linked issues and closing references. Use `Refs #<issue>`
    for program trackers and dispatch issues until their parent closeout passes.
-5. Render the PR/MR body with `agent-runtime pr-body render`.
+5. Render the PR/MR body with `agent-runtime pr-body render`, then add the
+   drafted `## Acceptance and verification` section.
 6. Select labels before provider mutation; use
    `references/pr-lifecycle.md` for the shared taxonomy rule.
 7. If `manifests/forge-labels.yaml` exists, validate labels with the
