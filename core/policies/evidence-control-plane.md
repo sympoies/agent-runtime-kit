@@ -40,16 +40,19 @@ The engineering discipline applies whether or not a durable record is required.
 Follow the tiers in `files-hooks-validation.md`.
 
 1. **State acceptance and verification** before implementation.
-   Declare the contract delta for behavior changes.
+   Declare the contract delta for behavior changes. Identify retained,
+   changed or removed, and added behavior, plus the invariants.
 2. Identify materially affected tests, fixtures, snapshots, mocks, contract
    consumers, and journeys. Keep, update, remove, add, or refactor each owner
    according to the intended contract.
-3. Choose the lowest stable behavioral boundary. For tier A, reproduce the
-   gap before production edits. **Capture meaningful red** when the expected
-   assertion fails. The command or scenario, test identity, expected assertion,
-   and observed failure must identify the same behavior gap. For tier B, verify stable-interface tests
-   before merge. No red record is required. For tier C, run repository checks
-   only.
+3. Choose the lowest stable behavioral boundary. **Capture meaningful red**
+   before production edits for tier A. Run the regression test and confirm
+   that the assertion for the missing behavior fails. Match the command or
+   scenario, test identity, expected assertion, and observed failure to the
+   same behavior gap. Setup, compilation, missing symbols, environment errors,
+   fixture errors, timeouts, retry-only failures, and unrelated failures do not qualify.
+   For tier B, verify stable-interface tests before merge. No red record is
+   required. For tier C, run repository checks only.
 4. Implement narrowly and validate by risk across focused owners, affected
    suites, contract consumers, and integration/manual boundaries as needed.
    Coverage percentage is diagnostic, not an objective, and does not justify
@@ -60,10 +63,10 @@ Follow the tiers in `files-hooks-validation.md`.
 Independent review and CI matter more than test ordering. Review checks for
 deleted tests or weakened assertions; no separate automated detector is claimed.
 
-A durable `test-first-evidence.record.v2` is required for tier A work. Tier B
-and C have no record requirement under the tier policy. See
-[Enforcement Boundary](#enforcement-boundary) for active release-specific
-gates. When a record is required, initialize it before production edits,
+A durable `test-first-evidence.record.v2` is required for tier A work. Other
+tiers need a record only when an active gate or workflow requires one. See
+[Enforcement Boundary](#enforcement-boundary) for release-specific gates.
+When a record is required, initialize it before production edits,
 record affected test decisions and the expected assertion failure or a
 complete waiver, append scoped final validation, declare residual gaps, and
 run `verify`. Use

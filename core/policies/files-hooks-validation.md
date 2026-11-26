@@ -32,7 +32,8 @@ runbooks and CLIs.
   - **A, red first** applies to bug or regression fixes, boundary contracts,
     and security changes. Before production edits, reproduce the behavior gap
     through the expected assertion failing. Setup, compilation, missing
-    symbols, timeouts, and unrelated failures do not qualify. Keep a verified
+    symbols, environment errors, fixture errors, timeouts, retry-only
+    failures, and unrelated failures do not qualify. Keep a verified
     `test-first-evidence` record or a waiver with the reason red is impractical
     and substitute validation.
   - **B, acceptance criteria first** applies to new features. Write observable
