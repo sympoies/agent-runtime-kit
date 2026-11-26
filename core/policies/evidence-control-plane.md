@@ -39,15 +39,15 @@ material, or retention is useful.
 The engineering discipline applies whether or not a durable record is required.
 Follow the tiers in `files-hooks-validation.md`.
 
-1. **State acceptance and verification** before implementation. For behavior
-   changes, also declare the contract delta.
+1. **State acceptance and verification** before implementation.
+   Declare the contract delta for behavior changes.
 2. Identify materially affected tests, fixtures, snapshots, mocks, contract
    consumers, and journeys. Keep, update, remove, add, or refactor each owner
    according to the intended contract.
-3. Choose the lowest stable behavioral boundary. For tier A, capture the
-   expected assertion failing before production edits. The command or
-   scenario, test identity, expected assertion, and observed failure must
-   identify the same behavior gap. For tier B, verify stable-interface tests
+3. Choose the lowest stable behavioral boundary. For tier A, reproduce the
+   gap before production edits. **Capture meaningful red** when the expected
+   assertion fails. The command or scenario, test identity, expected assertion,
+   and observed failure must identify the same behavior gap. For tier B, verify stable-interface tests
    before merge. No red record is required. For tier C, run repository checks
    only.
 4. Implement narrowly and validate by risk across focused owners, affected

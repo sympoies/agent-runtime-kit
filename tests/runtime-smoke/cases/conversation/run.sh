@@ -33,6 +33,7 @@ record_case() {
 
 run_conversation_skill_probe() {
   local skill="$1"
+  local path policy_words
   local out="$CONVERSATION_ARTIFACTS_DIR/${skill}.txt"
   local source="$REPO_ROOT/core/skills/conversation/${skill}/SKILL.md.tera"
   local codex="$REPO_ROOT/build/codex/plugins/conversation/skills/${skill}/SKILL.md"
@@ -57,14 +58,13 @@ run_conversation_skill_probe() {
 
   if [ "$skill" = "guided-feature-build" ]; then
     for path in "$source" "$codex" "$claude"; do
-      grep -Fq 'Follow the tiers in `core/policies/files-hooks-validation.md`' "$path"
-      grep -Fq 'contract delta and scan affected tests. A, bug/regression fixes and boundary' "$path"
-      grep -Fq 'contracts: meaningful red before production edits plus a verified' "$path"
-      grep -Fq '`test-first-evidence` record or complete waiver. B, new features: observable' "$path"
-      grep -Fq 'acceptance criteria first and stable-interface tests before merge; red and a' "$path"
-      grep -Fq 'record are optional. C, docs, config, generated output, small UI tweaks, and' "$path"
-      grep -Fq 'spikes: repository checks only, no record. Honor any active evidence gate;' "$path"
-      grep -Fq 'convergence, and explicit residual gaps' "$path"
+      policy_words="$(tr '\n' ' ' <"$path" | tr -s ' ')"
+      grep -Fq 'Finalize **Acceptance and verification** before editing.' <<<"$policy_words"
+      grep -Fq 'Follow the tiers in `core/policies/files-hooks-validation.md`.' <<<"$policy_words"
+      grep -Fq 'needs the expected assertion to fail first and a verified record or waiver' <<<"$policy_words"
+      grep -Fq 'requires stable-interface tests before merge. No red record is required.' <<<"$policy_words"
+      grep -Fq 'small UI tweaks, spikes) needs repo checks only' <<<"$policy_words"
+      grep -Fq 'suite convergence, and explicit residual gaps' <<<"$policy_words"
     done
   fi
 }
@@ -75,7 +75,7 @@ run_conversation_outcome_routing_probe() {
   local protocol="$REPO_ROOT/core/skills/conversation/guided-feature-build/references/DELEGATION_PROTOCOL.md"
 
   grep -Fq 'Deliver the smallest correct solution for the' "$home_policy"
-  grep -Fq 'accepted observable outcome;' "$home_policy"
+  grep -Fq 'accepted observable outcome' "$home_policy"
   grep -Fq '## Outcome Routing' "$guided"
   grep -Fq 'Advice and explanation stay normal conversation behavior' "$guided"
   grep -Fq 'selects inline, orchestrated, or' "$guided"

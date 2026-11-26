@@ -93,8 +93,9 @@ an integration branch because lane PRs cannot safely land on main separately.
    the orchestrator records an explicit reassignment.
 4. Apply the test-first tiers in `core/policies/files-hooks-validation.md`
    to each lane. Tier B needs stable-interface tests before merge. No red
-   record is required. Follow the released evidence gate through
-   `deliver-pr` if active.
+   record is required. Follow `deliver-pr` for any active released evidence
+   gate, passing `--test-first-evidence` to the lane PR call when the CLI
+   requires it.
    Use `agent-out` for local evidence and `git-cli` and `semantic-commit` for
    governed worktree and commit operations. Lane PR creation uses `forge-cli`
    with the integration branch as its base.

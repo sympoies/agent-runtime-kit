@@ -336,21 +336,24 @@ non-owning kind are rejected (`--changes-file` is feature-only;
 bug-only) instead of being silently dropped.
 
 Use the released provider CLI directly. `forge-cli` detects the provider from
-the remote; pass `--provider "$PROVIDER"` to pin it (`github` or `gitlab`):
+the remote; pass `--provider "$PROVIDER"` to pin it (`github` or `gitlab`).
+This example uses a feature-kind delivery subject to an active release-specific
+evidence gate.
 
 ```bash
 forge-cli pr deliver \
   --provider "$PROVIDER" \
-  --kind docs \
+  --kind feature \
   --title "$PR_TITLE" \
   --body-file "$PR_BODY" \
   --base main \
   --method squash \
-  --label type::docs \
+  --label type::feature \
   --label area::runtime \
   --label size::m \
   --label-catalog manifests/forge-labels.yaml \
   --strict-labels \
+  --test-first-evidence "$EVIDENCE_DIR" \
   --no-merge
 ```
 
