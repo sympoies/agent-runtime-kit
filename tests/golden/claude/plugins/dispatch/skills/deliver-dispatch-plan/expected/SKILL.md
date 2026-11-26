@@ -7,12 +7,6 @@ description: >
 
 # Deliver Dispatch Plan
 
-## Acceptance and verification
-
-Before implementation, record the program's observable acceptance criteria
-and how each will be verified. Require the same for each lane in its child
-issue and task packet before assignment.
-
 ## Contract
 
 Prerequisites:
@@ -57,6 +51,12 @@ review, the reviewed head changed, the review-loop has open findings, provider
 checks fail, a merge gate rejects, or a child remains open. Read current
 provider state and repair the owning lane or record before retrying. Never
 infer closeout from prose alone.
+
+## Acceptance and verification
+
+Before implementation, record the program's observable acceptance criteria
+and how each will be verified. Require the same for each lane in its child
+issue and task packet before assignment.
 
 ## Outcome Routing
 

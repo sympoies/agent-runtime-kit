@@ -6,14 +6,6 @@ description: >
 
 # Deliver PR / MR
 
-## Acceptance and verification
-
-For work this skill starts, draft observable acceptance criteria and the
-verification method for each before implementation. When adopting existing
-work, carry its criteria and methods into the PR/MR body under this heading.
-Follow the tiers in `core/policies/files-hooks-validation.md`. Tier B requires
-stable-interface tests before merge. No red record is required.
-
 ## Contract
 
 Prereqs:
@@ -168,6 +160,14 @@ Failure modes:
   or dispatch issue before its closeout gates complete.
 - `git-cli worktree remove` returns a `removal-*` refusal. Report the named
   live holder or other failure, retain the target, and do not retry with force.
+
+## Acceptance and verification
+
+For work this skill starts, draft observable acceptance criteria and the
+verification method for each before implementation. When adopting existing
+work, carry its criteria and methods into the PR/MR body under this heading.
+Follow the tiers in `core/policies/files-hooks-validation.md`. Tier B requires
+stable-interface tests before merge. No red record is required.
 
 ## Lifecycle Mode Selection
 
