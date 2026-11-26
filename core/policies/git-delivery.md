@@ -236,9 +236,9 @@ host cannot attest the target, then report a capability blocker if unavailable.
 
 Load [evidence-control-plane](evidence-control-plane.md) when retained test-first
 proof, a delivery gate, audit, handoff, or other durable evidence is required.
-Its conditional status never waives a gate. `forge-cli` owns opt-in feature/bug
-`test-first-evidence.record.v2` admission on create/adopt/dry-run; other kinds are
-exempt. The engineering contract's tiers still apply: tier A meaningful red or
-an honest waiver, tier B acceptance criteria, affected-test judgment, scoped
-final validation, and residual-gap disclosure. Storage/schema/typed failures
-belong to CLI help and the [on-demand reference](references/git-delivery.md#test-first-evidence-gate).
+Its conditional status never waives a gate. State observable acceptance and
+verification before implementation and follow the test-first tiers in
+[the engineering contract](files-hooks-validation.md). Tier B requires
+stable-interface tests before merge. No red record is required. Released CLI
+gate settings and failure codes belong to CLI help and the
+[on-demand reference](references/git-delivery.md#test-first-evidence-gate).

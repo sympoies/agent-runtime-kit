@@ -266,22 +266,22 @@ The [fold recipe](../devlog/ci-fold.md) owns workflow wiring and provider accept
   client-side hook: when `[test_first].require` resolves true, `forge-cli pr
   create` / `pr deliver` require `--test-first-evidence <dir>` for selected
   kinds (both the create and adopt paths, and the `--dry-run` preflight).
-  The compatibility default selects feature/bug; other kinds are exempt unless
-  explicitly selected through the per-kind setting below.
+  This released gate selects kinds using the setting below.
 - The retained PR and dispatch parent outcomes (`deliver-pr` and
   `deliver-dispatch-plan`) thread that flag
   through their internal create/deliver phases for gated kinds and omit it for
   exempt kinds. Point it at the `verify`-clean directory produced
   by the policy-owned `test-first-evidence` CLI flow.
-- Tiers (`core/policies/files-hooks-validation.md`, reversible; #289) decide
-  when a record is warranted: tier A (bug/regression fixes and cross-boundary
-  contracts) keeps one; tier B (new features) and tier C (docs, config,
-  generated output, small UI tweaks, spikes) need none by default. Since
-  nils-cli 1.36.11, `test_first.require_kinds` selects gated kinds, defaulting
-  to `["feature", "bug"]` for compatibility. With `require = true`, set
-  `require_kinds = ["bug"]` to exempt feature deliveries. The setting selects
-  kinds, not semantic tiers: cross-boundary feature contracts still keep a
-  tier A record. Satisfy active gates with a record; do not mislabel the PR kind.
+- The [engineering tiers](../files-hooks-validation.md) require an expected
+  assertion failure and verified record or waiver for tier A. Tier B requires
+  stable-interface tests before merge. No red record is required. Tier C
+  requires repository checks only.
+- The released per-kind gate introduced in nils-cli 1.36.11 defaults
+  `test_first.require_kinds` to `["feature", "bug"]`. With `require = true`,
+  `require_kinds = ["bug"]` exempts feature-kind deliveries from that gate.
+  Under the tier policy, cross-boundary feature contracts need tier A proof.
+  Tool-side alignment is tracked in sympoies/nils-cli#4121. Satisfy active
+  gates using the actual PR kind.
 - The gate is **off by default**. It is opt-in via `[test_first] require =
   true` in either a repo `.forge-cli.toml` or the user-global
   `${XDG_CONFIG_HOME:-$HOME/.config}/forge-cli/config.toml`. Precedence: explicit

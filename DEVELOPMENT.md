@@ -76,14 +76,14 @@ agents or target consumer rules.
 
 ## Change workflow
 
-1. Define the observable contract delta and list the canonical and derived
-   surfaces that must remain aligned.
-2. Test first by tier (`core/policies/files-hooks-validation.md`): capture a
-   meaningful regression failure at the lowest stable owner before editing for
-   bug/regression fixes and cross-boundary contracts, with a verified record or
-   waiver; write acceptance criteria first and stable-interface tests before merge
-   for new features (red/record optional); run repository checks only, with no
-   record, for docs, config, generated output, small UI tweaks, and spikes.
+1. State observable acceptance criteria and how each will be verified before
+   implementation. Define the contract delta and list affected source and
+   generated surfaces.
+2. Follow the test-first tiers in `core/policies/files-hooks-validation.md`:
+   A (bug/regression fixes, boundary contracts, security) requires the expected
+   assertion to fail first and a verified record or waiver. B (features) needs
+   stable-interface tests before merge. No red record is required. C (docs,
+   config, generated output, small UI tweaks, spikes) needs repo checks only.
 3. Make the smallest source change, then refresh only the affected generated
    output, manifests, fixtures, and current documentation.
 4. Run focused checks while iterating. Review generated diffs rather than
