@@ -6,6 +6,10 @@ skill's next action.
 
 ## Shared Rules
 
+- Coordination lock or merge-queue wait timeouts and duplicate-record notices
+  on a retried call are not refusals. Retry with backoff up to three times,
+  then report an unresolved transient condition; only a typed owner-tool
+  refusal is a refusal. Preserve the other delivery gates.
 - Use released nils-cli surfaces: `agent-runtime pr-body render` for body
   scaffolding and `forge-cli pr ...` for provider create, checks, ready, merge,
   close, and comments.
