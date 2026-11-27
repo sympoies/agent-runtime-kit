@@ -152,6 +152,7 @@ run_test_first_evidence_probe() {
   require_evidence_bin test-first-evidence || return 1
   require_evidence_bin python3 || return 1
   mkdir -p "$out_dir" "$removal_dir" "$waiver_dir" "$v1_dir"
+  python3 -c 'assert False, "fixture behavior is absent"' >"$EVIDENCE_ARTIFACTS_DIR/assertion.txt" 2>&1 || :
 
   # Policy owns qualitative judgment; the CLI owns deterministic v2 records.
   # Keep this assertion focused on the durable concepts, not CLI internals.
@@ -184,12 +185,13 @@ run_test_first_evidence_probe() {
     --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.impact.json"
   test-first-evidence record-failing \
     --out "$out_dir" \
-    --command "bash tests/runtime-smoke/run.sh --mode deterministic --domain evidence" \
+    --command "python3 -c 'assert False, \"fixture behavior is absent\"'" \
     --exit-code 1 \
     --test-name "evidence.selective-control-plane.test-first" \
     --expected-failure "the old policy omits the durable v2 lifecycle" \
-    --observed-failure "the policy-owned lifecycle assertion failed" \
+    --observed-failure "$(cat "$EVIDENCE_ARTIFACTS_DIR/assertion.txt")" \
     --summary "runtime smoke captured the intended contract migration" \
+    --artifact "$EVIDENCE_ARTIFACTS_DIR/assertion.txt" \
     --format json >"$EVIDENCE_ARTIFACTS_DIR/test-first.failing.json"
   test-first-evidence record-final \
     --out "$out_dir" \
@@ -362,6 +364,7 @@ run_selective_intent_control_plane_probe() {
   local workspace="$TMP_ROOT/workspaces/selective-intent-repo"
   local test_first_dir="$EVIDENCE_ARTIFACTS_DIR/phase-aware-test-first"
   require_evidence_bin test-first-evidence || return 1
+  python3 -c 'assert False, "fixture behavior is absent"' >"$EVIDENCE_ARTIFACTS_DIR/assertion.txt" 2>&1 || :
   mkdir -p "$workspace/src" "$workspace/tests"
   printf '# Dev\n' >"$workspace/DEV.md"
   printf '# Fixture\n' >"$workspace/README.md"
@@ -393,10 +396,10 @@ TOML
   fi
   grep -q '"code": "pre-edit-blocked"' "$EVIDENCE_ARTIFACTS_DIR/phase-aware.denied.json"
   test-first-evidence record-failing --out "$test_first_dir" \
-    --command "false" --exit-code 1 --summary "fixture failure reproduced" \
+    --command "python3 -c 'assert False, \"fixture behavior is absent\"'" --exit-code 1 --summary "fixture failure reproduced" \
     --test-name "runtime smoke regression" \
     --expected-failure "phase-aware behavior is absent before implementation" \
-    --observed-failure "the focused fixture returned exit 1" --format json \
+    --observed-failure "$(cat "$EVIDENCE_ARTIFACTS_DIR/assertion.txt")" --artifact "$EVIDENCE_ARTIFACTS_DIR/assertion.txt" --format json \
     >"$EVIDENCE_ARTIFACTS_DIR/phase-aware.failing.json"
   test-first-evidence check --out "$test_first_dir" --phase pre-edit \
     --project-path "$workspace" --path src/lib.rs --format json \
@@ -487,10 +490,10 @@ TOML
     --changed-behavior "no-path-class fixture behavior changes" --format json >/dev/null
   test-first-evidence record-impact --out "$dir" --none \
     --reason "the fixture has no configured path-class owner" --format json >/dev/null
-  test-first-evidence record-failing --out "$dir" --command false --exit-code 1 \
+  test-first-evidence record-failing --out "$dir" --command "python3 -c 'assert False, \"fixture behavior is absent\"'" --exit-code 1 \
     --summary "fixture failure" --test-name "no path classes" \
     --expected-failure "fixture behavior is absent before implementation" \
-    --observed-failure "the fixture command returned exit 1" --format json >/dev/null
+    --observed-failure "$(cat "$EVIDENCE_ARTIFACTS_DIR/assertion.txt")" --artifact "$EVIDENCE_ARTIFACTS_DIR/assertion.txt" --format json >/dev/null
   test-first-evidence check --out "$dir" --phase pre-edit \
     --project-path "$no_classes" --path src/lib.rs --format json >"$dir/check.json"
   python3 - "$EVIDENCE_ARTIFACTS_DIR" <<'PY'

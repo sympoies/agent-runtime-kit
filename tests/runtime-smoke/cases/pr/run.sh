@@ -901,6 +901,7 @@ write_test_first_gate_records() {
   local v1_dir="$2"
   local owner="$3"
   mkdir -p "$v2_dir" "$v1_dir"
+  python3 -c 'assert False, "fixture behavior is absent"' >"$v2_dir/assertion.txt" 2>&1 || :
   test-first-evidence init \
     --out "$v2_dir" \
     --classification behavior-change \
@@ -914,12 +915,13 @@ write_test_first_gate_records() {
     --format json >/dev/null
   test-first-evidence record-failing \
     --out "$v2_dir" \
-    --command "false" \
+    --command "python3 -c 'assert False, \"fixture behavior is absent\"'" \
     --exit-code 1 \
     --test-name "runtime-smoke-test-first-v2-$owner" \
     --expected-failure "the fixture behavior is absent before implementation" \
-    --observed-failure "the focused fixture command returned exit 1" \
+    --observed-failure "$(cat "$v2_dir/assertion.txt")" \
     --summary "strict v2 red fixture" \
+    --artifact "$v2_dir/assertion.txt" \
     --format json >/dev/null
   test-first-evidence record-final \
     --out "$v2_dir" \
