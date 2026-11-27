@@ -199,10 +199,11 @@ Resolve `AGENT_REVIEWER_SESSION` or the coordinator's explicit assignment
 through `core/policies/session-coordination.md`. No assignment uses the existing
 self-run review and command blocks unchanged.
 
-Mark the PR ready (not draft) before the review handoff. Transient lock or
-queue timeouts and duplicate-record notices on a retried call are not refusals;
-retry with bounded backoff and continue. Only a typed owner-tool refusal stops
-the work.
+Mark the PR ready (not draft) before the review handoff. Coordination lock or
+merge-queue wait timeouts and duplicate-record notices on a retried call are not
+refusals. Retry with backoff up to three times, then report an unresolved
+transient condition; only a typed owner-tool refusal is a refusal. Preserve the
+other delivery gates.
 
 The designated reviewer owns specialists, publication, ledger observation
 before repair push, and closure. Hand off the policy's PR/base/head,
