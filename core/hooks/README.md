@@ -746,6 +746,19 @@ Missing files, directories, relative paths, and non-string entries are omitted.
 An absent, malformed, non-array, or empty setting produces no reminder. It is
 stateless, so a later compact boundary checks file existence again.
 
+For one narrow case the adapter does read a file: on `compact` only, the
+launcher may also set `AGENT_RUNTIME_PROJECT_CONTEXT_FILE` to one absolute file
+path (a short, project-maintained status card). The adapter appends the file's
+text verbatim to the same `additionalContext`, after the path list, when the
+file is a regular file whose final path component is not a symlink, is owned by
+the current user, is non-empty, is at most 10240 bytes, and is valid UTF-8.
+Any failed check, a relative path, or an unset variable falls back to the
+path-only output with no error, and `startup`, `resume`, and `clear` never
+inject it. Nothing is executed or parsed, the adapter keeps no state, and the
+project owns what the file says and how fresh it is (for example by rewriting it
+atomically on a schedule). The size cap keeps the output well below Codex's
+per-hook-output limit of roughly 2,500 tokens.
+
 Normal sync materializes the handler and `agent-hook setup` previews and owns
 the new compact ingress; never hand-edit the legacy target fragments or
 bypass provider hook trust review. Source dispatch/setup fixtures establish
