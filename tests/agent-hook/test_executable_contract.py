@@ -518,6 +518,88 @@ class AgentHookExecutableContractTests(unittest.TestCase):
                 )
                 self.assertEqual(json.loads(result.stdout), {})
 
+    def install_readback_handlers(self) -> None:
+        self.install_source_handler("codex", "user-prompt-agent-docs.sh")
+        for handler in ("session-start-healthcheck", "user-prompt-agent-memory"):
+            self.install_fixture_handler("codex", handler, "{}")
+
+    def compact_context(self, **overrides: str) -> dict[str, Any]:
+        result = self.run_hook(
+            "dispatch", "--product", "codex", "--format", "provider",
+            payload={
+                "hook_event_name": "SessionStart", "source": overrides.pop("source", "compact"),
+                "cwd": str(self.root),
+            },
+            env={**self.env, **overrides},
+        )
+        return json.loads(result.stdout)
+
+    def test_project_context_file_is_injected_verbatim_once_per_compaction(self) -> None:
+        self.install_readback_handlers()
+        pointer = self.root / "rules.md"
+        pointer.write_text("rules must not be injected", encoding="utf-8")
+        card = self.root / "card.md"
+        text = "Status card (generated 2026-01-01T00:00:00Z)\nnext: step 2 中文\n[project-card:v1]\n"
+        card.write_text(text, encoding="utf-8")
+        overrides = {
+            "AGENT_RUNTIME_PROJECT_READBACK_PATHS": json.dumps([str(pointer)]),
+            "AGENT_RUNTIME_PROJECT_CONTEXT_FILE": str(card),
+        }
+        for compaction in range(3):
+            with self.subTest(compaction=compaction):
+                output = self.compact_context(**overrides)["hookSpecificOutput"]
+                self.assertEqual(output["hookEventName"], "SessionStart")
+                context = output["additionalContext"]
+                self.assertTrue(context.startswith("Before continuing, read these project-supplied files:\n"))
+                self.assertEqual(context.count("[project-card:v1]"), 1)
+                self.assertTrue(context.endswith(text.rstrip("\n")))
+                self.assertNotIn("rules must not be injected", context)
+
+    def test_project_context_file_is_compact_only_and_works_without_pointers(self) -> None:
+        self.install_readback_handlers()
+        card = self.root / "card.md"
+        card.write_text("card text [project-card:v1]\n", encoding="utf-8")
+        overrides = {"AGENT_RUNTIME_PROJECT_CONTEXT_FILE": str(card)}
+        for source in ("startup", "resume", "clear"):
+            with self.subTest(source=source):
+                self.assertEqual(self.compact_context(source=source, **overrides), {})
+        context = self.compact_context(**overrides)["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(context, "card text [project-card:v1]")
+
+    def test_invalid_project_context_file_falls_back_to_pointer_only_output(self) -> None:
+        self.install_readback_handlers()
+        pointer = self.root / "rules.md"
+        pointer.write_text("rules", encoding="utf-8")
+        readback = json.dumps([str(pointer)])
+        real = self.root / "real.md"
+        real.write_text("must not appear", encoding="utf-8")
+        link = self.root / "link.md"
+        link.symlink_to(real)
+        oversize = self.root / "oversize.md"
+        oversize.write_text("x" * 10241, encoding="utf-8")
+        binary = self.root / "binary.md"
+        binary.write_bytes(b"\xff\xfe not utf-8")
+        empty = self.root / "empty.md"
+        empty.write_text("", encoding="utf-8")
+        baseline = self.compact_context(AGENT_RUNTIME_PROJECT_READBACK_PATHS=readback)
+        self.assertIn(str(pointer), baseline["hookSpecificOutput"]["additionalContext"])
+        for name, value in {
+            "unset": "", "missing": str(self.root / "missing.md"), "directory": str(self.root),
+            "symlink": str(link), "oversize": str(oversize), "invalid-utf8": str(binary),
+            "empty": str(empty), "relative": "card.md",
+        }.items():
+            with self.subTest(case=name):
+                self.assertEqual(
+                    self.compact_context(
+                        AGENT_RUNTIME_PROJECT_READBACK_PATHS=readback,
+                        AGENT_RUNTIME_PROJECT_CONTEXT_FILE=value,
+                    ),
+                    baseline,
+                )
+                self.assertEqual(
+                    self.compact_context(AGENT_RUNTIME_PROJECT_CONTEXT_FILE=value), {}
+                )
+
     def test_shadow_only_writes_dispatch_observation_for_stateful_capabilities(
         self,
     ) -> None:
